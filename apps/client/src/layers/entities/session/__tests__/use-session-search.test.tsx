@@ -23,7 +23,7 @@ vi.mock('@/layers/shared/model', () => ({
 }));
 
 import { useSessionSearch } from '../model/navigation/use-session-search';
-import { sessionSearchSchema } from '@/router';
+import { sessionSearchSchema } from '@/layers/shared/lib/session-link';
 
 /**
  * Schema keys `useSessionSearch` deliberately does not forward.

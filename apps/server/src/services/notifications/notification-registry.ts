@@ -27,6 +27,7 @@
  * @module services/notifications/notification-registry
  */
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import { windowLabel } from '@dorkos/shared/account-usage';
 import {
   NOTIFICATION_KINDS,
   type NotificationActionDTO,
@@ -103,7 +104,10 @@ export interface NotificationPayloads {
     capabilityId: string;
     /**
      * Its human-facing title, from the capability registry — never from the
-     * requester (`approval-service.ts`'s `CapabilityDescriptorLookup`).
+     * requester (`approval-service.ts`'s `CapabilityDescriptorLookup`). For a
+     * connected-app action it is the action and app instead ("Delete message
+     * in Gmail", `approvalHeading`), which the server read from its own
+     * records; still no argument values.
      */
     capabilityTitle: string;
     /**
@@ -268,6 +272,72 @@ export interface NotificationPayloads {
     version: string;
     /** What it was running last time. Absent on the very first boot that records one. */
     previousVersion?: string;
+  };
+  /**
+   * An account hit a hard usage limit, so the session that was using it
+   * stopped (spec `claude-account-fleet` D4).
+   *
+   * About the ACCOUNT's episode, not the session: every session on that
+   * account hits the same limit, and {@link dedupeKey} collapses them into one.
+   * The session is the one that noticed, and where "Open" goes.
+   */
+  'account.limited': {
+    sessionId: string;
+    agentId?: string;
+    /** What to call the session in a sentence. See `ask.pending`. */
+    sessionLabel: string;
+    /** The account's registry id, or `null` when its folder is not registered. */
+    accountId: string | null;
+    /**
+     * A short hash of an unregistered account's folder (`accountId` null): its
+     * identity in the dedupe key. A hash, not the path, because this payload
+     * is stored and served by `/api/notifications`. Never shown.
+     */
+    accountRef?: string;
+    /** What the operator calls the account. */
+    accountLabel: string;
+    /**
+     * The account's runtime when it is not Claude Code (spec §6 R). Each
+     * runtime has its own `default`, so it is part of the episode's identity.
+     */
+    runtime?: 'codex' | 'opencode';
+    /** The ledger window key that ran out, such as `seven_day`, or `unknown`. */
+    window: string;
+    /** When that window resets, ISO 8601, or `null` when unknown. */
+    resetsAt: string | null;
+    /** When the limit was hit, ISO 8601: the episode's identity when the reset is unknown. */
+    since: string;
+    /**
+     * Set on the repeat raised when a planned automatic move to another account
+     * could not happen (spec D9 "Automatic handoff"), so a person decides.
+     */
+    autoMoveFailed?: true;
+  };
+  /**
+   * An account's usage reset while sessions waited on it, confirmed by a
+   * reading rather than the clock (spec `claude-account-fleet` D9 "Wait, then
+   * resume by itself").
+   *
+   * About the ACCOUNT's reset, not one session: {@link dedupeKey} raises it
+   * once per account and reset however many sessions were waiting. There is no
+   * account subject type, so the subject is the first waiting session, which is
+   * where "Open" goes.
+   */
+  'account.reset': {
+    sessionId: string;
+    agentId?: string;
+    /** The account's registry id, or `null` when its folder is not registered. */
+    accountId: string | null;
+    /** A short hash of an unregistered account's folder, as in `account.limited`. Never shown. */
+    accountRef?: string;
+    /** What the operator calls the account. */
+    accountLabel: string;
+    /** How many of that account's sessions were waiting for this reset when it was confirmed. */
+    pausedCount: number;
+    /** The reset the sessions waited for, ISO 8601, or `null` when it was unknown. */
+    resetsAt: string | null;
+    /** When a reading confirmed the reset, ISO 8601: the reset's identity when `resetsAt` is unknown. */
+    resetConfirmedAt: string;
   };
   /** The daily digest. */
   'report.daily': {
@@ -440,6 +510,33 @@ const UNREACHABLE_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
  * NEXT day's report, which carries a different key regardless.
  */
 const REPORT_DAILY_DEDUPE_WINDOW_MS = 25 * 60 * 60 * 1000;
+
+/**
+ * How long one account-limit episode stays deduped.
+ *
+ * Its key already names the episode (the account, the window and when it
+ * resets), so this only has to outlast the longest window: a weekly limit can
+ * stop one session on Monday and another on Friday, and that is still the one
+ * limit. Eight days is a week plus a margin; a later episode of the same window
+ * resets at a different time and so carries a different key.
+ */
+const ACCOUNT_LIMITED_DEDUPE_WINDOW_MS = 8 * 24 * 60 * 60 * 1000;
+
+/** A reset time in the server's local zone, short, e.g. `9/27/26, 8:00 PM`. */
+function formatResetTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(
+    date
+  );
+}
+
+/** A window's name inside a sentence: `weekly`, `5-hour window`, or `usage` when unknown. */
+function limitWindowPhrase(window: string): string {
+  if (window === 'unknown') return 'usage';
+  const label = windowLabel(window);
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
 
 /** Longest slice of an agent's note that is used to tell two notes apart. */
 const NOTE_DEDUPE_PREFIX = 120;
@@ -628,9 +725,13 @@ const ENTRIES: NotificationRegistryMap = {
   'mention.received': {
     // Wired in `services/rooms/room-service.ts`'s `writePost` (spec task T11,
     // DOR-1388): raised whenever an entry's resolved mentions name the
-    // operator, in any room kind. Pierces mute on purpose — an @-mention is a
-    // directed call-out, not the room's ambient chatter. Dedupes per ENTRY,
-    // unlike `dm.received`: each mention is its own event worth its own row.
+    // operator, in any room kind except a one-to-one DM with the operator.
+    // There the entry raises `dm.received` only, so a muted 1:1 DM swallows the
+    // mention with the rest of the conversation (see `dm.received` and
+    // `RoomMessageNotifier.notifyRoomMessage`). Everywhere else it pierces mute
+    // on purpose — an @-mention is a directed call-out, not the room's ambient
+    // chatter. Dedupes per ENTRY, unlike `dm.received`: each mention is its own
+    // event worth its own row.
     //
     // **Inert until the operator has set their own handle.** A mention is
     // resolved from `@handle` text against the roster (`mentions.ts`), and the
@@ -799,6 +900,63 @@ const ENTRIES: NotificationRegistryMap = {
     relay: 'never',
   },
 
+  'account.limited': {
+    // Raised by `emitters/session-lifecycle.ts` INSTEAD of `session.error` when
+    // the turn that stopped carried a usage limit. `notable`, not `blocking`:
+    // a limit ends at a known time on its own, which is not breakage to page
+    // somebody about, so it rides no escalation.
+    kind: 'account.limited',
+    tier: 'notable',
+    storage: 'event',
+    subjectType: 'session',
+    locate: (p) => ({ subjectId: p.sessionId, sessionId: p.sessionId, agentId: p.agentId }),
+    title: (p) =>
+      p.resetsAt
+        ? `${p.accountLabel} is out until ${formatResetTime(p.resetsAt)}`
+        : `${p.accountLabel} hit its ${limitWindowPhrase(p.window)} limit`,
+    body: (p) =>
+      p.autoMoveFailed
+        ? 'DorkOS could not move it automatically, so the session is waiting for you.'
+        : undefined,
+    actions: () => OPEN_ACTION,
+    // Per account EPISODE: five sessions hitting one account's weekly limit
+    // are one thing to be told. The reset time names the episode; when it is
+    // unknown, the hour the limit was hit stands in for it.
+    dedupeKey: (p) =>
+      `account-limited:${p.runtime ? `${p.runtime}:` : ''}${
+        p.accountId ?? p.accountRef ?? 'unregistered'
+      }:${p.window}:${p.resetsAt ?? p.since.slice(0, 13)}${
+        p.autoMoveFailed ? `:auto-failed:${p.sessionId}` : ''
+      }`,
+    dedupeWindowMs: ACCOUNT_LIMITED_DEDUPE_WINDOW_MS,
+    relay: 'never',
+  },
+
+  'account.reset': {
+    // Raised by `session/fleet/resume-service.ts` at the first confirmed reset
+    // of an account some sessions were waiting on. `notable`, like the limit it
+    // ends: good news, never an alarm.
+    kind: 'account.reset',
+    tier: 'notable',
+    storage: 'event',
+    subjectType: 'session',
+    locate: (p) => ({ subjectId: p.sessionId, sessionId: p.sessionId, agentId: p.agentId }),
+    title: (p) =>
+      `${p.accountLabel} is back: ${p.pausedCount} paused ${
+        p.pausedCount === 1 ? 'session' : 'sessions'
+      } can continue`,
+    actions: () => OPEN_ACTION,
+    // Per account RESET: three sessions waiting on one account are one thing
+    // to be told. The reset time names it; when it is unknown, the hour the
+    // reset was confirmed stands in for it.
+    dedupeKey: (p) =>
+      `account-reset:${p.accountId ?? p.accountRef ?? 'unregistered'}:${
+        p.resetsAt ?? p.resetConfirmedAt.slice(0, 13)
+      }`,
+    dedupeWindowMs: ACCOUNT_LIMITED_DEDUPE_WINDOW_MS,
+    relay: 'never',
+  },
+
   'report.daily': {
     // The one kind whose title AND body are already fully written when they
     // arrive — `shift-report.ts` composes both from the day's actual counts,
@@ -888,6 +1046,8 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'signin.required',
   'update.installed',
   'report.daily',
+  'account.limited',
+  'account.reset',
 ];
 
 /**

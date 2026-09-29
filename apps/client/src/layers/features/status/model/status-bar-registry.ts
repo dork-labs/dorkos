@@ -8,6 +8,12 @@
  * number that always reads 34% is wallpaper, so the 91% that matters would not
  * register either.
  *
+ * Two items are the deliberate exception: `context` and `usage` show whenever
+ * they have a reading, from the moment a session opens, because the operator
+ * asked to see those numbers without waiting for a turn (spec
+ * `claude-account-ui` §6.8). Their severity still rises near a limit, which is
+ * what keeps the 91% louder than the 34%.
+ *
  * @module features/status/model/status-bar-registry
  */
 import type { LucideIcon } from 'lucide-react';
@@ -24,14 +30,16 @@ import {
   Wifi,
   Users,
   UserRound,
+  CircleUserRound,
 } from 'lucide-react';
 import { useCallback } from 'react';
 import type { ConnectionState, UsageStatus } from '@dorkos/shared/types';
 import type { StatusBarPin } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PIN_KEYS } from '@dorkos/shared/config-schema';
 import { CONTEXT_ACTION_PERCENT, CONTEXT_PROMOTE_PERCENT } from '@/layers/entities/session';
+import { hasRenderableUsage } from '../lib/account-usage-status';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { isBypassPermissionMode, isBypassSemantics } from '@/layers/shared/lib';
+import { isBypassPermissionMode, isBypassSemantics, type ChipState } from '@/layers/shared/lib';
 import { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
 
 /** Union of every status line item key. */
@@ -40,6 +48,7 @@ export type StatusBarItemKey =
   | 'cwd'
   | 'git'
   | 'runtime'
+  | 'account'
   | 'model'
   | 'cache'
   | 'context'
@@ -100,8 +109,20 @@ export interface StatusPromotionContext {
   plan: PlanPromotionState | null;
   /** Runtime identity, or `null` while it is still resolving. */
   runtime: RuntimePromotionState | null;
+  /**
+   * Which account the session spends and how it is doing, or `null` when the
+   * account identity gate is closed (`useAccountIdentityGate`): one account, or
+   * a runtime that does not tell accounts apart. Nothing to say, no slot.
+   */
+  account: AccountPromotionState | null;
   /** Runtime-neutral usage descriptor, or `null` when the session has none. */
   usage: UsageStatus | null;
+  /**
+   * Whether the usage item is drawing "· old" after its number: a utilization
+   * reading older than an hour (`showsStaleMark`, the same rule the item draws
+   * from). It makes the item wider than one slot, so the budget has to know.
+   */
+  usageStale: boolean;
   /**
    * How many subagents this session has **in flight right now** — never how many
    * it could call.
@@ -132,6 +153,12 @@ export interface GitPromotionState {
 interface PlanPromotionState {
   /** Whether the session is planning right now. */
   active: boolean;
+}
+
+/** What the account chip needs in order to rank itself. */
+export interface AccountPromotionState {
+  /** How the session's account is doing (see `chipState`). */
+  chipState: ChipState;
 }
 
 /** The two things about a runtime that can make it news. */
@@ -181,6 +208,12 @@ const SEVERITY = {
   AGENT_ANCHOR: 1000,
   CONNECTION_LOST: 100,
   CONTEXT_CRITICAL: 90,
+  /**
+   * The session's account is out, near its limit, or out of one model. Above
+   * both usage ranks: the account chip names WHICH account and what happened in
+   * words, so when slots are contested it is the one that must survive.
+   */
+  ACCOUNT_ATTENTION: 85,
   USAGE_EXHAUSTED: 80,
   PERMISSION_BYPASS: 70,
   CONTEXT_WARNING: 50,
@@ -268,6 +301,17 @@ export interface StatusBarItemConfig {
    * claim that the row can afford one more thing that will not move.
    */
   rigid?: true;
+  /**
+   * Whether the item, in this state, draws more than the bounded value a slot is
+   * priced for. The budget charges a wide item two slots, so the least urgent
+   * item moves under the `⋯` instead of being painted over (see
+   * `applyStatusBudget`).
+   *
+   * Only for an item that is also {@link rigid}: a shrinkable item gives width
+   * back on its own. `usage` is the one today: a stale reading says
+   * "100% · old", about 36px past its slot, and it cannot give any of that up.
+   */
+  wide?: (ctx: StatusPromotionContext) => boolean;
 }
 
 /** Human-readable labels for each popover group, used as section headers. */
@@ -275,6 +319,32 @@ const GROUP_LABELS: Record<StatusBarItemGroup, string> = {
   session: 'Session',
   diagnostics: 'Diagnostics',
 };
+
+/**
+ * The runtime item's rank, which the account item shares while its account is
+ * fine: the two sit side by side and say the same kind of fact (who runs this).
+ */
+function runtimeSeverity(ctx: StatusPromotionContext): number {
+  return ctx.runtime && !ctx.runtime.isDefault ? SEVERITY.RUNTIME_NON_DEFAULT : SEVERITY.QUIET;
+}
+
+/**
+ * Whether the account chip is showing and so carries the usage display itself
+ * (its bars and popover), which leaves the `usage` item with nothing to add:
+ * one usage display, never two (spec `claude-account-ui` §6.8).
+ *
+ * The one rule both places read: `usage.promote` below, and
+ * `buildStatusItemNodes`, which skips the usage node so a PIN (which bypasses
+ * `promote`) cannot bring the second display back.
+ *
+ * @param ctx - The promotion context, or just its `account` field.
+ */
+export function isUsageAbsorbed(ctx: Pick<StatusPromotionContext, 'account'>): boolean {
+  return ctx.account !== null;
+}
+
+/** The account chip states that are news: out, near, or one model out. */
+const ACCOUNT_ATTENTION_STATES: ReadonlySet<ChipState> = new Set(['near', 'model-out', 'out']);
 
 /**
  * Whether a permission mode sits off the dial's safest stop ('ask', which
@@ -343,8 +413,25 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     group: 'session',
     icon: Cpu,
     promote: (ctx) => ctx.runtime !== null && (!ctx.runtime.isDefault || ctx.runtime.canSelect),
+    severity: runtimeSeverity,
+  },
+  {
+    key: 'account',
+    label: 'Account',
+    description: 'Which Claude account this session spends, and how much is left.',
+    cluster: 'right',
+    // No popover row, so it cannot be pinned: a new pin value would make an
+    // older build discard the whole config file (`widened-leaves.ts`), and the
+    // chip has nothing to show outside the identity gate anyway.
+    group: null,
+    icon: CircleUserRound,
+    // `account` is non-null only while the identity gate is open (two or more
+    // accounts on a runtime that tells them apart), so the gate IS the rule.
+    promote: (ctx) => ctx.account !== null,
     severity: (ctx) =>
-      ctx.runtime && !ctx.runtime.isDefault ? SEVERITY.RUNTIME_NON_DEFAULT : SEVERITY.QUIET,
+      ctx.account && ACCOUNT_ATTENTION_STATES.has(ctx.account.chipState)
+        ? SEVERITY.ACCOUNT_ATTENTION
+        : runtimeSeverity(ctx),
   },
   {
     key: 'model',
@@ -375,7 +462,10 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     group: 'session',
     icon: BarChart3,
     rigid: true,
-    promote: (ctx) => ctx.contextPercent !== null && ctx.contextPercent >= CONTEXT_PROMOTE_PERCENT,
+    // Shown whenever there is a reading, cached or live (spec
+    // `claude-account-ui` §6.8, the operator's ask): the number is there the
+    // moment a session opens. How loud it is still rises near the limit.
+    promote: (ctx) => ctx.contextPercent !== null,
     severity: (ctx) => {
       if (ctx.contextPercent === null) return SEVERITY.QUIET;
       if (ctx.contextPercent >= CONTEXT_ACTION_PERCENT) return SEVERITY.CONTEXT_CRITICAL;
@@ -391,7 +481,12 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     group: 'session',
     icon: Gauge,
     rigid: true,
-    promote: (ctx) => ctx.usage?.state === 'warning' || ctx.usage?.state === 'exhausted',
+    // Shown whenever there is a reading (spec `claude-account-ui` §6.8), unless
+    // the account chip is showing, which carries usage itself. Severity still
+    // rises near a limit.
+    promote: (ctx) => ctx.usage !== null && hasRenderableUsage(ctx.usage) && !isUsageAbsorbed(ctx),
+    // "100% · old" (04 §13): the word is the signal, so the budget pays for it.
+    wide: (ctx) => ctx.usageStale,
     severity: (ctx) => {
       if (ctx.usage?.state === 'exhausted') return SEVERITY.USAGE_EXHAUSTED;
       if (ctx.usage?.state === 'warning') return SEVERITY.USAGE_WARNING;
@@ -437,10 +532,6 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     label: 'Plan',
     description: 'Work out a plan first, and change nothing until you approve it',
     cluster: 'right',
-    // A Session row, and pinnable, because the line's width budget can drop this
-    // item on a narrow bar (a phone, the Obsidian panel) — and an item you can
-    // only reach in the line is an item a narrow bar can take away. The row
-    // carries the same switch, so planning stays reachable at every width.
     group: 'session',
     icon: ClipboardList,
     // Offered whenever the runtime has one, on or off — a switch nobody can find
@@ -505,11 +596,6 @@ export function isPinnable(item: StatusBarItemConfig): boolean {
 /**
  * Bridge to the server-persisted pin list (`ui.statusBar.pins`, DOR-431 →
  * DOR-452): the pinned keys plus the two actions that change them.
- *
- * Pins are config, not `localStorage`, so the same items follow you between the
- * desktop app, the browser, and Obsidian, and an agent can set them via
- * `config_patch`. Both actions write the whole list — the config schema treats
- * `pins` as one array and a PATCH replaces arrays wholesale.
  *
  * A pin whose key is no longer pinnable is ignored downstream rather than
  * rejected, so removing an item from the registry cannot strand the line.

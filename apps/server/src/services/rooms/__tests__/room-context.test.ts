@@ -143,7 +143,8 @@ describe('the room context a trigger derives', () => {
       // The person has no handle until they are asked for one, so they are named
       // and not addressable — which is the honest state, not a missing value.
       expect(members.map((member) => member.handle).sort()).toEqual(['ana', 'bo', null]);
-      expect(members.find((member) => member.displayName === 'You')?.isPerson).toBe(true);
+      // Named for the agent, never by the registry's 'You' (DOR-2458).
+      expect(members.find((member) => member.displayName === 'the operator')?.isPerson).toBe(true);
       expect(members.find((member) => member.handle === 'ana')?.isPerson).toBe(false);
       expect(members.find((member) => member.handle === 'bo')?.isPerson).toBe(false);
     });

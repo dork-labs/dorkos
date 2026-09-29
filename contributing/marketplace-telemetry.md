@@ -51,21 +51,24 @@ The telemetry table schema lives at `apps/site/src/db/telemetry-schema.ts`, re-e
 
 The site schema is split in two halves over one database, each with its own config, folder and journal table. Telemetry is in the **public** half: `apps/site/drizzle.public.config.ts` points at `./src/db/public-schema.ts`, its migrations land in `apps/site/drizzle-public/` and are committed to the repo. The control-plane half (accounts, device link, admin, managed connectors) is `apps/site/drizzle.control-plane.config.ts` and `apps/site/drizzle-control-plane/`. `apps/site/drizzle/` is the frozen pre-split history — see the README there.
 
-The `apps/site/package.json` exposes three scripts:
+The `apps/site/package.json` exposes these scripts:
 
 ```bash
 pnpm db:generate:public         # Regenerate after editing public-schema.ts
 pnpm db:generate:control-plane  # Regenerate after editing control-plane-schema.ts
-pnpm db:migrate                 # Baseline, then apply both histories to DATABASE_URL
+pnpm db:migrate                 # Baseline, then apply the PUBLIC history to DATABASE_URL (what every deploy runs)
+pnpm db:migrate:control-plane   # The control-plane history, for a local or test database only
 pnpm db:studio                  # Open drizzle-studio against DATABASE_URL
 ```
+
+**Deploys apply only the public history.** The control-plane tables share their database with the DorkOS Cloud control plane, which owns their schema and migrates them itself. The site's control-plane history builds those tables in a local or test database and refuses to run inside a Vercel build. A change the site needs in those tables lands in the control plane first, through an issue labelled `cloud-contract`; only then does the site mirror it with a migration in `drizzle-control-plane/` (so local and test databases match) and an entry in the list `apps/site/scripts/__tests__/deploy-migrations.test.ts` pins. A fresh, empty database, including a brand-new preview database, gets those tables only from `db:migrate:control-plane` run by hand.
 
 The workflow for changing the schema is:
 
 1. Edit `apps/site/src/db/telemetry-schema.ts` (or whichever file the public barrel re-exports).
 2. Run `pnpm --filter @dorkos/site db:generate:public` — this writes a new SQL migration file under `apps/site/drizzle-public/`.
 3. Review the generated SQL and commit both `schema.ts` and the migration file in the same commit.
-4. Run `pnpm --filter @dorkos/site db:migrate` against your local Neon branch (or wait for the deploy hook to run it against the staging branch).
+4. Run `pnpm --filter @dorkos/site db:migrate` against your local Neon branch (or wait for the deploy hook to run it against the staging branch). A fresh local database also needs `pnpm --filter @dorkos/site db:migrate:control-plane` once, for the account tables.
 
 Migrations are forward-only. There is no down migration story — Postgres state is reproducible from `marketplace.json` plus the cumulative install events, both of which are append-only.
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers data fetching patterns in DorkOS. The client uses TanStack Query for server-state management, communicating through the Transport abstraction layer (HttpTransport for standalone web, DirectTransport for Obsidian plugin). The server exposes Express routes that delegate to services.
+This guide covers data fetching patterns in DorkOS. The client uses TanStack Query for server-state management, communicating through the Transport abstraction layer (`HttpTransport` for the browser, phone web app, and desktop renderer). The server exposes Express routes that delegate to services.
 
 ## Key Files
 
@@ -10,7 +10,6 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 | ------------------------ | ---------------------------------------------------------------- |
 | Transport interface      | `packages/shared/src/transport.ts`                               |
 | HttpTransport            | `apps/client/src/layers/shared/lib/transport/http-transport.ts`  |
-| DirectTransport          | `apps/client/src/layers/shared/lib/direct-transport.ts`          |
 | TransportContext         | `apps/client/src/layers/shared/model/TransportContext.tsx`       |
 | EventStreamProvider      | `apps/client/src/layers/shared/model/event-stream-context.tsx`   |
 | Session entity hooks     | `apps/client/src/layers/entities/session/`                       |
@@ -154,7 +153,7 @@ const transport = useTransport();
 const sessions = await transport.listSessions();
 ```
 
-This ensures the same React code works in both standalone web (HTTP) and Obsidian plugin (in-process) modes.
+This keeps React code independent of network details and lets tests supply a mock transport.
 
 ### SSE Streaming Protocol
 
@@ -192,6 +191,8 @@ There is no separate sync mechanism: the durable `GET /api/sessions/:id/events` 
 **Pending-interaction recovery is snapshot-based.** The `snapshot` frame carries `pendingInteractions` (tool approvals, questions, MCP elicitations) with server-authoritative `startedAt`/`remainingMs`, so a switched-away, refreshed, or backgrounded client rebuilds its prompt cards on connect and the countdown resumes rather than resetting (ADR-0264 countdown semantics). Live resolution on any client emits `interaction_resolved`, removing the card everywhere. See [interactive-tools.md → Recovering Pending Interactions](./interactive-tools.md#recovering-pending-interactions).
 
 **Queued-message recovery is snapshot-based too.** The `snapshot` frame also carries `queuedMessages` — messages a caller sent while the session was already busy, waiting their turn in dispatch order (spec `persistent-session-runtime`). This is hydration, not a separate fetch: a window that reconnects mid-turn needs to show what's already queued without waiting for the next `queue_update` event to reveal it.
+
+**A usage limit rides `status.limit`, and it is not a lifecycle phase.** When a turn stops because the session's account ran out of usage, the server folds a `SessionLimit` (`accountId`, `window`, `resetsAt`, `since`, `plan`; `@dorkos/shared/schemas`) onto the session status through a `status_change`, and the `snapshot` carries it too. The lifecycle still reads `error`; "limited" is a display state, so decide what to show with `sessionDisplayState(status)` from `@dorkos/shared/session-stream` rather than testing `limit` yourself. The server keeps the limit in the `session_limits` table, so a reconnect after a restart still sees it. Both sides clear it at the next `turn_start`: `SessionStateProjector` on the server and `projectEvent` in `session-stream-store.ts` on the client. Any new status field that outlives its turn needs the same clear in both places, pinned by a parity test like the one in `session-stream-store.test.ts`. The person also gets one `account.limited` notification per account episode instead of `session.error`.
 
 ### Real-Time System Events (Unified SSE Stream)
 
@@ -326,37 +327,38 @@ This pattern centralizes the aggregation logic, avoids scattered queries, and le
 When a hook needs to combine TanStack Query data with non-query state (feature flags, config), use `useMemo` to produce a derived result:
 
 ```typescript
-// apps/client/src/layers/entities/agent/model/use-agent-tool-status.ts
-export function useAgentToolStatus(projectPath: string | null): AgentToolStatus {
-  const { data: agent } = useCurrentAgent(projectPath); // TanStack Query
+// apps/client/src/layers/entities/permissions/model/use-agent-permissions.ts
+export function useAgentToolStatus(agentId: string | null): AgentToolStatus {
+  const { data: permissions } = useAgentPermissions(agentId); // TanStack Query, GET /api/agents/:id/permissions
   const relayEnabled = useRelayEnabled(); // Feature flag (config query)
-  const pulseEnabled = usePulseEnabled(); // Feature flag (config query)
+  const tasksEnabled = useTasksEnabled(); // Feature flag (config query)
 
   return useMemo((): AgentToolStatus => {
-    const groups = agent?.enabledToolGroups ?? {};
+    const area = (id: PermissionAreaId) =>
+      permissions?.areas.find((a) => a.id === id)?.resolved.state;
     return {
-      pulse: !pulseEnabled
+      tasks: !tasksEnabled
         ? 'disabled-by-server'
-        : groups.pulse === false
+        : area('tasks') === 'blocked'
           ? 'disabled-by-agent'
           : 'enabled',
-      relay: !relayEnabled
+      messages: !relayEnabled
         ? 'disabled-by-server'
-        : groups.relay === false
+        : area('messages') === 'blocked'
           ? 'disabled-by-agent'
           : 'enabled',
-      mesh: groups.mesh === false ? 'disabled-by-agent' : 'enabled',
-      adapter: !relayEnabled
+      agents: area('agents') === 'blocked' ? 'disabled-by-agent' : 'enabled',
+      connections: !relayEnabled
         ? 'disabled-by-server'
-        : groups.adapter === false
+        : area('connections') === 'blocked'
           ? 'disabled-by-agent'
           : 'enabled',
     };
-  }, [agent, relayEnabled, pulseEnabled]);
+  }, [permissions, relayEnabled, tasksEnabled]);
 }
 ```
 
-This pattern is useful when the derived state depends on multiple independent sources with different update frequencies. Each source updates independently (agent manifest changes infrequently, feature flags almost never), but the derived value recomputes correctly via `useMemo` dependency tracking.
+This pattern is useful when the derived state depends on multiple independent sources with different update frequencies. Each source updates independently (an agent's resolved permissions change infrequently, feature flags almost never), but the derived value recomputes correctly via `useMemo` dependency tracking.
 
 ### Pre-loading Data with staleTime
 
@@ -375,7 +377,7 @@ const { data: sessions } = useSessions({ staleTime: 30_000 });
 ```typescript
 // ❌ NEVER bypass Transport to call fetch() directly
 async function getSessions() {
-  const res = await fetch('/api/sessions'); // Breaks in Obsidian plugin
+  const res = await fetch('/api/sessions'); // Bypasses the Transport seam and its request policies
   return res.json();
 }
 
@@ -384,7 +386,7 @@ function useSessions() {
   const transport = useTransport();
   return useQuery({
     queryKey: ['sessions'],
-    queryFn: () => transport.listSessions(), // Works in both modes
+    queryFn: () => transport.listSessions(), // Uses the shared request policy and supports mock transports
   });
 }
 ```
@@ -893,9 +895,9 @@ export function useMarketplaceSources() {
 }
 ```
 
-### useInstallPackage / useUninstallPackage / useUpdatePackage
+### useInstallPackage / useUninstallPackage
 
-Mutation hooks for the install/uninstall/update pipeline. Each invalidates the installed-packages cache and the package query on success.
+Mutation hooks for the install/uninstall pipeline. Each invalidates the installed-packages cache and the package query on success. An install also marks the update check stale (`refetchType: 'none'`), so the next view that mounts re-checks without an install setting off a sweep.
 
 ```typescript
 export function useInstallPackage() {
@@ -920,6 +922,27 @@ export function useInstalledPackages() {
   return useQuery({
     queryKey: marketplaceKeys.installed(),
     queryFn: () => transport.listInstalledPackages(),
+  });
+}
+```
+
+### useInstalledUpdates / useApplyUpdates / useApplyingInstallPaths
+
+`useInstalledUpdates(projectPath?, { enabled })` reads `GET /api/marketplace/updates`: one check per installation in view, keyed by `installPath` (the key the installed list's rows carry). Every consumer of one view shares the one request. The check reaches out to every package's source, so it is fresh for 10 minutes (`UPDATE_CHECK_STALE_MS`), never refetches on focus or reconnect, and never retries on its own.
+
+`useApplyUpdates()` sends `POST /api/marketplace/updates` for a non-empty list of `targets` (the transport requires one, so the app never sends an unnamed "update everything"). Each target is `{ installPath, latestVersion, disclosed }` straight from the check the confirm step rendered; the server refuses the whole apply with `disclosure_changed` if either moved, and the hook then invalidates the check so the next confirm shows what the new version runs now (DOR-2306). On success it patches the cached check from the answer instead of re-running it: an applied installation becomes `current` at `applied.version`, any other returned check replaces the cached one as given; it stays pending until the installed list has refreshed. It opts out of the shared failure toast (`meta.suppressErrorToast`) because its caller owns the report: `useApplyUpdatesWithToast` chains each apply's own `mutateAsync` promise, which settles even when applies overlap or the view unmounts, where per-call `mutate(…, { onSuccess })` callbacks would be skipped. `useApplyingInstallPaths()` reads every in-flight apply through `useMutationState` on the `marketplaceKeys.applyUpdates()` mutation key, so several rows can each show their own progress.
+
+```typescript
+export function useApplyUpdates() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: marketplaceKeys.applyUpdates(),
+    mutationFn: (opts: ApplyUpdatesOptions) => transport.applyMarketplaceUpdates(opts),
+    meta: { suppressErrorToast: true },
+    onSuccess: (result) => {
+      /* patch marketplaceKeys.updates() from result.checks; invalidate installed + commands */
+    },
   });
 }
 ```
@@ -956,7 +979,7 @@ export function useMcpConfig(projectPath: string | null, runtime?: string | null
 }
 ```
 
-The optional `runtime` param scopes the list to the runtime that owns the agent, so a Codex agent sees its own servers rather than the default runtime's, and keys the cache so switching runtime refetches instead of serving a stale list. Used by `AgentMcpServers` (`layers/features/agent-settings/`) — the managed-MCP-server UI behind an agent profile's Tools & MCP page — alongside the sibling `useAgentMcpServers` hook, which layers live per-server status (connected/error/pending) onto this entry list by server `name`.
+The optional `runtime` param scopes the list to the runtime that owns the agent, so a Codex agent sees its own servers rather than the default runtime's, and keys the cache so switching runtime refetches instead of serving a stale list. Used by `AgentMcpServers` (`layers/features/agent-settings/`) — the managed-MCP-server UI behind an agent profile's MCP servers page — alongside the sibling `useAgentMcpServers` hook, which layers live per-server status (connected/error/pending) onto this entry list by server `name`.
 
 ## References
 

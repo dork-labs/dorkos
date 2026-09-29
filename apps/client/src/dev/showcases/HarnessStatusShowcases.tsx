@@ -27,7 +27,6 @@ import {
   HARNESS_STATUS_NOT_SET_UP,
   HARNESS_STATUS_NO_SKILLS,
   HARNESS_STATUS_READY,
-  HARNESS_STATUS_UNAVAILABLE,
   HARNESS_STATUS_UNREADABLE,
 } from '@/layers/entities/harness';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -350,7 +349,6 @@ const PAGE_STATES: { label: string; answer: Answer }[] = [
   { label: 'Ready — no skills yet', answer: HARNESS_STATUS_NO_SKILLS },
   { label: 'Not set up in this folder', answer: HARNESS_STATUS_NOT_SET_UP },
   { label: 'The settings could not be read', answer: HARNESS_STATUS_UNREADABLE },
-  { label: 'Not available in this build', answer: HARNESS_STATUS_UNAVAILABLE },
 ];
 
 /**

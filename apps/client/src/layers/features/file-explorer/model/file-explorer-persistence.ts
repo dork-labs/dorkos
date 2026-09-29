@@ -8,10 +8,6 @@ import type { FileExplorerEntry } from './types';
  * `readX`/`writeX` helpers, LRU-capped by `accessedAt`). Zustand's `persist`
  * middleware is deliberately not used anywhere in this app.
  *
- * These helpers live in the feature (not `shared`) because this state is
- * feature-owned: it never crosses devices and never touches server config, so
- * it stays local and works identically in embedded (Obsidian) mode.
- *
  * @module features/file-explorer/model/file-explorer-persistence
  */
 

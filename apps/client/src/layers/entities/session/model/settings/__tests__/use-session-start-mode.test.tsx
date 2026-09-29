@@ -343,10 +343,6 @@ describe('the trust dial on a conversation nobody has written to yet', () => {
   });
 
   it('has nothing to be loading when no session is selected', async () => {
-    // PROBE A (DOR-2103 re-review), at the hook. The embed's session store
-    // starts null and resets on every directory switch, so this is an ordinary
-    // resting state — and the first version reported it as "still loading"
-    // forever. Nothing is loading; there is no session to load anything for.
     const transport = transportWith({ defaults: executionDefaults('autonomy') });
 
     const { result } = renderHook(() => useSessionStatus(null, null, false, 'claude-code'), {

@@ -40,7 +40,7 @@ import {
   type Verdict,
 } from './data.ts';
 import type { HandFiles } from './load.ts';
-import { computeSlos } from './slo.ts';
+import { computeSlos, deadlineMinutes } from './slo.ts';
 import type { LedgerFrontmatter } from './schemas.ts';
 import { addDays, dayOf, dayRange, daysBetween, minutesBetween, quantile, round } from './time.ts';
 
@@ -152,6 +152,24 @@ function canaryDetect(snaps: readonly Snapshot[]): MetricReading {
 }
 
 /**
+ * `tracked.repeat-ejections`: repeats per 7 days, over the days that measured
+ * them. A day collected before the collector computed it has no count and is
+ * left out, so it never reads as a day with none; the sample is the failed-check
+ * ejections on the days that did.
+ *
+ * @param snaps - The window's whole days.
+ */
+function repeatEjectionRate(snaps: readonly Snapshot[]): MetricReading {
+  const measured = snaps.filter((s) => s.counts.repeat_ejections !== undefined);
+  if (measured.length === 0) return { n: 0, value: null };
+  const repeats = sum(measured.map((s) => s.counts.repeat_ejections ?? 0));
+  return {
+    n: sum(measured.map((s) => s.counts.ejections_failed_checks)),
+    value: round1((repeats / measured.length) * 7),
+  };
+}
+
+/**
  * Read a catalogue metric over a window.
  *
  * @param id - The metric id (ci/metrics.yaml).
@@ -246,6 +264,7 @@ function readMetric(id: string, files: HandFiles, series: Series, w: Window): Me
       value: n ? round(sum(wholeSnaps.map((s) => s.counts.canary_minutes)) / n, 1) : null,
     };
   }
+  if (id === 'tracked.repeat-ejections') return repeatEjectionRate(wholeSnaps);
   if (id === 'tracked.job-minutes-per-merged-pr' || id === 'tracked.review-runs-per-merged-pr') {
     const merged = sum(wholeSnaps.map((s) => s.counts.merged_prs));
     const top = sum(
@@ -264,6 +283,12 @@ function readMetric(id: string, files: HandFiles, series: Series, w: Window): Me
       { slos: [slo] },
       {},
       {
+        // The same inner deadlines every other reader applies, so a headroom
+        // reading in a verdict is the number the report shows. Not the flaky
+        // coverage ruler: that one turns a reading `unmeasured`, which a
+        // verdict would read as n=0, and it needs the parsed workflows this
+        // path does not have. A verdict on flaky-test-runs reads the share.
+        deadlines: deadlineMinutes(files.config),
         snapshots: series.snapshots(addDays(to, -27), to),
         local: series.local(from, to),
         toolCeilingSeconds: files.config.local.tool_ceiling_seconds,

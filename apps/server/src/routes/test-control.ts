@@ -34,12 +34,14 @@ import {
   tryGetRoomWorktreeManager,
 } from '../services/rooms/index.js';
 import { commitAll } from '../services/rooms/repo/room-repo-git.js';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { getAgentIdentityService } from '../services/core/agent-identity/agent-identity-service.js';
+import { hashApprovalInput, type ApprovalService } from '../services/core/approvals/index.js';
+import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
 import { MOCK_MCP_OAUTH_MCP_PATH, resetMockMcpOAuthState } from './mock-mcp-oauth-server.js';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import { getRemoteConnectionStore } from '../services/communities/remote/state.js';
 import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-service.js';
+import type { SyncFromDiskResult } from '@dorkos/mesh';
 
 /**
  * Control routes for TestModeRuntime. Only mounted when DORKOS_TEST_RUNTIME=true.
@@ -490,27 +492,6 @@ const agentTokenSchema = z.object({
 });
 
 /**
- * The highest tier a token minted here may ever reach.
- *
- * **`mint` defaults to `destructive`, which is the top of the ladder** — higher
- * than the ceiling an unidentified caller gets (`DEFAULT_ANONYMOUS_TIER_CEILING`
- * in `tier-enforcement.ts`). So a test seam that took the default would hand out
- * a MORE powerful identity than presenting no identity at all, which is the
- * wrong direction for a route that exists only to let a test pretend.
- *
- * `act` is the narrowest ceiling that still covers what this seam is for: the
- * rooms verbs a test drives as an agent — `post_to_room`, `react_to_room_entry`
- * — are `act` (`room-capabilities.ts`). Anything destructive is refused, which
- * is a property worth having on a token handed out over an unauthenticated
- * local route.
- *
- * It is a deliberate divergence from production, where nothing passes a ceiling
- * yet and every real spawn is therefore `destructive`. Named here rather than
- * silently inherited so the difference is a decision somebody can read.
- */
-const TEST_TOKEN_TIER_CEILING: CapabilityTier = 'act';
-
-/**
  * `POST /api/test/agent-token` — mint an identity token for an agent that is
  * really registered here, and hand it to the test.
  *
@@ -583,9 +564,58 @@ testControlRouter.post('/agent-token', async (req, res) => {
   const token = await service.mint({
     agentPath,
     displayName: agent.displayName ?? agent.name,
-    tierCeiling: TEST_TOKEN_TIER_CEILING,
   });
   res.json({ token });
+});
+
+/** What `POST /api/test/seed-approval` needs to raise one request card. */
+const seedApprovalSchema = z.object({
+  /** A real capability id, so the card's title and tier come from the registry. */
+  capabilityId: z.string().min(1),
+  /** The registered agent the card says asked. */
+  agentPath: z.string().min(1),
+  /** The permission area the request is in. A floor area draws the floor card. */
+  area: z.enum(PERMISSION_AREA_IDS),
+  /** The sentence the card shows. */
+  summary: z.string().min(1).max(500),
+});
+
+/**
+ * `POST /api/test/seed-approval` — raise a request card for an action no agent
+ * can reach yet in this phase, such as one in a floor area (spec
+ * `agent-permissions` phase 2 verification). It records the approval exactly
+ * as the gate's `ask()` would, through the real approval service, so the card a
+ * test answers is the production card. The agent must be registered here, for
+ * the reason `/agent-token` gives.
+ */
+testControlRouter.post('/seed-approval', async (req, res) => {
+  const parsed = seedApprovalSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+  }
+  const { capabilityId, agentPath, area, summary } = parsed.data;
+  const meshCore = req.app.locals.meshCore as
+    | { getByPath(projectPath: string): { name: string; displayName?: string } | undefined }
+    | undefined;
+  const agent = meshCore?.getByPath(agentPath);
+  if (!agent) {
+    return res.status(404).json({ error: `No agent is registered at ${agentPath}.` });
+  }
+  const approvals = req.app.locals.approvalService as ApprovalService | undefined;
+  if (!approvals) {
+    return res.status(503).json({ error: 'The approval service is not running on this server.' });
+  }
+  const ticket = approvals.request({
+    capabilityId,
+    inputHash: hashApprovalInput({ seeded: summary }),
+    summary,
+    requestedBy: agent.displayName ?? agent.name,
+    requestedByPath: agentPath,
+    area,
+  });
+  res.json({ approvalId: ticket.approvalId });
 });
 
 testControlRouter.post('/reset', async (_req, res) => {
@@ -636,12 +666,49 @@ testControlRouter.get('/connect-approved', (_req, res) => {
 
 const seedAgentSchema = z
   .object({
-    slot: z.enum(['shared', 'denied-access']).default('shared'),
+    slot: z
+      .enum(['shared', 'denied-access', 'permission-requester', 'suggestion-requester'])
+      .default('shared'),
+    /**
+     * A fresh agent in the same slot: a spec whose checks read history that
+     * outlives an attempt (the Always allow suggestion counts a week of
+     * answers, and "Not now" is kept) seeds a new instance per attempt, so a
+     * retry or a rerun on the same server starts clean. Bounded, so the
+     * directory stays inside the slot's own by construction.
+     */
+    instance: z
+      .string()
+      .regex(/^[a-z0-9-]{1,40}$/)
+      .optional(),
   })
   .default({ slot: 'shared' });
 
 /** A fixed, enum-bounded test identity slot. */
 type SeedAgentSlot = z.infer<typeof seedAgentSchema>['slot'];
+
+/**
+ * Each slot's name and description. The requesters are agents of their own so
+ * the permission specs' changes, their per-agent request limits and the
+ * Always allow suggestion's count never touch DorkBot or each other.
+ */
+const SEED_AGENT_COPY: Record<SeedAgentSlot, { name: string; description: string }> = {
+  shared: {
+    name: 'E2E Test Agent',
+    description: 'Seeded by test setup — runs on the server default runtime',
+  },
+  'denied-access': {
+    name: 'E2E Denied Agent',
+    description: 'Requests access that the owner denies.',
+  },
+  'permission-requester': {
+    name: 'E2E Permission Requester',
+    description: 'Asks for permissions a person answers on the request card.',
+  },
+  'suggestion-requester': {
+    name: 'E2E Suggestion Requester',
+    description: 'Asks for the same thing until the card suggests Always allow.',
+  },
+};
 
 /**
  * Fixture directory for a seeded test agent, derived from the RESOLVED
@@ -663,8 +730,8 @@ type SeedAgentSlot = z.infer<typeof seedAgentSchema>['slot'];
  * Resolved per request rather than at module load: `app.ts` imports this router
  * statically, which runs before `initBoundary()` does at startup.
  */
-function e2eAgentDir(slot: SeedAgentSlot = 'shared'): string {
-  const suffix = slot === 'shared' ? '' : `-${slot}`;
+function e2eAgentDir(slot: SeedAgentSlot = 'shared', instance?: string): string {
+  const suffix = `${slot === 'shared' ? '' : `-${slot}`}${instance ? `-${instance}` : ''}`;
   return path.join(getBoundary(), 'tmp', `dorkos-e2e-agent${suffix}`);
 }
 
@@ -717,7 +784,8 @@ function fixtureAgentId(agentDir: string): string {
  * `AgentManifest.runtime` is required and its enum has no `test-mode` member,
  * so this fixture has to name a real harness — and a manifest runtime WINS over
  * the server default whenever this process registers it
- * (`resolveRuntimeTypeForNewSession` in `routes/sessions.ts`). Every spec that
+ * (`resolveRuntimeTypeForNewSession` in
+ * `services/session/launch/launch-session.ts`). Every spec that
  * starts a session in this agent's directory means "the server default"
  * (`test-mode`), so the declared value must be a runtime the test-mode server
  * never registers — then resolution soft-falls back to the default.
@@ -735,7 +803,7 @@ function fixtureAgentId(agentDir: string): string {
 const FIXTURE_AGENT_RUNTIME = 'codex';
 
 /**
- * Seed a test agent in one of two fixed slots inside the directory boundary —
+ * Seed a test agent in one of four fixed slots inside the directory boundary —
  * on disk AND in the mesh registry.
  *
  * Overwrites any existing manifest so tests always start with a clean agent.
@@ -762,8 +830,9 @@ const FIXTURE_AGENT_RUNTIME = 'codex';
  * uses for a manifest already written by hand: it adopts the id on disk, adds
  * exactly one registry row, and announces nothing.
  *
- * **No cleanup is owed, because none accumulates.** Each of the two slots maps
- * to one fixed directory and stable id. Re-seeding replaces that slot's row
+ * **No cleanup is owed, because little accumulates.** Each of the four slots maps
+ * to one fixed directory and stable id; an `instance` adds one agent per
+ * attempt, inside the leg's throwaway data directory. Re-seeding replaces that slot's row
  * rather than stacking rows. `POST /api/test/reset` does not touch mesh, and
  * does not need to.
  *
@@ -785,16 +854,12 @@ testControlRouter.post('/seed-agent', async (req, res) => {
         `this server does not register.`,
     });
   }
-  const { slot } = input.data;
-  const agentDir = e2eAgentDir(slot);
+  const { slot, instance } = input.data;
+  const agentDir = e2eAgentDir(slot, instance);
   const fixtureId = fixtureAgentId(agentDir);
-  const deniedAccess = slot === 'denied-access';
   const manifest: AgentManifest = {
     id: fixtureId,
-    name: deniedAccess ? 'E2E Denied Agent' : 'E2E Test Agent',
-    description: deniedAccess
-      ? 'Requests access that the owner denies.'
-      : 'Seeded by test setup — runs on the server default runtime',
+    ...SEED_AGENT_COPY[slot],
     runtime: FIXTURE_AGENT_RUNTIME,
     capabilities: [],
     // A fixture agent wears a face for the same reason a real one does: no
@@ -807,7 +872,6 @@ testControlRouter.post('/seed-agent', async (req, res) => {
     registeredBy: 'dorkos-e2e',
     personaEnabled: false,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [],
     workspace: { mode: 'home' },
   };
@@ -825,7 +889,7 @@ testControlRouter.post('/seed-agent', async (req, res) => {
   // swallowed throw would hand back the same `{ ok: true }` as a working seed
   // and put the hole straight back.
   const meshCore = req.app.locals.meshCore as
-    { syncFromDisk(path: string): Promise<'synced' | 'no-manifest' | 'duplicate-id'> } | undefined;
+    { syncFromDisk(path: string): Promise<SyncFromDiskResult> } | undefined;
   if (!meshCore) {
     return res.status(500).json({
       error:
@@ -837,7 +901,7 @@ testControlRouter.post('/seed-agent', async (req, res) => {
   // forward a rejected handler promise to the generic error handler on its
   // own, which answers 500 with no mention of seeding — a diagnosis-free 500
   // in the one route whose entire job is diagnosis.
-  let outcome: 'synced' | 'no-manifest' | 'duplicate-id';
+  let outcome: SyncFromDiskResult;
   try {
     outcome = await meshCore.syncFromDisk(agentDir);
   } catch (err) {
@@ -1005,7 +1069,6 @@ testControlRouter.post('/seed-oauth-mcp-agent', async (req, res) => {
     registeredBy: 'dorkos-e2e',
     personaEnabled: false,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [
       {
         name: 'granola',

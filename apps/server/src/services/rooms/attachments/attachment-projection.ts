@@ -91,10 +91,8 @@ function isUnlinkable(err: unknown): boolean {
  *   signal from a remote store that the bytes must be fetched rather than
  *   linked.
  * @param input.roomId - The room the files were posted in.
- * @param input.cwd - The directory this turn runs in; every destination is
- *   inside it. In a project room that is the agent's working copy of the room's
- *   repo, NOT its home — a file put under the home would be named to the model
- *   by a relative path that does not resolve from where it stands.
+ * @param input.cwd - The directory this turn runs in — the agent's home, room
+ *   turns included; every destination is inside it.
  * @param input.attachments - Exactly the files `buildRoomContext` told the model
  *   about. Never widened here.
  * @param input.now - The clock the sweep reads, injectable so a test can age a
@@ -119,14 +117,11 @@ export async function projectRoomAttachments(input: {
   // them. Growth is still bounded, which is what the sweep is for.
   if (input.attachments.length === 0) return;
 
-  // **Accepted: giving a room files strands whatever was projected before.** The
-  // sweep only ever walks the tree it is called with, so projections an agent
-  // received under its own folder before that room had a repo are not aged out
-  // by its later turns in the worktree. They are hardlinks bounded by one
-  // context window, the agent's own folder is swept again the moment any
-  // repo-less room sends it a file, and the alternative — sweeping directories
-  // this turn is not standing in — is a deletion path with no idea what else is
-  // using them.
+  // The sweep only ever walks the tree it is called with — the agent's home,
+  // where every room's attachments now land — and never a directory this turn
+  // is not standing in, which would be a deletion path with no idea what else
+  // is using it. What older builds projected into room worktrees is retired by
+  // the worktree manager (`retireLegacyPlumbing`).
   await sweep(input.cwd, input.now ?? Date.now);
 
   const store = input.store();

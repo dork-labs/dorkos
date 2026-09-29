@@ -97,6 +97,8 @@ const WEDGED_STATUS: SessionStatus = {
   runningSubagentCount: 0,
   lifecycle: 'error',
   lastError: null,
+  limit: null,
+  accountUsage: null,
 };
 
 /** A schedule an agent proposed and parked — the `schedule-approval` signal. */
@@ -108,6 +110,11 @@ const PARKED_SCHEDULE: Task = {
   prompt: 'Sweep yesterday’s failed runs and open an issue for each distinct cause.',
   cron: '0 2 * * *',
   timezone: 'UTC',
+  defaultCron: '0 2 * * *',
+  defaultTimezone: 'UTC',
+  timingOverridden: false,
+  packageOwned: null,
+  approvalChanges: [],
   agentId: null,
   enabled: false,
   sticky: false,
@@ -116,6 +123,7 @@ const PARKED_SCHEDULE: Task = {
   runtime: null,
   model: null,
   effort: null,
+  account: null,
   status: 'pending_approval',
   filePath: '',
   createdAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),

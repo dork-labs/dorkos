@@ -299,6 +299,10 @@ const PLAIN_LANGUAGE: Record<string, string> = {
   // the agent's boundaries said before is gone, which is what makes this one
   // irreversible in the same sense as the three above.
   'operator.update_agent_boundaries': "changing an agent's safety boundaries",
+  // An agent's runtime, model and effort (DOR-2328). Reversible, unlike the
+  // four above, and gated because every schedule that follows the agent runs
+  // differently; the docs say both.
+  'operator.update_agent_execution': 'changing what an agent runs on',
 };
 
 /**

@@ -25,6 +25,8 @@ const STATUS: SessionStatus = {
   runningSubagentCount: 0,
   lifecycle: 'idle',
   lastError: null,
+  limit: null,
+  accountUsage: null,
 };
 
 const MESSAGE: HistoryMessage = { id: 'm1', role: 'user', content: 'hello' };
@@ -658,6 +660,26 @@ describe('useSessionStreamStore', () => {
       });
       // Non-terminal: the error event itself must NOT settle the lifecycle.
       expect(s.status?.lifecycle).toBe('streaming');
+    });
+
+    it('holds a usage limit from a status_change and clears it at turn_start (projector parity)', () => {
+      const limit = {
+        accountId: 'work',
+        window: 'seven_day',
+        resetsAt: null,
+        since: '2026-09-26T10:00:00.000Z',
+        plan: { mode: 'ask' as const },
+        scope: 'account' as const,
+        state: 'limited' as const,
+      };
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, { type: 'status_change', seq: 2, status: { limit } });
+      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'error' });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.limit).toEqual(limit);
+      store.applyEvent(SID, { type: 'turn_start', seq: 4 });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.limit).toBeNull();
     });
 
     it('turn_start clears the previous lastError (server-projector parity)', () => {
@@ -1622,5 +1644,62 @@ describe('useSessionStreamStore — runtime-opened turn windows', () => {
 
     store.getState().applyEvent(SID, { type: 'turn_start', seq: 3, origin: 'runtime' });
     expect(store.getState().sessions[SID]?.turnOrigin).toBe('runtime');
+  });
+});
+
+describe('the live-usage stamp (spec claude-account-ui §6.8)', () => {
+  const usageFrame = (seq: number, utilization: number): SessionEvent => ({
+    type: 'status_change',
+    seq,
+    status: { usage: { kind: 'subscription', utilization } },
+  });
+  const stamp = () => useSessionStreamStore.getState().sessions[SID]!.usageArrivedAt;
+
+  beforeEach(() => {
+    useSessionStreamStore.getState().removeSession(SID);
+  });
+
+  it('stamps a live usage frame, and never a snapshot', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    expect(stamp()).toBeNull();
+    store.applyEvent(SID, usageFrame(6, 0.4));
+    expect(stamp()).not.toBeNull();
+  });
+
+  it('keeps the previous stamp for frames replayed after a reconnect', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    // The laptop sleeps; the stream drops and comes back, replaying the gap.
+    store.setConnectionState(SID, 'reconnecting');
+    store.setConnectionState(SID, 'connected');
+    store.applyEvent(SID, usageFrame(6, 0.9));
+    expect(stamp()).toBeNull();
+  });
+
+  it("stamps again once the turn carrying this window's own message starts", () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    store.setConnectionState(SID, 'reconnecting');
+    store.setConnectionState(SID, 'connected');
+    store.setOptimisticUserMessage(SID, { id: 'opt-1', content: 'next please' });
+    store.setTriggerPending(SID, true);
+    store.applyEvent(SID, { type: 'turn_start', seq: 6, userMessage: 'next please' });
+    store.applyEvent(SID, usageFrame(7, 0.5));
+    expect(stamp()).not.toBeNull();
+  });
+
+  it("does not restart on a replayed turn from another client's message", () => {
+    // A person sends while the reconnect is still replaying: the replay's
+    // turn_start is someone else's, older turn.
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    store.setConnectionState(SID, 'reconnecting');
+    store.setConnectionState(SID, 'connected');
+    store.setOptimisticUserMessage(SID, { id: 'opt-1', content: 'next please' });
+    store.setTriggerPending(SID, true);
+    store.applyEvent(SID, { type: 'turn_start', seq: 6, userMessage: 'from the other tab' });
+    store.applyEvent(SID, usageFrame(7, 0.9));
+    expect(stamp()).toBeNull();
   });
 });

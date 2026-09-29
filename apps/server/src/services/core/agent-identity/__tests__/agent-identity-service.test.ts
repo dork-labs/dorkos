@@ -36,23 +36,14 @@ describe('AgentIdentityService', () => {
       expect(JSON.stringify(rows[0])).not.toContain(token);
     });
 
-    it('records the identity fields and defaults the ceiling to destructive', async () => {
+    it('records the identity fields', async () => {
       await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
 
       const [row] = db.select().from(agentIdentityTokens).all();
       expect(row.agentPath).toBe(AGENT_PATH);
       expect(row.displayName).toBe('Researcher');
-      // `destructive` = unrestricted, preserving today's trust posture.
-      expect(row.tierCeiling).toBe('destructive');
       expect(row.revokedAt).toBeNull();
       expect(row.createdAt).toEqual(expect.any(String));
-    });
-
-    it('honors an explicit tier ceiling', async () => {
-      await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher', tierCeiling: 'act' });
-
-      const [row] = db.select().from(agentIdentityTokens).all();
-      expect(row.tierCeiling).toBe('act');
     });
 
     it('issues a distinct token on every call', async () => {
@@ -66,18 +57,13 @@ describe('AgentIdentityService', () => {
 
   describe('resolve()', () => {
     it('resolves a minted token to its identity', async () => {
-      const token = await service.mint({
-        agentPath: AGENT_PATH,
-        displayName: 'Researcher',
-        tierCeiling: 'act',
-      });
+      const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
 
       const identity = await service.resolve(token);
 
       expect(identity).toEqual({
         agentPath: AGENT_PATH,
         displayName: 'Researcher',
-        tierCeiling: 'act',
         createdAt: expect.any(String),
       });
     });
@@ -200,9 +186,10 @@ describe('AgentIdentityService — token expiry', () => {
     backdate(TOKEN_IDLE_TTL_MS + 60_000);
 
     // `expired` rather than `undefined` (DOR-486): an aged-out token must not be
-    // a way to SHED a tier ceiling, which resolving to nothing would be. It keeps
-    // its recorded ceiling and holds no tool-group grant. It is deliberately not
-    // clamped the way `revoked` is — expiry is a clock, not a person saying stop.
+    // a way to shed the agent's own permission settings for the install's
+    // defaults, which resolving to nothing would be. Its permission areas are
+    // Blocked; it is deliberately not refused the no-area actions the way
+    // `revoked` is — expiry is a clock, not a person saying stop.
     expect(await service.resolve(token)).toMatchObject({ inactive: 'expired' });
   });
 
@@ -250,18 +237,19 @@ describe('AgentIdentityService — token expiry', () => {
 
   it('still describes an in-session agent whose token aged out', async () => {
     // The in-session path presents no secret, so expiry has nothing to protect
-    // against — and dropping the identity would drop the tier ceiling with it.
-    await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher', tierCeiling: 'act' });
+    // against — and dropping the identity would swap the agent's own permission
+    // settings for the install's defaults.
+    await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
     backdate(TOKEN_ABSOLUTE_TTL_MS * 2);
 
-    expect(await service.describeAgent(AGENT_PATH)).toMatchObject({ tierCeiling: 'act' });
+    expect(await service.describeAgent(AGENT_PATH)).toMatchObject({ displayName: 'Researcher' });
   });
 
   it('describes a revoked agent as revoked rather than as nobody', async () => {
     // The in-session half of the same inversion (DOR-486). `undefined` here does
-    // not mean "no privilege" to the gate, it means "unidentified" — the widest
-    // ceiling there is. Naming the agent AND its state is what lets the gate cap
-    // it at `observe` instead of handing it everything.
+    // not mean "no privilege" to the gate, it means "unidentified" — decided on
+    // the install's defaults. Naming the agent AND its state is what lets the
+    // gate Block it instead of handing it what everyone else may do.
     await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
     await service.revoke(AGENT_PATH);
 

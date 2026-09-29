@@ -72,6 +72,8 @@ describe('owner notification contracts', () => {
       expectedCadenceSeconds: null,
       scopeVersion: 1,
       state: 'pending',
+      lastDelivery: null,
+      chatSessionId: null,
     };
     expect(
       ConnectionEventSubscriptionPageSchema.parse({
@@ -87,6 +89,22 @@ describe('owner notification contracts', () => {
     expect(
       ConnectionEventSubscriptionPageSchema.safeParse({
         subscriptions: [{ ...subscription, content: 'private message' }],
+      }).success
+    ).toBe(false);
+    // The delivery outcome carries a reason, never the event's content.
+    expect(
+      ConnectionEventSubscriptionPageSchema.safeParse({
+        subscriptions: [
+          {
+            ...subscription,
+            lastDelivery: {
+              outcome: 'failed',
+              receivedAt: '2026-09-07T12:00:00.000Z',
+              problem: 'unreachable',
+              title: 'private subject',
+            },
+          },
+        ],
       }).success
     ).toBe(false);
   });

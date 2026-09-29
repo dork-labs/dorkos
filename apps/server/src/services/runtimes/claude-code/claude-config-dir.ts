@@ -36,15 +36,94 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import type { ClaudeCodeAccount, UserConfig } from '@dorkos/shared/config-schema';
+import type {
+  ClaudeAccountReadWarning,
+  ReadClaudeAccount,
+  UserConfig,
+} from '@dorkos/shared/config-schema';
 import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
+import { IMPLICIT_ACCOUNT_ID, isAccountColor } from '@dorkos/shared/account-usage';
 import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
+import {
+  accountForPath,
+  canonicalAccountPath,
+  defaultAccountFolder,
+  expandAccountPath,
+  resolveRuntimeAccounts,
+  type AccountWarning,
+} from '../../core/usage/runtime-accounts.js';
 
 /** Minimal read surface of the config manager (injectable for tests). */
 type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
+
+/**
+ * Every `<home>/.claude*` folder on this computer (`.claude` itself included),
+ * following symlinks, sorted by name: the places Claude Code keeps an account.
+ * No other check is made here; the caller decides which of them is an
+ * account folder.
+ *
+ * For `accounts/found-claude-folders.ts` (spec `claude-account-ui` §7.4). It
+ * lives here because this file is the Hard Rule 3 carve-out, which is BY
+ * FILENAME: the folders are handed out, never the home folder itself.
+ *
+ * @param home - The home folder to list. Default: the OS home. Tests pass a temp one.
+ * @returns Absolute folder paths; empty when the home folder cannot be read.
+ */
+export function listClaudeAccountFolderCandidates(home: string = os.homedir()): string[] {
+  let names: string[];
+  try {
+    names = fs.readdirSync(home);
+  } catch {
+    return [];
+  }
+  return names
+    .filter((name) => name.startsWith('.claude'))
+    .sort()
+    .map((name) => path.join(home, name))
+    .filter((dir) => {
+      try {
+        return fs.statSync(dir).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+}
+
+/**
+ * A Claude account folder in comparable form ({@link canonicalAccountPath}),
+ * with a leading `~` expanded against the OS home: how a registered row or a
+ * dismissed folder written as `~/.claude2` is compared with a found folder.
+ *
+ * @param dir - A folder as written in config or sent by the client.
+ * @returns The folder's real path when it exists, else its normalized form.
+ */
+export function canonicalClaudeAccountPath(dir: string): string {
+  return canonicalAccountPath(dir, os.homedir());
+}
+
+/**
+ * A Claude account folder with a leading `~` expanded against the OS home, and
+ * anything else returned exactly as written.
+ *
+ * `CLAUDE_CONFIG_DIR` reaches the child through an env object, never a shell,
+ * so a stored `~/.claude2` would otherwise name a folder literally called `~`.
+ * Deliberately NOT {@link canonicalClaudeAccountPath}: no real-path lookup, so
+ * a symlinked spelling survives (the Keychain entry is keyed on the literal
+ * string), and a value that is not a `~` path is not resolved against the
+ * working directory either.
+ *
+ * Lives here because this file is the Hard Rule 3 carve-out; the config write
+ * path (`operator/config-patch.ts`) calls it to store the absolute form.
+ *
+ * @param dir - A folder as written in config or typed by a person.
+ * @returns The folder with `~` expanded, else `dir` unchanged.
+ */
+export function expandClaudeAccountHome(dir: string): string {
+  return dir === '~' || dir.startsWith('~/') ? expandAccountPath(dir, os.homedir()) : dir;
+}
 
 /**
  * The Claude root the SDK subprocess would pick on its own, with no DorkOS
@@ -71,6 +150,30 @@ export function inheritedClaudeRoot(): string {
 }
 
 /**
+ * Registry warnings already logged by this process, by message.
+ *
+ * The registry is read on every transcript lookup and every config read, so a
+ * hand-edited row would otherwise repeat its warning on every request. Each
+ * distinct message is logged once per process; a fixed row simply stops
+ * producing it.
+ */
+const loggedAccountWarnings = new Set<string>();
+
+/** Log each registry warning the first time this process sees it. */
+function warnOnce(warnings: readonly ClaudeAccountReadWarning[]): void {
+  for (const warning of warnings) {
+    if (loggedAccountWarnings.has(warning.message)) continue;
+    loggedAccountWarnings.add(warning.message);
+    // A minted id is expected on every install the '0.65.0' migration has not
+    // reached (a dev tree runs none), so it is not worth a warning each boot.
+    logger[warning.code === 'id-minted' ? 'debug' : 'warn'](
+      `[claude-accounts] ${warning.message}`,
+      { code: warning.code }
+    );
+  }
+}
+
+/**
  * Read `runtimes.claudeCode` without ever throwing.
  *
  * Config resolution is on the transcript read path, and the singleton is
@@ -87,7 +190,9 @@ export function inheritedClaudeRoot(): string {
  */
 function readClaudeCodeConfig(config: ConfigReader): {
   defaultAccount: string | null;
-  accounts: readonly ClaudeCodeAccount[];
+  accounts: readonly ReadClaudeAccount[];
+  /** The stored `defaultAccountColor` when it is lowercase `#rrggbb`, else `null`. */
+  defaultAccountColor: string | null;
   /** True when `accounts` is empty because the read failed, not because it is. */
   unavailable: boolean;
 } {
@@ -103,10 +208,24 @@ function readClaudeCodeConfig(config: ConfigReader): {
     // top two rungs are inert — a hint matched by an id no stored row carries.
     // Neither is a schema concern: `UserConfigSchema` is right either way, and
     // nothing on this path consults it.
-    return { ...readClaudeAccountSettings(config.get('runtimes')?.claudeCode), unavailable: false };
+    const block = config.get('runtimes')?.claudeCode;
+    const { warnings, ...settings } = readClaudeAccountSettings(block);
+    warnOnce(warnings);
+    const color = (block as { defaultAccountColor?: unknown } | undefined)?.defaultAccountColor;
+    return {
+      ...settings,
+      // The write path stores it absolute, but a value written before that, or
+      // by hand, may still start with `~`: expanded here so every reader below
+      // (the launch, `claudeConfigDirEnv`'s Keychain case, the settings view)
+      // sees the folder, not a literal `~` relative to the working directory.
+      defaultAccount:
+        settings.defaultAccount === null ? null : expandClaudeAccountHome(settings.defaultAccount),
+      defaultAccountColor: isAccountColor(color) ? color : null,
+      unavailable: false,
+    };
   } catch (err) {
     logger.debug('[claude-config-dir] Claude account config unavailable', { err: String(err) });
-    return { defaultAccount: null, accounts: [], unavailable: true };
+    return { defaultAccount: null, accounts: [], defaultAccountColor: null, unavailable: true };
   }
 }
 
@@ -124,8 +243,14 @@ function readClaudeCodeConfig(config: ConfigReader): {
  * but that is observed behavior of one release and macOS-only, so nothing here
  * depends on it. An authentication failure surfaces as a runtime error, which is
  * honest, rather than as a pre-flight guess.
+ *
+ * Exported for the account probe (`accounts/account-probe.ts`), which refuses to
+ * boot the CLI against a folder that is not an account.
+ *
+ * @param dir - The folder to check.
+ * @returns True when the folder holds a `projects/` directory.
  */
-function isClaudeAccountRoot(dir: string): boolean {
+export function isClaudeAccountRoot(dir: string): boolean {
   try {
     return fs.statSync(path.join(dir, 'projects')).isDirectory();
   } catch {
@@ -147,10 +272,53 @@ function isClaudeAccountRoot(dir: string): boolean {
  * particular launch is going.
  *
  * @param config - Config reader (defaults to the module singleton).
- * @returns The absolute Claude config directory to run in.
+ * @returns The absolute Claude config directory to run in, `~` expanded.
  */
 export function resolveActiveClaudeRoot(config: ConfigReader = configManager): string {
   return readClaudeCodeConfig(config).defaultAccount ?? inheritedClaudeRoot();
+}
+
+/**
+ * The folder Claude Code's `default` account names, machine-wide, from a parsed
+ * `config.json` and the OS home only (shared contract rev 6d): `defaultAccount`
+ * when it is a path, else the pre-0.65.0 `activeAccount`, else `~/.claude`.
+ *
+ * **Never the process environment.** A server started with
+ * `CLAUDE_CONFIG_DIR=/x` must not make `default` mean `/x`: the usage store
+ * would then read, write and prune the wrong account's ledger. That is the one
+ * difference from {@link resolveActiveClaudeRoot}, which answers where a launch
+ * with no account named goes and keeps inheriting the variable.
+ *
+ * Lives here because it needs the OS home, and this file is the Hard Rule 3
+ * carve-out for Claude Code's own directory.
+ *
+ * @param config - The parsed `config.json` (`null` when missing).
+ * @returns The folder, `~` expanded, and any `default-account-invalid` warning.
+ */
+export function claudeDefaultAccountFolder(config: unknown): {
+  path: string;
+  warnings: AccountWarning[];
+} {
+  const resolved = defaultAccountFolder('claude-code', config, os.homedir());
+  return { path: resolved.path ?? path.join(os.homedir(), '.claude'), warnings: resolved.warnings };
+}
+
+/**
+ * The folder Claude Code's `default` account names, from the live config
+ * (see {@link claudeDefaultAccountFolder}). Never the inherited
+ * `CLAUDE_CONFIG_DIR`, and never throws: an unreadable config gives `~/.claude`.
+ *
+ * @param config - Config reader (defaults to the module singleton).
+ * @returns The absolute folder an explicit `default` launch runs in.
+ */
+export function machineDefaultClaudeRoot(config: ConfigReader = configManager): string {
+  let claudeCode: unknown;
+  try {
+    claudeCode = config.get('runtimes')?.claudeCode;
+  } catch (err) {
+    logger.debug('[claude-config-dir] Claude account config unavailable', { err: String(err) });
+  }
+  return claudeDefaultAccountFolder({ runtimes: { claudeCode } }).path;
 }
 
 /**
@@ -161,6 +329,13 @@ export function resolveActiveClaudeRoot(config: ConfigReader = configManager): s
  * 2. `agentAccountId` — the account this agent's manifest pins it to.
  * 3. `runtimes.claudeCode.defaultAccount` — the operator's server-wide default.
  * 4. The environment (`$CLAUDE_CONFIG_DIR`, else `~/.claude`).
+ *
+ * **`default` is the machine-wide default account** (shared contract rev 6d). An
+ * explicit `default` on either rung launches in {@link machineDefaultClaudeRoot},
+ * never in the folder the server process inherited;
+ * `~/.claude` then reaches the subprocess as an UNSET `CLAUDE_CONFIG_DIR`
+ * ({@link claudeConfigDirEnv}). A hand-edited row whose id is `default` never
+ * takes the name.
  *
  * **A launch never fails on a bad account reference.** An id that no longer
  * names a registered account — the operator removed it, an agent manifest was
@@ -198,8 +373,14 @@ export function resolveLaunchAccountRoot(
     // id, so `find(a => a.id === id)` with an absent `id` on both sides would
     // return the first row and bill an account nobody named.
     if (!id) continue;
-    const match = accounts.find((account) => account.id === id);
+    // First, so a `default` still reaches a row the '0.87.0' migration renamed
+    // from it, while that row keeps its marker (see `findRegisteredAccount`).
+    const match = findRegisteredAccount(accounts, id);
     if (match) return match.path;
+    // Always the machine root itself, never an aliased row's own spelling: a row
+    // reaching `~/.claude` through a symlink is the same account, and only this
+    // spelling lets `claudeConfigDirEnv` unset the variable for it.
+    if (id === IMPLICIT_ACCOUNT_ID) return machineDefaultClaudeRoot(config);
     logger.warn('[claude-config-dir] account id is not registered; falling through', {
       source,
       id,
@@ -207,6 +388,94 @@ export function resolveLaunchAccountRoot(
   }
 
   return resolveActiveClaudeRoot(config);
+}
+
+/**
+ * The registered row a reference names: the row with that id, else a row the
+ * `'0.87.0'` migration renamed FROM that id.
+ *
+ * A row whose id is still `default` is never matched. `default` names the
+ * default account (contract `flow-cli-core` §1.1a, revision 6d), and the reader
+ * lists such a row with an `id-reserved` warning as not routable, for example
+ * one an older flow wrote after `'0.87.0'` ran. A reference to `default`
+ * therefore falls through to the next rung of the ladder.
+ *
+ * **The `renamedFrom` half is transitional.** `'0.87.0'` renames a row called
+ * `default` to `default-N` and marks it `renamedFrom: 'default'`, but the
+ * references to it (agent manifests, schedules and their files) live outside
+ * the config file. Until the account reconcile (`core/usage/account-reference-move.ts`)
+ * has moved them and dropped the marker, a reference that says `default` keeps
+ * billing the account it named the day before the upgrade. Once the marker is
+ * gone this half matches nothing, and `default` always means the machine
+ * default (contract rev 6d).
+ *
+ * @param accounts - The listed registry rows.
+ * @param id - The id a hint, manifest or schedule names.
+ */
+function findRegisteredAccount(
+  accounts: readonly ReadClaudeAccount[],
+  id: string
+): ReadClaudeAccount | undefined {
+  const routable = accounts.filter((account) => account.id !== IMPLICIT_ACCOUNT_ID);
+  return (
+    routable.find((account) => account.id === id) ??
+    routable.find((account) => account.renamedFrom === id)
+  );
+}
+
+/**
+ * Drop the `renamedFrom` marker the `'0.87.0'` migration left on these
+ * registry rows, once the account reconcile has moved every reference to them
+ * (`core/usage/account-reference-move.ts`). From then on `default` names only
+ * the machine default. Reads the stored rows as they are (raw, never a parse,
+ * so every other field survives) and writes only when a marker was there.
+ *
+ * @param config - The config manager (or a reader/writer shaped like it).
+ * @param ids - The registry ids whose marker to drop.
+ */
+export function dropClaudeAccountRenameMarkers(
+  config: ConfigReader & { set<K extends keyof UserConfig>(key: K, value: UserConfig[K]): void },
+  ids: readonly string[]
+): void {
+  const runtimes = config.get('runtimes') as unknown as Record<string, unknown> | undefined;
+  const block = runtimes?.claudeCode as Record<string, unknown> | undefined;
+  const rows = block?.accounts;
+  if (!runtimes || !block || !Array.isArray(rows)) return;
+  let changed = false;
+  const next = rows.map((row: unknown) => {
+    if (!row || typeof row !== 'object') return row;
+    const { renamedFrom, ...rest } = row as Record<string, unknown>;
+    if (renamedFrom === undefined || !ids.includes(String(rest.id))) return row;
+    changed = true;
+    return rest;
+  });
+  if (!changed) return;
+  config.set('runtimes', {
+    ...runtimes,
+    claudeCode: { ...block, accounts: next },
+  } as unknown as UserConfig['runtimes']);
+}
+
+/**
+ * Whether a registry id names a registered Claude account — the question
+ * {@link resolveLaunchAccountRoot} asks before it falls through a rung.
+ *
+ * Asked ahead of a launch by a caller that has to SAY the id will not be used
+ * (a scheduled run's Activity entry, DOR-2384), so it reads the same registry
+ * the ladder reads and never throws.
+ *
+ * @param id - The registry id to look up.
+ * @param config - Config reader (defaults to the module singleton).
+ * @returns True or false, or `undefined` when the registry could not be read —
+ *   "nobody can say", which a caller must not report as "not registered".
+ */
+export function isRegisteredClaudeAccount(
+  id: string,
+  config: ConfigReader = configManager
+): boolean | undefined {
+  const { accounts, unavailable } = readClaudeCodeConfig(config);
+  if (unavailable) return undefined;
+  return findRegisteredAccount(accounts, id) !== undefined;
 }
 
 /**
@@ -303,9 +572,101 @@ export function resolveClaudeRootSet(config: ConfigReader = configManager): stri
  */
 export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | undefined } {
   const ambient = ambientClaudeConfigDir();
-  const isDefaultRoot = path.resolve(root) === path.resolve(path.join(os.homedir(), '.claude'));
-  const ambientNamesRoot = ambient !== undefined && path.resolve(ambient) === path.resolve(root);
-  return { CLAUDE_CONFIG_DIR: isDefaultRoot && !ambientNamesRoot ? undefined : root };
+  // Compared by real path (`canonicalAccountPath`), so a symlink or another
+  // spelling of `~/.claude` is still `~/.claude` and still reaches the child as
+  // an UNSET variable, which is the only spelling its Keychain entry answers to.
+  const target = canonicalAccountPath(root, undefined);
+  const isDefaultRoot =
+    target === canonicalAccountPath(path.join(os.homedir(), '.claude'), undefined);
+  const ambientNamesRoot =
+    ambient !== undefined && canonicalAccountPath(ambient, undefined) === target;
+  if (isDefaultRoot && !ambientNamesRoot) return { CLAUDE_CONFIG_DIR: undefined };
+  // The operator exported `~/.claude` themselves: keep THEIR spelling (perhaps a
+  // symlink), because the Keychain entry is keyed on the literal string.
+  if (isDefaultRoot && ambientNamesRoot) return { CLAUDE_CONFIG_DIR: ambient };
+  return { CLAUDE_CONFIG_DIR: root };
+}
+
+/**
+ * Two answers about the default account that `GET /api/config` hands the
+ * client, both read off ONE `resolveRuntimeAccounts` pass so no client
+ * re-derives either by comparing path strings:
+ *
+ * - `defaultAccountResolvedColor`: the color `claude-code:default` is drawn
+ *   in: an alias row's own color (matched by real path, routable rows only),
+ *   else `runtimes.claudeCode.defaultAccountColor`, else the default for its
+ *   position among the listed rows. The default folder comes from config and
+ *   the OS home only, exactly as the usage store resolves it, never from this
+ *   process's `CLAUDE_CONFIG_DIR` (DOR-2492).
+ * - `resolvedAccountId`: the row a NEW session runs on, the one Settings marks
+ *   "in use". The folder is {@link resolveActiveClaudeRoot}'s, the function the
+ *   launch ladder falls back to, so it DOES follow `$CLAUDE_CONFIG_DIR` when no
+ *   default is chosen, because new sessions do. It is matched to a row by
+ *   {@link accountForPath}, the usage store's own canonical comparison (`~`
+ *   expanded, real path), so a trailing slash, a symlink or a `~` spelling
+ *   still names its row. `default` when no routable row has that folder and
+ *   it is the standalone default's own folder; omitted when it is neither (an
+ *   inherited `$CLAUDE_CONFIG_DIR` nobody registered).
+ *
+ * Both are omitted, rather than guessed, when the config cannot be read.
+ */
+function resolvedDefaultAccount(
+  config: ConfigReader,
+  unavailable: boolean
+): { defaultAccountResolvedColor?: string; resolvedAccountId?: string } {
+  if (unavailable) return {};
+  try {
+    const home = os.homedir();
+    const { accounts } = resolveRuntimeAccounts('claude-code', {
+      config: { runtimes: { claudeCode: config.get('runtimes')?.claudeCode } },
+      home,
+      defaultFolder: (_runtime, raw) => claudeDefaultAccountFolder(raw),
+    });
+    const color = accounts.find((account) => account.isDefault)?.color;
+    const root = resolveActiveClaudeRoot(config);
+    const row = accountForPath(accounts, 'claude-code', root, home);
+    // `default` only when the folder IS the standalone default the usage store
+    // lists as Main. Main is env-free by the shared contract (flow-cli-core
+    // §1.1a rev 6d: `defaultAccount`, else `activeAccount`, else `~/.claude`),
+    // because flow's CLI runs in other processes with other environments. The
+    // server's `$CLAUDE_CONFIG_DIR` is a LAUNCH-ONLY override, so a folder it
+    // names that nobody registered is not Main: no row can honestly claim it,
+    // and the field is left out rather than marking the wrong one
+    // (`launchOverride` says where new sessions go instead).
+    const standalone = accounts.find((account) => account.implicit);
+    const isMain =
+      !row &&
+      standalone?.canonicalPath != null &&
+      canonicalAccountPath(root, home) === standalone.canonicalPath;
+    const id = row?.id ?? (isMain ? IMPLICIT_ACCOUNT_ID : undefined);
+    return {
+      ...(color ? { defaultAccountResolvedColor: color } : {}),
+      ...(id ? { resolvedAccountId: id } : {}),
+    };
+  } catch (err) {
+    logger.debug('[claude-config-dir] default account unavailable', { err: String(err) });
+    return {};
+  }
+}
+
+/**
+ * The launch-only override Settings has to say in words, if any: the server's
+ * inherited `$CLAUDE_CONFIG_DIR` while no default account is chosen (exactly
+ * when {@link resolveActiveClaudeRoot} hands new sessions that folder), AND no
+ * row can say "in use" for it. When the variable names `~/.claude` itself or a
+ * registered row, that row already says it, so the line would only repeat it.
+ * Never sent when the config could not be read: nobody can say then.
+ *
+ * The path is no new disclosure: `resolvedAccount` already carries it then.
+ */
+function launchOverride(
+  defaultAccount: string | null,
+  resolvedAccountId: string | undefined,
+  unavailable: boolean
+): { launchOverride?: { env: 'CLAUDE_CONFIG_DIR'; path: string } } {
+  const ambient = ambientClaudeConfigDir();
+  if (defaultAccount !== null || !ambient || resolvedAccountId || unavailable) return {};
+  return { launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: ambient } };
 }
 
 /**
@@ -326,10 +687,24 @@ export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | 
 export function describeClaudeCodeAccounts(
   config: ConfigReader = configManager
 ): NonNullable<ServerConfig['claudeCode']> {
-  const { defaultAccount, accounts, unavailable } = readClaudeCodeConfig(config);
+  const { defaultAccount, accounts, defaultAccountColor, unavailable } =
+    readClaudeCodeConfig(config);
+  const resolved = resolvedDefaultAccount(config, unavailable);
   return {
     resolvedAccount: defaultAccount ?? inheritedClaudeRoot(),
     inherited: defaultAccount === null,
+    // The STORED choice for the standalone default account, `null` when it
+    // follows its position (DOR-2492): the Settings color control's value, so
+    // it can tell "chosen" from "default", as a row's `colorIsDefault` does.
+    defaultAccountColor,
+    // The color the default account is DRAWN in, and the row new sessions run
+    // on, decided here and nowhere else: the same rules the usage store and the
+    // launch ladder apply, so no client re-derives them from path strings.
+    ...resolved,
+    // Set only when the server's own `$CLAUDE_CONFIG_DIR` decides where new
+    // sessions go (no default chosen) and no row stands for that folder, so
+    // Settings can say so: Main never follows that variable (contract rev 6d).
+    ...launchOverride(defaultAccount, resolved.resolvedAccountId, unavailable),
     // Sent only when it is true, so an ordinary response carries no extra key
     // and a client that never learned about this field reads the same wire it
     // always did. What it buys the client is the difference between "your
@@ -345,6 +720,11 @@ export function describeClaudeCodeAccounts(
       id: account.id,
       path: account.path,
       label: account.label,
+      // Resolved by position when the operator stored none; `colorIsDefault`
+      // lets the settings screen write `null` back for such a row, so it keeps
+      // following the palette instead of freezing today's default into the file.
+      color: account.color,
+      colorIsDefault: account.colorIsDefault,
       // NOT `exists`: this is D4's structural check, so a directory that is
       // really there but holds no `projects/` reports false. Naming it `exists`
       // would read as `fs.existsSync` to any UI and mislabel that case.

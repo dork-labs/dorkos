@@ -1,5 +1,7 @@
 # Delight, Hooks, and Feature Food
 
+> **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
+
 > Positioning review deliverable (July 2026). The Hooked-model analysis of DorkOS's engagement loop, the first-time and daily-ritual moments worth engineering, and a catalog of delightful/fun/silly things (the "Tesla easter egg" list). Companion frames: StoryBrand and luxury codes live in `02-positioning.md` §8. Incorporation map at the end says what graduates into the GTM plan vs stays here as a parts bin.
 
 ## 1. The hook loop DorkOS already has (Hooked, applied)

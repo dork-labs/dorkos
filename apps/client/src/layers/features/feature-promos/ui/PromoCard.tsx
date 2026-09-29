@@ -46,16 +46,6 @@ interface PromoCardProps {
  *
  * The `×` is a real button beside the card's button rather than inside it:
  * nesting one is invalid HTML, and the browsers that tolerate it fire both.
- *
- * **One ramp for both placements, deliberately.** The other surviving placement
- * is the Obsidian `EmbedSidebar`, whose panel is bordered and painted from
- * `--background` rather than `--sidebar`, so `--sidebar-accent` composites
- * against a slightly different backdrop there. The tint idiom is still the right
- * one — both placements are sidebars, and one ramp is the whole point of R1 —
- * and per-placement scoping is not worth its cost while the embed is a staged,
- * under-tested surface (AGENTS.md). Its adoption of the shared sidebar
- * primitives belongs to DOR-1080, which is where a real calibration pass over
- * that backdrop should happen rather than as a special case here.
  */
 export function PromoCard({ promo }: PromoCardProps) {
   const { activate, dialog } = usePromoActivation(promo);

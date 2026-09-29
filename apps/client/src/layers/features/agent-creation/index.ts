@@ -6,3 +6,5 @@
 export { CreateAgentDialog } from './ui/CreateAgentDialog';
 export { useAgentCreationStore } from './model/store';
 export { useCreateAgent } from './model/use-create-agent';
+export { TemplateReviewNotice } from './ui/TemplateReviewNotice';
+export type { TemplateBrings } from './ui/TemplateReviewNotice';

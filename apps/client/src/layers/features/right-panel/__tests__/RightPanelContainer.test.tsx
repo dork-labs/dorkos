@@ -36,8 +36,17 @@ vi.mock('react-resizable-panels', async () => {
     PanelResizeHandle: ({
       className,
       children,
+      tabIndex,
+      'aria-label': ariaLabel,
+      'aria-disabled': ariaDisabled,
     }: React.PropsWithChildren<Record<string, unknown>>) => (
-      <div data-testid="resize-handle" className={className as string}>
+      <div
+        data-testid="resize-handle"
+        className={className as string}
+        tabIndex={tabIndex as number}
+        aria-label={ariaLabel as string}
+        aria-disabled={ariaDisabled as boolean | undefined}
+      >
         {children}
       </div>
     ),
@@ -145,10 +154,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   };
 });
 
-// The container is router-free — it takes `pathname` as a prop (AppShell passes
-// the live router pathname; the embed passes a constant), so no router mock is
-// needed here.
-
 // Import after mocks are set up
 import { RightPanelContainer } from '../ui/RightPanelContainer';
 import { RIGHT_PANEL_DEFAULT_PCT } from '../model/use-right-panel-sizing';
@@ -197,6 +202,9 @@ describe('RightPanelContainer', () => {
     // Panel structure stays in the DOM for animation readiness (collapsed)
     expect(screen.getByTestId('right-panel')).toBeInTheDocument();
     expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
+    // …but a closed panel's handle cannot move, so it is no tab stop.
+    expect(screen.getByTestId('resize-handle')).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByTestId('resize-handle')).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('renders the sole global tab body — never the removed empty state', () => {
@@ -224,7 +232,8 @@ describe('RightPanelContainer', () => {
     render(<RightPanelContainer pathname={mockPathname} />);
 
     expect(screen.getByTestId('right-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
+    expect(screen.getByTestId('resize-handle')).toHaveAttribute('aria-label', 'Resize right panel');
+    expect(screen.getByTestId('resize-handle')).toHaveAttribute('tabindex', '0');
   });
 
   it('expands with the default size as a floor when opening (DOR-388)', () => {
@@ -705,11 +714,6 @@ describe('RightPanelContainer', () => {
       expect(screen.getByTestId('sheet-content')).not.toHaveClass('sm:max-w-full');
     });
 
-    // The tablet is the second surface that reaches this Sheet without being a
-    // phone (the Obsidian embed is the other). CONTENT_SIZED_MOBILE_TABS is a
-    // 390×844 measurement — a tablet was never measured, so a short tab keeps
-    // the full-height sheet here rather than collapsing to a content-height box
-    // on a surface nobody checked (DOR-1753, finding 7.8 + adversarial I3).
     it('leaves a measured-short tab at full height — 390×844 is not a tablet', () => {
       mockIsMobile = false;
       mockIsBelowDesktop = true;
@@ -768,82 +772,6 @@ describe('RightPanelContainer', () => {
       const className = screen.getByTestId('sheet-content').className;
       expect(className).not.toContain('!h-auto');
       expect(className).not.toContain('!bottom-auto');
-    });
-  });
-
-  // variant='overlay' is the narrow Obsidian embed: always a slide-over Sheet,
-  // never the resizable inset Panel — even on a wide (non-mobile) viewport,
-  // since the embed has no PanelGroup to split.
-  describe("variant='overlay' (embed)", () => {
-    it('renders the Sheet, not the inset Panel, on a wide viewport', () => {
-      mockIsMobile = false;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'a';
-      mockContributions = [makeContribution('a')];
-
-      render(<RightPanelContainer pathname={mockPathname} variant="overlay" />);
-
-      expect(screen.getByTestId('sheet')).toBeInTheDocument();
-      expect(screen.queryByTestId('right-panel')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
-      // The embed's overlay pane is narrow even on a desktop-width viewport
-      // (mockIsMobile is false here), so the container's own className must
-      // still force full width — pins the caller override this branch relies
-      // on rather than ResponsiveSheetContent's own (desktop) computed width.
-      expect(screen.getByTestId('sheet-content')).toHaveClass('w-full', 'sm:max-w-full');
-    });
-
-    it('renders nothing when the panel is closed', () => {
-      mockIsMobile = false;
-      mockRightPanelOpen = false;
-      mockContributions = [makeContribution('a')];
-
-      const { container } = render(
-        <RightPanelContainer pathname={mockPathname} variant="overlay" />
-      );
-      expect(container.innerHTML).toBe('');
-    });
-
-    // DOR-1753 adversarial review (finding I3): CONTENT_SIZED_MOBILE_TABS is a
-    // 390×844 measurement (see the constant's TSDoc) — it must not apply on the
-    // embed's desktop-width viewport, which nobody measured.
-    it('does not content-size Pulse on a wide (non-mobile) viewport', () => {
-      mockIsMobile = false;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'pulse';
-      mockContributions = [makeContribution('pulse', { title: 'Pulse', isGlobal: true })];
-
-      render(<RightPanelContainer pathname={mockPathname} variant="overlay" />);
-
-      const className = screen.getByTestId('sheet-content').className;
-      expect(className).not.toContain('!h-auto');
-      expect(className).not.toContain('!bottom-auto');
-    });
-
-    it('drops a transport-gated tab (the terminal) under the in-process transport', () => {
-      // The embed's DirectTransport reports supportsTerminal=false, so the
-      // terminal tab hides while the other contextual tabs stay — the capability
-      // gate, exercised in the overlay presentation.
-      mockIsMobile = false;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
-      mockTransport = { supportsTerminal: false };
-      mockContributions = [
-        makeContribution('pulse', { title: 'Pulse', isGlobal: true }),
-        makeContribution('profile', { title: 'Profile' }),
-        makeContribution('files', { title: 'Files' }),
-        makeContribution('terminal', {
-          title: 'Terminal',
-          visibleWhen: ({ transport }) => transport?.supportsTerminal === true,
-        }),
-      ];
-
-      render(<RightPanelContainer pathname={mockPathname} variant="overlay" />);
-
-      expect(screen.getByRole('tab', { name: 'Pulse' })).toBeInTheDocument();
-      expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
-      expect(screen.getByRole('tab', { name: 'Files' })).toBeInTheDocument();
-      expect(screen.queryByRole('tab', { name: 'Terminal' })).not.toBeInTheDocument();
     });
   });
 });

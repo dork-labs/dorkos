@@ -21,6 +21,12 @@ export {
 } from './lib/team-roster-selectors';
 export { teamMemberFace } from './lib/team-member-face';
 export { nameProvenanceNote } from './lib/name-provenance';
+export {
+  isOperatorIdentityIncomplete,
+  operatorIdentityGaps,
+  suggestOperatorHandle,
+  type OperatorIdentityGaps,
+} from './lib/operator-identity';
 export type {
   TeamGrouping,
   TeamKindFilter,

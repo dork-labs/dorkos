@@ -17,8 +17,7 @@ import {
 // enforces: `['config','current']` may be written in exactly one file.
 import { configKeys } from '../../model/server-config/query-keys';
 import { HttpTransport } from '../transport';
-import { DirectTransport } from '../direct-transport';
-import type { Transport } from '@dorkos/shared/transport';
+import { createMockTransport } from '@dorkos/test-utils';
 
 /** A `Storage` that lives in a plain object, so each test starts from nothing. */
 function fakeStorage(seed: Record<string, string> = {}): Storage {
@@ -203,24 +202,18 @@ describe('the sidebar’s local memory', () => {
       expect(cache).toBeNull();
       expect(logged).toHaveBeenCalled();
     });
+  });
 
-    it('keeps none for the Obsidian embed, whose server is in the same process', () => {
-      // The embed’s transport needs no services to answer this question — the
-      // decision is made on the transport’s identity, before a call is made.
-      const embed = new DirectTransport({} as never) as unknown as Transport;
-      const storage = fakeStorage({ [`${BOOT_CACHE_KEY_PREFIX}http://x`]: '{}' });
-
-      const cache = createBootCache({
-        transport: embed,
-        apiBaseUrl: '/api',
-        buster: BUSTER,
-        storage,
-      });
-
-      expect(cache).toBeNull();
-      // …and it did not touch what was already there on its way out.
-      expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://x`)).toBe('{}');
+  it('does not persist mock transport responses or change existing cache entries', () => {
+    const storage = fakeStorage({ [`${BOOT_CACHE_KEY_PREFIX}http://x`]: '{}' });
+    const cache = createBootCache({
+      transport: createMockTransport(),
+      apiBaseUrl: '/api',
+      buster: BUSTER,
+      storage,
     });
+    expect(cache).toBeNull();
+    expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://x`)).toBe('{}');
   });
 
   describe('restoring', () => {

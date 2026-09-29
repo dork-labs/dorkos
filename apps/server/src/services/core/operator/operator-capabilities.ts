@@ -22,9 +22,10 @@
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
-import { TraitsSchema } from '@dorkos/shared/mesh-schemas';
+import { AgentRuntimeSchema, TraitsSchema } from '@dorkos/shared/mesh-schemas';
+import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import { NOPE_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
-import { CAPABILITY_TIERS } from '@dorkos/shared/capabilities';
+import { isSecretInputKey } from '@dorkos/shared/capabilities';
 
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
@@ -33,6 +34,8 @@ import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js'
 import {
   createUpdateAgentHandler,
   createUpdateAgentBoundariesHandler,
+  createUpdateAgentExecutionHandler,
+  describeAgentExecutionApproval,
   createActivityListHandler,
   createConfigGetHandler,
   createConfigPatchHandler,
@@ -43,10 +46,42 @@ import {
   createFeedbackDraftHandler,
   type UpdateAgentArgs,
   type UpdateAgentBoundariesArgs,
+  type UpdateAgentExecutionArgs,
   type SidebarAddToGroupArgs,
   type SidebarRemoveFromGroupArgs,
   type FeedbackDraftArgs,
 } from './operator-tool-handlers.js';
+import { operatorOnlyAreasForPatch } from './config-write-policy.js';
+
+/**
+ * The settings a config patch changes, as one line for its approval card:
+ * `ui.theme: dark, tunnel.enabled: yes`. The card quotes and escapes the whole
+ * line as one value, so nothing in it can pass for a second field. A leaf whose name says secret is
+ * listed by name only, and a list or an empty object by name only, so the card
+ * never carries a credential or a wall of structure.
+ *
+ * @param patch - The patch the call carries.
+ */
+export function describePatchForCard(patch: unknown): string {
+  const parts: string[] = [];
+  const walk = (value: unknown, prefix: string): void => {
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const entries = Object.entries(value as Record<string, unknown>);
+      if (entries.length === 0 && prefix) parts.push(prefix);
+      for (const [key, child] of entries) walk(child, prefix ? `${prefix}.${key}` : key);
+      return;
+    }
+    const leaf = prefix.split('.').pop() ?? prefix;
+    if (isSecretInputKey(leaf) || Array.isArray(value)) {
+      parts.push(prefix);
+      return;
+    }
+    const shown = typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value);
+    parts.push(`${prefix}: ${shown}`);
+  };
+  walk(patch, '');
+  return parts.length > 0 ? parts.join(', ') : 'nothing';
+}
 
 /**
  * Caps on the two free-form fields `feedback_draft` accepts.
@@ -198,6 +233,8 @@ export const operatorDomain: CapabilityDomain = {
         'Filter by categories (comma-separated), actorType, actorId, and a time window ' +
         '(before/since ISO timestamps); paginate with limit and the returned nextCursor.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(ListActivityQuerySchema.shape),
       output: z.unknown(),
       surfaces: {
@@ -229,6 +266,8 @@ export const operatorDomain: CapabilityDomain = {
         'plus providersConfigured (the provider ids that have a credential), so you can see what is set up ' +
         'without seeing where the material lives.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({}),
       output: z.unknown(),
       surfaces: {
@@ -248,6 +287,8 @@ export const operatorDomain: CapabilityDomain = {
         'Check for a DorkOS update: returns the running server version and the latest ' +
         'version published to npm. latestVersion is null in dev builds or if the registry is unreachable.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({}),
       output: z.unknown(),
       surfaces: {
@@ -267,6 +308,8 @@ export const operatorDomain: CapabilityDomain = {
         'Show which agents were active recently. Returns each agent joined with the timestamp of ' +
         'its most-recent session, newest first — the same per-agent latest-activity map the app uses.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(RecentSessionsQuerySchema.shape),
       output: z.unknown(),
       surfaces: {
@@ -327,6 +370,8 @@ export const operatorDomain: CapabilityDomain = {
         'opens this same page, and `dorkos feedback` does it from a terminal. Nothing stops you ' +
         'running that command either.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         kind: z
           .enum(['bug', 'feature', 'runtime'])
@@ -377,19 +422,23 @@ export const operatorDomain: CapabilityDomain = {
       description:
         "Edit an agent's manifest and personality: displayName, description, persona, personaEnabled, " +
         'traits, conventions, color, icon, and SOUL.md (soulContent) content. ' +
-        'It also carries tierCeiling, the most an agent may ever do — you can LOWER your own, ' +
-        'and only a person can raise one. ' +
+        'What an agent is allowed to do is not changed here: ask with the tool whose name ends ' +
+        'in `change_permission`. ' +
         // The other tool is named as a searchable ENDING, never bare: this same
         // string is served to the external `/mcp` server, where a person's
         // harness chooses the prefix, so a bare name is uncallable on
         // claude-code and unreliable everywhere else (DOR-1292). The form is
         // enforced by `messaging/__tests__/context-tool-names.test.ts`.
+        "An agent's runtime, model and effort are NOT changed here: they are changed with the tool " +
+        'whose name ends in `update_agent_execution`, which asks a person first. ' +
         "NOPE.md (the agent's safety boundaries) is NOT edited here, and neither is the switch that " +
         'decides whether the agent is given it. Both live on the boundaries tool, whose name ends in ' +
         '`update_agent_boundaries`; it asks a person first. ' +
         'Target the agent by agent_id or cwd. The slug (name) is immutable, and system agents (e.g. DorkBot) ' +
         'reject identity changes. Editing your OWN agent is fine; before editing a DIFFERENT agent, confirm with the user first.',
       tier: 'act',
+      area: 'agents',
+      approvalDisplayFields: ['agent_id', 'cwd', 'displayName', 'description'],
       input: z.object({
         ...agentSelectorSchema,
         displayName: z.string().optional().describe('Human-facing display name'),
@@ -455,21 +504,16 @@ export const operatorDomain: CapabilityDomain = {
               'file budget, so your text has a few hundred less than that; a refusal names the ' +
               'exact number for this agent.'
           ),
-        // Declared so an agent can TIGHTEN its own ceiling — and, just as much,
-        // so an attempt to widen one is answered instead of dropped. `z.object`
-        // strips what it does not declare, so leaving this out would let an
-        // agent report a limit change that never happened (the DOR-1253 shape).
-        // `.nullable()` for the same reason: clearing the limit is a real thing
-        // to try, and it deserves the guard's sentence rather than a type error.
-        // The direction guard lives in `agent-updater.ts` (DOR-486).
+        // Retired (spec `agent-permissions`): what an agent may do is its
+        // permissions now. Declared only so an old caller that still sends it is
+        // REFUSED with a pointer rather than stripped in silence, which would let
+        // it report a change that never happened (the DOR-1253 shape).
         tierCeiling: z
-          .enum(CAPABILITY_TIERS)
-          .nullable()
+          .unknown()
           .optional()
           .describe(
-            "The most this agent may ever do: 'observe' reads only, 'act' changes things it can " +
-              "undo, 'destructive' has no extra limit. You may LOWER your own ceiling; raising " +
-              'one (or clearing it with null) is refused and has to be done by a person.'
+            'Retired and refused. Ask to change a permission with the tool whose name ends in ' +
+              '`change_permission`.'
           ),
         // Declared only so it can be REFUSED, and the declaration is what makes
         // the refusal possible: `registry.invoke` parses the input before the
@@ -487,6 +531,30 @@ export const operatorDomain: CapabilityDomain = {
           .describe(
             'Refused here. Change NOPE.md with the boundaries tool, whose name ends in ' +
               '`update_agent_boundaries`; it asks a person first.'
+          ),
+        // Declared only so they can be REFUSED with a pointer, for the reason
+        // `nopeContent` is (DOR-2328): undeclared, `z.object` would strip them
+        // and an agent would report a model change that never happened.
+        runtime: z
+          .unknown()
+          .optional()
+          .describe(
+            'Refused here. Change it with the tool whose name ends in `update_agent_execution`; ' +
+              'it asks a person first.'
+          ),
+        model: z
+          .unknown()
+          .optional()
+          .describe(
+            'Refused here. Change it with the tool whose name ends in `update_agent_execution`; ' +
+              'it asks a person first.'
+          ),
+        effort: z
+          .unknown()
+          .optional()
+          .describe(
+            'Refused here. Change it with the tool whose name ends in `update_agent_execution`; ' +
+              'it asks a person first.'
           ),
       }),
       output: z.unknown(),
@@ -521,6 +589,7 @@ export const operatorDomain: CapabilityDomain = {
         'A person approves every call, your own boundaries included, so say plainly what you want to ' +
         'change and why before you ask.',
       tier: 'destructive',
+      area: 'safety',
       input: z.object({
         ...agentSelectorSchema,
         nopeContent: z
@@ -568,6 +637,63 @@ export const operatorDomain: CapabilityDomain = {
           )
         ),
     }),
+    // An agent's runtime, model and effort get their own capability for the
+    // reason NOPE.md did (DOR-2328): a tier is per-capability, and these three
+    // decide what every schedule that follows the agent runs on and what it
+    // costs, so a person sees the change, old → new, before it happens.
+    defineCapability({
+      id: 'operator.update_agent_execution',
+      title: 'Change what an agent runs on',
+      description:
+        "Change an agent's runtime, model or effort (how hard it thinks). Every schedule that " +
+        'follows the agent runs differently afterwards, so a person approves every call, your own ' +
+        "agent's included, and the card shows each change as it is now and as it would be. Send " +
+        'only what should change; null returns model or effort to the default. Target the agent ' +
+        'by agent_id or cwd. Say plainly what you want to change and why before you ask.',
+      tier: 'destructive',
+      // Other agents, with update_agent: it changes an agent. Being destructive,
+      // an area-level Allowed still asks; only an Allowed set on this one action
+      // runs it without a card.
+      area: 'agents',
+      input: z.object({
+        ...agentSelectorSchema,
+        runtime: AgentRuntimeSchema.optional().describe('Which program runs the agent'),
+        model: z
+          .string()
+          .min(1)
+          .nullable()
+          .optional()
+          .describe("The model, in the runtime's own ids; null returns it to the default"),
+        effort: z
+          .enum(EFFORT_LEVELS)
+          .nullable()
+          .optional()
+          .describe('How hard it thinks; null returns it to the default'),
+      }),
+      output: z.unknown(),
+      // The sentence names the agent; the change itself, old → new, is the
+      // card's detail, read from the agent as it stands and bound into the
+      // approval (`describeApprovalChange`).
+      approvalDisplayFields: ['agent_id', 'cwd'],
+      describeApprovalChange: (deps, input) =>
+        describeAgentExecutionApproval(
+          requireOperatorDeps(deps),
+          input as UpdateAgentExecutionArgs
+        ),
+      surfaces: {
+        mcp: {
+          toolName: 'update_agent_execution',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: async (deps, input) =>
+        unwrapMcpEnvelope(
+          await createUpdateAgentExecutionHandler(requireOperatorDeps(deps))(
+            input as UpdateAgentExecutionArgs
+          )
+        ),
+    }),
     defineCapability({
       id: 'operator.config_patch',
       title: 'Update configuration',
@@ -575,12 +701,25 @@ export const operatorDomain: CapabilityDomain = {
         'Update DorkOS user settings by deep-merging a partial config object (the same validated path as the ' +
         "settings UI). Use for status-bar/sidebar prefs, scheduler, logging, etc. This mutates the user's own " +
         'settings — only do it when the user has asked for the change. Arrays replace (not merge); invalid values are rejected. ' +
-        'Some settings only a person can change, and a patch touching any of them is refused whole: login (auth), ' +
-        'public exposure (tunnel), the MCP endpoint and its key, telemetry consent, credentials (providers, ' +
-        'credentialRef, cloud), extensions, the runtime binary paths and the OpenCode provider and baseURL, and the ' +
-        'directories DorkOS reads and writes (server.boundary, workspace.rootPath, relay.dataDir, ' +
-        'agents.defaultDirectory, mesh.scanRoots). Ask the person to change those in Settings themselves.',
+        "Some settings are the person's to decide: login (auth), public exposure (tunnel), the MCP endpoint and " +
+        'its key, telemetry consent, credentials (providers, credentialRef, cloud), extensions, the runtime binary ' +
+        'paths and the OpenCode provider and baseURL, the directories DorkOS reads and writes (server.boundary, ' +
+        'workspace.rootPath, relay.dataDir, agents.defaultDirectory, mesh.scanRoots), reply and turn limits, and ' +
+        'how often agents stop to ask. A patch touching any of them asks the person on a card every time, and is ' +
+        'applied whole only if they say yes. Agent permissions are never changed here: use the tool whose name ' +
+        'ends in `change_permission`.',
       tier: 'act',
+      area: 'settings',
+      // A patch touching a setting only a person may change asks in that
+      // setting's floor area instead (Safety limits, Reach & secrets or
+      // Permissions), where Always allow is never offered.
+      areasForInput: (input) => operatorOnlyAreasForPatch((input as { patch?: unknown }).patch),
+      // The card lists the settings the patch changes, never the patch object
+      // (which renders as "details") and never the value of a secret-named one.
+      approvalDisplayFields: ['changes'],
+      approvalView: (input) => ({
+        changes: describePatchForCard((input as { patch?: unknown }).patch),
+      }),
       input: z.object({
         // Not `z.record()`: a record anywhere in an in-session tool's schema
         // crashes the whole `tools/list` answer on claude-agent-sdk 0.3.257+ with
@@ -611,9 +750,10 @@ export const operatorDomain: CapabilityDomain = {
       // and simply cannot be named.
       invoke: async (_deps, input, context) =>
         unwrapMcpEnvelope(
-          await createConfigPatchHandler(context.identity)(
-            input as { patch?: Record<string, unknown> }
-          )
+          await createConfigPatchHandler(
+            context.identity,
+            context.approval
+          )(input as { patch?: Record<string, unknown> })
         ),
     }),
     // The two sidebar capabilities are `act` and live beside `config_patch`
@@ -658,6 +798,8 @@ export const operatorDomain: CapabilityDomain = {
         'the tool whose name ends in `sidebar_remove_from_group`. This rearranges the ' +
         "user's own sidebar, so only do it when they have asked for it.",
       tier: 'act',
+      area: 'agents',
+      approvalDisplayFields: ['group', 'items'],
       input: z.object({
         ...sidebarGroupSelectorSchema,
         items: sidebarItemsSchema('file there'),
@@ -700,6 +842,8 @@ export const operatorDomain: CapabilityDomain = {
         "name ends in `sidebar_add_to_group`. This rearranges the user's own sidebar, so only " +
         'do it when they have asked for it.',
       tier: 'act',
+      area: 'agents',
+      approvalDisplayFields: ['group', 'items'],
       input: z.object({
         ...sidebarGroupSelectorSchema,
         items: sidebarItemsSchema('take out'),

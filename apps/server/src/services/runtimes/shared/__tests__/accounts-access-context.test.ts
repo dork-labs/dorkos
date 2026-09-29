@@ -68,6 +68,12 @@ describe('Accounts turn awareness', () => {
           : 'mcp__dorkos__connector_list_toolkits'
       );
       expect(text).toContain('A command-line login in a shell');
+      // The agent says where the owner answers, and never sends a link.
+      expect(text).toContain('on the card in the conversation where you asked');
+      expect(text).toContain('the owner can answer in DorkOS');
+      expect(text).toContain('under Needs you on the Connections page');
+      expect(text).toContain('Never send a link to DorkOS');
+      expect(text).not.toContain('openUrl');
     }
   );
 
@@ -98,7 +104,7 @@ describe('Accounts turn awareness', () => {
       JSON.stringify(buildOpenCodeParts('question', { additionalContext: [entry] } as never)),
     ];
     for (const output of outputs) {
-      expect(output).toContain('Currently granted accounts for this agent session: 0');
+      expect(output).toContain('Accounts this agent session can use right now: 0');
       expect(output).toContain('Access changed');
     }
   });

@@ -37,6 +37,7 @@ import {
   selectPromotedItems,
   applyStatusBudget,
   resolveStatusBudget,
+  type SessionAccount,
   type StatusPromotionContext,
 } from '@/layers/features/status';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -66,22 +67,6 @@ vi.mock('@/layers/entities/runtime', async (importOriginal) => {
     useRuntimeRequirements: () => ({ data: undefined }),
   };
 });
-
-// `RuntimeItem` also calls these even when read-only (`canSelect: false`) —
-// both are unconditional in the component, not gated on the branch. Stubbed
-// here rather than wired through a real Transport so the DOR-1971 test needs no
-// provider tree: neither the account switcher nor the account roster is what
-// that test is about.
-vi.mock('@/layers/features/status/model/use-account-switch', () => ({
-  DEFAULT_ACCOUNT_VALUE: '__default__',
-  useAccountSwitch: () => ({
-    accounts: [],
-    selectedValue: '__default__',
-    isMultiAccount: false,
-    defaultLabel: undefined,
-    choose: vi.fn(),
-  }),
-}));
 
 // The roster read behind the chip's account tooltip (DOR-1970). It reaches for
 // the Transport, which this file deliberately does not stand up; `nameFor` is
@@ -136,6 +121,22 @@ vi.mock('@/layers/entities/session', async (importOriginal) => {
  */
 const RENDERABLE_USAGE: UsageStatus = { kind: 'pay-as-you-go', costUsd: 0.42 };
 
+/** A session whose account the identity gate hides (one account on this machine). */
+const HIDDEN_ACCOUNT: SessionAccount = {
+  visible: false,
+  runtime: 'claude-code',
+  accountId: 'acct-2',
+  path: '/Users/test/.claude-acct-2',
+  name: 'Acct 2',
+  color: '#1d8a4a',
+  usage: null,
+  limit: null,
+  chipState: 'unknown',
+  trackerItem: null,
+  lifecycle: 'idle',
+  pending: false,
+};
+
 /**
  * Everything the builder needs, with the two fields each test varies left to the
  * caller.
@@ -177,10 +178,15 @@ function inputWith(overrides: Partial<StatusItemNodesInput>): StatusItemNodesInp
       canSelect: false,
       onChangeRuntime: vi.fn(),
     },
+    account: HIDDEN_ACCOUNT,
     contextPercent: null,
     contextUsage: null,
+    contextReading: null,
     compact: null,
     usage: null,
+    usageSource: null,
+    usageObservedAt: null,
+    now: new Date(),
     supportsCostTracking: false,
     runningSubagents: [],
     liveSubagentCount: 0,
@@ -190,6 +196,31 @@ function inputWith(overrides: Partial<StatusItemNodesInput>): StatusItemNodesInp
     ...overrides,
   };
 }
+
+describe('buildStatusItemNodes — one clock for "· old"', () => {
+  it("reads staleness from the line's own moment, not the item's clock", () => {
+    // The budget charges for "· old" from the section's clock; the item must
+    // read the same one, or near the hour the two disagree for up to a minute.
+    const observedAt = '2026-09-28T10:00:00.000Z';
+    const usage: UsageStatus = { kind: 'subscription', utilization: 0.4, state: 'ok' };
+    const at = (iso: string) =>
+      buildStatusItemNodes(
+        inputWith({
+          usage,
+          usageSource: 'account',
+          usageObservedAt: observedAt,
+          supportsCostTracking: true,
+          now: new Date(iso),
+        })
+      ).usage;
+
+    render(<TooltipProvider>{at('2026-09-28T10:59:00.000Z')}</TooltipProvider>);
+    expect(screen.queryByText('· old')).not.toBeInTheDocument();
+    cleanup();
+    render(<TooltipProvider>{at('2026-09-28T11:01:00.000Z')}</TooltipProvider>);
+    expect(screen.getByText('· old')).toBeInTheDocument();
+  });
+});
 
 describe('buildStatusItemNodes — the cost gate', () => {
   it('builds the usage item for a runtime that declares it can track cost', () => {
@@ -232,6 +263,105 @@ describe('buildStatusItemNodes — the cost gate', () => {
   });
 });
 
+describe('buildStatusItemNodes — one usage display, never two (spec claude-account-ui §6.8)', () => {
+  const ACCOUNT_USAGE: UsageStatus = { kind: 'subscription', utilization: 0.4, state: 'ok' };
+  const SHOWN_ACCOUNT: SessionAccount = { ...HIDDEN_ACCOUNT, visible: true };
+
+  it('builds no usage node while the account chip shows, so a PIN cannot bring it back', () => {
+    const nodes = buildStatusItemNodes(
+      inputWith({
+        account: SHOWN_ACCOUNT,
+        usage: ACCOUNT_USAGE,
+        usageSource: 'account',
+        supportsCostTracking: true,
+      })
+    );
+    expect(nodes.account).toBeDefined();
+    expect(nodes.usage).toBeUndefined();
+    // A pin bypasses `promote`, never a missing node: `usage` pinned stays out.
+    const promoted = selectPromotedItems({
+      ctx: {
+        cwd: null,
+        git: null,
+        contextPercent: null,
+        connectionState: 'connected',
+        permissionMode: 'default',
+        permissionDescriptor: null,
+        plan: null,
+        runtime: null,
+        account: { chipState: 'ok' },
+        usage: ACCOUNT_USAGE,
+        usageStale: false,
+        subagentsInFlight: 0,
+      },
+      pins: ['usage'],
+      nodes,
+    });
+    expect(promoted.map((item) => item.key)).not.toContain('usage');
+    expect(promoted.map((item) => item.key)).toContain('account');
+  });
+
+  it('builds the usage node when the chip is not showing', () => {
+    expect(
+      buildStatusItemNodes(
+        inputWith({ usage: ACCOUNT_USAGE, usageSource: 'account', supportsCostTracking: true })
+      ).usage
+    ).toBeDefined();
+  });
+
+  it('keeps usage when the gate is open but the chip cannot name the account (draws nothing)', () => {
+    const nodes = buildStatusItemNodes(
+      inputWith({
+        account: { ...SHOWN_ACCOUNT, name: null },
+        usage: ACCOUNT_USAGE,
+        usageSource: 'account',
+        supportsCostTracking: true,
+      })
+    );
+    expect(nodes.account).toBeUndefined();
+    expect(nodes.usage).toBeDefined();
+  });
+
+  it("shows an account reading on a runtime that tracks no cost, without the session's cost", () => {
+    // Codex declares `supportsCostTracking: false`; its weekly window comes from
+    // the account store, not a turn, so it still shows from open.
+    render(
+      <TooltipProvider>
+        {
+          buildStatusItemNodes(
+            inputWith({
+              usage: { ...ACCOUNT_USAGE, costUsd: 3.5 },
+              usageSource: 'account',
+              supportsCostTracking: false,
+            })
+          ).usage
+        }
+      </TooltipProvider>
+    );
+    expect(screen.getByText('40%')).toBeInTheDocument();
+    expect(screen.queryByText('$3.50')).not.toBeInTheDocument();
+  });
+
+  it("still hides the session's OWN usage on such a runtime", () => {
+    expect(
+      buildStatusItemNodes(
+        inputWith({ usage: ACCOUNT_USAGE, usageSource: 'live', supportsCostTracking: false })
+      ).usage
+    ).toBeUndefined();
+  });
+});
+
+describe('buildStatusItemNodes — the account chip', () => {
+  it('builds the account item only while the identity gate is open', () => {
+    // The gate is the whole rule: with one account (or a runtime that does not
+    // tell accounts apart) the chip would name a fact that never varies.
+    expect(buildStatusItemNodes(inputWith({})).account).toBeUndefined();
+    expect(
+      buildStatusItemNodes(inputWith({ account: { ...HIDDEN_ACCOUNT, visible: true } })).account
+    ).toBeDefined();
+  });
+});
+
 /**
  * Claude's own declaration of Plan (mirrors `runtime-constants.ts`): the working
  * mode both the permission item and the composer's Plan switch resolve from.
@@ -257,6 +387,7 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  supportsAccounts: true,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
@@ -415,7 +546,9 @@ function buildLine(
       : (CLAUDE_CAPABILITIES.permissionModes.values.find((d) => d.id === permissionMode) ?? null),
     plan: { active: planActive },
     runtime: null,
+    account: null,
     usage: null,
+    usageStale: false,
     subagentsInFlight: 0,
   };
   return applyStatusBudget(selectPromotedItems({ ctx, pins: [], nodes }), budget);

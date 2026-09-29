@@ -11,6 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { switchAgentCwd } from '@/layers/entities/session';
+import { toSession } from '@/layers/shared/lib';
 
 /**
  * Switch the app to an agent's working directory.
@@ -30,7 +31,7 @@ export function useSwitchAgentCwd(): (cwd: string) => void {
         queryClient,
         transport,
         currentLocation: () => router.state.location,
-        navigate: (search) => void navigate({ to: '/session', search }),
+        navigate: (search) => void navigate(toSession(search)),
       }),
     [queryClient, transport, router, navigate]
   );

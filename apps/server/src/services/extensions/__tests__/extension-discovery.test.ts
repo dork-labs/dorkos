@@ -3,9 +3,11 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { ExtensionDiscovery } from '../extension-discovery.js';
+import type { HostVersion } from '../extension-host-version.js';
 import { mayRunExtensionCode } from '../extension-load-policy.js';
 import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
 import { logger } from '../../../lib/logger.js';
+import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 
 /** No user overrides. */
 const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [], approvedToRun: [] };
@@ -160,24 +162,49 @@ describe('ExtensionDiscovery', () => {
     });
   });
 
-  it('produces status "incompatible" when minHostVersion exceeds host version', async () => {
-    await writeManifest(path.join(dorkHome, 'extensions', 'future-ext'), {
-      id: 'future-ext',
-      name: 'Future Extension',
-      version: '1.0.0',
-      minHostVersion: '99.0.0',
+  describe('minHostVersion', () => {
+    /** A released host at 0.88.0, the version the Flow extension asks for. */
+    const RELEASED: HostVersion = { version: '0.88.0', isDevBuild: false };
+    const ENABLED = (id: string): ExtensionsConfig => ({
+      enabled: [id],
+      disabled: [],
+      approvedToRun: [],
     });
 
-    const results = await discovery.discover(
-      null,
-      { enabled: ['future-ext'], disabled: [], approvedToRun: [] },
-      EMPTY_CORE
-    );
+    async function statusOn(host: HostVersion, minHostVersion?: string): Promise<string> {
+      await writeManifest(path.join(dorkHome, 'extensions', 'versioned-ext'), {
+        id: 'versioned-ext',
+        name: 'Versioned Extension',
+        version: '1.0.0',
+        ...(minHostVersion ? { minHostVersion } : {}),
+      });
+      const results = await new ExtensionDiscovery(dorkHome, host).discover(
+        null,
+        ENABLED('versioned-ext'),
+        EMPTY_CORE
+      );
+      expect(results).toHaveLength(1);
+      return results[0].status;
+    }
 
-    expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({
-      id: 'future-ext',
-      status: 'incompatible',
+    it('marks an extension incompatible when it needs a newer DorkOS', async () => {
+      expect(await statusOn(RELEASED, '0.89.0')).toBe('incompatible');
+    });
+
+    it('loads an extension that needs exactly the running version', async () => {
+      expect(await statusOn(RELEASED, '0.88.0')).toBe('enabled');
+    });
+
+    it('loads an extension that needs an older version than the running one', async () => {
+      expect(await statusOn(RELEASED, '0.2.0')).toBe('enabled');
+    });
+
+    it('loads any extension on a development build', async () => {
+      expect(await statusOn({ version: '0.0.0', isDevBuild: true }, '99.0.0')).toBe('enabled');
+    });
+
+    it('loads an extension with no minHostVersion', async () => {
+      expect(await statusOn(RELEASED)).toBe('enabled');
     });
   });
 
@@ -488,7 +515,7 @@ describe('ExtensionDiscovery', () => {
           path: path.join(dorkHome, 'extensions', 'not-really'),
         });
         // And the load policy therefore asks about it, with an empty approval list.
-        expect(mayRunExtensionCode(results[0].id, results[0].origin, [])).toBe(false);
+        expect(mayRunExtensionCode(results[0], { approvedToRun: [] })).toBe(false);
       });
 
       it('refuses core to a SYMLINK at the staged path, on a reload with no restage', async () => {
@@ -524,7 +551,7 @@ describe('ExtensionDiscovery', () => {
         expect(afterReload[0]).toMatchObject({ id: 'marketplace', origin: 'user' });
         // So the planted `server.ts` is asked about instead of being run as DorkOS.
         expect(afterReload[0].hasServerEntry).toBe(true);
-        expect(mayRunExtensionCode('marketplace', afterReload[0].origin, [])).toBe(false);
+        expect(mayRunExtensionCode(afterReload[0], { approvedToRun: [] })).toBe(false);
       });
 
       it('ignores a project-tree copy of a core id and keeps the staged one', async () => {
@@ -734,6 +761,200 @@ describe('ExtensionDiscovery', () => {
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining("Ignoring the project copy of 'marketplace'")
       );
+    });
+  });
+
+  describe('extensions carried inside an installed plugin (DOR-2383)', () => {
+    /** Write `<pluginsRoot>/<plugin>/.dork/extensions/<id>/extension.json`. */
+    async function writeCarried(
+      pluginsRoot: string,
+      plugin: string,
+      id: string,
+      version = '1.0.0'
+    ): Promise<string> {
+      const dir = path.join(pluginsRoot, plugin, '.dork', 'extensions', id);
+      await writeManifest(dir, { id, name: id, version });
+      return dir;
+    }
+
+    it('finds an extension a globally installed plugin carries, and names the plugin', async () => {
+      const dir = await writeCarried(path.join(dorkHome, 'plugins'), 'flow', 'flow');
+
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        id: 'flow',
+        scope: 'global',
+        origin: 'user',
+        path: dir,
+        sourcePlugin: 'flow',
+        // Off until a person turns it on, like every marketplace extension.
+        status: 'disabled',
+      });
+    });
+
+    it('finds an extension a plugin installed into the project carries', async () => {
+      const cwd = path.join(tmpDir, 'project');
+      const dir = await writeCarried(path.join(cwd, '.dork', 'plugins'), 'flow', 'flow');
+
+      const results = await discovery.discover(cwd, EMPTY_CONFIG, EMPTY_CORE);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        id: 'flow',
+        scope: 'local',
+        origin: 'user',
+        path: dir,
+        sourcePlugin: 'flow',
+      });
+    });
+
+    it('skips the install engine siblings beside a plugin, such as a backup', async () => {
+      const plugins = path.join(dorkHome, 'plugins');
+      const dir = await writeCarried(plugins, 'flow', 'flow');
+      await writeCarried(plugins, `flow${MARKETPLACE_BACKUP_DIR_MARKER}20260926-abc`, 'flow');
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ path: dir, sourcePlugin: 'flow' });
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('scans the plugins directory once when the project holds the DorkOS home', async () => {
+      await writeCarried(path.join(dorkHome, 'plugins'), 'flow', 'flow');
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+
+      const results = await discovery.discover(tmpDir, EMPTY_CONFIG, EMPTY_CORE);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ scope: 'global', sourcePlugin: 'flow' });
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('lets an extension installed directly win over a plugin copy of the same id', async () => {
+      const direct = path.join(dorkHome, 'extensions', 'flow');
+      await writeManifest(direct, { id: 'flow', name: 'Flow', version: '1.0.0' });
+      await writeCarried(path.join(dorkHome, 'plugins'), 'flow', 'flow', '2.0.0');
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ path: direct, manifest: { version: '1.0.0' } });
+      expect(results[0].sourcePlugin).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Ignoring the copy of 'flow'"));
+    });
+
+    it('never lets a plugin copy take a core id', async () => {
+      await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
+        id: 'marketplace',
+        name: 'Marketplace',
+        version: '1.0.0',
+      });
+      await writeCarried(path.join(dorkHome, 'plugins'), 'aaa', 'marketplace');
+      const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+
+      const results = await discovery.discover(null, EMPTY_CONFIG, core);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        origin: 'core',
+        path: path.join(dorkHome, 'extensions', 'marketplace'),
+      });
+    });
+
+    it('resolves an id two plugins carry by sorted plugin name, with one warning', async () => {
+      const plugins = path.join(dorkHome, 'plugins');
+      await writeCarried(plugins, 'zeta', 'shared-ext', '2.0.0');
+      const first = await writeCarried(plugins, 'alpha', 'shared-ext', '1.0.0');
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ path: first, sourcePlugin: 'alpha' });
+      const duplicateWarnings = warn.mock.calls.filter(([msg]) =>
+        String(msg).includes("More than one installed plugin carries 'shared-ext'")
+      );
+      expect(duplicateWarnings).toHaveLength(1);
+      expect(String(duplicateWarnings[0][0])).toContain('alpha, zeta');
+    });
+
+    it('keeps the copy a person approved when another plugin carries the same id', async () => {
+      // `aaa-other` sorts first, so name order alone would hand it the id — and,
+      // before approvals named their copy, the approval given to `flow` with it.
+      const plugins = path.join(dorkHome, 'plugins');
+      await writeCarried(plugins, 'aaa-other', 'flow');
+      const approvedDir = await writeCarried(plugins, 'flow', 'flow');
+
+      const results = await discovery.discover(
+        null,
+        {
+          ...EMPTY_CONFIG,
+          approvedToRun: ['flow'],
+          approvedSources: { flow: { path: approvedDir, plugin: 'flow' } },
+        },
+        EMPTY_CORE
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ path: approvedDir, sourcePlugin: 'flow' });
+    });
+
+    it('ignores a project plugin copy of a core id', async () => {
+      const cwd = path.join(tmpDir, 'project');
+      await writeCarried(path.join(cwd, '.dork', 'plugins'), 'evil', 'hello-world');
+      const core = coreMap({ id: 'hello-world', defaultEnabled: true, canDisable: true });
+
+      const results = await discovery.discover(cwd, EMPTY_CONFIG, core);
+
+      expect(results).toHaveLength(0);
+    });
+
+    it('ignores a project plugin copy of an id approved for another copy', async () => {
+      // The approved copy is not on disk right now (its project is not open), so
+      // nothing ahead of the project plugin holds the id. It still may not take it.
+      const cwd = path.join(tmpDir, 'project');
+      await writeCarried(path.join(cwd, '.dork', 'plugins'), 'evil', 'flow');
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+
+      const results = await discovery.discover(
+        cwd,
+        {
+          ...EMPTY_CONFIG,
+          approvedToRun: ['flow'],
+          approvedSources: {
+            flow: { path: path.join(tmpDir, 'other', '.dork', 'plugins', 'flow'), plugin: 'flow' },
+          },
+        },
+        EMPTY_CORE
+      );
+
+      expect(results).toHaveLength(0);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Ignoring the project plugin copy of 'flow'")
+      );
+    });
+
+    it('lets a project plugin copy stand when it is the copy a person approved', async () => {
+      const cwd = path.join(tmpDir, 'project');
+      const dir = await writeCarried(path.join(cwd, '.dork', 'plugins'), 'flow', 'flow');
+
+      const results = await discovery.discover(
+        cwd,
+        {
+          ...EMPTY_CONFIG,
+          approvedToRun: ['flow'],
+          approvedSources: { flow: { path: dir, plugin: 'flow' } },
+        },
+        EMPTY_CORE
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ path: dir, scope: 'local', sourcePlugin: 'flow' });
     });
   });
 });

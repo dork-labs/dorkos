@@ -72,8 +72,8 @@ export function VerifyEmailCard({ token, errorParam }: { token?: string; errorPa
 
   return (
     <AuthShell title="Email verified" description="Your DorkOS account is ready.">
-      <Button render={<Link href="/account" />} className="w-full">
-        Go to your account
+      <Button asChild className="w-full">
+        <Link href="/account">Go to your account</Link>
       </Button>
     </AuthShell>
   );

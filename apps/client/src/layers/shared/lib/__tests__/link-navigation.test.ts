@@ -19,16 +19,13 @@ import {
   supportsSeparateWindow,
   type LinkNavigation,
 } from '../link-navigation';
-import { setPlatformAdapter } from '../platform';
+
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 const ORIGIN = 'http://localhost:4242';
 const FROM = `${ORIGIN}/team?view=topology`;
-
-const webPlatform = { isEmbedded: false, openFile: async () => {} };
-const embeddedPlatform = { isEmbedded: true, openFile: async () => {} };
 
 describe('declaredScheme', () => {
   it('reads the scheme an href declares for itself', () => {
@@ -38,12 +35,6 @@ describe('declaredScheme', () => {
   });
 
   it('never resolves against the page — a relative href declares no scheme', () => {
-    // The whole point of the no-base parse, and it is only observable here:
-    // dispatch reads `window.location`, which vitest pins per file, so a
-    // version of this that passed a base still satisfied every other test in
-    // the suite. In the Obsidian embed the page is `app://obsidian.md/…`, so a
-    // resolving version would answer `app:` for all four of these and the
-    // refusal would name a scheme the reader never saw.
     expect(declaredScheme('/team')).toBeNull();
     expect(declaredScheme('#section')).toBeNull();
     expect(declaredScheme('?settings=open')).toBeNull();
@@ -283,22 +274,6 @@ describe('classifyLink', () => {
     expect(classifyLink('https://dorkos.ai', from)).toMatchObject({ kind: 'external' });
   });
 
-  it('degrades safely from an app:// base (the Obsidian embed)', () => {
-    // Obsidian's own page origin. Absolute links still classify normally; a
-    // relative one inherits `app:`, which nothing in the app opens, so it is
-    // refused rather than turned into an `app://obsidian.md/...` navigation.
-    // The embed has no router either way, so no reachable behavior is lost.
-    const from = 'app://obsidian.md/index.html';
-    expect(classifyLink('https://dorkos.ai/docs', from)).toEqual({
-      kind: 'external',
-      url: 'https://dorkos.ai/docs',
-    });
-    expect(classifyLink('/team', from)).toEqual({
-      kind: 'blocked',
-      reason: 'unsupported-scheme',
-    });
-  });
-
   it('classifies every declared app route as internal', () => {
     for (const route of APP_ROUTE_PATHS) {
       expect(classifyLink(route, FROM), route).toMatchObject({ kind: 'internal' });
@@ -367,7 +342,6 @@ describe('link dispatch', () => {
     unregister = registerLinkNavigator((navigation) => navigated.push(navigation));
     openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    setPlatformAdapter(webPlatform);
   });
 
   afterEach(() => {
@@ -375,7 +349,6 @@ describe('link dispatch', () => {
     tabCleanups.forEach((clear) => clear());
     openSpy.mockRestore();
     warnSpy.mockRestore();
-    setPlatformAdapter(webPlatform);
     leaveDesktopShell();
   });
 
@@ -460,13 +433,6 @@ describe('link dispatch', () => {
       expect(openSpy).toHaveBeenCalledWith(expect.any(String), '_blank');
     });
 
-    it('navigates in place instead of opening a window in the embed', () => {
-      setPlatformAdapter(embeddedPlatform);
-      openLink('/tasks', { target: 'window' });
-      expect(openSpy).not.toHaveBeenCalled();
-      expect(navigated).toEqual([{ href: '/tasks', replace: undefined }]);
-    });
-
     it('warns rather than forcing a document load when no router is registered', () => {
       unregister();
       openLink('/tasks');
@@ -545,15 +511,6 @@ describe('link dispatch', () => {
       );
     });
 
-    it('falls back to navigating in place in the embed, the one pane with nowhere else to go', () => {
-      // The Obsidian embed mounts no strip and has no browser tabs to borrow.
-      // A tab request must still go somewhere rather than silently vanish.
-      setPlatformAdapter(embeddedPlatform);
-      openLink('/tasks', { target: 'tab' });
-      expect(openSpy).not.toHaveBeenCalled();
-      expect(navigated).toEqual([{ href: '/tasks', replace: undefined }]);
-    });
-
     it('reports whether the link was actually dispatched', () => {
       expect(openLink('/tasks')).toBe(true);
       expect(openLink('/tasks', { target: 'window' })).toBe(true);
@@ -582,8 +539,6 @@ describe('link dispatch', () => {
     });
 
     it('still opens with no router registered', () => {
-      // The Obsidian embed mounts no router (App.tsx). Confirmed-link opens
-      // must not fall into the internal warn-and-do-nothing branch there.
       unregister();
       openExternalLink('https://dorkos.ai/docs');
       expect(openSpy).toHaveBeenCalledWith(
@@ -592,14 +547,6 @@ describe('link dispatch', () => {
         'noopener,noreferrer'
       );
       expect(warnSpy).not.toHaveBeenCalled();
-    });
-
-    it('still opens in the embed, router or not', () => {
-      setPlatformAdapter(embeddedPlatform);
-      unregister();
-      openExternalLink('https://dorkos.ai/docs');
-      expect(openSpy).toHaveBeenCalledTimes(1);
-      expect(navigated).toEqual([]);
     });
 
     it('refuses a script-bearing scheme', () => {
@@ -780,13 +727,6 @@ describe('link dispatch', () => {
     });
 
     it('names the scheme the href itself declares, never one it inherited', () => {
-      // These tests run from an `http:` page, where a relative href inherits a
-      // dispatchable scheme and is never refused. The case this pins matters in
-      // the Obsidian embed, whose page is `app://obsidian.md/…`: there a
-      // relative href resolves to `app:` and IS refused, and naming that scheme
-      // would report a word the reader never saw in the link they clicked.
-      // Reachable here only through `classifyLink`, which takes its base as an
-      // argument — dispatch reads `window.location`, which jsdom pins per file.
       expect(classifyLink('/team', 'app://obsidian.md/index.html')).toEqual({
         kind: 'blocked',
         reason: 'unsupported-scheme',
@@ -849,9 +789,6 @@ describe('link dispatch', () => {
     });
 
     it('stays quiet for a missing router, which is a wiring bug and not a refusal', () => {
-      // The embed mounts no router on purpose. Telling its reader "DorkOS
-      // couldn't open that link" every time would be reporting our own
-      // architecture at them.
       unregister();
       expect(openLink('/tasks')).toBe(false);
       expect(warnSpy).toHaveBeenCalled();
@@ -860,12 +797,6 @@ describe('link dispatch', () => {
   });
 
   describe('supportsNewTab', () => {
-    it('is true in the browser and false in the embed', () => {
-      expect(supportsNewTab()).toBe(true);
-      setPlatformAdapter(embeddedPlatform);
-      expect(supportsNewTab()).toBe(false);
-    });
-
     it('stays true in the desktop app — a tab is a tab, whoever owns it', () => {
       enterDesktopShell();
       expect(supportsNewTab()).toBe(true);
@@ -879,13 +810,6 @@ describe('link dispatch', () => {
       expect(supportsSeparateWindow()).toBe(false);
       enterDesktopShell();
       expect(supportsSeparateWindow()).toBe(true);
-    });
-
-    it('is false in the embed even with a bridge in scope', () => {
-      // Both halves are load-bearing statements, not one guarding the other.
-      enterDesktopShell();
-      setPlatformAdapter(embeddedPlatform);
-      expect(supportsSeparateWindow()).toBe(false);
     });
   });
 

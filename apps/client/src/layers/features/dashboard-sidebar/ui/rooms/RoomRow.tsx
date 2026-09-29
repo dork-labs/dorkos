@@ -32,6 +32,7 @@ import {
   NOT_IN_ROOM_LABEL,
   NOT_IN_ROOM_PILL,
   RoomAvatar,
+  RetiredMark,
   RoomTitle,
   hasUnread,
   roomDisplayTitle,
@@ -294,6 +295,15 @@ export const RoomRow = memo(function RoomRow({
    * strands.
    */
   const isOneToOne = (room.participants ?? []).filter((p) => p.kind === 'agent').length === 1;
+  /**
+   * A direct message every agent in which is retired — unregistered, or its
+   * folder now holding a different agent (DOR-2095). Nobody in it answers any
+   * more, so the row says so beside the name rather than looking like a
+   * conversation that is waiting on somebody.
+   */
+  const agentParticipants = (room.participants ?? []).filter((p) => p.kind === 'agent');
+  const allRetired =
+    agentParticipants.length > 0 && agentParticipants.every((p) => p.retired === true);
 
   /**
    * `room.wellKnown` on the wire — `'team'` for #team, `null`/absent for
@@ -348,7 +358,16 @@ export const RoomRow = memo(function RoomRow({
       {awake && <RoomRowActsBearer room={room} isActive={isActive} onReady={setActs} />}
       <SidebarRow
         glyph={<RoomAvatar room={room} participants={room.participants} visuals={faces} />}
-        title={<RoomTitle room={room} />}
+        title={
+          allRetired ? (
+            <>
+              <RoomTitle room={room} />
+              <RetiredMark retired className="ml-1 shrink-0" />
+            </>
+          ) : (
+            <RoomTitle room={room} />
+          )
+        }
         titleText={title}
         isActive={isActive}
         emphasized={unread && !quiet}

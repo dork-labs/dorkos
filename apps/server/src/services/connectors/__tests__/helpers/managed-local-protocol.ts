@@ -52,6 +52,7 @@ export async function proveLocalHostedProtocol(input: {
     config: {
       getToken: () => input.instanceKey,
       getAccountLabel: () => 'Protocol owner',
+      getPreviousLinkProof: () => null,
       save: () => {},
       setAccountLabel: () => {},
       clear: () => {},

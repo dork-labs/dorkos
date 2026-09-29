@@ -118,7 +118,7 @@ import { controlUi, getUiState, type UiCallerContext } from './ui-control.js';
 
 /** What `get_ui_state` tells the model it does. */
 const GET_UI_STATE_DESCRIPTION =
-  'Get the current DorkOS UI state — what is on the canvas right now, which panels are open, the active agent, and (embedded app only) the sidebar tab. The canvas part is a LIVE read of the table: every document on it, what each one is, what it is called, whether you or the person put it there ("agent" or "owner"), which one is at the front of its view, and how many windows are open on this session (windows, not people — 0 means nobody is looking). Each document\'s id is what the canvas-reading tool takes to read that one back. The panels, sidebar and agent parts reflect the last state the client reported at the start of this turn, merged with the UI commands issued this turn, so they are intent rather than a live read; sidebar.activeTab is null in the web app, which has no sidebar tab strip.';
+  'Get the current DorkOS UI state — what is on the canvas right now, which panels are open, whether the sidebar is open, and the active agent. The canvas part is a LIVE read of the table: every document on it, what each one is, what it is called, whether you or the person put it there ("agent" or "owner"), which one is at the front of its view, and how many windows are open on this session (windows, not people — 0 means nobody is looking). Each document\'s id is what the canvas-reading tool takes to read that one back. The panels, sidebar and agent parts reflect the last state the client reported at the start of this turn, merged with the UI commands issued this turn, so they are intent rather than a live read.';
 
 /**
  * Narrow a capability's handler context to the three facts a `ui` verb reads.
@@ -231,6 +231,8 @@ export const uiDomain: CapabilityDomain = {
       title: 'Drive the DorkOS app',
       description: CONTROL_UI_DESCRIPTION,
       tier: 'act',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object(CONTROL_UI_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'control_ui', servers: ['in-session'] } },
@@ -241,6 +243,8 @@ export const uiDomain: CapabilityDomain = {
       title: "Read the app's state",
       description: GET_UI_STATE_DESCRIPTION,
       tier: 'observe',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object({}),
       output: z.unknown(),
       surfaces: {
@@ -264,6 +268,8 @@ export const uiDomain: CapabilityDomain = {
         'than what it held when the tab was opened. ' +
         'Reading the canvas notifies nobody and starts no turn.',
       tier: 'observe',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object({
         documentId: z
           .string()
@@ -293,6 +299,8 @@ export const uiDomain: CapabilityDomain = {
       title: "Read the preview's console log",
       description: READ_CONSOLE_DESCRIPTION,
       tier: 'observe',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object(READ_CONSOLE_INPUT),
       output: z.unknown(),
       surfaces: {
@@ -310,6 +318,8 @@ export const uiDomain: CapabilityDomain = {
       title: "Read the preview's network log",
       description: READ_NETWORK_DESCRIPTION,
       tier: 'observe',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object(READ_NETWORK_INPUT),
       output: z.unknown(),
       surfaces: {
@@ -327,6 +337,8 @@ export const uiDomain: CapabilityDomain = {
       title: 'Take a screenshot of the preview',
       description: SCREENSHOT_DESCRIPTION,
       tier: 'act',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object({}),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_screenshot', servers: ['in-session'] } },
@@ -337,6 +349,8 @@ export const uiDomain: CapabilityDomain = {
       title: 'Click something in the preview',
       description: CLICK_DESCRIPTION,
       tier: 'act',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object(CLICK_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_click', servers: ['in-session'] } },
@@ -348,6 +362,8 @@ export const uiDomain: CapabilityDomain = {
       title: 'Type into the preview',
       description: TYPE_DESCRIPTION,
       tier: 'act',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object(TYPE_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_type', servers: ['in-session'] } },
@@ -359,6 +375,8 @@ export const uiDomain: CapabilityDomain = {
       title: 'Press a key in the preview',
       description: PRESS_DESCRIPTION,
       tier: 'act',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object(PRESS_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_press', servers: ['in-session'] } },
@@ -370,6 +388,8 @@ export const uiDomain: CapabilityDomain = {
       title: 'Scroll the preview',
       description: SCROLL_DESCRIPTION,
       tier: 'act',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object(SCROLL_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_scroll', servers: ['in-session'] } },
@@ -381,6 +401,8 @@ export const uiDomain: CapabilityDomain = {
       title: 'Wait for the preview to catch up',
       description: WAIT_FOR_DESCRIPTION,
       tier: 'observe',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object(WAIT_FOR_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_wait_for', servers: ['in-session'] } },
@@ -392,6 +414,8 @@ export const uiDomain: CapabilityDomain = {
       title: "Read the preview's page outline",
       description: READ_PAGE_DESCRIPTION,
       tier: 'observe',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object(READ_PAGE_INPUT),
       output: z.unknown(),
       surfaces: {
@@ -409,6 +433,8 @@ export const uiDomain: CapabilityDomain = {
       title: 'Start recording the preview',
       description: RECORD_START_DESCRIPTION,
       tier: 'act',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object(RECORD_START_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_record_start', servers: ['in-session'] } },
@@ -422,6 +448,8 @@ export const uiDomain: CapabilityDomain = {
       title: 'Stop recording the preview',
       description: RECORD_STOP_DESCRIPTION,
       tier: 'act',
+      area: null,
+      areaNote: "the agent's own window seat",
       input: z.object({}),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_record_stop', servers: ['in-session'] } },

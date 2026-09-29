@@ -9,7 +9,14 @@ import type { ActivityCategory } from '@/layers/entities/activity';
 import { useActivityFilters } from '../model/use-activity-filters';
 
 /** All category options in display order. */
-const CATEGORIES: ActivityCategory[] = ['tasks', 'relay', 'agent', 'config', 'system'];
+const CATEGORIES: ActivityCategory[] = [
+  'tasks',
+  'relay',
+  'agent',
+  'config',
+  'system',
+  'permissions',
+];
 
 /**
  * The chip's real, clickable box — invisible on its own, `group` so the

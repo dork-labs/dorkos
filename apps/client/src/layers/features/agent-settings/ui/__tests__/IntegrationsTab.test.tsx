@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createContext, useContext, type ReactNode } from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
@@ -14,7 +14,7 @@ import {
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import { mergeDialogSearch, useAppStore } from '@/layers/shared/model';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AdapterBinding, CatalogEntry, ObservedChat } from '@dorkos/shared/relay-schemas';
 
@@ -166,7 +166,6 @@ const baseAgent: AgentManifest = {
   registeredAt: '2025-01-01T00:00:00.000Z',
   registeredBy: 'test',
   personaEnabled: true,
-  enabledToolGroups: {},
   mcpServers: [],
 };
 
@@ -226,34 +225,6 @@ function makeCatalogEntry(overrides: {
   };
 }
 
-function makeCatalogEntryInternal(): CatalogEntry {
-  return {
-    manifest: {
-      type: 'claude-code',
-      displayName: 'Claude Code',
-      description: 'Runtime bridge adapter',
-      category: 'internal',
-      builtin: true,
-      configFields: [],
-      multiInstance: false,
-    },
-    instances: [
-      {
-        id: 'claude-code-1',
-        enabled: true,
-        status: {
-          id: 'claude-code-1',
-          type: 'claude-code',
-          displayName: 'Claude Code',
-          state: 'connected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        },
-      },
-    ],
-  };
-}
-
 // ── Router harness ───────────────────────────────────────────
 //
 // The tab's two empty-state CTAs deep-link Settings through the URL, so it has
@@ -284,12 +255,12 @@ function buildRouter() {
   });
   // The empty-state CTAs navigate to the Connections page now (DOR-857/858), so
   // the harness registers that route to let the navigation resolve and the
-  // assertions read the landing pathname + region.
+  // assertions read the landing pathname.
   const connectionsRoute = createRoute({
     staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/connections',
-    validateSearch: zodValidator(z.object({ region: z.string().optional() })),
+    validateSearch: zodValidator(z.object({ app: z.string().optional() })),
     component: RouteSlot,
   });
   return createRouter({
@@ -315,18 +286,6 @@ function readPathname(): string {
   return router.state.location.pathname;
 }
 
-/** The Connections region the URL currently points to, or `undefined`. */
-function readConnectionsRegion(): string | undefined {
-  return (router.state.location.search as { region?: string }).region;
-}
-
-/**
- * Render the tab the way the Obsidian embed does: no `RouterProvider` at all.
- *
- * This is a real surface, not a hypothetical. `app/init-extensions.ts` registers
- * the profile's Connections page from both the web entry and the embed, and
- * `features/profile/ui/pages/ConnectionsPage.tsx` renders this component inside it.
- */
 function renderTabWithoutRouter(agent: AgentManifest = baseAgent) {
   const { container } = render(<IntegrationsTab agent={agent} />);
   return within(container);
@@ -358,20 +317,19 @@ describe('IntegrationsTab', () => {
     it('State A: shows relay-off message and CTA when relay is disabled', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      expect(view.getByText('Messaging is off')).toBeInTheDocument();
-      expect(view.getByRole('button', { name: 'Open Messaging settings' })).toBeInTheDocument();
+      expect(view.getByText('Chat apps are off')).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Open Connections' })).toBeInTheDocument();
     });
 
-    // Messaging lives on the Connections page now (DOR-857), so the CTA lands
-    // there, in the messaging region — not on a Settings tab. Asserting the
-    // landing path + region is what keeps a CTA from silently going nowhere,
-    // the way "Open Relay settings" used to open the Advanced tab (DOR-858).
-    it('State A: the CTA lands on the Connections page, messaging region', async () => {
+    // Chat apps live on the Connections page (DOR-857, one list since
+    // DOR-2418), so the CTA lands there, not on a Settings tab. Asserting the
+    // landing path is what keeps a CTA from silently going nowhere, the way
+    // "Open Relay settings" used to open the Advanced tab (DOR-858).
+    it('State A: the CTA lands on the Connections page', async () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      fireEvent.click(view.getByRole('button', { name: 'Open Messaging settings' }));
+      fireEvent.click(view.getByRole('button', { name: 'Open Connections' }));
       await waitFor(() => expect(readPathname()).toBe('/connections'));
-      expect(readConnectionsRegion()).toBe('messaging');
     });
 
     it('State B: shows no-adapters message when relay is on but catalog is empty', () => {
@@ -381,26 +339,16 @@ describe('IntegrationsTab', () => {
       expect(view.getByRole('button', { name: 'Add a connection' })).toBeInTheDocument();
     });
 
-    it('State B: the CTA lands on the Connections page, messaging region', async () => {
+    it('State B: the CTA lands on the Connections page', async () => {
       mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
       fireEvent.click(view.getByRole('button', { name: 'Add a connection' }));
       await waitFor(() => expect(readPathname()).toBe('/connections'));
-      expect(readConnectionsRegion()).toBe('messaging');
     });
 
-    // The Obsidian embed mounts no router, so these CTAs have nowhere to
-    // navigate. Following DOR-857's decision for the retired messaging deep
-    // links, the Connections navigation is a no-op in the embed rather than a
-    // lie — the click must not throw and must not fabricate a Settings dialog
-    // that no longer owns this surface.
-    describe('in the router-less embed', () => {
+    describe('in an isolated preview without a router', () => {
       beforeEach(() => {
-        setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
         useAppStore.setState({ settingsOpen: false });
-      });
-      afterEach(() => {
-        setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
       });
 
       it('State A: the CTA is inert instead of throwing', () => {
@@ -408,7 +356,7 @@ describe('IntegrationsTab', () => {
         const view = renderTabWithoutRouter();
 
         expect(() =>
-          fireEvent.click(view.getByRole('button', { name: 'Open Messaging settings' }))
+          fireEvent.click(view.getByRole('button', { name: 'Open Connections' }))
         ).not.toThrow();
 
         expect(useAppStore.getState().settingsOpen).toBe(false);
@@ -506,7 +454,7 @@ describe('IntegrationsTab', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
       expect(view.queryByText('Add connection')).not.toBeInTheDocument();
-      expect(view.getByRole('button', { name: 'Open Messaging settings' })).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Open Connections' })).toBeInTheDocument();
     });
   });
 

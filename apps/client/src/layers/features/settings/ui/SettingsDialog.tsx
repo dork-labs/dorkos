@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import {
   Palette,
   Settings2,
@@ -13,18 +12,22 @@ import {
   FlaskConical,
   Bell,
   MessagesSquare,
+  KeyRound,
+  Cable,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
-import { getPlatform } from '@/layers/shared/lib';
+
 import { ProfileTab } from './ProfileTab';
 import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
 import { NotificationsTab } from './tabs/NotificationsTab';
 import { RoomsTab } from './tabs/RoomsTab';
+import { ConnectionsTab } from './tabs/ConnectionsTab';
+import { PermissionsTab } from './tabs/PermissionsTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
-import { ToolsResetAction, ToolsTab } from './ToolsTab';
+import { ToolsTab } from './ToolsTab';
 import { AccessTab } from './AccessTab';
 import { RemoteAccessTab } from './RemoteAccessTab';
 import { PrivacyTab } from './PrivacyTab';
@@ -69,7 +72,15 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     label: 'Tools',
     icon: Wrench,
     component: ToolsTab,
-    actions: <ToolsResetAction />,
+    group: 'Agents & sessions',
+  },
+  {
+    // What agents may do, for everyone (spec `agent-permissions`). First in the
+    // group because it is the answer to "why did my agent ask / refuse".
+    id: 'permissions',
+    label: 'Permissions',
+    icon: KeyRound,
+    component: PermissionsTab,
     group: 'Agents & sessions',
   },
   {
@@ -87,6 +98,17 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     label: 'Rooms',
     icon: MessagesSquare,
     component: RoomsTab,
+    group: 'Agents & sessions',
+  },
+  {
+    // The plumbing behind the Connections page: how DorkOS reaches your apps
+    // (the DorkOS account, your own Composio or Nango key) and how chat apps
+    // behave when a message arrives. The page is for apps; this is for how
+    // they are reached, which people set once and rarely revisit.
+    id: 'connections',
+    label: 'Connections',
+    icon: Cable,
+    component: ConnectionsTab,
     group: 'Agents & sessions',
   },
   {
@@ -163,17 +185,6 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { activeTab: urlTab } = useSettingsDeepLink();
 
-  // Remote access is a tunnel into this machine from somewhere else, which the
-  // Obsidian embed cannot open — the panel there would render nothing at all. A
-  // tab that shows an empty panel is worse than no tab.
-  const tabs = useMemo(
-    () =>
-      getPlatform().isEmbedded
-        ? SETTINGS_TABS.filter((tab) => tab.id !== 'remote-access')
-        : SETTINGS_TABS,
-    []
-  );
-
   return (
     <TabbedDialog
       open={open}
@@ -182,7 +193,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       description="Application settings"
       defaultTab="appearance"
       initialTab={urlTab}
-      tabs={tabs}
+      tabs={SETTINGS_TABS}
       extensionSlot="settings.tabs"
       maximized
       testId="settings-dialog"

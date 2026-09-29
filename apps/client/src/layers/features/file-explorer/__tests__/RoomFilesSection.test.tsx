@@ -82,7 +82,7 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-function renderSection(transport: Transport) {
+function renderSection(transport: Transport, canChange = true) {
   const queryErrors: unknown[] = [];
   const queryCache = new QueryCache({ onError: (error) => queryErrors.push(error) });
   const queryClient = new QueryClient({
@@ -92,7 +92,7 @@ function renderSection(transport: Transport) {
   const view = render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <RoomFilesSection roomId={ROOM_ID} />
+        <RoomFilesSection roomId={ROOM_ID} canChange={canChange} />
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -214,16 +214,37 @@ describe('RoomFilesSection', () => {
     expect(box.className).not.toContain('max-h-');
   });
 
-  it('offers nothing that would write to a commit', async () => {
+  it('offers the room’s own changes, and nothing that needs a disk or a copy', async () => {
     renderSection(roomWithFiles([entry({ name: 'ROOM.md' })]));
 
     const row = await screen.findByRole('treeitem', { name: 'ROOM.md' });
-    // No drag handle and no context menu: an affordance that would always
-    // refuse is worse than no affordance.
+    expect(row).toHaveAttribute('draggable', 'true');
+    fireEvent.contextMenu(row);
+    expect(await screen.findByText('Rename')).toBeInTheDocument();
+    expect(screen.getByText('Delete')).toBeInTheDocument();
+    expect(screen.getByText('Upload files…')).toBeInTheDocument();
+    expect(screen.getByText('Copy path')).toBeInTheDocument();
+    // A room has no copy route and no place on this machine's disk: an
+    // affordance that would always refuse is worse than no affordance.
+    expect(screen.queryByText('Duplicate')).not.toBeInTheDocument();
+    expect(screen.queryByText('Paste')).not.toBeInTheDocument();
+    expect(screen.queryByText('Add to chat')).not.toBeInTheDocument();
+    expect(screen.queryByText('Copy relative path')).not.toBeInTheDocument();
+  });
+
+  it('offers nothing that changes the files to somebody who may not change them', async () => {
+    // An archived room, or a reader who only sees the room: every change would
+    // be refused, so the section is a tree to read.
+    renderSection(roomWithFiles([entry({ name: 'ROOM.md' })]), false);
+
+    const row = await screen.findByRole('treeitem', { name: 'ROOM.md' });
     expect(row).not.toHaveAttribute('draggable', 'true');
     fireEvent.contextMenu(row);
     expect(screen.queryByText('Rename')).not.toBeInTheDocument();
     expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+    for (const name of ['New file', 'New folder', 'Upload files']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
   });
 
   it('looks again when the room stream delivers something, at most once a window', async () => {
@@ -375,6 +396,51 @@ describe('RoomFilesSection', () => {
   });
 });
 
+describe('RoomFilesSection, a room whose git settings name a program', () => {
+  /** The refusal as the server words it, with an optional command beside the sentence. */
+  function refusal(error: string, command?: string) {
+    const body = { error, code: 'ROOM_REPO_CONFIG_UNSAFE', ...(command ? { command } : {}) };
+    return Object.assign(new Error(error), { code: 'ROOM_REPO_CONFIG_UNSAFE', body });
+  }
+
+  it('shows the person who runs DorkOS the settings and a command they can copy as it is', async () => {
+    // A key's name is whoever wrote the settings' choice — a backtick in it must
+    // reach the terminal as a backtick, not as the curly quote the sentence's
+    // markup would make of it.
+    const command =
+      "git config --file '/home/me/.dork/rooms/r/repo/.git/config' --unset-all 'filter.a`b`.smudge'";
+    const transport = createMockTransport();
+    transport.readRoomFiles = vi
+      .fn()
+      .mockRejectedValue(
+        refusal(
+          'This room’s shared git settings contain entries that can make git run programs: filter.a`b`.smudge.',
+          command
+        )
+      );
+    renderSection(transport);
+
+    expect(await screen.findByText(/can make git run programs/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Command that removes the settings').textContent).toBe(command);
+    expect(screen.queryByText('Couldn’t load files.')).not.toBeInTheDocument();
+  });
+
+  it('shows anybody else the plain line, and no command', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFiles = vi
+      .fn()
+      .mockRejectedValue(
+        refusal(
+          'This room’s files are paused until the person who runs this DorkOS fixes the room’s git settings.'
+        )
+      );
+    renderSection(transport);
+
+    expect(await screen.findByText(/files are paused until/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Command that removes the settings')).not.toBeInTheDocument();
+  });
+});
+
 describe('RoomFilesSection previews', () => {
   it('renders a markdown file in place', async () => {
     const transport = roomWithFiles([entry({ name: 'ROOM.md', lastCommit: COMMIT })]);
@@ -404,7 +470,7 @@ describe('RoomFilesSection previews', () => {
 
     fireEvent.click(await screen.findByRole('treeitem', { name: 'logo.png' }));
     expect(
-      await screen.findByText('This isn’t text, so there’s nothing to show here.')
+      await screen.findByText('This isn’t a text file, so it can’t be shown or edited here.')
     ).toBeInTheDocument();
   });
 

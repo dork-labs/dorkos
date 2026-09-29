@@ -3,9 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockConnectionReadiness, createMockTransport } from '@dorkos/test-utils';
+import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import { TransportProvider } from '@/layers/shared/model';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import {
   AgentConnectionAccessList,
   SessionConnectionAccessList,
@@ -13,34 +14,10 @@ import {
 
 afterEach(() => {
   cleanup();
-  setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
 });
 
 describe('AgentConnectionAccessList', () => {
-  it('explains embedded unavailability without claiming the agent has no access', async () => {
-    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
-    const transport = createMockTransport({
-      getAgentConnectorConnections: vi
-        .fn()
-        .mockRejectedValue(new Error('Connections can only be managed in DorkOS itself.')),
-    });
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    render(
-      <QueryClientProvider client={client}>
-        <TransportProvider transport={transport}>
-          <AgentConnectionAccessList agentId="agent-1" />
-        </TransportProvider>
-      </QueryClientProvider>
-    );
-
-    expect(await screen.findByText('Account access is unavailable here')).toBeInTheDocument();
-    expect(screen.getByText(/Open DorkOS in your browser to connect services/)).toBeInTheDocument();
-    expect(screen.queryByText('No account access')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-  });
-
-  it('reads canonical grants and keeps pending authority unavailable', async () => {
+  it('reads canonical grants and shows the server’s readiness for each', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getAgentConnectorConnections).mockResolvedValue({
       agentId: 'agent-1',
@@ -53,7 +30,13 @@ describe('AgentConnectionAccessList', () => {
           authenticationStatus: 'active',
           reconciliationStatus: 'ready',
           operationRevisionIds: ['operation-1'],
+          everyAgent: false,
           authoritySync: { status: 'pending' },
+          readiness: createMockConnectionReadiness({
+            state: 'finishing',
+            reason: 'access_updating',
+            fix: { action: 'wait', fixableBy: 'dorkos' },
+          }),
         },
       ],
     });
@@ -69,12 +52,51 @@ describe('AgentConnectionAccessList', () => {
 
     expect(await screen.findByText('Gmail (work)')).toBeInTheDocument();
     expect(screen.getByText('1 approved action')).toBeInTheDocument();
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Unavailable')).toHaveAttribute(
+      'title',
+      CONNECTION_READINESS_COPY.access_updating.owner
+    );
     expect(transport.getAgentConnectorConnections).toHaveBeenCalledWith('agent-1');
+  });
+
+  it('shows each app’s logo, asking the server for one the app has no bundled mark for', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getAgentConnectorConnections).mockResolvedValue({
+      agentId: 'agent-1',
+      connections: [
+        {
+          connectionId: 'connection-2' as never,
+          toolkit: 'zendesk',
+          label: 'support',
+          lifecycle: 'connected',
+          authenticationStatus: 'active',
+          reconciliationStatus: 'ready',
+          operationRevisionIds: ['operation-1'],
+          everyAgent: false,
+          authoritySync: { status: 'ready' },
+          readiness: createMockConnectionReadiness(),
+        },
+      ],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <AgentConnectionAccessList agentId="agent-1" />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    await screen.findByText('Zendesk (support)');
+    expect(container.querySelector('img')).toHaveAttribute(
+      'src',
+      '/api/connectors/catalog/logos/zendesk'
+    );
   });
 });
 
-it('explains disabled session access while hosted authority is still updating', async () => {
+it('says a chat can’t use an account yet while its access is still updating', async () => {
   const transport = createMockTransport();
   vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
     sessionId: 'session-1',
@@ -84,9 +106,13 @@ it('explains disabled session access while hosted authority is still updating', 
         connectionId: 'connection-1' as never,
         toolkit: 'gmail',
         label: 'work',
-        access: 'disabled',
+        source: 'agent',
         operationRevisionIds: ['operation-1'],
-        dominatingReason: 'authority_sync_required',
+        readiness: createMockConnectionReadiness({
+          state: 'finishing',
+          reason: 'access_updating',
+          fix: { action: 'wait', fixableBy: 'dorkos' },
+        }),
       },
     ],
   });
@@ -98,7 +124,7 @@ it('explains disabled session access while hosted authority is still updating', 
       </TransportProvider>
     </QueryClientProvider>
   );
-  expect(await screen.findByText('Disabled in this session')).toBeInTheDocument();
-  expect(screen.getByText('Account access has not finished updating.')).toBeInTheDocument();
+  expect(await screen.findByText('Not available')).toBeInTheDocument();
+  expect(screen.getByText(CONNECTION_READINESS_COPY.access_updating.owner)).toBeInTheDocument();
   expect(screen.queryByText(/actions available/)).not.toBeInTheDocument();
 });

@@ -84,4 +84,12 @@ export const ONE_BAR_SECTIONS: PlaygroundSection[] = [
       'mobile',
     ],
   },
+  // AccountBadge (spec claude-account-ui §13)
+  {
+    id: 'accountbadge',
+    title: 'AccountBadge',
+    page: 'one-bar',
+    category: 'One Bar',
+    keywords: ['account', 'badge', 'claude', 'session header', 'out of usage', 'limit', 'pill'],
+  },
 ];

@@ -55,13 +55,6 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
   },
   // RelayShowcases
   {
-    id: 'catalogcard',
-    title: 'CatalogCard',
-    page: 'features',
-    category: 'Relay',
-    keywords: ['catalog', 'card', 'adapter', 'manifest', 'add', 'relay'],
-  },
-  {
     id: 'connectionstatusbanner',
     title: 'ConnectionStatusBanner',
     page: 'features',
@@ -69,20 +62,11 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
     keywords: ['connection', 'status', 'banner', 'disconnected', 'reconnecting', 'relay'],
   },
   {
-    id: 'messagingconnections',
-    title: 'MessagingConnections',
+    id: 'chatappanswerers',
+    title: 'ChatAppAnswerers',
     page: 'features',
     category: 'Relay',
-    keywords: [
-      'messaging',
-      'connections',
-      'panel',
-      'composed',
-      'adapter',
-      'card',
-      'live now',
-      'catalog',
-    ],
+    keywords: ['chat app', 'who answers', 'binding', 'telegram', 'slack', 'agent', 'panel'],
   },
   // AdapterWizardShowcases
   {
@@ -307,6 +291,22 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
     page: 'features',
     category: 'Mesh',
     keywords: ['mesh', 'discovery', 'project', 'import', 'failed', 'retry', 'candidate'],
+  },
+  {
+    id: 'templatereviewnotice',
+    title: 'TemplateReviewNotice',
+    page: 'features',
+    category: 'Mesh',
+    keywords: [
+      'agent',
+      'create',
+      'template',
+      'hooks',
+      'settings',
+      'skills',
+      'review',
+      'disclosure',
+    ],
   },
   // TasksShowcases
   {

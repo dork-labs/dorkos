@@ -19,6 +19,7 @@ import { recommendForRoles } from '@dorkos/shared/profile-recommendations';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import type { OnboardingStep } from '@dorkos/shared/config-schema';
 import type { ChatMessage, MessageGrouping } from '@/layers/shared/model';
+import type { IdentityQuestion } from './use-identity-prompt';
 import {
   ONBOARDING_BEATS,
   buildScriptMessage,
@@ -39,6 +40,18 @@ export type DiscoveryPhase = 'unasked' | 'scanning' | 'results';
 export interface OnboardingConversationPorts {
   /** Collapse staged reveals to instant when the user prefers reduced motion. */
   reducedMotion: boolean;
+  /**
+   * Whether to put the name-and-handle question after arrival (DOR-677).
+   * Arrival waits while this is `pending`, then asks on `ask` and goes straight
+   * to personality on `settled`.
+   */
+  identityQuestion: IdentityQuestion;
+  /**
+   * Record that the name-and-handle question was put and closed, so no other
+   * surface asks it again. Fire-and-forget: a failed write only means a later
+   * surface may ask once more.
+   */
+  closeIdentityQuestion: () => void;
   /** Persist DorkBot's chosen traits. Resolves on success, rejects on failure. */
   saveTraits: (traits: Traits) => Promise<void>;
   /** Persist the user's roles (`{ profile: { roles } }`). Resolves on success, rejects on failure. */
@@ -160,7 +173,7 @@ export interface OnboardingConversation {
   /** Whether DorkBot is still revealing queued lines (typing or lines pending). */
   isRevealing: boolean;
   beatId: BeatId;
-  activeWidget: 'personality' | 'profile' | 'discovery' | null;
+  activeWidget: 'identity' | 'personality' | 'profile' | 'discovery' | null;
   composerEnabled: boolean;
   discoveryPhase: DiscoveryPhase;
   saving: boolean;
@@ -169,6 +182,16 @@ export interface OnboardingConversation {
   beginConversation: () => void;
   /** Reveal every pending line at once (tap-to-skip). */
   fastForward: () => void;
+  /**
+   * The name and handle were saved (by the form, which owns that write and its
+   * refusals): close the question and advance to personality.
+   */
+  confirmIdentity: () => void;
+  /**
+   * Skip the name-and-handle beat. Nothing is written to the name or handle;
+   * the question is recorded as closed, which counts as asked forever.
+   */
+  skipIdentity: () => void;
   /** Save the chosen traits and advance; surfaces `saveError` on failure. */
   confirmPersonality: (traits: Traits) => void;
   /**
@@ -237,12 +260,20 @@ export function useOnboardingConversation(
     return () => clearTimeout(t);
   }, [state.queue.length, state.isTyping]);
 
-  // Arrival has no interaction — once its lines land, roll into the personality beat.
+  // Arrival has no interaction — once its lines land, roll into the name
+  // question, or past it when there is nothing to ask. While the answer is
+  // still loading, arrival simply holds: guessing "ask" would put a question to
+  // someone who already answered it, and guessing "skip" would never ask.
+  const identityQuestion = ports.identityQuestion;
   useEffect(() => {
-    if (state.stage === 'talking' && beat.id === 'arrival' && drained) {
-      dispatch({ type: 'goto-beat', beatId: 'personality', extraLines: [] });
-    }
-  }, [state.stage, beat.id, drained]);
+    if (state.stage !== 'talking' || beat.id !== 'arrival' || !drained) return;
+    if (identityQuestion === 'pending') return;
+    dispatch({
+      type: 'goto-beat',
+      beatId: identityQuestion === 'ask' ? 'identity' : 'personality',
+      extraLines: [],
+    });
+  }, [state.stage, beat.id, drained, identityQuestion]);
 
   // Reaching the handoff beat is the authoritative "onboarding done" signal.
   const completedRef = useRef(false);
@@ -255,6 +286,24 @@ export function useOnboardingConversation(
 
   const beginConversation = useCallback(() => dispatch({ type: 'begin' }), []);
   const fastForward = useCallback(() => dispatch({ type: 'drain' }), []);
+
+  const confirmIdentity = useCallback(() => {
+    portsRef.current.closeIdentityQuestion();
+    dispatch({
+      type: 'goto-beat',
+      beatId: 'personality',
+      extraLines: [DORKBOT_ONBOARDING_LINES.identitySaved],
+    });
+  }, []);
+
+  const skipIdentity = useCallback(() => {
+    portsRef.current.closeIdentityQuestion();
+    dispatch({
+      type: 'goto-beat',
+      beatId: 'personality',
+      extraLines: [DORKBOT_ONBOARDING_LINES.identitySkip],
+    });
+  }, []);
 
   const confirmPersonality = useCallback((traits: Traits) => {
     dispatch({ type: 'saving' });
@@ -371,6 +420,8 @@ export function useOnboardingConversation(
     saveError: state.saveError,
     beginConversation,
     fastForward,
+    confirmIdentity,
+    skipIdentity,
     confirmPersonality,
     skipPersonality,
     confirmProfile,

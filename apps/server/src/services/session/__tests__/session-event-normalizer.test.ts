@@ -205,6 +205,8 @@ describe('toRawSessionEvent', () => {
             outputTokens: 20,
             cacheReadTokens: 80,
             cacheCreationTokens: 5,
+            // A live context reading is dated when it is taken (spec §6 U).
+            observedAt: expect.any(String),
           },
           cacheStats: { cacheReadTokens: 80, cacheCreationTokens: 5 },
         },
@@ -223,6 +225,34 @@ describe('toRawSessionEvent', () => {
         type: 'status_change',
         status: {
           usage: { kind: 'subscription', utilization: 0.82, windowLabel: '5-hour window' },
+        },
+      },
+    },
+    {
+      name: 'limit-only session_status → status_change carrying the usage limit (D4)',
+      input: {
+        type: 'session_status',
+        data: {
+          sessionId: 's1',
+          limit: {
+            accountId: 'work',
+            window: 'seven_day',
+            resetsAt: null,
+            since: '2026-09-26T10:00:00.000Z',
+            plan: { mode: 'ask' },
+          },
+        },
+      },
+      expected: {
+        type: 'status_change',
+        status: {
+          limit: {
+            accountId: 'work',
+            window: 'seven_day',
+            resetsAt: null,
+            since: '2026-09-26T10:00:00.000Z',
+            plan: { mode: 'ask' },
+          },
         },
       },
     },
@@ -259,6 +289,7 @@ describe('toRawSessionEvent', () => {
             maxTokens: 200000,
             cacheReadTokens: 80,
             cacheCreationTokens: 5,
+            observedAt: expect.any(String),
           },
           cacheStats: { cacheReadTokens: 80, cacheCreationTokens: 5 },
         },
@@ -1255,6 +1286,7 @@ describe('feedProjector', () => {
       outputTokens: 148,
       cacheReadTokens: 326_000,
       cacheCreationTokens: 0,
+      observedAt: expect.any(String),
     });
   });
 

@@ -1,0 +1,152 @@
+<h2>5 of 6 · The run chip: "this chat is working on DOR-2387"</h2>
+<p class="subtitle">
+  When a chat is a flow run, it shows which item it's working on and where it stands. Facts only,
+  never guesses. The question: where does it sit?
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 12px/1.5 system-ui;
+  }
+  .ax-win {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    overflow: hidden;
+    color: #18181b;
+  }
+  .ax-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .ax-title {
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .ax-badge {
+    font-size: 11px;
+    padding: 0 7px;
+    border-radius: 999px;
+    border: 1px solid #e4e4e7;
+    color: #3f3f46;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .ax-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+  .ax-chip {
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 6px;
+    border: 1px solid #d4d4d8;
+    color: #18181b;
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    background: #fafafa;
+  }
+  .ax-body {
+    padding: 16px 12px;
+    color: #71717a;
+    min-height: 50px;
+  }
+  .ax-bar {
+    display: flex;
+    gap: 10px;
+    padding: 5px 12px;
+    border-top: 1px solid #f4f4f5;
+    font-size: 11px;
+    color: #52525b;
+  }
+  .ax-muted {
+    color: #71717a;
+  }
+  .ax-st {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>In the chat header, after the title (my pick)</h3>
+      <p>
+        It's about what this chat is, so it sits next to its name. It opens the item and the
+        project's Flow view.
+      </p>
+      <div class="ax">
+        <div class="ax-win">
+          <div class="ax-head">
+            <span class="ax-title">Out-of-usage banner</span>
+            <span class="ax-badge"
+              ><span class="ax-dot" style="background: #2563eb"></span>Acct 2</span
+            >
+            <span class="ax-chip">DOR-2387 · Building</span>
+          </div>
+          <div class="ax-body">(chat)</div>
+          <div class="ax-bar">
+            <span>Claude Code</span><span>Opus</span><span>● Acct 2 ▮▮</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>In the status bar at the bottom</h3>
+      <p>
+        Beside the runtime and account chips. The header stays clean, but the bottom bar is already
+        busy and easy to miss.
+      </p>
+      <div class="ax">
+        <div class="ax-win">
+          <div class="ax-head">
+            <span class="ax-title">Out-of-usage banner</span>
+            <span class="ax-badge"
+              ><span class="ax-dot" style="background: #2563eb"></span>Acct 2</span
+            >
+          </div>
+          <div class="ax-body">(chat)</div>
+          <div class="ax-bar">
+            <span>Claude Code</span><span>Opus</span><span>● Acct 2 ▮▮</span
+            ><span class="ax-chip">DOR-2387 · Building</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 18px; color: #18181b">
+  <h3>Its states (same for both)</h3>
+  <div class="ax ax-st">
+    <div>
+      <span class="ax-chip">DOR-2387 · Building</span> <span class="ax-muted">while it works</span>
+    </div>
+    <div>
+      <span class="ax-chip">DOR-2387 · Needs you</span>
+      <span class="ax-muted">waiting on your answer or review</span>
+    </div>
+    <div>
+      <span class="ax-chip">DOR-2387 · <span class="ax-muted">Last update 2h ago</span></span>
+      <span class="ax-muted">quiet, or data is old</span>
+    </div>
+    <div>
+      <span class="ax-chip">DOR-2387 · Merged · closed</span> <span class="ax-muted">done</span>
+    </div>
+    <div><span class="ax-muted">Phone: the ID and the state only, no title.</span></div>
+  </div>
+</div>

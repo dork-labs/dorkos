@@ -227,6 +227,18 @@ test('a host administrator creates a community and its intended owner signs up a
     // A reload after preflight resumes from the HTTP-only claim, with no secret in the page.
     await ownerPage.reload();
     await expect(ownerPage.getByLabel('Your name')).toBeVisible();
+    await expect(ownerPage.getByLabel('Your name')).toHaveAttribute('data-slot', 'input');
+    await expect(
+      ownerPage.getByRole('button', { name: 'Create account and claim' })
+    ).toHaveAttribute('type', 'submit');
+    expect(
+      await ownerPage
+        .getByLabel('Your name')
+        .evaluate((element) => element.getBoundingClientRect().height)
+    ).toBeGreaterThanOrEqual(44);
+    expect(await ownerPage.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+      false
+    );
     await shot(ownerPage, 'account');
 
     await ownerPage.getByLabel('Your name').fill('Priya');

@@ -104,7 +104,13 @@ describe('offline Composio browser upstream', () => {
     });
     expect(operations).toMatchObject({
       status: 'ok',
-      page: { operations: [{ operationSlug: 'GMAIL_FETCH_EMAILS' }] },
+      page: {
+        operations: [
+          { operationSlug: 'GMAIL_FETCH_EMAILS', capabilityClassification: 'read' },
+          { operationSlug: 'GMAIL_SEND_EMAIL', capabilityClassification: 'write' },
+          { operationSlug: 'GMAIL_DELETE_MESSAGE', capabilityClassification: 'destructive' },
+        ],
+      },
     });
     if (operations.status !== 'ok') throw new Error('Missing operation metadata');
     const operation = {

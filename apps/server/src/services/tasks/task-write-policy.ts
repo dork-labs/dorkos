@@ -65,7 +65,8 @@
  *   where the risk lives: `TaskStore.upsertFromFile` refuses a file-declared
  *   `bypassPermissions` and logs the downgrade, so **a file can never INTRODUCE
  *   one**. A file may only KEEP a bypass already in the row, and only while that
- *   row is `active` AND still holds the same prompt and cron the file carries —
+ *   row is `active` AND still holds the same prompt, cron and timezone the file
+ *   carries —
  *   so **a kept bypass is bound to an un-retired task doing the work a person
  *   approved**, never to a path. Rewriting the body under a kept grant clamps;
  *   dropping a file back where a paused task's row still sits clamps. Only a
@@ -83,9 +84,8 @@
  *
  * ## The cookie bar, under login-on (DOR-1569)
  *
- * A cron task carrying `bypassPermissions` is a standing grant of the same
- * character as `approvals.standingGrants`: it keeps saying yes, on its own, for
- * as long as it is armed. So `clearsTheAgentBar` (in `routes/tasks.ts`) composes
+ * A cron task carrying `bypassPermissions` is a standing grant: it keeps saying
+ * yes, on its own, for as long as it is armed. So `clearsTheAgentBar` (in `routes/tasks.ts`) composes
  * `requireOperatorCookieUnderLogin` — the SAME second bar the approval, config,
  * and extension-approval routes run — before the agent bar. Under login-on that
  * refuses every credential but a session cookie, so a per-user API key no longer
@@ -160,6 +160,12 @@ export const TASK_WRITE_POLICY = {
   // an agent must supply it. An operator-only verdict here would refuse every
   // proposal that did what it was asked to do.
   reason: 'agent-writable',
+  // Putting a package's schedule back on the package's own timing (DOR-2302).
+  // A timing choice, like `cron`, not a power one — and treated exactly like a
+  // cron change where it matters: a reset that changes when an approved
+  // schedule runs parks it for a person, the same as an agent's own cron would
+  // (`TaskApprovals.settleApprovedWorkChange`).
+  resetTiming: 'agent-writable',
   // WHICH backend does the work, and how hard it thinks (DOR-1615/DOR-1347).
   // Not a power choice: every runtime here runs under the SAME
   // `permissionMode`, which stays operator-only below, so moving a task from
@@ -176,6 +182,11 @@ export const TASK_WRITE_POLICY = {
   runtime: 'agent-writable',
   model: 'agent-writable',
   effort: 'agent-writable',
+  // Which Claude account a run starts on (DOR-2384), classified with `model`
+  // and `runtime`: it chooses whose subscription pays, never what the run may
+  // do, and an agent's change to it on an approved schedule parks it for a
+  // person like any other settings change (`TaskApprovals.settleApprovedWorkChange`).
+  account: 'agent-writable',
 
   // The runtime's safety prompts, for a run nobody is watching.
   //

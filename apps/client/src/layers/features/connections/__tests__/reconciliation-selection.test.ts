@@ -63,6 +63,7 @@ const PREVIEW: ConnectorReconciliationPreview = {
     { agentId: 'agent-b', displayName: 'Bo' },
   ],
   currentGrants: [{ agentId: 'agent-a', operationRevisionIds: ['legacy-v1', 'read-v1'] }],
+  everyAgent: { available: false, operationRevisionIds: [] },
   catalogComplete: true,
   createdAt: '2026-09-06T00:00:00.000Z',
   expiresAt: '2026-09-06T01:00:00.000Z',

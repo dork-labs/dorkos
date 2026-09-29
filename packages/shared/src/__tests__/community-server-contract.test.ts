@@ -16,6 +16,7 @@ import {
   CommunityWireEntryPostRequestSchema,
   CommunityWireEntryPostResponseSchema,
   CommunityWireEntryPageSchema,
+  CommunityWireEntryRemoveResponseSchema,
   CommunityWireErrorSchema,
   CommunityWireInviteListResponseSchema,
   CommunityWireInvitePreflightResponseSchema,
@@ -105,14 +106,29 @@ describe('community server port additions', () => {
   });
 
   it('keeps HTTP conversation DTOs strict and free of private fields', () => {
-    expect(CommunityWireAuthOptionsSchema.parse({ google: false, github: true })).toEqual({
-      google: false,
-      github: true,
-    });
+    expect(
+      CommunityWireAuthOptionsSchema.parse({ google: false, github: true, oidc: null })
+    ).toEqual({ google: false, github: true, oidc: null });
+    expect(
+      CommunityWireAuthOptionsSchema.parse({
+        google: false,
+        github: false,
+        oidc: { label: 'Example sign-in' },
+      }).oidc
+    ).toEqual({ label: 'Example sign-in' });
+    // Only the button text crosses the wire: never the issuer, client ID or secret.
+    expect(
+      CommunityWireAuthOptionsSchema.safeParse({
+        google: false,
+        github: false,
+        oidc: { label: 'Example sign-in', clientId: 'private' },
+      }).success
+    ).toBe(false);
     expect(
       CommunityWireAuthOptionsSchema.safeParse({
         google: true,
         github: false,
+        oidc: null,
         clientSecret: 'private',
       }).success
     ).toBe(false);
@@ -224,6 +240,12 @@ describe('community server port additions', () => {
     expect(CommunityWireEntryPostResponseSchema.safeParse({ entry, cursor: 'wrong' }).success).toBe(
       false
     );
+    // A removal answers with the entry alone; a receipt cursor is not part of it.
+    expect(CommunityWireEntryRemoveResponseSchema.safeParse({ entry }).success).toBe(true);
+    expect(
+      CommunityWireEntryRemoveResponseSchema.safeParse({ entry, cursor: entry.cursor }).success
+    ).toBe(false);
+    expect(COMMUNITY_API_V1_ROUTES.entry).toBe('/api/v1/entries/:id');
     expect(
       CommunityWireEntryPageSchema.safeParse({ entries: [entry], nextCursor: 'page-only-cursor' })
         .success

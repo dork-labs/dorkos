@@ -18,6 +18,8 @@ import {
   InboxQuerySchema,
   DeadLetterQuerySchema,
   EndpointRegistrationSchema,
+  reachesServerDestination,
+  SERVER_DESTINATION_REFUSAL,
 } from '@dorkos/shared/relay-schemas';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -27,7 +29,7 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import { resolveSubjectLabels, type SubjectLabel } from '../services/relay/subject-resolver.js';
 import { isServerOnlyPrincipal } from '../services/relay/initiate-consent.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { readManifest } from '@dorkos/shared/manifest';
+import { readHomeManifest } from '../services/core/agent-identity/index.js';
 import { createAdapterRouter } from './relay-adapters.js';
 import { logger } from '../lib/logger.js';
 
@@ -213,6 +215,20 @@ export function createRelayRouter(
       });
     }
 
+    // DOR-2432: nothing on this route is a server publisher — the scheduler,
+    // the stop paths and the approval bridges publish in process — and the
+    // route cannot tell an agent with a shell from the person at the keyboard,
+    // so a server-owned destination or reply address is refused for everyone.
+    const refused = [result.data.subject, result.data.replyTo].find(
+      (subject): subject is string => subject !== undefined && reachesServerDestination(subject)
+    );
+    if (refused !== undefined) {
+      return res.status(403).json({
+        error: `Cannot send to "${refused}": ${SERVER_DESTINATION_REFUSAL}`,
+        code: 'RESERVED_SUBJECT',
+      });
+    }
+
     try {
       const publishResult = await relayCore.publish(result.data.subject, result.data.payload, {
         from: result.data.from,
@@ -313,7 +329,7 @@ export function createRelayRouter(
             return null;
           }
         },
-        readManifest: async (cwd: string) => readManifest(cwd),
+        readManifest: readHomeManifest,
       };
       const labelMap = await resolveSubjectLabels(allSubjects, resolverDeps);
 

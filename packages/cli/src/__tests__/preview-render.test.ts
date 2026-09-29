@@ -16,6 +16,14 @@ function makePreview(overrides: Partial<PreviewPayload> = {}): PreviewPayload {
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    skillCommands: [],
+    skippedLinks: [],
+    unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
     secrets: [],
@@ -88,6 +96,128 @@ describe('renderPreview', () => {
 
     expect(out).toContain('Commands we could not read:');
     expect(out).toContain('hooks/hooks.json');
+  });
+
+  it('prints every program the package starts on its own, each argument quoted', () => {
+    // Purpose: MCP servers, language servers, monitors and bin/ commands run
+    // without being asked for by name; the terminal must name them like hooks.
+    const out = stripAnsi(
+      renderPreview(
+        'flow',
+        '0.5.0',
+        makePreview({
+          mcpServers: [
+            { name: 'db', transport: 'stdio', command: 'npx', args: ['-y', 'db mcp'] },
+            { name: 'web', transport: 'http', url: 'https://mcp.example.test' },
+          ],
+          lspServers: [{ name: 'go', command: 'gopls', args: ['serve'] }],
+          monitors: [{ name: 'deploy', command: './poll.sh', when: 'always' }],
+          executables: ['git'],
+          skippedLinks: [],
+          unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'odd' }],
+        })
+      )
+    );
+
+    expect(out).toContain('Programs this package starts on its own:');
+    expect(out).toContain('"npx" "-y" "db mcp"');
+    expect(out).toContain('connects to "https://mcp.example.test"');
+    expect(out).toContain('Language server go');
+    expect(out).toContain('"gopls" "serve"');
+    expect(out).toContain('Background monitor deploy (always)');
+    expect(out).toContain('"git"');
+    expect(out).toContain('does not start them');
+    expect(out).toContain('.mcp.json (odd)');
+  });
+
+  it("names a skill's hook as the skill's, and the tools a skill may use without asking", () => {
+    // Purpose: a skill's frontmatter hooks and allowed-tools run on the model's
+    // choice, not the person's; the terminal must show both.
+    const out = stripAnsi(
+      renderPreview(
+        'flow',
+        '0.5.0',
+        makePreview({
+          hooks: [{ event: 'Stop', command: 'echo hi', source: 'skills/all/SKILL.md' }],
+          skillTools: [{ source: 'skills/all/SKILL.md', skill: 'all', tools: ['Bash(curl:*)'] }],
+        })
+      )
+    );
+    expect(out).toContain('while skills/all/SKILL.md is in use');
+    expect(out).toContain('Tools a skill may use without asking you:');
+    expect(out).toContain('"Bash(curl:*)"');
+  });
+
+  it("prints each command a skill's or command's text runs, verbatim, under the commands (DOR-2327)", () => {
+    // Purpose: Claude Code runs these as the skill loads, before the model
+    // sees it; the terminal is a consent surface like the card.
+    const out = stripAnsi(
+      renderPreview(
+        'ctx',
+        '1.0.0',
+        makePreview({
+          skillCommands: [
+            {
+              source: 'skills/ctx/SKILL.md',
+              skill: 'ctx',
+              form: 'block',
+              command: 'node -v\ngit status',
+              usesArguments: false,
+            },
+            {
+              source: 'commands/ship.md',
+              skill: 'ship',
+              form: 'inline',
+              command: 'git push',
+              usesArguments: false,
+            },
+          ],
+        })
+      )
+    );
+
+    expect(out).toContain('Commands this package declares:');
+    expect(out).toContain(
+      '  Runs when the skill ctx is used (skills/ctx/SKILL.md)\n    node -v\n    git status'
+    );
+    expect(out).toContain('  Runs when the command ship is used (commands/ship.md)\n    git push');
+  });
+
+  it('says when a skill command uses the text typed after it (DOR-2327)', () => {
+    const out = stripAnsi(
+      renderPreview(
+        'co',
+        '1.0.0',
+        makePreview({
+          skillCommands: [
+            {
+              source: 'agents/co.md',
+              skill: 'co',
+              form: 'inline',
+              command: 'git checkout $1',
+              usesArguments: true,
+            },
+          ],
+        })
+      )
+    );
+    expect(out).toContain(
+      '  Runs when the agent co is used (agents/co.md), using the text typed after it\n    git checkout $1'
+    );
+  });
+
+  it('shows a hidden direction-changing character instead of letting it rewrite the line', () => {
+    // Purpose: a right-to-left override can make a command read as something
+    // it is not; the person must see it is there.
+    const out = stripAnsi(
+      renderPreview(
+        'flow',
+        '0.5.0',
+        makePreview({ hooks: [{ event: 'Stop', command: 'echo \u202Egnp.exe' }] })
+      )
+    );
+    expect(out).toContain('echo <U+202E>gnp.exe');
+    expect(out).not.toContain('\u202E');
   });
 
   it('names a schedule permission mode in plain words, never as a raw id', () => {
@@ -169,5 +299,22 @@ describe('renderPreview', () => {
     expect(out).not.toContain('Commands this package declares:');
     expect(out).not.toContain('Commands we could not read:');
     expect(out).not.toContain('Scheduled jobs:');
+  });
+});
+
+describe('renderPreview shortcuts (DOR-2319)', () => {
+  // Purpose: the terminal preview names each shortcut that won't be installed.
+  it('lists each skipped shortcut', () => {
+    const message =
+      "skills/neon-postgres is a shortcut to a folder outside the package, so it won't be installed.";
+    const out = stripAnsi(
+      renderPreview(
+        'linky',
+        '1.0.0',
+        makePreview({ skippedLinks: [{ path: 'skills/neon-postgres', message }] })
+      )
+    );
+    expect(out).toContain("Shortcuts that won't be installed:");
+    expect(out).toContain(message);
   });
 });

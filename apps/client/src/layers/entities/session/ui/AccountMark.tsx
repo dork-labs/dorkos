@@ -1,48 +1,32 @@
-import { cn } from '@/layers/shared/lib';
-import { useClaudeAccounts } from '@/layers/shared/model';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import { AccountDot } from '@/layers/shared/ui';
+import type { SessionRowAccount } from '../model/status/use-session-row-account';
 
 interface AccountMarkProps {
+  /** The row's account, from `useSessionRowAccount`. */
+  account: SessionRowAccount;
   /**
-   * The session's Claude account — the config directory its transcript lives
-   * under. Absent for runtimes with no account concept, and for history from
-   * before accounts existed; both render nothing.
+   * Give the dot a tooltip of its own. Rows pass `false` and name the account
+   * in their own tooltip, so two tooltips never open at once.
    */
-  account?: string;
+  tooltip?: boolean;
   className?: string;
 }
 
 /**
- * Which Claude account a session belongs to, as a short name in the row.
+ * Which account a session spends, as a dot in the account's color that leads
+ * the row's title (spec `claude-account-ui` §6.2, decision Q4). The account's
+ * name is the dot's accessible name and a tooltip (the dot's own, or the
+ * row's when the dot sits in a row), so color is never the only signal; the
+ * row no longer prints the name beside it.
  *
- * Text rather than an icon, unlike its `RuntimeMark`/`SessionOriginMark` neighbours:
- * the account IS the name, and no glyph can say "Acme Corp". The full path rides
- * the tooltip so the row stays readable while the exact directory is still one
- * hover away.
- *
- * **Renders only when more than one account is registered.** With one account
- * every row would wear the same badge, which tells the operator nothing they can
- * act on — and a default install has no accounts registered at all, so nothing
- * about it changes. Sessions the server did not attribute render nothing either.
+ * **Renders only while the account identity gate is open** (two or more
+ * accounts on a runtime that tells them apart): with one account every row
+ * would wear the same dot. A session whose account cannot be named or colored
+ * renders nothing rather than a guess.
  */
-export function AccountMark({ account, className }: AccountMarkProps) {
-  const { isMultiAccount, nameFor } = useClaudeAccounts();
-  if (!account || !isMultiAccount) return null;
-
-  const name = nameFor(account);
+export function AccountMark({ account, tooltip = true, className }: AccountMarkProps) {
+  if (!account.visible || !account.name || !account.color) return null;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          aria-label={`Account: ${name}`}
-          className={cn('text-3xs max-w-24 shrink-0 truncate', className)}
-        >
-          {name}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top" sideOffset={4}>
-        {account}
-      </TooltipContent>
-    </Tooltip>
+    <AccountDot color={account.color} name={account.name} tooltip={tooltip} className={className} />
   );
 }

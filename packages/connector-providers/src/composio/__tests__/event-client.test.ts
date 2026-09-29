@@ -197,6 +197,30 @@ describe('Composio event SDK boundary', () => {
     expect(local.requests.filter((r) => r.method === 'POST')).toHaveLength(1);
   });
 
+  it.each([
+    [404, { status: 'ok' }],
+    [500, { status: 'outcome_unknown', code: 'PROVIDER_OUTCOME_UNKNOWN' }],
+  ] as const)(
+    'treats a trigger the service no longer has as deleted (answer %s)',
+    async (statusCode, expected) => {
+      const local = await fixture((path, response) => {
+        if (!path.includes('/trigger_instances/manage/')) return false;
+        response.statusCode = statusCode;
+        response.end('{}');
+        return true;
+      });
+      expect(
+        await local.client.deleteTrigger({
+          providerTriggerRef: 'trigger_gone',
+          signal: signal(),
+          authorizeDispatch: () => true,
+        })
+      ).toEqual(expected);
+      expect(local.requests.map((r) => r.method)).toEqual(['DELETE']);
+      expect(local.requests[0].path).toContain('trigger_gone');
+    }
+  );
+
   it('uses authenticated delivery identity rather than shared normalized trigger ID', async () => {
     const local = await fixture();
     const first = await local.client.verifyWebhook(signed(v1, 'msg_one'));

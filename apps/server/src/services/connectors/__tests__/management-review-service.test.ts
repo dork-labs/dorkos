@@ -126,6 +126,63 @@ describe('ConnectorManagementReviewService', () => {
     });
   }
 
+  it('shows live every-agent sharing on a pending review and keeps what approval saw', async () => {
+    const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
+    const removal = service.create(requester, {
+      action: {
+        version: 1,
+        kind: 'remove_agent_access',
+        connectionId: CONNECTION_ID,
+        agentId: 'agent-a',
+      },
+      idempotencyKey: 'remove-a',
+    });
+    const disconnect = service.create(requester, {
+      action: { version: 1, kind: 'disconnect', connectionId: CONNECTION_ID },
+      idempotencyKey: 'disconnect-a',
+    });
+    expect(removal.context).toMatchObject({ keptThroughEveryAgent: [] });
+    expect(disconnect.context).toMatchObject({ everyAgent: false });
+
+    // Filed while nothing was shared; the owner then shares with every agent.
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'every-agent-a',
+        subjectType: 'every_agent',
+        subjectId: 'every_agent',
+        agentId: null,
+        connectionId: CONNECTION_ID,
+        operationRevisionId: 'revision-a',
+        createdBy: 'operator',
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+    expect(service.get(OWNER, removal.reviewRequestId).context).toMatchObject({
+      keptThroughEveryAgent: [{ operationRevisionId: 'revision-a' }],
+    });
+    expect(service.get(OWNER, disconnect.reviewRequestId).context).toMatchObject({
+      everyAgent: true,
+    });
+
+    const approved = await service.resolve(OWNER, removal.reviewRequestId, {
+      decision: 'approved',
+    });
+    expect(approved.review.context).toMatchObject({
+      keptThroughEveryAgent: [{ operationRevisionId: 'revision-a' }],
+    });
+    // The resolved record keeps what was true when the owner said yes.
+    db.update(connectionOperationGrants)
+      .set({ revokedAt: NOW.toISOString() })
+      .where(eq(connectionOperationGrants.id, 'every-agent-a'))
+      .run();
+    expect(service.get(OWNER, removal.reviewRequestId).context).toMatchObject({
+      keptThroughEveryAgent: [{ operationRevisionId: 'revision-a' }],
+    });
+    expect(service.get(OWNER, disconnect.reviewRequestId).context).toMatchObject({
+      everyAgent: false,
+    });
+  });
+
   it('returns the same unresolved review for an equivalent program idempotency key', () => {
     const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
     const request = {

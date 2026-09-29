@@ -14,6 +14,7 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
+import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
 
 // Only the two stores are stubbed. `useSettingsDeepLink` stays real, because the
@@ -44,12 +45,29 @@ vi.mock('@/layers/entities/config', async (importOriginal) => ({
     .CONFIG_STALE_TIME_MS,
 }));
 
+import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { ProgressCard } from '../ui/ProgressCard';
+
+/** The operator's own roster row: no name, no handle, unless a case says so. */
+function selfRow(overrides: Partial<TeamMember> = {}): TeamMember {
+  return {
+    id: 'author-self',
+    kind: 'human',
+    displayName: 'You',
+    handle: null,
+    isSelf: true,
+    ownerId: null,
+    origin: 'local',
+    person: { role: null, lastSeenAt: null, email: 'kai@example.com' },
+    ...overrides,
+  };
+}
 
 /** The profile fragment of the config the card's `useProfile` reads. */
 interface ProfileOverrides {
   roles?: string[];
   rolePromptDismissedAt?: string | null;
+  identityPromptDismissedAt?: string | null;
 }
 
 // ── Router harness ───────────────────────────────────────────
@@ -61,7 +79,11 @@ interface ProfileOverrides {
 
 const searchSchema = mergeDialogSearch(z.object({}));
 
-async function renderCard(onDismiss = vi.fn(), profile: ProfileOverrides = {}) {
+async function renderCard(
+  onDismiss = vi.fn(),
+  profile: ProfileOverrides = {},
+  roster: TeamMember[] = []
+) {
   const mockTransport = createMockTransport();
   vi.mocked(mockTransport.getConfig).mockResolvedValue({
     profile: {
@@ -69,8 +91,12 @@ async function renderCard(onDismiss = vi.fn(), profile: ProfileOverrides = {}) {
       tools: [],
       displayName: null,
       rolePromptDismissedAt: profile.rolePromptDismissedAt ?? null,
+      identityPromptDismissedAt: profile.identityPromptDismissedAt ?? null,
     },
   } as unknown as Awaited<ReturnType<typeof mockTransport.getConfig>>);
+  vi.mocked(mockTransport.getTeamRoster).mockResolvedValue({ members: roster } as Awaited<
+    ReturnType<typeof mockTransport.getTeamRoster>
+  >);
   vi.mocked(mockTransport.updateConfig).mockResolvedValue(undefined);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -93,9 +119,7 @@ async function renderCard(onDismiss = vi.fn(), profile: ProfileOverrides = {}) {
     staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/connections',
-    validateSearch: zodValidator(
-      mergeDialogSearch(z.object({ region: z.enum(['messaging', 'accounts']).optional() }))
-    ),
+    validateSearch: zodValidator(mergeDialogSearch(z.object({ app: z.string().optional() }))),
     component: () => <div data-testid="connections-route" />,
   });
   const router = createRouter({
@@ -113,6 +137,7 @@ async function renderCard(onDismiss = vi.fn(), profile: ProfileOverrides = {}) {
   await waitFor(() => expect(router.state.status).toBe('idle'));
   // Let the config query settle so the profile row's visibility is decided.
   await waitFor(() => expect(mockTransport.getConfig).toHaveBeenCalled());
+  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
 
   return {
     router,
@@ -233,16 +258,15 @@ describe('ProgressCard', () => {
     });
   });
 
-  it('"Connect a service" deep-links to the Accounts region of the Connections page', async () => {
+  it('"Connect a service" lands on the Connections page', async () => {
     const harness = await renderCard();
 
     fireEvent.click(screen.getByText('Connect a service'));
 
-    // The row lands on /connections and scrolls to the Accounts region — the
-    // `region` search param is what the page reads to pick which half to show.
+    // The page is one list of apps, so the row lands on it with no panel open.
     expect(await screen.findByTestId('connections-route')).toBeTruthy();
     await waitFor(() => expect(harness.router.state.location.pathname).toBe('/connections'));
-    expect((harness.router.state.location.search as { region?: string }).region).toBe('accounts');
+    expect((harness.router.state.location.search as { app?: string }).app).toBeUndefined();
   });
 
   it('dismiss button calls onDismiss', async () => {
@@ -253,5 +277,55 @@ describe('ProgressCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss getting started' }));
 
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  describe('the "Tell DorkBot your name" row (DOR-677)', () => {
+    it('offers the row, right after Talk to DorkBot, while a name or handle is missing', async () => {
+      await renderCard(vi.fn(), {}, [selfRow()]);
+      const labels = screen.getAllByRole('button').map((b) => b.textContent);
+      const talk = labels.indexOf('Talk to DorkBot');
+      expect(labels[talk + 1]).toBe('Tell DorkBot your name');
+    });
+
+    it('has no row for an operator who already has both', async () => {
+      await renderCard(vi.fn(), {}, [selfRow({ displayName: 'Kai', handle: 'kai' })]);
+      expect(screen.queryByRole('button', { name: 'Tell DorkBot your name' })).toBeNull();
+    });
+
+    it('has no row once the question was closed anywhere', async () => {
+      await renderCard(vi.fn(), { identityPromptDismissedAt: '2026-09-01T00:00:00.000Z' }, [
+        selfRow(),
+      ]);
+      expect(screen.queryByRole('button', { name: 'Tell DorkBot your name' })).toBeNull();
+    });
+
+    it('expands the form with the email suggestion shown but not saved', async () => {
+      const { mockTransport } = await renderCard(vi.fn(), {}, [selfRow()]);
+      fireEvent.click(screen.getByRole('button', { name: 'Tell DorkBot your name' }));
+
+      expect(screen.getByTestId('progress-card-identity-form')).toBeTruthy();
+      expect((screen.getByLabelText('Handle') as HTMLInputElement).value).toBe('kai');
+      expect(mockTransport.setAuthorHandle).not.toHaveBeenCalled();
+    });
+
+    it('saves on confirm and records the question closed', async () => {
+      const { mockTransport } = await renderCard(vi.fn(), {}, [selfRow()]);
+      fireEvent.click(screen.getByRole('button', { name: 'Tell DorkBot your name' }));
+      fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Kai' } });
+      fireEvent.click(screen.getByTestId('confirm-identity'));
+
+      await waitFor(() =>
+        expect(mockTransport.setAuthorHandle).toHaveBeenCalledWith('author-self', 'kai')
+      );
+      expect(mockTransport.updateProfile).toHaveBeenCalledWith('Kai');
+      await waitFor(() =>
+        expect(mockTransport.updateConfig).toHaveBeenCalledWith({
+          profile: { identityPromptDismissedAt: expect.any(String) },
+        })
+      );
+      // The same brief thanks the sidebar card gives, in place of the form.
+      expect(await screen.findByText(DORKBOT_ONBOARDING_LINES.identityCardSaved)).toBeTruthy();
+      expect(screen.queryByTestId('progress-card-identity-form')).toBeNull();
+    });
   });
 });

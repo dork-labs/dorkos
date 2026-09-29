@@ -174,7 +174,7 @@ async function declineTelemetry(): Promise<void> {
  * the telemetry modal does. The same reasoning as {@link declineTelemetry}: seed
  * a real, settled answer rather than let a first-run prompt sit on top of the
  * product, and "supervised" is the choice that records the answer WITHOUT
- * flipping full autonomy, standing grants or the open mesh on a demo instance.
+ * flipping full autonomy or the open mesh on a demo instance.
  */
 async function settleFullPowerDoor(): Promise<void> {
   await patchJson(`${API_URL}/api/config`, {
@@ -199,7 +199,14 @@ async function settleFullPowerDoor(): Promise<void> {
  */
 async function seedOperatorProfile(): Promise<void> {
   await patchJson(`${API_URL}/api/config`, {
-    profile: { roles: ['software-development'] },
+    // The name-and-handle card (DOR-677) takes the same slot, so it is settled
+    // too. Dismissed rather than answered: an answer would put a name on every
+    // "You" in every shot, which is a change to the product shots should make
+    // on purpose, not as a side effect of clearing a prompt.
+    profile: {
+      roles: ['software-development'],
+      identityPromptDismissedAt: '2026-07-01T00:00:00.000Z',
+    },
   });
 }
 

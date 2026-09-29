@@ -61,7 +61,10 @@ function SigninReceipt({ part }: { part: McpSigninPart }) {
       <CardShell
         testId="mcp-signin-failed"
         icon={
-          <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber-500" />
+          <TriangleAlert
+            aria-hidden="true"
+            className="text-status-warning-dot mt-0.5 size-4 shrink-0"
+          />
         }
       >
         <p className="text-sm">
@@ -74,10 +77,7 @@ function SigninReceipt({ part }: { part: McpSigninPart }) {
     <CardShell
       testId="mcp-signin-receipt"
       icon={
-        <CheckCircle2
-          aria-hidden="true"
-          className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-500"
-        />
+        <CheckCircle2 aria-hidden="true" className="text-status-success mt-0.5 size-4 shrink-0" />
       }
     >
       <p className="text-sm">

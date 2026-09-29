@@ -10,13 +10,17 @@
  * account cleanup first and then returned 500 for the whole invocation when the
  * event sweep threw, which read as "cleanup failed" in the cron log.
  *
- * Invoked by Vercel Cron on the schedule in `apps/site/vercel.json` and
- * authorized by the `CRON_SECRET` Bearer token (see `@/lib/cron/auth`).
+ * No longer on a Vercel Cron schedule (removed from `apps/site/vercel.json`
+ * once DorkOS Cloud's own scheduler took over this sweep) — reachable only by
+ * a direct, authorized call until DOR-2442 deletes the route. Authorized by
+ * the `CRON_SECRET` Bearer token either way (see `@/lib/cron/auth`).
  *
  * @module app/api/cron/instance-expiry
  */
 import { getAuth } from '@/lib/auth';
 import { runCleanup } from '@/lib/cleanup-service';
+import { env } from '@/env';
+import { cloudAccountsForwarding } from '@/lib/cloud-accounts/forward';
 import { rejectUnauthorizedCron } from '@/lib/cron/auth';
 
 export const runtime = 'nodejs';
@@ -26,6 +30,14 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request): Promise<Response> {
   const unauthorized = rejectUnauthorizedCron(request);
   if (unauthorized) return unauthorized;
+
+  // Once accounts are handed to the accounts service (DOR-2441), the account
+  // and device-link rows this sweeps belong to that service, and it runs the
+  // sweep itself. Answer 200 so the scheduler sees a healthy job, and touch
+  // nothing.
+  if (cloudAccountsForwarding(env.DORKOS_CLOUD_ACCOUNTS_ORIGIN)) {
+    return Response.json({ ok: true, skipped: 'accounts-service' }, { status: 200 });
+  }
 
   const counts = await runCleanup(getAuth(), {});
   return Response.json({ ok: true, counts }, { status: 200 });

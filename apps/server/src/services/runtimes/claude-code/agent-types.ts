@@ -41,6 +41,12 @@ export interface AgentSession {
   /** Connector authority for the active DorkOS turn, never the warm process. */
   connectorTurn?: ClaudeConnectorTurnContext;
   /**
+   * Whether nobody can answer an approval card inside the CURRENT turn
+   * (`MessageOpts.unattendedApprovals`). Assigned on every send, so it always
+   * describes the turn in flight; the in-session hold reads it at call time.
+   */
+  unattendedApprovals?: boolean;
+  /**
    * The Claude Code account this session belongs to: the absolute Claude CONFIG
    * directory its transcript lives under (`~/.claude`, `~/.claude2`, …). Not
    * `cwd`, which is the working directory — the two are unrelated paths.
@@ -85,6 +91,15 @@ export interface AgentSession {
    * distinction, never the notice.
    */
   launchedAccountRoot?: string;
+  /**
+   * True when the last launch this process resolved billed per token: its
+   * final environment carried an API key or gateway token (stored, credits, or
+   * inherited), or the binary's session-init `apiKeySource` said so, which
+   * overrides the environment's guess. Such a session's `usage` is
+   * its own pay-as-you-go cost, never its folder's subscription windows (spec
+   * `claude-account-fleet` §6 U). Undefined until the first launch here.
+   */
+  launchedPerToken?: boolean;
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;
   /**
@@ -104,6 +119,12 @@ export interface AgentSession {
    * `InteractiveSession` in `messaging/interaction-wait.ts` for the full rule.
    */
   unattended?: boolean;
+  /**
+   * True while THIS turn has nobody to ask (`MessageOpts.unattended`): the
+   * same refusal as {@link unattended}, assigned on every send so it never
+   * outlives the turn that asked for it.
+   */
+  unattendedTurn?: boolean;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
   /**
@@ -180,6 +201,17 @@ export interface AgentSession {
    * the first rate-limit signal (e.g. an API-key session never sets it).
    */
   lastSubscriptionUsage?: UsageStatus;
+  /**
+   * Whether this turn already reported a usage limit (spec
+   * `claude-account-fleet` D4: one limit status per turn). Reset at turn start.
+   */
+  limitReportedThisTurn?: boolean;
+  /**
+   * The window a `rejected` `rate_limit_event` named during this turn, whether
+   * or not extra usage covered it, so a `rate_limit` error that follows reports
+   * that window rather than a guess. Reset at turn start.
+   */
+  rejectedLimitThisTurn?: { window: string; resetsAt: string | null };
   /**
    * The SDK's running usage totals as of this session's last `result`, keyed by
    * model: the baseline a turn's own usage is the difference from, because

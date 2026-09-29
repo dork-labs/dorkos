@@ -133,7 +133,7 @@ export function OwnerSetupScreen({
 
         {errorCopy && (
           <div role="alert" className="space-y-1">
-            <p className="text-sm text-red-500">{errorCopy.message}</p>
+            <p className="text-destructive text-sm">{errorCopy.message}</p>
             {/* The auth layer's own wording, kept so it can be searched or pasted. */}
             {errorCopy.detail && (
               <p className="text-muted-foreground text-xs">{errorCopy.detail}</p>

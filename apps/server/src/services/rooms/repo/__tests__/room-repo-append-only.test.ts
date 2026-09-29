@@ -137,16 +137,17 @@ describe('a room’s repo is append-only', () => {
       'search_member_rooms',
       'get_room',
       'find_room',
-      // The five that ARRANGE rooms (DOR-1611). They are here because the pin is
-      // the WHOLE hand, not because they touch a room's files — none of them
-      // does, which is the point: the repo verbs are still exactly the two
-      // above. These five are additionally off until a person turns them on,
-      // behind the `roomsManage` grant.
+      // The verbs that ARRANGE rooms (DOR-1611, and `archive_room` from spec
+      // `agent-permissions` D12). They are here because the pin is the WHOLE
+      // hand, not because they touch a room's files — none of them does, which
+      // is the point: the repo verbs are still exactly the two above. These sit
+      // in the Rooms permission area, which a person sets.
       'create_room',
       'add_room_members',
       'remove_room_members',
       'update_room',
       'leave_room',
+      'archive_room',
       // The room's shared canvas, read-only (DOR-1999). It touches no repo and
       // writes nothing: the four verbs that CHANGE a canvas are `control_ui`
       // actions on the runtime side, not capabilities here.

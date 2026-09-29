@@ -75,7 +75,7 @@ import {
   initCapabilityTierGate,
   resetCapabilityTierGate,
 } from '../tier-enforcement.js';
-import { ApprovalGrantService, ApprovalService } from '../../approvals/index.js';
+import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import { codeOnly } from '../../../../../../../scripts/lib/code-only.mjs';
 
@@ -85,6 +85,7 @@ const DESTROY = defineCapability({
   title: 'Delete a thing permanently',
   description: 'A destructive capability used by the permission-mode firewall guard.',
   tier: 'destructive',
+  area: null,
   input: z.object({ name: z.string() }),
   output: z.unknown(),
   surfaces: { mcp: { toolName: 'demo_destroy', servers: ['external'] } },
@@ -95,24 +96,16 @@ const DESTROY = defineCapability({
 const IDENTITY = {
   agentPath: '/projects/prober',
   displayName: 'Prober',
-  tierCeiling: 'destructive' as const,
   createdAt: new Date().toISOString(),
 };
 
 describe('no permission mode switches off the destructive gate', () => {
   beforeEach(() => {
     const db = createTestDb();
-    const grants = new ApprovalGrantService(db);
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-    // Wired exactly as boot wires it, standing permissions included, so nothing
-    // here passes because the feature was switched off for the test.
-    initCapabilityTierGate({
-      approvals: new ApprovalService(db),
-      standingGrants: {
-        enabled: () => true,
-        findLive: (agentPath, capabilityId) => grants.findLive(agentPath, capabilityId),
-      },
-    });
+    // Wired exactly as boot wires it, so nothing here passes because a feature
+    // was switched off for the test.
+    initCapabilityTierGate({ approvals: new ApprovalService(db) });
   });
 
   afterEach(() => {
@@ -129,6 +122,7 @@ describe('no permission mode switches off the destructive gate', () => {
       // field for it. If somebody adds one, this cast stops compiling and the author
       // has to come here and explain themselves.
       const decision = enforceCapabilityTier({
+        permission: null,
         action: DESTROY,
         input: { name: 'production' },
         identity: IDENTITY,

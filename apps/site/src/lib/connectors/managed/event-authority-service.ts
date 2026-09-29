@@ -1,8 +1,8 @@
 /** Existing authority-command receipts govern hosted event consent and physical trigger setup. */
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import { and, desc, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { stableStringify } from '@dorkos/shared/capabilities';
+import { checkConnectorArguments } from '@dorkos/shared/connector-arguments';
 import { ConnectorEventDefinitionSchema } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectorPhysicalTrigger } from '@dorkos/shared/connector-events';
 import type {
@@ -16,8 +16,10 @@ import {
   type ManagedEventCapacityPolicy,
 } from './event-capacity-service';
 import {
+  lockCleanupAuthority,
   lockLiveAuthorityPrincipal,
   managedRequestHash,
+  type ManagedCleanupPrincipal,
   type ManagedConnectorDatabase,
   type ManagedConnectorPrincipal,
   type ManagedAuthorityProviderContext,
@@ -55,7 +57,7 @@ function status(row: typeof commands.$inferSelect): ManagedConnectorAuthorityCom
     };
   return { ...base, state: row.state };
 }
-function commandWhere(principal: ManagedConnectorPrincipal, command: EventCommand) {
+function commandWhere(principal: ManagedCleanupPrincipal, command: EventCommand) {
   return and(
     eq(commands.tenantId, principal.tenantId),
     eq(commands.instanceId, principal.instanceId),
@@ -236,8 +238,7 @@ export async function applyManagedEventAuthorityCommand(
         try {
           if (
             Buffer.byteLength(filter) > 32_768 ||
-            stableStringify(z.fromJSONSchema(metadata.filterSchema).parse(command.filter)) !==
-              filter
+            !checkConnectorArguments(metadata.filterSchema, command.filter).ok
           )
             throw new Error();
         } catch {
@@ -659,10 +660,14 @@ export async function applyManagedEventAuthorityCommand(
   }
 }
 
-/** Last-reference cleanup uses the captured physical identity, never a later subscription binding. */
+/**
+ * Last-reference cleanup uses the captured physical identity, never a later
+ * subscription binding. It runs under a live instance's key or, once the
+ * instance is revoked, under that revocation (see {@link lockCleanupAuthority}).
+ */
 export async function cleanupManagedEventBinding(
   db: ManagedConnectorDatabase,
-  principal: ManagedConnectorPrincipal,
+  principal: ManagedCleanupPrincipal,
   command: EventCommand,
   receipt: typeof commands.$inferSelect,
   provider: ManagedAuthorityProviderContext,
@@ -713,7 +718,7 @@ export async function cleanupManagedEventBinding(
   };
   const liveClaim = async (tx: Transaction) => {
     await lockManagedEventCapacity(tx, principal.tenantId, policy);
-    await lockLiveAuthorityPrincipal(tx, principal);
+    await lockCleanupAuthority(tx, principal);
     const [live] = await tx
       .select({ id: bindings.id })
       .from(bindings)
@@ -787,7 +792,7 @@ export async function cleanupManagedEventBinding(
     if (
       await db.transaction(async (tx) => {
         await lockManagedEventCapacity(tx, principal.tenantId, policy);
-        await lockLiveAuthorityPrincipal(tx, principal);
+        await lockCleanupAuthority(tx, principal);
         return hasSubscribers(tx);
       })
     )

@@ -1,0 +1,13 @@
+{
+  "trailing30Micro": "7654321",
+  "suggestedPlanId": "pl_opaque_0002",
+  "suggestedPlanDisplayName": "the subscription shown in your billing page",
+  "suggestedPlanPriceMicro": "5000000",
+  "savingMicro": "2654321",
+  "computedAt": "2026-09-15T12:00:00.000Z",
+  "dismissible": true,
+  "denomination": {
+    "currency": "XTS",
+    "microPerCredit": "250"
+  }
+}

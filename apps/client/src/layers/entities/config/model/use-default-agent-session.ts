@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { useTransport } from '@/layers/shared/model';
 import { useConfig } from './use-config';
+import { toSession } from '@/layers/shared/lib';
 
 /** Fallback agent slug when config has no configured default (a fresh install). */
 const DEFAULT_AGENT = 'dorkbot';
@@ -72,7 +73,7 @@ export function useDefaultAgentSession(): DefaultAgentSession {
   const defaultAgentDir = registeredEntry?.projectPath ?? resolveDefaultAgentDir(config);
 
   const startSession = useCallback(() => {
-    navigate({ to: '/session', search: { dir: defaultAgentDir } });
+    navigate(toSession({ dir: defaultAgentDir }));
   }, [navigate, defaultAgentDir]);
 
   return {

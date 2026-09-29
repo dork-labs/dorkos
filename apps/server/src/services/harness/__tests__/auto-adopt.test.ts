@@ -46,7 +46,6 @@ import { adoptInOwnedWorkspace } from '../adopt-owned-workspace.js';
 import { resolveDirectoryOwnership } from '../directory-ownership.js';
 import { initConfigManager, configManager } from '../../core/config-manager.js';
 import { logger } from '../../../lib/logger.js';
-import { SEEDED_PACK_EXCLUDES } from '../../rooms/repo/room-worktree-manager.js';
 import { RoomRepoStore } from '../../rooms/repo/room-repo-store.js';
 
 let dorkHome: string;
@@ -392,7 +391,13 @@ describe('SRC-11: harness.autoAdopt on in a room worktree', () => {
     // because that is where a room authors skills of its own.
     writeFileSync(
       join(worktree, '.git', 'info', 'exclude'),
-      ['/.claude/skills/', '/.agents/harness.manifest.json', ...SEEDED_PACK_EXCLUDES, ''].join('\n')
+      [
+        '/.claude/skills/',
+        '/.agents/harness.manifest.json',
+        // The seeded-pack lines an older release's block carries.
+        ...OPERATING_SKILLS_PACK.map((skill) => `/.agents/skills/${skill.name}/SKILL.md`),
+        '',
+      ].join('\n')
     );
 
     const outcome = adoptInOwnedWorkspace(worktree, 'room-worktree');

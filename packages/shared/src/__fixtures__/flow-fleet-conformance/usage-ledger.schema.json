@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Usage ledger v1 (contract 2.0.0)",
+  "description": "One account's usage at <dorkHome>/runtimes/<runtime>/usage/<account-id>.json (spec flow-cli-core 1.2). Readers ignore fields and window keys they do not use; writers keep them.",
+  "type": "object",
+  "required": ["v", "runtime", "accountId", "updatedAt", "windows"],
+  "properties": {
+    "v": {"const": 1},
+    "runtime": {"enum": ["claude-code", "codex", "opencode"], "description": "Always the runtime in the file's path."},
+    "accountId": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
+    "updatedAt": {"$ref": "#/definitions/isoTime"},
+    "windows": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^(model:[a-z0-9][a-z0-9._-]*|credits:[a-z0-9][a-z0-9._-]*|rate_limit:[a-z0-9][a-z0-9._-]*|window:[1-9][0-9]*|[a-z][a-z0-9_]*)$"
+      },
+      "additionalProperties": {"$ref": "#/definitions/window"}
+    },
+    "plan": {
+      "type": "object",
+      "required": ["name", "observedAt", "source"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "observedAt": {"$ref": "#/definitions/isoTime"},
+        "source": {"$ref": "#/definitions/source"}
+      }
+    },
+    "credits": {
+      "type": "object",
+      "required": ["hasCredits", "unlimited", "observedAt", "source"],
+      "properties": {
+        "hasCredits": {"type": "boolean"},
+        "unlimited": {"type": "boolean"},
+        "balance": {"type": ["string", "null"], "description": "As the runtime reports it."},
+        "observedAt": {"$ref": "#/definitions/isoTime"},
+        "source": {"$ref": "#/definitions/source"}
+      }
+    },
+    "spend": {
+      "type": "object",
+      "required": ["periodStart", "costUsd", "observedAt", "source"],
+      "properties": {
+        "periodStart": {"$ref": "#/definitions/isoTime"},
+        "costUsd": {"type": "number", "minimum": 0},
+        "limitUsd": {"type": ["number", "null"], "minimum": 0},
+        "observedAt": {"$ref": "#/definitions/isoTime"},
+        "source": {"$ref": "#/definitions/source"}
+      }
+    }
+  },
+  "definitions": {
+    "isoTime": {
+      "description": "ISO-8601 with an explicit zone. Writers emit UTC with Z.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "source": {
+      "enum": ["statusline", "sdk_event", "sdk_usage", "transcript", "rollout", "sidecar", "provider_api", "error"]
+    },
+    "window": {
+      "type": "object",
+      "required": ["observedAt", "source"],
+      "properties": {
+        "usedPct": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "resetsAt": {"oneOf": [{"$ref": "#/definitions/isoTime"}, {"type": "null"}]},
+        "windowMinutes": {"type": "integer", "minimum": 1},
+        "status": {"enum": ["allowed", "allowed_warning", "rejected", null]},
+        "observedAt": {"$ref": "#/definitions/isoTime"},
+        "source": {"$ref": "#/definitions/source"}
+      },
+      "anyOf": [
+        {"required": ["usedPct"], "properties": {"usedPct": {"type": "number"}}},
+        {"required": ["status"], "properties": {"status": {"type": "string"}}}
+      ]
+    }
+  }
+}

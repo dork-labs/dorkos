@@ -102,6 +102,8 @@ function snapshot(cursor = 400, queuedMessages: QueuedMessage[] = []): SessionSn
       runningSubagentCount: 1,
       lifecycle: 'streaming',
       lastError: null,
+      limit: null,
+      accountUsage: null,
     },
     pendingInteractions: [],
     canvas: [],

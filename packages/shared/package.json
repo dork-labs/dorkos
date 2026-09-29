@@ -5,6 +5,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./account-usage": {
+      "types": "./src/account-usage.ts",
+      "default": "./dist/account-usage.js"
+    },
     "./capabilities": {
       "types": "./src/capabilities.ts",
       "default": "./dist/capabilities.js"
@@ -41,6 +45,14 @@
       "types": "./src/constants.ts",
       "default": "./dist/constants.js"
     },
+    "./bounded-read": {
+      "types": "./src/bounded-read.ts",
+      "default": "./dist/bounded-read.js"
+    },
+    "./git-hardening": {
+      "types": "./src/git-hardening.ts",
+      "default": "./dist/git-hardening.js"
+    },
     "./atomic-write": {
       "types": "./src/atomic-write.ts",
       "default": "./dist/atomic-write.js"
@@ -69,6 +81,10 @@
       "types": "./src/error-report.ts",
       "default": "./dist/error-report.js"
     },
+    "./session-link": {
+      "types": "./src/session-link.ts",
+      "default": "./dist/session-link.js"
+    },
     "./telemetry-consent": {
       "types": "./src/telemetry-consent.ts",
       "default": "./dist/telemetry-consent.js"
@@ -88,10 +104,6 @@
     "./mesh-schemas": {
       "types": "./src/mesh-schemas.ts",
       "default": "./dist/mesh-schemas.js"
-    },
-    "./mcp-tool-groups": {
-      "types": "./src/mcp-tool-groups.ts",
-      "default": "./dist/mcp-tool-groups.js"
     },
     "./manifest": {
       "types": "./src/manifest.ts",
@@ -113,6 +125,10 @@
       "types": "./src/agent-runtime.ts",
       "default": "./dist/agent-runtime.js"
     },
+    "./directory-grants": {
+      "types": "./src/directory-grants.ts",
+      "default": "./dist/directory-grants.js"
+    },
     "./connector-provider": {
       "types": "./src/connector-provider.ts",
       "default": "./dist/connector-provider.js"
@@ -120,6 +136,10 @@
     "./connector-schemas": {
       "types": "./src/connector-schemas.ts",
       "default": "./dist/connector-schemas.js"
+    },
+    "./connector-arguments": {
+      "types": "./src/connector-arguments.ts",
+      "default": "./dist/connector-arguments.js"
     },
     "./connector-event-schemas": {
       "types": "./src/connector-event-schemas.ts",
@@ -184,6 +204,10 @@
     "./permission-semantics": {
       "types": "./src/permission-semantics.ts",
       "default": "./dist/permission-semantics.js"
+    },
+    "./permissions": {
+      "types": "./src/permissions/index.ts",
+      "default": "./dist/permissions/index.js"
     },
     "./command-intents": {
       "types": "./src/command-intents.ts",
@@ -411,6 +435,7 @@
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/node": "^24",
+    "ajv": "^8.20.0",
     "vitest": "^4.1.11"
   }
 }

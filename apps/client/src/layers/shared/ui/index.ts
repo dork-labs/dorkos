@@ -128,6 +128,8 @@ export { FieldCard, FieldCardContent, CollapsibleFieldCard } from './field-card'
 export type { CollapsibleFieldCardProps } from './field-card';
 export { FloatingPanel, clampGeometry } from './floating-panel';
 export type { FloatingPanelProps, FloatingPanelGeometry } from './floating-panel';
+export { PaneResizeHandle } from './pane-resize-handle';
+export type { PaneResizeHandleProps } from './pane-resize-handle';
 export { HoverBorderGradient, type HoverBorderGradientProps } from './hover-border-gradient';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card';
 export {
@@ -162,6 +164,8 @@ export type {
 export { InlineCode } from './inline-code';
 export { Kbd } from './kbd';
 export { Label } from './label';
+export { Notice } from '@dork-labs/ui/notice';
+export type { NoticeProps, NoticeTone } from '@dork-labs/ui/notice';
 export { PasswordInput } from './password-input';
 export type { PasswordInputProps } from './password-input';
 export { ProvenanceChip } from './provenance-chip';
@@ -184,6 +188,7 @@ export {
 export { RadioGroup, RadioGroupItem } from './radio-group';
 export type { RadioGroupItemProps } from './radio-group';
 export { SegmentedControl, SegmentedControlItem } from './segmented-control';
+export { PermissionStateSwitch, type PermissionStateSwitchProps } from './permission-state-switch';
 export {
   NavigationLayout,
   NavigationLayoutBody,
@@ -349,7 +354,21 @@ export type { PathInputProps } from './path-input';
 export { Skeleton } from './skeleton';
 export { Textarea } from './textarea';
 export { Toaster } from './sonner';
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
+export {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+  TOOLTIP_MUTED_TEXT,
+} from './tooltip';
+export { AccountDot, type AccountDotProps } from './account-dot';
+export {
+  UsageBar,
+  UsageMiniBars,
+  usageMiniBarsLabel,
+  type UsageBarProps,
+  type UsageMiniBarsProps,
+} from './usage-bar';
 export { FeatureDisabledState } from './FeatureDisabledState';
 export type { FeatureDisabledStateProps } from './FeatureDisabledState';
 export { LinkifiedText, containsUrl } from './linkified-text';
@@ -469,9 +488,6 @@ export type {
   SidebarRowProps,
 } from './sidebar-row';
 export { SectionHeader, SECTION_HEADER_INSET, SIDEBAR_HOVER_REVEAL } from './section-header';
-// The one pinned card at the bottom of a sidebar. The arbiter is here rather
-// than in the panel because its candidates come from three different features
-// and, in the Obsidian embed, from a fourth surface entirely.
 export { BottomSlot } from './bottom-slot';
 export type { BottomSlotCandidate, BottomSlotProps } from './bottom-slot';
 // Three small rows the transcript and the Ask card both draw. They lived inside

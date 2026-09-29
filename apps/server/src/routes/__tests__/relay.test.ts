@@ -5,7 +5,10 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createRelayRouter, buildConversations } from '../relay.js';
 import type { RelayCore, AdapterRegistry, WebhookAdapter, DeadLetterEntry } from '@dorkos/relay';
 import { AdapterError, type AdapterManager } from '../../services/relay/adapter-manager.js';
-import { TASK_CANCEL_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
+import {
+  TASK_CANCEL_SUBJECT_PREFIX,
+  WEBHOOK_SERVER_SUBJECT_REFUSAL,
+} from '@dorkos/shared/relay-schemas';
 import { SERVER_MANAGED_PREFIXES } from '@dorkos/relay';
 
 function createMockRelayCore(): RelayCore {
@@ -124,6 +127,33 @@ describe('Relay routes', () => {
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('RESERVED_SENDER');
       // The message must never reach the bus — no bypass of the consent gate.
+      expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
+    });
+
+    // DOR-2432: this route cannot tell an agent with a shell from the person at
+    // the keyboard, and no server publisher uses it, so a server-owned
+    // destination or reply address is refused for every caller.
+    it.each([
+      ['relay.system.tasks.task-1', undefined],
+      ['relay.system.approval.agent-1', undefined],
+      ['relay.control.task-cancel.run-1', undefined],
+      ['relay.*.console', undefined],
+      ['relay.agent.some-agent', 'relay.system.approval.agent-1'],
+    ])('refuses a send to %s (reply address %s) and never publishes', async (subject, replyTo) => {
+      const res = await request(server)
+        .post('/api/relay/messages')
+        .send({
+          subject,
+          payload: { type: 'forged' },
+          from: 'relay.human.console',
+          ...(replyTo ? { replyTo } : {}),
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('RESERVED_SUBJECT');
+      expect(res.body.error).toContain(
+        'relay.system.* and relay.control.* addresses belong to DorkOS; agents cannot send to them.'
+      );
       expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
     });
 
@@ -993,6 +1023,26 @@ describe('Adapter routes', () => {
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('DUPLICATE_ID');
+    });
+
+    // DOR-2432: a refused config is the caller's mistake, and the message
+    // carrying the rule reaches them (it used to fall through to a 500).
+    it('returns 400 with the rule when the config is refused (INVALID_CONFIG)', async () => {
+      const message = `Invalid webhook configuration: ${WEBHOOK_SERVER_SUBJECT_REFUSAL}`;
+      vi.mocked(adapterManager.addAdapter).mockRejectedValue(
+        new AdapterError(message, 'INVALID_CONFIG')
+      );
+
+      const res = await request(server)
+        .post('/api/relay/adapters')
+        .send({
+          type: 'webhook',
+          id: 'wh-forge',
+          config: { inbound: { subject: 'relay.system.tasks.t1', secret: 'secret-long-enough' } },
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: message, code: 'INVALID_CONFIG' });
     });
 
     it('returns 400 for UNKNOWN_TYPE', async () => {

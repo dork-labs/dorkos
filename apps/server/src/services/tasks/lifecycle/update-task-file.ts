@@ -24,7 +24,7 @@
  */
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import type { Task, UpdateTaskRequest } from '@dorkos/shared/schemas';
+import type { PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
@@ -32,11 +32,13 @@ import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import {
   describeArmBlocker,
   fileBackedChanges,
-  isPackageOwned,
   landsOnRowAlone,
   packageOwnershipContext,
+  packageOwnershipOf,
   planTaskFileUpdate,
+  type PackageOwnershipKind,
 } from '../task-file-update.js';
+import type { TimingLandsOn } from '../timing/effective-timing.js';
 import { logger } from '../../../lib/logger.js';
 
 /** The collaborators a file rewrite needs. */
@@ -56,6 +58,12 @@ export interface TaskFileUpdateRefusal {
   error: string;
   /** A machine-readable code, on the refusals that carry one. */
   code?: string;
+  /**
+   * For `schedule_package_owned`: how the package's ownership is known. A
+   * `record` refusal can be answered with the person's own copy; a `legacy` one
+   * lasts only until the package's next update writes a record (DOR-2272).
+   */
+  ownedBy?: PackageOwnershipKind;
 }
 
 /** A rewrite that happened, or that correctly had nothing to do. */
@@ -76,6 +84,27 @@ export interface TaskFileUpdateSuccess {
    * above exist to compensate for a write. No write, nothing to compensate for.
    */
   changesFile: boolean;
+  /**
+   * Where the request's `cron` and `timezone` go — see {@link TimingLandsOn}.
+   *
+   * `row` only for a schedule an installed package owns, whose timing becomes
+   * the row's override (DOR-2302); `file` for everything else. Returned here
+   * because this is the one step that asks who owns the file, and the store
+   * cannot ask on its own.
+   */
+  timingLandsOn: TimingLandsOn;
+  /**
+   * Whether the caller's permission clamp (`clampTo`) was applied, and so has
+   * to reach the row too.
+   *
+   * Always, except for a package's schedule whose change lands on its row alone
+   * (DOR-2302): the package's file is never written, and a timing change there
+   * is settled against the approval instead (`TaskApprovals.settleApprovedWorkChange`
+   * parks an agent's), so the clamp has nothing to protect — and carried into
+   * the request it would read as an attempt to change the package's permission
+   * level, and refuse a timing change with a sentence about approval levels.
+   */
+  clampApplied: boolean;
 }
 
 /** The outcome of a file rewrite. */
@@ -126,6 +155,45 @@ function describeTaskFileFailure(
 }
 
 /**
+ * The sentence a refused edit to a package's schedule answers with.
+ *
+ * A `record` refusal is permanent and has a way out: the person's own copy. A
+ * `legacy` one is not about the package at all but about DorkOS not knowing yet
+ * which files are the package's, so it says when that changes, and offers no
+ * copy it cannot promise is needed.
+ *
+ * @param by - How the package's ownership is known.
+ * @param packageName - The owning package, named so a link into another
+ *   package's checkout does not read as the agent's own.
+ * @param grant - Whether the refused change was a higher power level.
+ */
+function packageOwnedRefusal(
+  by: PackageOwnershipKind,
+  packageName: string,
+  grant: boolean
+): string {
+  const rowOnly = grant
+    ? `You can still approve it as it stands, and it will run at the level the package asks for.`
+    : `You can switch it on or off, or change when it runs, here.`;
+  if (by === 'legacy') {
+    return (
+      `This schedule sits in the "${packageName}" package, which an older version of DorkOS ` +
+      `installed without a list of its files, so DorkOS can't yet tell them from yours and ` +
+      `didn't change ${grant ? 'how much it may do' : 'it'}. ${rowOnly} To change the rest, ` +
+      `choose Check files on the package in Marketplace's Installed tab (or run ` +
+      `\`dorkos marketplace check-files ${packageName}\`), then try again.`
+    );
+  }
+  return grant
+    ? `This schedule came with the "${packageName}" package, so DorkOS didn't change how much ` +
+        `it may do: the package's next update would put its own setting back. ${rowOnly} To ` +
+        `give it more, make your own copy.`
+    : `This schedule came with the "${packageName}" package, so DorkOS didn't change it: the ` +
+        `package's next update would put its own version back. ${rowOnly} To change what it ` +
+        `does, make your own copy.`;
+}
+
+/**
  * Merge an update into a task's SKILL.md, once the file has been read.
  *
  * Split out from {@link applyTaskFileUpdate} only to keep each half readable;
@@ -136,7 +204,7 @@ function describeTaskFileFailure(
  * @param existing - The task as it stands, whose `filePath` is being rewritten.
  * @param content - The file's current bytes.
  * @param data - The fields the request carries.
- * @param changed - Which file-backed fields this request changes.
+ * @param clampTo - The mode a non-trusted edit clamps the task to, if any.
  * @returns What to tell the caller: a refusal, or a success saying whether the
  *   file was written.
  */
@@ -145,8 +213,9 @@ async function rewriteTaskFile(
   existing: Task,
   content: string,
   data: UpdateTaskRequest,
-  changed: readonly string[]
+  clampTo: PermissionMode | undefined
 ): Promise<TaskFileUpdateOutcome> {
+  const written = clampTo ? { ...data, permissionMode: clampTo } : data;
   // A file the skill schema cannot read is the silent-success defect DOR-1481
   // closed: the update used to skip the write, change the row, and report
   // success. It refuses.
@@ -159,18 +228,19 @@ async function rewriteTaskFile(
     };
   }
 
-  // A skill an installed package owns is never ours to rewrite: the edit would
+  // A file an installed package owns is never ours to rewrite: the edit would
   // land inside the package's own checkout, be shared by every agent that
-  // installed it, and vanish at the next update. Plugins are not the only ones —
-  // a Shape ships schedules, and an agent that came from a package owns every
-  // schedule filed under it (DOR-1789).
+  // installed it, and be undone by its next update. Which files those are is
+  // the install's installed-files record's to say: the ones it lists, unless
+  // the package marked them editable (DOR-2272). A schedule a person made
+  // under a package agent is not listed, and is written like any other. An
+  // install with no record keeps the older location-and-marker answer.
   const agentDir = existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null;
-  if (
-    await isPackageOwned(
-      existing.filePath,
-      packageOwnershipContext(deps.dorkHome, agentDir ?? undefined)
-    )
-  ) {
+  const ownership = await packageOwnershipOf(
+    existing.filePath,
+    packageOwnershipContext(deps.dorkHome, agentDir ?? undefined)
+  );
+  if (ownership.owned) {
     // **The refusal's own promise, kept.** Switching a schedule on or off is a
     // decision about a file DorkOS will not write, so it lands on the row and
     // the file is left exactly as the package shipped it — which is why
@@ -178,7 +248,12 @@ async function rewriteTaskFile(
     // schedule answer 409 with the sentence that offers the thing it refused
     // (FB-26). The row is then authoritative for that switch, and the sync
     // keeps it (`file-sync-gates.ts`).
-    if (landsOnRowAlone(changed)) return { ok: true, changesFile: false };
+    // What the CALLER asked for, without the clamp: see
+    // {@link TaskFileUpdateSuccess.clampApplied}.
+    const changed = fileBackedChanges(data, existing);
+    if (landsOnRowAlone(changed)) {
+      return { ok: true, changesFile: false, timingLandsOn: 'row', clampApplied: false };
+    }
     // **When the refused request was a grant, say so about the grant** (DOR-2100).
     // Approving a packaged schedule at the operator's own trust stop arrives
     // here as an ordinary `permissionMode` change, and the sentence below is
@@ -195,21 +270,13 @@ async function rewriteTaskFile(
     return {
       ok: false,
       status: 409,
-      error: refusedGrant
-        ? `This schedule came with an installed package, so DorkOS did not change how much it ` +
-          `may do — its settings live in the package's own folder, and the next update of that ` +
-          `package would wipe the change out. You can still approve it as it stands, and it will ` +
-          `run at the level the package asks for. To give it more, edit the package or make your ` +
-          `own copy of the skill.`
-        : `This file lives inside an installed package's folder, so DorkOS did not change it — ` +
-          `the next update of that package would wipe the change out. You can switch this ` +
-          `schedule on or off here; to change what it does, edit the package or make your own ` +
-          `copy of the skill.`,
+      error: packageOwnedRefusal(ownership.by, ownership.packageName, refusedGrant),
       code: 'schedule_package_owned',
+      ownedBy: ownership.by,
     };
   }
 
-  const plan = planTaskFileUpdate(existing.filePath, content, data, data.prompt);
+  const plan = planTaskFileUpdate(existing.filePath, content, written, written.prompt);
   if (plan.kind === 'refuse') {
     return { ok: false, status: 409, error: plan.message, code: 'schedule_file_unreadable' };
   }
@@ -229,7 +296,12 @@ async function rewriteTaskFile(
       error: describeTaskFileFailure('save', existing.filePath, diskReason(err)),
     };
   }
-  return { ok: true, changesFile: true };
+  return {
+    ok: true,
+    changesFile: true,
+    timingLandsOn: 'file',
+    clampApplied: clampTo !== undefined,
+  };
 }
 
 /**
@@ -253,20 +325,29 @@ async function rewriteTaskFile(
  * could erase the file's `schedule:` block.
  *
  * @param deps - Data directory and Mesh.
- * @param options - The task as it stands and the fields the request carries.
+ * @param options - The task as it stands, the fields the request carries, and
+ *   the permission mode a non-trusted edit clamps the task down to, if any —
+ *   kept apart from `data` so a package's row-only change can leave it out
+ *   ({@link TaskFileUpdateSuccess.clampApplied}).
  * @returns Whether the file was in scope, or a refusal that wrote nothing.
  */
 export async function applyTaskFileUpdate(
   deps: TaskFileUpdateDeps,
-  options: { existing: Task; data: UpdateTaskRequest }
+  options: { existing: Task; data: UpdateTaskRequest; clampTo?: PermissionMode }
 ): Promise<TaskFileUpdateOutcome> {
-  const { existing, data } = options;
+  const { existing, data, clampTo } = options;
+  const clampApplied = clampTo !== undefined;
   // Arming is the one thing a person can ask for that the FILE can refuse, so it
   // opens the file even when nothing in the file changes.
   const arming = data.status === 'active' && existing.status === 'pending_approval';
-  const changed = fileBackedChanges(data, existing);
+  const changed = fileBackedChanges(
+    clampTo ? { ...data, permissionMode: clampTo } : data,
+    existing
+  );
   const changesFile = changed.length > 0;
-  if (!existing.filePath || !(changesFile || arming)) return { ok: true, changesFile };
+  if (!existing.filePath || !(changesFile || arming)) {
+    return { ok: true, changesFile, timingLandsOn: 'file', clampApplied };
+  }
 
   // No initializer: every catch path returns, so a value here could never be
   // read - and ESLint 10's no-useless-assignment now says so.
@@ -294,7 +375,7 @@ export async function applyTaskFileUpdate(
       taskId: existing.id,
       filePath: existing.filePath,
     });
-    return { ok: true, changesFile };
+    return { ok: true, changesFile, timingLandsOn: 'file', clampApplied };
   }
 
   // A schedule whose block or cron DorkOS cannot read has nothing to run on, so
@@ -315,7 +396,7 @@ export async function applyTaskFileUpdate(
     }
   }
 
-  if (!changesFile) return { ok: true, changesFile };
+  if (!changesFile) return { ok: true, changesFile, timingLandsOn: 'file', clampApplied };
 
-  return rewriteTaskFile(deps, existing, content, data, changed);
+  return rewriteTaskFile(deps, existing, content, data, clampTo);
 }

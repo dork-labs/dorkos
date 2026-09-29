@@ -34,6 +34,29 @@ interface RefreshResponseBody {
     packages?: unknown[];
   };
   fetchedAt: string;
+  /**
+   * True when the source couldn't be reached and `marketplace` is the last
+   * cached copy (DOR-2304). Absent from servers older than that.
+   */
+  stale?: boolean;
+  /** Why the source couldn't be reached, when `stale`. */
+  reason?: string;
+}
+
+/**
+ * A refresh that could not reach its source and answered with the last cached
+ * copy. Thrown so both code paths count it as a failure: a refresh is "check
+ * now", and this check did not happen.
+ */
+class StaleRefreshError extends Error {
+  constructor(
+    readonly reason: string,
+    readonly fetchedAt: string,
+    readonly count: number
+  ) {
+    super(reason);
+    this.name = 'StaleRefreshError';
+  }
 }
 
 /** Marketplace source as returned by the server `/sources` endpoint. */
@@ -101,7 +124,11 @@ async function refreshOne(name: string): Promise<number> {
     'POST',
     `/api/marketplace/sources/${encodeURIComponent(name)}/refresh`
   );
-  return countPackages(result.marketplace);
+  const count = countPackages(result.marketplace);
+  if (result.stale) {
+    throw new StaleRefreshError(result.reason ?? 'unknown reason', result.fetchedAt, count);
+  }
+  return count;
 }
 
 /**
@@ -119,6 +146,16 @@ function formatSuccess(name: string, count: number): string {
  * sees the server's reason instead of an HTTP status code.
  */
 function formatError(name: string, err: unknown): string {
+  if (err instanceof StaleRefreshError) {
+    const when = new Date(err.fetchedAt).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    return (
+      `Couldn't reach ${name}: ${err.reason.replace(/\.$/, '')}. ` +
+      `Still showing the last copy, from ${when} (${err.count} ${err.count === 1 ? 'package' : 'packages'}).`
+    );
+  }
   if (err instanceof ApiError) {
     if (err.status === 404) return `Failed ${name}: not found.`;
     return `Failed ${name}: ${err.message}`;

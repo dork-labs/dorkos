@@ -42,6 +42,7 @@ import {
 } from '@/layers/features/chat';
 import { SlashCommandList } from '@/layers/features/slash-commands';
 import { FilePalette } from '@/layers/features/files';
+import { useLimitComposer } from '@/layers/features/continue-on-account';
 import { ScanLine } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useComposerRichText } from '@/layers/entities/config';
@@ -190,6 +191,10 @@ export function SessionComposer({
   const { target } = useConversation();
   const defaultPlaceholder = target?.placeholder ?? 'Send a message…';
   const awaitingDecision = useSessionAwaitingDecision(sessionId);
+  // While the account is out the box waits with the banner's words, and after
+  // a move it stays shut until "Continue here anyway" (spec §6.7). The banner
+  // above says why, so the box adds no reason line of its own.
+  const limitComposer = useLimitComposer(sessionId);
 
   // What THIS session's runtime can do with a message sent mid-task. Steer and
   // Add context appear only when the runtime declares them (claude-code does,
@@ -707,6 +712,7 @@ export function SessionComposer({
                 : 'Checking this directory before starting the session…',
             }
           : {}),
+        ...(limitComposer.canSubmit ? {} : { canSubmit: false }),
         onStop: handleStop,
         stopPending,
         onEscape: autocomplete.dismissPalettes,
@@ -747,18 +753,21 @@ export function SessionComposer({
         // switch, so an arm would otherwise survive into the next session's
         // text.
         contextKey: sessionContextKey(sessionId, selectedCwd) ?? undefined,
-        placeholder: getPlaceholder(
-          chatQueue.editingIndex,
-          isStreaming,
-          chatQueue.queue.length,
-          defaultPlaceholder
-        ),
-        placeholderOverlay: isIdle ? (
-          <AnimatedPlaceholder
-            text={rotatingPlaceholder.text}
-            animationKey={rotatingPlaceholder.key}
-          />
-        ) : null,
+        placeholder:
+          limitComposer.placeholder ??
+          getPlaceholder(
+            chatQueue.editingIndex,
+            isStreaming,
+            chatQueue.queue.length,
+            defaultPlaceholder
+          ),
+        placeholderOverlay:
+          isIdle && limitComposer.canSubmit ? (
+            <AnimatedPlaceholder
+              text={rotatingPlaceholder.text}
+              animationKey={rotatingPlaceholder.key}
+            />
+          ) : null,
       }}
     >
       <StopConfirmDialog

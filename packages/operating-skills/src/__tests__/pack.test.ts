@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import matter from 'gray-matter';
+import { stringifyFrontmatter } from '@dorkos/skills/frontmatter';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION } from '../pack.js';
@@ -72,7 +72,7 @@ describe('OPERATING_SKILLS_PACK', () => {
       // Each skill must serialize to a SKILL.md that the @dorkos/skills parser
       // accepts, with the frontmatter name matching its directory.
       const filePath = `/tmp/.agents/skills/${skill.name}/SKILL.md`;
-      const content = matter.stringify(skill.body, {
+      const content = stringifyFrontmatter(skill.body, {
         name: skill.name,
         description: skill.description,
       });
@@ -212,6 +212,25 @@ describe('the pack teaches the world as it actually is', () => {
     expect(bodyOf('operating-dorkos')).toMatch(/uninstall\W+ is gated/);
   });
 
+  it('points an older install at Check files instead of a later update (DOR-2197)', () => {
+    // Purpose: pack v28 told agents that a schedule under a package an older
+    // DorkOS installed "works after the package's next update", and that such
+    // packages "don't offer" Make my own copy yet. Check files now fixes both
+    // at once, so an agent still reading v28 would tell a person to wait for an
+    // update that may never ship.
+    const scheduling = bodyOf('scheduling-tasks');
+    expect(scheduling).not.toMatch(/works after the package's next update/);
+    expect(scheduling).not.toMatch(/don't offer it yet/);
+    expect(scheduling.match(/Check files/g)?.length).toBeGreaterThanOrEqual(2);
+
+    // The marketplace page names both ways in: the app button and the CLI verb,
+    // plus the verify flag that says which packages need it.
+    const marketplace = bodyOf('using-the-marketplace');
+    expect(marketplace).toMatch(/\*\*Check files\*\*/);
+    expect(marketplace).toMatch(/dorkos marketplace check-files <name>/);
+    expect(marketplace).toMatch(/verify: true/);
+  });
+
   it('teaches the three permission tiers', () => {
     const umbrella = bodyOf('operating-dorkos');
     expect(umbrella).toContain('observe');
@@ -226,8 +245,10 @@ describe('the pack teaches the world as it actually is', () => {
     expect(umbrella).toContain('--approval');
     // The reasons a model has to branch on, not just the happy path.
     expect(umbrella).toContain('awaiting_decision');
-    expect(umbrella).toContain('tier_ceiling');
+    expect(umbrella).toContain('permission_blocked');
     expect(umbrella).toContain('operator_denied');
+    // The retired per-agent ceiling's refusal can no longer happen.
+    expect(umbrella).not.toContain('tier_ceiling');
   });
 
   it('teaches MCP-first discovery and only a verified CLI fallback', () => {
@@ -403,15 +424,45 @@ describe('working-in-room-repos', () => {
     // Spec §3.4 is the whole design in one rule, and the failure it prevents is
     // an agent editing the room's integration checkout: two writers on one tree,
     // which is the DOR-500 interleaving rooms are built to avoid.
-    expect(rooms).toContain('Your working copy is yours');
+    expect(rooms).toContain('Your copy is yours');
     expect(rooms).toMatch(/The room's own copy is the room's[\s\S]{0,60}never write in it/);
   });
 
+  it('says the turn runs in the agent’s own folder and the copy is reached by path', () => {
+    // Spec `agent-home-desk` §5.5: a room turn stands at home, so an agent that
+    // still believes it stands in its copy edits relative paths into its OWN
+    // folder. The page must say where the turn runs and how to reach the copy.
+    expect(rooms).toContain('Your turn runs in your own folder');
+    expect(rooms).toContain('**full paths**');
+    expect(rooms).toContain('`git -C <your copy> …`');
+    expect(rooms).toContain('`git -C <your copy> merge main`');
+    // The retired claim, which would now be a lie about where the agent stands.
+    expect(rooms).not.toMatch(/your turn runs in (?:\*\*)?your own working copy/i);
+    expect(rooms).not.toContain('rather than in your usual directory');
+  });
+
+  it('states the own-code rule: a private worktree, never the home checkout', () => {
+    // §5.5 and §13: every room turn of an agent now stands in its home, beside a
+    // person's direct session, so two turns editing one checkout is the DOR-500
+    // interleaving. The rule is the mitigation, and it has to be a rule.
+    expect(rooms).toContain(
+      'when you change your own code, do it in a private worktree of\nyour own repository, never in your own folder itself.'
+    );
+  });
+
+  it('says a clean copy is brought up to date at turn start, and a busy one is left alone', () => {
+    // Spec `agent-home-desk` §6: the one server write into a copy. An agent that
+    // does not know it happens reads a refreshed tree as someone else's edit.
+    expect(rooms).toContain('DorkOS brings it up to date with main first');
+    expect(rooms).toContain('your copy is left exactly as it is');
+  });
+
   it('teaches syncing as plain git, never as a tool', () => {
-    // Deliberately not a tool (spec §3.7): the server must never write into a
-    // working copy an agent owns. An agent that goes looking for a sync tool
+    // Deliberately not a tool (spec §3.7): merging main into a copy that holds
+    // work is the agent's own act — the server only fast-forwards a clean one
+    // (spec `agent-home-desk` §6). An agent that goes looking for a sync tool
     // finds nothing and has no fallback unless the page says this.
-    expect(rooms).toContain('`git merge main`');
+    expect(rooms).toContain('merge main`');
     expect(rooms).toContain('This is plain git, not a tool');
   });
 

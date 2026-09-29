@@ -61,7 +61,6 @@
     "src/routes/__tests__/sessions-trigger.test.ts", // 6
     "src/routes/__tests__/sessions-ui-action.test.ts", // 5
     "src/routes/__tests__/sessions.test.ts", // 10
-    "src/routes/__tests__/standing-grants-chain.test.ts", // 1
     "src/services/__tests__/transcript-parser.test.ts", // 2
     "src/services/core/__tests__/agent-creator.test.ts", // 4
     "src/services/core/__tests__/config-manager.test.ts", // 1

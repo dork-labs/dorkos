@@ -22,6 +22,7 @@ const configGet = defineCapability({
   title: 'Get config',
   description: 'Return the DorkOS config snapshot.',
   tier: 'observe',
+  area: null,
   input: z.object({
     section: z.string().optional(),
     format: z.enum(['json', 'yaml']),
@@ -47,6 +48,7 @@ const configPatch = defineCapability({
   title: 'Patch config',
   description: 'Deep-merge a partial config object.',
   tier: 'act',
+  area: null,
   input: z.object({ patch: z.record(z.string(), z.unknown()) }),
   output: z.object({ applied: z.boolean() }),
   surfaces: {
@@ -107,6 +109,7 @@ describe('composeRegistry — invoke', () => {
       title: 'Probe authority',
       description: 'Records authenticated invocation authority.',
       tier: 'observe',
+      area: null,
       input: z.object({}),
       output: z.object({ ok: z.boolean() }),
       surfaces: {},
@@ -145,6 +148,7 @@ describe('composeRegistry — invoke', () => {
       title: 'Probe principal',
       description: 'Never runs for a forged principal.',
       tier: 'observe',
+      area: null,
       input: z.object({}),
       output: z.object({ ok: z.boolean() }),
       surfaces: {},
@@ -155,6 +159,7 @@ describe('composeRegistry — invoke', () => {
       title: 'Probe binding',
       description: 'Never runs for a forged authority binding.',
       tier: 'observe',
+      area: null,
       input: z.object({}),
       output: z.object({ ok: z.boolean() }),
       surfaces: {},
@@ -225,6 +230,7 @@ describe('composeRegistry — invoke', () => {
       title: 'Ping',
       description: 'Records the deps it was invoked with.',
       tier: 'observe',
+      area: null,
       input: z.object({}),
       output: z.object({ pong: z.boolean() }),
       surfaces: {},
@@ -253,6 +259,7 @@ describe('composeRegistry — startup conflict detection', () => {
       title: 'Reset',
       description: 'Reset config.',
       tier: 'destructive',
+      area: null,
       input: z.object({}),
       output: z.object({}),
       surfaces: { mcp: { toolName: 'config_get', servers: ['external'] } },
@@ -268,6 +275,7 @@ describe('composeRegistry — startup conflict detection', () => {
       title: 'Fetch',
       description: 'Fetch config.',
       tier: 'observe',
+      area: null,
       input: z.object({}),
       output: z.object({}),
       surfaces: { cli: { verb: 'config', subcommand: 'get' } },
@@ -287,6 +295,7 @@ describe('composeRegistry — startup conflict detection', () => {
       title: 'Snapshot',
       description: 'Snapshot config.',
       tier: 'observe',
+      area: null,
       input: z.object({}),
       output: z.object({}),
       surfaces: { http: { method: 'get', path: '/api/config' } },
@@ -329,28 +338,28 @@ describe('catalog — serialization', () => {
     });
   });
 
-  it('carries a declared tool group, and omits the key entirely without one', () => {
-    // The catalog is where the cockpit and the docs projection read this from,
-    // so a capability whose grant never reached the wire would leave the Tools
-    // tab describing a switch the server does not have (DOR-1611). Omitted
-    // rather than nulled for the ungated majority: an absent key keeps their
-    // catalog entries byte-identical and their content hash still.
-    const gated = defineCapability({
+  it('carries the declared permission area on every entry, null included', () => {
+    // The catalog is where readers and the docs projection read an action's area
+    // from (spec `agent-permissions` D2), so a capability whose area never
+    // reached the wire would be listed under the wrong row. Present on every
+    // entry, `null` for an area-less one, so no reader has to guess what a
+    // missing key means.
+    const inArea = defineCapability({
       id: 'config.manage',
       title: 'Manage config',
-      description: 'A capability declaring a per-agent grant, for the catalog assertion.',
+      description: 'A capability declaring a permission area, for the catalog assertion.',
       tier: 'act',
+      area: 'settings',
       input: z.object({}),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'config_manage', servers: ['external'] } },
-      toolGroup: 'roomsManage',
       invoke: async () => ({ ok: true }),
     });
-    const registry = composeRegistry([{ name: 'config', capabilities: [configGet, gated] }], deps);
+    const registry = composeRegistry([{ name: 'config', capabilities: [configGet, inArea] }], deps);
     const entries = registry.catalog().capabilities;
 
-    expect(entries.find((c) => c.id === 'config.manage')?.toolGroup).toBe('roomsManage');
-    expect(entries.find((c) => c.id === 'config.get')).not.toHaveProperty('toolGroup');
+    expect(entries.find((c) => c.id === 'config.manage')?.area).toBe('settings');
+    expect(entries.find((c) => c.id === 'config.get')?.area).toBeNull();
   });
 
   it('carries the per-tool MCP annotation hints through unchanged', () => {
@@ -393,6 +402,7 @@ describe('catalog — content-hash version stability', () => {
       title: 'T',
       description: 'D',
       tier: 'observe',
+      area: null,
       inputSchema: { type: 'object', properties: { a: { type: 'string' }, b: { type: 'number' } } },
       outputSchema: { type: 'object' },
       surfaces: { mcp: { toolName: 't', servers: ['external'] } },
@@ -406,6 +416,7 @@ describe('catalog — content-hash version stability', () => {
         type: 'object',
       },
       tier: 'observe',
+      area: null,
       description: 'D',
       title: 'T',
       id: 'x.y',
@@ -422,6 +433,7 @@ describe('catalog — content-hash version stability', () => {
           title: 'One',
           description: 'First.',
           tier: 'observe',
+          area: null,
           input: z.object({}),
           output: z.object({}),
           surfaces: {},
@@ -436,6 +448,7 @@ describe('catalog — content-hash version stability', () => {
           title: 'Two',
           description: 'Second.',
           tier: 'observe',
+          area: null,
           input: z.object({}),
           output: z.object({}),
           surfaces: {},

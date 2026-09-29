@@ -1596,6 +1596,19 @@ describe('runHarnessHooks', () => {
     );
   });
 
+  it('--list names a global package\u2019s decision as one about every session (DOR-2306)', async () => {
+    // Purpose: the same lists hold a person's yes for a globally installed
+    // package's programs; reading it as "another project" would be false.
+    writeStored({
+      approvedHooks: [`globex@global-${'a'.repeat(64)}`],
+      refusedHooks: [],
+    });
+
+    await runHarnessHooks({ list: true });
+
+    expect(printed()).toContain('globex — for the globally installed package, in every session');
+  });
+
   it('--list says the file could not be read rather than "nothing stored yet"', async () => {
     fs.writeFileSync(path.join(homeDir, 'config.json'), '{ "version": 1, "harness": {');
 
@@ -2967,7 +2980,7 @@ describe('runHarnessSync: harness.autoAdopt in a folder DorkOS does not own', ()
 
   /** B1's frozen sentence, spelled out rather than imported from what produced it. */
   const S8 =
-    'harness.autoAdopt is on, and it does nothing here: DorkOS only moves skills on its own inside the agent folders and room folders it owns. Run dorkos harness adopt <name> to move one yourself.';
+    'harness.autoAdopt is on, and it does nothing here: DorkOS only moves skills on its own inside the agent folders it owns. Run dorkos harness adopt <name> to move one yourself.';
 
   /** Write `config.json` into the staged dork home with the flag at `value`. */
   function writeAutoAdopt(value: boolean): void {

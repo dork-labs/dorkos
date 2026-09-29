@@ -210,10 +210,6 @@ export default defineConfig({
     outDir: 'dist',
     rollupOptions: {
       input: 'index.html',
-      // @dorkos/shared/manifest uses Node.js built-ins (fs, path, crypto) and
-      // is only consumed by DirectTransport in Electron/Obsidian. Externalize
-      // it from the browser bundle to prevent Vite from inlining Node modules.
-      external: ['@dorkos/shared/manifest'],
     },
   },
 });

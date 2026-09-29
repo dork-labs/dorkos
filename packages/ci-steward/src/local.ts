@@ -71,9 +71,10 @@ export function aggregateDays(
       note(b, c.notes);
     }
     // THE HOOK'S NOTES ARE PER RUN, THE COMMAND'S ARE PER COMMAND, and the
-    // difference is not cosmetic: one pre-commit run can leave two
-    // `lock_timeout` notes, because `lint` and `typecheck` run concurrently and
-    // can both give up waiting for a slot. Summing them into the hook bucket
+    // difference is not cosmetic: one run can leave two `lock_timeout` notes
+    // whenever two of its commands hold slots. Pre-commit `lint` and
+    // `typecheck` both did until typecheck left the hook on 2026-09-24
+    // (ci/ledger/260919-175506-*), and those records stay in the file. Summing them into the hook bucket
     // made a share whose numerator could exceed its denominator — the daily
     // report printed "Of 1 hook runs ... 2 ran without waiting for a free slot"
     // — while `ci/metrics.yaml` declares `tracked.gate-cut-short` a share of

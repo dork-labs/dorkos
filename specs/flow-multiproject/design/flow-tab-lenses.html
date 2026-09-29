@@ -1,0 +1,281 @@
+<h2>3 of 6 · The Flow tab in the right panel</h2>
+<p class="subtitle">
+  The tab follows your chat. In a flow project it shows that project. Anywhere else it shows a thin
+  "all projects" view. The question: how should the project view be laid out?
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 12px/1.5 system-ui;
+  }
+  .ax-app {
+    display: flex;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 8px;
+    min-height: 300px;
+    color: #18181b;
+  }
+  .ax-chat {
+    flex: 1;
+    padding: 10px;
+    border-right: 1px solid #e4e4e7;
+    color: #71717a;
+    font-size: 11px;
+  }
+  .ax-panel {
+    width: 270px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+  }
+  .ax-tabs {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: #71717a;
+    border-bottom: 1px solid #f4f4f5;
+    padding-bottom: 5px;
+    margin-bottom: 8px;
+  }
+  .ax-tabs .on {
+    color: #18181b;
+    font-weight: 600;
+    border-bottom: 2px solid #18181b;
+  }
+  .ax-mk {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #d97706;
+    margin-left: 3px;
+    vertical-align: 2px;
+  }
+  .ax-hd {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ax-hd b {
+    font-size: 13px;
+  }
+  .ax-muted {
+    color: #71717a;
+    font-size: 11px;
+  }
+  .ax-cap {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #71717a;
+    margin: 10px 0 3px;
+  }
+  .ax-run {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .ax-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .ax-grow {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ax-state {
+    font-size: 10px;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid #e4e4e7;
+    color: #3f3f46;
+    flex: none;
+  }
+  .ax-btn {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    border: 1px solid #d4d4d8;
+    background: #fff;
+    color: #18181b;
+  }
+  .ax-cond {
+    margin-top: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: #fafafa;
+    border: 1px solid #f4f4f5;
+    font-size: 11px;
+    color: #3f3f46;
+  }
+  .ax-foot {
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid #f4f4f5;
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #3f3f46;
+  }
+  .ax-seg {
+    display: inline-flex;
+    border: 1px solid #e4e4e7;
+    border-radius: 7px;
+    overflow: hidden;
+    margin-top: 10px;
+  }
+  .ax-seg span {
+    padding: 2px 10px;
+    font-size: 11px;
+    color: #52525b;
+  }
+  .ax-seg .on {
+    background: #f4f4f5;
+    color: #18181b;
+    font-weight: 600;
+  }
+  .ax-q {
+    display: flex;
+    gap: 6px;
+    padding: 3px 0;
+    color: #3f3f46;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>One scroll: problems, then running, then up next (my pick)</h3>
+      <p>Everything in one glance. Most projects have only a few runs, so it stays short.</p>
+      <div class="ax">
+        <div class="ax-app">
+          <div class="ax-chat">(your chat in ~/Keep/dork-os/dorkos)</div>
+          <div class="ax-panel">
+            <div class="ax-tabs">
+              <span>Files</span><span>Canvas</span
+              ><span class="on">Flow<span class="ax-mk" title="Something needs you"></span></span>
+            </div>
+            <div class="ax-hd">
+              <b>dorkos</b><span class="ax-muted">· Linear DOR</span><span style="flex: 1"></span
+              ><span class="ax-btn">Pause</span><span class="ax-btn">⚙</span>
+            </div>
+            <div class="ax-cond">Can't reach Linear since 09:14 · <u>Reconnect</u></div>
+            <div class="ax-cap">Running · 2 of 3</div>
+            <div class="ax-run">
+              <span class="ax-dot" style="background: #2563eb"></span
+              ><span class="ax-grow">DOR-2387 Out-of-usage banner</span
+              ><span class="ax-state">Building</span>
+            </div>
+            <div class="ax-run">
+              <span class="ax-dot" style="background: #16a34a"></span
+              ><span class="ax-grow">DOR-2401 Keep the old API?</span
+              ><span class="ax-state">Needs you</span>
+            </div>
+            <div class="ax-cap">Up next</div>
+            <div class="ax-q">
+              <span class="ax-muted">1</span
+              ><span class="ax-grow">DOR-2412 Faster sidebar load</span>
+            </div>
+            <div class="ax-q">
+              <span class="ax-muted">2</span><span class="ax-grow">DOR-2419 Relay retry copy</span>
+            </div>
+            <div class="ax-muted" style="padding-left: 14px">+ 5 more</div>
+            <div class="ax-foot">
+              <span>2 need you elsewhere →</span><span class="ax-muted">Open in Linear ↗</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Two small tabs inside: Running | Up next</h3>
+      <p>Each list gets the full height. But you can't see both at once.</p>
+      <div class="ax">
+        <div class="ax-app">
+          <div class="ax-chat">(your chat in ~/Keep/dork-os/dorkos)</div>
+          <div class="ax-panel">
+            <div class="ax-tabs">
+              <span>Files</span><span>Canvas</span
+              ><span class="on">Flow<span class="ax-mk"></span></span>
+            </div>
+            <div class="ax-hd">
+              <b>dorkos</b><span class="ax-muted">· Linear DOR</span><span style="flex: 1"></span
+              ><span class="ax-btn">Pause</span><span class="ax-btn">⚙</span>
+            </div>
+            <div class="ax-cond">Can't reach Linear since 09:14 · <u>Reconnect</u></div>
+            <div>
+              <span class="ax-seg"><span class="on">Running 2</span><span>Up next 7</span></span>
+            </div>
+            <div style="margin-top: 6px"></div>
+            <div class="ax-run">
+              <span class="ax-dot" style="background: #2563eb"></span
+              ><span class="ax-grow">DOR-2387 Out-of-usage banner</span
+              ><span class="ax-state">Building</span>
+            </div>
+            <div class="ax-run">
+              <span class="ax-dot" style="background: #16a34a"></span
+              ><span class="ax-grow">DOR-2401 Keep the old API?</span
+              ><span class="ax-state">Needs you</span>
+            </div>
+            <div class="ax-foot">
+              <span>2 need you elsewhere →</span><span class="ax-muted">Open in Linear ↗</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 18px; color: #18181b">
+  <h3>Same for both: the tab when your chat is outside any flow project</h3>
+  <div class="ax" style="max-width: 300px">
+    <div class="ax-app" style="min-height: 0">
+      <div class="ax-panel" style="width: 100%">
+        <div class="ax-tabs">
+          <span>Files</span><span class="on">Flow<span class="ax-mk"></span></span>
+        </div>
+        <div class="ax-hd"><b>All projects</b></div>
+        <div class="ax-run">
+          <span class="ax-grow"><b>dorkos</b> · 2 need you</span>
+        </div>
+        <div class="ax-run">
+          <span class="ax-grow"><b>blintz</b> · Can't reach Linear</span>
+        </div>
+        <div class="ax-muted" style="padding: 4px 0">2 other projects are fine</div>
+        <div class="ax-muted" style="padding: 2px 0">
+          This folder is a repo. <u>Set up flow here</u>
+        </div>
+        <div class="ax-foot"><span>Open Flow home →</span></div>
+      </div>
+    </div>
+  </div>
+  <ul>
+    <li>
+      The small amber dot on the "Flow" tab label shows only when something needs you, or when every
+      project is paused. No number.
+    </li>
+    <li>
+      Accounts move out of this tab. They live on the account chip and in Settings, where they
+      already are.
+    </li>
+    <li>No engine words. "Building", "In review", "Needs you", never "EXECUTE".</li>
+  </ul>
+</div>

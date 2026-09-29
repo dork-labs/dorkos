@@ -1,25 +1,50 @@
 import { Gauge, DollarSign } from 'lucide-react';
 import type { UsageStatus } from '@dorkos/shared/types';
-import { DetailRow, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import {
+  DetailRow,
+  STATUS_TONE_TEXT,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { useNow } from '@/layers/shared/model';
 import { formatCost } from '../lib/format-tokens';
+import { showsStaleMark, staleNumberClass } from '../lib/account-usage-status';
+import { MUTED_TEXT, type UsageSurface } from '../lib/usage-surface';
+import { UsageFreshnessLine } from './UsageFreshnessLine';
 
-interface UsageStatusItemProps {
+interface UsageDetailProps {
+  /** The runtime-neutral usage descriptor. */
   usage: UsageStatus;
+  /**
+   * What the rows are painted on. `panel` (the default) is a popover or panel
+   * on the page's own colors, where the overage note and "Rate limit reached"
+   * wear the text-tuned warning and error tokens (4.5:1 or better, both
+   * themes). `tooltip` is the inverted tooltip, where no warning or error token
+   * reaches 4.5:1 in either theme, so both lines wear the tooltip's own text
+   * color and the words carry the state, and the labels and notes wear its
+   * own muted step (04 §13).
+   */
+  surface?: UsageSurface;
 }
 
-/**
- * Whether a {@link UsageStatus} has a metric worth rendering. A subscription
- * renders when it has utilization or cost; pay-as-you-go renders when it has
- * cost. The parent gates its mount on this so an empty usage hides the item.
- *
- * @param usage - The runtime-neutral usage descriptor.
- */
-export function hasRenderableUsage(usage: UsageStatus): boolean {
-  if (usage.kind === 'subscription') {
-    return usage.utilization != null || usage.costUsd != null;
-  }
-  return usage.costUsd != null;
+/** The overage note's and the out-of-usage line's colors, by surface. */
+const TONE_BY_SURFACE = {
+  panel: { warning: STATUS_TONE_TEXT.warning, error: STATUS_TONE_TEXT.error },
+  tooltip: { warning: '', error: '' },
+} as const;
+
+interface UsageStatusItemProps extends UsageDetailProps {
+  /**
+   * When the usage was observed, ISO-8601, or nothing when that is not known
+   * (a snapshot's usage). With it, the tooltip ends with the freshness line and
+   * a reading older than an hour mutes the number and says "· old" after it (spec
+   * `claude-account-ui` §6.8).
+   */
+  observedAt?: string | null;
+  /** A fixed moment to read freshness from (tests and the Dev Playground); else the clock. */
+  now?: Date;
 }
 
 /**
@@ -65,18 +90,53 @@ function costHeading(usage: UsageStatus): string {
 }
 
 /**
+ * The rows under a subscription's utilization: the session's cost (named the
+ * way every cost is, "Estimated" when no price matched), the note on how it was
+ * priced, the runtime's detail line, and "Rate limit reached" when out. Shared
+ * by {@link UsageDetail} and the `/context` reveal's window bars, so the cost
+ * reads the same everywhere.
+ *
+ * @param props - The usage descriptor whose cost to show.
+ */
+export function UsageCostRows({ usage, surface = 'panel' }: UsageDetailProps) {
+  const basisNote = costBasisNote(usage);
+  const tone = TONE_BY_SURFACE[surface];
+  const muted = MUTED_TEXT[surface];
+  return (
+    <>
+      {usage.costUsd != null && (
+        <DetailRow label={costHeading(usage)} labelClassName={muted}>
+          {`$${usage.costUsd.toFixed(2)}`}
+        </DetailRow>
+      )}
+      {basisNote && <div className={muted}>{basisNote}</div>}
+      {usage.detail && (
+        <div data-slot="usage-detail-note" className={tone.warning || undefined}>
+          {usage.detail}
+        </div>
+      )}
+      {usage.state === 'exhausted' && (
+        <div data-slot="usage-limit-note" className={tone.error || undefined}>
+          Rate limit reached
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
  * The usage & cost detail body — utilization, window, resets, and cost for a
  * subscription; the cost figure for pay-as-you-go. Shared by the status-bar
  * item's hover tooltip and the pinned `/context` reveal so both read identically
  * (DOR-100 / DOR-109). Render only for a usage that {@link hasRenderableUsage}.
  *
- * @param usage - The runtime-neutral usage descriptor.
+ * @param props - The usage descriptor, and the surface the rows are painted on.
  */
-export function UsageDetail({ usage }: UsageStatusItemProps) {
+export function UsageDetail({ usage, surface = 'panel' }: UsageDetailProps) {
   const basisNote = costBasisNote(usage);
+  const muted = MUTED_TEXT[surface];
   if (usage.kind === 'subscription' && usage.utilization != null) {
     const pct = Math.round(usage.utilization * 100);
-    const isExhausted = usage.state === 'exhausted';
     const resetsAtLabel = usage.resetsAt
       ? new Date(usage.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : null;
@@ -84,15 +144,18 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
       <div className="space-y-1">
         <div className="text-xs font-medium">Subscription usage</div>
         <div className="text-3xs space-y-0.5">
-          <DetailRow label="Utilization">{`${pct}%`}</DetailRow>
-          {usage.windowLabel && <DetailRow label="Window">{usage.windowLabel}</DetailRow>}
-          {resetsAtLabel && <DetailRow label="Resets at">{resetsAtLabel}</DetailRow>}
-          {usage.costUsd != null && (
-            <DetailRow label="Session cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
+          <DetailRow label="Utilization" labelClassName={muted}>{`${pct}%`}</DetailRow>
+          {usage.windowLabel && (
+            <DetailRow label="Window" labelClassName={muted}>
+              {usage.windowLabel}
+            </DetailRow>
           )}
-          {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
-          {usage.detail && <div className="text-amber-500">{usage.detail}</div>}
-          {isExhausted && <div className="text-red-500">Rate limit reached</div>}
+          {resetsAtLabel && (
+            <DetailRow label="Resets at" labelClassName={muted}>
+              {resetsAtLabel}
+            </DetailRow>
+          )}
+          <UsageCostRows usage={usage} surface={surface} />
         </div>
       </div>
     );
@@ -103,10 +166,13 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
       <div className="text-xs font-medium">{costHeading(usage)}</div>
       <div className="text-3xs space-y-0.5">
         {usage.costUsd != null && (
-          <DetailRow label="Cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
+          <DetailRow
+            label="Cost"
+            labelClassName={muted}
+          >{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
         )}
-        {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
-        {usage.detail && <div className="text-muted-foreground">{usage.detail}</div>}
+        {basisNote && <div className={muted}>{basisNote}</div>}
+        {usage.detail && <div className={muted}>{usage.detail}</div>}
       </div>
     </div>
   );
@@ -132,14 +198,23 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
  *
  * @param props - The usage descriptor to render.
  */
-export function UsageStatusItem({ usage }: UsageStatusItemProps) {
+export function UsageStatusItem({ usage, observedAt = null, now: fixedNow }: UsageStatusItemProps) {
+  const tick = useNow();
+  const now = fixedNow ?? new Date(tick);
   const showUtilization = usage.kind === 'subscription' && usage.utilization != null;
 
   if (showUtilization) {
     const pct = Math.round(usage.utilization! * 100);
     const isExhausted = usage.state === 'exhausted';
     const isWarning = usage.state === 'warning' || pct >= 80;
-    const colorClass = isExhausted ? 'text-red-500' : isWarning ? 'text-amber-500' : '';
+    // The text-tuned amber and red: each clears 4.5:1 on the status bar in both
+    // themes, where text-amber-500 read 2.06:1 and text-red-500 3.60:1 in light.
+    const colorClass = isExhausted ? 'text-destructive' : isWarning ? 'text-status-warning-fg' : '';
+    // An old reading keeps its number, muted, and says "· old" after it, so the
+    // word, not a shade of gray, is what tells it from a fresh one; the tooltip
+    // says how old (Q17, 04 §13).
+    const stale = showsStaleMark(usage, observedAt, now);
+    const numberClass = staleNumberClass(stale);
 
     return (
       <Tooltip>
@@ -147,13 +222,20 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
           <span
             className={cn('inline-flex shrink-0 cursor-default items-center gap-1', colorClass)}
             aria-label="Subscription usage"
+            data-stale={stale || undefined}
           >
             <Gauge className="size-(--size-icon-xs)" />
-            <span>{pct}%</span>
+            <span className={numberClass}>{pct}%</span>
+            {stale && <span className={numberClass}>· old</span>}
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-56">
-          <UsageDetail usage={usage} />
+          <div className="space-y-1">
+            <UsageDetail usage={usage} surface="tooltip" />
+            {observedAt !== null && (
+              <UsageFreshnessLine observedAt={observedAt} now={now} surface="tooltip" />
+            )}
+          </div>
         </TooltipContent>
       </Tooltip>
     );
@@ -199,8 +281,8 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
       <TooltipContent side="top" className="max-w-56">
         <div className="space-y-1">
           <div className="text-xs font-medium">{label}</div>
-          {basisNote && <div className="text-muted-foreground text-3xs">{basisNote}</div>}
-          {usage.detail && <div className="text-muted-foreground text-3xs">{usage.detail}</div>}
+          {basisNote && <div className={cn(MUTED_TEXT.tooltip, 'text-3xs')}>{basisNote}</div>}
+          {usage.detail && <div className={cn(MUTED_TEXT.tooltip, 'text-3xs')}>{usage.detail}</div>}
         </div>
       </TooltipContent>
     </Tooltip>

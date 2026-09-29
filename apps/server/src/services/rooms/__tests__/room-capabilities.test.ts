@@ -9,12 +9,12 @@
  * those, which is exactly the shape of enforcement this repo has been bitten by.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { rooms as roomsTable, eq } from '@dorkos/db';
+import { rooms as roomsTable, roomEntries, eq } from '@dorkos/db';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import {
   composeRegistry,
-  initToolGroupGate,
-  resetToolGroupGate,
+  initPermissionGate,
+  resetPermissionGate,
   type CapabilityRegistry,
 } from '../../core/capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from '../../core/self-description/dorkos-registry.js';
@@ -26,7 +26,13 @@ import { MAX_CAPABILITY_LIMIT } from '@dorkos/shared/capabilities';
 import type { AgentIdentity } from '../../core/agent-identity/index.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import { roomsDomain } from '../room-capabilities.js';
+import {
+  ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
+  RoomRepoConfigUnsafeError,
+} from '../room-errors.js';
+import type { RoomMergeService } from '../repo/room-merge-service.js';
 import { FIND_ROOMS_MAX, type RoomService } from '../room-service.js';
+import { RoomStore } from '../room-store.js';
 import type { RoomTurnRequest } from '../room-trigger.js';
 import {
   agentLookupFor,
@@ -77,7 +83,6 @@ const agents = agentLookupFor({
 const ANA_IDENTITY: AgentIdentity = {
   agentPath: '/agents/ana',
   displayName: 'Ana',
-  tierCeiling: 'act',
   createdAt: new Date().toISOString(),
 };
 
@@ -156,53 +161,53 @@ describe('the rooms capability domain', () => {
   });
 
   describe('what it declares', () => {
-    it('advertises the sixteen tools on both MCP servers, with the tiers and the grant it means', () => {
+    it('advertises the seventeen tools on both MCP servers, with the tiers and the area each is in', () => {
       const declared = roomsDomain.capabilities.map((capability) => ({
         id: capability.id,
         tool: capability.surfaces.mcp?.toolName,
         tier: capability.tier,
         servers: capability.surfaces.mcp?.servers,
         readOnly: capability.surfaces.mcp?.readOnlyCarveOut ?? false,
-        // The grant, pinned per verb (DOR-1611, acceptance criterion 12). A
-        // management verb that silently lost its `toolGroup` would go from
-        // "off until a person turns it on" to reachable by every agent on the
-        // install, and nothing else in this file would notice.
-        group: capability.toolGroup ?? null,
+        // The permission area, pinned per verb (spec `agent-permissions` D2). A
+        // management verb that silently lost its `area` would go from "what the
+        // person set for Rooms" to reachable by every agent on the install, and
+        // nothing else in this file would notice.
+        area: capability.area,
       }));
 
       expect(declared).toEqual([
         {
           id: 'rooms.post',
-          group: null,
           tool: 'post_to_room',
           tier: 'act',
+          area: null,
           servers: ['in-session', 'external'],
           readOnly: false,
         },
         {
           id: 'rooms.react',
-          group: null,
           tool: 'react_to_room_entry',
           tier: 'act',
+          area: null,
           servers: ['in-session', 'external'],
           readOnly: false,
         },
         {
           id: 'rooms.merge',
-          group: null,
           tool: 'merge_to_room_main',
           // `act`, like the other two writes. Not `destructive`: the room's repo
           // is append-only — nothing on this surface, or under it, can force,
           // reset or push — so a merge adds a commit and takes none away.
           tier: 'act',
+          area: 'rooms',
           servers: ['in-session', 'external'],
           readOnly: false,
         },
         {
           id: 'rooms.repo_status',
-          group: null,
           tool: 'room_repo_status',
           tier: 'observe',
+          area: null,
           // Deliberately NOT in the tokenless carve-out, for the reason
           // `list_member_rooms` is not: it is the shape of somebody's work.
           servers: ['in-session', 'external'],
@@ -210,9 +215,9 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.read_history',
-          group: null,
           tool: 'read_room_history',
           tier: 'observe',
+          area: null,
           servers: ['in-session', 'external'],
           // Deliberately NOT in the tokenless carve-out: these return other
           // people's messages, and every other way to read a room's log on this
@@ -221,9 +226,9 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.search_history',
-          group: null,
           tool: 'search_room_history',
           tier: 'observe',
+          area: null,
           servers: ['in-session', 'external'],
           // Deliberately NOT in the tokenless carve-out: these return other
           // people's messages, and every other way to read a room's log on this
@@ -232,9 +237,9 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.list_member_rooms',
-          group: null,
           tool: 'list_member_rooms',
           tier: 'observe',
+          area: null,
           servers: ['in-session', 'external'],
           // Out of the carve-out for a reason of its own: the LIST is not
           // machine state either. A room's name and the fact that somebody is
@@ -244,9 +249,9 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.search_member_rooms',
-          group: null,
           tool: 'search_member_rooms',
           tier: 'observe',
+          area: null,
           servers: ['in-session', 'external'],
           // The widest read in the domain — other people's messages across
           // every room at once — so the carve-out is the last thing it should
@@ -255,9 +260,9 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.get_room',
-          group: null,
           tool: 'get_room',
           tier: 'observe',
+          area: null,
           servers: ['in-session', 'external'],
           // No message body at all, and still out of the carve-out: what it
           // returns is WHO — a room's topic and its whole roster. That is the
@@ -267,9 +272,9 @@ describe('the rooms capability domain', () => {
         },
         {
           id: 'rooms.find_room',
-          group: null,
           tool: 'find_room',
           tier: 'observe',
+          area: null,
           servers: ['in-session', 'external'],
           // The same answer as its pair, from NO ROOM ID — so a tokenless
           // caller could ask which of the operator's rooms hold a named person
@@ -282,52 +287,62 @@ describe('the rooms capability domain', () => {
         // not a tier pretending to be a mechanism.
         {
           id: 'rooms.create',
-          group: 'roomsManage',
           tool: 'create_room',
           tier: 'act',
+          area: 'rooms',
           servers: ['in-session', 'external'],
           readOnly: false,
         },
         {
           id: 'rooms.add_members',
-          group: 'roomsManage',
           tool: 'add_room_members',
           tier: 'act',
+          area: 'rooms',
           servers: ['in-session', 'external'],
           readOnly: false,
         },
         {
           id: 'rooms.remove_members',
-          group: 'roomsManage',
           tool: 'remove_room_members',
           tier: 'act',
+          area: 'rooms',
           servers: ['in-session', 'external'],
           readOnly: false,
         },
         {
           id: 'rooms.update',
-          group: 'roomsManage',
           tool: 'update_room',
           tier: 'act',
+          area: 'rooms',
           servers: ['in-session', 'external'],
           readOnly: false,
         },
         {
           id: 'rooms.leave',
-          group: 'roomsManage',
           tool: 'leave_room',
           tier: 'act',
+          area: 'rooms',
+          servers: ['in-session', 'external'],
+          readOnly: false,
+        },
+        {
+          // Putting a channel away (spec `agent-permissions` D12). `act`: it is
+          // a flag the person can undo, not a delete.
+          id: 'rooms.archive',
+          tool: 'archive_room',
+          tier: 'act',
+          area: 'rooms',
           servers: ['in-session', 'external'],
           readOnly: false,
         },
         {
           id: 'rooms.read_canvas',
-          group: null,
           tool: 'read_canvas',
           // `observe`, like every other read here — and, like every other read
           // here, deliberately NOT in the tokenless carve-out: what it returns
           // is what the room's members put in front of each other.
           tier: 'observe',
+          area: null,
           servers: ['in-session', 'external'],
           readOnly: false,
         },
@@ -348,15 +363,15 @@ describe('the rooms capability domain', () => {
       ).toHaveLength(1);
     });
 
-    it('serves the five tool names behind the grant through the catalog the cockpit reads', () => {
-      // The one fact both Tools tabs render, taken from the WHOLE composed
-      // registry through the SAME projection the HTTP route serves. Asserting it
-      // off `roomsDomain` instead would prove only that the declaration exists,
-      // and the declaration was never the part that broke.
+    it('serves the tool names in the Rooms area through the catalog', () => {
+      // Taken from the WHOLE composed registry through the SAME projection the
+      // HTTP route serves. Asserting it off `roomsDomain` instead would prove
+      // only that the declaration exists, and the declaration was never the
+      // part that broke.
       const catalog = composeCapabilityRegistryForDocs().catalog();
 
       const granted = projectCatalog(catalog, {
-        toolGroup: 'roomsManage',
+        area: 'rooms',
         limit: MAX_CAPABILITY_LIMIT,
       });
       expect(granted.detail).toBe('full');
@@ -366,20 +381,20 @@ describe('the rooms capability domain', () => {
           .sort()
       ).toEqual([
         'add_room_members',
+        'archive_room',
         'create_room',
         'leave_room',
+        'merge_to_room_main',
         'remove_room_members',
         'update_room',
       ]);
 
-      // And the reason the cockpit has to ASK for that slice. The unfiltered
-      // page is compact and bounded at 50 of 80-odd capabilities sorted by id,
-      // so `rooms.*` is both stripped of its grant and off the end of the page:
-      // a Tools tab reading it would show an empty group, forever, with nothing
-      // failing anywhere.
+      // And the reason a reader has to ASK for that slice. The unfiltered page
+      // is compact and bounded at 50 of 80-odd capabilities sorted by id, so
+      // `rooms.*` is both stripped of its area and off the end of the page.
       const bare = projectCatalog(catalog, { limit: DEFAULT_CAPABILITY_LIMIT });
       expect(bare.detail).toBe('compact');
-      expect(bare.capabilities.some((capability) => 'toolGroup' in capability)).toBe(false);
+      expect(bare.capabilities.some((capability) => 'area' in capability)).toBe(false);
     });
 
     it('refuses to compose with the domain but without its service handle', () => {
@@ -478,6 +493,81 @@ describe('the rooms capability domain', () => {
       )) as { entryId: string };
 
       expect(harness.store.getEntryById(channel.id, result.entryId)?.authorId).toBe(ana);
+    });
+  });
+
+  describe('a room whose git settings name a program (DOR-2457)', () => {
+    const CONFIG = '/home/operator/.dork/rooms/r1/repo/.git/config';
+
+    /** A registry whose merge service refuses every call the way a poisoned room does. */
+    function poisonedRegistry(): CapabilityRegistry {
+      const refuse = async () => {
+        throw new RoomRepoConfigUnsafeError(CONFIG, ['filter.x.smudge']);
+      };
+      return composeRegistry([roomsDomain], {
+        logger: { debug() {}, info() {}, warn() {}, error() {} },
+        roomDeps: {
+          rooms: service,
+          merges: { merge: refuse, status: refuse } as unknown as RoomMergeService,
+        },
+      });
+    }
+
+    /** Both repo verbs' refusal payloads for one caller. */
+    async function refusals(context: Parameters<CapabilityRegistry['invoke']>[2]) {
+      const poisoned = poisonedRegistry();
+      const payloads: unknown[] = [];
+      for (const id of ['rooms.merge', 'rooms.repo_status']) {
+        const input =
+          id === 'rooms.merge'
+            ? { roomId: channel.id, summary: 'Ship it' }
+            : { roomId: channel.id };
+        await poisoned.invoke(id, input, context).then(
+          () => payloads.push('no refusal'),
+          (err: { payload?: unknown }) => payloads.push(err.payload ?? String(err))
+        );
+      }
+      return payloads;
+    }
+
+    it('tells an agent only that the files are paused — never the path, keys or command', async () => {
+      for (const payload of await refusals({
+        identity: ANA_IDENTITY,
+        retryChannel: 'mcp-argument',
+      })) {
+        expect(payload).toEqual({
+          code: 'ROOM_REPO_CONFIG_UNSAFE',
+          error: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
+        });
+      }
+    });
+
+    it('tells another signed-in person the same plain line', async () => {
+      installState.loginEnabled = true;
+      installState.ownerId = 'owner-account';
+      const priya = authors.human('priya-account').id;
+      service.addMember(channel.id, human, { authorId: priya });
+
+      for (const payload of await refusals({
+        userId: 'priya-account',
+        retryChannel: 'http-header',
+      })) {
+        expect(payload).toEqual({
+          code: 'ROOM_REPO_CONFIG_UNSAFE',
+          error: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
+        });
+      }
+    });
+
+    it('tells the owner the file, the key, and the command to remove it', async () => {
+      for (const payload of await refusals({ retryChannel: 'http-header' })) {
+        expect(payload).toMatchObject({
+          code: 'ROOM_REPO_CONFIG_UNSAFE',
+          error: expect.stringContaining(CONFIG),
+          command: `git config --file '${CONFIG}' --unset-all 'filter.x.smudge'`,
+        });
+        expect((payload as { error: string }).error).toContain('filter.x.smudge');
+      }
     });
   });
 
@@ -602,6 +692,20 @@ describe('the rooms capability domain', () => {
       ).toBe(true);
     });
 
+    it('names the operator as an agent should read them, never the registry`s "You"', async () => {
+      // DOR-2458: "You" in a tool result reads as the agent itself. No profile
+      // name in this harness, so it is the fallback.
+      service.post(channel.id, { authorId: human, text: 'ship it' });
+
+      const result = (await call('rooms.read_history', {
+        roomId: channel.id,
+        limit: 10,
+      })) as { entries: Array<{ text: string; author: string }> };
+
+      expect(result.entries.find((entry) => entry.text === 'ship it')?.author).toBe('the operator');
+      expect(result.entries.some((entry) => entry.author === 'You')).toBe(false);
+    });
+
     it('finds a message through the shipped index', async () => {
       service.post(channel.id, { authorId: human, text: 'the kubernetes rollout is done' });
       await harness.indexMessages();
@@ -664,6 +768,19 @@ describe('the rooms capability domain', () => {
     async function describeAs(roomId: string): Promise<RoomDetailPayload> {
       return (await call('rooms.get_room', { roomId })) as RoomDetailPayload;
     }
+
+    it('names the operator as an agent reads them, on get_room and find_room (DOR-2458)', async () => {
+      const described = await describeAs(channel.id);
+      const operator = described.members.find((member) => member.authorId === human);
+      expect(operator?.name).toBe('the operator');
+      expect(described.members.some((member) => member.name === 'You')).toBe(false);
+
+      const found = (await call('rooms.find_room', { name: 'Backend' })) as {
+        rooms: RoomDetailPayload[];
+      };
+      const listed = found.rooms[0]!.members.find((member) => member.authorId === human);
+      expect(listed?.name).toBe('the operator');
+    });
 
     /** Ask for one room as somebody else — the positive control on a refusal. */
     function describeAsAgent(roomId: string, agentPath: string): Promise<unknown> {
@@ -1075,7 +1192,7 @@ describe('the rooms MANAGEMENT verbs', () => {
   let human: string;
   let ana: string;
   let bo: string;
-  /** Whether the agent calling holds `roomsManage`, flipped per test. */
+  /** Whether the agent calling has Rooms set to Allowed, flipped per test. */
   let grantHeld = true;
 
   /** Call a management tool as Ana, the way an identified agent would. */
@@ -1094,10 +1211,14 @@ describe('the rooms MANAGEMENT verbs', () => {
     installState.ownerId = null;
     installState.loginEnabled = false;
     grantHeld = true;
-    resetToolGroupGate();
-    // The real gate, over a lookup this file can move — the same seam boot wires
-    // to the agent's manifest.
-    initToolGroupGate({ grants: { holds: async () => grantHeld } });
+    resetPermissionGate();
+    // The real gate, over sources this file can move — the same seam boot wires
+    // to the config and the agent's manifest. No preset chosen (Unchanged), so
+    // Rooms is Blocked unless the agent's own setting allows it.
+    initPermissionGate({
+      readConfig: () => ({ preset: null, defaults: { areas: {}, actions: {} } }),
+      readAgentPermissions: async () => (grantHeld ? { areas: { rooms: 'allowed' } } : undefined),
+    });
     harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
     ({ service, authors, human } = harness);
     registry = composeRegistry([roomsDomain], {
@@ -1114,7 +1235,7 @@ describe('the rooms MANAGEMENT verbs', () => {
   });
 
   afterEach(() => {
-    resetToolGroupGate();
+    resetPermissionGate();
   });
 
   describe('create_room', () => {
@@ -1570,8 +1691,101 @@ describe('the rooms MANAGEMENT verbs', () => {
     });
   });
 
-  describe('the grant', () => {
-    it('refuses every management verb when the person has not turned it on', async () => {
+  describe('archive_room', () => {
+    it('puts a channel away: archived, gone from lists, with a notice saying who', async () => {
+      const before = service.listRooms(human).map((room) => room.id);
+      expect(before).toContain(channel.id);
+
+      await expect(call('rooms.archive', { roomId: channel.id })).resolves.toMatchObject({
+        archived: true,
+        roomId: channel.id,
+      });
+
+      expect(service.listRooms(human).map((room) => room.id)).not.toContain(channel.id);
+      expect(service.getRoom(channel.id, human)?.archived).toBe(true);
+      // The last line the room ever gains, written once the archive landed.
+      const entries = harness.db
+        .select()
+        .from(roomEntries)
+        .where(eq(roomEntries.roomId, channel.id))
+        .all();
+      const notice = entries.map((entry) => JSON.parse(entry.body)).at(-1);
+      expect(notice).toMatchObject({ notice: 'room_archived', subjectAuthorId: ana });
+      expect(notice.text).toContain('Ana');
+    });
+
+    it('writes no notice when the archive itself fails', async () => {
+      const count = () =>
+        harness.db.select().from(roomEntries).where(eq(roomEntries.roomId, channel.id)).all()
+          .length;
+      const before = count();
+      const updateRoom = vi.spyOn(RoomStore.prototype, 'updateRoom').mockImplementationOnce(() => {
+        throw new Error('the database went away');
+      });
+      try {
+        await expect(call('rooms.archive', { roomId: channel.id })).rejects.toThrow();
+      } finally {
+        updateRoom.mockRestore();
+      }
+
+      expect(service.getRoom(channel.id, human)?.archived).toBe(false);
+      expect(count()).toBe(before);
+    });
+
+    it('lets the person bring it back afterwards', async () => {
+      await call('rooms.archive', { roomId: channel.id });
+
+      const restored = service.updateRoom(channel.id, human, { archived: false });
+
+      expect(restored.archived).toBe(false);
+      expect(service.listRooms(human).map((room) => room.id)).toContain(channel.id);
+    });
+
+    it('refuses a channel the caller is not in, as if it did not exist', async () => {
+      const elsewhere = service.createRoom(
+        { kind: 'channel', title: 'Elsewhere', members: [], agentPaths: [] },
+        human
+      );
+
+      await expect(call('rooms.archive', { roomId: elsewhere.id })).rejects.toMatchObject({
+        payload: { code: 'ROOM_NOT_FOUND' },
+      });
+      expect(service.getRoom(elsewhere.id, human)?.archived).toBe(false);
+    });
+
+    it('refuses a direct message, with the leave_room sentence', async () => {
+      const dm = (await call('rooms.create', { kind: 'dm', members: [] })) as { roomId: string };
+
+      await expect(call('rooms.archive', { roomId: dm.roomId })).rejects.toMatchObject({
+        payload: {
+          code: 'TOOL_ARCHIVE_NOT_IN_DM',
+          error: 'A direct message stays until the person archives it.',
+        },
+      });
+    });
+
+    it('refuses the home channel', async () => {
+      const { room } = service.ensureSystemChannel('team', { slug: 'team' }, human);
+      service.addMember(room.id, human, { agentPath: '/agents/ana' });
+
+      await expect(call('rooms.archive', { roomId: room.id })).rejects.toMatchObject({
+        payload: { code: 'SYSTEM_ROOM' },
+      });
+      expect(service.getRoom(room.id, human)?.archived).toBe(false);
+    });
+
+    it('is refused like the other Rooms verbs while Rooms is Blocked', async () => {
+      grantHeld = false;
+
+      await expect(call('rooms.archive', { roomId: channel.id })).rejects.toMatchObject({
+        decision: { payload: { reason: 'permission_blocked' } },
+      });
+      expect(service.getRoom(channel.id, human)?.archived).toBe(false);
+    });
+  });
+
+  describe('the Rooms permission', () => {
+    it('refuses every management verb while Rooms is Blocked', async () => {
       grantHeld = false;
 
       for (const [id, input] of [
@@ -1580,9 +1794,12 @@ describe('the rooms MANAGEMENT verbs', () => {
         ['rooms.remove_members', { roomId: channel.id, members: ['@bo'] }],
         ['rooms.update', { roomId: channel.id, topic: 'nope' }],
         ['rooms.leave', { roomId: channel.id }],
+        ['rooms.archive', { roomId: channel.id }],
       ] as const) {
+        // Approvable, because the agent may ask on purpose with the request
+        // tool; a direct call still raises no card (spec `agent-permissions` D8).
         await expect(call(id, input), id).rejects.toMatchObject({
-          decision: { payload: { reason: 'tool_group_disabled', approvable: false } },
+          decision: { payload: { reason: 'permission_blocked', approvable: true } },
         });
       }
       // Nothing ran: the room is exactly as it was.
@@ -1590,9 +1807,9 @@ describe('the rooms MANAGEMENT verbs', () => {
     });
 
     it('leaves the CONVERSATION verbs reachable without it', async () => {
-      // The grant covers arranging rooms and nothing else. An agent whose owner
-      // has not armed it is not muted — which is the whole reason the
-      // conversation verbs deliberately have no toggle.
+      // The Rooms area covers arranging rooms and nothing else. An agent with it
+      // Blocked is not muted — which is the whole reason the conversation verbs
+      // deliberately have no switch.
       grantHeld = false;
 
       await expect(
@@ -1687,12 +1904,15 @@ describe('what an armed agent can spend by making rooms', () => {
   beforeEach(() => {
     installState.ownerId = null;
     installState.loginEnabled = false;
-    resetToolGroupGate();
-    initToolGroupGate({ grants: { holds: async () => true } });
+    resetPermissionGate();
+    initPermissionGate({
+      readConfig: () => ({ preset: 'full', defaults: { areas: {}, actions: {} } }),
+      readAgentPermissions: async () => undefined,
+    });
   });
 
   afterEach(() => {
-    resetToolGroupGate();
+    resetPermissionGate();
   });
 
   it('costs the colleague exactly one turn when the sequence runs inside a turn', async () => {

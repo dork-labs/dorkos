@@ -37,12 +37,13 @@ const registry = composeRegistry([operatorDomain, marketplaceDomain], {
 /**
  * The exact tool set both MCP servers advertise.
  *
- * It started as the pre-migration set and has grown by four since:
+ * It started as the pre-migration set and has grown by five since:
  * `update_agent_boundaries`, the NOPE.md write split out of `update_agent` so it
  * can be tier `destructive` (DOR-1698), the two sidebar-section writes that
  * replace re-sending the whole `ui.sidebar.groups` array through `config_patch`
  * (DOR-2055), and `feedback_draft`, which builds the prefilled GitHub issue link
- * `dorkos feedback` builds and sends nothing (DOR-2056).
+ * `dorkos feedback` builds and sends nothing (DOR-2056), and
+ * `marketplace_update`, which checks and applies package updates (DOR-2195).
  */
 const EXPECTED_TOOL_NAMES = [
   'activity_list',
@@ -52,6 +53,7 @@ const EXPECTED_TOOL_NAMES = [
   'feedback_draft',
   'update_agent',
   'update_agent_boundaries',
+  'update_agent_execution',
   'config_patch',
   'sidebar_add_to_group',
   'sidebar_remove_from_group',
@@ -61,6 +63,7 @@ const EXPECTED_TOOL_NAMES = [
   'marketplace_list_installed',
   'marketplace_recommend',
   'marketplace_install',
+  'marketplace_update',
   'marketplace_uninstall',
   'marketplace_create_package',
 ].sort();
@@ -105,11 +108,13 @@ const EXPECTED_ANNOTATIONS: Record<string, ToolAnnotations> = {
     idempotentHint: true,
     openWorldHint: false,
   },
+  // readOnlyOpenWorld since DOR-2195: `checkUpdates` reads each package's
+  // (possibly remote) marketplace.
   marketplace_list_installed: {
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: true,
-    openWorldHint: false,
+    openWorldHint: true,
   },
   // readOnlyOpenWorld
   check_update: {
@@ -170,8 +175,23 @@ const EXPECTED_ANNOTATIONS: Record<string, ToolAnnotations> = {
     idempotentHint: true,
     openWorldHint: false,
   },
+  // Tier `destructive` because every schedule that follows the agent moves with
+  // it (DOR-2328); setting the same values twice lands the same state.
+  update_agent_execution: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
   // mutateCreateOpenWorld
   marketplace_install: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true,
+  },
+  // mutateCreateOpenWorld — a reinstall replaces files with a fresh fetch.
+  marketplace_update: {
     readOnlyHint: false,
     destructiveHint: false,
     idempotentHint: false,
@@ -208,14 +228,14 @@ const EXPECTED_CARVE_OUT = [
 ].sort();
 
 describe('operator + marketplace MCP projection', () => {
-  it('advertises the same 18 tools on the in-session server', () => {
+  it('advertises the same 20 tools on the in-session server', () => {
     const names = capabilitiesForMcpServer(registry, 'in-session')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();
     expect(names).toEqual(EXPECTED_TOOL_NAMES);
   });
 
-  it('advertises the same 18 tools on the external server', () => {
+  it('advertises the same 20 tools on the external server', () => {
     const names = capabilitiesForMcpServer(registry, 'external')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();

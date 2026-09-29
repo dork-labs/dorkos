@@ -75,6 +75,7 @@ vi.mock('../../core/config-manager.js', () => ({
 }));
 
 const mockScheduledCleanup = vi.fn();
+const mockReleaseAccounts = vi.fn();
 const mockCreateDataProviderContext = vi.fn().mockReturnValue({
   ctx: {
     secrets: {},
@@ -85,6 +86,7 @@ const mockCreateDataProviderContext = vi.fn().mockReturnValue({
     extensionDir: '/fake/extensions/test-ext',
   },
   getScheduledCleanups: () => [mockScheduledCleanup],
+  releaseAccounts: () => mockReleaseAccounts(),
 });
 vi.mock('../extension-server-api-factory.js', () => ({
   createDataProviderContext: (...args: unknown[]) => mockCreateDataProviderContext(...args),
@@ -118,6 +120,20 @@ vi.mock('fs/promises', () => ({
 import { ExtensionManager } from '../extension-manager.js';
 
 // --- Helpers ---
+
+/**
+ * Approvals of the given ids, each bound to the copy `makeRecord` builds for it
+ * (DOR-2383: an approval names the copy it was given to, not just the id).
+ */
+function approved(ids: string[]): {
+  approvedToRun: string[];
+  approvedSources: Record<string, { path: string }>;
+} {
+  return {
+    approvedToRun: ids,
+    approvedSources: Object.fromEntries(ids.map((id) => [id, { path: `/fake/extensions/${id}` }])),
+  };
+}
 
 function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): ExtensionRecord {
   return {
@@ -164,7 +180,7 @@ describe('ExtensionManager — server lifecycle', () => {
     mockConfigGet.mockReturnValue({
       enabled: [],
       disabled: [],
-      approvedToRun: [
+      ...approved([
         'srv-ext',
         'no-srv',
         'disabled-srv',
@@ -179,7 +195,7 @@ describe('ExtensionManager — server lifecycle', () => {
         'auto-srv',
         'fail-srv',
         'dis-srv',
-      ],
+      ]),
     });
     mockDiscover.mockResolvedValue([]);
     manager = new ExtensionManager('/fake/dork-home');
@@ -283,11 +299,14 @@ describe('ExtensionManager — server lifecycle', () => {
       });
 
       await manager.initialize(null);
+      mockReleaseAccounts.mockClear();
 
       const result = await manager.initializeServer('throw-srv');
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('register failed');
+      // An account listener or advisor it added before throwing does not outlive it.
+      expect(mockReleaseAccounts).toHaveBeenCalledTimes(1);
     });
 
     it('returns ok:false when module does not export a function', async () => {
@@ -420,7 +439,7 @@ describe('ExtensionManager — server lifecycle', () => {
         mockConfigGet.mockReturnValue({
           enabled: ['stale-srv'],
           disabled: [],
-          approvedToRun: ['stale-srv'],
+          ...approved(['stale-srv']),
         });
         mockDiscover.mockResolvedValue([record]);
         mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
@@ -492,7 +511,7 @@ describe('ExtensionManager — server lifecycle', () => {
         mockConfigGet.mockReturnValue({
           enabled: ['reload-ext'],
           disabled: [],
-          approvedToRun: ['reload-ext'],
+          ...approved(['reload-ext']),
         });
         mockDiscover.mockResolvedValue([record]);
         mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
@@ -506,6 +525,8 @@ describe('ExtensionManager — server lifecycle', () => {
 
         expect(manager.getServerRouter('reload-ext')).not.toBe(router);
         expect(mockScheduledCleanup).toHaveBeenCalled();
+        // Its account listeners and advisor go with the old instance.
+        expect(mockReleaseAccounts).toHaveBeenCalledTimes(1);
       });
     });
   });
@@ -535,6 +556,7 @@ describe('ExtensionManager — server lifecycle', () => {
 
       expect(manager.getServerRouter('shutdown-ext')).toBeNull();
       expect(mockScheduledCleanup).toHaveBeenCalled();
+      expect(mockReleaseAccounts).toHaveBeenCalledTimes(1);
     });
 
     it('is a no-op for extensions without an active server', async () => {
@@ -666,7 +688,7 @@ describe('ExtensionManager — server lifecycle', () => {
       mockConfigGet.mockReturnValue({
         enabled: ['reload-srv'],
         disabled: [],
-        approvedToRun: ['reload-srv'],
+        ...approved(['reload-srv']),
       });
       mockDiscover.mockResolvedValue([record]);
       mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
@@ -703,7 +725,7 @@ describe('ExtensionManager — server lifecycle', () => {
       mockConfigGet.mockReturnValue({
         enabled: ['startup-srv', 'startup-client'],
         disabled: [],
-        approvedToRun: ['startup-srv', 'startup-client'],
+        ...approved(['startup-srv', 'startup-client']),
       });
       mockDiscover.mockResolvedValue([srvRecord, clientRecord]);
       mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
@@ -744,7 +766,7 @@ describe('ExtensionManager — server lifecycle', () => {
       mockConfigGet.mockReturnValue({
         enabled: ['startup-throws', 'startup-survives'],
         disabled: [],
-        approvedToRun: ['startup-throws', 'startup-survives'],
+        ...approved(['startup-throws', 'startup-survives']),
       });
       mockDiscover.mockResolvedValue([throwsRecord, survivesRecord]);
       mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });

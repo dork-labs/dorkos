@@ -39,9 +39,6 @@ const DEFAULT_CONCURRENCY = 4;
  *   {@link useRoomTurnLimits} hook Settings → Rooms writes with, so the two
  *   surfaces cannot disagree. The four numbers behind it stay in Settings: this
  *   panel is for the switches a person reaches for, not for tuning.
- * - **Standing grants** — `approvals.standingGrants`, coupled to Require login
- *   exactly as the canonical Security control is: without a login DorkOS cannot
- *   tell the operator from an agent, so the switch reads off and is held.
  * - **Warm agents** — `runtimes.claudeCode.persistentSession`. This is the new
  *   home of the switch that left Settings → Experiments when the flag graduated;
  *   its honest cost note travels with it.
@@ -59,8 +56,6 @@ export function ControlCenterSwitches() {
   // change live, so a write invalidates the whole config prefix.
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: configKeys.all });
 
-  const standingGrants = config?.approvals?.standingGrants ?? false;
-  const loginEnabled = config?.auth?.enabled ?? false;
   // Warm agents default on (spec `full-power-defaults`); read from the config
   // route's `claudeCode` block, which exposes it now that its Experiments switch
   // is gone.
@@ -89,20 +84,6 @@ export function ControlCenterSwitches() {
           checked={limits?.turnLimitsEnabled ?? true}
           disabled={limits === null}
           onCheckedChange={(next) => setLimits({ turnLimitsEnabled: next })}
-        />
-
-        <SwitchSettingRow
-          label="Standing permissions"
-          description={
-            loginEnabled
-              ? 'Answer “stop asking about this” once from an approval card and DorkOS remembers it, one agent, one action at a time.'
-              : 'Turn on Require login in Settings → Access to use this. Without it, DorkOS cannot tell you apart from an agent on this machine.'
-          }
-          checked={standingGrants && loginEnabled}
-          disabled={!loginEnabled || updateConfig.isPending}
-          onCheckedChange={(next) =>
-            updateConfig.mutate({ approvals: { standingGrants: next } }, { onSuccess: invalidate })
-          }
         />
 
         <SwitchSettingRow

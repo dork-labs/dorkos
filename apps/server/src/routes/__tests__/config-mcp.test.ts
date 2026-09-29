@@ -9,6 +9,11 @@ vi.mock('../../services/core/config-manager.js', () => {
   return {
     configManager: {
       get: vi.fn((key: string) => store[key]),
+      getDot: vi.fn((key: string) =>
+        key
+          .split('.')
+          .reduce<unknown>((node, segment) => (node as Record<string, unknown>)?.[segment], store)
+      ),
       set: vi.fn((key: string, value: unknown) => {
         store[key] = value;
       }),

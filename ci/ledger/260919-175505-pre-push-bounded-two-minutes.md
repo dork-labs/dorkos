@@ -7,7 +7,6 @@ actor: agent
 gates:
   - lefthook.pre-push.formatting
   - lefthook.pre-commit.lint
-  - lefthook.pre-commit.typecheck
 prs: [1969]
 hypothesis:
   metric: 'local-push'
@@ -19,6 +18,8 @@ hypothesis:
 ratchet-release: []
 field-changes: []
 ---
+
+<!-- Amended 2026-09-24: `lefthook.pre-commit.typecheck` removed from `gates:` because the command no longer exists (ci/ledger/260919-175506-*). At commit, `lint` alone now holds a slot. The hypothesis is unchanged. -->
 
 ## What changed
 

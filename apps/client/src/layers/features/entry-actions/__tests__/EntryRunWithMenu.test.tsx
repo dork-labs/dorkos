@@ -145,6 +145,7 @@ function makeCaps(...types: string[]): CapabilitiesMap {
     supportsManagedMcpServers: false,
     supportsQuestionPrompt: false,
     supportsPlugins: false,
+    supportsAccounts: false,
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,

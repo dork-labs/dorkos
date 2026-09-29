@@ -41,7 +41,9 @@ function promotionContext(overrides: Partial<StatusPromotionContext> = {}): Stat
     permissionDescriptor: null,
     plan: null,
     runtime: { isDefault: true, canSelect: false },
+    account: null,
     usage: { kind: 'pay-as-you-go', costUsd: 0.35 },
+    usageStale: false,
     subagentsInFlight: 0,
     ...overrides,
   };

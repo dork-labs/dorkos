@@ -48,11 +48,8 @@ export interface AssembleContextOpts {
    * more authority than `content` does — the rendered block says so out loud
    * (`runtimes/shared/seed-context-block.ts`).
    *
-   * Clamped to {@link SEED_CONTEXT_MAX_LENGTH} HERE rather than only at the HTTP
-   * route, because this is the one place both transports pass through: the
-   * embedded (Obsidian / `DirectTransport`) path never meets
-   * `SendMessageRequestSchema`, so the route's refusal is not a bound on the
-   * feature — it is a bound on one of its two doors.
+   * Clamped to {@link SEED_CONTEXT_MAX_LENGTH} here as well as at the HTTP
+   * route, so direct service callers cannot submit an unbounded seed.
    */
   seedContext?: string;
   /**

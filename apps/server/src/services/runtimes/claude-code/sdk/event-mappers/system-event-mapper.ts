@@ -2,6 +2,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, MemoryRecallEvent } from '@dorkos/shared/types';
 import type { AgentSession, ToolState } from '../../agent-types.js';
 import { logger } from '../../../../../lib/logger.js';
+import { keySourceBillsPerToken } from '../../messaging/per-token-billing.js';
 
 /** Hook events that correlate to a specific tool call and render inside ToolCallCard. */
 const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
@@ -34,6 +35,12 @@ export async function* mapSystemEvent(
     // never saw, so its ledger is left as it is (see `sdk/turn-usage.ts`).
     if (!session.hasStarted) session.usageLedger = {};
     session.hasStarted = true;
+    // The binary says which credential pays: it overrides the launch's guess
+    // from the environment (spec `claude-account-fleet` §6 U).
+    const apiKeySource = (message as Record<string, unknown>).apiKeySource;
+    if (typeof apiKeySource === 'string') {
+      session.launchedPerToken = keySourceBillsPerToken(apiKeySource);
+    }
     const initModel = (message as Record<string, unknown>).model as string | undefined;
     if (initModel) {
       yield {

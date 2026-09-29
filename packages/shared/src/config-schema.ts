@@ -28,9 +28,24 @@ import { EFFORT_LEVELS } from './constants.js';
 // inlines, and the `.openapi()` prototype patch would land on one instance while
 // the registry asked the other. See `harness-ids.ts` for the measurement.
 import { HARNESS_IDS } from './harness-ids.js';
+import {
+  ACCOUNT_COLOR_PATTERN,
+  ACCOUNT_ID_PATTERN,
+  IMPLICIT_ACCOUNT_ID,
+  isAbsoluteAccountPath,
+  isAccountColor,
+  resolveAccountColor,
+} from './account-identity.js';
 import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
+// Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
+// the same SRC-alias reason as `HARNESS_IDS` above.
+import {
+  PERMISSION_ACTION_ID_PATTERN,
+  PERMISSION_PRESETS,
+  PERMISSION_STATES,
+} from './permissions/permission-ids.js';
 export {
   RuntimeInheritedEnvNamesSchema,
   isReservedRuntimeEnvName,
@@ -40,6 +55,29 @@ export {
 const CommunityNavigationRefSchema = z
   .string()
   .regex(/^[0-9A-Za-z][0-9A-Za-z_-]*$/, 'A community ref must be path-safe');
+
+/**
+ * The one copy of an extension a person approved to run code (DOR-2383).
+ *
+ * An approval is about code, and an id is only a name: two copies of an
+ * extension can carry the same id, and the marketplace tools an agent may call
+ * can install a second one. So an approval also records WHICH copy it was
+ * given to, by where that copy lives. It is identity, not content: editing or
+ * updating the approved copy keeps loading with nothing to click (DOR-504/506).
+ * See `apps/server/src/services/extensions/extension-load-policy.ts`.
+ */
+export const ExtensionApprovedSourceSchema = z.object({
+  /** Absolute path of the approved extension directory. */
+  path: z.string().min(1),
+  /**
+   * The installed marketplace plugin that carries this extension, when it came
+   * inside one; absent for an extension installed directly.
+   */
+  plugin: z.string().min(1).optional(),
+});
+
+/** The one copy of an extension a person approved to run code. */
+export type ExtensionApprovedSource = z.infer<typeof ExtensionApprovedSourceSchema>;
 
 /** One canonical route inside the local DorkOS installation. */
 export const CommunityInstallationPathSchema = z.enum([
@@ -134,29 +172,6 @@ export type CommunityNavigationOwnerPrefs = z.infer<typeof CommunityNavigationOw
 export type CommunityNavigationPrefs = z.infer<typeof CommunityNavigationPrefsSchema>;
 
 /**
- * How long a new standing permission lasts by default, in minutes (eight hours —
- * about one working day, which is the span the button on the approval card names).
- */
-export const DEFAULT_TRUST_WINDOW_MINUTES = 480;
-
-/**
- * Shortest standing permission a person can choose, in minutes.
- *
- * A floor keeps the window from becoming a deny-all that looks like a broken
- * feature, which is the reasoning already applied to the approval window in
- * `approval-service.ts`.
- */
-export const MIN_TRUST_WINDOW_MINUTES = 5;
-
-/**
- * Longest standing permission a person can choose, in minutes (one day).
- *
- * The ceiling is what makes "forever" unrepresentable. It is a schema bound rather
- * than a UI one, so no surface can offer a window the store would accept.
- */
-export const MAX_TRUST_WINDOW_MINUTES = 1440;
-
-/**
  * The bounds every room turn limit must satisfy, wherever it is set.
  *
  * **One definition because there are two writers.** These numbers can be set
@@ -209,6 +224,26 @@ export const ROOM_TURN_LIMIT_DEFAULTS = {
 } as const;
 
 /**
+ * The bounds `rooms.maxConcurrentTurnsPerAgent` must satisfy — how many
+ * conversations one agent may work in at the same time.
+ *
+ * Exported so Settings offers exactly the range the schema accepts. Eight is
+ * the ceiling because DOR-500 measured real damage at six writers on one tree:
+ * a person may go past that on purpose, but not by an order of magnitude.
+ */
+export const MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS = { min: 1, max: 8 } as const;
+
+/**
+ * What `rooms.maxConcurrentTurnsPerAgent` is before anybody changes it.
+ *
+ * The schema builds both of its declarations from this — the per-field
+ * `.default()` and the `rooms` section literal — so a fresh install and an
+ * upgraded one cannot disagree, and Settings reads it to say what the default
+ * is.
+ */
+export const MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT = 3;
+
+/**
  * The bounds the relay turn ceiling must satisfy.
  *
  * Its own constant rather than a reuse of {@link ROOM_TURN_LIMIT_BOUNDS},
@@ -250,6 +285,7 @@ export const SENSITIVE_CONFIG_KEYS = [
   'tunnel.auth',
   'mcp.apiKey',
   'cloud.instanceToken',
+  'cloud.previousLinkProof',
 ] as const;
 
 /**
@@ -456,6 +492,19 @@ export const UserProfileSchema = z.object({
    * ("don't ask again"). Machine-managed; null = never dismissed.
    */
   rolePromptDismissedAt: z.string().nullable().default(null),
+  /**
+   * ISO timestamp when the person closed the one-time "what should we call
+   * you?" question (DOR-677) — by saving a name or handle, or by skipping it —
+   * in onboarding, the getting-started card or the sidebar prompt.
+   * Machine-managed; null = never asked.
+   *
+   * One fact for all three surfaces, and written on a save as well as on a
+   * skip: a person who saved a name and left the handle empty has answered, and
+   * asking again would be nagging. The name and the handle themselves live on
+   * the profile route and the author row, never here — this only records that
+   * the question was put. Nothing derives a handle when it is absent (DOR-604).
+   */
+  identityPromptDismissedAt: z.string().nullable().default(null),
 });
 
 /** What the user has told DorkOS about themselves (see {@link UserProfileSchema}). */
@@ -1063,6 +1112,16 @@ export type RawMcpServerConfig = z.infer<typeof RawMcpServerConfigSchema>;
  * operator-controlled place instead of silently breaking every agent pointing at
  * it. An id that is no longer registered degrades to the next tier of the launch
  * ladder rather than failing a launch.
+ *
+ * **A row keeps fields it does not know**, but not through this schema. The
+ * registry is a shared contract with flow (marketplace `specs/flow-cli-core`
+ * §1.1a: "readers ignore fields they do not know; writers preserve them"), and
+ * a parse strips them. The object stays closed on purpose: the config
+ * disclosure and write-policy guards classify every leaf of the schema and
+ * refuse an open catchall, which a loose object would put on every row. So the
+ * one writer that parses rows, `applyConfigPatch`, carries each row's unknown
+ * fields across itself (`planClaudeAccountWrite`), and every reader reads the
+ * stored row, not a parse of it.
  */
 export const ClaudeCodeAccountSchema = z.object({
   /**
@@ -1075,6 +1134,14 @@ export const ClaudeCodeAccountSchema = z.object({
   path: z.string().min(1),
   /** What the operator calls this account; `null` when they have not named it. */
   label: z.string().nullable(),
+  /**
+   * The color DorkOS draws this account's dot and badge in, as lowercase
+   * `#rrggbb`. `null` means the default for the account's position in the
+   * registry (resolved at read time, never stored), so an absent or `null`
+   * color follows the palette if it changes. A value that is not lowercase
+   * `#rrggbb` reads as `null` rather than failing the whole config.
+   */
+  color: z.string().regex(ACCOUNT_COLOR_PATTERN).nullable().default(null).catch(null),
 });
 
 /** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
@@ -1112,6 +1179,12 @@ export function slugifyAccountId(value: string): string {
  * registries and for the settings UI that registers a new account, so an id
  * minted by either is minted by the same rule.
  *
+ * `default` is always taken (contract §1.1a): it names the runtime's default
+ * account, so a label "Default" or a folder called `default` mints
+ * `default-2`. The `'0.65.0'` migration reaches this function, so that rule
+ * applies to an install minting its ids for the first time; `'0.87.0'` renames
+ * a row an earlier build already minted as `default`.
+ *
  * @param opts - The account being named and the ids already in use.
  * @param opts.label - The operator's name for the account, if they gave one.
  * @param opts.path - The account's config directory (its basename is the fallback).
@@ -1133,6 +1206,7 @@ export function claudeAccountId(opts: {
       .pop() ?? '';
   const base = slugifyAccountId(opts.label ?? '') || slugifyAccountId(basename) || 'account';
   const taken = new Set(opts.taken);
+  taken.add(IMPLICIT_ACCOUNT_ID);
   if (!taken.has(base)) return base;
   for (let n = 2; ; n++) {
     const candidate = `${base}-${n}`;
@@ -1298,6 +1372,133 @@ export function settleLegacyAccountAlias(merged: unknown, patch: unknown): void 
 }
 
 /**
+ * Why a registry row was read differently from how it is stored (contract
+ * §1.1a). Each is logged once by the reader's caller.
+ *
+ * - `row-invalid`: the entry is not an object; skipped.
+ * - `path-invalid`: `path` is missing or not absolute; skipped.
+ * - `id-duplicate`: an earlier listed row already has this id; skipped.
+ * - `id-reserved`: the id is `default`, which names the default account;
+ *   listed, but not routable until the config migration renames it.
+ * - `id-invalid`: the id fails {@link ACCOUNT_ID_PATTERN} (a hand edit);
+ *   listed, but it has no usage file and cannot be routed.
+ * - `color-invalid`: `color` is not lowercase `#rrggbb`; read as `null`.
+ * - `label-invalid`: `label` is set but not text; read as `null`.
+ * - `id-minted`: a listed row had no id; read with the one minted for it.
+ * - `accounts-invalid`: `accounts` is set but not a list; read as no rows.
+ *   It names no row, so its `index` is `-1`.
+ */
+export type ClaudeAccountReadWarningCode =
+  | 'row-invalid'
+  | 'path-invalid'
+  | 'id-duplicate'
+  | 'id-reserved'
+  | 'id-invalid'
+  | 'color-invalid'
+  | 'label-invalid'
+  | 'id-minted'
+  | 'accounts-invalid';
+
+/** One thing the registry reader noticed about a stored row. */
+export interface ClaudeAccountReadWarning {
+  /** What was wrong. */
+  code: ClaudeAccountReadWarningCode;
+  /** The row's position in the STORED array, or `-1` for `accounts-invalid`. */
+  index: number;
+  /** One line naming the row and what the reader did about it. */
+  message: string;
+}
+
+/** One stored registry row as the read rules classify it. */
+export interface ClaudeAccountRowView {
+  /** The row's position in the stored array. */
+  index: number;
+  /** The stored row with a minted id filled in when it had none; `null` when not an object. */
+  row: Record<string, unknown> | null;
+  /** True when the read rules list this row (it can be seen and edited). */
+  listed: boolean;
+}
+
+/**
+ * Apply the contract's read rules (§1.1a) to a stored `accounts` value, in the
+ * contract's order.
+ *
+ * 1. Mint a missing id on EVERY object row, in array order, with every id
+ *    already present reserved first (`backfillMissingAccountIds`). Minting
+ *    happens before anything is skipped, because skipping first would shift
+ *    later ids and flow and DorkOS would write different ledger files.
+ * 2. Skip a row that is not an object, or whose `path` is missing or not
+ *    absolute.
+ * 3. Of two remaining rows sharing an id, keep the first.
+ *
+ * The single classification both the reader and the write path use, so a row
+ * the settings screen was never shown is exactly a row the write path keeps.
+ *
+ * @param value - The stored `runtimes.claudeCode.accounts` value, any shape.
+ * @param noun - What a warning calls one row, starting with a capital: `Claude account`
+ *   (the default), `Codex account` or `OpenCode account`.
+ * @returns Every stored row with its verdict, and the warnings for the skipped ones.
+ */
+export function classifyClaudeAccountRows(
+  value: unknown,
+  noun = 'Claude account'
+): {
+  rows: ClaudeAccountRowView[];
+  warnings: ClaudeAccountReadWarning[];
+} {
+  const minted = backfillMissingAccountIds(value);
+  if (!Array.isArray(minted)) return { rows: [], warnings: [] };
+  const warnings: ClaudeAccountReadWarning[] = [];
+  const seen = new Set<string>();
+  const rows = minted.map((entry, index): ClaudeAccountRowView => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      warnings.push({
+        code: 'row-invalid',
+        index,
+        message: `${noun} ${index + 1} is not an object, so it was skipped.`,
+      });
+      return { index, row: null, listed: false };
+    }
+    const row = entry as Record<string, unknown>;
+    const id = row.id as string;
+    if (!isAbsoluteAccountPath(row.path)) {
+      warnings.push({
+        code: 'path-invalid',
+        index,
+        message: `${noun} "${id}" has no absolute path, so it was skipped.`,
+      });
+      return { index, row, listed: false };
+    }
+    if (seen.has(id)) {
+      warnings.push({
+        code: 'id-duplicate',
+        index,
+        message: `${noun} "${id}" repeats an earlier account's id, so it was skipped.`,
+      });
+      return { index, row, listed: false };
+    }
+    seen.add(id);
+    return { index, row, listed: true };
+  });
+  return { rows, warnings };
+}
+
+/** One registry row as a READER sees it, with its display color resolved. */
+export type ReadClaudeAccount = ClaudeCodeAccount & {
+  /** The color to draw it in: the stored color, else the default for its position. */
+  color: string;
+  /** True when {@link ReadClaudeAccount.color} is the positional default, not a stored choice. */
+  colorIsDefault: boolean;
+  /**
+   * The id this row had before the `'0.87.0'` migration renamed it (only ever
+   * `default`), until the account reconcile has moved every reference to it.
+   */
+  renamedFrom?: string;
+  /** Any other field the stored row carries, kept as stored. */
+  [field: string]: unknown;
+};
+
+/**
  * The Claude account settings as every READER should see them, healed.
  *
  * The launch ladder, the `GET /api/config` block and the root-set scan all read
@@ -1307,32 +1508,123 @@ export function settleLegacyAccountAlias(merged: unknown, patch: unknown): void 
  * healed only on parse leaves the ladder's top two rungs inert on every
  * un-migrated install, because a hint is matched by an id no stored row has.
  *
+ * The registry follows the contract's read rules (§1.1a, see
+ * {@link classifyClaudeAccountRows}): ids minted over every row first, then a
+ * row with no absolute path skipped, then the first of two rows sharing an id
+ * kept. A listed row whose id is `default` or fails {@link ACCOUNT_ID_PATTERN}
+ * stays listed with a warning; a bad `color` reads as `null`. Each row's color
+ * is resolved by its position among the LISTED rows, so a skipped hand edit
+ * never shifts the colors the operator sees. A missing or non-string `label`
+ * reads as `null`. The warning codes are the contract's (`identity.cases` in
+ * flow's conformance fixture), so a minted id, a label that is not text and an
+ * `accounts` that is not a list are each reported too.
+ *
  * Read-time only, by design. Nothing here writes: the migration remains the sole
  * writer of the settled shape, and a reader that heals cannot corrupt a file it
- * never touches.
+ * never touches. Nothing here logs either (this module is pure): the caller logs
+ * `warnings`.
  *
- * @param raw - The stored `runtimes.claudeCode` block, or anything at all.
- * @returns The default account and the registry, with ids and the rename applied.
+ * @param raw - The stored `runtimes.claudeCode` block, or anything at all. Codex's
+ *   and OpenCode's blocks read by the same rules.
+ * @param noun - What a warning calls one row, starting with a capital: `Claude account`
+ *   (the default), `Codex account` or `OpenCode account`.
+ * @returns The default account, the listed registry, and what the reader noticed.
  */
-export function readClaudeAccountSettings(raw: unknown): {
+export function readClaudeAccountSettings(
+  raw: unknown,
+  noun = 'Claude account'
+): {
   defaultAccount: string | null;
-  accounts: ClaudeCodeAccount[];
+  accounts: ReadClaudeAccount[];
+  warnings: ClaudeAccountReadWarning[];
 } {
   const healed = healClaudeAccountRename(raw);
   const block =
     healed && typeof healed === 'object' ? (healed as Record<string, unknown>) : undefined;
   const defaultAccount = typeof block?.defaultAccount === 'string' ? block.defaultAccount : null;
-  const rows = backfillMissingAccountIds(block?.accounts);
-  const accounts = Array.isArray(rows)
-    ? rows.filter(
-        (row): row is ClaudeCodeAccount =>
-          !!row &&
-          typeof row === 'object' &&
-          typeof (row as ClaudeCodeAccount).id === 'string' &&
-          typeof (row as ClaudeCodeAccount).path === 'string'
-      )
-    : [];
-  return { defaultAccount, accounts };
+  const storedRows = block?.accounts;
+  const { rows, warnings } = classifyClaudeAccountRows(storedRows, noun);
+  if (storedRows !== undefined && storedRows !== null && !Array.isArray(storedRows)) {
+    warnings.push({
+      code: 'accounts-invalid',
+      index: -1,
+      message: `The ${noun} list is not a list, so it was read as no accounts.`,
+    });
+  }
+  const accounts: ReadClaudeAccount[] = [];
+  for (const { index, row, listed } of rows) {
+    if (!listed || !row) continue;
+    const id = row.id as string;
+    const storedId = (storedRows as Record<string, unknown>[])[index]?.id;
+    if (typeof storedId !== 'string' || storedId.length === 0) {
+      warnings.push({
+        code: 'id-minted',
+        index,
+        message: `${noun} ${index + 1} has no id, so it was read as "${id}".`,
+      });
+    }
+    if (row.label !== undefined && row.label !== null && typeof row.label !== 'string') {
+      warnings.push({
+        code: 'label-invalid',
+        index,
+        message: `${noun} "${id}" has a label that is not text, so it has no label.`,
+      });
+    }
+    if (id === IMPLICIT_ACCOUNT_ID) {
+      warnings.push({
+        code: 'id-reserved',
+        index,
+        message: `${noun} "${id}" uses the reserved id "default", so it is listed but not routable until it is renamed.`,
+      });
+    } else if (!ACCOUNT_ID_PATTERN.test(id)) {
+      warnings.push({
+        code: 'id-invalid',
+        index,
+        message: `${noun} "${id}" has an id that is not lowercase words joined by hyphens, so it is listed but not routable.`,
+      });
+    }
+    const stored = row.color;
+    if (stored !== undefined && stored !== null && !isAccountColor(stored)) {
+      warnings.push({
+        code: 'color-invalid',
+        index,
+        message: `${noun} "${id}" has a color that is not lowercase #rrggbb, so it uses the default.`,
+      });
+    }
+    const colorIsDefault = !isAccountColor(stored);
+    accounts.push({
+      ...row,
+      id,
+      path: row.path as string,
+      label: typeof row.label === 'string' ? row.label : null,
+      color: resolveAccountColor(colorIsDefault ? null : (stored as string), accounts.length),
+      colorIsDefault,
+    });
+  }
+  return { defaultAccount, accounts, warnings };
+}
+
+/**
+ * The agent runtimes configured on this host, in a fixed order.
+ *
+ * claude-code is always available; codex and opencode are included unless they
+ * are explicitly turned off, since both default to enabled. The one definition
+ * behind the config DTO's `runtimes` list and the feedback report's, so the web
+ * app and a pasted report can never disagree about what a host runs.
+ *
+ * Takes a dotted-path reader rather than a parsed config, because both callers
+ * hold one (`configManager.getDot`, the feedback gatherer's `readConfigValue`)
+ * and a store that is missing or unreadable should degrade to the defaults
+ * instead of failing.
+ *
+ * @param read - Reads one dotted config path; returns `undefined` when unset.
+ * @returns The configured runtime ids, `claude-code` first.
+ */
+export function configuredRuntimes(read: (key: string) => unknown): string[] {
+  const runtimes = ['claude-code'];
+  if (read('runtimes.codex.enabled') !== false) runtimes.push('codex');
+  if (read('runtimes.opencode.enabled') !== false) runtimes.push('opencode');
+  return runtimes;
 }
 
 /**
@@ -1362,6 +1654,26 @@ export const ClaudeCodeAccountsSchema = z.preprocess(
     });
   })
 );
+
+/**
+ * The ids of the Claude accounts a writer was SHOWN, sent beside
+ * `runtimes.claudeCode.accounts` in a config PATCH as
+ * `runtimes.claudeCode.accountsSeen` (spec `claude-account-fleet` D1).
+ *
+ * Not a setting: the write path takes it out of the patch before merging, and
+ * nothing stores it. It exists because a PATCH replaces the account array, and
+ * flow can add an account while the settings screen is open. Without it, a row
+ * the screen never saw would read as one the operator removed. With it, the
+ * server removes only a stored row whose id is in this list and that the patch
+ * left out; every other stored row is kept. A patch naming `accounts` without
+ * this list is a full replace of the listed rows, as before (the CLI's
+ * `dorkos config set` and the `config_patch` tool); rows the read rules skip
+ * are kept either way.
+ */
+export const ClaudeAccountsSeenSchema = z.array(z.string());
+
+/** The patch key {@link ClaudeAccountsSeenSchema} travels under, inside `runtimes.claudeCode`. */
+export const CLAUDE_ACCOUNTS_SEEN_KEY = 'accountsSeen';
 
 /**
  * The model a NEW session on one runtime starts on, or `null` to let that
@@ -1428,6 +1740,29 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
 const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
 
 /**
+ * The color a STANDALONE default Claude account is drawn in
+ * (`runtimes.claudeCode.defaultAccountColor`, DOR-2492): lowercase `#rrggbb`,
+ * the rule a registry row's `color` follows. `null` or `''` means the default
+ * for its position, which is after the registered rows.
+ *
+ * A standalone default is `~/.claude` (or the folder `defaultAccount` names)
+ * when no registered row has that folder. It has no row, so it has no row
+ * `color` to store a choice in, and registering the folder to get one would
+ * re-key the account's identity and every policy that names
+ * `claude-code:default`. When a registered row DOES have the default folder,
+ * `default` is an alias of that row and the row's own color wins: this field
+ * is ignored.
+ *
+ * The strict shape is what `PATCH /api/config` checks a new value against
+ * (`applyConfigPatch`), so a bad value is refused rather than stored. The
+ * setting itself reads a bad hand-edited value as `null` instead of failing the
+ * whole config, as a row's `color` does.
+ */
+export const DefaultAccountColorSchema = z
+  .union([z.string().regex(ACCOUNT_COLOR_PATTERN), z.literal('')])
+  .nullable();
+
+/**
  * What a NEW Claude Code session starts with, and which account it bills.
  *
  * Named rather than left inline in {@link UserConfigSchema} so the JSON-schema
@@ -1468,10 +1803,27 @@ export const ClaudeCodeSettingsSchema = z.object({
   /**
    * The Claude accounts DorkOS knows about — what lets it show which
    * client a session belongs to. The operator registers these: DorkOS
-   * never globs `~/.claude*`, because that guess sweeps up directories
-   * that are not accounts at all (D4).
+   * never registers a `~/.claude*` folder on its own, because that guess
+   * sweeps up directories that are not accounts at all (D4). Settings may
+   * OFFER the folders it finds (spec `claude-account-ui` §6.9), and nothing
+   * lands here until a person clicks Add.
    */
   accounts: ClaudeCodeAccountsSchema.default(() => []),
+  /**
+   * The color the standalone default account is drawn in, or `null` for the
+   * default for its position. Ignored while a registered row has the default
+   * folder: that row's own color wins. See {@link DefaultAccountColorSchema}.
+   */
+  defaultAccountColor: DefaultAccountColorSchema.default(null).catch(null),
+  /**
+   * Account folders a person dismissed from Settings' "Found on this
+   * computer" list, so they stay hidden across restarts (spec
+   * `claude-account-ui` §7.4). Stored in comparable form (the real path).
+   * Written only by `POST /api/runtimes/claude-code/accounts/found/dismiss`,
+   * which appends in one read-modify-write; a `PATCH /api/config` would
+   * replace the array, and the screen never sees it.
+   */
+  dismissedFolders: z.array(z.string()).max(200).default([]),
   /** Model a new claude-code session starts on. See {@link DefaultModelSchema}. */
   defaultModel: DefaultModelSchema,
   /** Effort a new claude-code session starts at. See {@link DefaultEffortSchema}. */
@@ -1513,6 +1865,9 @@ const LoggingConfigSchema = z.object({
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
   maxLogFiles: z.number().int().min(1).max(30).default(14),
 });
+
+/** A permission state as the config file stores it. */
+const PermissionConfigStateSchema = z.enum(PERMISSION_STATES);
 
 export const UserConfigSchema = z.object({
   version: z.literal(1),
@@ -1624,10 +1979,8 @@ export const UserConfigSchema = z.object({
        * callers is a separate piece of work (`agent-approval-settings`, DOR-501)
        * and this field is not it. Do not describe it as one.
        *
-       * Lives under `ui` rather than `approvals` on purpose. `approvals.*` is
-       * security policy — every leaf there requires login to write, because those
-       * settings decide what the approval gate enforces. This one decides what a
-       * dialog does, and requiring login to dismiss a dialog would make the
+       * Lives under `ui` because it decides what a dialog does, not what any
+       * gate enforces: requiring login to dismiss a dialog would make the
        * feature unreachable on the default login-off install. It is still
        * `operator-only` to write, so an agent cannot forge a person's consent
        * record.
@@ -2024,6 +2377,36 @@ export const UserConfigSchema = z.object({
        */
       maxCanvasOpsPerTurn: z.number().int().min(1).max(10).default(3),
       /**
+       * How many conversations one agent may work in at the same time.
+       *
+       * An agent's rooms and chats all run in its own folder, so two turns at
+       * once are two writers in one set of files — the contention ADR
+       * `260726-170125` (DOR-500) measured, where six writers on one tree
+       * clobbered each other and halving them roughly doubled what survived.
+       * A message that finds the agent at this limit is held, never refused,
+       * and starts the moment one of its turns ends (ADR `260818-234541`).
+       *
+       * Three covers the common case — one person talking to one agent in two
+       * or three rooms — well short of the measured collision regime; `1` is
+       * the old one-turn-at-a-time behaviour. It never lets one agent run two
+       * turns in the SAME room: a room is one transcript, and that ceiling is
+       * not a setting.
+       *
+       * Read at every claim decision, so a change binds the very next message.
+       * Lowering it while turns are running stops nothing already started; new
+       * turns wait until the agent is back under the limit.
+       *
+       * Both declarations of this value — here and in the `rooms` section
+       * literal below — read {@link MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}, so
+       * they cannot disagree.
+       */
+      maxConcurrentTurnsPerAgent: z
+        .number()
+        .int()
+        .min(MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS.min)
+        .max(MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS.max)
+        .default(MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT),
+      /**
        * A room's own files — its git repo, the standing worktree each agent
        * works in, and the merges that bring that work back (spec
        * `project-rooms`).
@@ -2117,6 +2500,9 @@ export const UserConfigSchema = z.object({
       // How many canvas changes one agent may make in one turn, same judgement
       // and same both-sites rule as the line above it.
       maxCanvasOpsPerTurn: 3,
+      // How many conversations one agent may work in at once, same both-sites
+      // rule as the lines above it.
+      maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
       repo: {
         enabled: true,
         worktreeReapDays: 14,
@@ -2205,15 +2591,8 @@ export const UserConfigSchema = z.object({
     displayName: null,
     displayNameSource: null,
     rolePromptDismissedAt: null,
+    identityPromptDismissedAt: null,
   })),
-  agentContext: z
-    .object({
-      relayTools: z.boolean().default(true),
-      meshTools: z.boolean().default(true),
-      adapterTools: z.boolean().default(true),
-      tasksTools: z.boolean().default(true),
-    })
-    .default(() => ({ relayTools: true, meshTools: true, adapterTools: true, tasksTools: true })),
   uploads: z
     .object({
       maxFileSize: z
@@ -2290,8 +2669,21 @@ export const UserConfigSchema = z.object({
        * own id here would be approving its own code.
        */
       approvedToRun: z.array(z.string()).default(() => []),
+      /**
+       * Which copy of each approved extension the approval was given to, keyed
+       * by extension id (DOR-2383).
+       *
+       * An id in `approvedToRun` with no entry here counts as NOT approved,
+       * except that an approval given before this map existed is bound, on the
+       * first discovery that finds it, to the extension installed directly
+       * under `{dorkHome}/extensions/<id>` — the only copy it could have been
+       * about. A copy at any other path, inside any other plugin, asks again.
+       *
+       * `operator-only` for the same reason as `approvedToRun`.
+       */
+      approvedSources: z.record(z.string(), ExtensionApprovedSourceSchema).default(() => ({})),
     })
-    .default(() => ({ enabled: [], disabled: [], approvedToRun: [] })),
+    .default(() => ({ enabled: [], disabled: [], approvedToRun: [], approvedSources: {} })),
   mcp: z
     .object({
       enabled: z.boolean().default(true),
@@ -2602,6 +2994,8 @@ export const UserConfigSchema = z.object({
       claudeCode: z.preprocess(healClaudeAccountRename, ClaudeCodeSettingsSchema).default(() => ({
         defaultAccount: null,
         accounts: [],
+        defaultAccountColor: null,
+        dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
@@ -2688,6 +3082,8 @@ export const UserConfigSchema = z.object({
       claudeCode: {
         defaultAccount: null,
         accounts: [],
+        defaultAccountColor: null,
+        dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
@@ -2724,73 +3120,40 @@ export const UserConfigSchema = z.object({
     })
     .default(() => ({ enabled: false })),
   /**
-   * Standing permissions: whether an operator may say "stop asking about this
-   * agent doing this thing", and for how long one of those answers lasts
-   * (spec `agent-approval-settings` §3.1).
+   * What agents may do, by area (spec `agent-permissions` D4). The preset every
+   * area starts from, plus the changes a person made on top of it; each agent's
+   * own differences live in its manifest, not here.
    *
-   * The policy lives here; the permissions themselves do not. A granted
-   * permission has a creation time, an expiry, and a revocation, which is
-   * operational state and belongs in SQLite (`approval_grants`), not in a file a
-   * person edits. Keeping them out also means nothing about WHICH agents are
-   * trusted can ever leave through `config_get`.
+   * `operator-only` and refused outright by the generic config write paths
+   * (`PATCH /api/config`, `dorkos config set`): only the permission routes may
+   * write it, so every change carries a person's yes and an audit event.
    *
-   * Both leaves are `operator-only`, writing either requires a session cookie
-   * like every other operator-only setting, and on top of that neither can be
-   * written at all while login is off — see `REQUIRES_LOGIN_CONFIG_PATHS`.
+   * Declared twice on purpose (per field AND in the object-literal default):
+   * one feeds fresh installs, the other upgrades, and they must agree.
    */
-  approvals: z
+  permissions: z
     .object({
+      /** The preset every area starts from. `null` = not chosen yet ("Unchanged"). */
+      preset: z.enum(PERMISSION_PRESETS).nullable().default(null),
+      /** The changes a person made on top of the preset ("Full power, 2 changes"). */
+      defaults: z
+        .object({
+          areas: z.record(z.string(), PermissionConfigStateSchema).default(() => ({})),
+          actions: z
+            .record(z.string().regex(PERMISSION_ACTION_ID_PATTERN), PermissionConfigStateSchema)
+            .default(() => ({})),
+        })
+        .default(() => ({ areas: {}, actions: {} })),
       /**
-       * Whether standing permissions may exist at all. Off by default: a safety
-       * feature does not get quietly relaxed by an upgrade, so nothing changes
-       * for an existing user until they ask for it.
+       * The server version the permission upgrade sweep last ran for; `null`
+       * means never. Machine-managed: the boot sweep stamps it.
        */
-      standingGrants: z.boolean().default(false),
-      /**
-       * How long a new standing permission lasts, in minutes, counted from the
-       * moment it is granted and never extended by use.
-       *
-       * Bounded in the schema, in both directions and on purpose. The maximum of
-       * 1440 (one day) is what makes "forever" unrepresentable. The minimum of 5
-       * keeps the window from becoming a deny-all that looks like a broken
-       * feature, which is the reasoning already applied to the approval window in
-       * `approval-service.ts`.
-       */
-      trustWindowMinutes: z
-        .number()
-        .int()
-        .min(MIN_TRUST_WINDOW_MINUTES)
-        .max(MAX_TRUST_WINDOW_MINUTES)
-        .default(DEFAULT_TRUST_WINDOW_MINUTES),
-      /**
-       * The moment the settings last stopped licensing standing permissions, as
-       * an ISO 8601 UTC string. Every permission granted at or before it is void
-       * and is never honored again (DOR-520). `null` until the posture has
-       * narrowed once.
-       *
-       * Machine-managed, like `onboarding` and `tours`: `ConfigManager` stamps it
-       * on any write that takes `auth.enabled` or `standingGrants` away, and
-       * nothing else should write it by hand.
-       *
-       * It lives in the config file rather than beside the permissions in SQLite
-       * for one reason, and it is the whole point of the field: `dorkos config
-       * set` runs in a process with no database, so the config file is the ONLY
-       * thing every writer of these settings touches. A marker anywhere else
-       * would be invisible to exactly the write that motivated it.
-       *
-       * Constrained to a real timestamp, not merely a string. The store treats a
-       * FALSY floor as "no floor", so a bare `z.string()` let the empty string
-       * through as a value that silently disables the filter — the one direction
-       * this field must never fail. Garbage that is not empty already fails
-       * closed (it sorts above every real timestamp, so everything is voided);
-       * `''` was the single value that failed open.
-       */
-      standingGrantsVoidBefore: z.string().datetime().nullable().default(null),
+      upgradeSweptVersion: z.string().nullable().default(null),
     })
     .default(() => ({
-      standingGrants: false,
-      trustWindowMinutes: DEFAULT_TRUST_WINDOW_MINUTES,
-      standingGrantsVoidBefore: null,
+      preset: null,
+      defaults: { areas: {}, actions: {} },
+      upgradeSweptVersion: null,
     })),
   cloud: z
     .object({
@@ -2806,8 +3169,27 @@ export const UserConfigSchema = z.object({
       instanceName: z.string().nullable().default(null),
       /** Human-readable label of the linked DorkOS account, when the cloud reports one. */
       linkedAccountLabel: z.string().nullable().default(null),
+      /**
+       * Relink proof of the last instance key this install dropped (user
+       * unlink, a `401` from the cloud, or `dorkos cloud logout`):
+       * base64url-unpadded HMAC-SHA256 keyed by that key over
+       * `dorkos-relink-v1`. Sent once with the next device-link request so the
+       * cloud can continue the same link, and the apps connected through it,
+       * for the same DorkOS account. Cleared after the next successful link.
+       * Never the raw key, but it IS the credential that continues a link (with
+       * the same account's approval), so it is in {@link SENSITIVE_CONFIG_KEYS},
+       * withheld from agents, and only a person may write it. `null` when no
+       * key has been dropped since the last link. Absent from configs written
+       * before it existed; every reader treats absence as `null`.
+       */
+      previousLinkProof: z.string().nullable().default(null),
     })
-    .default(() => ({ instanceToken: null, instanceName: null, linkedAccountLabel: null })),
+    .default(() => ({
+      instanceToken: null,
+      instanceName: null,
+      linkedAccountLabel: null,
+      previousLinkProof: null,
+    })),
   /**
    * Connector gateway settings (connector-completion spec). `rawMcpServers`
    * lists the remote MCP servers the raw-MCP connector offers as connectable

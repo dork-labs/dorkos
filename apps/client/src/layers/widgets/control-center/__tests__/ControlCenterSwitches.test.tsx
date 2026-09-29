@@ -25,7 +25,6 @@ const CLOSED_MESH: TopologyView = {
 
 function makeConfig(over: Partial<ServerConfig> = {}): ServerConfig {
   return {
-    approvals: { standingGrants: true },
     auth: { enabled: true },
     claudeCode: { persistentSession: true },
     scheduler: { maxConcurrentRuns: 4 },
@@ -78,18 +77,16 @@ describe('ControlCenterSwitches', () => {
     );
   });
 
-  it('standing permissions is off and disabled when Require login is off', async () => {
+  it('carries no Standing permissions switch: Always allow replaced it', async () => {
     const transport = createMockTransport({
-      getConfig: vi
-        .fn()
-        .mockResolvedValue(makeConfig({ auth: { enabled: false } } as Partial<ServerConfig>)),
+      getConfig: vi.fn().mockResolvedValue(makeConfig()),
       getMeshTopology: vi.fn().mockResolvedValue(CLOSED_MESH),
     });
     render(<ControlCenterSwitches />, { wrapper: harness(transport) });
 
-    const grants = await screen.findByRole('switch', { name: 'Standing permissions' });
-    expect(grants).toBeDisabled();
-    expect(grants).not.toBeChecked();
+    // The panel has landed (a sibling switch is up), so the absence means something.
+    await screen.findByRole('switch', { name: 'Warm agents' });
+    expect(screen.queryByRole('switch', { name: 'Standing permissions' })).not.toBeInTheDocument();
   });
 
   it('the mesh switch reads topology.openMesh, not a local boolean', async () => {

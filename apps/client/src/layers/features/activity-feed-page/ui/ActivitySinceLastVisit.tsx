@@ -54,6 +54,7 @@ function buildDigestLine(counts: Partial<Record<ActivityCategory, number>>): str
     agent: 'Agent update',
     config: 'Config change',
     system: 'System event',
+    permissions: 'Permission change',
   };
 
   return (Object.entries(counts) as [ActivityCategory, number][])

@@ -151,9 +151,8 @@ export const PAGE_CONFIGS: PageConfig[] = [
   // ── Design System ──
   {
     id: 'tokens',
-    label: 'Design Tokens',
-    description:
-      'Color palette, typography, spacing, border radius, and shadow tokens that define the visual language.',
+    label: 'Client Tokens',
+    description: 'App-local status, sidebar, typography, spacing, radius, shadow, and icon tokens.',
     icon: Palette,
     group: 'design-system',
     sections: TOKENS_SECTIONS,
@@ -163,7 +162,7 @@ export const PAGE_CONFIGS: PageConfig[] = [
     id: 'forms',
     label: 'Forms',
     description:
-      'Form primitives and composed input components — inputs, selects, comboboxes, and tag inputs.',
+      'Client-local form controls and compositions; portable Input and Field examples live in the shared UI catalog.',
     icon: TextCursorInput,
     group: 'design-system',
     sections: FORMS_SECTIONS,
@@ -173,7 +172,7 @@ export const PAGE_CONFIGS: PageConfig[] = [
     id: 'components',
     label: 'Components',
     description:
-      'Interactive gallery of shared UI primitives — buttons, overlays, navigation, and feedback. Its Sidebar category is the row-level primitives; the journey model and the boot sequence each have their own page.',
+      'Client-local layout, press, overlay, navigation and feedback galleries. Portable Button examples live in the shared UI catalog.',
     icon: Component,
     group: 'design-system',
     sections: COMPONENTS_SECTIONS,

@@ -3,7 +3,7 @@ import { stableStringify } from '@dorkos/shared/capabilities';
 import { ConnectorSubscriptionStore } from '../events/subscription-store.js';
 import { ConnectorSubscriptionService } from '../events/subscription-service.js';
 import { ConnectorEventGrantService } from '../events/grant-service.js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectionOperationGrants,
   connections,
@@ -30,6 +30,7 @@ import {
   type ManagedAuthorityCloudPort,
 } from '../resources/managed-authority-sync-service.js';
 import { ConnectorRegistry } from '../registry.js';
+import { logger } from '../../../lib/logger.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const PROVIDER_ID = ConnectorProviderInstanceIdSchema.parse('provider-a');
@@ -634,6 +635,322 @@ describe('ManagedAuthoritySyncService', () => {
       lastCommandId: before.commandId,
       lastCommandHash: before.requestHash,
       scopeVersion: before.scopeVersion,
+    });
+  });
+  describe('a disconnect whose hosted sign-out stalls', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function disconnect(sync = service()) {
+      return sync.transition({
+        connectionId: CONNECTION_ID,
+        managedConnectionId: MANAGED_CONNECTION_ID,
+        lifecycle: 'disconnected',
+        providerInstanceId: PROVIDER_ID,
+        executionConfigGeneration: 1,
+        owner: OWNER,
+        signal: new AbortController().signal,
+      });
+    }
+
+    function cleanupStatus(
+      command: ManagedConnectorAuthorityCommand,
+      externalCleanup: 'pending' | 'complete' | 'failed'
+    ): ManagedConnectorAuthorityCommandStatus {
+      return { ...statusFor(command), externalCleanup } as ManagedConnectorAuthorityCommandStatus;
+    }
+
+    function outbox() {
+      return db.select().from(connectorManagedAuthorityOutbox).get()!;
+    }
+
+    it.each(['background recovery', 'Finish disconnecting'] as const)(
+      'sends the same command again through %s until an applied-but-pending cleanup completes',
+      async (path) => {
+        const cleanup: Array<'pending' | 'complete'> = ['pending', 'pending', 'complete'];
+        cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+          submitted.push(command);
+          return cleanupStatus(command, cleanup.shift()!);
+        });
+        cloud.readConnectorAuthorityCommand = vi.fn(async () =>
+          cleanupStatus(submitted[0]!, 'pending')
+        );
+        const sync = service();
+
+        await expect(disconnect(sync)).resolves.toMatchObject({ externalCleanup: 'pending' });
+        const first = outbox();
+        expect(first).toMatchObject({
+          state: 'pending',
+          safeReason: 'DorkOS’s servers haven’t finished disconnecting this account.',
+        });
+
+        // The hosted row reads applied with cleanup pending: reading alone never
+        // finishes it, so the exact command goes out again.
+        clock = Date.parse(first.nextAttemptAt!) + 1;
+        const again =
+          path === 'background recovery'
+            ? await sync.recoverPending(new AbortController().signal).then(() => undefined)
+            : await disconnect(sync);
+        if (again)
+          expect(again).toMatchObject({
+            externalCleanup: 'pending',
+            authoritySync: {
+              status: 'pending',
+              reason: 'DorkOS’s servers haven’t finished disconnecting this account.',
+              retryAt: expect.any(String),
+            },
+          });
+        expect(submitted).toHaveLength(2);
+        expect(submitted[1]).toEqual(submitted[0]);
+        const second = outbox();
+        expect(second.state).toBe('pending');
+        // Backoff grows between tries rather than hammering the hosted side.
+        expect(Date.parse(second.nextAttemptAt!) - clock).toBeGreaterThan(
+          Date.parse(first.nextAttemptAt!) - START
+        );
+
+        clock = Date.parse(second.nextAttemptAt!) + 1;
+        await sync.recoverPending(new AbortController().signal);
+        expect(submitted).toHaveLength(3);
+        expect(submitted[2]).toEqual(submitted[0]);
+        expect(outbox()).toMatchObject({ state: 'applied', safeReason: null, nextAttemptAt: null });
+        expect(db.select().from(connections).get()).toMatchObject({
+          externalCleanupState: 'complete',
+        });
+        expect(db.select().from(connectorManagedAuthorityOutbox).all()).toHaveLength(1);
+      }
+    );
+
+    it('sends a resume the hosted side still holds as pending again until it applies', async () => {
+      {
+        db.update(connections).set({ enabled: false }).run();
+        const states: Array<'pending' | 'applied'> = ['pending', 'pending', 'applied'];
+        cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+          submitted.push(command);
+          return statusFor(command, states.shift()!);
+        });
+        cloud.readConnectorAuthorityCommand = vi.fn(async () =>
+          statusFor(submitted[0]!, 'pending')
+        );
+        const sync = service();
+        const resume = () =>
+          sync.transition({
+            connectionId: CONNECTION_ID,
+            managedConnectionId: MANAGED_CONNECTION_ID,
+            lifecycle: 'active',
+            providerInstanceId: PROVIDER_ID,
+            executionConfigGeneration: 1,
+            owner: OWNER,
+            signal: new AbortController().signal,
+          });
+
+        await expect(resume()).resolves.toMatchObject({
+          applied: false,
+          authoritySync: {
+            status: 'pending',
+            reason: 'DorkOS’s servers haven’t finished this change yet.',
+          },
+        });
+        const first = outbox();
+        expect(first.safeReason).toBe('DorkOS’s servers haven’t finished this change yet.');
+
+        // Reading alone never settles a pending resume, so the exact command
+        // goes out again (an owner's own retry is a new command, not this path).
+        clock = Date.parse(first.nextAttemptAt!) + 1;
+        await sync.recoverPending(new AbortController().signal);
+        expect(submitted).toHaveLength(2);
+        expect(submitted[1]).toEqual(submitted[0]);
+        expect(outbox().state).toBe('pending');
+
+        clock = Date.parse(outbox().nextAttemptAt!) + 1;
+        await sync.recoverPending(new AbortController().signal);
+        expect(submitted).toHaveLength(3);
+        expect(submitted[2]).toEqual(submitted[0]);
+        expect(outbox()).toMatchObject({ state: 'applied', safeReason: null });
+        expect(db.select().from(connections).get()?.enabled).toBe(true);
+      }
+    });
+
+    it('gives no retry reason to a pending command that recovery only re-reads', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return statusFor(command, 'pending');
+      });
+      await expect(replace()).resolves.toMatchObject({
+        applied: false,
+        authoritySync: { status: 'pending' },
+      });
+      const stored = outbox();
+      expect(stored).toMatchObject({ state: 'pending', safeReason: null });
+      expect((await replace()).authoritySync).toEqual({ status: 'pending' });
+    });
+
+    it('does not send again once the hosted read says cleanup settled', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return cleanupStatus(command, 'pending');
+      });
+      const sync = service();
+      await disconnect(sync);
+      cloud.readConnectorAuthorityCommand = vi.fn(async () =>
+        cleanupStatus(submitted[0]!, 'failed')
+      );
+      clock = Date.parse(outbox().nextAttemptAt!) + 1;
+      await sync.recoverPending(new AbortController().signal);
+      expect(submitted).toHaveLength(1);
+      expect(outbox().state).toBe('applied');
+      expect(db.select().from(connections).get()?.externalCleanupState).toBe('failed');
+    });
+
+    it('finishes an account disconnected before cleanup was tracked (unknown) through the same path', async () => {
+      db.update(connections)
+        .set({ lifecycleState: 'disconnected', enabled: false, externalCleanupState: 'unknown' })
+        .run();
+      const cleanup: Array<'pending' | 'complete'> = ['pending', 'complete'];
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return cleanupStatus(command, cleanup.shift()!);
+      });
+      cloud.readConnectorAuthorityCommand = vi.fn(async () =>
+        cleanupStatus(submitted[0]!, 'pending')
+      );
+      const sync = service();
+
+      await disconnect(sync);
+      expect(db.select().from(connections).get()?.externalCleanupState).toBe('pending');
+      clock = Date.parse(outbox().nextAttemptAt!) + 1;
+      await sync.recoverPending(new AbortController().signal);
+
+      expect(submitted).toHaveLength(2);
+      expect(submitted[1]).toEqual(submitted[0]);
+      expect(db.select().from(connections).get()?.externalCleanupState).toBe('complete');
+    });
+
+    it('stores a plain reason and retry time, and logs a stalled command without flooding', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      // The hosted text rides in the message and the cause; none of it may
+      // reach the stored row, the returned state or the log line.
+      const serverError = () =>
+        Object.assign(cloudError('request_failed', 'private hosted detail'), {
+          status: 500,
+          cause: new Error('private hosted cause'),
+        });
+      cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw serverError();
+      });
+      cloud.readConnectorAuthorityCommand = vi.fn(async () => {
+        throw serverError();
+      });
+      const sync = service();
+
+      const result = await disconnect(sync);
+      const stored = outbox();
+      expect(stored).toMatchObject({
+        state: 'pending',
+        safeReason: 'DorkOS’s servers had a problem.',
+        nextAttemptAt: expect.any(String),
+      });
+      expect(result.authoritySync).toEqual({
+        status: 'pending',
+        reason: 'DorkOS’s servers had a problem.',
+        retryAt: stored.nextAttemptAt,
+      });
+      for (const seen of [stored, result, warn.mock.calls]) {
+        expect(JSON.stringify(seen)).not.toMatch(/private hosted (detail|cause)/);
+      }
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![1]).toMatchObject({
+        code: 'request_failed',
+        status: 500,
+        commandId: stored.commandId,
+        scopeKind: 'connection_lifecycle',
+        nextAttemptAt: stored.nextAttemptAt,
+      });
+
+      // The same failure again soon after stays quiet.
+      clock = Date.parse(stored.nextAttemptAt!) + 1;
+      await sync.recoverPending(new AbortController().signal);
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      // A different failure is logged at once, with its own reason.
+      cloud.readConnectorAuthorityCommand = vi.fn(async () => {
+        throw cloudError('network_error');
+      });
+      clock = Date.parse(outbox().nextAttemptAt!) + 1;
+      await sync.recoverPending(new AbortController().signal);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn.mock.calls[1]![1]).toMatchObject({ code: 'network_error' });
+      expect(outbox().safeReason).toBe('Couldn’t reach DorkOS’s servers.');
+
+      // The same failure is logged again once enough time has passed.
+      clock += 15 * 60_000;
+      await sync.recoverPending(new AbortController().signal);
+      expect(warn).toHaveBeenCalledTimes(3);
+    });
+
+    it('logs the class of a failure on this computer, never its message', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw new TypeError('private local detail');
+      });
+      await expect(disconnect()).resolves.toMatchObject({
+        authoritySync: {
+          status: 'pending',
+          reason: 'Something went wrong on this computer during the last try.',
+        },
+      });
+      expect(warn.mock.calls[0]![1]).toMatchObject({ code: 'local_error', errorName: 'TypeError' });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('private local detail');
+    });
+
+    it('gives up on a hung hosted request so recovery keeps running', async () => {
+      const deadlines: AbortController[] = [];
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return cleanupStatus(command, 'pending');
+      });
+      const hang = vi.fn(
+        (_id: string, signal?: AbortSignal) =>
+          new Promise<ManagedConnectorAuthorityCommandStatus>((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(signal.reason));
+          })
+      );
+      cloud.readConnectorAuthorityCommand = hang;
+      const sync = new ManagedAuthoritySyncService({
+        db,
+        cloud,
+        now: () => new Date(clock),
+        createId: () => `managed-command-${++ids}`,
+        random: () => 0.5,
+        timeoutSignal: (timeoutMs) => {
+          expect(timeoutMs).toBe(30_000);
+          const deadline = new AbortController();
+          deadlines.push(deadline);
+          return deadline.signal;
+        },
+      });
+      await disconnect(sync);
+      clock = Date.parse(outbox().nextAttemptAt!) + 1;
+
+      const recovering = sync.recoverPending(new AbortController().signal);
+      await vi.waitFor(() => expect(hang).toHaveBeenCalledTimes(1));
+      // While the request hangs, a second pass is refused rather than stacked.
+      await expect(sync.recoverPending(new AbortController().signal)).resolves.toBe(0);
+      deadlines.at(-1)!.abort(new Error('deadline'));
+      await expect(recovering).resolves.toBe(1);
+      expect(outbox()).toMatchObject({
+        state: 'pending',
+        safeReason: 'DorkOS’s servers didn’t answer in time.',
+      });
+
+      // The pass is free again: the next one really reaches the hosted side.
+      cloud.readConnectorAuthorityCommand = vi.fn(async () =>
+        cleanupStatus(submitted[0]!, 'complete')
+      );
+      clock = Date.parse(outbox().nextAttemptAt!) + 1;
+      await expect(sync.recoverPending(new AbortController().signal)).resolves.toBe(1);
+      expect(db.select().from(connections).get()?.externalCleanupState).toBe('complete');
     });
   });
 });

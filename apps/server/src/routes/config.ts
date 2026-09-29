@@ -16,6 +16,7 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { env } from '../env.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import {
+  configuredRuntimes,
   SIDEBAR_PREFS_DEFAULTS,
   SHAPE_USER_PREFS_DEFAULTS,
   STATUS_BAR_PREFS_DEFAULTS,
@@ -35,19 +36,13 @@ import {
   describeOperatorOnlyRefusal,
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
-  REQUIRES_LOGIN_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
   isLocalCaller,
   readCallerAuthority,
   requireOperatorCookieUnderLogin,
-  requireStandingGrantsLogin,
 } from '../lib/caller-authority.js';
-import {
-  readStandingGrantPosture,
-  revokeStandingGrantsIfPostureNarrowed,
-} from '../services/core/approvals/index.js';
 import { getLatestVersion } from '../services/core/update-checker.js';
 import { isTasksEnabled, getTasksInitError } from '../services/tasks/task-state.js';
 import { isRelayEnabled, getRelayInitError } from '../services/relay/relay-state.js';
@@ -59,6 +54,7 @@ import { hasAnyApiKey } from '../services/core/auth/index.js';
 import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp-local-token.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
+import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 
 const router = Router();
 
@@ -80,22 +76,7 @@ export { deepMerge };
 const TASKS_LOCKED_BY_ENV = 'DORKOS_TASKS_ENABLED' in process.env;
 
 /** The same question for the Relay message bus and `DORKOS_RELAY_ENABLED`. */
-// eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
-const RELAY_LOCKED_BY_ENV = 'DORKOS_RELAY_ENABLED' in process.env;
-
-/**
- * List the agent runtimes configured on this host.
- *
- * claude-code is always available; codex and opencode are included unless a user
- * has explicitly disabled them in config (both default to enabled).
- */
-function configuredRuntimes(): string[] {
-  const runtimes = ['claude-code'];
-  const config = configManager.get('runtimes');
-  if (config?.codex?.enabled !== false) runtimes.push('codex');
-  if (config?.opencode?.enabled !== false) runtimes.push('opencode');
-  return runtimes;
-}
+const RELAY_LOCKED_BY_ENV = env.DORKOS_RELAY_ENABLED !== undefined;
 
 router.get('/', async (req, res) => {
   let claudeCliPath: string | null = null;
@@ -160,7 +141,7 @@ router.get('/', async (req, res) => {
     // whoever sets it (the CLI does; the desktop shell will).
     workingDirectory: DEFAULT_CWD,
     platform: `${process.platform}-${process.arch}`,
-    runtimes: configuredRuntimes(),
+    runtimes: configuredRuntimes((key) => configManager.getDot(key)),
     // Which Claude account new work will run and bill on, RESOLVED, plus the
     // accounts registered here (spec claude-code-accounts). Resolved for the same
     // reason `claudeCliPath` is: the cockpit cannot see the server process's
@@ -254,12 +235,6 @@ router.get('/', async (req, res) => {
     // Who the user is, in their own words (spec user-profile-onboarding).
     // Local-only; the fallback covers the pre-migration read window.
     profile: configManager.get('profile') ?? USER_PROFILE_DEFAULTS,
-    agentContext: configManager.get('agentContext') ?? {
-      relayTools: true,
-      meshTools: true,
-      adapterTools: true,
-      tasksTools: true,
-    },
     // `defaultDirectory` goes out RESOLVED: the cockpit shows a person where a
     // new agent will live and probes that path for a `.dork` conflict, so it has
     // to be the directory the server will actually use. The stored value is the
@@ -316,10 +291,6 @@ router.get('/', async (req, res) => {
       aiMetadata: false,
     },
     auth: configManager.get('auth') ?? { enabled: false },
-    approvals: configManager.get('approvals') ?? {
-      standingGrants: false,
-      trustWindowMinutes: 480,
-    },
     // The two engaged-window ceilings, and the five automatic-reply limits.
     //
     // The ceilings are READ-ONLY here: the cockpit prints them inside the
@@ -329,7 +300,8 @@ router.get('/', async (req, res) => {
     //
     // The five limits ride along because Settings → Rooms offers them, and
     // because a room's own override is shown as "Use default (N)" where N is
-    // whatever is set HERE (DOR-1430). Writing them is still operator-only —
+    // whatever is set HERE (DOR-1430). So does how many conversations one agent
+    // may work in at once, which Settings → Rooms offers too (DOR-2104). Writing them is still operator-only —
     // `config-write-policy.ts` decides that, not this read. The rest of the
     // block (reply waits) is nothing the cockpit says out loud, so it stays off
     // the wire.
@@ -343,6 +315,7 @@ router.get('/', async (req, res) => {
         maxTurnsPerAgentPerCascade: rooms.maxTurnsPerAgentPerCascade,
         maxAutomaticTurnsPerRoomPerHour: rooms.maxAutomaticTurnsPerRoomPerHour,
         maxAutomaticTurnsTotalPerHour: rooms.maxAutomaticTurnsTotalPerHour,
+        maxConcurrentTurnsPerAgent: rooms.maxConcurrentTurnsPerAgent,
       };
     })(),
     // Whether agents may greet you when you come back, whether a greeting may
@@ -414,28 +387,6 @@ router.get('/', async (req, res) => {
  */
 function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAuthority {
   return {
-    // ## THE LOGIN BAR — the standing-permission settings need login on at all
-    //
-    // The reason it is not folded into the cookie bar is written out at
-    // REQUIRES_LOGIN_CONFIG_PATHS: that bar allows every caller while login is
-    // off, and for these paths that would leave the switch pre-armable.
-    //
-    // These settings decide real behavior: the tier gate reads
-    // `approvals.standingGrants` on every gated call. The write also persists and
-    // nothing sweeps it, so a switch set while login is off would still be set
-    // once login is on, reading as something the person chose.
-    refuseLoginRequired(paths) {
-      const refusal = requireStandingGrantsLogin();
-      if (!refusal) return undefined;
-      return {
-        status: refusal.status,
-        code: refusal.code,
-        error: REQUIRES_LOGIN_CONFIG_ERROR,
-        message: refusal.error,
-        paths: [...paths],
-      };
-    },
-
     // The REST twin of the guard on `operator.config_patch` (DOR-467). PR #469
     // put the operator-only write policy on the capability surface, but this
     // route reaches the SAME write and had no policy check at all — and with
@@ -530,9 +481,68 @@ function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAu
   };
 }
 
-router.patch('/', (req, res) => {
+/**
+ * How long a save that changed Claude Code's accounts waits for the usage store
+ * to catch up before answering anyway. A reference move after a rename can be
+ * slow, and the save itself has already landed.
+ */
+const ACCOUNT_RECONCILE_WAIT_MS = 2_000;
+
+/**
+ * The Claude Code fields that decide which accounts the usage store lists, and
+ * whether `default` stands alone, as one comparable string.
+ */
+function claudeAccountFields(): string {
+  const claudeCode = configManager.get('runtimes')?.claudeCode;
+  return JSON.stringify([
+    claudeCode?.accounts ?? null,
+    claudeCode?.defaultAccount ?? null,
+    claudeCode?.defaultAccountColor ?? null,
+  ]);
+}
+
+/**
+ * Wait, bounded, for the usage store to re-read the accounts after a save that
+ * changed them (spec `claude-account-ui` §6.5, "Main's own row").
+ *
+ * The config listener in `index.ts` starts a reconcile without waiting, and it
+ * can join the 60 s scan's pass, which read the config BEFORE this save. The
+ * client refetches usage the moment this route answers, so answering first let
+ * it read that stale list: a standalone `default` beside the row that now owns
+ * its folder, for up to a minute. `fresh` waits out any pass in flight and runs
+ * one that reads the saved file. A reconcile that writes config itself (moving
+ * references off a renamed account) fires the listener again, which joins this
+ * pass rather than starting another, so the wait cannot loop.
+ *
+ * Never fails the request: the save has landed, so a reconcile that throws or
+ * runs past {@link ACCOUNT_RECONCILE_WAIT_MS} is logged and the route answers
+ * as it would have. Without a running store there is nothing to wait for.
+ */
+async function awaitAccountReconcile(): Promise<void> {
+  const store = getAccountUsageStore();
+  if (!store) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), ACCOUNT_RECONCILE_WAIT_MS);
+    timer.unref?.();
+  });
   try {
-    const postureBefore = readStandingGrantPosture();
+    const outcome = await Promise.race([store.reconcileAccounts({ fresh: true }), timedOut]);
+    if (outcome === 'timeout') {
+      logger.warn(
+        '[Config] account usage did not catch up with the save in time; answering anyway'
+      );
+    }
+  } catch (err) {
+    logger.warn('[Config] account usage reconcile after the save failed', logError(err));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+router.patch('/', async (req, res) => {
+  try {
+    const accountsBefore = claudeAccountFields();
     // The bars, the autonomy consent door, the write, and the audit line — the
     // sequence `dorkos config set` and the `config_patch` tool also run, so the
     // three doors cannot drift into meaning different things. What this route
@@ -562,16 +572,11 @@ router.patch('/', (req, res) => {
       return res.status(status).json({ error, code, paths, message });
     }
 
-    // Turning login off, or the master switch off, ends every live standing
-    // permission. Leaving them dormant would let them wake up later under a
-    // posture that can no longer justify them. It stays at the route rather than
-    // inside the shared step because it acts on an in-process store of live
-    // permissions, which exists in the server and nowhere else.
-    revokeStandingGrantsIfPostureNarrowed(postureBefore, readStandingGrantPosture());
-
     for (const warning of result.warnings) {
       logger.warn(`[Config] ${warning}`);
     }
+
+    if (claudeAccountFields() !== accountsBefore) await awaitAccountReconcile();
 
     return res.json({
       success: true,

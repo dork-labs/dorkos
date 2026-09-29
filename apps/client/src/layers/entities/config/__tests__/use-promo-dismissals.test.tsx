@@ -91,11 +91,6 @@ describe('usePromoDismissals', () => {
   });
 
   it('holds the dismissal for the session on a transport that cannot persist', async () => {
-    // The Obsidian `DirectTransport` shape: `getConfig` answers, `updateConfig`
-    // RESOLVES but stores nothing (`embedded-mode-stubs.ts` makes it a no-op).
-    // What this catches is the version of this hook that trusted the server
-    // list alone: the success invalidation refetches `[]`, the optimistic write
-    // is undone, and the card the person just dismissed comes straight back.
     const { result } = await renderDismissals([]);
 
     act(() => result.current.dismissPromo('schedules'));

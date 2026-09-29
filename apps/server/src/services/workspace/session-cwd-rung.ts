@@ -5,18 +5,15 @@
  * A plain sibling split out of {@link module:server/services/workspace/resolve-session-cwd}
  * to keep that file focused on the chain rather than on its types. **Every rung
  * is answered by the resolver** — there is one resolver, one precedence chain,
- * and one log line for every turn on the install, session or room alike. The
- * `room-worktree` rung is reached when a caller names a `room` on the request
- * and is resolved through an injected worktree-ensure seam, so the resolver
- * imports nothing from the rooms domain (see `resolveSessionCwd`).
+ * and one log line for every turn on the install. A room turn always stands in
+ * its agent's home (spec `agent-home-desk` §5.1), so it reports `agent-home`.
  *
  * ## The rungs, in precedence order
  *
  * | Rung             | Reached when                                              |
  * | ---------------- | --------------------------------------------------------- |
  * | `explicit`       | the caller already resolved a `cwd`                       |
- * | `room-worktree`  | the request names a `room` and that room has files        |
- * | `agent-home`     | an agent was named — its own folder, or a room's floor    |
+ * | `agent-home`     | an agent was named — its own folder, and every room turn  |
  * | `agent-managed`  | an agent's manifest asks for a provisioned checkout       |
  * | `default`        | nobody had a better answer                                |
  *
@@ -34,15 +31,11 @@ import { logger } from '../../lib/logger.js';
  * The order of the union IS the precedence order, first match wins:
  *
  * 1. **`explicit`** — the caller named a `cwd`. Nothing else is consulted.
- * 2. **`room-worktree`** — a room turn in a repo-enabled room, running in that
- *    agent's standing working copy of the room's repo (spec `project-rooms`
- *    §3.5).
- * 3. **`agent-home` / `agent-managed`** — an agent was named, and its manifest
+ * 2. **`agent-home` / `agent-managed`** — an agent was named, and its manifest
  *    says where it works.
- * 4. **`default`** — nobody had a better answer, so `DEFAULT_CWD`.
+ * 3. **`default`** — nobody had a better answer, so `DEFAULT_CWD`.
  */
-export type SessionCwdRung =
-  'explicit' | 'room-worktree' | 'agent-home' | 'agent-managed' | 'default';
+export type SessionCwdRung = 'explicit' | 'agent-home' | 'agent-managed' | 'default';
 
 /** Where a turn runs, and why. */
 export interface ResolvedCwd {

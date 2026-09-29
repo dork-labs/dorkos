@@ -1,11 +1,15 @@
+import { Button, Input, Label, Notice, Textarea } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { describeError, request } from '../api.js';
 import { ownerClaimLink } from '../owner-claim.js';
 import { FocusDialog } from './CommunityAdministration.js';
 import { HostApiKeys } from './HostApiKeys.js';
 import { HostCommunityLimits } from './HostCommunityLimits.js';
+import { HostHoldControls } from './HostHoldControls.js';
+import { HostShortNames } from './HostShortNames.js';
 
-type Lifecycle = 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
+type Lifecycle =
+  'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
 type Community = {
   id: string;
   name: string;
@@ -15,6 +19,10 @@ type Community = {
   settingsVersion: number;
   ownerPresent: boolean;
   deletionState: 'waiting' | 'deleting' | 'retrying' | null;
+  deletionNoticeAt: string | null;
+  deletionRequestedBy: 'owner' | 'host' | null;
+  shortName: string | null;
+  legalHold: { since: string; reference: string | null } | null;
   createdAt: string;
 };
 type Claim = { grantId: string; ownerClaimToken: string; expiresAt: string };
@@ -45,7 +53,7 @@ function OwnerClaimHandoff({ claim }: { claim: Claim }) {
     }
   }
   return (
-    <div className="notice mt-4">
+    <Notice tone="info" className="mt-4">
       <strong>Send this to the new owner</strong>
       <p className="small">
         Send this link only to the person who will own the community. It works once, expires{' '}
@@ -53,9 +61,9 @@ function OwnerClaimHandoff({ claim }: { claim: Claim }) {
         yourself to become the owner.
       </p>
       <div className="field mb-2">
-        <label htmlFor="owner-claim-link">Owner claim link</label>
+        <Label htmlFor="owner-claim-link">Owner claim link</Label>
         <div className="row">
-          <input
+          <Input
             id="owner-claim-link"
             ref={input}
             className="min-w-0 flex-1"
@@ -63,9 +71,14 @@ function OwnerClaimHandoff({ claim }: { claim: Claim }) {
             value={link}
             onFocus={(event) => event.currentTarget.select()}
           />
-          <button className="button shrink-0" type="button" onClick={() => void copyLink()}>
+          <Button
+            variant="outline"
+            className="shrink-0"
+            type="button"
+            onClick={() => void copyLink()}
+          >
             {copy === 'copied' ? 'Copied' : 'Copy link'}
-          </button>
+          </Button>
         </div>
       </div>
       <p className="small mb-0" aria-live="polite">
@@ -76,7 +89,7 @@ function OwnerClaimHandoff({ claim }: { claim: Claim }) {
             : ''}
       </p>
       <p className="small muted mb-0">Claim ID: {claim.grantId}</p>
-    </div>
+    </Notice>
   );
 }
 
@@ -92,13 +105,17 @@ export function HostAdministration() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<HostConfirmation | null>(null);
+  const [noticeDays, setNoticeDays] = useState(14);
   const creationAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const refresh = useCallback(async () => {
     setError('');
     try {
-      const body = await request<{ communities: Community[] }>('/api/v1/host/communities');
+      const body = await request<{ communities: Community[]; deletionNoticeDays: number }>(
+        '/api/v1/host/communities'
+      );
       setCommunities(body.communities);
+      setNoticeDays(body.deletionNoticeDays);
     } catch (cause) {
       setError(describeError(cause));
     }
@@ -166,12 +183,12 @@ export function HostAdministration() {
         <div className="panel p-6">
           {error ? (
             <>
-              <p role="alert" className="notice error">
+              <Notice role="alert" tone="error">
                 {error}
-              </p>
-              <button className="button" onClick={() => void refresh()}>
+              </Notice>
+              <Button variant="outline" onClick={() => void refresh()}>
                 Try again
-              </button>
+              </Button>
             </>
           ) : (
             <div role="status">Opening host administration…</div>
@@ -194,22 +211,22 @@ export function HostAdministration() {
         does not create a community on this host.
       </p>
       {error && (
-        <div role="alert" className="notice error mb-4">
+        <Notice role="alert" tone="error" className="mb-4">
           {error}
-        </div>
+        </Notice>
       )}
       {message && (
-        <div role="status" className="notice success mb-4">
+        <Notice role="status" tone="success" className="mb-4">
           {message}
-        </div>
+        </Notice>
       )}
       <div className="settings-grid">
         <section className="panel">
           <h2>Create a community</h2>
           <form onSubmit={(event) => void create(event)}>
             <div className="field">
-              <label htmlFor="host-community-name">Name</label>
-              <input
+              <Label htmlFor="host-community-name">Name</Label>
+              <Input
                 id="host-community-name"
                 value={name}
                 maxLength={80}
@@ -218,8 +235,8 @@ export function HostAdministration() {
               />
             </div>
             <div className="field">
-              <label htmlFor="host-community-description">Description</label>
-              <textarea
+              <Label htmlFor="host-community-description">Description</Label>
+              <Textarea
                 id="host-community-description"
                 value={description}
                 maxLength={1000}
@@ -227,7 +244,7 @@ export function HostAdministration() {
               />
             </div>
             <div className="field">
-              <label htmlFor="host-community-admission">Access</label>
+              <Label htmlFor="host-community-admission">Access</Label>
               <select
                 id="host-community-admission"
                 value={admissionPolicy}
@@ -239,9 +256,9 @@ export function HostAdministration() {
                 <option value="closed">Closed</option>
               </select>
             </div>
-            <button className="button primary" disabled={busy}>
+            <Button type="submit" variant="default" disabled={busy}>
               Create community
-            </button>
+            </Button>
           </form>
           {claim && <OwnerClaimHandoff key={claim.grantId} claim={claim} />}
         </section>
@@ -254,7 +271,9 @@ export function HostAdministration() {
               {communities.map((community) => {
                 const pending = community.lifecycle === 'pending_owner';
                 const suspendable =
-                  community.lifecycle === 'active' || community.lifecycle === 'archived';
+                  community.lifecycle === 'active' ||
+                  community.lifecycle === 'archived' ||
+                  community.lifecycle === 'held';
                 return (
                   <article
                     className="panel-alt p-4"
@@ -269,14 +288,34 @@ export function HostAdministration() {
                       <p className="small muted">{community.description}</p>
                     )}
                     <p className="small muted">
+                      {community.shortName && <>/{community.shortName} · </>}
                       ID: {shortId(community.id)} · Owner{' '}
                       {community.ownerPresent ? 'assigned' : 'not assigned'}
                       {community.deletionState ? ` · Cleanup ${community.deletionState}` : ''}
                     </p>
+                    {community.legalHold && (
+                      <div className="small">
+                        <p>
+                          Legal hold since{' '}
+                          {new Date(community.legalHold.since).toLocaleDateString()}
+                          {community.legalHold.reference
+                            ? ` (${community.legalHold.reference})`
+                            : ''}
+                          .{' '}
+                          {community.lifecycle === 'deletion_pending'
+                            ? 'Its deletion is paused until the hold is released.'
+                            : 'This community can’t be deleted until the hold is released.'}
+                        </p>
+                        <p className="muted">
+                          The hold doesn’t stop single messages or files being removed, or a person
+                          erasing their own data. See “Legal holds” in OPERATIONS.md.
+                        </p>
+                      </div>
+                    )}
                     <div className="row flex-wrap gap-2">
                       {pending && (
-                        <button
-                          className="button"
+                        <Button
+                          variant="outline"
                           disabled={busy}
                           onClick={() =>
                             void perform(async () => {
@@ -290,20 +329,20 @@ export function HostAdministration() {
                           }
                         >
                           Reissue owner claim
-                        </button>
+                        </Button>
                       )}
                       {suspendable && (
-                        <button
-                          className="button"
+                        <Button
+                          variant="outline"
                           disabled={busy}
                           onClick={() => setConfirmation({ community, action: 'suspend' })}
                         >
                           Suspend
-                        </button>
+                        </Button>
                       )}
                       {community.lifecycle === 'suspended' && (
-                        <button
-                          className="button"
+                        <Button
+                          variant="outline"
                           disabled={busy}
                           onClick={() =>
                             void perform(
@@ -318,17 +357,32 @@ export function HostAdministration() {
                           }
                         >
                           Resume
-                        </button>
+                        </Button>
                       )}
                     </div>
+                    <div className="mt-3">
+                      <HostHoldControls
+                        community={community}
+                        busy={busy}
+                        noticeDays={noticeDays}
+                        perform={perform}
+                      />
+                    </div>
+                    {community.lifecycle !== 'deletion_pending' && (
+                      <HostShortNames
+                        communityId={community.id}
+                        name={community.name}
+                        onChanged={refresh}
+                      />
+                    )}
                     {community.lifecycle !== 'deletion_pending' && (
                       <HostCommunityLimits communityId={community.id} name={community.name} />
                     )}
                     {pending && (
                       <div className="field mt-3 mb-0">
-                        <label htmlFor={`revoke-${community.id}`}>Owner claim ID</label>
+                        <Label htmlFor={`revoke-${community.id}`}>Owner claim ID</Label>
                         <div className="row">
-                          <input
+                          <Input
                             id={`revoke-${community.id}`}
                             className="min-w-0 flex-1"
                             value={revokeGrantId[community.id] ?? ''}
@@ -339,8 +393,8 @@ export function HostAdministration() {
                               }))
                             }
                           />
-                          <button
-                            className="button"
+                          <Button
+                            variant="outline"
                             disabled={busy || !revokeGrantId[community.id]}
                             onClick={() =>
                               void perform(
@@ -355,15 +409,16 @@ export function HostAdministration() {
                             }
                           >
                             Revoke
-                          </button>
+                          </Button>
                         </div>
-                        <button
-                          className="button danger mt-2"
+                        <Button
+                          variant="destructive"
+                          className="mt-2"
                           disabled={busy}
                           onClick={() => setConfirmation({ community, action: 'abandon' })}
                         >
                           Abandon unclaimed community
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </article>
@@ -389,11 +444,11 @@ export function HostAdministration() {
               : 'This permanently removes the empty community. It only succeeds after every owner claim is revoked.'}
           </p>
           <div className="row justify-end gap-2">
-            <button className="button" onClick={() => setConfirmation(null)}>
+            <Button variant="outline" onClick={() => setConfirmation(null)}>
               Cancel
-            </button>
-            <button
-              className="button danger"
+            </Button>
+            <Button
+              variant="destructive"
               disabled={busy}
               onClick={() => {
                 const { community, action } = confirmation;
@@ -412,7 +467,7 @@ export function HostAdministration() {
               }}
             >
               {confirmation.action === 'suspend' ? 'Suspend community' : 'Abandon community'}
-            </button>
+            </Button>
           </div>
         </FocusDialog>
       )}

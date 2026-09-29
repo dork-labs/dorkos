@@ -9,7 +9,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Configuration
 
-DorkOS works out of the box. Most people never open this page again after their first session: no ports to pick, no files to edit, nothing to tune. This page exists for the day you need to change one specific thing, a port conflict, a tunnel so you can check on an agent from your phone, a different AI provider.
+DorkOS works out of the box. Most people never open this page again after their first session: no ports to pick, no files to edit, nothing to tune. This page exists for the day you need to change one specific thing, a port conflict, a tunnel so you can check on an agent from your phone, a different AI service.
 
 The one setting worth knowing on day one is `ANTHROPIC_API_KEY`, and the [Installation guide](/docs/getting-started/installation) already walks you through setting it. Everything below is reference: skip to the section you need and ignore the rest.
 
@@ -102,13 +102,13 @@ DorkOS supports ngrok tunnels (a service that gives your local machine a public 
 
 ### Relay Configuration
 
-Relay is the messaging layer that lets agents reach you on Telegram, notify each other, and connect to external platforms. See the [Relay Messaging guide](/docs/guides/relay-messaging) for setup details.
+Relay is the messaging layer that lets agents reach you on Telegram, notify each other, and connect to external platforms. It is on by default. You can turn it on or off without a terminal: switch **Agent messaging** in Settings › Tools, or choose **Turn on chat apps** on the Connections page, then restart DorkOS when it asks. The environment variable below wins over that switch whenever it is set. See the [Relay Messaging guide](/docs/guides/relay-messaging) for setup details.
 
 <TypeTable
   type={{
     DORKOS_RELAY_ENABLED: {
       description:
-        'Enable the Relay messaging layer for inter-agent communication. Adapter configuration lives in `~/.dork/config.json` under the `relay` key.',
+        'Turns Relay (agent messaging and chat apps like Telegram and Slack) on or off. While it is set it overrules the **Agent messaging** switch in Settings › Tools and `relay.enabled` in `~/.dork/config.json`; leave it unset to use the switch. Relay’s own configuration lives in the same file under the `relay` key.',
       type: 'boolean',
       default: 'true',
     },
@@ -290,6 +290,12 @@ You do not have to edit the file for these. **Settings → Rooms** has the switc
       description:
         "How many times one agent may change a room's shared canvas during a single turn — putting a document on it, changing one, taking one off. Three is room for the thing it meant to show you, a second thing beside it, and a correction; the fourth is refused and the agent is told to put the rest in one change next turn. Nothing you do yourself is ever counted. Only you can change this.",
       type: 'integer (1--10)',
+      default: '3',
+    },
+    'rooms.maxConcurrentTurnsPerAgent': {
+      description:
+        'How many conversations one agent may work in at the same time. Higher is faster, but turns that change the same files can collide. A message sent while the agent is at the limit waits and starts when one of its conversations finishes; you never have to send it again. One agent never runs two turns in the same room, whatever this says. Set it to 1 to have each agent work on one thing at a time. Only you can change this.',
+      type: 'integer (1--8)',
       default: '3',
     },
     'rooms.repo.enabled': {
@@ -489,9 +495,9 @@ Two things have to be true for it to reach you. You need at least one device add
 
 On a phone, open DorkOS using your tunnel address (see [Tunnel Setup](/docs/self-hosting/tunnel-setup)), then choose "Add to Home Screen." It installs like an app: full screen, with its own icon, no browser bar. On iPhone this step is not optional — it only shows notifications from an app installed this way, never from a browser tab. Once it is installed, open Settings there and add the phone under Notifications, and it joins the list above.
 
-### Connectors
+### Connections
 
-Connectors let your agents reach outside services (Gmail, Slack, and so on). Most of that is set up in the app, not here. The one piece that lives in the config file is the list of remote MCP servers you want DorkOS to offer as connectable services.
+[Connections](/docs/connections) is where your agents reach outside services (Gmail, Slack, and so on). Most of that is set up in the app, not here. The one piece that lives in the config file is the list of remote MCP servers you want DorkOS to offer as connectable services.
 
 <TypeTable
   type={{
@@ -530,6 +536,12 @@ DorkOS records only your **deviations** from each extension's default state, acr
       type: 'string[]',
       default: '[]',
     },
+    'extensions.approvedSources': {
+      description:
+        'Which copy of each allowed extension you said yes to: its folder, and the plugin it came in, if any. Only you can change it.',
+      type: 'object',
+      default: '{}',
+    },
   }}
 />
 
@@ -541,11 +553,13 @@ An extension is code, in two places: some of it runs on your computer with the s
 
 You will see it the first time: the extension shows up in Settings → Extensions with a note that it is waiting for you, and an **Allow it to run** button. Click it once and you are done. Editing that extension, testing it, and reloading it all work from then on with nothing further to click, and turning the extension off and on again does not ask you again. If you change your mind, **Stop it** on the same card takes the permission back and stops the extension straight away.
 
-Two things do ask again, because in both the code has changed hands rather than been edited by you: installing an update to an extension, and reinstalling one you removed. Editing an extension you already allowed never re-asks.
+Some extensions come inside a plugin you install from the marketplace. Those show up in Settings → Extensions too, and ask the same way.
+
+Your yes is for one copy of an extension: the one in that folder, from that plugin. Two things ask again, because in both the code has changed hands rather than been edited by you: reinstalling an extension you removed, and a different plugin bringing an extension with the same name. Updating a plugin keeps your yes for the extensions it still brings. Editing an extension you already allowed never re-asks.
 
 Extensions that ship with DorkOS never ask. You already installed DorkOS. DorkOS tells its own extensions apart by where their files sit, not by the name inside them, so a folder in your project cannot claim to be one.
 
-Your answer lives in `extensions.approvedToRun`. Your agents can read it but cannot write it, which is the point: an agent that could add its own extension to that list would be approving its own code. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
+Your answer lives in `extensions.approvedToRun`, and the copy it applies to lives in `extensions.approvedSources`. Your agents can read the first but cannot write either, which is the point: an agent that could add its own extension to that list would be approving its own code. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
 
 <Callout type="warn">
   Adding a ships-on extension's id to `enabled` does nothing, since it's already on. To disable it,
@@ -556,7 +570,7 @@ Your answer lives in `extensions.approvedToRun`. Your agents can read it but can
 
 DorkOS runs three agent runtimes: Claude Code (the default), Codex, and OpenCode. The `runtimes` block in `~/.dork/config.json` controls which ones are available and how their binaries are found. Running multiple runtimes side by side is shipped, but still getting real-world mileage, so treat multi-runtime setups as an area to watch rather than a fully settled feature. See the [Runtimes guide](/docs/guides/runtimes) for connecting and choosing runtimes.
 
-**If you have more than one Claude account**, the `runtimes.claudeCode` settings say which one your work runs on. A Claude account is a folder that holds that account's chat history and its own sign-in. It is usually `~/.claude`, and a second one might be `~/.claude2`. Point `defaultAccount` at a folder and your next chat runs and bills there, unless the agent or the chat itself names another account. Write the folder's full path, like `/Users/you/.claude2`; a path starting with `~` will not work here. Leave it `null` and nothing changes: DorkOS uses whatever your shell already set, or `~/.claude`. List your accounts under `accounts` and give each one a name you'll recognise, like the client you bill it to. Nothing outside DorkOS changes either way. Your shell, your aliases, and a plain `claude` all keep working exactly as before.
+**If you have more than one Claude account**, the `runtimes.claudeCode` settings say which one your work runs on. A Claude account is a folder that holds that account's chat history and its own sign-in. It is usually `~/.claude`, and a second one might be `~/.claude2`. Point `defaultAccount` at a folder and your next chat runs and bills there, unless the agent or the chat itself names another account. Write the folder's full path, like `/Users/you/.claude2`. Leave it `null` and nothing changes: DorkOS uses whatever your shell already set, or `~/.claude`. List your accounts under `accounts` and give each one a name you'll recognise, like the client you bill it to. Nothing outside DorkOS changes either way. Your shell, your aliases, and a plain `claude` all keep working exactly as before.
 
 You do not have to edit this file. Open Settings and go to Runtimes: you can add your accounts there, name them, and choose the one in use. Once you have more than one, the account also shows in the status bar at the bottom of a new session, so you can switch before you send.
 
@@ -572,7 +586,7 @@ The switch used to sit in Settings under Experiments and moved to the Control Ce
 
 **And you can say how much a new chat may do before it checks with you.** That is `runtimes.defaultTrustStop`, and it takes one of three words: `ask` (stop before changing anything), `act` (get on with the work, stop for the risky parts), or `autonomy` (never stop). It ships as `null`, which means every runtime starts where it always did — asking first. One setting covers every runtime, because those three words mean the same thing whichever agent you are talking to; each runtime works out its own equivalent. If you want something different for just one of them, set `defaultTrustStop` inside that runtime's own block and it wins there.
 
-Choosing `autonomy` is the one that asks you first. DorkOS will not save it until you have read what Full autonomy means and confirmed it, and it writes down that you did — after that, every new chat starts with the approval prompts turned off, so agents act without stopping for your OK each time. They still ask when something genuinely needs your call, and still follow anything you have told them to check with you about. Settings shows a quiet note while that is on, so you can always find it. Chats you already have keep what they are running with, whatever you change here. This setting is for the chats you open yourself: scheduled runs, integrations, and rooms have their own settings and their own, stricter rules.
+Choosing `autonomy` is the one that asks you first. DorkOS will not save it until you have read what Full autonomy means and confirmed it, and it writes down that you did — after that, every new chat starts with the approval prompts turned off, so agents act without stopping for your OK each time. They still ask when something genuinely needs your call, and still follow anything you have told them to check with you about. Settings shows a quiet note while that is on, so you can always find it. Chats you already have keep what they are running with, whatever you change here. This setting is for the chats you open yourself: scheduled runs, chat apps, and rooms have their own settings and their own, stricter rules.
 
 <TypeTable
   type={{
@@ -596,8 +610,26 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
     },
     'runtimes.claudeCode.accounts': {
       description:
-        'The Claude accounts you have told DorkOS about, each with a short id, a path, and a name you choose (or `null` for no name). The id is how an agent or a single chat says which account to bill. DorkOS never goes looking for accounts on its own.',
-      type: 'Array<{ id: string; path: string; label: string | null }>',
+        'The Claude accounts you have told DorkOS about, each with a short id, a path, and a name you choose (or `null` for no name). The id is how an agent or a single chat says which account to bill. It uses lowercase letters, digits and single hyphens, and `default` is kept for your main account, so DorkOS will not save an account under that name. DorkOS never adds an account on its own: Settings may show Claude folders it finds on your computer, and one is added only when you click Add.',
+      type: 'Array<{ id: string; path: string; label: string | null; color: string | null }>',
+      default: '[]',
+    },
+    'runtimes.claudeCode.accounts[].color': {
+      description:
+        "The color DorkOS uses for this account's dot and badge. Leave it empty to use the default for its position.",
+      type: 'string | null',
+      default: 'null',
+    },
+    'runtimes.claudeCode.defaultAccountColor': {
+      description:
+        "The color DorkOS uses for this computer's own Claude sign-in when you haven't added its folder as an account, written like `#0d9488`. Leave it empty to use the default for its position. If you have added that folder as an account, the account's own color is used instead.",
+      type: 'string | null',
+      default: 'null',
+    },
+    'runtimes.claudeCode.dismissedFolders': {
+      description:
+        'Claude folders you dismissed from the "Found on this computer" list in Settings, so DorkOS stops offering them. Set by the Dismiss button; you do not need to edit it.',
+      type: 'string[]',
       default: '[]',
     },
     'runtimes.claudeCode.defaultModel': {
@@ -630,13 +662,13 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
     },
     'runtimes.opencode.provider': {
       description:
-        'Selected provider id keying into the `providers` registry (e.g. `openrouter`, `openai`). `null` uses OpenCode host auth.',
+        'Selected AI-service id keying into the `providers` registry (e.g. `openrouter`, `openai`). `null` uses OpenCode host auth.',
       type: 'string | null',
       default: 'null',
     },
     'runtimes.opencode.baseURL': {
       description:
-        'Optional OpenAI-compatible base URL for a Direct provider, injected into the sidecar as `OPENAI_BASE_URL`.',
+        'Optional OpenAI-compatible base URL for Direct mode, injected into the sidecar as `OPENAI_BASE_URL`.',
       type: 'string | null',
       default: 'null',
     },
@@ -790,7 +822,7 @@ If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`
     },
     'harness.autoAdopt': {
       description:
-        'Let DorkOS move a skill that only one of your coding tools can see into the shared folder every tool reads — but only inside the agent folders and room folders DorkOS owns, and only for skills whose settings hold nothing one tool alone understands. Off everywhere until you turn it on with `dorkos config set harness.autoAdopt true`. Everything else is reported and left where it is. Only a person can change this.',
+        'Let DorkOS move a skill that only one of your coding tools can see into the shared folder every tool reads — but only inside the agent folders DorkOS owns, and only for skills whose settings hold nothing one tool alone understands. Off everywhere until you turn it on with `dorkos config set harness.autoAdopt true`. Everything else is reported and left where it is. Only a person can change this.',
       type: 'boolean',
       default: 'false',
     },
@@ -838,29 +870,44 @@ DorkOS runs with no login by default: no login screen, no user concept, instant 
 
 Session cookies are signed by Better Auth. Production deployments should set the `BETTER_AUTH_SECRET` environment variable so sessions survive server restarts.
 
-### Standing permissions
+### Standing permissions (removed)
 
-These settings let you answer one approval once instead of every time, for one agent doing one named thing, for a set number of hours. They are off to start with, and turning them on needs local login to be on too — without a sign-in, DorkOS cannot tell you apart from an agent running on the same machine.
+The `approvals` section is gone. Its settings (`approvals.standingGrants`, `approvals.trustWindowMinutes` and `approvals.standingGrantsVoidBefore`) are removed from your config file the first time the new version starts. **Always allow** on a request card replaced standing permissions: it is a permission setting for one agent and one action, changed on the Permissions page. See [Always allow](/docs/guides/action-approvals#always-allow).
 
-Switching either one off ends every permission you have open, right away. It stays ended: turning the setting back on later never brings an old permission back, however you switch it, and whether or not DorkOS was running at the time. Granting a permission again is always a fresh decision you make.
+### Agent permissions
+
+What your agents may do on their own, what waits for your yes, and what they cannot do at all — across ten areas (Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, DorkOS settings, Safety limits, Permissions, Reach & secrets) plus **Files & commands**, how often an agent stops to check with you while it edits files and runs commands. See the [Permissions guide](/docs/guides/permissions).
+
+These are changed on the Permissions page (Settings → Permissions, or an agent's own Permissions page), never here, so that every change DorkOS makes is recorded in the history. (An edit made straight to an agent's settings file is recorded too, as changed outside DorkOS.) `PATCH /api/config` and `dorkos config set` refuse any `permissions` key and say where to go instead.
+
+Choosing a preset (Careful, Balanced, or Full power) sets all ten areas AND moves `runtimes.defaultTrustStop`, the global Files & commands stop: Careful to `ask`, Balanced to `act`, Full power to `autonomy`. Moving it to `autonomy` needs the same confirmation Full autonomy always needs; without it, the write is refused. Per-runtime stops (`runtimes.claudeCode.defaultTrustStop` and its siblings, documented under Runtimes above) are left alone by a preset and show up as changes on top of it.
 
 <TypeTable
   type={{
-    'approvals.standingGrants': {
-      description: 'Whether standing permissions may exist at all.',
-      type: 'boolean',
-      default: 'false',
-    },
-    'approvals.trustWindowMinutes': {
+    'permissions.preset': {
       description:
-        'How long a new standing permission lasts, in minutes, counted from the moment you grant it. Using it never extends it. The longest allowed is one day.',
-      type: 'number (5-1440)',
-      default: '480',
+        'The starting point for every area: `careful`, `balanced` or `full`. `null` means you have not chosen yet, and agents work as they did before permissions existed.',
+      type: "'careful' | 'balanced' | 'full' | null",
+      default: 'null',
+    },
+    'permissions.defaults.areas': {
+      description:
+        'The area changes you made on top of the preset: `rooms`, `tasks`, `agents`, `messages`, `connections`, `packages`, `settings`, `safety`, `permissions`, `reach`, each mapping to `blocked`, `ask` or `allowed`. Safety limits, Permissions, and Reach & secrets can never be `allowed`.',
+      type: 'Partial<Record<string, "blocked" | "ask" | "allowed">>',
+      default: '{}',
+    },
+    'permissions.defaults.actions': {
+      description:
+        'Single-action changes on top of the preset, keyed by action id, each mapping to `blocked`, `ask` or `allowed`. A single action beats its area.',
+      type: 'Partial<Record<string, "blocked" | "ask" | "allowed">>',
+      default: '{}',
     },
   }}
 />
 
-DorkOS keeps one more value in this section, `approvals.standingGrantsVoidBefore`. It writes that one itself to remember when you last switched standing permissions off, and it is what stops an old permission waking up later. Leave it alone — editing the config file by hand here can bring back a permission you meant to end.
+DorkOS keeps one more value here, `permissions.upgradeSweptVersion`. It records which version last carried your old settings across on upgrade; leave it alone.
+
+Each agent's own differences live in its `.dork/agent.json`, under `permissions` (`areas`, `actions`, and its own `filesAndCommands` stop).
 
 ### Full autonomy
 
@@ -870,7 +917,7 @@ Turning a conversation up to Full autonomy asks you to confirm what that means f
 
 If you tick **Don't show this again** in that dialog, DorkOS writes down the date and stops asking you to confirm — one answer covers all of it. Settings → Access shows the date back with a **Reset** button; resetting brings the dialog back the next time you reach for a setting that won't stop for approval. **Resetting also turns off any Full-autonomy default for new chats** — that note is what let new chats start with the approval prompts off, so it goes when the note does. Nothing about a conversation you already have changes either way; only the confirmation comes back.
 
-You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. Either way DorkOS asks you to confirm what it means once, at the moment you choose it, and writes down that you did. From then on new chats start with the approval prompts off, and Settings keeps a note saying so with a link to change it back. **Scheduled runs follow the same level.** A task you create without picking a level starts at whatever you chose here, worked out for the agent that will run it; if you never chose one, it starts where scheduled runs have always started — able to edit files, stopping for anything riskier. Picking a level on the task itself always wins. Integrations and rooms still have their own settings and their own, stricter rules, and a task file on disk can never hand itself the never-ask level — that is refused whatever your default says.
+You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. Either way DorkOS asks you to confirm what it means once, at the moment you choose it, and writes down that you did. From then on new chats start with the approval prompts off, and Settings keeps a note saying so with a link to change it back. **Scheduled runs follow the same level.** A task you create without picking a level starts at whatever you chose here, worked out for the agent that will run it; if you never chose one, it starts where scheduled runs have always started — able to edit files, stopping for anything riskier. Picking a level on the task itself always wins. Chat apps and rooms still have their own settings and their own, stricter rules, and a task file on disk can never hand itself the never-ask level — that is refused whatever your default says.
 
 Reset takes effect everywhere within about half a minute. A browser tab you left open reads your settings from a copy it refreshes every 30 seconds, so a tab open at the moment you reset can still skip the dialog once before it catches up. Nothing is lost by that — it only means the confirmation returns a few seconds later on that tab than on the one you pressed Reset in.
 
@@ -897,7 +944,7 @@ Reset takes effect everywhere within about half a minute. A browser tab you left
   }}
 />
 
-This is a confirmation for you, not a lock against your agents. It makes sure a person cannot arrive in Full autonomy without having been told what it means. It is not a defence against a program on your machine calling the API directly — that is what [standing permissions](#standing-permissions) and local login are for.
+This is a confirmation for you, not a lock against your agents. It makes sure a person cannot arrive in Full autonomy without having been told what it means. It is not a defence against a program on your machine calling the API directly — that is what local login is for.
 
 ### Cloud link
 
@@ -922,10 +969,18 @@ Linking this instance to a DorkOS account lets the account see and manage it. Ru
       type: 'string | null',
       default: 'null',
     },
+    'cloud.previousLinkProof': {
+      description:
+        'Proof that this computer held its earlier key, never the key itself. The next link sends it so apps connected through the earlier link can come back when you link the same DorkOS account. Treat it like a password: the CLI and API warn when it is set by hand. DorkOS clears it once the new link is made. null when there is nothing to bring back.',
+      type: 'string | null',
+      default: 'null',
+    },
   }}
 />
 
 Set `DORKOS_CLOUD_URL` to point at a non-production cloud (defaults to `https://dorkos.ai`). While linked, the instance checks in with the cloud on startup and every 15 minutes. If the account revokes the instance, the next check-in clears the local token and the instance is unlinked.
+
+Linking this computer again with the same DorkOS account can bring back the apps it connected through its earlier link, as long as that link was not removed from the account. If it was removed, or you link a different account or a different computer, connect those apps again.
 
 ### Uploads
 
@@ -989,6 +1044,12 @@ Tell DorkBot what kind of work you do, and every agent on this machine knows who
     'profile.rolePromptDismissedAt': {
       description:
         'When you told DorkBot "don\'t ask again" about your work. Set automatically; you never edit it. Local-only; never included in any telemetry payload.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'profile.identityPromptDismissedAt': {
+      description:
+        'When DorkBot asked what to call you and you answered or skipped it. Set automatically; you never edit it. DorkBot asks once, and only while your name or @handle is missing. Local-only; never included in any telemetry payload.',
       type: 'string | null',
       default: 'null',
     },

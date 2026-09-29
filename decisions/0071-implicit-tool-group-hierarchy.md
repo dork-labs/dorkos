@@ -1,15 +1,17 @@
 ---
 number: 71
 title: Implicit Tool Group Hierarchy for User-Facing Toggles
-status: accepted
+status: superseded
 created: 2026-03-04
 spec: agent-tools-elevation
-superseded-by: null
+superseded-by: '260923-223904'
 ---
 
 # 71. Implicit Tool Group Hierarchy for User-Facing Toggles
 
 ## Status
+
+Superseded (2026-09-24, DOR-2278, spec `agent-permissions` phase 3) by ADR-260923-223904 (one permission model for agent actions): the user-facing tool-group toggles are gone; permission areas replace them.
 
 Accepted
 

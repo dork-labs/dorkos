@@ -24,7 +24,10 @@ import { noopLogger } from '@dorkos/shared/logger';
 let protocolVersion = '2';
 const root = mkdtempSync(path.join(tmpdir(), 'pkg-fetcher-git-'));
 
-vi.mock('../../../lib/git-safety.js', () => ({
+vi.mock('../../../lib/git-safety.js', async (importOriginal) => ({
+  // The real `-c` hardening; only the environment is swapped for a local remote.
+  internalGitArgs: (await importOriginal<typeof import('../../../lib/git-safety.js')>())
+    .internalGitArgs,
   hardenedGitEnv: () => ({
     ...process.env,
     GIT_ALLOW_PROTOCOL: 'file',
@@ -51,7 +54,7 @@ vi.mock('../source-url-policy.js', async () => {
 
 import { MarketplaceCache } from '../marketplace-cache.js';
 import { PackageFetcher } from '../package-fetcher.js';
-import { GitCommitNotFoundError, gitTreeSource } from '../lib/git-tree.js';
+import { GitCommitNotFoundError, gitTreeSource } from '../lib/git/git-tree.js';
 
 const FIXTURE_ENV = {
   ...process.env,

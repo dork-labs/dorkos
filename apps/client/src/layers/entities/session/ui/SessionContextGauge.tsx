@@ -1,7 +1,13 @@
 import { CircleDashed, Recycle } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { STATUS_TONE_TEXT, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import {
+  STATUS_TONE_TEXT,
+  TOOLTIP_MUTED_TEXT,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/layers/shared/ui';
 // Same-slice imports via sibling modules (not the entities/session barrel).
 import { useSessionContextHealth } from '../model/context/use-session-context-health';
 import type { ContextSeverity } from '../lib/context-health';
@@ -74,8 +80,8 @@ function AutoCompactedMarker({ at }: { at: string }) {
  * - **Auto-compacted** — a discreet recycle marker rides EITHER state when the
  *   session's tail carries a recent auto-compaction.
  *
- * Presentational within the `role="button"` row: the triggers are non-interactive
- * spans that let clicks bubble, so the gauge never steals the row's click target.
+ * Presentational within the session row: the triggers are non-interactive spans
+ * that let clicks bubble, so the gauge never steals the row's click target.
  *
  * @param session - The session row to gauge.
  */
@@ -93,6 +99,8 @@ export function SessionContextGauge({ session }: { session: Session }) {
                 'inline-flex cursor-default items-center gap-1',
                 SEVERITY_TEXT[health.severity]
               )}
+              // A labelled glyph: `img` is the role that may carry a name.
+              role="img"
               aria-label={`Context ${health.percent}% full`}
             >
               <ContextRing percent={health.percent} />
@@ -102,7 +110,7 @@ export function SessionContextGauge({ session }: { session: Session }) {
           <TooltipContent side="top">
             <div>Context {health.percent}% full</div>
             {!health.fresh && (
-              <div className="text-muted-foreground">as of {formatRelativeTime(health.asOf)}.</div>
+              <div className={TOOLTIP_MUTED_TEXT}>as of {formatRelativeTime(health.asOf)}.</div>
             )}
           </TooltipContent>
         </Tooltip>
@@ -111,6 +119,7 @@ export function SessionContextGauge({ session }: { session: Session }) {
           <TooltipTrigger asChild>
             <span
               className="text-muted-foreground/40 inline-flex cursor-default items-center"
+              role="img"
               aria-label="Context usage unknown"
             >
               <CircleDashed className="size-3.5 shrink-0" aria-hidden="true" />

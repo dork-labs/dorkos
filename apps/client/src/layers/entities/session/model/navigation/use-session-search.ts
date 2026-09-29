@@ -1,14 +1,8 @@
 import { useSafeSearch } from '@/layers/shared/model';
-import type { SessionSearch } from '@/router';
+import type { SessionSearch } from '@/layers/shared/lib';
 
 /**
  * Read session search params safely from any route — and any platform.
- *
- * Returns `{ session, dir, runtime, prompt, send, seed, message }` when on
- * `/_shell/session`, empty object otherwise. Routes through
- * {@link useSafeSearch}, so it never throws on a route mismatch
- * (`strict: false`) and degrades to an empty object in the router-less Obsidian
- * embed instead of crashing.
  *
  * **It is an allow-list, and that is the trap.** A param added to
  * `sessionSearchSchema` but not repeated here is silently dropped: the return

@@ -22,7 +22,7 @@ import { ChatEmptyState, TypingDots } from '@/layers/features/chat';
 import { Feed } from '@/layers/shared/ui';
 import { SESSION_CAPABILITIES, SessionMessage } from '@/layers/widgets/session';
 import { ROOM_CAPABILITIES, RoomMessage } from '@/layers/widgets/room-view';
-import type { PendingPost } from '@/layers/entities/room';
+import { threadReplySummary, type PendingPost } from '@/layers/entities/room';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -311,10 +311,91 @@ function ThreadGroupingDemo() {
             grouping={{ position: 'only' }}
           />
           <ThreadReplyRow
-            replies={replies}
-            lastReadSeq={replies[0]!.seq - 1}
+            summary={threadReplySummary(replies, replies[0]!.seq - 1)}
             open={false}
             onOpen={() => {}}
+          />
+        </Conversation.Root>
+      </ShowcaseDemo>
+    </>
+  );
+}
+
+/**
+ * A post that answers something further back than the row above it — the one
+ * place a room quotes what an answer is FOR (`room-entry-answers`).
+ *
+ * Two answers, so both shapes the line takes are on the bench: under a group's
+ * own name and time, and as the first line of a continuation, where the time
+ * comes back in the gutter on hover (DOR-2120).
+ */
+function AnsweringEarlierDemo() {
+  const first = benchEntry('Can someone check why the nightly export is so slow?', {
+    authorId: BENCH_VIEWER_ID,
+  });
+  const second = benchEntry('And is the staging deploy still blocked?', {
+    authorId: BENCH_VIEWER_ID,
+  });
+  const answerFirst = benchEntry('', {
+    authorId: BENCH_AGENT.id,
+    body: {
+      text: 'It is scanning the whole events table. An index on created_at should fix it.',
+      answersEntryId: first.id,
+    },
+  });
+  const answerSecond = benchEntry('Unblocked a few minutes ago — the migration finished.', {
+    authorId: BENCH_AGENT.id,
+    body: {
+      text: 'Unblocked a few minutes ago — the migration finished.',
+      answersEntryId: second.id,
+    },
+  });
+  const quote = (entry: typeof first) => ({ entryId: entry.id, excerpt: entry.body.text });
+  const shared = {
+    roomId: BENCH_ROOM_ID,
+    authors: BENCH_AUTHORS,
+    viewerAuthorId: BENCH_VIEWER_ID,
+    authorNames: BENCH_NAMES,
+    reactionFrequents: BENCH_FREQUENTS,
+  };
+
+  return (
+    <>
+      <ShowcaseLabel>
+        Answering an earlier message — the quoted line under the name, and on a continuation beside
+        the hover time
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
+          <RoomMessage
+            {...shared}
+            entry={first}
+            author={BENCH_VIEWER}
+            authorRef={BENCH_VIEWER_REF}
+            grouping={{ position: 'first' }}
+          />
+          <RoomMessage
+            {...shared}
+            entry={second}
+            author={BENCH_VIEWER}
+            authorRef={BENCH_VIEWER_REF}
+            grouping={{ position: 'last' }}
+          />
+          <RoomMessage
+            {...shared}
+            entry={answerFirst}
+            author={BENCH_AGENT}
+            authorRef={BENCH_AGENT_REF}
+            grouping={{ position: 'first' }}
+            answers={quote(first)}
+          />
+          <RoomMessage
+            {...shared}
+            entry={answerSecond}
+            author={BENCH_AGENT}
+            authorRef={BENCH_AGENT_REF}
+            grouping={{ position: 'last' }}
+            answers={quote(second)}
           />
         </Conversation.Root>
       </ShowcaseDemo>
@@ -390,6 +471,7 @@ export function TimelineShowcase() {
       <GroupingAndDividersDemo />
       <Subhead>Thread grouping</Subhead>
       <ThreadGroupingDemo />
+      <AnsweringEarlierDemo />
       <Subhead>Pending list</Subhead>
       <PendingListDemo />
       <Subhead>A long virtualized run</Subhead>

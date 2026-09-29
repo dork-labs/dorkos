@@ -9,12 +9,16 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 
 # Connections
 
-The **Connections** page brings the outside world into one place. It has two regions:
+The **Connections** page is one list of apps. **Yours** shows every app you connected, one row each, with its logo, what state it is in, and the one thing to do next. **All apps** shows everything you could connect, also by logo, so you can find the app you want at a glance.
 
-- **Messaging** lets people reach your agents through services such as Slack and Telegram. See [Relay Messaging](/docs/guides/relay-messaging).
-- **Accounts** lets agents use services such as Gmail. You choose an account, a named agent, and the exact actions or notifications it may use.
+Apps come in two kinds, and both live in the same list:
 
-This guide covers Accounts.
+- Apps your agents **use**, such as Gmail. You choose an account, a named agent, and the exact actions or notifications it may use.
+- **Chat** apps, such as Telegram and Slack, where people reach your agents. They carry a small **Chat** tag. See [Relay Messaging](/docs/guides/relay-messaging).
+
+Click a connected app to open its side panel: who can use it, what agents did with it lately, and a few things to try. Everything else (its name, notifications, exact actions, pause, disconnect) is under **More**.
+
+This guide covers apps your agents use.
 
 <Callout type="warn">
   DorkOS-managed Accounts are available in alpha. A real Gmail sign-in, profile read, usage record,
@@ -30,7 +34,9 @@ This guide covers Accounts.
 
 ### Choose a service
 
-Open **Connections** and find **Accounts**. If you see **Link DorkOS account**, select it to open **Settings → Access**. Choose **Link this instance** and finish signing in to your DorkOS account. Return to **Connections → Accounts** and select **Connect service**. Search for a service, then choose its account button, such as **Use a Gmail account**.
+Open **Connections** and find the app in **All apps**, or search for it. Select **Connect** on its row. Popular apps are always listed, even before anything is set up. An app that does two things, such as Slack, asks which one you want first.
+
+The first time you connect an app, DorkOS asks how it should reach your apps. If a way already works (for example, your DorkOS account is linked in **Settings → Access**, or you saved your own key), it skips this step and goes straight to sign-in.
 
 Supported services use Composio-managed sign-in by default, without a separate developer setup. An explicit custom setup takes priority when one exists. Services that need unsupported or custom setup stay visible and explain what is missing. When more than one route is ready, you can change the route before continuing.
 
@@ -46,21 +52,25 @@ Read where the service will keep your login access. Add a label such as “work�
 
 <Step>
 
-### Choose agent access
+### Choose who can use it
 
-Open the new connection and choose **Agent access**. Pick a named agent, then review the exact actions it may use. OAuth scopes decide which service actions are available; your agent grant decides which of those actions this agent may run. Notification access is a separate choice. New or changed actions stay off until you review them.
+Once you're signed in, the same window asks **Who can use it?** Choose **Only agents I pick** and tick the agents you want, or **Every agent**, which includes agents you add later. Then pick **Read**, or **Read and write** where the app offers it (Gmail and Google Calendar today), and save. Before you save, the card tells you if an agent you unticked will lose access, or if every agent could send, change or delete things as you. This works the same for apps connected through your DorkOS account.
+
+You can skip this and come back later: click the app's row in **Yours**, and the same question is at the top of its side panel. For exact actions, open **More** and choose **Exact actions per agent**. To stop sharing with every agent, open **More** and choose **Stop sharing with every agent**. OAuth scopes decide which service actions are available; your choice decides which of those actions an agent may run. Notification access is a separate choice. New or changed actions stay off until you review them, even for **Every agent**.
 
 </Step>
 
 </Steps>
 
-You can connect several accounts for one service. Labels keep a personal account separate from a work account. Access always belongs to the exact connection you selected.
+You can connect several accounts for one service: each account is its own row. To add another, open the app's side panel, open **More** and choose **Connect another** account (for Gmail, **Connect another Gmail account**). Labels keep a personal account separate from a work account. Access always belongs to the exact connection you selected.
 
 ## Agents can ask, but you decide
 
-An agent can ask for a service and explain why it needs access. The request does not reveal your private account list and does not grant anything. DorkOS opens an owner review where you choose the connection, actions, notifications, and destination.
+An agent can ask for a service and explain why it needs access. The request does not reveal your private account list and does not grant anything.
 
-If the request is still attached to a live turn, the agent receives the result there. After a restart, DorkOS can continue the exact recorded session once. A denied, expired, failed, or deleted request grants no access.
+Most of the time you answer right where the agent asked: a card appears in that chat or room, walking you through signing in (if needed) and then "Let DorkBot use Gmail?" — named for the agent that asked — with the reason it gave. The card is always about that one agent; if it also needs to know when something new happens (like a new email), the card sends you to the full review on Connections instead, so you can choose exactly what it hears about. You can also open **Connections** directly, where every pending request waits in a **Needs you** strip at the top.
+
+If the request is still attached to a live turn, the agent receives the result there, right on the card. After a restart, DorkOS can continue the exact recorded session once. A denied, expired, failed, or deleted request grants no access.
 
 ## Actions and notifications are separate
 
@@ -114,10 +124,14 @@ A local DorkOS installation without login has one local owner. Keep it on a trus
 
 Program commands still name an agent and can use only that agent's approved connections. Omitting `--agent` never widens access. Through the supported agent and program paths, a request can ask for access but cannot approve itself.
 
+One kind of write does not have that protection: changing who can use an app — sharing it, narrowing it, disconnecting it. With login off, DorkOS cannot tell that write apart from one the app itself made, so anything with a shell on this machine can make it, the same as the app could. **Every agent** is just the widest version of that change, not a special case. Turning login on closes the gap for all of them, because only your signed-in session can make those writes from then on. Until then, changing an app's access is a choice for a machine you trust.
+
 These controls are boundaries inside DorkOS. They do not isolate other software running as your operating-system user. That software can reach the same local files and credentials that you can. The [threat model](/docs/self-hosting/threat-model#connections-and-account-access) explains token lifetime, runtime settings, and this same-user limit.
 
 ## Remove access
 
 Removing an agent's access stops its next action and revokes its notification grants for that connection. Pausing a connection stops local use without deleting it. Disconnecting closes local authority first, then asks the service route to remove its private account.
+
+To keep an agent away from an app in just one chat, open that chat's details. Each app the agent was given has a switch there. Turning it off only affects that chat. Turning it back on puts back the access that chat had, and never adds any.
 
 An external cleanup can remain pending when the service is unavailable. DorkOS keeps the local connection closed while it waits. A request already sent to another service cannot be recalled.

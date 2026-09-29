@@ -82,7 +82,7 @@ describe('readSigninFailurePayload', () => {
   });
 
   it('degrades to nothing for a rejection that carries neither', () => {
-    // A dropped request, an abort, an embedded-mode stub — all plain Errors.
+    // A dropped request or an abort can arrive as a plain Error.
     expect(readSigninFailurePayload(new Error('Failed to fetch'))).toEqual({});
     expect(readSigninFailurePayload('a string')).toEqual({});
     expect(readSigninFailurePayload(null)).toEqual({});

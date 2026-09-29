@@ -217,11 +217,22 @@ describe('createConnectorRuntimeMcpServer', () => {
       services: {
         serviceDirectory: vi.fn(async () => ({
           services: [
-            { serviceSlug: 'gmail', displayName: 'Gmail', requestable: true },
-            { serviceSlug: 'composio_search', displayName: 'Composio Search', requestable: true },
+            {
+              serviceSlug: 'gmail',
+              displayName: 'Gmail',
+              requestable: true as const,
+              reached: true,
+            },
+            {
+              serviceSlug: 'composio_search',
+              displayName: 'Composio Search',
+              requestable: true as const,
+              reached: true,
+            },
           ],
           warnings: [],
           routeTypes: ['composio'],
+          reachProblem: 'app_not_reached' as const,
         })),
       },
       runtimePrincipals: { revalidatePrincipal: vi.fn(async () => true) },
@@ -473,9 +484,15 @@ describe('createConnectorRuntimeMcpServer', () => {
     ).toMatchObject({ connections: [{ connectionId: 'connection-a' }] });
 
     registry.register(provider, 'material-b');
+    // Named, with what the person does, rather than silently dropped.
     expect(
       payload(await client.callTool({ name: 'connectors.list_granted_connections', arguments: {} }))
-    ).toEqual({ connections: [] });
+    ).toEqual({
+      connections: [],
+      unavailable: [
+        expect.objectContaining({ connectionId: 'connection-a', reason: 'needs_review' }),
+      ],
+    });
     const staleMaterialExecution = await client.callTool({
       name: 'connectors.execute_read',
       arguments: {

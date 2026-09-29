@@ -85,8 +85,28 @@ In CI the leg is on: the config defaults it on whenever `CI` is set (unless
 `.github/workflows/browser-test.yml` — also sets `E2E_SITE=1` explicitly so its
 coverage does not ride the conditional.
 
-If you add another spec that targets the site, add it to `SITE_SPECS`. Grep
-`tests/` for `6244` and `SITE_BASE_URL` to keep the list complete.
+A sharded run boots the leg on **one shard only** (DOR-2360). Every shard still
+collects the two site specs, so the duration-balanced cut stays identical on every
+runner, and the balanced-shard reporter pins them to shard 1, the only shard that
+starts `next dev`. The workflow tells each shard its index in `E2E_SHARD_INDEX`;
+a sharded run without it fails at config load rather than guessing. The rule and
+the measurement behind it are in `site-leg.ts`.
+
+If you add another spec that targets the site, add it to `SITE_SPEC_FILES` in
+`site-leg.ts`. `__tests__/site-leg.test.ts` fails if a spec under `tests/`
+mentions `SITE_BASE_URL` or port 6244 and is not on that list.
+
+## The legs' output reaches the log
+
+Every leg pipes its output, but Playwright hands piped leg output to the
+reporters, and none of CI's reporters prints output that belongs to no test. So
+until DOR-2360 a leg that never came up left one line in the CI log, the timeout,
+and nothing it had said. `reporters/webserver-legs-reporter.ts` prints each
+leg's first 150 lines while the legs boot (prefixed with the leg's name,
+timestamped by GitHub), then one summary line with each leg's first output
+relative to the start of the run. Legs start one after another, so the gap
+between two legs' first lines approximates the earlier leg's boot time. After the boot it goes quiet and keeps each leg's
+last 40 lines, printed only if the run fails.
 
 Leaving it off for cockpit-only runs is not just a speed win. On a machine with
 many recursive file watchers already running (several worktrees, several dev
@@ -295,35 +315,38 @@ any of them watched. Tests never edit source, so nothing is lost by not watching
   `http://localhost:6244` unless `SITE_BASE_URL` says otherwise — so set
   `DORKOS_SITE_PORT` and `SITE_BASE_URL` together.
 
-## CI runs this suite in three shards
+## CI runs this suite in six shards
 
-A whole run takes about 41 minutes, so `.github/workflows/browser-test.yml` cuts
-it three ways (`playwright test --shard=i/3`) and runs the thirds side by side.
-On a pull request you will see four checks, not one:
+A whole run takes about 58 minutes (about 5 of boot, 53 of tests), so
+`.github/workflows/browser-test.yml` cuts it six ways (`playwright test
+--shard=i/6`) and runs the sixths side by side, in the merge queue. A queue
+build shows seven checks, not one:
 
-- **`browser-shard (1/3)`, `(2/3)`, `(3/3)`** — a third of the tests each. Each
-  one boots all six webServer legs, because a shard does not know which projects
-  it drew until after the config is loaded. A failing shard uploads its Playwright
+- **`browser-shard (1/6)` to `(6/6)`** — a sixth of the tests each. Each
+  one boots every webServer leg its projects might need, because a shard does not
+  know which projects it drew until after the config is loaded. The marketing-site
+  leg is the exception: its two specs are pinned to shard 1, so shard 1 boots all
+  six legs and the other shards boot five. A failing shard uploads its Playwright
   report as `playwright-report-shard-<n>` — traces, screenshots and videos.
 - **`browser-test`** — the one that matters. It fails unless every shard passed,
   and it is where `scripts/assert-browser-tests-executed.sh` proves the suite
-  really executed: no single shard sees every spec file, so the script takes all
-  three shards' JSON reports and asserts against their union.
+  really executed: no single shard sees every spec file, so the script takes every
+  shard's JSON report and asserts against their union.
 
 Local runs are never sharded — you always get the whole suite. If you need to
 reproduce one shard exactly, pass the same flag: `pnpm --filter @dorkos/e2e e2e
---shard=2/3`. Add `--list` to see which spec files a shard draws without
+--shard=2/6`. Add `--list` to see which spec files a shard draws without
 running them.
 
-### How the thirds are cut
+### How the sixths are cut
 
 Not by test count. `reporters/balanced-shard-reporter.ts` takes over
 `--shard`: it weighs every spec file (per project) by how long it took in real
 merge-queue runs, recorded in `reporters/shard-timings.json`, and deals the
 files out heaviest first to whichever shard has the least so far. A file is
 never split, so its `beforeAll` and serial tests run together. Each shard prints
-one line with its estimate, for example `balanced shard 3/3: 32 of 91 spec
-units, ~17.4 min of tests (shards: 17.4 / 17.4 / 17.4 min)`.
+one line with its estimate, for example `balanced shard 3/6: 17 of 101 spec
+units, ~8.8 min of tests (shards: 8.8 / 8.8 / 8.8 / 8.8 / 8.8 / 8.8 min)`.
 
 A new spec needs nothing: it is weighed at its project's average time per test.
 Refresh the timings when those printed estimates drift away from the shards'

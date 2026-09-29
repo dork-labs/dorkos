@@ -47,6 +47,19 @@ const PRE_CONNECTOR_EXECUTION_IDX = 86;
 /** Shipped main schema after Better Auth account issuers, before P2 execution state. */
 const SHIPPED_ACCOUNT_ISSUER_IDX = 87;
 
+/**
+ * Last migration BEFORE `account.issuer` was dropped (0112, DOR-2036). Better
+ * Auth 1.7.3 stopped writing the column, so every install that ran 0087 holds
+ * accounts with an issuer and a NOT NULL column that now fails every sign-up.
+ */
+const PRE_ACCOUNT_ISSUER_DROP_IDX = 111;
+
+/**
+ * Last migration BEFORE the limit history (0120, spec `claude-account-ui`
+ * §7.1): an install that may already hold a live `session_limits` row.
+ */
+const PRE_LIMIT_HISTORY_IDX = 119;
+
 /** Temp migration folders to remove after each test. */
 const tempMigrationDirs: string[] = [];
 
@@ -129,10 +142,6 @@ describe('Database Migrations', () => {
       'agent_identity_tokens',
       'agents',
       'apikey',
-      // Standing permissions: one operator's "stop asking about this agent doing
-      // this thing", keyed on the stable agentPath and bounded by an absolute
-      // expiry (agent-approval-settings spec §3.2, migration 0033).
-      'approval_grants',
       // Approval records for capability invocations that need a person's
       // consent; the token lives here only as a hash (agent-trust spec §3.3,
       // migration 0031).
@@ -151,6 +160,7 @@ describe('Database Migrations', () => {
       'community_entry_origins',
       'community_mirror_access',
       'community_mirror_entries',
+      'community_mirror_redactions',
       'community_outbox',
       'community_room_mirrors',
       // Derived cache binding a ConnectionId → owning connector provider
@@ -235,6 +245,9 @@ describe('Database Migrations', () => {
       // 0047, DOR-865).
       'room_bridge_messages',
       'room_bridges',
+      // The channel seats an unregistered agent held, replayed if the same
+      // agent is registered again (DOR-2095, migration 0113).
+      'room_departed_seats',
       // The room primitive: a membership-scoped durable stream, its roster, its
       // never-trimmed log, and the per-(room, agent) session bindings
       // (ADR 260726-170125, migration 0034).
@@ -261,9 +274,19 @@ describe('Database Migrations', () => {
       // 'attached'|'detached'), never a plain delete (connection-scoping spec
       // §Part 1, migration 0048).
       'session_connector_attachments',
+      // Each session's last context reading, so it shows on open and after a
+      // restart (spec claude-account-fleet §6 U, migration 0118).
+      'session_context',
       // Durable completed-turn event stream for log-backed runtimes
       // (DOR-189, migration 0026).
       'session_events',
+      // How each limit below ended, kept after its row is gone so the
+      // transcript can say what happened (spec claude-account-ui §7.1,
+      // migration 0120).
+      'session_limit_history',
+      // A session's hard usage limit, kept across a restart until its next
+      // turn starts (spec claude-account-fleet D4, migration 0117).
+      'session_limits',
       // Stable proof that a protected source was accepted for one session.
       'session_message_acceptance_receipts',
       // Messages typed while a session was busy, waiting their turn — the
@@ -284,6 +307,66 @@ describe('Database Migrations', () => {
       'verification',
       'workspaces',
     ]);
+  });
+
+  it('adds what the out-of-usage flow keeps (spec claude-account-fleet D9, migration 0119)', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const columnsOf = (table: string) =>
+      (db.$client.pragma(`table_info(${table})`) as Array<{ name: string }>).map((c) => c.name);
+
+    expect(columnsOf('session_metadata')).toContain('launch_origin');
+    expect(columnsOf('session_limits')).toEqual(
+      expect.arrayContaining(['cwd', 'model_fallback', 'all_out', 'claimed_by'])
+    );
+  });
+
+  it('adds the limit history over a database that already holds a live limit (migration 0120)', () => {
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_LIMIT_HISTORY_IDX) });
+    const raw = db.$client;
+    raw
+      .prepare(
+        "INSERT INTO session_metadata (session_id, runtime, created_at, model) VALUES ('s-1', 'claude-code', '2026-01-01T00:00:00Z', 'opus'), ('s-2', 'claude-code', '2026-01-01T00:00:00Z', NULL)"
+      )
+      .run();
+    for (const id of ['s-1', 's-2', 's-3']) {
+      raw
+        .prepare(
+          "INSERT INTO session_limits (session_id, since, window, scope, plan, state, updated_at) VALUES (?, '2026-01-01T00:00:00Z', 'five_hour', 'account', '{\"mode\":\"ask\"}', 'limited', '2026-01-01T00:00:00Z')"
+        )
+        .run(id);
+    }
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    // Each live limit takes the session's current model ('' = the runtime's
+    // default, and for a session with no settings row), so its next turn does
+    // not read a model switch that never happened.
+    expect(
+      raw.prepare('SELECT session_id, model FROM session_limits ORDER BY session_id').all()
+    ).toEqual([
+      { session_id: 's-1', model: 'opus' },
+      { session_id: 's-2', model: '' },
+      { session_id: 's-3', model: '' },
+    ]);
+    const insert = raw.prepare(
+      "INSERT OR IGNORE INTO session_limit_history (id, session_id, since, runtime, window, scope, resolution, resolved_at) VALUES (?, 's-1', '2026-01-01T00:00:00Z', 'claude-code', 'five_hour', 'account', 'moved', '2026-01-01T00:01:00Z')"
+    );
+    expect(insert.run('a').changes).toBe(1);
+    // One row per episode.
+    expect(insert.run('b').changes).toBe(0);
+  });
+
+  it('adds the automatic-resume record (spec claude-account-fleet D9, migration 0121)', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const columns = (
+      db.$client.pragma('table_info(session_metadata)') as Array<{ name: string }>
+    ).map((c) => c.name);
+
+    // One automatic resume per window reset; outlives the session_limits row.
+    expect(columns).toContain('last_auto_resume_for');
   });
 
   it('foreign key constraint is enforced on pulse_runs.schedule_id', () => {
@@ -971,7 +1054,7 @@ describe('Database Migrations', () => {
     });
   });
 
-  it('applies the P2 chain after shipped migration 0087 without losing account issuers', () => {
+  it('applies the P2 chain after shipped migration 0087 without losing accounts', () => {
     const db = createDb(':memory:');
     migrate(db, { migrationsFolder: migrationsFolderThrough(SHIPPED_ACCOUNT_ISSUER_IDX) });
     const raw = db.$client;
@@ -1002,8 +1085,8 @@ describe('Database Migrations', () => {
     expect(() => runMigrations(db)).not.toThrow();
 
     expect(
-      raw.prepare('SELECT issuer, account_id FROM account WHERE id = ?').get('account-a')
-    ).toEqual({ issuer: 'local:credential', account_id: 'owner-a' });
+      raw.prepare('SELECT provider_id, account_id FROM account WHERE id = ?').get('account-a')
+    ).toEqual({ provider_id: 'credential', account_id: 'owner-a' });
     expect(
       raw
         .prepare(
@@ -1015,6 +1098,107 @@ describe('Database Migrations', () => {
       raw.prepare("SELECT name FROM pragma_table_info('connector_review_requests')").all()
     ).toContainEqual({ name: 'review_context_json' });
     expect(raw.pragma('foreign_key_check')).toEqual([]);
+  });
+
+  it('drops account.issuer and its index, keeping every account and its password', () => {
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_ACCOUNT_ISSUER_DROP_IDX) });
+    const raw = db.$client;
+
+    raw
+      .prepare(
+        `INSERT INTO user
+          (id, name, email, email_verified, created_at, updated_at)
+         VALUES ('owner-a', 'Owner', 'owner@example.com', 1, 1788700000000, 1788700000000)`
+      )
+      .run();
+    raw
+      .prepare(
+        `INSERT INTO account
+          (id, issuer, account_id, provider_id, user_id, password, created_at, updated_at)
+         VALUES ('account-a', 'local:credential', 'owner-a', 'credential', 'owner-a',
+                 'password-hash', 1788700000000, 1788700000000)`
+      )
+      .run();
+
+    runMigrations(db);
+
+    expect(raw.prepare("SELECT name FROM pragma_table_info('account')").all()).not.toContainEqual({
+      name: 'issuer',
+    });
+    expect(
+      raw
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'account_issuer_accountId_unique'"
+        )
+        .get()
+    ).toBeUndefined();
+    expect(
+      raw
+        .prepare('SELECT provider_id, account_id, user_id, password FROM account WHERE id = ?')
+        .get('account-a')
+    ).toEqual({
+      provider_id: 'credential',
+      account_id: 'owner-a',
+      user_id: 'owner-a',
+      password: 'password-hash',
+    });
+    // The insert Better Auth 1.7.3+ makes: no issuer at all. This is the write
+    // that failed every sign-up while the column was NOT NULL.
+    expect(() =>
+      raw
+        .prepare(
+          `INSERT INTO account
+            (id, account_id, provider_id, user_id, password, created_at, updated_at)
+           VALUES ('account-b', 'owner-a-2', 'credential', 'owner-a', 'hash-b',
+                   1788700000000, 1788700000000)`
+        )
+        .run()
+    ).not.toThrow();
+    // One row per provider-side identity: a second link of the same identity
+    // (a racing sign-in) is refused rather than left to lock the person out.
+    expect(() =>
+      raw
+        .prepare(
+          `INSERT INTO account
+            (id, account_id, provider_id, user_id, created_at, updated_at)
+           VALUES ('account-c', 'owner-a-2', 'credential', 'owner-a', 1788700000000, 1788700000000)`
+        )
+        .run()
+    ).toThrow(/UNIQUE/);
+    expect(raw.pragma('foreign_key_check')).toEqual([]);
+  });
+
+  it('refuses to drop account.issuer over a duplicate identity, changing nothing', () => {
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_ACCOUNT_ISSUER_DROP_IDX) });
+    const raw = db.$client;
+    raw
+      .prepare(
+        `INSERT INTO user
+          (id, name, email, email_verified, created_at, updated_at)
+         VALUES ('owner-a', 'Owner', 'owner@example.com', 1, 1788700000000, 1788700000000)`
+      )
+      .run();
+    // Two issuers let the same (provider_id, account_id) in twice under 0087.
+    for (const [id, issuer] of [
+      ['account-a', 'local:credential'],
+      ['account-b', 'local:other'],
+    ]) {
+      raw
+        .prepare(
+          `INSERT INTO account
+            (id, issuer, account_id, provider_id, user_id, created_at, updated_at)
+           VALUES (?, ?, 'owner-a', 'credential', 'owner-a', 1788700000000, 1788700000000)`
+        )
+        .run(id, issuer);
+    }
+
+    expect(() => runMigrations(db)).toThrow(/UNIQUE/);
+    expect(raw.prepare("SELECT name FROM pragma_table_info('account')").all()).toContainEqual({
+      name: 'issuer',
+    });
+    expect(raw.prepare('SELECT count(*) AS n FROM account').get()).toEqual({ n: 2 });
   });
 
   it('unique constraint on relay_traces.message_id is enforced', () => {

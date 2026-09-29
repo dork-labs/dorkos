@@ -51,6 +51,16 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   [{ kind: 'relay-binding' }, 'none'],
   [{ kind: 'agent-dm' }, 'none'],
   [{ kind: 'connector-event' }, 'none'],
+  // An agent started it through `session_start`: the agent is not the person
+  // the operator's stop was set for, so power comes only from the tool's own
+  // clamped mode.
+  [{ kind: 'agent-launch' }, 'none'],
+  // A limited session's work carried over to another account: the settings
+  // row copied from the source session is its power, and the origin adds none.
+  [{ kind: 'account-handoff' }, 'none'],
+  // A limited session resumed by itself after its account's reset: already
+  // bound, so its own row is its power.
+  [{ kind: 'account-resume' }, 'none'],
   // Not a surface anybody ships to.
   [{ kind: 'test-harness' }, 'none'],
 ];

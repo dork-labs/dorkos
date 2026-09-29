@@ -25,9 +25,6 @@ import { useIsRestoring } from '@tanstack/react-query';
  * Both were fixed the same way and separately, which is what made a third one a
  * matter of time. This is that fix, named once.
  *
- * `useIsRestoring` is false wherever there is no persister — the Obsidian embed
- * included — so this costs those surfaces nothing.
- *
  * **Not for a query that can be disabled.** A disabled query is pending forever
  * and is not waiting on anything; ask whether the answer has ARRIVED instead
  * (`data === undefined && !isError`, gated on the thing that enables it — see

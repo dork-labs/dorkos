@@ -41,13 +41,11 @@ const COALESCE_MS = 500;
  *
  * The veto DEFERS rather than drops — see
  * {@link CoalescedInvalidationOptions.shouldFlush}, which holds the pending keys
- * and re-arms. It has to: three config mutations invalidate on `onSuccess`
- * alone, so "the mutation will re-read anyway" is false for a REFUSED write, and
- * a dropped broadcast would leave this window showing a value nothing corrects.
- *
- * Mount once near the app root, beside the other `*Sync` hooks. In embedded
- * mode (Obsidian) the in-process transport yields no generic events, so the
- * subscription is an inert no-op there.
+ * and re-arms. It has to: four config mutations invalidate on `onSuccess`
+ * alone (`useUpdateConfig`, `useAgentContextConfig`, `useMeshScanRoots`, and
+ * `useProfile` in `entities/user-profile`), so "the mutation will re-read
+ * anyway" is false for a REFUSED write, and a dropped broadcast would leave
+ * this window showing a value nothing corrects.
  *
  * @param coalesceMs - Debounce window in milliseconds (default
  *   {@link COALESCE_MS}); parameterised for deterministic testing.

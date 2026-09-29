@@ -1,45 +1,10 @@
-/**
- * The two Transports answer the same questions, and this reads the QUESTION
- * LIST off the interface rather than off a list somebody maintains
- * (message-search task 5.3 / DOR-691).
- *
- * ## Why the interface and not a list of names
- *
- * `Transport` is the port the whole client talks through, and it has two
- * implementations: `HttpTransport` for the browser and the desktop shell, and
- * `DirectTransport` for the Obsidian embed, which has no server to call. A
- * method added to the interface and implemented on one of them is a compile
- * error — until somebody satisfies the compiler with a stub that throws, which
- * is exactly what `search` was here until this file was written. TypeScript
- * cannot tell "implemented" from "declared and refused".
- *
- * So this enumerates `Transport`'s members from its own source, following its
- * `extends` clauses across files, and asks both objects for each name. **The
- * next method somebody adds is covered on the day they add it**, without
- * touching this file — which a hand-written list can never be.
- *
- * ## What it cannot see, said plainly
- *
- * Presence is not behaviour. A method that answers `[]` for everything passes
- * this and would pass a hand-list too. That gap is why the second half of this
- * file exists — the same query, the same envelope, out of both transports — and
- * why the access half lives where a real index and the real route can be put
- * beside each other (`apps/obsidian-plugin/src/__tests__/embed-search-access.test.ts`).
- *
- * @module shared/lib/__tests__/transport-parity
- */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  SearchResponseSchema,
-  type SearchAnswer,
-  type SearchResponse,
-} from '@dorkos/shared/search-schemas';
+import { SearchResponseSchema, type SearchResponse } from '@dorkos/shared/search-schemas';
 import { HttpTransport } from '../transport';
-import { DirectTransport, type DirectTransportServices } from '../direct-transport';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TRANSPORT_SOURCE = path.resolve(
@@ -123,12 +88,7 @@ function resolveDeclaringModule(source: ts.SourceFile, name: string): string | u
   return undefined;
 }
 
-/** A `DirectTransport` whose only wired seam is the one under test. */
-function directTransport(search: (query: unknown) => SearchAnswer): DirectTransport {
-  return new DirectTransport({ search: { search } } as unknown as DirectTransportServices);
-}
-
-describe('the Transport interface, as both implementations answer it', () => {
+describe('the Transport interface, as HttpTransport answers it', () => {
   const members = interfaceMembers(TRANSPORT_SOURCE, 'Transport');
   const required = members.filter((member) => !member.optional);
 
@@ -147,14 +107,6 @@ describe('the Transport interface, as both implementations answer it', () => {
 
   it.each([
     ['HttpTransport', () => new HttpTransport(BASE_URL) as unknown as Record<string, unknown>],
-    [
-      'DirectTransport',
-      () =>
-        directTransport(() => ({ ok: true, response: EMPTY })) as unknown as Record<
-          string,
-          unknown
-        >,
-    ],
   ])('%s defines every member the interface promises', (_label, build) => {
     const transport = build();
     const missing = required
@@ -190,10 +142,7 @@ const ENVELOPE: SearchResponse = {
   warnings: [{ source: 'codex', message: 'Some of this could not be read.' }],
 };
 
-/** The empty envelope, for the presence cases that never look at it. */
-const EMPTY: SearchResponse = { results: [], warnings: [] };
-
-describe('search, over both transports', () => {
+describe('HttpTransport search', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
   });
@@ -201,28 +150,23 @@ describe('search, over both transports', () => {
     vi.unstubAllGlobals();
   });
 
-  it('hands back the same envelope, parsed, from the same query', async () => {
+  it('preserves the response envelope and warnings', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(ENVELOPE), { status: 200 }));
 
     const overHttp = await new HttpTransport(BASE_URL).search({ q: 'scheduler' });
-    const inProcess = await directTransport(() => ({ ok: true, response: ENVELOPE })).search({
-      q: 'scheduler',
-    });
 
     // Parsed, not compared raw: a transport that added a field would still be
     // deep-equal to itself, and the contract is what the schema admits.
     const parsedHttp = SearchResponseSchema.parse(overHttp);
-    const parsedDirect = SearchResponseSchema.parse(inProcess);
 
-    expect(parsedDirect).toEqual(parsedHttp);
-    expect(parsedDirect).toEqual(ENVELOPE);
+    expect(parsedHttp).toEqual(ENVELOPE);
     // Named separately because it is the field a transport is most likely to
     // quietly drop: it is empty on almost every real response, so a `?? []`
     // anywhere in the chain would look correct for months.
-    expect(parsedDirect.warnings).toEqual(ENVELOPE.warnings);
+    expect(parsedHttp.warnings).toEqual(ENVELOPE.warnings);
   });
 
-  it('refuses a bad query the same way on both, down to the code and the status', async () => {
+  it('preserves a refused query’s code, status and body', async () => {
     const refusal = {
       error: 'Search needs a word of at least 2 letters to look for.',
       code: 'INVALID_SEARCH_QUERY',
@@ -232,11 +176,8 @@ describe('search, over both transports', () => {
     const overHttp = await new HttpTransport(BASE_URL)
       .search({ q: 'a' })
       .catch((err: unknown) => err);
-    const inProcess = await directTransport(() => ({ ok: false, status: 400, ...refusal }))
-      .search({ q: 'a' })
-      .catch((err: unknown) => err);
 
-    for (const thrown of [overHttp, inProcess]) {
+    for (const thrown of [overHttp]) {
       expect(thrown).toBeInstanceOf(Error);
     }
     const shapeOf = (err: unknown) => {
@@ -246,8 +187,7 @@ describe('search, over both transports', () => {
     // The box above these renders `error.message` and never asks which
     // transport it is on, so the whole carried shape has to match — not just
     // the fact that something threw.
-    expect(shapeOf(inProcess)).toEqual(shapeOf(overHttp));
-    expect(shapeOf(inProcess)).toEqual({
+    expect(shapeOf(overHttp)).toEqual({
       message: refusal.error,
       code: 'INVALID_SEARCH_QUERY',
       status: 400,

@@ -273,7 +273,7 @@ describe('password confirmation names its failure and limits guesses', () => {
             body: { password: TENANCY_PASSWORD },
           })
         ).status
-      ).toBe(201);
+      ).toBe(202);
 
       vi.setSystemTime(new Date(Date.now() + 61_000));
       expect((await disconnectAll(person.cookie, a, TENANCY_PASSWORD)).status).toBe(204);

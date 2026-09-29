@@ -16,7 +16,7 @@ export interface InstallPackageArgs {
  *
  * Invalidates the installed-packages list, the all-packages browse cache, and
  * the individual package-detail cache on success so the UI reflects the new
- * installed state without a manual refresh.
+ * installed state without a manual refresh, and marks the update check stale.
  */
 export function useInstallPackage() {
   const transport = useTransport();
@@ -24,6 +24,14 @@ export function useInstallPackage() {
 
   return useMutation<InstallResult, Error, InstallPackageArgs>({
     mutationFn: ({ name, options }) => transport.installMarketplacePackage(name, options),
+    onError: (err) => {
+      // The package changed what it runs after the preview the person read, so
+      // the install refused it. Refresh the preview so the dialog shows what it
+      // runs now instead of the stale list (DOR-2306).
+      if ((err as { code?: unknown }).code === 'disclosure_changed') {
+        void queryClient.invalidateQueries({ queryKey: marketplaceKeys.preview() });
+      }
+    },
     onSuccess: (_result, { name, options }) => {
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.installed() });
       if (options?.projectPath) {
@@ -33,11 +41,14 @@ export function useInstallPackage() {
       }
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.packages() });
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.packageDetail(name) });
-      // Installing a plugin can register new slash commands (e.g. `/flow:*`).
-      // The server hot-reloads them and broadcasts `commands_changed`, but
-      // invalidate here too so the palette catches up even when the SSE event
-      // is missed or the in-process (Obsidian) transport yields no events (UX-12).
       void queryClient.invalidateQueries({ queryKey: ['commands'] });
+      // The new installation has no update check yet. Mark the check stale
+      // without re-running it: the next view that mounts asks again, and an
+      // install never sets off a sweep of every package's source.
+      void queryClient.invalidateQueries({
+        queryKey: marketplaceKeys.updates(),
+        refetchType: 'none',
+      });
     },
   });
 }

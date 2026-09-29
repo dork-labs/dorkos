@@ -103,14 +103,64 @@ collect:
   # backfilled ledger entries (#1135, #1246, #1391) get live verdicts.
   backfill_from: '2026-08-12'
   # Queue builds a day whose test reports are downloaded for flaky-test-runs.
-  # Each costs about nine requests (two listings, seven artifacts).
+  # Each costs about twelve requests (two listings, ten artifacts: six browser
+  # shards and four vitest shards).
   artifact_builds_per_day: 10
   review_workflow: claude-code-review.yml
   # Playwright's JSON reporter counts flaky tests (failed, then passed on the
   # retry); the vitest shard reports carry executions and the flake list.
+  #
+  # `gate` is the job that writes each report: flaky-test-runs can only see a
+  # flake in a job listed here.
   artifacts:
-    - { workflow: browser-test.yml, pattern: browser-results-shard-*, format: playwright }
-    - { workflow: test.yml, pattern: vitest-shard-report-*, format: vitest }
+    - {
+        workflow: browser-test.yml,
+        pattern: browser-results-shard-*,
+        format: playwright,
+        gate: wf.browser-test.browser-shard,
+      }
+    - {
+        workflow: test.yml,
+        pattern: vitest-shard-report-*,
+        format: vitest,
+        gate: wf.test.test-shard,
+      }
+  # Jobs that run tests on every queue build with no report flaky-test-runs can
+  # read. A failed queue job in one could be a flake or a break and the SLO
+  # cannot tell which, so a window with any reads `unmeasured` ("coverage
+  # unknown") rather than claim a share over tests it never saw. A failure in a
+  # job that runs no tests (lint, typecheck, a fan-in's own step, a copy drift
+  # check) says nothing about flakes and is counted nowhere. Moving a gate from
+  # here to `artifacts` means making it write a retry-aware report first.
+  blind_test_gates:
+    wf.test.community-packaged: Runs the packaged community journey in Playwright at retries 0, so a flake there can only show as a hard failure, never as failed-then-passed; its JSON report is uploaded but not read.
+    wf.test.community-pg: Runs the community Postgres suite (vitest) and browser suite (Playwright, retries 0); the vitest JSON is not uploaded and neither report is read.
+    wf.credential-free-build.credential-free-build: Builds, typechecks and boots the app with every credential stripped, and uploads no test report at all.
+    wf.harness-windows.harness-windows: Runs the harness and harness-sync vitest suites on Windows and uploads no test report.
+
+# Deadlines that end a job before its own `timeout-minutes` does. `headroom`
+# (the SLO and trigger rule 8) reads each gate against the smaller of the two,
+# because that is the deadline that actually fires. A browser shard's
+# timeout-minutes is 45, the outermost rung of browser-test.yml's ladder, which
+# is built never to fire; Playwright's own globalTimeout stops the suite first
+# (25 minutes at six shards; it was 30 at three). Measured against 45, a
+# three-way shard at 29 minutes read as 65% used when it was 97%.
+#
+# The job's duration includes about 2.5 minutes of setup before Playwright
+# starts, so the ratio reads that much high. That is the safe side for a
+# tripwire. The number is checked against playwright.config.ts's derivation and
+# the workflow's shard count by ruler.test.ts, so it cannot drift silently.
+#
+# Readers apply this to every day they read, not only to days after it
+# changed, so when it drops (30 to 25 on 2026-09-27, ledger 260919-175503) the
+# `headroom` window reads the days before the change against the new, tighter
+# number until the window rolls past it: about 1.1-1.2 for up to 7 days, from
+# three-shard runs that never ran under 25. That is the ruler, not a
+# regression.
+deadlines:
+  - gate: wf.browser-test.browser-shard
+    minutes: 25
+    source: apps/e2e/playwright.config.ts globalTimeout in CI, derived per shard from E2E_SHARD_TOTAL
 
 # The quarantine lane (plan §4.9 L1): a test data has classified flaky runs and
 # reports as usual, but does not fail the blocking queue job.
@@ -335,14 +385,13 @@ local:
   # commit whose affected set is empty, which holds a slot for a second, and
   # serialising those would add waiting to runs that cost nothing. Three allows
   # roughly 3x oversubscription — bad, but a long way from the ~10x measured —
-  # and it leaves a slot free when one agent's pre-commit takes two, because
-  # lint and typecheck run concurrently in that hook. Raise it only with a
-  # ledger entry and the load numbers from the daily report; lowering it is
-  # cheaper to try.
+  # and one agent's pre-commit holds at most one slot at a time. Raise it only
+  # with a ledger entry and the load numbers from the daily report; lowering it
+  # is cheaper to try.
   #
-  # WHAT HOLDS A SLOT, as of DOR-2160: the pre-commit `lint` and `typecheck`
-  # commands, and nothing else. The pre-push test gate was the third and it no
-  # longer exists. Fast checks are never capped.
+  # WHAT HOLDS A SLOT, as of 2026-09-24: the pre-commit `lint` command, and
+  # nothing else. The pre-push test gate left in DOR-2160 and the pre-commit
+  # `typecheck` in ci/ledger/260919-175506-*. Fast checks are never capped.
   #
   # The script reads these three with `sed`, because it runs before any
   # node_modules exist; local.test.ts pins its fallbacks to the values here so
@@ -354,14 +403,17 @@ local:
   # against a 120 s pre-push budget, so the wait was carved out of time the gate
   # already had; with the test gate gone, both commands this guards are
   # unbounded and every second here is latency ADDED to a commit. 45 s is chosen
-  # against the commands themselves: it is about a quarter of lint's 186 s p90,
+  # against the command itself: it is about a quarter of lint's 186 s p90,
   # so a full wait is a visible but minor tax on the run it protects, and it is
   # long enough that a colliding sweep usually clears. Past it the command runs
   # uncapped, which is worse for the machine and better than a commit that
   # waits on other agents indefinitely.
   heavy_lock_wait_seconds: 45
-  # A slot held longer than this is reclaimable even if its owner is alive. The
-  # slowest heavy command measured here is a pre-commit typecheck at 473 s (lint
-  # peaked at 409 s); 900 is well above both and far below anything a healthy
-  # run reaches.
+  # A slot held longer than this is reclaimable even if its owner is alive. When
+  # this was set, the slowest heavy command measured here was a pre-commit
+  # typecheck at 473 s (lint peaked at 409 s); 900 was well above both and far
+  # below anything a healthy run reaches. Typecheck has since left the hook, and
+  # lint's worst in the week to 2026-09-24 was 1485 s under heavy load, so a run
+  # that slow can lose its slot to a waiter; the cost is one extra concurrent
+  # run, not a wrong verdict.
   heavy_lock_max_hold_seconds: 900

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { forwardRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import type { PromoDefinition, PromoContext, PromoPlacement } from '../model/promo-types';
+import type { PromoDefinition, PromoContext } from '../model/promo-types';
 
 /** Minimal stub that satisfies the LucideIcon (ForwardRefExoticComponent) shape for tests. */
 const StubIcon = forwardRef<SVGSVGElement>(() => null) as unknown as LucideIcon;
@@ -86,8 +86,8 @@ describe('usePromoSlot', () => {
   it('filters promos by placement correctly', () => {
     mockRegistry.push(
       makePromo({ id: 'a', placements: ['dashboard-sidebar'] }),
-      makePromo({ id: 'b', placements: ['agent-sidebar'] }),
-      makePromo({ id: 'c', placements: ['dashboard-sidebar', 'agent-sidebar'] })
+      makePromo({ id: 'b', placements: [] }),
+      makePromo({ id: 'c', placements: ['dashboard-sidebar'] })
     );
     const { result } = renderHook(() => usePromoSlot('dashboard-sidebar', 10));
     expect(result.current.map((p) => p.id)).toEqual(['a', 'c']);
@@ -139,8 +139,8 @@ describe('usePromoSlot', () => {
   });
 
   it('returns empty array when no promos qualify for a placement', () => {
-    mockRegistry.push(makePromo({ id: 'a', placements: ['dashboard-sidebar'] }));
-    const { result } = renderHook(() => usePromoSlot('agent-sidebar' as PromoPlacement, 10));
+    mockRegistry.push(makePromo({ id: 'a', placements: [] }));
+    const { result } = renderHook(() => usePromoSlot('dashboard-sidebar', 10));
     expect(result.current).toEqual([]);
   });
 });

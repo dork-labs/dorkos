@@ -131,7 +131,6 @@ async function setup(connection: McpServerTransport): Promise<{
     registeredBy: 'test',
     personaEnabled: true,
     isSystem: false,
-    enabledToolGroups: {},
     mcpServers: [
       {
         name: SERVER,

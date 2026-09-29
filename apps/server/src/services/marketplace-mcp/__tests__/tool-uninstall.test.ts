@@ -86,6 +86,7 @@ function createStubDeps(opts: {
     uninstallFlow: opts.uninstallFlow,
     confirmationProvider: opts.confirmationProvider,
     onPluginsChanged: opts.onPluginsChanged ?? vi.fn(),
+    consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -415,6 +416,29 @@ describe('createUninstallHandler — purge flag', () => {
     );
     const payload = parseToolPayload<{ preservedPaths: string[] }>(result);
     expect(payload.preservedPaths).toEqual(['/tmp/.dork-test/plugins/sentry/.dork/data']);
+  });
+
+  // Purpose (DOR-2322): an agent must be able to tell the person which files
+  // were kept only because nothing proved whose they were, and why. Fails if
+  // the tool drops the list or the sentence.
+  it('passes on the files it could not prove, and the sentence that says so', async () => {
+    const confirmationProvider = new FakeConfirmationProvider();
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const uninstallFlow = createStubUninstallFlow({
+      result: uninstallResult({
+        packageName: 'sentry',
+        unproven: ['/tmp/.dork-test/plugins/sentry/a.md'],
+        warnings: ["DorkOS couldn't download the version of sentry you had…"],
+      }),
+    });
+    const handler = createUninstallHandler(createStubDeps({ confirmationProvider, uninstallFlow }));
+
+    const payload = parseToolPayload<{ unprovenPaths?: string[]; warnings?: string[] }>(
+      await handler({ name: 'sentry' })
+    );
+
+    expect(payload.unprovenPaths).toEqual(['/tmp/.dork-test/plugins/sentry/a.md']);
+    expect(payload.warnings).toEqual(["DorkOS couldn't download the version of sentry you had…"]);
   });
 
   it('forwards projectPath to the underlying flow when supplied', async () => {

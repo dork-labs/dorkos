@@ -1,5 +1,7 @@
 # The Revenue Model: From Free Alpha to Paying Crews
 
+> **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
+
 > Positioning review deliverable (July 2026). The monetization strategy, tier ladder, and the month-by-month arc from today's unlaunched alpha to first revenue within 3-6 months. Grounded in: spec #268 (accounts-and-auth, whose decisions this doc builds on, not revisits), the shipped-in-review DOR-181/182 device-link + instance-registry work, and a deep OSS-monetization research pass (2026-07-06; sources and price verifications in the research output; aggregator-sourced prices re-verify before public use).
 
 > **Superseded on prices, 2026-09-12.** The Solo/Crew ladder and every dollar figure below are historical. The fence rules (§3), the reasons people pay (§2), and the arc (§6) still stand. The current plan is maintained privately and is announced on dorkos.ai/pricing before anyone is billed.

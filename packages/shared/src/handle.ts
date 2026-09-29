@@ -21,6 +21,52 @@
  */
 
 /**
+ * The room's own voice, reserved so nothing else can wear it.
+ *
+ * **Not to make the system author addressable** — it is already excluded from
+ * the picker and already un-triggerable, because addressing filters to
+ * `kind === 'agent'`. The reason is impersonation: without a reservation, an
+ * agent whose manifest `name` is `DorkOS` derives `@dorkos`, and thereafter
+ * every `@dorkos` in the room addresses it instead of the room.
+ *
+ * No conflict with DorkBot, the system AGENT at `~/.dork/agents/dorkbot/`, which
+ * derives `@dorkbot`.
+ */
+export const SYSTEM_HANDLE = 'dorkos';
+
+/**
+ * The broadcast words, held as reservations rather than as a blocklist.
+ *
+ * Broadcast keywords are a separate token type — at the grammar level
+ * `@everyone` can never BE a broadcast, so `everyone` is an ordinary handle and
+ * Discord's reason for reserving it (its broadcasts share the `@` sigil) does
+ * not apply. That reasoning is sound and it stops one step short. Apply the
+ * question this whole feature is built on — *what does a model write, and is it
+ * guaranteed to work?* — and the answer is uncomfortable: a model writes
+ * `@everyone`, because that is the spelling in its training data, and the
+ * writers that matter most here (an agent's own reply, `post_to_room`, the
+ * external MCP server, a relay adapter) have no composer to rewrite it. So
+ * `@everyone` would either reach nobody, which is harmless, or reach **whoever
+ * holds the handle `everyone`** — a mis-address an adversarial agent could farm
+ * deliberately by claiming the name.
+ *
+ * **This is still not a blocklist.** Nothing consults a list of forbidden words
+ * at any enforcement point; there is nothing to keep in sync across routes,
+ * tools and the client. It is three rows in `handle_tombstones`, under the index
+ * that already refuses a released handle. Discord pays a rule at every boundary;
+ * we pay three rows at boot, once.
+ */
+export const BROADCAST_RESERVATIONS = ['everyone', 'here', 'channel'] as const;
+
+/**
+ * Every handle held back at boot, for a caller that SUGGESTS a handle and must
+ * not suggest one it knows will be refused (DOR-677). Reading it is never
+ * enforcement: the server refuses these because they are tombstones, which is
+ * the only check that counts.
+ */
+export const RESERVED_HANDLES: readonly string[] = [SYSTEM_HANDLE, ...BROADCAST_RESERVATIONS];
+
+/**
  * The shortest a handle may be. Two, matching Discord — our namespace is a few
  * dozen entities, so nothing about our scale argues for a bound at all, and the
  * tiebreak is that a shipped, tested-at-scale bound beats an invented one.

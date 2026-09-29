@@ -8,11 +8,13 @@
  * `open_file` command seam (`executeUiCommand`), the same seam the agent's
  * `open_file` tool drives.
  *
- * Over a room's own files (spec `project-rooms` §3.9) the same tree is
- * read-only, shows who last touched each entry, and previews a file in place —
- * because what it lists is the commit `main` points at rather than a directory
- * on disk. What differs between the two is a {@link FileExplorerSource}, and
- * nothing else.
+ * Over a room's own files (spec `project-rooms` §3.9, `agent-home-desk` §7.3)
+ * the same tree shows who last touched each entry and previews a file in
+ * place — because what it lists is the commit `main` points at rather than a
+ * directory on disk — and every change a person makes there (a new file, an
+ * upload, a rename, a delete, any text file edited) is one commit through the
+ * room's own routes. What differs between the two is a
+ * {@link FileExplorerSource}, and nothing else.
  *
  * **It stays a feature rather than moving down to `entities`.** It is not a
  * business entity — it is a stateful pane with a store, a keyboard model, a
@@ -28,6 +30,7 @@
  */
 export { FileExplorer } from './ui/FileExplorer';
 export type { FileExplorerProps } from './ui/FileExplorer';
+export type { FileExplorerCommands } from './model/file-explorer-store';
 export { FileExplorerActions } from './ui/FileExplorerActions';
 export { HiddenEntriesToggle } from './ui/HiddenEntriesToggle';
 // `PendingWorkBadge` and `RoomMainWarning` are deliberately NOT here. Nothing
@@ -46,6 +49,8 @@ export type { RoomRepoStatusRead } from './model/pending-work';
 export { RoomFilesSection } from './ui/RoomFilesSection';
 export type { RoomFilesSectionProps } from './ui/RoomFilesSection';
 export { FilePreviewDialog } from './ui/FilePreviewDialog';
+export { SaveToRoomFilesButton } from './ui/SaveToRoomFiles';
+export type { SaveToRoomFilesButtonProps } from './ui/SaveToRoomFiles';
 export type { FilePreviewDialogProps } from './ui/FilePreviewDialog';
 export { createSessionCwdSource } from './model/session-cwd-source';
 export type { SessionCwdSourceDeps } from './model/session-cwd-source';
@@ -54,6 +59,8 @@ export { ROOM_FILES_REFRESH_INTERVAL_MS } from './model/room-entry-watch';
 export type { RoomFilesSourceDeps } from './model/room-files-source';
 export { explorerDirQueryKey, explorerDirQueryOptions } from './model/source';
 export type {
+  ExplorerChangeOutcome,
+  ExplorerChanges,
   ExplorerCommit,
   ExplorerEntry,
   ExplorerFile,

@@ -10,7 +10,6 @@
   "references": [
     { "path": "./apps/client" },
     { "path": "./apps/server" },
-    { "path": "./apps/obsidian-plugin" },
     { "path": "./packages/shared" },
     { "path": "./packages/test-utils" },
     { "path": "./packages/relay" }

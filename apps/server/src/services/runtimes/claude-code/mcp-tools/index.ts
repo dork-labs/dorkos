@@ -14,6 +14,8 @@ import {
 } from './tool-exposure.js';
 import { DORKOS_MCP_TOOL_TIMEOUT_MS } from './tool-timeout.js';
 import { getCoreTools } from './core-tools.js';
+import { getAccountTools } from './account-tools.js';
+import { getSessionTools } from './session-tools.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
 import { resolveSenderIdentity } from './relay-helpers.js';
@@ -27,13 +29,22 @@ import {
   capabilityMcpTools,
   registerClaudeConnectorCapabilityTools,
 } from './capability-mcp-tools.js';
-import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
-import type { AgentIdentity } from '../../../core/agent-identity/index.js';
-import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../../../core/mcp-tool-gate.js';
+import {
+  homeOf,
+  createInSessionContextResolver,
+  resolveAgentHome,
+} from '../../../core/agent-identity/index.js';
+import type { AgentIdentity, HomeResolution } from '../../../core/agent-identity/index.js';
+import {
+  createHandToolReach,
+  gateHandRegisteredMcpTools,
+  type SdkMcpTool,
+} from '../../../core/mcp-tool-gate.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import type {
   CapabilityApprovalHold,
   CapabilityRegistry,
+  HandToolReach,
 } from '../../../core/capabilities/index.js';
 import { composeDorkOsCapabilityRegistry } from '../../../core/self-description/dorkos-registry.js';
 import { registerDorkOsResources } from '../../../core/mcp-resources/index.js';
@@ -125,29 +136,56 @@ export {
  */
 export function handRegisteredInSessionTools(
   deps: McpToolDeps,
-  options: {
-    /** Per-query session: its directory, its canonical id, and its event queue. */
-    session?: McpToolSession;
-    /** Per-query trigger session id (DevTools read fallback). */
-    sessionId?: string;
-    /** Resolves the calling agent for this session; see `mcp-tool-gate.ts`. */
-    resolveContext?: () => Promise<{ identity?: AgentIdentity } | undefined>;
-    /**
-     * The in-session hold seam (DOR-1930).
-     *
-     * With it, a fresh destructive ask from one of these tools waits for the
-     * operator and resumes in the same turn instead of ending the turn and
-     * leaving the agent to be told by hand. Absent on the introspection and
-     * unit-test paths, which keep the poll flow.
-     */
-    hold?: CapabilityApprovalHold;
-  } = {}
+  options: HandRegisteredInSessionOptions = {}
 ): SdkMcpTool[] {
+  return handRegisteredInSessionToolSet(deps, options).tools;
+}
+
+/** Per-query session context for {@link handRegisteredInSessionTools}. */
+export interface HandRegisteredInSessionOptions {
+  /** Per-query session: its directory, its canonical id, and its event queue. */
+  session?: McpToolSession;
+  /** Per-query trigger session id (DevTools read fallback). */
+  sessionId?: string;
+  /**
+   * Whose identity this session carries (DOR-2091). Defaults to the anchor of
+   * `session.cwd` itself; a launch passes the one it resolved, which also
+   * knows who the turn is for.
+   */
+  identity?: HomeResolution;
+  /** Resolves the calling agent for this session; see `mcp-tool-gate.ts`. */
+  resolveContext?: () => Promise<{ identity?: AgentIdentity } | undefined>;
+  /**
+   * The in-session hold seam (DOR-1930).
+   *
+   * With it, a fresh destructive ask from one of these tools waits for the
+   * operator and resumes in the same turn instead of ending the turn and
+   * leaving the agent to be told by hand. Absent on the introspection and
+   * unit-test paths, which keep the poll flow.
+   */
+  hold?: CapabilityApprovalHold;
+}
+
+/**
+ * {@link handRegisteredInSessionTools}, plus the {@link HandToolReach} over the
+ * same tools: the request tool reaches a tool through it even when a Blocked
+ * permission leaves the tool out of the list (spec `agent-permissions` D8).
+ *
+ * @param deps - Shared tool dependencies (relay, tasks, mesh, etc.).
+ * @param options - Per-query session context.
+ * @returns The gated tools, and the reach over their ungated definitions.
+ */
+export function handRegisteredInSessionToolSet(
+  deps: McpToolDeps,
+  options: HandRegisteredInSessionOptions = {}
+): { tools: SdkMcpTool[]; reach: HandToolReach } {
   const { session, sessionId, resolveContext, hold } = options;
-  // Resolve the caller's trusted Relay identity from the session's working
-  // directory (its agent manifest), not from tool arguments — this is what
-  // relay `from`/namespace access rules key on.
-  const relayIdentity = resolveSenderIdentity(deps, session?.cwd);
+  const identity = options.identity ?? resolveAgentHome(session?.cwd);
+  // Resolve the caller's trusted Relay identity from the session's identity
+  // anchor (its agent manifest), not from tool arguments — this is what relay
+  // `from`/namespace access rules key on.
+  const relayIdentity = resolveSenderIdentity(deps, session?.cwd, identity);
+  const identityPath = homeOf(identity);
   // Which relay envelope THIS turn is answering, if the bus started it (DOR-791).
   // The adapter that dispatched the turn bound it under the session key the turn
   // runs under, which is the id handed to this factory; the SDK's canonical id is
@@ -161,15 +199,17 @@ export function handRegisteredInSessionTools(
   // Who is proposing a schedule, for `tasks_create` (DOR-1394). Resolved at CALL
   // time for the same first-turn rekey reason as the DevTools id above, and it
   // reads the SAME two sources — an approval card that named a session the
-  // person cannot open would be worse than one that names none. The directory is
-  // the agent-identity key, so it is what later resolves the proposer's name.
+  // person cannot open would be worse than one that names none. The identity
+  // anchor is the agent-identity key, so it is what later resolves the
+  // proposer's name — the agent's own directory even when the session stands
+  // in its room worktree (DOR-2091).
   const resolveTaskProvenance =
     session || sessionId
       ? () => ({
           ...(session?.sdkSessionId || sessionId
             ? { sessionId: session?.sdkSessionId || sessionId }
             : {}),
-          ...(session?.cwd ? { agentPath: session.cwd } : {}),
+          ...(identityPath ? { agentPath: identityPath } : {}),
         })
       : undefined;
 
@@ -198,28 +238,37 @@ export function handRegisteredInSessionTools(
     loadsAgentToAgentTools(relayIdentity.agentId !== undefined, deps.relayCore !== undefined)
   );
 
+  const raw: SdkMcpTool[] = [
+    ...getCoreTools(deps),
+    ...getAccountTools(deps),
+    // The caller is the session's identity anchor, so the Activity entry names
+    // the agent that started the session, even from its room worktree.
+    ...getSessionTools(deps, () => (identityPath ? { agentPath: identityPath } : undefined)),
+    ...getTasksTools(deps, resolveTaskProvenance),
+    ...getRelayTools(deps, relayIdentity, resolveInboundBudget),
+    ...getAdapterTools(deps),
+    ...getBindingTools(deps),
+    ...getTraceTools(deps),
+    ...getMeshTools(deps),
+    ...getAgentTools(deps),
+    ...getExtensionTools(deps),
+  ];
+
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each
   // tool's advertised input schema (it adds `approvalToken` to destructive ones),
   // so hinting the pre-gate definition would hint a schema the model never sees.
-  return withToolExposure(
-    gateHandRegisteredMcpTools(
-      [
-        ...getCoreTools(deps),
-        ...getTasksTools(deps, resolveTaskProvenance),
-        ...getRelayTools(deps, relayIdentity, resolveInboundBudget),
-        ...getAdapterTools(deps),
-        ...getBindingTools(deps),
-        ...getTraceTools(deps),
-        ...getMeshTools(deps),
-        ...getAgentTools(deps),
-        ...getExtensionTools(deps),
-      ],
-      resolveContext,
-      hold,
-      resolveRequestingSession
+  return {
+    tools: withToolExposure(
+      gateHandRegisteredMcpTools(raw, resolveContext, hold, resolveRequestingSession),
+      alwaysLoaded
     ),
-    alwaysLoaded
-  );
+    reach: createHandToolReach(raw, {
+      // In session, where the UI tools exist, so a card can be surfaced.
+      interactive: true,
+      origin: 'session',
+      ...(resolveRequestingSession ? { resolveRequestingSession } : {}),
+    }),
+  };
 }
 
 /**
@@ -288,14 +337,24 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  *   the marketplace surface is unavailable (relay disabled / not yet wired)
  * @param registry - The shared boot-composed capability registry. When omitted,
  *   one is composed on the spot from `deps` + `marketplaceDeps`.
+ * @param hiddenToolNames - Tools this agent is not shown because their
+ *   permission resolves to Blocked (spec `agent-permissions` D15). Left out of
+ *   the list only; the gate refuses a Blocked call whatever the list says.
+ * @param launchIdentity - Whose identity this session carries, as the launch resolved
+ *   it (DOR-2091). Defaults to the anchor of `session.cwd`, which is right for
+ *   every caller that is not a turn's launch.
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
-  session?: McpToolSession & Pick<import('../agent-types.js').AgentSession, 'connectorTurn'>,
+  session?: McpToolSession &
+    Pick<import('../agent-types.js').AgentSession, 'connectorTurn' | 'unattendedApprovals'>,
   sessionId?: string,
   marketplaceDeps?: MarketplaceMcpDeps,
-  registry?: CapabilityRegistry
+  registry?: CapabilityRegistry,
+  hiddenToolNames: ReadonlySet<string> = new Set(),
+  launchIdentity?: HomeResolution
 ) {
+  const identity = launchIdentity ?? resolveAgentHome(session?.cwd);
   // Operator + marketplace + self-description tools, all generated from the
   // Capability Registry (shared boot instance, or composed on the spot).
   const capabilityRegistry =
@@ -307,7 +366,7 @@ export function createDorkOsToolServer(
     });
   // One resolver for both halves of the tool surface, so the session's identity is
   // looked up once and the two paths cannot disagree about who is calling.
-  const resolveContext = createInSessionContextResolver(session?.cwd);
+  const resolveContext = createInSessionContextResolver(identity);
   // Registry capabilities additionally learn WHICH session is calling, read per
   // tool call (the live session's canonical `sdkSessionId` over the trigger id,
   // mirroring the DevTools read-time resolution) so resumable flows can bind to
@@ -323,6 +382,9 @@ export function createDorkOsToolServer(
       ...(invokingSessionId ? { sessionId: invokingSessionId } : {}),
       ...(session?.cwd ? { cwd: session.cwd } : {}),
       ...(signal ? { signal } : {}),
+      // Forwarded by the registry only to the request tool. Read at call time,
+      // so the set built below (after the hold) is the one handed on.
+      handTools: hand.reach,
     };
     const connectorTurn = session?.connectorTurn;
     if (!connectorTurn?.isConnectorCapabilityId(capabilityId)) return invocation;
@@ -333,7 +395,32 @@ export function createDorkOsToolServer(
   // queue to render the inline card into) and the approval primitive can a fresh
   // destructive call hold inline and resume. Absent either — the introspection
   // stub, a hermetic test — capabilities keep the token/poll flow untouched.
-  const hold = session && deps.approvals ? { session, approvals: deps.approvals } : undefined;
+  //
+  // An unattended turn (a scheduled run, a chat binding, a connector event)
+  // keeps the seam but never holds: `unattended` is read per call, because one
+  // warm session serves turns of both kinds (spec `agent-permissions` D6).
+  const hold =
+    session && deps.approvals
+      ? {
+          session,
+          approvals: deps.approvals,
+          unattended: () => session.unattendedApprovals === true,
+        }
+      : undefined;
+  // The hand-registered half, built once for this query: the gated tools the
+  // agent is shown, and the reach the request tool uses to ask past a Blocked
+  // one that the list below leaves out (spec `agent-permissions` D8).
+  const hand = handRegisteredInSessionToolSet(deps, {
+    ...(session ? { session } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    identity,
+    resolveContext,
+    // The same seam the registry tools get. Both halves of the tool surface can
+    // wait for one person's decision — before this, `mesh_unregister` and
+    // `tasks_delete` were the only gated tools that ended the turn and left the
+    // agent uninformed (DOR-1930).
+    ...(hold ? { hold } : {}),
+  });
   const server = createSdkMcpServer({
     // Not a label: Claude Code qualifies every tool on this server as
     // `mcp__<name>__<tool>`, so this string is half of what the model must type
@@ -348,18 +435,9 @@ export function createDorkOsToolServer(
     // environment floor is gone rather than kept beside it.
     timeout: DORKOS_MCP_TOOL_TIMEOUT_MS,
     tools: [
-      ...handRegisteredInSessionTools(deps, {
-        ...(session ? { session } : {}),
-        ...(sessionId ? { sessionId } : {}),
-        resolveContext,
-        // The same seam the registry tools get, three lines below. Both halves of
-        // the tool surface can now wait for one person's decision — before this,
-        // `mesh_unregister` and `tasks_delete` were the only gated tools that
-        // ended the turn and left the agent uninformed (DOR-1930).
-        ...(hold ? { hold } : {}),
-      }),
+      ...hand.tools,
       ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
-    ],
+    ].filter((tool) => !hiddenToolNames.has(tool.name)),
   });
 
   if (session?.connectorTurn) {

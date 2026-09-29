@@ -15,7 +15,7 @@
  * @module services/tasks/task-provenance
  */
 import type { Task } from '@dorkos/shared/types';
-import { getAgentIdentityService } from '../core/agent-identity/index.js';
+import { getAgentIdentityService, homeOf, resolveAgentHome } from '../core/agent-identity/index.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -32,13 +32,17 @@ import { logger } from '../../lib/logger.js';
 export async function resolveProposerName(
   agentPath: string | null | undefined
 ): Promise<string | null> {
-  if (!agentPath) return null;
+  // The proposing session's folder resolved to its agent's home first: a
+  // session in a worktree or checkout of the agent's repo is still that agent
+  // (spec `agent-home-desk` §3.2 row 10).
+  const home = homeOf(resolveAgentHome(agentPath ?? undefined));
+  if (!home) return null;
 
   const service = getAgentIdentityService();
   if (!service) return null;
 
   try {
-    const identity = await service.describeAgent(agentPath);
+    const identity = await service.describeAgent(home);
     // A revoked agent is not credited, which is the behavior this has always
     // had and a deliberate one: switching an agent off stops its name appearing
     // beside work. It used to fall out of `describeAgent` answering `undefined`;

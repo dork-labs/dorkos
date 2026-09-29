@@ -54,6 +54,22 @@ export interface ThreadReplySummary {
 }
 
 /**
+ * How many replies a thread has, as every surface that counts them says it.
+ *
+ * Whichever is larger of what is loaded and what the room last said — the
+ * reasoning is {@link threadReplySummary}'s, which uses this. The thread row,
+ * the room's flow and the thread panel's reply-count line all call it, so the
+ * three can never disagree about one thread.
+ *
+ * @param loaded - How many of the thread's replies this client holds.
+ * @param known - The room's own count (`RoomEntry.threadReplyCount`), when the
+ *   root came from behind the page with one.
+ */
+export function honestReplyCount(loaded: number, known?: number): number {
+  return Math.max(known ?? 0, loaded);
+}
+
+/**
  * Reduce a thread's replies to the three numbers its row in the timeline reads.
  *
  * **The unread count is derived, not stored** (design record §3.3): a reply is
@@ -133,7 +149,7 @@ export function threadReplySummary(
     if (lastReadSeq !== null && reply.seq > lastReadSeq) unread += 1;
   }
   return {
-    count: Math.max(totalReplies ?? 0, replies.length),
+    count: honestReplyCount(replies.length, totalReplies),
     lastAt: newest.createdAt,
     unread,
   };

@@ -32,6 +32,7 @@
  * future SDK version adds one, switch to it.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync } from 'node:fs';
 import { mkdtemp, rm, writeFile, mkdir, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -41,7 +42,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { MarketplaceSourceManager } from '../../marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from '../../marketplace/marketplace-cache.js';
 import { PackageFetcher } from '../../marketplace/package-fetcher.js';
-import type { GitTreeSource } from '../../marketplace/lib/git-tree.js';
+import type { GitTreeSource } from '../../marketplace/lib/git/git-tree.js';
 import type { InstallerLike, PreviewResult } from '../../marketplace/marketplace-installer.js';
 import type { InstallRequest, InstallResult, PermissionPreview } from '../../marketplace/types.js';
 import type { UninstallFlow } from '../../marketplace/flows/uninstall.js';
@@ -193,6 +194,14 @@ function emptyPreview(): PermissionPreview {
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    skillCommands: [],
+    skippedLinks: [],
+    unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
     secrets: [],
@@ -208,6 +217,9 @@ function emptyPreview(): PermissionPreview {
  * file-scoped transaction engine is never reached from this test (see the
  * note at the top of the file).
  */
+/** An empty staged package directory every stub preview points at. */
+const STAGED_DIR = mkdtempSync(path.join(tmpdir(), 'mcp-integration-staged-'));
+
 function buildStubInstaller(): InstallerLike & {
   preview: ReturnType<typeof vi.fn>;
   install: ReturnType<typeof vi.fn>;
@@ -217,7 +229,7 @@ function buildStubInstaller(): InstallerLike & {
     return {
       preview: emptyPreview(),
       manifest: buildManifest(req.name),
-      packagePath: `/tmp/staged/${req.name}`,
+      packagePath: STAGED_DIR,
     };
   });
   const install = vi.fn(async (req: InstallRequest): Promise<InstallResult> => {
@@ -357,6 +369,7 @@ function buildIntegrationDeps(opts: {
     uninstallFlow: opts.uninstallFlow,
     confirmationProvider: opts.confirmationProvider,
     onPluginsChanged: vi.fn(),
+    consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     logger: opts.logger,
   };
 }

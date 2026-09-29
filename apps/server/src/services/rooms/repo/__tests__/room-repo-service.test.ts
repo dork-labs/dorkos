@@ -505,7 +505,10 @@ describe('RoomRepoService', () => {
       // The one case that legitimately answers 0, established by a probe rather
       // than inferred from a failure — which is what let every other failure
       // read as "merged".
-      const bare = path.join(store.worktreesPath(ROOM_ID), 'fresh');
+      // Beside the room's worktrees rather than among them: the server's git in
+      // a worktree is pinned to the room's own storage, which a stand-alone
+      // repository there does not use.
+      const bare = path.join(store.homeDir(ROOM_ID), 'fresh');
       await mkdir(bare, { recursive: true });
       await runGit(['-c', 'init.templateDir=', 'init', '-b', 'other', '--quiet', '.'], bare, bare);
 

@@ -1,20 +1,13 @@
 /**
  * OpenCode cloud (OpenRouter) connect path (ADR-0318; spec opencode-connect §5).
  *
- * The recommended "best models, zero setup" path: paste an OpenRouter key or run
- * the ToS-clean OAuth-PKCE flow. OAuth is browser-only — in the Obsidian embedding
- * (`getPlatform().isEmbedded`) it degrades to the always-available paste-key path
- * rather than crashing on the stubbed transport. Model choice is no longer picked
- * here — it moved to the toolbar model menu; on success this path reports the
- * connect so the dialog shows its success moment.
- *
  * @module features/runtime-connect/ui/OpenRouterGatewayPath
  */
 import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Button, Label, PasswordInput } from '@/layers/shared/ui';
 import type { RuntimeConnectSuccess } from '@/layers/entities/runtime';
-import { getPlatform } from '@/layers/shared/lib';
+
 import { useOpenRouterOAuth, useStoreOpenRouterKey } from '../model/use-openrouter-connect';
 import { CLOUD_CONNECT_SUCCESS } from '../lib/connect-success';
 import { ConnectErrorRow, ConnectProgressRow, ConnectedRow } from './connect-feedback';
@@ -33,7 +26,6 @@ export function OpenRouterGatewayPath({
   const oauth = useOpenRouterOAuth();
   // OAuth-PKCE hosts a loopback callback + opens a browser tab — desktop-server
   // only. Detected via the platform adapter, not window sniffing.
-  const oauthAvailable = !getPlatform().isEmbedded;
 
   const connected = store.isSuccess || oauth.isSuccess;
 
@@ -49,7 +41,7 @@ export function OpenRouterGatewayPath({
 
   return (
     <div className="space-y-4" data-testid="openrouter-gateway">
-      {oauthAvailable && (
+      {
         <div className="space-y-2">
           {oauth.isPending ? (
             <ConnectProgressRow message="Finish signing in to OpenRouter in the new tab…" />
@@ -69,15 +61,15 @@ export function OpenRouterGatewayPath({
             </>
           )}
         </div>
-      )}
+      }
 
-      {oauthAvailable && (
+      {
         <div className="flex items-center gap-3">
           <span className="bg-border h-px flex-1" />
           <span className="text-muted-foreground text-2xs tracking-wide uppercase">or</span>
           <span className="bg-border h-px flex-1" />
         </div>
-      )}
+      }
 
       {store.isPending ? (
         <ConnectProgressRow message="Checking your OpenRouter key…" />

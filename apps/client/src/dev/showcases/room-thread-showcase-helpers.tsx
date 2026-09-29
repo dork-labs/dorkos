@@ -21,6 +21,8 @@ import type { RoomEntry, RoomWithRoster } from '@/layers/entities/room';
 import { TransportProvider } from '@/layers/shared/model';
 import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES, RoomThreadPanel } from '@/layers/widgets/room-view';
+// Leaf import: the split is room-view's own layout, not part of its public API.
+import { RoomThreadSplit } from '@/layers/widgets/room-view/ui/RoomThreadSplit';
 import { createPlaygroundTransport } from '../playground-transport';
 import { threadEntry, THREAD_REACTION_FREQUENTS, THREAD_ROOM } from './room-thread-showcase-data';
 
@@ -87,6 +89,12 @@ export interface ThreadPanelDemoProps {
   /** True for the mobile full-screen push framing. */
   pushed?: boolean;
   /**
+   * Mount the panel the way a wide screen does: in `RoomThreadSplit`, beside a
+   * stand-in for the room, with the real resize handle between them. Without
+   * it the side panel sits at its in-app opening width on its own.
+   */
+  beside?: boolean;
+  /**
    * Replies to append after mount, one array growth at a time — for demos that
    * land a reply from outside the composer (e.g. authored by an agent, to
    * exercise the hand-off arrival). Each entry present here that is not yet in
@@ -111,6 +119,7 @@ export function ThreadPanelDemo({
   focusComposer = false,
   streamStalled,
   pushed = false,
+  beside = false,
   injected = [],
 }: ThreadPanelDemoProps) {
   const [entries, setEntries] = useState<RoomEntry[]>(initialEntries);
@@ -134,6 +143,20 @@ export function ThreadPanelDemo({
     setEntries((prev) => [...prev, ...toLand]);
   }, [injected]);
 
+  const panel = (
+    <RoomThreadPanel
+      room={room}
+      rootEntryId={rootEntryId}
+      focusComposer={focusComposer}
+      entries={entries}
+      reactionFrequents={THREAD_REACTION_FREQUENTS}
+      streamStalled={streamStalled}
+      pushed={pushed}
+      historyLoaded
+      onClose={() => {}}
+    />
+  );
+
   return (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
@@ -143,17 +166,24 @@ export function ThreadPanelDemo({
         >
           {/* The same conversation `RoomSurface` mounts around the panel. */}
           <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">
-            <RoomThreadPanel
-              room={room}
-              rootEntryId={rootEntryId}
-              focusComposer={focusComposer}
-              entries={entries}
-              reactionFrequents={THREAD_REACTION_FREQUENTS}
-              streamStalled={streamStalled}
-              pushed={pushed}
-              historyLoaded
-              onClose={() => {}}
-            />
+            {beside ? (
+              <div className="min-w-0 flex-1">
+                <RoomThreadSplit
+                  room={
+                    <div className="text-muted-foreground flex flex-1 items-center justify-center text-sm">
+                      The room
+                    </div>
+                  }
+                  thread={panel}
+                  // Its own key: dragging the demo must never move a real room.
+                  storageKey="dorkos-dev-playground-room-thread-width"
+                />
+              </div>
+            ) : (
+              // The side panel on its own takes the width it opens at in the
+              // app (about 40% of a wide room); the push fills the phone.
+              <div className={pushed ? 'flex min-w-0 flex-1' : 'flex w-md max-w-full'}>{panel}</div>
+            )}
           </Conversation.Root>
         </div>
       </QueryClientProvider>

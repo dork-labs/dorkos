@@ -52,7 +52,7 @@
 #     "checks": [{"name": "typecheck", "bucket": "pass"}],
 #     "headSince": "2026-09-21T15:02:45Z",
 #     "queueRemovals": [{"at": "2026-09-21T14:10:19Z",
-#                        "failedChecks": ["browser-shard (2/3)", "browser-test"]}]
+#                        "failedChecks": ["browser-shard (2/6)", "browser-test"]}]
 #   }
 #
 # `bucket` follows `gh pr checks --json bucket`: pass | fail | pending | skipping | cancel.

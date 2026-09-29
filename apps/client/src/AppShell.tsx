@@ -6,13 +6,14 @@ import {
   useDocumentTitle,
   useIsMobile,
   useSlotContributions,
+  useAccountUsageSync,
 } from '@/layers/shared/model';
 import { useElectronNavigate } from './app/use-electron-navigate';
 import { useElectronCloseTab } from './app/use-electron-close-tab';
 import { useElectronFullscreen } from './app/use-electron-fullscreen';
 import { useWindowFocusDimming } from './app/use-window-focus-dimming';
 import { useRoomDocumentTitle } from './app/use-room-document-title';
-import { useCommunityRevocationCleanup } from './app/use-community-revocation-cleanup';
+import { useCommunityWatchers } from './app/use-community-watchers';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
@@ -38,12 +39,12 @@ import {
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useConfig, useConfigSync } from '@/layers/entities/config';
 import { useAgentsSync } from '@/layers/entities/mesh';
+import { useConnectorAgentRequestsSync } from '@/layers/entities/connectors';
 import { useCommandsSync } from '@/layers/entities/command';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { useTasksSync } from '@/layers/entities/tasks';
-import { useCommunityConnectionsSync } from '@/layers/entities/community';
 import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'motion/react';
 import { shouldFadeRoute } from './app/route-fade';
@@ -228,14 +229,6 @@ function useRouteHeader() {
  */
 export function AppShell() {
   const { sidebarOpen, setSidebarOpen } = useAppStore();
-  // **The one call site that decides which cockpit this is** (spec §9, P4).
-  // Below 768px the sidebar is not a narrower sidebar — it is four destinations
-  // along the bottom of the screen and no drawer at all. Reverting this one
-  // choice restores the off-canvas sheet, which stays in `shared/ui/sidebar.tsx`
-  // as the shared primitive it always was (the Dev Playground and the component
-  // tests mount it). It is NOT kept there for the Obsidian embed, whatever the
-  // comment here used to say: the embed renders `EmbedSidebar`, which never
-  // touches `<Sidebar>`.
   const isMobile = useIsMobile();
   // Whether a phone's tab panel is covering the routed page. The panels are an
   // opaque layer, so the page underneath has to be unreachable while they are
@@ -243,10 +236,6 @@ export function AppShell() {
   // and only the layout knows, so the bit travels through the widget's store.
   const mobilePanelUp = useMobilePanelStore((s) => s.panelUp);
   const [activeSessionId] = useSessionId();
-  // Live route pathname threaded into the right panel so its tab `visibleWhen`
-  // predicates re-evaluate on navigation. The container itself is router-free
-  // (it takes pathname as a prop) so the same component mounts in the
-  // router-less Obsidian embed, which passes a constant.
   const rightPanelPathname = useRouterState({ select: (s) => s.location.pathname });
   const searchStr = useRouterState({ select: (st) => st.location.searchStr });
   const rightPanelSearch = new URLSearchParams(searchStr);
@@ -270,12 +259,9 @@ export function AppShell() {
   // The tab names the room you are reading when there is one, and counts the
   // rooms waiting on you whichever route you are on (spec `rooms` §13.1/§13.3).
   const { room: openRoom, roomTitle, unreadRoomCount } = useRoomDocumentTitle();
-  // One watcher for the whole app: a Community that stops being connected is
-  // erased and routed away from, whichever surface is showing it. The sync
-  // hook re-reads the list the moment the server says a connection changed,
-  // so the watcher runs within seconds instead of on the next poll.
-  useCommunityRevocationCleanup();
-  useCommunityConnectionsSync();
+  // One set of Community watchers for the whole app (revocation cleanup, list
+  // sync, and the approval checks that finish a pairing).
+  useCommunityWatchers();
   useFavicon({
     cwd: selectedCwd,
     isStreaming,
@@ -308,8 +294,6 @@ export function AppShell() {
   // strip does not exist (DOR-568).
   useAppTabsSync();
   useAppTabShortcuts();
-  // Desktop shell → client navigation bridge (ADR 260709-210223). A no-op in
-  // the browser and Obsidian, where `window.electronAPI` is absent.
   useElectronNavigate();
   // Desktop Cmd+W → close a tab, not the window. No-op without the bridge, and
   // deliberately silent on the last tab so the window still closes.
@@ -348,6 +332,10 @@ export function AppShell() {
   // staying in one window meant the list quietly lied.
   useAgentsSync();
   useConfigSync();
+  useAccountUsageSync();
+  // Live agent requests for apps (DOR-2415): a request answered in one window,
+  // on the Connections page or in a room retires its chat card everywhere.
+  useConnectorAgentRequestsSync();
   // Remote access, live and audible — the two halves that must happen exactly
   // once for the whole app (DOR-1743). `useTunnelSync` refreshes the config
   // read from other tabs and from the server's `tunnel_status` stream, which

@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vite
 import { render, screen, cleanup, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import { IsRestoringProvider } from '@tanstack/react-query';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { AgentGallery } from '../ui/AgentGallery';
@@ -203,6 +204,21 @@ describe('AgentGallery', () => {
       /couldn’t load ready-made agents/i
     );
     expect(screen.getByTestId('gallery-design-your-own')).toBeInTheDocument();
+  });
+
+  it('holds the placeholders, not the empty note, while the boot cache is restoring', () => {
+    // A paused query during the restore reports `isLoading: false` with no data
+    // (DOR-1914) — the note would say "No ready-made agents yet" over a catalog
+    // that has them.
+    setMarketplaceState({ data: undefined, isLoading: false });
+    render(
+      <IsRestoringProvider value={true}>
+        <AgentGallery onDesignYourOwn={vi.fn()} onSelectTemplate={vi.fn()} onImport={vi.fn()} />
+      </IsRestoringProvider>
+    );
+
+    expect(screen.queryByTestId('gallery-templates-note')).toBeNull();
+    expect(screen.getAllByTestId('gallery-skeleton')).toHaveLength(2);
   });
 
   it('disables Continue while the custom template URL is empty', async () => {

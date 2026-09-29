@@ -56,6 +56,8 @@ export function SessionOriginMark({
     <Tooltip>
       <TooltipTrigger asChild>
         <span
+          // A labelled glyph: `img` is the role that may carry a name.
+          role="img"
           aria-label={`Origin: ${text}`}
           className={cn('inline-flex shrink-0 items-center', className)}
         >

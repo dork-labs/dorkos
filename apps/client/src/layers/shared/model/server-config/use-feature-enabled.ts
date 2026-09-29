@@ -25,6 +25,14 @@ export interface FeatureEnabledState {
   isRetrying: boolean;
   /** A startup failure reported for a subsystem the server tried to start. */
   initError?: string;
+  /**
+   * What the saved setting says. It can differ from {@link enabled} because the
+   * server starts each subsystem once, at boot: a switch turned on since then is
+   * saved but not yet running. Undefined until the config arrives.
+   */
+  enabledInConfig?: boolean;
+  /** True when an environment variable on this computer decides it, not the setting. */
+  lockedByEnv: boolean;
   /** Ask the server for its current config again. */
   retry: () => void;
 }
@@ -44,13 +52,16 @@ export function useFeatureEnabledState(subsystem: Subsystem): FeatureEnabledStat
     staleTime: CONFIG_STALE_TIME_MS,
   });
 
-  const initError = data?.[subsystem]?.initError;
+  const state = data?.[subsystem];
+  const initError = state?.initError;
   return {
-    enabled: data?.[subsystem]?.enabled ?? false,
+    enabled: state?.enabled ?? false,
     isLoading,
     isError,
     isRetrying: isFetching && !isLoading,
     ...(initError && { initError }),
+    ...(state?.enabledInConfig !== undefined && { enabledInConfig: state.enabledInConfig }),
+    lockedByEnv: state?.lockedByEnv === true,
     retry: () => void refetch(),
   };
 }

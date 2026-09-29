@@ -48,6 +48,7 @@ import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { resolveAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
+import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
 
 /**
  * Canonical UUID regex — used to exclude session-ID-shaped subject segments
@@ -220,6 +221,24 @@ function enrichAgent(
     relaySubject,
     taskCount,
   };
+}
+
+/**
+ * The permission fields a mesh agent PATCH names, which this route refuses: the
+ * `permissions` object, and the two retired fields that used to carry the same
+ * answer, `enabledToolGroups` and `tierCeiling` (spec `agent-permissions` D13).
+ * Refused by name rather than stripped, so a caller still sending one learns
+ * where the setting went instead of hearing "done".
+ *
+ * @param body - The raw request body.
+ * @returns The refused field paths, empty when the body names none.
+ */
+function retiredPermissionFields(body: unknown): string[] {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return [];
+  const record = body as Record<string, unknown>;
+  return ['permissions', 'enabledToolGroups', 'tierCeiling'].filter((field) =>
+    Object.hasOwn(record, field)
+  );
 }
 
 /**
@@ -551,7 +570,23 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
   });
 
   // PATCH /agents/:id — Update agent fields
-  router.patch('/agents/:id', async (req, res) => {
+  // An agent's runtime, model and effort move every schedule that follows it,
+  // so an agent changing them is sent to the tool that asks a person (DOR-2328).
+  router.patch('/agents/:id', refuseAgentExecutionWrites, async (req, res) => {
+    // What an agent may do is never written here (spec `agent-permissions` D10).
+    // This route has no caller guard of its own, so any local program can reach
+    // it; the permission routes are the one way in, behind a person and with an
+    // audit event. Refused by name rather than stripped by the schema, so the
+    // caller learns where to go instead of getting a 200 that changed nothing.
+    const refused = retiredPermissionFields(req.body);
+    if (refused.length > 0) {
+      return res.status(400).json({
+        error:
+          'Only a person can change permissions, from the Permissions page. Agents can ask the person.',
+        code: 'USE_PERMISSIONS_API',
+        fields: refused,
+      });
+    }
     const result = UpdateAgentRequestSchema.safeParse(req.body);
     if (!result.success) {
       return res
@@ -583,8 +618,8 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     //
     // It REFUSES when the manifest is present but unreadable, rather than
     // rebuilding one from the DB row, because that row cannot carry
-    // `enabledToolGroups`, `mcpServers`, `workspace` or `tierCeiling` and the
-    // rebuild would erase all four (DOR-486 review). Answered as a 409 with the
+    // `permissions`, `mcpServers` or `workspace` and the rebuild would erase all
+    // three (DOR-486 review). Answered as a 409 with the
     // reason: the request is fine, the state on disk is not, and the operator
     // can act on the sentence.
     // Narrowed to the sentinel class on purpose. An unconditional catch here

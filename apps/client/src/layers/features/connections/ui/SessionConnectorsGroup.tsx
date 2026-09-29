@@ -1,21 +1,21 @@
 import { useNavigate } from '@tanstack/react-router';
 import { SessionConnectionAccessList } from '@/layers/entities/connectors';
-import { getPlatform, requestComposerInsert } from '@/layers/shared/lib';
+import { requestComposerInsert } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 
 const CONNECTION_REQUEST_PROMPT =
   'I need access to another service. Ask me which service and actions you need, then request only that access.';
 
 /**
- * Read-only connector access summary for one session. Access changes happen in
- * Connections, where an owner reviews exact immutable operations for an agent.
+ * The chat's apps: what its agent can use here, with the owner's switch to
+ * turn each app on or off for this chat alone. What an agent may do with an
+ * app account-wide is reviewed on Connections ("Manage agent access").
  *
  * @param props - The session whose durable connector access state is rendered.
  * @param props.sessionId - The active session id.
  */
 export function SessionConnectorsGroup({ sessionId }: { sessionId: string }) {
   const navigate = useNavigate();
-  const embedded = getPlatform().isEmbedded;
   const askAgent = (
     <Button
       variant="secondary"
@@ -29,7 +29,7 @@ export function SessionConnectorsGroup({ sessionId }: { sessionId: string }) {
   return (
     <SessionConnectionAccessList
       sessionId={sessionId}
-      onManage={embedded ? undefined : () => void navigate({ to: '/connections' })}
+      onManage={() => void navigate({ to: '/connections' })}
       emptyAction={askAgent}
       footer={<div className="pt-1">{askAgent}</div>}
     />

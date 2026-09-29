@@ -25,6 +25,11 @@ export interface FileExplorerCommands {
   newFolder: () => void;
   /** Refetch the tree's root level. */
   refresh: () => void;
+  /**
+   * Open the file picker to upload into the tree root — present only for a
+   * source that takes uploads (a room's files).
+   */
+  upload?: () => void;
 }
 
 interface FileExplorerStore {

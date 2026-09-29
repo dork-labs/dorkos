@@ -79,7 +79,7 @@ async function waitForTask(store: TaskStore, filePath: string, label: string): P
   // with its symlinks resolved, and every macOS temp directory is under one.
   const identity = await realpath(filePath);
   while (Date.now() < deadline) {
-    const task = store.getByFilePath(identity);
+    const task = store.fileSync.getByFilePath(identity);
     if (task) return task;
     await new Promise((r) => setTimeout(r, 25));
   }

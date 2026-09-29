@@ -237,6 +237,22 @@ export const ScheduleBlockSchema = z.object({
    * drops it rather than pretending — see `resolveSessionDefaults`.
    */
   effort: z.enum(EFFORT_LEVELS).optional().catch(undefined),
+
+  /**
+   * Which Claude account a fire of this schedule runs on, as a registry id —
+   * which subscription pays for the run (DOR-2384).
+   *
+   * Only claude-code runs use it; every other runtime ignores it. Absent means
+   * the agent's own account, then the default — the same launch ladder every
+   * new session walks. It is read only when a run STARTS a conversation: a
+   * sticky schedule's later runs stay on the account their conversation began
+   * on.
+   *
+   * **Not validated against the registry**, for the reason `model` gives: the
+   * accounts are the machine's, and an id nobody registered falls through the
+   * ladder at run time with a warning rather than making the file unreadable.
+   */
+  account: z.string().min(1).optional().catch(undefined),
 });
 
 /**
@@ -368,13 +384,14 @@ export function scheduleProblem<T extends { schedule?: ScheduleField }>(meta: T)
  * exactly that size across any number of round trips.
  *
  * **It always returns a mapping, never `undefined`.** An all-default block
- * writes as `schedule: {}`, which round-trips exactly — gray-matter emits
- * `schedule: {}` and reads it back as `{}` — and, which matters more, keeps the
+ * writes as `schedule: {}`, which round-trips exactly — the frontmatter writer
+ * emits `schedule: {}` and reads it back as `{}` — and, which matters more, keeps the
  * key present: presence is what makes the file a scheduled task, so dropping it
  * would silently un-schedule the skill. Returning `undefined` would be worse
  * still, because the spread this helper is written for
- * (`{...meta, schedule: scheduleToFrontmatter(block)}`) would hand js-yaml an
- * `undefined` and throw "unacceptable kind of an object".
+ * (`{...meta, schedule: scheduleToFrontmatter(block)}`) would hand the
+ * frontmatter writer an `undefined`, which it refuses rather than silently
+ * dropping the key.
  *
  * One thing it cannot preserve: a `true` the author typed by hand is
  * indistinguishable after parsing from one the schema supplied, so an explicit
@@ -399,5 +416,6 @@ export function scheduleToFrontmatter(schedule: ScheduleBlock): Record<string, u
   if (schedule.runtime !== undefined) out.runtime = schedule.runtime;
   if (schedule.model !== undefined) out.model = schedule.model;
   if (schedule.effort !== undefined) out.effort = schedule.effort;
+  if (schedule.account !== undefined) out.account = schedule.account;
   return out;
 }

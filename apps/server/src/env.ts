@@ -192,7 +192,8 @@ export const serverEnvSchema = z.object({
   // relax the limit without a restart; mirrors the A2A override knobs (DOR-281).
   DORKOS_AUTH_SIGNIN_RATE_LIMIT: z.coerce.number().int().min(1).optional(),
   DORKOS_TASKS_ENABLED: boolFlag,
-  DORKOS_RELAY_ENABLED: boolFlag,
+  // Overrides `relay.enabled` only when present; unset lets the setting decide.
+  DORKOS_RELAY_ENABLED: optionalBoolFlag,
   // Local-first debug tracing (DOR-294). When 'true' (set by `dorkos
   // --debug-trace`), the server records OpenTelemetry spans for session turns,
   // runtime calls, relay dispatch, and task runs to a sanitized JSONL file

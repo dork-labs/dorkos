@@ -835,7 +835,7 @@ describe('SlackAdapter', () => {
           respondedBy: 'U_OPERATOR',
           platform: 'slack',
         }),
-        { from: 'slack:U_OPERATOR' }
+        { from: 'relay.system.approval-bridge.slack.slack-1' }
       );
     });
 

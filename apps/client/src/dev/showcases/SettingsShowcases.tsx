@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { useExtensionRegistry } from '@/layers/shared/model';
 import { Palette, Settings2, Server } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -33,11 +35,14 @@ import {
 import { NotificationsTab } from '@/layers/features/settings/ui/tabs/NotificationsTab';
 import { RoomsTab } from '@/layers/features/settings/ui/tabs/RoomsTab';
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
-import { ToolsResetAction, ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
+import { ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
 import { DangerZoneTab } from '@/layers/features/settings/ui/DangerZoneTab';
 import { RemoteAccessTab } from '@/layers/features/settings/ui/RemoteAccessTab';
 import { ExperimentsTab } from '@/layers/features/settings/ui/ExperimentsTab';
 import { BackgroundSystemsCard } from '@/layers/features/settings/ui/tools/BackgroundSystemsCard';
+import { AccountColorControl } from '@/layers/features/settings/ui/runtimes/sections/AccountColorControl';
+import { RuntimeUsageSection } from '@/layers/features/settings/ui/runtimes/sections/RuntimeUsageSection';
+import { FoundAccountsGroup } from '@/layers/features/settings/ui/runtimes/sections/FoundAccountsGroup';
 import { ControlCenterBody } from '@/layers/widgets/control-center';
 import {
   LiveRuntimeCard,
@@ -46,12 +51,15 @@ import {
   TabShell,
 } from './settings-showcase-helpers';
 import {
+  MOCK_ACCOUNT_USAGE,
   MOCK_EXECUTION_DEVIATIONS,
   MOCK_EXECUTION_EXCEPTIONS,
   MOCK_SERVER_CONFIG_EXPERIMENT_LOCKED,
   MOCK_SERVER_CONFIG_MULTI_ACCOUNT,
+  MOCK_SERVER_CONFIG_STANDALONE_DEFAULT,
   MOCK_SERVER_CONFIG_NO_EXPERIMENTS,
 } from './settings-mock-data';
+import { MOCK_FOUND_CLAUDE_FOLDERS } from './account-mock-data';
 
 /** Comprehensive showcase for the Settings dialog system. */
 export function SettingsShowcases() {
@@ -60,6 +68,8 @@ export function SettingsShowcases() {
       <FullSettingsDialogSection />
       <IndividualTabsSection />
       <ClaudeAccountsShowcaseSection />
+      <FoundAccountsGroupShowcaseSection />
+      <RuntimeUsageShowcaseSection />
       <ExecutionExceptionsSection />
       <BackgroundSystemsSection />
       <MobileDrillInSection />
@@ -129,6 +139,53 @@ function ClaudeAccountsShowcaseSection() {
         </MockedQueryProvider>
       </ShowcaseDemo>
 
+      <ShowcaseLabel>One account: its usage under Billing account</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider config={SINGLE_ACCOUNT_CONFIG} usage={CLAUDE_USAGE}>
+          <LiveRuntimeCard type="claude-code" expanded renderSection={accountsSection} />
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Several accounts with usage: colors, compact bars, one account unknown
+      </ShowcaseLabel>
+      <FlowTabToggle />
+      <ShowcaseDemo>
+        <MockedQueryProvider config={MOCK_SERVER_CONFIG_MULTI_ACCOUNT} usage={CLAUDE_USAGE}>
+          <LiveRuntimeCard
+            type="claude-code"
+            expanded
+            renderSection={accountsSection}
+            sectionValues={{ 'claude-accounts': 'Acme Corp' }}
+          />
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        This computer’s own sign-in, not registered: Main gets its own row, with no remove button
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider
+          config={MOCK_SERVER_CONFIG_STANDALONE_DEFAULT}
+          usage={STANDALONE_USAGE}
+        >
+          <LiveRuntimeCard type="claude-code" expanded renderSection={accountsSection} />
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>An account’s color picker, open</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="h-24">
+          <AccountColorControl
+            name="Acme Corp"
+            color="#1d8a4a"
+            colorIsDefault
+            onChoose={() => {}}
+            defaultOpen
+          />
+        </div>
+      </ShowcaseDemo>
+
       <ShowcaseLabel>Write refused: pick an account to see the message</ShowcaseLabel>
       <ShowcaseDemo>
         <RefusedConfigWriteProvider>
@@ -141,6 +198,156 @@ function ClaudeAccountsShowcaseSection() {
             />
           </MockedQueryProvider>
         </RefusedConfigWriteProvider>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/**
+ * The playground's Claude usage fixtures, re-keyed onto the multi-account
+ * config's rows (ok, near, out, unknown), so each row finds its reading.
+ */
+const CLAUDE_USAGE: AccountUsage[] = (
+  MOCK_SERVER_CONFIG_MULTI_ACCOUNT.claudeCode?.accounts ?? []
+).map((account, i) => ({
+  ...MOCK_ACCOUNT_USAGE[i]!,
+  accountId: account.id ?? null,
+  path: account.path,
+  label: account.label,
+  color: account.color,
+}));
+
+/**
+ * Usage for the standalone-default config: its two registered rows, plus the
+ * `default` record the server lists while this computer's sign-in stands alone.
+ */
+const STANDALONE_USAGE: AccountUsage[] = [
+  ...(MOCK_SERVER_CONFIG_STANDALONE_DEFAULT.claudeCode?.accounts ?? []).map((account, i) => ({
+    ...MOCK_ACCOUNT_USAGE[i]!,
+    accountId: account.id ?? null,
+    path: account.path,
+    label: account.label,
+    color: account.color,
+  })),
+  {
+    ...MOCK_ACCOUNT_USAGE[4]!,
+    accountId: 'default',
+    path: '/Users/dev/.claude',
+    label: "Main (this computer's sign-in)",
+    color: MOCK_SERVER_CONFIG_STANDALONE_DEFAULT.claudeCode!.defaultAccountResolvedColor!,
+    windows: MOCK_ACCOUNT_USAGE[4]!.windows.slice(0, 2),
+  },
+];
+
+/** The multi-account config cut to its one Acme Corp row. */
+const SINGLE_ACCOUNT_CONFIG = {
+  ...MOCK_SERVER_CONFIG_MULTI_ACCOUNT,
+  claudeCode: {
+    ...MOCK_SERVER_CONFIG_MULTI_ACCOUNT.claudeCode!,
+    accounts: MOCK_SERVER_CONFIG_MULTI_ACCOUNT.claudeCode!.accounts.slice(1, 2),
+  },
+};
+
+/**
+ * Registers a stand-in Flow settings tab while checked, so the Flow note under
+ * the accounts list can be seen with and without it. Unregisters on unmount.
+ */
+function FlowTabToggle() {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (!on) return;
+    return useExtensionRegistry.getState().register('settings.tabs', {
+      id: 'flow:fleet',
+      label: 'Flow',
+      icon: Settings2,
+      component: () => null,
+    });
+  }, [on]);
+  return (
+    <div className="text-muted-foreground mb-2 flex items-center gap-2 text-xs">
+      <Switch checked={on} onCheckedChange={setOn} aria-label="Flow installed" />
+      Flow installed (shows the note under the list)
+    </div>
+  );
+}
+
+/**
+ * "Found on this computer" (spec `claude-account-ui` §6.9): the account folders
+ * DorkOS found and was not told about, each with Add and Dismiss. The real
+ * component with injected folders; the buttons do nothing here.
+ */
+function FoundAccountsGroupShowcaseSection() {
+  const [refusedPath, setRefusedPath] = useState<string | null>(null);
+  return (
+    <PlaygroundSection
+      title="FoundAccountsGroup"
+      description="Claude account folders found on this computer, offered below your accounts. Nothing is added until you click Add, and a folder that looks company-managed is flagged and gets a plain Add button."
+    >
+      <ShowcaseLabel>
+        Several folders: used today, days ago, org-managed, last use unknown
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <FoundAccountsGroup
+            folders={MOCK_FOUND_CLAUDE_FOLDERS}
+            onAdd={() => {}}
+            onDismiss={() => {}}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Write refused: click Add to see the message under its row</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <FoundAccountsGroup
+            folders={MOCK_FOUND_CLAUDE_FOLDERS.slice(0, 2)}
+            onAdd={(folder) => setRefusedPath(folder.path)}
+            onDismiss={() => setRefusedPath(null)}
+            error={
+              refusedPath
+                ? { path: refusedPath, message: 'Only a person can change those settings.' }
+                : null
+            }
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Nothing found: renders nothing</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <FoundAccountsGroup folders={[]} onAdd={() => {}} onDismiss={() => {}} />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/**
+ * The Usage row of the Codex and OpenCode cards (spec `claude-account-ui`
+ * §6.5): Codex's windows as bars, and OpenCode's spend as one line.
+ */
+function RuntimeUsageShowcaseSection() {
+  return (
+    <PlaygroundSection
+      title="Runtime Usage"
+      description="How much of each limit a runtime has used, shown on its card even with one account. A runtime billed per turn shows what it spent this month instead."
+    >
+      <ShowcaseLabel>Codex: its weekly window, 5-hour unknown</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider usage={MOCK_ACCOUNT_USAGE}>
+          <div className="max-w-md">
+            <RuntimeUsageSection type="codex" />
+          </div>
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>OpenCode: spend this month</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider usage={MOCK_ACCOUNT_USAGE}>
+          <div className="max-w-md">
+            <RuntimeUsageSection type="opencode" />
+          </div>
+        </MockedQueryProvider>
       </ShowcaseDemo>
     </PlaygroundSection>
   );
@@ -310,7 +517,7 @@ function IndividualTabsSection() {
       <ShowcaseLabel>Tools Tab</ShowcaseLabel>
       <ShowcaseDemo>
         <MockedQueryProvider>
-          <TabShell value="tools" title="Tools" actions={<ToolsResetAction />}>
+          <TabShell value="tools" title="Tools">
             <ToolsTab />
           </TabShell>
         </MockedQueryProvider>

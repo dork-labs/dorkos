@@ -50,6 +50,10 @@ import {
   McpSigninResolvedEventSchema,
   QueuedMessageSchema,
   MessageDeliveryOutcomeSchema,
+  SessionLifecycleSchema,
+  SessionLimitSchema,
+  type LimitState,
+  type SessionLifecycle,
   type ToolApprovalOutcome,
   type QuestionOutcome,
 } from './schemas.js';
@@ -57,6 +61,7 @@ import {
 // beside it (spec `canvas-agent-seat` §1.3): one client reducer handles both
 // scopes, and two definitions of "what is on the table" would drift.
 import { CanvasDocumentSchema } from './canvas-schemas.js';
+import { AccountUsageSchema } from './account-usage.js';
 
 extendZodWithOpenApiOnce();
 
@@ -79,6 +84,14 @@ export const SessionContextUsageSchema = z
     cacheReadTokens: z.number().int(),
     /** Tokens written to prompt cache (slight write premium). */
     cacheCreationTokens: z.number().int(),
+    /**
+     * When {@link totalTokens} and {@link maxTokens} were measured (ISO-8601):
+     * the moment of a live reading, or the stored reading's time when the
+     * figures were restored on open or after a restart (spec
+     * `claude-account-fleet` §6 U). ABSENT when a runtime reported the figures
+     * without it (an older server).
+     */
+    observedAt: z.string().optional(),
   })
   .openapi('SessionContextUsage');
 
@@ -119,17 +132,19 @@ export const SessionTodoCountsSchema = z
 /** Inferred type for {@link SessionTodoCountsSchema}. */
 export type SessionTodoCounts = z.infer<typeof SessionTodoCountsSchema>;
 
-/**
- * Coarse lifecycle phase of a session. `streaming` while a turn produces
- * output, `blocked` while an interaction awaits the operator, `interrupted`
- * when a turn was aborted, `error` on a terminal failure, `idle` otherwise.
- */
-export const SessionLifecycleSchema = z
-  .enum(['idle', 'streaming', 'blocked', 'error', 'interrupted'])
-  .openapi('SessionLifecycle');
-
-/** Inferred type for {@link SessionLifecycleSchema}. */
-export type SessionLifecycle = z.infer<typeof SessionLifecycleSchema>;
+// The lifecycle and limit schemas live in `schemas.ts`, because `SessionSchema`
+// carries them and this module imports that one. Re-exported so this stays the
+// home a status consumer imports them from.
+export {
+  SessionLifecycleSchema,
+  SessionLimitSchema,
+  LimitPlanSchema,
+  LimitStateSchema,
+  type SessionLifecycle,
+  type SessionLimit,
+  type LimitPlan,
+  type LimitState,
+} from './schemas.js';
 
 /**
  * What a session is doing RIGHT NOW, structured rather than phrased.
@@ -184,6 +199,21 @@ export const SessionStatusSchema = z
      * The `.default(null)` keeps pre-usage snapshots parsing (version skew).
      */
     usage: UsageStatusSchema.nullable().default(null),
+    /**
+     * Account-wide cached usage for the account this session bills (spec
+     * `claude-account-fleet` §6 U), stamped from the server's usage store when
+     * the session is opened, so it shows before the session's first turn and
+     * for a single account (`default`). `updatedAt` and each window's
+     * `observedAt` say how fresh it is. `null` when the session's runtime keeps
+     * no usage ledger.
+     *
+     * Never carried by a `status_change`: a change travels only on the global
+     * `account_usage` event, and a client applies it to every session whose
+     * value names that account, matching on (`runtime`, `accountId`), or on
+     * (`runtime`, `path`) when `accountId` is `null`. The `.default(null)` keeps
+     * older snapshots parsing (version skew).
+     */
+    accountUsage: AccountUsageSchema.nullable().default(null),
     /** Prompt-cache accounting, or `null` before the first turn. */
     cacheStats: SessionCacheStatsSchema.nullable(),
     /** Active model identifier, or `null` before the first turn. */
@@ -218,6 +248,14 @@ export const SessionStatusSchema = z
      * lifecycle. The `.default(null)` keeps old snapshots parsing (version skew).
      */
     lastError: ErrorEventSchema.nullable().default(null),
+    /**
+     * The hard usage limit the session's account reported during the last
+     * turn, or `null`. Set when the account reports one; cleared at the next
+     * `turn_start`. The lifecycle is untouched: "limited" is a display state
+     * ({@link sessionDisplayState}), not a lifecycle phase. The `.default(null)`
+     * keeps older snapshots parsing (version skew).
+     */
+    limit: SessionLimitSchema.nullable().default(null),
     /**
      * What this session is doing right now ({@link SessionActivitySchema}), or
      * ABSENT when nothing is known — an idle session, a turn that has not
@@ -254,6 +292,36 @@ export const SessionStatusSchema = z
 
 /** Inferred type for {@link SessionStatusSchema}. */
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
+
+/**
+ * The state to show for a session: `'limited'` while its account's usage limit
+ * holds it, else its lifecycle. The one place "limited" is spelled.
+ *
+ * @param status - The session's lifecycle and limit.
+ */
+export function sessionDisplayState(
+  status: Pick<SessionStatus, 'lifecycle' | 'limit'>
+): SessionLifecycle | 'limited' {
+  return status.limit ? 'limited' : status.lifecycle;
+}
+
+/**
+ * The account state to show for a session (spec `claude-account-fleet` D9):
+ * the server-set `limit.state` while a limit holds it; with no limit,
+ * `near-limit` when the account it bills reads `warning`; else `null`.
+ * `near-limit` is the one state with no limit to hang on, so it is derived here
+ * rather than set by the server.
+ *
+ * @param status - The session's limit.
+ * @param accountUsage - The usage of the account the session bills, when known.
+ */
+export function sessionAccountState(
+  status: Pick<SessionStatus, 'limit'>,
+  accountUsage: { state: string } | null | undefined
+): LimitState | 'near-limit' | null {
+  if (status.limit) return status.limit.state;
+  return accountUsage?.state === 'warning' ? 'near-limit' : null;
+}
 
 // === Session Event Stream ===
 
@@ -434,10 +502,15 @@ export const SessionEventSchema = z
     // out fleet-wide — which is a runtime naming a tool the session never
     // started. Nothing produces it (the normalizer maps no source field to it),
     // so the delta simply cannot express it.
+    //
+    // `accountUsage` is OMITTED too: it is account-wide, so a change to it
+    // travels once on the global `account_usage` event rather than into every
+    // session's log (a log-backed runtime persists each event it streams, and a
+    // reconnect would replay them all).
     z.object({
       ...seqShape,
       type: z.literal('status_change'),
-      status: SessionStatusSchema.omit({ activity: true }).partial().extend({
+      status: SessionStatusSchema.omit({ activity: true, accountUsage: true }).partial().extend({
         contextUsage: SessionContextUsageSchema.partial().nullable().optional(),
       }),
     }),
@@ -1044,8 +1117,7 @@ export const SessionSnapshotSchema = z
      *
      * Required rather than optional, so a transport that forgot to decorate its
      * snapshot fails a test instead of quietly answering with an empty table.
-     * Decorated in `deliverSessionStream` and in `DirectTransport`'s own
-     * session-stream methods rather than inside four runtime adapters: storage a
+     * Decorated in `deliverSessionStream` rather than inside four runtime adapters: storage a
      * runtime owns lives in the runtime, and storage the server owns is not
      * copied into each of them (ADR-0310's reasoning, in the other direction).
      */

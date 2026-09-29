@@ -5,8 +5,8 @@
  * directory, read through the files API, written through it too. A room's own
  * files are the same shape of question asked of a different place — one
  * directory at a time, entries with names and kinds — and answered by a
- * different route, from a git commit rather than a live checkout, read-only,
- * and with provenance the filesystem cannot give.
+ * different route, from a git commit rather than a live checkout, changed one
+ * commit at a time, and with provenance the filesystem cannot give.
  *
  * So the pane takes a SOURCE rather than a working directory. A source is the
  * whole of what the explorer needs to know about where its entries come from:
@@ -95,6 +95,16 @@ export interface ExplorerListing {
    * this; one that always shows a tree renders an empty one.
    */
   absent?: true;
+  /**
+   * The version this listing was read at, for a source that has versions —
+   * `null` when the place has none yet (a repo with no commits).
+   *
+   * What a change to an entry in this directory carries as its lock: a rename
+   * or a delete is only safe over files the person has SEEN, and this names
+   * exactly the version they saw. Absent on a source that lists a live
+   * filesystem.
+   */
+  commit?: string | null;
 }
 
 /**
@@ -160,6 +170,83 @@ export interface ExplorerSaveInput {
   text: string;
 }
 
+/**
+ * How a change to a source's tree ended — an upload, a rename or move, or a
+ * delete through {@link ExplorerChanges}.
+ *
+ * Four outcomes rather than one plus rejections, for the reason
+ * {@link ExplorerSaveOutcome} has three: each of the last three is something a
+ * person answers or acts on, not a failure of the request. Only a refusal
+ * nobody wrote copy for is left to throw.
+ */
+export type ExplorerChangeOutcome =
+  /** It landed as one commit. `commit` is where the place is now. */
+  | { status: 'changed'; commit: string }
+  /**
+   * A file the change would touch moved since the person's view of it, and
+   * NOTHING was changed. `commit` is where the place is now: re-read at it to
+   * see theirs, or send it back as the base to make the change anyway.
+   */
+  | { status: 'conflict'; path: string; commit: string; lastCommit: ExplorerCommit | null }
+  /**
+   * The destination already holds something with that name. The person picks:
+   * replace it (an upload only), or another name.
+   */
+  | { status: 'exists'; reason: string }
+  /** Refused for a reason the person can be told in one sentence. */
+  | { status: 'refused'; reason: string };
+
+/** What an upload sends. */
+export interface ExplorerUploadInput {
+  /** The folder to upload into; `''` for the source's root. */
+  dir: string;
+  /** The version the person's view of that folder came from. */
+  baseCommit: string | null;
+  /** The file NAMES the person agreed to overwrite. */
+  replace: string[];
+  /** The files, each uploaded under its own name. */
+  files: File[];
+}
+
+/**
+ * The tree writes a source makes through a door of its own, one commit each
+ * (spec `agent-home-desk` §7.3).
+ *
+ * A session's tree is a directory on disk and is written through the files API
+ * — which `use-file-crud` already drives, copy and paste included. A room's
+ * tree is a git commit, and every change to it is a commit with a person's
+ * name on it and a lock on the version they saw. That is a different contract,
+ * so it is a different interface rather than the files API in disguise: the
+ * operations here are exactly the ones the place has, and nothing else. There
+ * is no copy, because a room has no route for one; the pane offers what is
+ * here and nothing it would have to refuse.
+ *
+ * Every method answers an {@link ExplorerChangeOutcome} and throws only on a
+ * refusal nobody wrote copy for.
+ */
+export interface ExplorerChanges {
+  /** The most files one upload may carry. */
+  readonly maxUploadFiles: number;
+  /**
+   * Upload files into one folder.
+   *
+   * @param input - The folder, the version seen, the names to replace, the files.
+   */
+  upload(input: ExplorerUploadInput): Promise<ExplorerChangeOutcome>;
+  /**
+   * Rename or move one file or folder.
+   *
+   * @param input - What moves, where to, and the version the person saw.
+   */
+  move(input: { from: string; to: string; baseCommit: string }): Promise<ExplorerChangeOutcome>;
+  /**
+   * Delete one file or folder.
+   *
+   * @param input - What to delete, and the version the person saw.
+   */
+  remove(input: { path: string; baseCommit: string }): Promise<ExplorerChangeOutcome>;
+}
+
 /** Where the explorer's entries come from, and what may be done with them. */
 export interface FileExplorerSource {
   /**
@@ -176,13 +263,24 @@ export interface FileExplorerSource {
    * The session working directory behind this source, or `null` when there
    * isn't one.
    *
-   * The write and reveal paths are defined in terms of a real directory on this
-   * machine, and a room's files are a commit — no directory to name, so `null`,
-   * and those paths are never reachable because {@link writable} is false.
+   * The files API's write paths and the reveal and copy-path actions are
+   * defined in terms of a real directory on this machine, and a room's files
+   * are a commit — no directory to name, so `null`. A room writes through
+   * {@link changes} instead, and the actions that would name a place on disk
+   * are not offered.
    */
   readonly cwd: string | null;
-  /** Whether entries may be created, renamed, moved, copied and deleted. */
+  /** Whether entries may be created, renamed, moved and deleted. */
   readonly writable: boolean;
+  /**
+   * The source's own door for tree writes, for a {@link writable} source whose
+   * tree is not a directory on disk (a room's files). Absent on a source the
+   * files API writes to, which is every session directory.
+   *
+   * When present, the pane makes its changes through here, offers upload, and
+   * offers nothing this interface does not have — no copy, paste or duplicate.
+   */
+  readonly changes?: ExplorerChanges;
   /** Whether entries carry {@link ExplorerEntry.lastCommit} — the provenance column. */
   readonly provenance: boolean;
   /**

@@ -1,0 +1,48 @@
+{
+  "offers": [
+    {
+      "skuId": "sku_opaque_0001",
+      "planId": "pl_opaque_0001",
+      "displayName": "the first thing on sale",
+      "interval": "month",
+      "amountMicro": "7340000",
+      "limits": {
+        "personSeatsIncluded": 1,
+        "agentSeatsIncluded": 2,
+        "includedCreditsMicro": "910000",
+        "cloudHours": 3,
+        "storageGb": 4,
+        "remoteAccess": "on_demand",
+        "alwaysAvailableInstances": 0,
+        "customAddress": "addon",
+        "managedConnectionActions": null,
+        "support": "community",
+        "emailAddressPerSeat": true
+      }
+    },
+    {
+      "skuId": "sku_opaque_0002",
+      "planId": "pl_opaque_0001",
+      "displayName": "the first thing on sale",
+      "interval": "year",
+      "amountMicro": "61900000",
+      "limits": {
+        "personSeatsIncluded": 1,
+        "agentSeatsIncluded": 2,
+        "includedCreditsMicro": "910000",
+        "cloudHours": 3,
+        "storageGb": 4,
+        "remoteAccess": "on_demand",
+        "alwaysAvailableInstances": 0,
+        "customAddress": "addon",
+        "managedConnectionActions": null,
+        "support": "community",
+        "emailAddressPerSeat": true
+      }
+    }
+  ],
+  "denomination": {
+    "currency": "XTS",
+    "microPerCredit": "250"
+  }
+}

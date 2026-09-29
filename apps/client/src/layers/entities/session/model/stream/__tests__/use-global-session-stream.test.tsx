@@ -240,6 +240,8 @@ describe('useGlobalSessionStream', () => {
           runningSubagentCount: 0,
           lifecycle: 'streaming',
           lastError: null,
+          limit: null,
+          accountUsage: null,
         },
       });
     });

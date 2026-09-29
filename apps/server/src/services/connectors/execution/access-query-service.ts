@@ -28,6 +28,12 @@ import {
   type ConnectorUsagePage,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-provider';
+import type { ConnectionReadinessReason } from '@dorkos/shared/connector-schemas';
+import {
+  deriveConnectionReadiness,
+  registryWayHealth,
+  type ConnectionWayHealthPort,
+} from '../readiness/connection-readiness.js';
 import {
   isServerPrincipal,
   type ConnectorOwnerAuthority,
@@ -35,6 +41,8 @@ import {
 } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorAgentOwnershipPort } from './authorization-service.js';
+import { everyAgentGrantSubject } from '../every-agent-grants.js';
+import { managedAgentAccess } from './managed-agent-access.js';
 
 /** Bounded cursor input shared by agent and operator usage views. */
 export interface ConnectorUsageQuery {
@@ -83,6 +91,47 @@ function ownerColumns(owner: ConnectorOwnerAuthority): {
     : { ownerKind: owner.kind, ownerId: owner.installationId };
 }
 
+/**
+ * Grant rows that can speak for one agent: its own named grants (and, with a
+ * session, that session's grants), plus every-agent grants (ADR 260926-192625),
+ * which count on every connection, including one made through a DorkOS account
+ * (DOR-2439).
+ */
+function agentGrantRows(agentId: string, sessionId?: string) {
+  const named = and(
+    eq(connectionOperationGrants.subjectType, 'agent'),
+    eq(connectionOperationGrants.subjectId, agentId)
+  );
+  return or(
+    and(
+      eq(connectionOperationGrants.agentId, agentId),
+      sessionId
+        ? or(
+            named,
+            and(
+              eq(connectionOperationGrants.subjectType, 'session'),
+              eq(connectionOperationGrants.subjectId, sessionId)
+            )
+          )
+        : named
+    ),
+    everyAgentGrantSubject()
+  );
+}
+
+/** Keep the first row for each exact connection and revision. */
+function uniqueRevisions<T extends { connectionId: string; operationRevisionId: string }>(
+  rows: readonly T[]
+): T[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = `${row.connectionId}\0${row.operationRevisionId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function encodeUsageCursor(startedAt: string, attemptId: string): string {
   return Buffer.from(JSON.stringify({ startedAt, attemptId }), 'utf8').toString('base64url');
 }
@@ -98,15 +147,68 @@ function decodeUsageCursor(cursor: string): z.infer<typeof UsageCursorSchema> {
   }
 }
 
+/** One session's access override for one connection. */
+interface SessionOverride {
+  connectionId: string;
+  agentId: string | null;
+  state: 'attached' | 'detached';
+  needsReconciliation: boolean;
+}
+
+/**
+ * Whether one grant row gives this agent the connection in this session. The
+ * same precedence as `ConnectorExecutionAuthorizationService.hasGrant`: a
+ * session override decides alone; without one, named-agent and every-agent
+ * grants both count.
+ */
+function grantApplies(
+  row: { subjectType: string },
+  override: SessionOverride | undefined,
+  agentId: string
+): boolean {
+  if (!override) return row.subjectType === 'agent' || row.subjectType === 'every_agent';
+  if (
+    override.agentId !== agentId ||
+    override.needsReconciliation ||
+    override.state === 'detached'
+  ) {
+    return false;
+  }
+  return row.subjectType === 'session';
+}
+
+/**
+ * True when this chat turned the connection off for its agent: a current
+ * override for this agent says detached, so no other grant counts here.
+ */
+function turnedOffHere(override: SessionOverride | undefined, agentId: string): boolean {
+  return (
+    override !== undefined &&
+    override.agentId === agentId &&
+    !override.needsReconciliation &&
+    override.state === 'detached'
+  );
+}
+
 /** SQLite-backed, owner-scoped access and usage query service. */
 export class ConnectorAccessQueryService {
-  /** Construct owner-bound reads over canonical connector state. */
+  private readonly wayHealth: ConnectionWayHealthPort;
+
+  /**
+   * Construct owner-bound reads over canonical connector state.
+   *
+   * @param wayHealth - The live health of the way behind an account. Without
+   *   it, only the registry is read.
+   */
   constructor(
     private readonly db: Db,
     private readonly agentOwnership: ConnectorAgentOwnershipPort,
     private readonly registry: ConnectorRegistry,
-    private readonly runtimePrincipals: ConnectorRuntimeDiscoveryPrincipalPort
-  ) {}
+    private readonly runtimePrincipals: ConnectorRuntimeDiscoveryPrincipalPort,
+    wayHealth?: ConnectionWayHealthPort
+  ) {
+    this.wayHealth = wayHealth ?? registryWayHealth(registry);
+  }
 
   /** Build a private, server-only awareness snapshot for the next normal agent turn. */
   async accessSnapshot(owner: ConnectorOwnerAuthority, agentId: string, sessionId: string) {
@@ -137,17 +239,7 @@ export class ConnectorAccessQueryService {
       )
       .where(
         and(
-          eq(connectionOperationGrants.agentId, agentId),
-          or(
-            and(
-              eq(connectionOperationGrants.subjectType, 'agent'),
-              eq(connectionOperationGrants.subjectId, agentId)
-            ),
-            and(
-              eq(connectionOperationGrants.subjectType, 'session'),
-              eq(connectionOperationGrants.subjectId, sessionId)
-            )
-          ),
+          agentGrantRows(agentId, sessionId),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId)
         )
@@ -189,9 +281,7 @@ export class ConnectorAccessQueryService {
       )
       .where(
         and(
-          eq(connectionOperationGrants.subjectType, 'agent'),
-          eq(connectionOperationGrants.subjectId, agentId),
-          eq(connectionOperationGrants.agentId, agentId),
+          agentGrantRows(agentId),
           isNull(connectionOperationGrants.revokedAt),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId),
@@ -252,9 +342,7 @@ export class ConnectorAccessQueryService {
         and(
           eq(connections.id, connectionId),
           eq(connections.lifecycleState, 'connected'),
-          eq(connectionOperationGrants.subjectType, 'agent'),
-          eq(connectionOperationGrants.subjectId, agentId),
-          eq(connectionOperationGrants.agentId, agentId),
+          agentGrantRows(agentId),
           isNull(connectionOperationGrants.revokedAt),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId)
@@ -282,7 +370,7 @@ export class ConnectorAccessQueryService {
     }
     return ConnectorAccessibleOperationsResponseSchema.parse({
       connectionId,
-      operations: rows
+      operations: uniqueRevisions(rows.map((row) => ({ ...row, connectionId })))
         .map((row) => ({
           operationRevisionId: row.operationRevisionId,
           toolkit: row.toolkit,
@@ -309,7 +397,13 @@ export class ConnectorAccessQueryService {
     const rows = this.listRuntimeGrantRows(claims.owner, claims.agentId, claims.canonicalSessionId);
     const unique = new Map<string, (typeof rows)[number]>();
     for (const row of rows) unique.set(row.connectionId, row);
+    const unavailable = this.listUnavailableConnections(
+      claims.owner,
+      claims.agentId,
+      claims.canonicalSessionId
+    ).filter((row) => !unique.has(row.connectionId));
     return ConnectorAccessibleConnectionsResponseSchema.parse({
+      ...(unavailable.length > 0 && { unavailable }),
       connections: [...unique.values()]
         .sort(
           (left, right) =>
@@ -417,19 +511,7 @@ export class ConnectorAccessQueryService {
     connectionId?: string
   ) {
     const ownerKey = ownerColumns(owner);
-    const overrides = new Map(
-      this.db
-        .select({
-          connectionId: sessionConnectionOverrides.connectionId,
-          agentId: sessionConnectionOverrides.agentId,
-          state: sessionConnectionOverrides.state,
-          needsReconciliation: sessionConnectionOverrides.needsReconciliation,
-        })
-        .from(sessionConnectionOverrides)
-        .where(eq(sessionConnectionOverrides.sessionId, sessionId))
-        .all()
-        .map((row) => [row.connectionId, row] as const)
-    );
+    const overrides = this.sessionOverrides(sessionId);
     const rows = this.db
       .select({
         subjectType: connectionOperationGrants.subjectType,
@@ -441,6 +523,8 @@ export class ConnectorAccessQueryService {
         reconciliationStatus: connections.grantReconciliationStatus,
         providerInstanceId: connectorProviderInstances.id,
         providerType: connectorProviderInstances.type,
+        mode: connectorProviderInstances.mode,
+        externalAccountRef: connections.externalAccountRef,
         operationRevisionId: connectorOperationRevisions.id,
         operationToolkit: connectorOperationRevisions.toolkit,
         operationSlug: connectorOperationRevisions.operationSlug,
@@ -465,17 +549,7 @@ export class ConnectorAccessQueryService {
       .where(
         and(
           isNull(connectionOperationGrants.revokedAt),
-          eq(connectionOperationGrants.agentId, agentId),
-          or(
-            and(
-              eq(connectionOperationGrants.subjectType, 'agent'),
-              eq(connectionOperationGrants.subjectId, agentId)
-            ),
-            and(
-              eq(connectionOperationGrants.subjectType, 'session'),
-              eq(connectionOperationGrants.subjectId, sessionId)
-            )
-          ),
+          agentGrantRows(agentId, sessionId),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId),
           eq(connectorProviderInstances.status, 'available'),
@@ -489,7 +563,7 @@ export class ConnectorAccessQueryService {
         )
       )
       .all();
-    return rows.filter((row) => {
+    const executable = rows.filter((row) => {
       const provider = this.registry.resolveProviderInstance(
         row.providerInstanceId as ConnectorProviderInstanceId
       );
@@ -500,17 +574,147 @@ export class ConnectorAccessQueryService {
       ) {
         return false;
       }
-      const override = overrides.get(row.connectionId);
-      if (!override) return row.subjectType === 'agent';
-      if (
-        override.agentId !== agentId ||
-        override.needsReconciliation ||
-        override.state === 'detached'
-      ) {
-        return false;
-      }
-      return row.subjectType === 'session';
+      if (!grantApplies(row, overrides.get(row.connectionId), agentId)) return false;
+      // Through a DorkOS account, a call needs this agent's access applied at
+      // the hosted side, exactly as the execution check reads it.
+      return (
+        row.mode !== 'managed' ||
+        managedAgentAccess(this.db, row.externalAccountRef, agentId, {
+          named: row.subjectType !== 'every_agent',
+          everyAgent: row.subjectType === 'every_agent',
+        }).applied !== undefined
+      );
     });
+    return uniqueRevisions(executable);
+  }
+
+  /**
+   * Accounts this agent was given that it cannot use right now, each with the
+   * readiness reason and what the agent tells the person (DOR-2494, DOR-2500).
+   * Same owner and grant rules as {@link listRuntimeGrantRows}, except that an
+   * account this chat turned off is listed (as off for this chat) rather than
+   * dropped. A disconnected account is not listed: it is no longer the
+   * agent's to use. Access sync is this agent's own ({@link managedAgentAccess}),
+   * never the account-wide state that spans every agent.
+   */
+  private listUnavailableConnections(
+    owner: ConnectorOwnerAuthority,
+    agentId: string,
+    sessionId: string
+  ): Array<{
+    connectionId: string;
+    toolkit: string;
+    label: string;
+    reason: ConnectionReadinessReason;
+    note: string;
+  }> {
+    const ownerKey = ownerColumns(owner);
+    const overrides = this.sessionOverrides(sessionId);
+    const rows = this.db
+      .select({
+        subjectType: connectionOperationGrants.subjectType,
+        connectionId: connections.id,
+        toolkit: connections.toolkit,
+        label: connections.label,
+        providerInstanceId: connections.providerInstanceId,
+        enabled: connections.enabled,
+        status: connections.status,
+        reconciliationStatus: connections.grantReconciliationStatus,
+        mode: connectorProviderInstances.mode,
+        externalAccountRef: connections.externalAccountRef,
+      })
+      .from(connectionOperationGrants)
+      .innerJoin(connections, eq(connections.id, connectionOperationGrants.connectionId))
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(
+        and(
+          isNull(connectionOperationGrants.revokedAt),
+          agentGrantRows(agentId, sessionId),
+          eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
+          eq(connectorProviderInstances.ownerId, ownerKey.ownerId),
+          isNull(connections.removedAt),
+          eq(connections.lifecycleState, 'connected')
+        )
+      )
+      .all();
+    const unavailable = new Map<
+      string,
+      {
+        connectionId: string;
+        toolkit: string;
+        label: string;
+        reason: ConnectionReadinessReason;
+        note: string;
+      }
+    >();
+    // Every grant row that gives this agent the account, by account.
+    const byConnection = new Map<
+      string,
+      {
+        row: (typeof rows)[number];
+        offHere: boolean;
+        granted: { named: boolean; everyAgent: boolean };
+      }
+    >();
+    for (const row of rows) {
+      const override = overrides.get(row.connectionId);
+      const offHere = turnedOffHere(override, agentId);
+      if (!offHere && !grantApplies(row, override, agentId)) continue;
+      const current = byConnection.get(row.connectionId) ?? {
+        row,
+        offHere,
+        granted: { named: false, everyAgent: false },
+      };
+      if (row.subjectType === 'every_agent') current.granted.everyAgent = true;
+      else current.granted.named = true;
+      byConnection.set(row.connectionId, current);
+    }
+    for (const { row, offHere, granted } of byConnection.values()) {
+      const readiness = deriveConnectionReadiness({
+        lifecycle: row.enabled ? 'connected' : 'paused',
+        authenticationStatus: row.status,
+        reconciliationStatus: row.reconciliationStatus,
+        // This agent's own hosted access, never another agent's.
+        ...(row.mode === 'managed' && {
+          authoritySync: managedAgentAccess(this.db, row.externalAccountRef, agentId, granted).sync,
+        }),
+        mode: row.mode,
+        way: this.wayHealth(row.providerInstanceId),
+        offForThisChat: offHere,
+      });
+      if (readiness.state === 'ready') continue;
+      unavailable.set(row.connectionId, {
+        connectionId: row.connectionId,
+        toolkit: row.toolkit,
+        label: row.label,
+        reason: readiness.reason,
+        note: readiness.copy.agent,
+      });
+    }
+    return [...unavailable.values()].sort(
+      (left, right) =>
+        left.label.localeCompare(right.label) || left.connectionId.localeCompare(right.connectionId)
+    );
+  }
+
+  /** This session's per-connection access overrides, by connection id. */
+  private sessionOverrides(sessionId: string): Map<string, SessionOverride> {
+    return new Map(
+      this.db
+        .select({
+          connectionId: sessionConnectionOverrides.connectionId,
+          agentId: sessionConnectionOverrides.agentId,
+          state: sessionConnectionOverrides.state,
+          needsReconciliation: sessionConnectionOverrides.needsReconciliation,
+        })
+        .from(sessionConnectionOverrides)
+        .where(eq(sessionConnectionOverrides.sessionId, sessionId))
+        .all()
+        .map((row) => [row.connectionId, row] as const)
+    );
   }
 
   private listUsage(

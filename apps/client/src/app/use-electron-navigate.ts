@@ -1,12 +1,6 @@
 /**
  * Bridges Electron main-process navigation requests to TanStack Router.
  *
- * The desktop shell drives the client through a single `navigate` IPC
- * channel (ADR 260709-210223): menu items (Settings… `Cmd+,`), the dock
- * menu, and — Chunk D — `dorkos://` deep links all funnel through it. In the
- * browser (and Obsidian) `window.electronAPI` is absent, so this is a no-op
- * there.
- *
  * @module app/use-electron-navigate
  */
 import { useEffect } from 'react';

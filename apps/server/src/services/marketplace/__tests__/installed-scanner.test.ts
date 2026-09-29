@@ -758,6 +758,33 @@ describe('scanInstallationRecords', () => {
     });
   });
 
+  it('flags a symlinked install on the listing, and leaves a fetched one unflagged', async () => {
+    // Purpose: `GET /installed` (and `dorkos marketplace installed`) must say
+    // which installs are a developer's linked working copy, since those are
+    // never updated in place. The flag is present only when true, so a fetched
+    // install's listing entry is unchanged.
+    const source = join(agentA, 'working-copy');
+    await writeManifest(source, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'dev',
+      version: '1.0.0',
+    });
+    await mkdir(join(dorkHome, 'plugins'), { recursive: true });
+    await symlink(source, join(dorkHome, 'plugins', 'dev'));
+    await writeManifest(join(dorkHome, 'plugins', 'fetched'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'fetched',
+      version: '1.0.0',
+    });
+
+    const listed = await scanInstallationsAcrossScopes(dorkHome, []);
+
+    expect(listed.find((p) => p.name === 'dev')?.linked).toBe(true);
+    expect(listed.find((p) => p.name === 'fetched')).not.toHaveProperty('linked');
+  });
+
   it("gives one project's merged view when asked for a project", async () => {
     // Purpose: with a project, a project install shadows the global one in the
     // same root, exactly as the installed list's project view does.

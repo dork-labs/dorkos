@@ -43,7 +43,7 @@ import type {
   PermissionMode,
   TaskItem,
 } from '@dorkos/shared/types';
-import type { QueuedMessage } from '@dorkos/shared/schemas';
+import type { QueuedMessage, SessionLimit } from '@dorkos/shared/schemas';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import {
   isAbsolvingTerminalReason,
@@ -61,6 +61,7 @@ import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import type { SessionEventStore } from './session-event-store.js';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import { getStagedContextStore } from './staged-context-store.js';
+import { getSessionLimitStore, withSessionLimitStore } from './fleet/session-limit-store.js';
 import {
   EAGERLY_RECORDED_EVENT_TYPES,
   RECORDED_EVENT_TYPES,
@@ -254,7 +255,53 @@ function coldStatus(): SessionStatus {
     runningSubagentCount: 0,
     lifecycle: 'idle',
     lastError: null,
+    limit: null,
+    accountUsage: null,
   };
+}
+
+/**
+ * The longest a snapshot waits for a new projector's status to be hydrated
+ * ({@link setProjectorHydrator}). Hydration reads memory and, at most once per
+ * session, a bounded transcript or rollout tail, so it normally lands well
+ * inside this; past it the snapshot goes out without the cached figures rather
+ * than making a reader wait on a slow disk.
+ */
+export const PROJECTOR_HYDRATION_WAIT_MS = 1_500;
+
+/**
+ * What a hydrator may fill into a held status without an event: cached figures
+ * that describe the session but that no runtime event carries on open.
+ */
+export interface StatusSeed {
+  /** The account's cached usage (replaces the held value). */
+  accountUsage?: SessionStatus['accountUsage'];
+  /** The session's `usage` as derived from its account (replaces the held value). */
+  usage?: SessionStatus['usage'];
+  /** A stored or derived context reading (fills only an EMPTY held value). */
+  contextUsage?: SessionContextUsage;
+}
+
+/**
+ * Fills a freshly created projector's status from caches (spec
+ * `claude-account-fleet` §6 U). Installed once at boot; see
+ * {@link setProjectorHydrator}.
+ */
+export type ProjectorHydrator = (projector: SessionStateProjector) => Promise<void>;
+
+/** The installed hydrator, or `undefined` (tests, and before boot wires one). */
+let projectorHydrator: ProjectorHydrator | undefined;
+
+/**
+ * Install (or clear, with `undefined`) the hook every NEW projector's status is
+ * hydrated through. Called once from the composition root. The session-core
+ * module keeps no knowledge of accounts, stores or runtimes: whatever the hook
+ * finds, it hands back through {@link SessionStateProjector.seedStatus}.
+ *
+ * @param hydrator - The hook, or `undefined` to clear it.
+ */
+export function setProjectorHydrator(hydrator: ProjectorHydrator | undefined): void {
+  projectorHydrator = hydrator;
 }
 
 /** A live interaction the projector tracks for pending-recovery projection. */
@@ -604,6 +651,17 @@ export class SessionStateProjector {
     this._sessionId = sessionId;
   }
 
+  /**
+   * Restore a usage limit kept in the `session_limits` table, for a projector
+   * created after the turn that hit it (a restart, an idle eviction). Cleared
+   * like any held limit, at the next `turn_start`.
+   *
+   * @param limit - The stored limit.
+   */
+  hydrateLimit(limit: SessionLimit): void {
+    this.status.limit = limit;
+  }
+
   /** The id this projector is currently registered under (canonical post-rekey). */
   get sessionId(): string {
     return this._sessionId;
@@ -643,6 +701,7 @@ export class SessionStateProjector {
     // Capture before project(): applyStatusChange replaces the status object.
     const lifecycleBefore = this.status.lifecycle;
     const activityBefore = this.status.activity;
+    const limitSinceBefore = this.status.limit?.since;
     // Capture the completing turn BEFORE project() clears inProgressTurn, so a
     // persistence-enabled projector can flush the whole turn (turn_start … the
     // captured deltas … this turn_end) after the event has streamed. A turn_end
@@ -687,6 +746,12 @@ export class SessionStateProjector {
     if (event.type === 'turn_end' || event.type === 'interaction_resolved') {
       notifyTurnBoundary(this._sessionId, event.type);
     }
+    // A NEW usage limit, one this session was not already holding: the moment
+    // the out-of-usage flow works out what happens next (spec
+    // claude-account-fleet D9). After the projection, so the planner's own
+    // update of the same episode lands on top of it, never under it.
+    const limitAfter = this.status.limit;
+    if (limitAfter && limitAfter.since !== limitSinceBefore) notifyLimitSet(this, limitAfter);
     return event;
   }
 
@@ -875,6 +940,12 @@ export class SessionStateProjector {
         this.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface.
         this.status.lastError = null;
+        // …and the usage limit the last turn hit (spec claude-account-fleet
+        // D4), in memory and in the table that kept it across a restart. The
+        // table is cleared even when this projector holds no limit: a row can
+        // outlive the projector that would have hydrated it.
+        this.status.limit = null;
+        withSessionLimitStore('delete', (store) => store.delete(this.sessionId));
         // …and the previous turn's tool. The new turn has not reached one yet,
         // and carrying the old one over would name the last thing the session
         // did as the thing it is doing.
@@ -1727,6 +1798,67 @@ export class SessionStateProjector {
   }
 
   /**
+   * Fill cached figures into the held status IN MEMORY, with no event (spec
+   * `claude-account-fleet` §6 U).
+   *
+   * No event on purpose: these are account-wide or restored values, not
+   * something this session did. A log-backed projector persists every event it
+   * ingests, so a usage change seeded through the stream would pile up in an
+   * idle session's log and replay on every reconnect. The next snapshot
+   * carries whatever was seeded; a live client learns of account changes from
+   * the global `account_usage` event.
+   *
+   * `contextUsage` fills only an EMPTY held value: a reading this projector has
+   * already taken from a turn is newer than any cache.
+   *
+   * @param seed - The fields to fill.
+   */
+  seedStatus(seed: StatusSeed): void {
+    if (seed.accountUsage !== undefined) this.status.accountUsage = seed.accountUsage;
+    if (seed.usage !== undefined) this.status.usage = seed.usage;
+    if (seed.contextUsage !== undefined && this.status.contextUsage === null) {
+      this.status.contextUsage = seed.contextUsage;
+    }
+  }
+
+  /** The hydration started when this projector was created, if one was. */
+  private hydration: Promise<void> | undefined;
+
+  /**
+   * Start hydrating this projector's status through `hydrator`, once. Failures
+   * are logged and swallowed: a missing cache is an empty field, never a
+   * broken session.
+   *
+   * @param hydrator - The installed hydrator.
+   * @internal
+   */
+  startHydration(hydrator: ProjectorHydrator): void {
+    if (this.hydration) return;
+    this.hydration = Promise.resolve()
+      .then(() => hydrator(this))
+      .catch((err: unknown) => {
+        logger.warn('[SessionStateProjector] status hydration failed', {
+          sessionId: this._sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+  }
+
+  /** Wait for the creation-time hydration, bounded by {@link PROJECTOR_HYDRATION_WAIT_MS}. */
+  private async awaitHydration(): Promise<void> {
+    if (!this.hydration) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      this.hydration,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, PROJECTOR_HYDRATION_WAIT_MS);
+        timer.unref?.();
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+  }
+
+  /**
    * Pending interactions as recovery DTOs, with server-authoritative
    * `remainingMs` and expired entries (`remainingMs <= 0`) excluded. Delegates
    * to the canonical {@link listPendingInteractions} selector so the DOR-73
@@ -1800,7 +1932,9 @@ export class SessionStateProjector {
    */
   async buildSnapshot(loadHistory: () => Promise<HistoryMessage[]>): Promise<SessionSnapshot> {
     this.expireStaleSubagents();
-    const messages = await loadHistory();
+    // The creation-time hydration first, so a cold snapshot carries the cached
+    // account usage and context reading before any turn (spec §6 U).
+    const [messages] = await Promise.all([loadHistory(), this.awaitHydration()]);
     return {
       messages,
       inProgressTurn: this.snapshotInProgressTurn(),
@@ -1809,8 +1943,8 @@ export class SessionStateProjector {
       queuedMessages: this.readQueue(),
       // Empty here, and filled by whoever DELIVERS the snapshot (spec
       // `canvas-agent-seat` §1.4). The canvas is the server's, not a runtime's,
-      // so it is decorated once in `deliverSessionStream` — and once in
-      // `DirectTransport` — rather than reached for from inside a projector that
+      // so it is decorated in `deliverSessionStream` rather than reached for
+      // from inside a projector that
       // has no business importing a service.
       canvas: [],
       cursor: this.counter,
@@ -2180,7 +2314,7 @@ function forgetProjectorRedirects(canonicalId: string): void {
 
 /**
  * Durable session-event store for LOG-BACKED runtimes (DOR-189), injected once
- * at boot. `undefined` until wired — and in unit tests / embedded hosts without
+ * at boot. `undefined` until wired — and in unit tests without
  * a Db — in which case persistence is a no-op and history degrades to the
  * in-memory EventLog (the pre-DOR-189 behavior).
  */
@@ -2243,14 +2377,22 @@ export function getOrCreateProjector(
 ): SessionStateProjector {
   const key = resolveProjectorId(sessionId);
   let projector = projectors.get(key);
+  const minted = !projector;
   if (!projector) {
     projector = new SessionStateProjector(key);
     projectors.set(key, projector);
+    // A usage limit outlives the process that saw it (spec
+    // claude-account-fleet D4): Claude Code's projector never hydrates status
+    // from its event rows, so the limit comes back from its own table.
+    const stored = withSessionLimitStore('get', (store) => store.get(key));
+    if (stored) projector.hydrateLimit(stored.limit);
   }
   if (cwd !== undefined && projector.cwd === undefined) projector.cwd = cwd;
   if (opts?.persist !== undefined && sessionEventStore !== undefined) {
     projector.enablePersistence(sessionEventStore, opts.persist);
   }
+  // After the cwd and persistence are stamped, so the hydrator sees both.
+  if (minted && projectorHydrator) projector.startHydration(projectorHydrator);
   return projector;
 }
 
@@ -2280,6 +2422,15 @@ export function listProjectorStatuses(): ProjectorStatusUpdate[] {
     cwd: projector.cwd,
     status: projector.getStatus(),
   }));
+}
+
+/**
+ * Every live projector, for a caller that must update held state across the
+ * fleet without an event (the account-usage fan-in, spec §6 U). A copy of the
+ * registry's values; each instance appears once however many ids redirect to it.
+ */
+export function listLiveProjectors(): SessionStateProjector[] {
+  return [...projectors.values()];
 }
 
 /**
@@ -2528,6 +2679,9 @@ export function rekeyProjector(oldId: string, newId: string): void {
     // the person has already been told their words will ride the next reply, and
     // a hold left at the pre-rename id is invisible to every dispatch after it.
     getStagedContextStore()?.rekeySession(fromId, newId);
+    // And the usage limit a turn under the old id hit (spec
+    // claude-account-fleet D4), or the session's next projector cannot find it.
+    getSessionLimitStore()?.rekeySession(fromId, newId);
   } catch (err) {
     logger.warn('[SessionStateProjector] durable rows not carried across rekey', {
       oldId: fromId,
@@ -2608,6 +2762,47 @@ function notifyTurnBoundary(sessionId: string, kind: TurnBoundaryKind): void {
     } catch (err) {
       logger.warn('[SessionStateProjector] a turn-boundary observer threw', {
         sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
+/** A subscriber notified when a session starts holding a new usage limit. */
+type LimitSetListener = (update: { sessionId: string; cwd?: string; limit: SessionLimit }) => void;
+
+/** Observers of new usage limits; see {@link onProjectorLimitSet}. */
+const limitSetListeners = new Set<LimitSetListener>();
+
+/**
+ * Subscribe to the moment a session starts holding a usage limit it did not
+ * hold before (a new `limit.since`), as reported by its runtime during a turn.
+ * A limit restored from the `session_limits` table ({@link
+ * SessionStateProjector.hydrateLimit}) is an old episode and is not announced,
+ * and an update of the held episode (its plan or state) is not a new one.
+ *
+ * @param listener - Invoked with the session's current id, cwd and new limit.
+ * @returns An unsubscribe function.
+ */
+export function onProjectorLimitSet(listener: LimitSetListener): () => void {
+  limitSetListeners.add(listener);
+  return () => {
+    limitSetListeners.delete(listener);
+  };
+}
+
+/** Tell every limit observer, without letting one of them break an ingest. */
+function notifyLimitSet(projector: SessionStateProjector, limit: SessionLimit): void {
+  for (const listener of limitSetListeners) {
+    try {
+      listener({
+        sessionId: projector.sessionId,
+        ...(projector.cwd !== undefined ? { cwd: projector.cwd } : {}),
+        limit,
+      });
+    } catch (err) {
+      logger.warn('[SessionStateProjector] a limit observer threw', {
+        sessionId: projector.sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
     }

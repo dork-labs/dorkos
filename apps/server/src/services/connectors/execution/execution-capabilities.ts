@@ -129,6 +129,18 @@ const ConnectorGrantedOperationsInputSchema = z
   .object({ connectionId: ConnectionIdSchema })
   .strict();
 
+/**
+ * Each classification's title in plain words, as the approval card, Activity
+ * and notifications show it. The card names the exact action, app and account
+ * on top of this (DOR-2504); the title is what surfaces with no room for that
+ * still say.
+ */
+const EXECUTION_TITLES = {
+  read: 'Read from a connected app',
+  write: 'Change something in a connected app',
+  destructive: "Make a change that can't be undone in a connected app",
+} as const;
+
 function executionCapability(
   id: ConnectorRuntimeExecutionCapabilityId,
   classification: 'read' | 'write' | 'destructive'
@@ -141,13 +153,18 @@ function executionCapability(
         : ('destructive' as const);
   return defineCapability({
     id,
-    title: `Execute a ${classification} account operation`,
+    title: EXECUTION_TITLES[classification],
     description:
       `Execute one exact ${classification} operation revision against one already granted ` +
       'connected account. Use only the account and revision ids listed for this agent.',
     tier,
+    area: null,
+    areaNote: 'connected accounts have their own grant model',
     input: ConnectorExecutionTargetSchema,
     output: ConnectorExecutionResponseSchema,
+    // The card and summary name the app, account, action and arguments from
+    // the preflight's `approvalServiceAction`; these ids are what a card would
+    // show only if that were ever missing.
     ...(classification === 'destructive'
       ? { approvalDisplayFields: ['connectionId', 'operationRevisionId'] }
       : {}),
@@ -185,8 +202,14 @@ const listGrantedConnections = defineCapability({
   id: 'connectors.list_granted_connections',
   title: 'List granted connections',
   description:
-    'List only the currently executable connections granted to this authenticated runtime turn.',
+    'List only the currently executable connections granted to this authenticated runtime turn. ' +
+    'Accounts granted to you that cannot be used right now (paused, signed out, waiting on a ' +
+    'review, turned off for this chat, or reached through a way that is down or cannot run ' +
+    'actions) are listed under unavailable, each with a reason and a note on what the person ' +
+    'must do. Do not request access to an account listed there.',
   tier: 'observe',
+  area: null,
+  areaNote: 'connected accounts have their own grant model',
   input: z.object({}).strict(),
   output: ConnectorAccessibleConnectionsResponseSchema,
   surfaces: {},
@@ -208,6 +231,8 @@ const listGrantedOperations = defineCapability({
   description:
     'List exact immutable operation revisions and input schemas granted for one listed connected account.',
   tier: 'observe',
+  area: null,
+  areaNote: 'connected accounts have their own grant model',
   input: ConnectorGrantedOperationsInputSchema,
   output: ConnectorAccessibleOperationsResponseSchema,
   surfaces: {},
@@ -231,10 +256,13 @@ const requestConnection = defineCapability({
   description:
     'Ask the owner for access to one service when the granted connections do not cover the work. ' +
     `serviceSlug is an exact service id; find it with ${SERVICE_CATALOG_TOOL_NAME} instead of ` +
-    'guessing. Name only the service actions and events needed and explain why. The owner chooses ' +
+    'guessing. An app listed with a setupNote can still be requested; the note says what the ' +
+    'owner fixes first. Name only the service actions and events needed and explain why. The owner chooses ' +
     'the account and exact access; this call never lists accounts or grants access by itself. A ' +
     'command-line login in a shell does not grant access; only the owner connects services.',
   tier: 'observe',
+  area: null,
+  areaNote: 'connected accounts have their own grant model',
   input: ConnectorAgentConnectionRequestInputSchema,
   output: ConnectorAgentRequestStatusSchema,
   surfaces: {},
@@ -261,6 +289,8 @@ const getConnectionRequest = defineCapability({
     'Check one service request created by this exact agent session. It returns the request outcome ' +
     "without revealing the owner's account inventory.",
   tier: 'observe',
+  area: null,
+  areaNote: 'connected accounts have their own grant model',
   input: ConnectorRequestStatusInputSchema,
   output: ConnectorAgentRequestStatusSchema,
   surfaces: {},

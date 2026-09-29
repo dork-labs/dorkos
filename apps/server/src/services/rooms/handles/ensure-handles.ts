@@ -6,47 +6,15 @@
  * @module server/services/rooms/handles/ensure-handles
  */
 import { and, asc, authors, isNull, type Db } from '@dorkos/db';
-import { deriveHandle } from '@dorkos/shared/handle';
+import { BROADCAST_RESERVATIONS, SYSTEM_HANDLE, deriveHandle } from '@dorkos/shared/handle';
 import { logger } from '../../../lib/logger.js';
 import { isExternalNaturalKey, type AuthorRegistry } from '../author-registry.js';
 
-/**
- * The room's own voice, reserved so nothing else can wear it.
- *
- * **Not to make the system author addressable** — it is already excluded from
- * the picker and already un-triggerable, because addressing filters to
- * `kind === 'agent'`. The reason is impersonation: without a reservation, an
- * agent whose manifest `name` is `DorkOS` derives `@dorkos`, and thereafter
- * every `@dorkos` in the room addresses it instead of the room.
- *
- * No conflict with DorkBot, the system AGENT at `~/.dork/agents/dorkbot/`, which
- * derives `@dorkbot`.
- */
-const SYSTEM_HANDLE = 'dorkos';
-
-/**
- * The broadcast words, held as reservations rather than as a blocklist.
- *
- * Broadcast keywords are a separate token type — at the grammar level
- * `@everyone` can never BE a broadcast, so `everyone` is an ordinary handle and
- * Discord's reason for reserving it (its broadcasts share the `@` sigil) does
- * not apply. That reasoning is sound and it stops one step short. Apply the
- * question this whole feature is built on — *what does a model write, and is it
- * guaranteed to work?* — and the answer is uncomfortable: a model writes
- * `@everyone`, because that is the spelling in its training data, and the
- * writers that matter most here (an agent's own reply, `post_to_room`, the
- * external MCP server, a relay adapter) have no composer to rewrite it. So
- * `@everyone` would either reach nobody, which is harmless, or reach **whoever
- * holds the handle `everyone`** — a mis-address an adversarial agent could farm
- * deliberately by claiming the name.
- *
- * **This is still not a blocklist.** Nothing consults a list of forbidden words
- * at any enforcement point; there is nothing to keep in sync across routes,
- * tools and the client. It is three rows in `handle_tombstones`, under the index
- * that already refuses a released handle. Discord pays a rule at every boundary;
- * we pay three rows at boot, once.
- */
-const BROADCAST_RESERVATIONS = ['everyone', 'here', 'channel'] as const;
+// The room's own voice (`SYSTEM_HANDLE`) and the broadcast words
+// (`BROADCAST_RESERVATIONS`) live in `@dorkos/shared/handle`, with the reasons
+// for each, so the client can keep them out of a handle it SUGGESTS (DOR-677).
+// This module is still the only thing that enforces them: it seeds them as
+// tombstones at boot.
 
 /**
  * Seed the reservations and backfill every author that has no handle yet.

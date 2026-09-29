@@ -162,6 +162,10 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   transcript holds the earlier messages); the pointer-less variant when the
  *   bridge starts fresh. Either way the room log does NOT gain the old messages,
  *   and the notice says so — the platform gives bots no history to import.
+ * - `room_archived` — an agent put this channel away with `archive_room` (spec
+ *   `agent-permissions` D12). Written just before the archive lands, because an
+ *   archived room takes no new entries; it names who did it and says the person
+ *   can bring the room back.
  *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
@@ -194,10 +198,53 @@ export const RoomNoticeCodeSchema = z
     'bridge_disconnected',
     'bridge_agent_swapped',
     'bridge_history_note',
+    'room_archived',
   ])
   .openapi('RoomNoticeCode');
 
 export type RoomNoticeCode = z.infer<typeof RoomNoticeCodeSchema>;
+
+/**
+ * The notice codes whose words send the reader to the subject agent's session —
+ * "Open Ana's session to see what went wrong" (`turn_failed`), "Open Ana's
+ * session to answer" (`awaiting_approval`).
+ *
+ * A line that tells somebody to go somewhere has to take them there, so a client
+ * draws a link to that session beside every notice with one of these codes
+ * (DOR-2077). The link is resolved from `subjectAuthorId` and the room's session
+ * bindings when it is drawn, never stamped on the entry: a room rebinds an
+ * agent's session after every turn, so an id written into the log would go stale
+ * (DOR-1974). The server's notice-copy test pins the other direction — a notice
+ * that says "Open …'s session" and is missing from this list fails it.
+ */
+export const SESSION_POINTER_NOTICE_CODES: readonly RoomNoticeCode[] = [
+  'turn_failed',
+  'awaiting_approval',
+];
+
+/**
+ * The words in a session-pointer notice that send the reader there — "Open
+ * Ana's session". A client turns exactly these words into the link, so the line
+ * says it once rather than once as a sentence and again as a button. The
+ * server's notice-copy test holds every notice in
+ * {@link SESSION_POINTER_NOTICE_CODES} to containing them.
+ *
+ * Built from the agent's name rather than matched by pattern, because a notice
+ * STARTS with that name: an agent called "Open Interpreter" would otherwise have
+ * the link begin at the first word of the sentence.
+ *
+ * @param agentName - The display name the notice was written with.
+ */
+export function sessionPointerPhrase(agentName: string): string {
+  return `Open ${agentName}'s session`;
+}
+
+/**
+ * The same words when the agent's name is not known to the reader (it left the
+ * roster, or was renamed after the notice was written). Looser than
+ * {@link sessionPointerPhrase} and used only in its place.
+ */
+export const SESSION_POINTER_PATTERN = /Open .+?'s session/;
 
 // === Authors ===
 
@@ -375,6 +422,12 @@ export const AuthorRefSchema = z
       .nullable()
       .describe(
         "This author's address: what to type after an `@` to reach them. Globally unique on this install (case-folded), lowercase, 2–32 characters of `[a-z0-9._-]`, starting and ending alphanumeric. A mention picker inserts it verbatim, so the string written is the string the server resolves. `null` means this author cannot be addressed by `@` at all — a person who has not chosen one yet, or an agent whose name spells nothing legal. Never fall back to the display name: that is not an address, it is unrestricted text, and it routinely contains spaces the mention pattern cannot span."
+      ),
+    retired: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when this is an agent that is no longer on your team — it was unregistered, or its directory now holds a different agent. Its messages keep its name and face; it answers to no `@`, receives no turns, and is on no channel roster (DOR-2095). Absent means active: only a source that asked the liveness question ever sends it, and it is never sent as `false`.'
       ),
   })
   .openapi('AuthorRef');
@@ -610,6 +663,20 @@ export const RoomRosterEntrySchema = RoomMemberSchema.extend({
 export type RoomRosterEntry = z.infer<typeof RoomRosterEntrySchema>;
 
 /**
+ * Somebody whose words are in a room's log but who is no longer on its roster
+ * (DOR-2095). The same author-and-origin pair a roster entry carries, without a
+ * membership to hang it on.
+ */
+export const RoomFormerAuthorSchema = z
+  .object({
+    author: AuthorRefSchema,
+    origin: AuthorOriginSchema,
+  })
+  .openapi('RoomFormerAuthor');
+
+export type RoomFormerAuthor = z.infer<typeof RoomFormerAuthorSchema>;
+
+/**
  * One agent that is mid-turn in a room, read straight off the dispatcher's claim
  * map at the moment of the request.
  *
@@ -646,6 +713,12 @@ export type RoomWorkingClaim = z.infer<typeof RoomWorkingClaimSchema>;
  */
 export const RoomWithRosterSchema = RoomSchema.extend({
   members: z.array(RoomRosterEntrySchema),
+  formerAuthors: z
+    .array(RoomFormerAuthorSchema)
+    .optional()
+    .describe(
+      'Everybody who wrote in this room and is no longer on its roster, oldest author first — so their messages keep their name and face instead of reading as "Unknown". An agent that was unregistered is here with `author.retired: true`; a person or agent who was only taken out of the room is here without it. Never the room\'s own system voice. Membership is live state and history is archive (DOR-2095): nothing on this list can be addressed or can answer. Optional so a caller that predates it still parses; absent means the same as empty.'
+    ),
   viewerAuthorId: z
     .string()
     .min(1)
@@ -842,6 +915,51 @@ export const RoomMergeEventSchema = z
 
 /** Work an agent merged into a room's repo. See {@link RoomMergeEventSchema}. */
 export type RoomMergeEvent = z.infer<typeof RoomMergeEventSchema>;
+
+/** The most paths one file-change entry lists; `pathCount` says how many there were. */
+export const ROOM_FILE_CHANGE_MAX_PATHS = 20;
+
+/**
+ * A change a PERSON made to a room's files, carried on the entry that announces
+ * it (spec `agent-home-desk` §7.2).
+ *
+ * The merge entry's shape and the merge entry's reasons: an ordinary post in the
+ * room's own voice, addressed to nobody, triggering nothing — a person editing
+ * `ROOM.md` is news for whoever reads the room next, not a reason for three
+ * agents to start talking. `subjectAuthorId` on the body names the person.
+ *
+ * **Every path here is member-chosen text.** Render it as plain text, never as
+ * markdown or a link; the entry's own `text` is composed on the server from
+ * sanitized path segments.
+ */
+export const RoomFileChangeEventSchema = z
+  .object({
+    kind: z
+      .enum(['edit', 'add', 'upload', 'rename', 'delete', 'from-attachment'])
+      .describe('What the person did.'),
+    paths: z
+      .array(z.string())
+      .max(ROOM_FILE_CHANGE_MAX_PATHS)
+      .describe(
+        'The files the change wrote or removed, in byte order — the first twenty. For a rename, the new paths.'
+      ),
+    pathCount: z.number().int().nonnegative().describe('How many files the change touched in all.'),
+    from: z
+      .string()
+      .optional()
+      .describe('For a rename, the file or folder as it was named before.'),
+    target: z
+      .string()
+      .optional()
+      .describe(
+        'What the sentence names: the file edited or added; the folder an upload or a save from the chat went into (empty for the top folder); where a rename went; or the file or folder a delete removed. A folder ends in `/`. Absent on entries written before it existed.'
+      ),
+    commit: z.string().min(1).describe('The commit on the room’s main branch.'),
+  })
+  .openapi('RoomFileChangeEvent');
+
+/** A change a person made to a room's files. See {@link RoomFileChangeEventSchema}. */
+export type RoomFileChangeEvent = z.infer<typeof RoomFileChangeEventSchema>;
 
 /**
  * What one turn put on, changed or took off a room's canvas, carried on the one
@@ -1164,6 +1282,10 @@ export type MergeRoomRepoRequest = z.infer<typeof MergeRoomRepoRequestSchema>;
  * reasons — one entry per turn, system-voiced, addressed to nobody, triggering
  * nothing. Optional like its two siblings, so every entry written before it
  * existed still parses.
+ *
+ * `fileChange` is the same shape again, for a change a PERSON made to the
+ * room's files (spec `agent-home-desk` §7.2): one entry per commit, naming the
+ * person in `subjectAuthorId`, waking nobody.
  */
 export const RoomEntryBodySchema = z
   .object({
@@ -1173,6 +1295,7 @@ export const RoomEntryBodySchema = z
     moment: RoomMomentSchema.optional(),
     merge: RoomMergeEventSchema.optional(),
     canvas: RoomCanvasChangeSchema.optional(),
+    fileChange: RoomFileChangeEventSchema.optional(),
     waitingKind: RoomWaitingKindSchema.optional(),
     answersEntryId: z
       .string()
@@ -2105,6 +2228,12 @@ export const RoomHeldBehindSchema = z
       .boolean()
       .describe(
         'This agent is holding a message in at least one OTHER conversation too. A boolean, never a count or a list — it exists only to decide whether "Answer here first" would do anything.'
+      ),
+    severalInTheWay: z
+      .boolean()
+      .optional()
+      .describe(
+        "More than one of this agent's turns is running elsewhere, so whichever finishes first may be the one that lets this message start — `roomId` names only the one that has run longest. A boolean, never a count, for the same reason as `othersWaiting`. Absent from a producer that predates `rooms.maxConcurrentTurnsPerAgent`, and read as `false`."
       ),
   })
   .openapi('RoomHeldBehind');

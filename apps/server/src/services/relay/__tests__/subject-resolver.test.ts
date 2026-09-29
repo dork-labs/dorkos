@@ -1,6 +1,15 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TASK_SUBJECT_LABEL } from '@dorkos/shared/relay-schemas';
 import { resolveSubjectLabel, resolveSubjectLabels } from '../subject-resolver.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 describe('resolveSubjectLabel', () => {
   it('resolves relay.human.console.* to "You"', async () => {

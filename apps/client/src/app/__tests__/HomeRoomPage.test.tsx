@@ -321,6 +321,8 @@ describe('HomeRoomPage — getting out of the keyboard’s way', () => {
           summary: 'Uninstall "sentry-monitor"',
           requestedBy: '/Users/dev/agents/dorkbot',
           hasAgentPath: true,
+          area: null,
+          alwaysOffered: false,
           requestedAt: '2026-08-08T10:00:00.000Z',
           expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
         },

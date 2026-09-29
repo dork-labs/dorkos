@@ -8,6 +8,7 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
  * @module services/runtimes/claude-code/claude-code-runtime
  */
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
+import { setAccountProbeBinaryResolver } from './accounts/account-probe.js';
 import path from 'path';
 import { renameSession as sdkRenameSession, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig, Query } from '@anthropic-ai/claude-agent-sdk';
@@ -69,7 +70,6 @@ import {
   resolveClaudeCliPath,
   createIdlePrompt,
 } from './sdk/sdk-utils.js';
-import { readManifest } from '@dorkos/shared/manifest';
 import {
   claudeConfigDirEnv,
   resolveActiveClaudeRoot,
@@ -85,10 +85,17 @@ import type { SessionAttachmentStore } from '../../session/attachments/index.js'
 import { SessionPumpRegistry } from './sessions/session-pump-registry.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
-import type { MessageSenderOpts } from './messaging/message-sender-shared.js';
+import type { McpServerFactory, MessageSenderOpts } from './messaging/message-sender-shared.js';
 import { PersistentDispatch } from './sessions/persistent-dispatch.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
+import {
+  homeOf,
+  readHomeManifest,
+  resolveAgentHome,
+  turnAgentOf,
+} from '../../core/agent-identity/index.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
+import { predictLaunchBillsPerToken } from './messaging/per-token-billing.js';
 import {
   disposeProjector,
   getOrCreateProjector,
@@ -182,8 +189,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private claudeCliPath: string | undefined;
 
   // Injected dependencies
-  private mcpServerFactory:
-    ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>) | null = null;
+  private mcpServerFactory: McpServerFactory | null = null;
   private meshCore: AgentRegistryPort | null = null;
   /** Internal connector tool boundary, installed after boot opens its listener. */
   private connectorRuntimeTools: ConnectorRuntimeTools | undefined;
@@ -203,7 +209,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * (command wrappers, skill symlinks, `.claude/settings.local.json` hooks) via
    * `@dorkos/harness`, so external CLI and DorkOS sessions see the same thing
    * (ADR 260706-192819, amending ADR-0239). Global-scope projection is deferred
-   * (DOR-174), so global installs keep SDK injection for now.
+   * (DOR-174), so global installs keep SDK injection for now. A global package
+   * that runs anything on its own is in it only when a person approved exactly
+   * what it runs (`marketplace/global-plugin-consent.ts`, DOR-2306).
    */
   private activatedPlugins: Array<{ type: 'local'; path: string }> = [];
 
@@ -252,6 +260,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // Warm-up spawns the SDK too; give it the same resolved binary path so it
     // works in the packaged desktop app (see setClaudeCliPath's doc).
     this.cache.setClaudeCliPath(this.claudeCliPath);
+    // The account probe spawns too; it runs the binary a session would.
+    setAccountProbeBinaryResolver(() => this.spawnBinaryPath);
     this.transcriptReader = new TranscriptReader();
   }
 
@@ -421,9 +431,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** Register a factory that creates fresh MCP tool server configs per query() call. */
-  setMcpServerFactory(
-    factory: (session: AgentSession, sessionId: string) => Record<string, McpServerConfig>
-  ): void {
+  setMcpServerFactory(factory: McpServerFactory): void {
     this.mcpServerFactory = factory;
   }
 
@@ -554,18 +562,30 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
     const cwdKey = opts?.cwd || session.cwd || this.cwd;
 
-    const meshAgent = this.meshCore?.getByPath(cwdKey);
+    // The agent this turn acts as: the home the folder resolves to, and never
+    // another than the turn is dispatched as (DOR-2091, DOR-2355,
+    // `core/agent-identity/agent-home.ts`). The same answer the launch resolves
+    // its token from, so the connections below and the token cannot name two
+    // different agents.
+    const agentPath = homeOf(resolveAgentHome(cwdKey, turnAgentOf(opts)));
+    const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
 
     const connectorTurn =
-      this.connectorRuntimeTools && meshAgent
+      this.connectorRuntimeTools && meshAgent && agentPath
         ? new ClaudeConnectorTurnContext({
             tools: this.connectorRuntimeTools,
             canonicalSessionId: () => session.sdkSessionId || sessionId,
-            agentPath: cwdKey,
+            agentPath,
             cwd: cwdKey,
           })
         : undefined;
     session.connectorTurn = connectorTurn;
+    // Unconditionally, `false` included: a warm session a person later talks
+    // to must hold for their answer again (spec `agent-permissions` D6).
+    session.unattendedApprovals = opts?.unattendedApprovals === true;
+    // Per turn too, for the same reason: an automatic carry-over's first turn
+    // has nobody to ask, and the person who opens it next does.
+    session.unattendedTurn = opts?.unattended === true;
     const accessContext =
       connectorTurn &&
       this.connectorRuntimeTools &&
@@ -681,18 +701,28 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * broadcast fires unconditionally so a freshly-loaded palette (cold cache)
    * still re-fetches and the install's effect is visible.
    *
-   * Best-effort throughout — filesystem scan or reload failures leave the
-   * previous value in place so a single misbehaving plugin never blocks
-   * sessions.
+   * A reload can add a plugin but never take one away, so a warm process that
+   * loaded a plugin the new set drops is relaunched before its next turn
+   * instead (`sessions/launch-fingerprint.ts`, DOR-2306); for the same reason a
+   * reload after the set SHRANK is never held for what it costs the prompt
+   * cache.
+   *
+   * Fails closed: a scan that cannot say which global packages a person
+   * approved leaves every global plugin out. Reload failures are per session
+   * and never block the others.
    */
   async refreshActivatedPlugins(changedProjectPath?: string): Promise<void> {
+    const before = this.activatedPlugins.map((plugin) => plugin.path);
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
-      const { listEnabledPluginNames } = await import('../../marketplace/installed-scanner.js');
+      const { listConsentedPluginNames } =
+        await import('../../marketplace/global-plugin-consent.js');
       const { buildClaudeAgentSdkPluginsArray } = await import('./messaging/plugin-activation.js');
       const { logger } = await import('../../../lib/logger.js');
       const dorkHome = resolveDorkHome();
-      const enabledNames = await listEnabledPluginNames(dorkHome);
+      // Only packages a person approved (or that run nothing on their own):
+      // a global package's hooks and servers start in every session (DOR-2306).
+      const enabledNames = await listConsentedPluginNames(dorkHome);
       if (enabledNames.length === 0) {
         this.activatedPlugins = [];
       } else {
@@ -703,13 +733,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         });
       }
     } catch {
-      // Best-effort; leave the previous value in place.
+      // Fail closed (DOR-2306): a refresh that cannot say which global packages
+      // a person approved loads none of them, rather than keeping a list that
+      // may hold one nobody approves any more.
+      this.activatedPlugins = [];
     }
 
     // Hot-reload every live session so its cached command list reflects the
     // new plugin set instantly, then tell clients to re-fetch. Isolated from
     // the plugin-array swap above so a reload failure never reverts it.
-    await this.reloadCommandsForLiveSessions();
+    const kept = new Set(this.activatedPlugins.map((plugin) => plugin.path));
+    await this.reloadCommandsForLiveSessions({
+      mayHold: before.every((pluginPath) => kept.has(pluginPath)),
+    });
 
     // A PROJECT-scoped install/uninstall changes which commands that project's
     // sessions report, but only sessions launched after the change see the new
@@ -739,8 +775,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * each session's reload goes through the cost check rather than paying a
    * cache rebuild on all of them at the same moment. A reload the person
    * triggered by hand does not come through here; see {@link reloadPlugins}.
+   *
+   * @param options.mayHold - False when the new set dropped a plugin: nothing
+   *   waits on the cache then (the process itself is relaunched before its
+   *   next turn, since a reload cannot unload a plugin).
    */
-  private async reloadCommandsForLiveSessions(): Promise<void> {
+  private async reloadCommandsForLiveSessions({ mayHold }: { mayHold: boolean }): Promise<void> {
     const reloadable = this.sessionStore.getReloadableSessions();
     if (reloadable.length === 0) return;
     await Promise.all(
@@ -748,6 +788,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         const queryObj = session.activeQuery ?? session.lastQuery;
         if (!queryObj) return;
         const contextTokens = conversationTokens(session);
+        if (!mayHold) {
+          // A plugin was withdrawn: never wait on the cache for it.
+          try {
+            await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
+          } catch (err) {
+            logger.debug('[refreshActivatedPlugins] session hot-reload failed', {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          return;
+        }
         try {
           const asked = await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd, {
             holdOnCacheImpact: true,
@@ -919,8 +971,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * question it has no notion of.
    *
    * @param sessionId - DorkOS or SDK session id.
-   * @param projectDir - The session's working directory (keys both the
-   *   transcript probe and the agent manifest read).
+   * @param projectDir - The session's working directory. Keys the transcript
+   *   probe; the account pin is read from the home it resolves to, never from a
+   *   `.dork/` the folder carries (spec `agent-home-desk` I1).
    * @returns An absolute Claude config directory.
    */
   async accountRootForSession(sessionId: string, projectDir: string): Promise<string> {
@@ -930,7 +983,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       projectDir
     );
     if (settled) return settled;
-    const manifest = await readManifest(projectDir).catch(() => null);
+    const home = homeOf(resolveAgentHome(projectDir));
+    const manifest = home ? await readHomeManifest(home).catch(() => null) : null;
     return resolveLaunchAccountRoot({ agentAccountId: manifest?.account });
   }
 
@@ -1236,6 +1290,52 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
     return this.transcriptReader.getSession(projectDir, sessionId);
+  }
+
+  /**
+   * Whether this session bills per token rather than against its account's
+   * subscription (spec `claude-account-fleet` §6 U): what its last launch here
+   * did, else whether it has had a subscription reading of its own, else what
+   * its next launch would do, read off the environment a launch would get (a
+   * stored key, credits, or one inherited from the server's own environment),
+   * and per token when that cannot be told. A per-token session's `usage` stays
+   * its own cost.
+   *
+   * Not on the `AgentRuntime` port, for the reason `accountRootForSession`
+   * is not: accounts are a Claude-Code-only concept.
+   *
+   * @param sessionId - DorkOS or SDK session id.
+   */
+  async sessionBillsPerToken(sessionId: string): Promise<boolean> {
+    const session = this.sessionStore.findSession(sessionId);
+    if (session?.launchedPerToken !== undefined) return session.launchedPerToken;
+    if (session?.lastSubscriptionUsage?.kind === 'subscription') return false;
+    return predictLaunchBillsPerToken();
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * The transcript tail's last assistant usage: the same bounded 64 KB read
+   * the session list's `contextTokens` comes from (`readTailStatus`), cached
+   * under the file's mtime. The transcript records no context window and the
+   * SDK's model list carries none either (`runtime-cache.ts`), so the window is
+   * `0`, which every reader shows as an unknown percentage until a turn reports
+   * the real one.
+   */
+  async readContextUsage(
+    sessionId: string,
+    cwd: string | undefined
+  ): Promise<{ contextTokens: number; contextMaxTokens: number } | null> {
+    try {
+      const projectDir = cwd ?? this.sessionStore.findSession(sessionId)?.cwd ?? this.cwd;
+      const historyId = this.getInternalSessionId(sessionId) ?? sessionId;
+      const session = await this.transcriptReader.getSession(projectDir, historyId);
+      if (!session?.contextTokens) return null;
+      return { contextTokens: session.contextTokens, contextMaxTokens: 0 };
+    } catch {
+      return null;
+    }
   }
 
   /**

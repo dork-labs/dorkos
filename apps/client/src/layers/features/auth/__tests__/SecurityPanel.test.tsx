@@ -73,15 +73,12 @@ describe('SecurityPanel', () => {
     expect(screen.queryByText(/signed in/i)).not.toBeInTheDocument();
   });
 
-  it('offers standing permissions, disabled, while login is off', async () => {
-    // Visible rather than hidden: the fix is the Require login toggle directly
-    // above it, and somebody who read about the feature has to be able to find
-    // out why it is unavailable.
+  it('offers no Standing permissions switch: Always allow on a request card replaced it', async () => {
     setup({ authEnabled: false });
 
-    const toggle = await screen.findByRole('switch', { name: 'Standing permissions' });
-    await waitFor(() => expect(toggle).toBeDisabled());
-    expect(screen.getByText(/Turn on Require login above to use this/i)).toBeInTheDocument();
+    // The panel has drawn (its one switch is up), so the absence means something.
+    await screen.findByRole('switch', { name: /Require login/i });
+    expect(screen.queryByRole('switch', { name: 'Standing permissions' })).not.toBeInTheDocument();
   });
 
   it('shows API keys and sign-out when auth is enabled', async () => {

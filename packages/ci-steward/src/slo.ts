@@ -7,7 +7,8 @@
  * quiet weekend never reads as a breach or a win.
  */
 import { gateDays, mergePathGates, type LocalDay, type SloReading, type Snapshot } from './data.ts';
-import type { Slos } from './schemas.ts';
+import { mainEpisodes } from './main-episodes.ts';
+import type { Config, Slos } from './schemas.ts';
 import { addDays, quantile, round } from './time.ts';
 
 type Slo = Slos['slos'][number];
@@ -22,7 +23,127 @@ export interface SloInputs {
   /** First day of the window. Pass snapshots from 27 days before `to`: main-green reads 28 days. */
   from: string;
   to: string;
+  /**
+   * Deadlines that fire inside a gate's job before its `timeout-minutes`, in
+   * minutes by gate (`deadlines:` in ci/config.yaml). `headroom` reads each gate
+   * against the smaller of the two. Omitted, every gate reads against its own
+   * timeout, as it did before the deadlines were recorded.
+   */
+  deadlines?: Readonly<Record<string, number>>;
+  /**
+   * What `flaky-test-runs` can see: the gates whose reports it reads, and the
+   * gates that run tests it cannot read. With it, a failed queue job in one of
+   * the second is coverage the SLO does not have, and it reads `unmeasured`
+   * instead of a share over the tests it did see. Omitted (a verdict's own
+   * reading), the share is reported as before.
+   */
+  flakyCoverage?: FlakyCoverage;
 }
+
+/** What `flaky-test-runs` can and cannot see, by gate. */
+export interface FlakyCoverage {
+  /** Gates whose retry-aware test reports the collector reads (`collect.artifacts`). */
+  reported: ReadonlySet<string>;
+  /** Gates that run tests with no report it can read (`collect.blind_test_gates`). */
+  blind: ReadonlySet<string>;
+}
+
+/**
+ * The two readings the repo's own files decide: each gate's inner deadline,
+ * and what `flaky-test-runs` can see. Every caller that shows an SLO to a
+ * person passes both, so the report, `/ci-status` and the triggers read one
+ * ruler.
+ *
+ * @param config - Parsed `ci/config.yaml`.
+ */
+export function sloRuler(config: Config): Required<Pick<SloInputs, 'deadlines' | 'flakyCoverage'>> {
+  return {
+    deadlines: deadlineMinutes(config),
+    flakyCoverage: {
+      reported: new Set(config.collect.artifacts.map((a) => a.gate)),
+      blind: new Set(Object.keys(config.collect.blind_test_gates)),
+    },
+  };
+}
+
+/**
+ * The inner deadlines of `ci/config.yaml`, in minutes by gate.
+ *
+ * @param config - Parsed `ci/config.yaml`.
+ */
+export function deadlineMinutes(config: Config): Record<string, number> {
+  return Object.fromEntries(config.deadlines.map((d) => [d.gate, d.minutes]));
+}
+
+/**
+ * A gate's effective deadline on one day: its recorded timeout, or a deadline
+ * inside the job that fires first. A day with no recorded timeout (a
+ * backfilled day) stays unmeasured whatever the deadlines say.
+ *
+ * @param timeouts - The day's recorded `timeout-minutes` by gate.
+ * @param deadlines - Inner deadlines by gate.
+ */
+export function effectiveTimeouts(
+  timeouts: Readonly<Record<string, number>>,
+  deadlines: Readonly<Record<string, number>> = {}
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [gate, t] of Object.entries(timeouts)) {
+    const inner = deadlines[gate];
+    out[gate] = inner !== undefined && inner > 0 ? Math.min(t, inner) : t;
+  }
+  return out;
+}
+
+/**
+ * `flaky-test-runs`: executions that failed and then passed on their retry,
+ * over the executions in the sampled reports.
+ *
+ * The share can only see jobs that write a report the collector reads, with a
+ * retry to pass on. A failed queue job in a gate that runs tests it cannot
+ * read — a Playwright suite at `retries: 0`, a Windows job with no report —
+ * could be a flake or a break and this SLO cannot tell, so when the window has
+ * any, the reading is `unmeasured` and says how many, rather than a share of 0
+ * that claims tests it never saw. The share stays in the stats for what it
+ * does cover. A failure in a gate that runs no tests (lint, a fan-in's own
+ * step, a docs drift check) says nothing about flakes and is not counted.
+ *
+ * @param inp - The inputs.
+ * @param c - Sums a count over the window.
+ */
+function flakyTestRuns(inp: SloInputs, c: (k: CountKey) => number): Raw {
+  if (c('flaky_builds_sampled') === 0)
+    return { n: 0, stats: {}, unmeasured: 'no queue build test reports sampled in the window' };
+  const r = share(c('test_flaky'), c('test_executions'));
+  r.note = `${c('flaky_builds_sampled')} queue builds sampled`;
+  const cov = inp.flakyCoverage;
+  if (!cov) return r;
+  const unseen = new Map<string, number>();
+  let failed = 0;
+  for (const b of inp.snapshots.flatMap((s) => s.queue_builds)) {
+    if (b.outcome !== 'red') continue;
+    for (const g of new Set(b.failed_gates)) {
+      if (cov.reported.has(g)) failed += 1;
+      else if (cov.blind.has(g)) {
+        failed += 1;
+        unseen.set(g, (unseen.get(g) ?? 0) + 1);
+      }
+    }
+  }
+  const blind = sum([...unseen.values()]);
+  r.stats.failed_jobs = failed;
+  r.stats.unreported_failed_jobs = blind;
+  if (blind > 0) {
+    const worst = [...unseen]
+      .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
+      .map(([g, k]) => `${g} ${k}`)
+      .join(', ');
+    r.unmeasured = `coverage unknown: ${blind} of ${failed} failed queue test jobs wrote no retry-aware report (${worst}); share ${r.stats.share ?? 0} is over the reported suites only`;
+  }
+  return r;
+}
+
+type CountKey = Exclude<keyof Snapshot['counts'], 'repeat_ejections'>;
 
 interface Raw {
   n: number;
@@ -58,38 +179,34 @@ function share(num: number, den: number): Raw {
 }
 
 /**
- * Red episodes on the default branch: one starts at a red commit that follows
- * a green one (or opens the span) and ends at the next green commit.
+ * Red episodes on the default branch (`mainEpisodes`): one starts when a push
+ * workflow goes red on `main` and ends when that same workflow goes green
+ * there again, not at the next commit that merely did not run it.
  *
  * @param inp - The inputs.
  */
 function mainGreen(inp: SloInputs): Raw {
-  const commits = inp.snapshots.flatMap((s) => s.main).sort((a, b) => a.at.localeCompare(b.at));
-  let episodes = 0;
-  let openedAt: string | null = null;
-  const restores: number[] = [];
-  for (const c of commits) {
-    if (c.red && openedAt === null) {
-      episodes += 1;
-      openedAt = c.done;
-    } else if (!c.red && openedAt !== null) {
-      restores.push((Date.parse(c.done) - Date.parse(openedAt)) / 60_000);
-      openedAt = null;
-    }
-  }
-  const stats: Record<string, number> = { red_episodes: episodes };
+  const commits = inp.snapshots.flatMap((s) => s.main);
+  const episodes = mainEpisodes(commits);
+  // An unresolved spell (its workflow stopped reporting) counts, but has no
+  // restore time to contribute.
+  const restores = episodes.flatMap((e) =>
+    e.closed && !e.unresolved ? [(Date.parse(e.closed) - Date.parse(e.opened)) / 60_000] : []
+  );
+  const stats: Record<string, number> = { red_episodes: episodes.length };
   // No red episode means nothing waited to be restored: 0, not "no data".
-  setStat(stats, 'restore_p90', episodes === 0 ? 0 : quantile(restores, 0.9), 1);
+  setStat(stats, 'restore_p90', episodes.length === 0 ? 0 : quantile(restores, 0.9), 1);
   return {
     n: commits.length,
     stats,
-    note: openedAt ? 'main is red at the end of the window' : undefined,
+    note: episodes.at(-1)?.closed === null ? 'main is red at the end of the window' : undefined,
   };
 }
 
 /**
- * The worst gate's p95 of duration over its timeout, each run against the
- * timeout recorded on its own day (a backfilled day records none).
+ * The worst gate's p95 of duration over its deadline, each run against the
+ * timeout recorded on its own day (a backfilled day records none), or against
+ * a deadline inside the job that fires first (`effectiveTimeouts`).
  *
  * @param inp - The inputs.
  * @param minN - Runs a gate needs before it counts.
@@ -100,7 +217,7 @@ function headroom(inp: SloInputs, minN: number): Raw {
   const ratios = new Map<string, number[]>();
   const onPath = mergePathGates(inp.snapshots);
   for (const s of inp.snapshots) {
-    for (const [gate, timeout] of Object.entries(s.timeouts)) {
+    for (const [gate, timeout] of Object.entries(effectiveTimeouts(s.timeouts, inp.deadlines))) {
       const list = ratios.get(gate) ?? [];
       // Unqualified, so a gate that runs on the merge path is read over that
       // population only and not over the main canary's runs of the same job.
@@ -146,7 +263,7 @@ function local(inp: SloInputs, hook: string): Raw {
  */
 function raw(slo: Slo, inp: SloInputs): Raw {
   const s = inp.snapshots;
-  const c = (k: keyof Snapshot['counts']) => sum(s.map((x) => x.counts[k]));
+  const c = (k: CountKey) => sum(s.map((x) => x.counts[k]));
   switch (slo.id) {
     case 'headroom':
       return headroom(inp, slo.definition.min_n);
@@ -170,13 +287,8 @@ function raw(slo: Slo, inp: SloInputs): Raw {
           : 0;
       return r;
     }
-    case 'flaky-test-runs': {
-      if (c('flaky_builds_sampled') === 0)
-        return { n: 0, stats: {}, unmeasured: 'no queue build test reports sampled in the window' };
-      const r = share(c('test_flaky'), c('test_executions'));
-      r.note = `${c('flaky_builds_sampled')} queue builds sampled`;
-      return r;
-    }
+    case 'flaky-test-runs':
+      return flakyTestRuns(inp, c);
     case 'main-green':
       return mainGreen(inp);
     case 'review-completes':

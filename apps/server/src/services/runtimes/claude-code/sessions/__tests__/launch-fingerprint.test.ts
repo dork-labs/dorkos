@@ -17,6 +17,8 @@ import {
   compareLaunchFingerprints,
   type LaunchParams,
 } from '../launch-fingerprint.js';
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
+import { applyDirectoryGrants } from '../../messaging/directory-grants.js';
 import { resolveThinkingOptions } from '../../messaging/thinking-config.js';
 
 /** The account a paying client's session belongs to. */
@@ -95,6 +97,16 @@ function captureReasoning(args: {
   });
 }
 
+/**
+ * Launch options carrying `grants` exactly as the launch resolver writes them,
+ * so the pin reads the real rule format rather than a hand-built copy of it.
+ */
+function grantedOptions(grants: DirectoryGrant[], base: Partial<Options> = {}): Options {
+  const launched = options(base);
+  applyDirectoryGrants(launched, grants, '/agents/ana');
+  return launched;
+}
+
 describe('the pin list', () => {
   it('enumerates exactly the rows of spec §4.5, with the disposition each row states', () => {
     // Drift guard. The spec's table has ten rows; three of them
@@ -122,6 +134,7 @@ describe('the pin list', () => {
       env: 'relaunch',
       effort: 'relaunch',
       fastMode: 'relaunch',
+      additionalDirectories: 'relaunch',
       mcpServers: 'live',
       plugins: 'live',
       permissionMode: 'live',
@@ -294,6 +307,10 @@ describe('the relaunch pins', () => {
     ['effort', { effortInput: 'low', options: options({ effort: 'low' }) }],
     ['effort', { effortInput: undefined, options: options({ effort: undefined }) }],
     ['fastMode', { options: options({ settings: { fastMode: true } }) }],
+    [
+      'additionalDirectories',
+      { options: grantedOptions([{ path: '/rooms/r1/worktrees/ana', access: 'write' }]) },
+    ],
   ];
 
   it.each(cases)('relaunches when %s changes', (pin, overrides) => {
@@ -628,5 +645,43 @@ describe('the live pins', () => {
       });
     const decision = compareLaunchFingerprints(withInstance({ a: 1 }), withInstance({ a: 2 }));
     expect(decision.action === 'reuse' && decision.liveChanges).toEqual([]);
+  });
+});
+
+describe('the folder-grant pin (spec `agent-home-desk` §4.2)', () => {
+  const worktree: DirectoryGrant = { path: '/rooms/r1/worktrees/ana', access: 'write' };
+  const repo: DirectoryGrant = { path: '/rooms/r1/repo', access: 'read' };
+
+  it('rides the warm process when the same set arrives in a different order', () => {
+    const decision = compareLaunchFingerprints(
+      capture({ options: grantedOptions([worktree, repo]) }),
+      capture({ options: grantedOptions([repo, worktree]) })
+    );
+    expect(decision.action).toBe('reuse');
+  });
+
+  it('relaunches when a grant is dropped, so an earlier turn’s folder is not left reachable', () => {
+    const decision = compareLaunchFingerprints(
+      capture({ options: grantedOptions([worktree, repo]) }),
+      capture({ options: grantedOptions([worktree]) })
+    );
+    expect(decision.action === 'relaunch' && decision.changed).toEqual(['additionalDirectories']);
+  });
+
+  it('relaunches when only a grant’s access changes', () => {
+    const decision = compareLaunchFingerprints(
+      capture({ options: grantedOptions([worktree, repo]) }),
+      capture({ options: grantedOptions([worktree, { ...repo, access: 'write' }]) })
+    );
+    expect(decision.action === 'relaunch' && decision.changed).toEqual(['additionalDirectories']);
+  });
+
+  it('does not move with fastMode, which shares the settings object', () => {
+    const before = capture({ options: grantedOptions([worktree]) });
+    const after = capture({
+      options: grantedOptions([worktree], { settings: { fastMode: true } }),
+    });
+    expect(before.pins.additionalDirectories).toBe(after.pins.additionalDirectories);
+    expect(before.pins.fastMode).not.toBe(after.pins.fastMode);
   });
 });

@@ -25,6 +25,8 @@ const coldStatus = {
   runningSubagentCount: 0,
   lifecycle: 'idle' as const,
   lastError: null,
+  limit: null,
+  accountUsage: null,
 };
 
 describe('SessionStatusSchema', () => {
@@ -51,6 +53,36 @@ describe('SessionStatusSchema', () => {
     // resolve to null usage rather than throwing.
     const { usage: _omitted, ...withoutUsage } = coldStatus;
     expect(SessionStatusSchema.parse(withoutUsage).usage).toBeNull();
+  });
+
+  it('defaults accountUsage to null when omitted (version skew)', () => {
+    // Purpose: snapshots from a server before cached account usage (spec
+    // claude-account-fleet §6 U) must keep parsing.
+    const { accountUsage: _omitted, ...withoutAccount } = coldStatus;
+    expect(SessionStatusSchema.parse(withoutAccount).accountUsage).toBeNull();
+  });
+
+  it('keeps a context reading with the time it was observed', () => {
+    const contextUsage = {
+      totalTokens: 1_000,
+      maxTokens: 200_000,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      observedAt: '2026-09-27T10:00:00.000Z',
+    };
+    expect(SessionStatusSchema.parse({ ...coldStatus, contextUsage }).contextUsage).toEqual(
+      contextUsage
+    );
+  });
+
+  it('a status_change cannot carry accountUsage: it travels only on account_usage', () => {
+    const parsed = SessionEventSchema.parse({
+      type: 'status_change',
+      seq: 1,
+      status: { model: 'm', accountUsage: { runtime: 'codex' } },
+    });
+    expect(parsed.type === 'status_change' && 'accountUsage' in parsed.status).toBe(false);
   });
 
   it('accepts a populated subscription usage on the durable snapshot', () => {
@@ -463,10 +495,7 @@ describe('SessionSnapshotSchema', () => {
   });
 
   it('REQUIRES canvas, so a transport cannot forget to decorate its snapshot', () => {
-    // Purpose: two transports build this snapshot — `deliverSessionStream` and
-    // `DirectTransport`'s own session-stream methods. An optional field would
-    // let one of them answer with an empty canvas that looks exactly like a
-    // session with nothing on it.
+    // A missing field would look exactly like an empty session canvas.
     const withoutCanvas = {
       messages: [],
       inProgressTurn: null,

@@ -15,7 +15,7 @@
  * @module @dorkos/marketplace/package-validator
  */
 
-import { promises as fs } from 'node:fs';
+import { promises as fs, type Dirent } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
@@ -29,9 +29,23 @@ import {
   MarketplacePackageManifestSchema,
   type MarketplacePackageManifest,
 } from './manifest-schema.js';
+import {
+  PACKAGE_TEXT_MAX_BYTES,
+  TooLargeError,
+  UnsafeFileError,
+  readPackageFileWithin,
+} from '@dorkos/shared/bounded-read';
+import { describePackageLink, findPackageLinks } from './package-links.js';
+import { PackageTooLargeError, measurePackageTree } from './package-size.js';
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
 import { validateAgainstCcSchema } from './cc-validator.js';
+import {
+  declaredEffectPaths,
+  isReservedPackagePath,
+  userEditableReaches,
+} from './user-editable.js';
+import { findAgentWorkspaceConfig } from './agent-workspace-config.js';
 
 /**
  * A single validation finding produced by {@link validatePackage}. Errors
@@ -52,6 +66,28 @@ export interface ValidationIssue {
    * Omitted for issues that are not tied to a specific file.
    */
   path?: string;
+}
+
+/**
+ * Options for {@link validatePackage}.
+ */
+export interface ValidatePackageOptions {
+  /**
+   * What kind of tree is being validated. `'package'` (the default) is a
+   * package as its author ships it: publishing, `dorkos marketplace validate`,
+   * and the install pipeline's staged tree. `'installed'` is an install root on
+   * disk, which legitimately holds the installer's own records and the
+   * person's data, so the reserved-path check is skipped there.
+   */
+  tree?: 'package' | 'installed';
+  /**
+   * The package is a folder on this machine that the person pointed at. A
+   * `.git` FILE at its root is then its own worktree's link, not a package
+   * steering git elsewhere, and the install drops every `.git` as it copies,
+   * so that one refusal is skipped. A root shaped like a git repository is
+   * still refused.
+   */
+  localSource?: boolean;
 }
 
 /**
@@ -133,6 +169,77 @@ const SCHEDULE_SKILL_SOURCE_DIRS = [
 const PermissiveSkillFrontmatterSchema = z.unknown();
 
 /**
+ * Thrown by {@link readPackageFile} for a package file DorkOS refuses to read:
+ * larger than it reads, reached through a symbolic link, or not a regular
+ * file. It carries the file's package-relative path so the validator can
+ * report it by name, and it passes through the "missing or unreadable reads
+ * as absent" catches below, so a refused manifest is never mistaken for a
+ * missing one (DOR-2319).
+ */
+class RefusedPackageFileError extends Error {
+  /** The issue code: `FILE_TOO_LARGE` or `FILE_REFUSED`. */
+  readonly code: 'FILE_TOO_LARGE' | 'FILE_REFUSED';
+
+  /**
+   * Wrap one refused read.
+   *
+   * @param relPath - The file's path, relative to the package root.
+   * @param cause - The refusal.
+   */
+  constructor(
+    readonly relPath: string,
+    cause: TooLargeError | UnsafeFileError
+  ) {
+    super(cause.message, { cause });
+    this.name = 'RefusedPackageFileError';
+    this.code = cause instanceof TooLargeError ? 'FILE_TOO_LARGE' : 'FILE_REFUSED';
+  }
+}
+
+/**
+ * Read one package file as text, within {@link PACKAGE_TEXT_MAX_BYTES} and
+ * never through a symbolic link.
+ *
+ * @param packagePath - Absolute path to the package root.
+ * @param relPath - The file's path, relative to the package root.
+ * @returns The file's text.
+ * @throws {RefusedPackageFileError} When the file is too large, reached
+ *   through a symbolic link, or not a regular file.
+ * @throws The read error, unchanged, otherwise (for example `ENOENT`).
+ */
+async function readPackageFile(packagePath: string, relPath: string): Promise<string> {
+  try {
+    return await readPackageFileWithin(
+      packagePath,
+      relPath,
+      PACKAGE_TEXT_MAX_BYTES,
+      `The package's ${relPath}`
+    );
+  } catch (err) {
+    if (err instanceof TooLargeError || err instanceof UnsafeFileError) {
+      throw new RefusedPackageFileError(relPath, err);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Whether any directory from `packagePath` down to `relDir` is a symbolic link.
+ *
+ * @param packagePath - Absolute path to the package root.
+ * @param relDir - A directory, relative to the package root.
+ * @returns `true` when one of them is a link.
+ */
+async function reachedThroughLink(packagePath: string, relDir: string): Promise<boolean> {
+  let current = packagePath;
+  for (const part of path.normalize(relDir).split(path.sep)) {
+    current = path.join(current, part);
+    if ((await fs.lstat(current)).isSymbolicLink()) return true;
+  }
+  return false;
+}
+
+/**
  * The version a package tree states about itself: `plugin.json`'s `version`
  * when that file declares one, else `.dork/manifest.json`'s. Reads the two
  * files directly and NEVER gates on validity, so an install whose files
@@ -149,8 +256,8 @@ const PermissiveSkillFrontmatterSchema = z.unknown();
  */
 export async function readDeclaredVersion(packagePath: string): Promise<string | undefined> {
   return (
-    (await readVersionField(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH))) ??
-    (await readVersionField(path.join(packagePath, PACKAGE_MANIFEST_PATH)))
+    (await readVersionField(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH)) ??
+    (await readVersionField(packagePath, PACKAGE_MANIFEST_PATH))
   );
 }
 
@@ -159,12 +266,15 @@ export async function readDeclaredVersion(packagePath: string): Promise<string |
  * unreadable file, invalid JSON, a non-object, or a missing, empty or
  * non-string `version` all read as "declares none". Never throws.
  *
- * @param filePath - Absolute path to the JSON file.
+ * @param packagePath - Absolute path to the package root.
+ * @param relPath - The JSON file, relative to the package root.
  * @internal
  */
-async function readVersionField(filePath: string): Promise<string | undefined> {
+async function readVersionField(packagePath: string, relPath: string): Promise<string | undefined> {
   try {
-    const parsed: unknown = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+    const parsed: unknown = JSON.parse(
+      await readPackageFileWithin(packagePath, relPath, PACKAGE_TEXT_MAX_BYTES, 'The file')
+    );
     if (parsed === null || typeof parsed !== 'object') return undefined;
     const version = (parsed as Record<string, unknown>).version;
     return typeof version === 'string' && version !== '' ? version : undefined;
@@ -191,25 +301,69 @@ async function readVersionField(filePath: string): Promise<string | undefined> {
  * 6. Directory-name vs `manifest.name` check. Mismatches are warnings.
  *
  * @param packagePath - Absolute path to the package root directory.
+ * @param options - What kind of tree this is; see {@link ValidatePackageOptions}.
  * @returns A {@link ValidatePackageResult} describing all issues found.
  */
-export async function validatePackage(packagePath: string): Promise<ValidatePackageResult> {
+export async function validatePackage(
+  packagePath: string,
+  options: ValidatePackageOptions = {}
+): Promise<ValidatePackageResult> {
+  try {
+    return await validatePackageFiles(packagePath, options);
+  } catch (err) {
+    if (!(err instanceof RefusedPackageFileError)) throw err;
+    return {
+      ok: false,
+      issues: [{ level: 'error', code: err.code, message: err.message, path: err.relPath }],
+      declaredVersion: await readDeclaredVersion(packagePath),
+    };
+  }
+}
+
+/**
+ * The body of {@link validatePackage}. A refused package file anywhere in it
+ * throws {@link RefusedPackageFileError}, which the caller turns into one
+ * issue naming the file.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param options - What kind of tree this is.
+ * @returns The validation result.
+ */
+async function validatePackageFiles(
+  packagePath: string,
+  options: ValidatePackageOptions
+): Promise<ValidatePackageResult> {
   const issues: ValidationIssue[] = [];
   // Read before any gate, so every result — failed ones included — says what
   // version the tree states. The update check relies on that for trees that
   // do not validate.
   const declaredVersion = await readDeclaredVersion(packagePath);
 
+  // 0. The package is not larger than DorkOS installs (DOR-2321). First, so
+  //    an enormous tree is refused before anything else walks it.
+  try {
+    await measurePackageTree(packagePath);
+  } catch (err) {
+    if (!(err instanceof PackageTooLargeError)) throw err;
+    issues.push({
+      level: 'error',
+      code: 'PACKAGE_TOO_LARGE',
+      message: err.message,
+      ...(err.path !== undefined && { path: err.path }),
+    });
+    return { ok: false, issues, declaredVersion };
+  }
+
   // 1. Manifest existence — prefer .dork/manifest.json, fall back to
   //    synthesizing from .claude-plugin/plugin.json for CC-only packages.
   let manifestRaw: unknown;
   let manifestSource: string;
 
-  const dorkManifestPath = path.join(packagePath, PACKAGE_MANIFEST_PATH);
   let dorkManifestContent: string | null = null;
   try {
-    dorkManifestContent = await fs.readFile(dorkManifestPath, 'utf-8');
-  } catch {
+    dorkManifestContent = await readPackageFile(packagePath, PACKAGE_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
     // File not found — will attempt CC fallback below.
   }
 
@@ -293,6 +447,17 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
     await checkVersionAgreement(packagePath, manifest.version, issues);
   }
 
+  // 4b. Every shortcut (symbolic link) in the package: staging drops them, so
+  //     each is said out loud rather than silently missing once installed.
+  for (const link of await findPackageLinks(packagePath)) {
+    issues.push({
+      level: 'warning',
+      code: 'LINK_SKIPPED',
+      message: describePackageLink(link),
+      path: link.path,
+    });
+  }
+
   // 5. Validate any bundled SKILL.md files
   for (const dir of SKILL_SOURCE_DIRS) {
     const fullDir = path.join(packagePath, dir);
@@ -301,6 +466,11 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
     } catch {
       continue; // Directory doesn't exist — skip silently
     }
+    // A skill directory reached through a symbolic link is not the package's
+    // own: staging drops the link, and following it could read files outside
+    // the package. It is never read; the LINK_SKIPPED warning below says it
+    // will not be installed (DOR-2319).
+    if (await reachedThroughLink(packagePath, dir)) continue;
     await validateSkillsInDirectory(fullDir, packagePath, issues);
   }
 
@@ -322,11 +492,144 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
   //    that gate, never carried by the package.
   await checkPackagedMcpServers(packagePath, issues);
 
+  // 7a. Nor may it ship what it is allowed to do. A shipped `.dork/agent.json`
+  //     carrying `permissions` (or the retired `enabledToolGroups` /
+  //     `tierCeiling`, which DorkOS folds into permissions) would be adopted as
+  //     the agent's own settings, widening what it may do before a person was
+  //     asked (spec `agent-permissions`). A person sets permissions after
+  //     install, through DorkOS. Only before install: an installed agent's
+  //     file holds the person's own settings by design.
+  if ((options.tree ?? 'package') === 'package') {
+    await checkPackagedPermissions(packagePath, issues);
+  }
+
+  // 7b. A root git would read as a repository (DOR-2326): its `config` can
+  //     name a program git runs whenever it runs there. Only before install:
+  //     a person may make their installed agent's folder a repository of
+  //     their own, and that must not hide the agent.
+  if ((options.tree ?? 'package') === 'package') {
+    await checkGitShapedRoot(packagePath, manifest.type, options.localSource === true, issues);
+  }
+
   // 8. Declared schedules that point at nothing.
   await checkScheduleSkillRefs(packagePath, manifest, issues);
 
+  // 9. Paths that belong to the person or the installer (DOR-2245). Skipped on
+  //    an installed tree, which holds exactly those files by design.
+  if ((options.tree ?? 'package') === 'package') {
+    await checkReservedPaths(packagePath, issues);
+  }
+
+  // 10. userEditable entries that reach a path plugin.json declares hooks,
+  //     servers, monitors, skills or commands at (DOR-2245). The defaults are
+  //     refused by the manifest schema; these locations only plugin.json knows.
+  await checkUserEditableDeclaredPaths(packagePath, manifest.userEditable ?? [], issues);
+
+  // 11. An agent package's folder is its working directory, so harness
+  //     configuration there would run in every session unseen (DOR-2314).
+  //     Skipped on an installed tree, where DorkOS writes some of it itself.
+  if (manifest.type === 'agent' && (options.tree ?? 'package') === 'package') {
+    for (const finding of await findAgentWorkspaceConfig(packagePath)) {
+      issues.push({
+        level: 'error',
+        code: 'AGENT_WORKSPACE_CONFIG_FORBIDDEN',
+        message: finding.message,
+        path: finding.path,
+      });
+    }
+  }
+
   const hasErrors = issues.some((i) => i.level === 'error');
   return { ok: !hasErrors, issues, manifest, declaredVersion };
+}
+
+/**
+ * Fail for every `userEditable` entry that reaches a location plugin.json
+ * declares something runnable at. A person approves the new version's copy of
+ * those files on update, so an edited copy must never be kept over it
+ * (DOR-2245, DOR-2195). The manifest schema already refuses the default
+ * locations (`EFFECT_BEARING_PATHS`).
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param userEditable - The manifest's `userEditable` list.
+ * @param issues - Mutable issue list to append findings to.
+ * @internal
+ */
+async function checkUserEditableDeclaredPaths(
+  packagePath: string,
+  userEditable: readonly string[],
+  issues: ValidationIssue[]
+): Promise<void> {
+  if (userEditable.length === 0) return;
+  let pluginJson: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(
+      await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH)
+    );
+    if (typeof parsed !== 'object' || parsed === null) return;
+    pluginJson = parsed as Record<string, unknown>;
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
+    return;
+  }
+  const declared = declaredEffectPaths(pluginJson);
+  for (const pattern of userEditable) {
+    const reached = declared.find((p) => userEditableReaches(pattern, p));
+    if (reached === undefined) continue;
+    issues.push({
+      level: 'error',
+      code: 'USER_EDITABLE_EFFECT_PATH',
+      message:
+        `userEditable entry "${pattern}" reaches ${reached}, which plugin.json names as something ` +
+        "the package runs. A person approves the new version's copy on update, so it can't be user-editable.",
+      path: PACKAGE_MANIFEST_PATH,
+    });
+  }
+}
+
+/** Directories the reserved-path walk never enters: vendored code and git's own store. */
+const RESERVED_WALK_SKIP_DIRS = new Set(['node_modules', '.git']);
+
+/**
+ * Fail for every shipped file under a path DorkOS keeps for the person or the
+ * installer (`isReservedPackagePath`): the package's data directory, its
+ * secrets file, the installer's records, and `.dork-old` / `.dork-new` copies.
+ * A package that shipped one would, on the next update, own a file that is
+ * really a person's (ADR 260923-163513). The install copy step strips these
+ * too; this check is the one an author sees.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param issues - Mutable issue list to append findings to.
+ * @internal
+ */
+async function checkReservedPaths(packagePath: string, issues: ValidationIssue[]): Promise<void> {
+  const walk = async (relDir: string): Promise<void> => {
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(path.join(packagePath, relDir), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const rel = relDir === '' ? entry.name : `${relDir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (RESERVED_WALK_SKIP_DIRS.has(entry.name)) continue;
+        await walk(rel);
+      } else if (isReservedPackagePath(rel)) {
+        issues.push({
+          level: 'error',
+          code: 'RESERVED_PATH_SHIPPED',
+          message:
+            `${rel} is a path DorkOS keeps for the person or the installer ` +
+            '(.dork/data/, .dork/secrets.json, .dork/install-metadata.json, ' +
+            '.dork/installed-files.json, .dork/uninstalled-agent.json, *.dork-old, ' +
+            '*.dork-new). Remove it from the package.',
+          path: rel,
+        });
+      }
+    }
+  };
+  await walk('');
 }
 
 /**
@@ -358,10 +661,9 @@ async function checkVersionAgreement(
 ): Promise<void> {
   let plugin: unknown;
   try {
-    plugin = JSON.parse(
-      await fs.readFile(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH), 'utf-8')
-    );
-  } catch {
+    plugin = JSON.parse(await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH));
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
     return;
   }
   if (plugin === null || typeof plugin !== 'object') return;
@@ -510,6 +812,76 @@ async function searchForSkill(root: string, skillName: string, depth: number): P
 }
 
 /**
+ * Refuse a package whose root git would read as a repository (DOR-2326).
+ *
+ * Git treats a folder holding `HEAD` with `objects/`, `refs/` or `packed-refs`
+ * as a repository in its own right, and a `.git` file saying `gitdir:` makes
+ * the folder part of another one. Either way git reads a `config` the package
+ * wrote, and settings such as `core.fsmonitor` name a program git runs, so
+ * `git status` in the installed folder ran the package's code. That holds for
+ * any package type.
+ *
+ * An agent's folder is also where its sessions run git, so an agent may not
+ * carry the other pieces of a repository at its root either: no `config`
+ * file, `worktrees/` or `packed-refs`. (A plugin's `config` file or folder is
+ * an ordinary name, and nothing runs git inside a plugin's folder.) A `.git`
+ * FOLDER is not refused: a local agent that is someone's own repository is
+ * ordinary, and the install drops every `.git` as it copies the package
+ * (`stage-package.ts`). DorkOS's own git calls and every agent session's git
+ * are hardened as well (`@dorkos/shared/git-hardening`); this refusal keeps
+ * such a package from being installed at all.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param type - The package's type.
+ * @param localSource - A folder on this machine; see {@link ValidatePackageOptions}.
+ * @param issues - Mutable issue list to append a finding to.
+ * @internal
+ */
+async function checkGitShapedRoot(
+  packagePath: string,
+  type: string,
+  localSource: boolean,
+  issues: ValidationIssue[]
+): Promise<void> {
+  const kindOf = async (name: string): Promise<'file' | 'dir' | null> => {
+    try {
+      const stats = await fs.lstat(path.join(packagePath, name));
+      return stats.isDirectory() ? 'dir' : 'file';
+    } catch {
+      return null;
+    }
+  };
+  const [head, objects, refs, packedRefs, dotGit, config, worktrees] = await Promise.all(
+    ['HEAD', 'objects', 'refs', 'packed-refs', '.git', 'config', 'worktrees'].map(kindOf)
+  );
+  const found: string[] = [];
+  if (head === 'file' && (objects === 'dir' || refs === 'dir' || packedRefs === 'file')) {
+    found.push('HEAD with objects/, refs/ or packed-refs');
+  }
+  if (dotGit === 'file' && !localSource) {
+    let text: string;
+    try {
+      text = await readPackageFileWithin(packagePath, '.git', 4096, "The package's .git");
+    } catch {
+      // A link, too large, or unreadable: treated like one that points elsewhere.
+      text = 'gitdir:';
+    }
+    if (/^\s*gitdir:/m.test(text.slice(0, 4096))) found.push('a .git file that points elsewhere');
+  }
+  if (type === 'agent') {
+    if (config === 'file') found.push('a config file');
+    if (worktrees === 'dir') found.push('a worktrees folder');
+    if (packedRefs === 'file') found.push('packed-refs');
+  }
+  if (found.length === 0) return;
+  issues.push({
+    level: 'error',
+    code: 'GIT_REPOSITORY_SHAPED',
+    message: `The package's folder looks like a git repository (${[...new Set(found)].join(', ')}), and git would read settings from it that can run a program. Remove those files from the package.`,
+  });
+}
+
+/**
  * Reject a package that ships an agent identity manifest (`.dork/agent.json`)
  * declaring one or more managed MCP servers.
  *
@@ -537,12 +909,11 @@ async function checkPackagedMcpServers(
   packagePath: string,
   issues: ValidationIssue[]
 ): Promise<void> {
-  const agentManifestPath = path.join(packagePath, AGENT_MANIFEST_PATH);
-
   let content: string;
   try {
-    content = await fs.readFile(agentManifestPath, 'utf-8');
-  } catch {
+    content = await readPackageFile(packagePath, AGENT_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
     return; // No shipped agent.json — nothing to guard.
   }
 
@@ -567,6 +938,50 @@ async function checkPackagedMcpServers(
       path: AGENT_MANIFEST_PATH,
     });
   }
+}
+
+/** The agent manifest fields that say what an agent may do, retired ones included. */
+const PACKAGED_PERMISSION_FIELDS = ['permissions', 'enabledToolGroups', 'tierCeiling'] as const;
+
+/**
+ * Reject a package that ships an agent identity manifest (`.dork/agent.json`)
+ * carrying any field that decides what the agent may do. Structural, for the
+ * reason {@link checkPackagedMcpServers} is: the key being present at all is
+ * the refusal, whatever its value, because an empty-looking value today is a
+ * place to put a wide one tomorrow.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param issues - Mutable issue list to append a finding to.
+ * @internal
+ */
+async function checkPackagedPermissions(
+  packagePath: string,
+  issues: ValidationIssue[]
+): Promise<void> {
+  let content: string;
+  try {
+    content = await readPackageFile(packagePath, AGENT_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
+    return;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+  const shipped = PACKAGED_PERMISSION_FIELDS.filter((field) => Object.hasOwn(parsed, field));
+  if (shipped.length === 0) return;
+  issues.push({
+    level: 'error',
+    code: 'PACKAGED_PERMISSIONS_FORBIDDEN',
+    message:
+      `A packaged agent may not ship what it is allowed to do (${shipped.join(', ')} in ` +
+      '.dork/agent.json). A person sets its permissions after install, in DorkOS.',
+    path: AGENT_MANIFEST_PATH,
+  });
 }
 
 /**
@@ -599,6 +1014,7 @@ async function validateSkillsInDirectory(
   let scanResults;
   try {
     scanResults = await scanSkillDirectory(fullDir, PermissiveSkillFrontmatterSchema, {
+      packageTree: true,
       includeMissing: false,
       requireNameMatch: false,
     });
@@ -751,11 +1167,11 @@ export function validateDorkosSidecar(raw: string): MarketplaceValidationIssue[]
 async function synthesizeFromCcManifest(
   packagePath: string
 ): Promise<Record<string, unknown> | null> {
-  const ccPath = path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH);
   let content: string;
   try {
-    content = await fs.readFile(ccPath, 'utf-8');
-  } catch {
+    content = await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
     return null;
   }
 

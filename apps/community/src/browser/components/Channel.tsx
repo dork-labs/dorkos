@@ -1,65 +1,58 @@
+import { Button, Label, Notice, Separator } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUp, Download, MessageCircle, Paperclip, RotateCcw, X } from 'lucide-react';
-import type { CommunityWireEvent } from '@dorkos/shared/community-wire';
-import { describeError, download, RequestError, request, tenantApiPath, upload } from '../api.js';
-import type { Channel as ChannelType, Entry } from '../types.js';
+import { ArrowLeft, ArrowUp, MessageCircle, Paperclip, RotateCcw, X } from 'lucide-react';
+import {
+  CommunityWireEntryRemoveResponseSchema,
+  type CommunityWireEvent,
+} from '@dorkos/shared/community-wire';
+import { describeError, RequestError, request, tenantApiPath, upload } from '../api.js';
+import {
+  expectedTombstone,
+  isRemovedEntry,
+  removalAction,
+  type RemovalViewer,
+} from '../entry-removal.js';
+import type { Agent, Channel as ChannelType, Entry, Member } from '../types.js';
+import { EntryCard } from './EntryCard.js';
+import type { RemovalRequest } from './EntryRemoval.js';
+import { useChannelChanges } from './channel-changes.js';
 
 type Page = { entries: Entry[]; nextCursor: string | null };
+type MemberDirectoryPage = { members: Member[]; nextCursor: string | null };
 type Post = { entry: Entry; cursor: string };
-type Props = { channel: ChannelType; onChanged: () => void; readOnly?: boolean };
+type Props = {
+  communityId: string;
+  channel: ChannelType;
+  /** The signed-in member: whose messages are theirs, and what their role lets them remove. */
+  me: Member;
+  onChanged: () => void;
+  /** Reload the signed-in member after the server refused a removal, in case their role changed. */
+  onMemberStale: () => void;
+  readOnly?: boolean;
+  /** Read-only because the host holds the community, not because its owner archived it. */
+  held?: boolean;
+};
 function mergeEntries(previous: Entry[], incoming: Entry[]) {
   const byId = new Map(previous.map((entry) => [entry.id, entry]));
   for (const entry of incoming) byId.set(entry.id, entry);
   return [...byId.values()].sort((a, b) => a.seq - b.seq);
 }
-function EntryCard({
-  entry,
-  onThread,
-  threadReadOnly = false,
-}: {
-  entry: Entry;
-  onThread?: (entry: Entry) => void;
-  threadReadOnly?: boolean;
-}) {
-  return (
-    <article className="entry">
-      <div className="avatar" aria-hidden="true">
-        {entry.authorDisplayName.slice(0, 1).toUpperCase()}
-      </div>
-      <div>
-        <div className="entry-meta">
-          <strong>{entry.authorDisplayName}</strong>
-          <time className="small muted" dateTime={entry.createdAt}>
-            {new Date(entry.createdAt).toLocaleTimeString([], {
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
-          </time>
-        </div>
-        <p className="entry-text">{entry.text}</p>
-        {entry.attachments.map((attachment) => (
-          <button
-            className="button small mt-1 mr-2"
-            type="button"
-            key={attachment.id}
-            onClick={() => void download(`/api/v1/attachments/${attachment.id}`, attachment.name)}
-          >
-            <Download size={14} />
-            {attachment.name}
-          </button>
-        ))}
-        {onThread && (
-          <button className="button ghost small mt-1" type="button" onClick={() => onThread(entry)}>
-            <MessageCircle size={14} /> {threadReadOnly ? 'View thread' : 'Reply in thread'}
-          </button>
-        )}
-      </div>
-    </article>
-  );
+/** Replace the entries already shown with their changed versions; never add one. */
+function replaceEntries(previous: Entry[], changed: ReadonlyMap<string, Entry>) {
+  return previous.some((entry) => changed.has(entry.id))
+    ? previous.map((entry) => changed.get(entry.id) ?? entry)
+    : previous;
 }
-
 /** Render channel history, live events, threads and composition. */
-export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
+export function ChannelView({
+  communityId,
+  channel,
+  me,
+  onChanged,
+  onMemberStale,
+  readOnly = false,
+  held = false,
+}: Props) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [thread, setThread] = useState<Entry | null>(null);
   const [replies, setReplies] = useState<Entry[]>([]);
@@ -75,9 +68,32 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [livePaused, setLivePaused] = useState(false);
+  // Bumped to open the live stream again after the server refused it outright.
+  const [streamAttempt, setStreamAttempt] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [readCursor, setReadCursor] = useState<string | null>(null);
+  const [ownAgentIds, setOwnAgentIds] = useState<ReadonlySet<string>>(new Set());
+  const [humanRoles, setHumanRoles] = useState<RemovalViewer['humanRoles']>(null);
+  const [agentOwners, setAgentOwners] = useState<RemovalViewer['agentOwners']>(new Map());
+  // Bumped after a refusal, so an admin's view of who holds which role is read again.
+  const [rolesRevision, setRolesRevision] = useState(0);
+  // The server's refusal of the latest removal, shown under its message until the next one.
+  const [removalError, setRemovalError] = useState<{ entryId: string; message: string } | null>(
+    null
+  );
+  // Files whose removal the server confirmed: a later refusal never brings them back on screen.
+  const removedFiles = useRef(new Set<string>());
   const threadRef = useRef(thread);
+  const applyChanges = useCallback((changed: ReadonlyMap<string, Entry>) => {
+    setEntries((previous) => replaceEntries(previous, changed));
+    setReplies((previous) => replaceEntries(previous, changed));
+    setThread((current) => (current ? (changed.get(current.id) ?? current) : current));
+  }, []);
+  const {
+    asChanged,
+    begin: beginChanges,
+    remember: rememberChange,
+  } = useChannelChanges(channel.id, channel.joined, applyChanges);
   const listRef = useRef<HTMLDivElement>(null);
   const activeChannelId = useRef(channel.id);
   // A reload can overlap the initial request (or a retry). Only the newest
@@ -100,13 +116,16 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
     setLoading(true);
     setError('');
     try {
+      // Take the changes cursor before history, so a message removed between the two reads is
+      // still replaced by the next poll.
+      await beginChanges(requestedChannelId);
       const page = await request<Page>(`/api/v1/channels/${channel.id}/entries?limit=50`);
       if (
         generation !== historyGeneration.current ||
         activeChannelId.current !== requestedChannelId
       )
         return;
-      setEntries((previous) => mergeEntries(previous, page.entries));
+      setEntries((previous) => mergeEntries(previous, asChanged(page.entries)));
       setNextCursor(page.nextCursor);
       // Keep a cursor advanced by SSE. Moving it backward would make the next
       // read receipt describe an earlier point than the one already rendered.
@@ -118,7 +137,7 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
     } finally {
       if (activeChannelId.current === requestedChannelId) setLoading(false);
     }
-  }, [channel.id]);
+  }, [channel.id, asChanged, beginChanges]);
   useEffect(() => {
     if (channel.joined) void load();
     else setLoading(false);
@@ -132,23 +151,25 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
         if (event.type === 'snapshot') {
           setLivePaused(false);
           setEntries((previous) =>
-            mergeEntries(
-              previous,
-              event.entries.filter((entry) => !entry.parentEntryId)
-            )
+            mergeEntries(previous, asChanged(event.entries.filter((entry) => !entry.parentEntryId)))
           );
           if (event.entries.length) setReadCursor(event.cursor);
         } else if (event.type === 'entry') {
           setLivePaused(false);
           setEntries((previous) =>
-            event.entry.parentEntryId ? previous : mergeEntries(previous, [event.entry])
+            event.entry.parentEntryId ? previous : mergeEntries(previous, asChanged([event.entry]))
           );
           setReplies((previous) =>
             threadRef.current && event.entry.threadRootEntryId === threadRef.current.id
-              ? mergeEntries(previous, [event.entry])
+              ? mergeEntries(previous, asChanged([event.entry]))
               : previous
           );
           setReadCursor(event.cursor);
+          onChanged();
+        } else if (event.type === 'closed' && event.reason === 'archived') {
+          // The community (held or archived) or this channel became read-only. History stays;
+          // refreshing the community shows why, and a release opens the stream again.
+          source.close();
           onChanged();
         } else {
           setError('Your access to this channel has changed.');
@@ -164,20 +185,30 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
     source.addEventListener('snapshot', receive);
     source.addEventListener('entry', receive);
     source.addEventListener('closed', receive);
+    let retry: number | undefined;
     source.onerror = () => {
       // EventSource reconnects on its own. A later snapshot or entry clears
       // this transient status, so a recovered stream never leaves a stale
       // warning covering the composer.
       setLivePaused(true);
+      if (source.readyState !== EventSource.CLOSED) return;
+      // A refused open (a hold answers 423) is final for EventSource, which never retries it.
+      // Refresh the community once so a hold shows as read-only, and try the stream once a
+      // minute, never in a loop; the lifecycle refresh reopens it sooner when a hold ends.
+      onChanged();
+      retry = window.setTimeout(() => setStreamAttempt((attempt) => attempt + 1), 60_000);
     };
-    return () => source.close();
-  }, [channel.id, channel.joined, onChanged, readOnly]);
+    return () => {
+      source.close();
+      window.clearTimeout(retry);
+    };
+  }, [channel.id, channel.joined, onChanged, readOnly, streamAttempt, asChanged]);
   useEffect(() => {
     if (!threadId) return;
     let active = true;
     void request<Page>(`/api/v1/channels/${channel.id}/entries?thread=${threadId}&limit=100`)
       .then((page) => {
-        if (active) setReplies(page.entries.filter((entry) => entry.id !== threadId));
+        if (active) setReplies(asChanged(page.entries.filter((entry) => entry.id !== threadId)));
       })
       .catch((cause: unknown) => {
         if (active) setError(describeError(cause));
@@ -185,7 +216,7 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
     return () => {
       active = false;
     };
-  }, [threadId, channel.id]);
+  }, [threadId, channel.id, asChanged]);
   useEffect(() => {
     if (!readCursor || !channel.joined) return;
     const timer = window.setTimeout(() => {
@@ -195,6 +226,58 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
     }, 450);
     return () => window.clearTimeout(timer);
   }, [readCursor, channel.id, channel.joined, onChanged]);
+  // Your agents' messages are yours to delete. A listing failure only hides that Delete; the
+  // server still decides every removal.
+  useEffect(() => {
+    let active = true;
+    void request<{ agents: Agent[] }>('/api/v1/agents')
+      .then((body) => {
+        if (active) setOwnAgentIds(new Set(body.agents.map((agent) => agent.memberId)));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [me.memberId]);
+  // An admin's Remove depends on who is the owner or an active admin (the community's member
+  // directory, which an admin may read) and whose agent is whose (the channel's roster). Until
+  // the directory loads, an admin is offered nothing on other people's messages.
+  useEffect(() => {
+    if (me.role !== 'admin') return;
+    let active = true;
+    void (async () => {
+      const roles = new Map<string, NonNullable<Member['role']>>();
+      let cursor: string | null = null;
+      do {
+        const page: MemberDirectoryPage = await request<MemberDirectoryPage>(
+          `/api/v1/members?limit=100${cursor ? `&cursor=${cursor}` : ''}`
+        );
+        for (const member of page.members) if (member.role) roles.set(member.memberId, member.role);
+        cursor = page.nextCursor;
+      } while (cursor && active);
+      if (active) setHumanRoles(roles);
+    })().catch(() => {
+      if (active) setHumanRoles(null);
+    });
+    if (channel.joined)
+      void request<{ members: Member[] }>(`/api/v1/channels/${channel.id}/members`)
+        .then((body) => {
+          if (!active) return;
+          setAgentOwners(
+            new Map(
+              body.members.flatMap((member) =>
+                member.kind === 'agent' && member.ownerMemberId
+                  ? [[member.memberId, member.ownerMemberId] as const]
+                  : []
+              )
+            )
+          );
+        })
+        .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [channel.id, channel.joined, me.role, rolesRevision]);
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [entries.length]);
@@ -204,13 +287,96 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
       const page = await request<Page>(
         `/api/v1/channels/${channel.id}/entries?limit=50&cursor=${encodeURIComponent(nextCursor)}`
       );
-      setEntries((previous) => mergeEntries(page.entries, previous));
+      setEntries((previous) => mergeEntries(asChanged(page.entries), previous));
       setNextCursor(page.nextCursor);
     } catch (cause) {
       setError(describeError(cause));
       setErrorAction('reload');
     }
   }
+  /**
+   * Change one message everywhere it shows (the channel, the thread, its root) from its state
+   * there now, so two removals in flight never undo each other's view.
+   */
+  function updateEntry(id: string, change: (current: Entry) => Entry) {
+    const swap = (list: Entry[]) =>
+      list.some((entry) => entry.id === id)
+        ? list.map((entry) => (entry.id === id ? change(entry) : entry))
+        : list;
+    setEntries(swap);
+    setReplies(swap);
+    setThread((current) => (current?.id === id ? change(current) : current));
+  }
+  const replaceEntry = (next: Entry) => updateEntry(next.id, () => next);
+  /**
+   * Delete or remove a message or one of its files. The change shows at once; the server's answer
+   * then replaces it. A refusal puts back only what this removal took, with the server's sentence
+   * under the message.
+   */
+  async function remove(entry: Entry, { target, action }: RemovalRequest) {
+    setRemovalError(null);
+    if (target.kind === 'message') replaceEntry(expectedTombstone(entry, action));
+    else
+      updateEntry(entry.id, (current) => ({
+        ...current,
+        attachments: current.attachments.filter((file) => file.id !== target.attachment.id),
+      }));
+    try {
+      const body = await request<unknown>(
+        target.kind === 'message'
+          ? `/api/v1/entries/${entry.id}`
+          : `/api/v1/attachments/${target.attachment.id}`,
+        'DELETE'
+      );
+      // No body: the server removed it and has nothing more to show than what is on screen.
+      if (target.kind === 'file') removedFiles.current.add(target.attachment.id);
+      if (body !== undefined) {
+        const confirmed = CommunityWireEntryRemoveResponseSchema.parse(body).entry;
+        // A slower history or stream read from before this removal must not bring it back.
+        rememberChange(confirmed);
+        replaceEntry(confirmed);
+      }
+    } catch (cause) {
+      const kept = (file: Entry['attachments'][number]) => !removedFiles.current.has(file.id);
+      // A rollback puts back only what this removal took, and never what the tab has since
+      // learned was changed by someone else (the redaction feed's version wins).
+      if (target.kind === 'message')
+        replaceEntry(asChanged([{ ...entry, attachments: entry.attachments.filter(kept) }])[0]);
+      else
+        updateEntry(entry.id, (current) =>
+          isRemovedEntry(current)
+            ? current
+            : asChanged([
+                {
+                  ...current,
+                  // Only this file comes back, in its place among the files still there.
+                  attachments: entry.attachments.filter(
+                    (file) =>
+                      file.id === target.attachment.id ||
+                      current.attachments.some((shown) => shown.id === file.id)
+                  ),
+                },
+              ])[0]
+        );
+      setRemovalError({ entryId: entry.id, message: describeError(cause) });
+      if (cause instanceof RequestError && cause.status === 403) {
+        setRolesRevision((revision) => revision + 1);
+        onMemberStale();
+      }
+    }
+  }
+  const viewer: RemovalViewer = {
+    memberId: me.memberId,
+    role: me.role,
+    ownAgentIds,
+    humanRoles,
+    agentOwners,
+  };
+  const controlsFor = (entry: Entry) => ({
+    action: removalAction(entry, viewer),
+    onRemove: (target: Entry, removal: RemovalRequest) => void remove(target, removal),
+    error: removalError?.entryId === entry.id ? removalError.message : undefined,
+  });
   async function submit() {
     if (!text.trim() && files.length === 0) return;
     setBusy(true);
@@ -299,18 +465,19 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
             {channel.description ?? 'Join to read and take part in this channel.'}
           </p>
           {readOnly ? (
-            <p className="notice mb-0">
-              Archived history is available only for channels you joined.
-            </p>
+            <Notice tone="info" className="mb-0">
+              {held ? 'While this community is on hold, history' : 'Archived history'} is available
+              only for channels you joined.
+            </Notice>
           ) : (
-            <button className="button primary" onClick={() => void join()}>
+            <Button variant="default" onClick={() => void join()}>
               Join channel <ArrowUp size={16} />
-            </button>
+            </Button>
           )}
           {error && (
-            <div className="notice error mt-4" role="alert">
+            <Notice tone="error" className="mt-4" role="alert">
               {error}
-            </div>
+            </Notice>
           )}
         </div>
       </div>
@@ -326,9 +493,9 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
           <>
             {nextCursor && (
               <div className="text-center">
-                <button className="button" onClick={() => void older()}>
+                <Button variant="outline" onClick={() => void older()}>
                   Load older messages
-                </button>
+                </Button>
               </div>
             )}
             {entries.length === 0 && (
@@ -341,23 +508,25 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
             {entries.map((entry) => (
               <EntryCard
                 key={entry.id}
+                communityId={communityId}
                 entry={entry}
+                controls={controlsFor(entry)}
                 onThread={setThread}
                 threadReadOnly={readOnly}
               />
             ))}
           </>
         )}
-        {(error || livePaused) && (
-          <div role="alert" className="notice error row mt-3">
+        {(error || (livePaused && !readOnly)) && (
+          <Notice role="alert" tone="error" className="row mt-3">
             {error || 'Live updates paused. Reconnecting…'}
             {errorAction === 'remove-file' && rejectedFile ? (
               <>
                 <span className="small">
                   Remove the rejected file, then choose a supported file.
                 </span>
-                <button
-                  className="button"
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setFiles((previous) => previous.filter((file) => file !== rejectedFile));
                     setRejectedFile(null);
@@ -367,24 +536,26 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
                   }}
                 >
                   Remove rejected file
-                </button>
+                </Button>
               </>
             ) : errorAction === 'retry-send' ? (
-              <button className="button" onClick={() => void submit()}>
+              <Button variant="outline" onClick={() => void submit()}>
                 <RotateCcw size={14} /> Retry sending
-              </button>
+              </Button>
             ) : errorAction === 'reload' ? (
-              <button className="button" onClick={() => void load()}>
+              <Button variant="outline" onClick={() => void load()}>
                 <RotateCcw size={14} /> Retry
-              </button>
+              </Button>
             ) : null}
-          </div>
+          </Notice>
         )}
       </div>
       {readOnly ? (
         <div className="composer" role="status">
           <p className="mb-0">
-            Archived history is read-only. Restore the community to post again.
+            {held
+              ? 'This community is on hold by its host, so no one can post.'
+              : 'Archived history is read-only. Restore the community to post again.'}
           </p>
         </div>
       ) : (
@@ -395,9 +566,9 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
             void submit();
           }}
         >
-          <label htmlFor="message" className="sr-only">
+          <Label htmlFor="message" className="sr-only">
             Message #{channel.name}
-          </label>
+          </Label>
           <textarea
             id="message"
             placeholder={channel.archived ? 'This channel is archived' : `Message #${channel.name}`}
@@ -442,26 +613,29 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
             </p>
           )}
           <div className="composer-foot">
-            <label className="button" aria-label="Add files">
-              <Paperclip size={17} /> Attach
-              <input
-                type="file"
-                multiple
-                className="sr-only"
-                disabled={busy || channel.archived}
-                onChange={(event) => {
-                  chooseFiles(event.target.files);
-                  event.target.value = '';
-                }}
-              />
-            </label>
-            <button
-              className="button primary"
+            <Button asChild variant="outline">
+              <label aria-label="Add files">
+                <Paperclip size={17} /> Attach
+                <input
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  disabled={busy || channel.archived}
+                  onChange={(event) => {
+                    chooseFiles(event.target.files);
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+            </Button>
+            <Button
+              type="submit"
+              variant="default"
               disabled={busy || channel.archived || (!text.trim() && !files.length)}
             >
               {busy ? 'Sending…' : 'Send'}
               <ArrowUp size={17} />
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -474,33 +648,39 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
           />
           <aside className="drawer" aria-label="Thread">
             <div className="drawer-head row">
-              <button
-                className="button ghost"
-                onClick={() => setThread(null)}
-                aria-label="Close thread"
-              >
+              <Button variant="ghost" onClick={() => setThread(null)} aria-label="Close thread">
                 <ArrowLeft size={18} />
-              </button>
+              </Button>
               <strong>Thread</strong>
-              <button
-                className="button ghost ml-auto"
+              <Button
+                variant="ghost"
+                className="ml-auto"
                 onClick={() => setThread(null)}
                 aria-label="Close thread"
               >
                 <X size={18} />
-              </button>
+              </Button>
             </div>
             <div className="drawer-content">
-              <EntryCard entry={thread} />
-              <hr className="divider" />
+              <EntryCard communityId={communityId} entry={thread} controls={controlsFor(thread)} />
+              <Separator className="my-4" />
               {replies.map((entry) => (
-                <EntryCard key={entry.id} entry={entry} />
+                <EntryCard
+                  key={entry.id}
+                  communityId={communityId}
+                  entry={entry}
+                  controls={controlsFor(entry)}
+                />
               ))}
               {replies.length === 0 && <p className="muted small">No replies yet.</p>}
             </div>
             {readOnly ? (
               <div className="composer" role="status">
-                <p className="mb-0">Archived threads are read-only.</p>
+                <p className="mb-0">
+                  {held
+                    ? 'Threads are read-only while on hold.'
+                    : 'Archived threads are read-only.'}
+                </p>
               </div>
             ) : (
               <form
@@ -510,9 +690,9 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
                   void submit();
                 }}
               >
-                <label htmlFor="reply" className="sr-only">
+                <Label htmlFor="reply" className="sr-only">
                   Reply in thread
-                </label>
+                </Label>
                 <textarea
                   id="reply"
                   placeholder="Reply in thread"
@@ -522,12 +702,13 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
                 />
                 <div className="composer-foot">
                   <span className="small muted">Replies stay in this thread.</span>
-                  <button
-                    className="button primary"
+                  <Button
+                    type="submit"
+                    variant="default"
                     disabled={busy || !text.trim() || channel.archived}
                   >
                     Reply <ArrowUp size={16} />
-                  </button>
+                  </Button>
                 </div>
               </form>
             )}

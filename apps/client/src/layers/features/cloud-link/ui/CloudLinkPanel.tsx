@@ -28,13 +28,22 @@ import {
 } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
+  appCount,
+  ConnectionImpactList,
+  dorkosAccountApps,
+  splitByImpact,
+  useConnectorConnections,
+} from '@/layers/entities/connectors';
+import {
   cn,
   formatRelativeTime,
   openLink,
   useCopyFeedback,
   useRenderSlot,
 } from '@/layers/shared/lib';
+import { useNow } from '@/layers/shared/model';
 import { useCloudLink, type CloudLinkView } from '../model/use-cloud-link';
+import { msUntilExpiry, spokenExpiry, visibleExpiry } from '../lib/code-expiry';
 
 /**
  * DorkOS account section for the Settings dialog — links or unlinks this
@@ -92,7 +101,9 @@ function CloudLinkBody({ view, start, unlink, starting, unlinking, startError }:
     case 'idle':
       return <IdleState start={start} starting={starting} startError={startError} />;
     case 'pending':
-      return <PendingState view={view} />;
+      // Keyed by the code so a fresh code starts a fresh countdown and clears
+      // any error left over from the last one.
+      return <PendingState key={view.userCode} view={view} />;
     case 'linked':
       return <LinkedState view={view} unlink={unlink} unlinking={unlinking} />;
     case 'expired':
@@ -216,7 +227,7 @@ function IdleState({
         {busy ? 'Starting…' : 'Link this instance'}
       </Button>
       {(consentError ?? startError) && (
-        <p className="text-sm text-red-500" role="alert">
+        <p className="text-destructive text-sm" role="alert">
           {consentError ?? startError}
         </p>
       )}
@@ -224,9 +235,33 @@ function IdleState({
   );
 }
 
-/** A device flow is in progress — show the code and the activation link. */
+/** The sentence shown when the approval page cannot be opened from here. */
+const OPEN_FAILED_MESSAGE =
+  'We could not open the approval page. Copy the code and open it in your browser.';
+
+/** A device flow is in progress — show the code, the approval-page button, and the time left. */
 function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending' }> }) {
   const { copied, failed, copy } = useCopyFeedback();
+  const [openError, setOpenError] = useState<string | null>(null);
+
+  const now = useNow(1000);
+  const msLeft = msUntilExpiry(view.expiresAt, now);
+  // Frozen at entry: the spoken sentence changes only at thresholds, so the
+  // status region is not re-announced every second.
+  const [entry] = useState(() => ({
+    at: Date.now(),
+    msLeft: msUntilExpiry(view.expiresAt, Date.now()) ?? 0,
+  }));
+  // A live region that appears with its text already in it is not announced by
+  // most screen readers. The spoken sentence is added on the first tick, into a
+  // region that already exists, so the entry announcement is a real change.
+  const announced = now > entry.at;
+
+  const handleOpen = () => {
+    setOpenError(
+      openVerification(view.verificationUri, view.userCode) ? null : OPEN_FAILED_MESSAGE
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -242,7 +277,7 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
             aria-label={failed ? 'Couldn’t copy code. Try again' : 'Copy code'}
           >
             {copied ? (
-              <Check className="size-4 text-green-500" />
+              <Check className="text-status-success size-4" />
             ) : failed ? (
               <X className="text-destructive size-4" />
             ) : (
@@ -252,17 +287,41 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
         </div>
       </div>
 
-      <Button
-        variant="outline"
-        onClick={() => openVerification(view.verificationUri, view.userCode)}
-      >
-        <ExternalLink className="mr-1.5 size-4" />
-        Open dorkos.ai/activate
-      </Button>
+      <div className="space-y-2">
+        <Button variant="outline" onClick={handleOpen}>
+          <ExternalLink className="mr-1.5 size-4" />
+          Open the approval page
+        </Button>
+        {openError && (
+          <p className="text-destructive text-sm" role="alert">
+            {openError}
+          </p>
+        )}
+      </div>
 
-      <div className="text-muted-foreground flex items-center gap-2 text-sm" role="status">
+      <div className="text-muted-foreground flex items-center gap-2 text-sm">
         <Spinner />
-        <span>Waiting for you to approve on dorkos.ai…</span>
+        <p>
+          {/* Only this part is live. The ticking sentence sits OUTSIDE the
+              status region: some screen readers announce any change under a
+              live region, aria-hidden or not, and read the whole region each
+              time. The region carries a coarse sentence instead, which changes
+              only at five minutes and at the last minute. */}
+          <span role="status">
+            Waiting for you to approve.
+            {msLeft !== null && announced && (
+              <span className="sr-only"> {spokenExpiry(entry.msLeft, msLeft)}</span>
+            )}
+          </span>
+          {msLeft !== null && (
+            <>
+              {' '}
+              <span aria-hidden className="tabular-nums" data-testid="cloud-link-expiry">
+                {visibleExpiry(msLeft)}
+              </span>
+            </>
+          )}
+        </p>
       </div>
     </div>
   );
@@ -310,22 +369,52 @@ function LinkedState({
               {unlinking ? 'Unlinking…' : 'Unlink'}
             </Button>
           </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Unlink this instance?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This instance will stop reporting to your DorkOS account. You can link it again at
-                any time.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={() => void unlink()}>Unlink</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
+          <UnlinkConfirm unlink={unlink} />
         </AlertDialog>
       </div>
     </div>
+  );
+}
+
+/**
+ * The unlink confirmation. Unlinking also stops every app connected through
+ * the DorkOS account, so it lists them and the button says how many, the same
+ * way removing a key does in Settings › Connections.
+ */
+function UnlinkConfirm({ unlink }: { unlink: () => Promise<void> }) {
+  const connections = useConnectorConnections();
+  const apps = connections.data ? dorkosAccountApps(connections.data.connections) : [];
+  const { stopping, idle } = splitByImpact(apps);
+  return (
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Unlink this instance?</AlertDialogTitle>
+        <AlertDialogDescription>
+          This instance will stop reporting to your DorkOS account. You can link it again at any
+          time.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      {connections.isPending ? (
+        <p className="text-muted-foreground text-sm">Checking which apps use this account…</p>
+      ) : connections.isError ? (
+        <p className="text-muted-foreground text-sm">
+          Couldn’t check which apps use this account. Any app connected through it will stop
+          working.
+        </p>
+      ) : (
+        <ConnectionImpactList
+          stopping={stopping}
+          idle={idle}
+          stopLine={`${stopping.length === 1 ? 'This app' : `These ${stopping.length} apps`} will stop working for every agent:`}
+        />
+      )}
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction onClick={() => void unlink()}>
+          {stopping.length > 0 ? `Unlink and stop ${appCount(stopping.length)}` : 'Unlink'}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
   );
 }
 
@@ -346,7 +435,7 @@ function RecoveryState({
   return (
     <div className="space-y-3">
       <div className="flex items-start gap-2">
-        <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
+        <TriangleAlert className="text-status-warning-dot mt-0.5 size-4 shrink-0" />
         <div className="space-y-1">
           <p className="text-sm font-medium">{title}</p>
           <p className="text-muted-foreground text-sm">{description}</p>
@@ -365,17 +454,21 @@ function RecoveryState({
 }
 
 /**
- * Open the activation page in a new tab, code pre-filled. Guarded: only `http`/
- * `https` URLs from the server response are opened, never a `javascript:` or
- * other scheme, and a malformed URL is ignored.
+ * Open the approval page in a new tab, code pre-filled, and say whether it
+ * opened. Guarded: only `http`/`https` URLs from the server response are
+ * opened, never a `javascript:`, `mailto:` or other scheme. A refused scheme or
+ * a URL that will not parse returns `false`, so the caller can tell the person
+ * instead of leaving a button that does nothing. `openLink`'s own answer is
+ * passed through as well; for an http(s) URL it does not refuse today.
  */
-function openVerification(verificationUri: string, userCode: string): void {
+function openVerification(verificationUri: string, userCode: string): boolean {
+  let url: URL;
   try {
-    const url = new URL(verificationUri);
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
-    url.searchParams.set('code', userCode);
-    openLink(url.href);
+    url = new URL(verificationUri);
   } catch {
-    // Malformed URL — do nothing rather than open something unexpected.
+    return false;
   }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+  url.searchParams.set('code', userCode);
+  return openLink(url.href);
 }

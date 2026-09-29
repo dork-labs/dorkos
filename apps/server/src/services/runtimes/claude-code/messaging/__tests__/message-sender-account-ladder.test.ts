@@ -19,6 +19,15 @@ import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { configManager } from '../../../../core/config-manager.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -28,11 +37,6 @@ vi.mock('../context-builder.js', () => ({
     .fn()
     .mockResolvedValue({ text: '<env>mock</env>', stable: '<env>mock</env>' }),
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
-}));
-vi.mock('../../tooling/tool-filter.js', () => ({
-  resolveToolConfig: vi
-    .fn()
-    .mockReturnValue({ tasks: true, relay: true, mesh: true, adapter: true }),
 }));
 vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/project'),
@@ -152,6 +156,35 @@ describe('the launch ladder at the spawn seam (spec billing-account-ladder)', ()
   it('bills the hinted account on a launch that has none of its own', async () => {
     const options = await runTurn(makeSession({ accountRoot: undefined }), 'acme-corp');
     expect(pinnedAccount(options)).toBe(HINT_ROOT);
+  });
+
+  it('bills a scheduled run on the account its schedule names (DOR-2384)', async () => {
+    // The scheduler's send, as `executeRunDirect` builds it: the run's settings
+    // spread whole, the schedule's account among them as the hint.
+    let captured: Options | undefined;
+    vi.mocked(query).mockImplementation((args) => {
+      captured = args.options;
+      return { [Symbol.asyncIterator]: async function* () {} } as unknown as ReturnType<
+        typeof query
+      >;
+    });
+    const opts: MessageSenderOpts = { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
+    for await (const _event of executeSdkQuery(
+      's1',
+      'run the nightly job',
+      makeSession({ accountRoot: undefined }),
+      opts,
+      {
+        permissionMode: 'acceptEdits',
+        systemPromptAppend: 'Job: nightly',
+        model: 'sonnet',
+        accountHint: 'acme-corp',
+        unattendedApprovals: true,
+      }
+    )) {
+      // drain
+    }
+    expect(pinnedAccount(captured!)).toBe(HINT_ROOT);
   });
 
   it("bills the AGENT's account when no hint came with the message", async () => {

@@ -18,24 +18,33 @@ import { SERVER_VERSION } from '../../../lib/version.js';
  * @param registry - Fully composed server capability registry.
  * @param principal - Turn-bound principal resolved by the loopback listener.
  * @param identity - Active agent identity resolved from the principal's path.
+ * @param hiddenToolNames - Tools this agent is not shown because their permission
+ *   resolves to Blocked (spec `agent-permissions` D15).
  * @returns MCP server whose handlers retain the authenticated turn context.
  */
 export function createAgentRuntimeMcpServer(
   registry: CapabilityRegistry,
   principal: ServerPrincipalProof,
-  identity: AgentIdentity
+  identity: AgentIdentity,
+  hiddenToolNames: ReadonlySet<string> = new Set()
 ): McpServer {
   if (principal.claims.kind !== 'runtime') {
     throw new Error('Agent runtime tools require a runtime principal.');
   }
 
   const server = new McpServer({ name: 'dorkos', version: SERVER_VERSION });
-  registerCapabilitiesAsMcpTools(server, registry, 'in-session', {
-    identity,
-    agentIdentityPresented: true,
-    sessionId: principal.claims.canonicalSessionId,
-    cwd: principal.claims.agentPath,
-    serverPrincipal: principal,
-  });
+  registerCapabilitiesAsMcpTools(
+    server,
+    registry,
+    'in-session',
+    {
+      identity,
+      agentIdentityPresented: true,
+      sessionId: principal.claims.canonicalSessionId,
+      cwd: principal.claims.agentPath,
+      serverPrincipal: principal,
+    },
+    hiddenToolNames
+  );
   return server;
 }

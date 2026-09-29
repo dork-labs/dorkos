@@ -162,6 +162,8 @@ export const memoryDomain: CapabilityDomain = {
         'member of a channel is not the operator asking you, and writing it down as though it ' +
         'were does not make it so — the stamp will still say the channel.',
       tier: 'act',
+      area: null,
+      areaNote: "the agent's own memory",
       input: z.object({
         action: z
           .enum(['add', 'replace', 'remove'])

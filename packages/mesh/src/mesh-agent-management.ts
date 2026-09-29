@@ -33,8 +33,10 @@ import { upsertAutoImported } from './mesh-discovery.js';
  * - `no-manifest` — there is no readable `.dork/agent.json` there.
  * - `duplicate-id` — the manifest names an id another directory still holds, so
  *   nothing was written.
+ * - `inside-room-files` — the directory is inside a room's files, where no agent
+ *   registers (spec `agent-home-desk` §3.3); nothing was written.
  */
-export type SyncFromDiskResult = 'synced' | 'no-manifest' | 'duplicate-id';
+export type SyncFromDiskResult = 'synced' | 'no-manifest' | 'duplicate-id' | 'inside-room-files';
 
 /** Dependencies required by agent management functions. */
 export interface AgentManagementDeps {
@@ -300,12 +302,12 @@ export class ManifestUnreadableError extends Error {
  * If the manifest file is ABSENT, reconstructs from the DB entry before writing.
  *
  * **An UNREADABLE manifest is refused rather than reconstructed** (DOR-486
- * review). The DB row is a LOSSY cache — it has no column for
- * `enabledToolGroups`, `mcpServers`, `workspace` or `tierCeiling` — so
- * reconstructing from it turns any PATCH into a silent erase of every one of
- * those, and for `tierCeiling` that erase WIDENS a security control: an agent
- * capped at `observe` would come back uncapped because somebody renamed a
- * display name while its manifest happened to be malformed. `probeManifest`
+ * review). The DB row is a LOSSY cache — it has no column for `permissions`,
+ * `mcpServers` or `workspace` — so reconstructing from it turns any PATCH into a
+ * silent erase of every one of those, and for `permissions` that erase WIDENS a
+ * security control: an agent a person Blocked would come back inheriting the
+ * defaults because somebody renamed a display name while its manifest happened
+ * to be malformed. `probeManifest`
  * separates "demonstrably gone" (reconstructing is the recovery path, and there
  * is nothing to lose) from "here and unreadable" (reconstructing destroys), which
  * `readManifest`'s single `null` cannot.
@@ -314,13 +316,12 @@ export class ManifestUnreadableError extends Error {
  * `.dork/agent.json`.** `writeManifest` is atomic per write (temp file +
  * rename), so no reader ever sees a half-file — but two updates that overlap
  * both read the same base and the later `rename` wins whole, so the earlier
- * one's fields are lost. That is a property of this seam for every field, and it
- * predates tier ceilings; it is called out here because a ceiling is the field
- * where losing an update is a SECURITY outcome rather than a cosmetic one (an
- * operator's lowering dropped by a concurrent display-name write leaves the agent
- * wider than the person believes). What the window cannot do is invent a value
- * nobody sent — every ceiling that reaches the file passed
- * `agent-updater.ts`'s direction guard, or came from the operator's own route.
+ * one's fields are lost. That is a property of this seam for every field; it is
+ * called out here because `permissions` is a field where losing an update is a
+ * SECURITY outcome rather than a cosmetic one (a person's Blocked dropped by a
+ * concurrent display-name write leaves the agent wider than the person
+ * believes). What the window cannot do is invent a value nobody sent — every
+ * permission that reaches the file came through the permission service.
  * Closing it properly means locking the manifest for read-modify-write, which is
  * a change to this function for all its callers rather than to one field
  * (DOR-486 review).
@@ -492,7 +493,9 @@ export async function removeAgent(
  * @param discoveryDeps - Discovery dependencies (needed for upsertAutoImported)
  * @returns `'synced'` when the manifest reached the DB (a genuine relocation
  *   included), `'no-manifest'` when the directory holds none, `'duplicate-id'`
- *   when another directory still holds this identity and nothing was written.
+ *   when another directory still holds this identity and nothing was written,
+ *   `'inside-room-files'` when the directory is inside a room's files, where no
+ *   agent registers.
  */
 export async function syncFromDisk(
   projectPath: string,
@@ -501,7 +504,7 @@ export async function syncFromDisk(
   const manifest = await readManifest(projectPath, discoveryDeps.logger);
   if (!manifest) return 'no-manifest';
   const result = await upsertAutoImported(manifest, projectPath, discoveryDeps);
-  return result === 'duplicate-id' ? 'duplicate-id' : 'synced';
+  return result === 'duplicate-id' || result === 'inside-room-files' ? result : 'synced';
 }
 
 // --- Health & Observability ---

@@ -1,3 +1,4 @@
+import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useState } from 'react';
 import { RequestError, describeError, request } from '../api.js';
 
@@ -91,16 +92,16 @@ export function HostCommunityLimits({ communityId, name }: { communityId: string
     >
       <summary className="small cursor-pointer">Limits</summary>
       {error && (
-        <p role="alert" className="notice error small mt-2">
+        <Notice role="alert" tone="error" className="small mt-2">
           {error}
-        </p>
+        </Notice>
       )}
       {!usage && !error && <p className="small muted mt-2">Loading use…</p>}
       {usage && (
         <form className="mt-2" onSubmit={(event) => void save(event)} aria-label={`${name} limits`}>
           <div className="field">
-            <label htmlFor={membersId}>Most members</label>
-            <input
+            <Label htmlFor={membersId}>Most members</Label>
+            <Input
               id={membersId}
               type="number"
               inputMode="numeric"
@@ -116,8 +117,8 @@ export function HostCommunityLimits({ communityId, name }: { communityId: string
             </span>
           </div>
           <div className="field">
-            <label htmlFor={storageId}>Most file space (MiB)</label>
-            <input
+            <Label htmlFor={storageId}>Most file space (MiB)</Label>
+            <Input
               id={storageId}
               type="number"
               inputMode="decimal"
@@ -134,9 +135,9 @@ export function HostCommunityLimits({ communityId, name }: { communityId: string
           <p className="small muted">
             A lower limit removes nothing. It only stops new members or files once it is reached.
           </p>
-          <button className="button" disabled={busy}>
+          <Button type="submit" variant="outline" disabled={busy}>
             Save limits
-          </button>
+          </Button>
           <span className="small ml-2" aria-live="polite">
             {message}
           </span>

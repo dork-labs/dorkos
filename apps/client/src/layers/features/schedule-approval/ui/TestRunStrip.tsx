@@ -77,9 +77,6 @@ export function TestRunStrip({ testRun, onOpenRun, className }: TestRunStripProp
           <Check className="text-status-success size-(--size-icon-xs) shrink-0" aria-hidden />
           <span>Test run finished{finishedWhen(finishedAt)}</span>
           {onOpenRun && (
-            // A real button rather than an anchor: the cockpit routes in-process
-            // and the Obsidian embed has no router at all, so the caller decides
-            // what "go there" means (and closes the panel it was drawn in).
             <button
               type="button"
               data-slot="schedule-test-run-open"

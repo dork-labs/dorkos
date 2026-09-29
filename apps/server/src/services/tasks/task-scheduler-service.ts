@@ -37,7 +37,12 @@ import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
 import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
 import { RunAccounting } from './run-accounting.js';
-import { emitRefusedAskActivity, emitRunActivity } from './run-activity.js';
+import {
+  emitRefusedAskActivity,
+  emitRunActivity,
+  emitUnregisteredAccountActivity,
+} from './run-activity.js';
+import { isRegisteredClaudeAccount } from '../runtimes/claude-code/claude-config-dir.js';
 import { dispatchRunViaRelay } from './relay-dispatch.js';
 import { pruneRunHistory, PRUNE_INTERVAL_MS } from './run-retention.js';
 import { sweepInterruptedRuns } from './crash-recovery.js';
@@ -48,6 +53,7 @@ import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { resolveRunSession } from './session/sticky-session.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
+import { assertOwnDesk, deskBindingFor } from '../core/agent-identity/index.js';
 import {
   resolveRunExecution,
   type RunExecution,
@@ -162,6 +168,12 @@ export interface SchedulerAgentManager {
       model?: string;
       /** The reasoning-effort rung this run resolved to; absent leaves it unset. */
       effort?: EffortLevel;
+      /**
+       * The schedule's Claude account (DOR-2384). Arrives here only because the
+       * run's settings are spread whole into both calls; the claude-code launch
+       * reads it off the send ({@link SchedulerAgentManager.sendMessage}).
+       */
+      accountHint?: string;
     }
   ): void;
   sendMessage(
@@ -172,6 +184,11 @@ export interface SchedulerAgentManager {
       cwd?: string;
       systemPromptAppend?: string;
       /**
+       * Nobody can answer an approval card inside this turn, so it must not hold
+       * for one (`MessageOpts.unattendedApprovals`, spec `agent-permissions` D6).
+       */
+      unattendedApprovals?: boolean;
+      /**
        * Sent again, for the same reason the permission mode and the cwd are: the
        * runtime contract resolves a turn as per-send override → persisted → its
        * own default, and a runtime whose sessions are not held in memory sees
@@ -180,6 +197,13 @@ export interface SchedulerAgentManager {
       model?: string;
       /** See {@link SchedulerAgentManager.sendMessage}'s `model`. */
       effort?: EffortLevel;
+      /**
+       * The schedule's Claude account as the launch hint
+       * (`MessageOpts.accountHint`, DOR-2384): read by the claude-code launch
+       * ladder only when this run starts a conversation, ignored by every other
+       * runtime. An id nobody registered falls through the ladder.
+       */
+      accountHint?: string;
     }
   ): AsyncGenerator<StreamEvent>;
   /**
@@ -897,6 +921,8 @@ export class TaskSchedulerService {
    * @param task - The task to resolve CWD for
    * @returns Where the run works, and where its agent's manifest lives
    * @throws When agentId is set but the agent is not found in the Mesh registry
+   * @throws {DeskNotOwnError} When the agent's folder resolves to another agent's
+   *   (spec `agent-home-desk` §3.4)
    */
   private async resolveRunPlacement(task: Task): Promise<RunPlacement> {
     if (task.agentId && this.meshCore) {
@@ -907,10 +933,13 @@ export class TaskSchedulerService {
             'The agent may have been unregistered. Re-link the task to a valid agent or directory.'
         );
       }
-      return {
-        cwd: (await resolveSessionCwd({ agentPath: projectPath })).cwd,
-        agentPath: projectPath,
-      };
+      const resolved = await resolveSessionCwd({ agentPath: projectPath });
+      // **The desk guard** (spec `agent-home-desk` §3.4, DOR-2356): a run for
+      // this agent never stands in another agent's home, a copy of it, or a
+      // room's folder. A refusal throws, and the run is recorded failed with
+      // the reason — nothing reaches a runtime.
+      assertOwnDesk(projectPath, resolved.cwd, deskBindingFor(resolved));
+      return { cwd: resolved.cwd, agentPath: projectPath };
     }
     // Unchanged: `process.cwd()`, not `DEFAULT_CWD`. The two are the same in
     // every deployment that does not set `DORKOS_DEFAULT_CWD`, and routing an
@@ -1080,6 +1109,7 @@ export class TaskSchedulerService {
           runtime: execution.runtimeType,
           model: execution.settings.model ?? null,
         });
+        this.reportUnregisteredAccount(task, run, execution);
 
         // **Only a runtime the relay can actually drive, right now** (DOR-1614,
         // DOR-1636). This read `execution.runtimeType === 'claude-code'` while
@@ -1113,12 +1143,13 @@ export class TaskSchedulerService {
                   runs: this.runs,
                   // Already resolved, once, above — see `resolveRunPlacement`.
                   resolveCwd: () => Promise.resolve(placement.cwd),
+                  ...(placement.agentPath !== undefined ? { forAgent: placement.agentPath } : {}),
                 },
                 task,
                 run,
                 execution
               )
-            : await this.executeRunDirect(task, run, execution, placement.cwd);
+            : await this.executeRunDirect(task, run, execution, placement.cwd, placement.agentPath);
           recordDispatchEnd(dispatchId, 'answered');
           return result;
         } catch (err) {
@@ -1127,6 +1158,31 @@ export class TaskSchedulerService {
         }
       })
     );
+  }
+
+  /**
+   * Say in the Activity feed when this run will not start on the account its
+   * schedule names, because no registered account has that id (DOR-2384).
+   *
+   * Asked once, before either dispatch path, so the direct and relay runs say
+   * the same thing. Only where the account would actually be read: a
+   * claude-code run that starts a conversation. A sticky run resuming one stays
+   * on that conversation's account whatever the schedule says, and a registry
+   * nobody can read says nothing rather than something that may be false.
+   *
+   * @param task - The task being dispatched.
+   * @param run - The run being dispatched.
+   * @param execution - What the run resolved to.
+   */
+  private reportUnregisteredAccount(task: Task, run: TaskRun, execution: RunExecution): void {
+    const account = execution.settings.accountHint;
+    if (!account || execution.runtimeType !== 'claude-code') return;
+    const { hasStarted } = resolveRunSession(this.store, task, {
+      runtimeType: execution.runtimeType,
+    });
+    if (hasStarted) return;
+    if (isRegisteredClaudeAccount(account) !== false) return;
+    emitUnregisteredAccountActivity(this.activityService, task, run, account);
   }
 
   /**
@@ -1226,12 +1282,17 @@ export class TaskSchedulerService {
    * @param effectiveCwd - Where it runs, resolved once by
    *   {@link TaskSchedulerService.resolveRunPlacement}. A broken agent link has
    *   already failed the run there, with the same message it used to raise here.
+   * @param forAgent - The home of the task's agent, when it has one. Sent with
+   *   the turn so the runtime reads identity from that home and refuses a
+   *   folder that resolves to another agent's (spec `agent-home-desk` §3.2
+   *   row 12).
    */
   private async executeRunDirect(
     task: Task,
     run: TaskRun,
     execution: RunExecution,
-    effectiveCwd: string
+    effectiveCwd: string,
+    forAgent: string | undefined
   ): Promise<void> {
     // The manager for the runtime this run RESOLVED to, not one bound at boot.
     // Safe to `get` unconditionally: `resolveRunExecution` has already refused an
@@ -1362,6 +1423,7 @@ export class TaskSchedulerService {
       const permissionMode = (task.permissionMode ??
         resolveScheduledRunPermissionMode({
           capabilities: execution.capabilities,
+          agent: execution.agent,
         })) as PermissionMode;
 
       agentManager.ensureSession(sessionId, {
@@ -1399,8 +1461,13 @@ export class TaskSchedulerService {
       const stream = agentManager.sendMessage(sessionId, task.prompt, {
         permissionMode,
         cwd: effectiveCwd,
+        ...(forAgent !== undefined ? { forAgent } : {}),
         systemPromptAppend: taskAppend,
         ...execution.settings,
+        // The same line as `unattended` above, for approval cards: a timer fire
+        // does not hold its turn for one, a Run now a person pressed does
+        // (spec `agent-permissions` D6).
+        unattendedApprovals: !attended,
       });
 
       const stopped = await consumeRunStream(

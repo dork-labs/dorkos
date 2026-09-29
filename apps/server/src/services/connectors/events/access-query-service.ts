@@ -98,7 +98,12 @@ export class ConnectorEventAccessQueryService {
       return ConnectorAgentEventSubscriptionPageSchema.parse({
         agentId: query.agentId,
         subscriptions: page.map((row) => {
-          const subscription = this.store.get(owner, row.connection_id, row.id);
+          // The owner's delivery history and chat stay with the owner.
+          const {
+            lastDelivery: _lastDelivery,
+            chatSessionId: _chatSessionId,
+            ...subscription
+          } = this.store.get(owner, row.connection_id, row.id);
           const active =
             subscription.state === 'active' &&
             (row.mode !== 'managed' ||

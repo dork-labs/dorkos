@@ -13,10 +13,6 @@
  * need one, and inventing that surface before a second caller exists would be a
  * public API nobody asked for.
  *
- * It reads the store and nothing else — no router, no transport. The tab strip
- * renders in the Obsidian shell and in plenty of tests with neither behind it,
- * and a tab that resolved the route itself took 102 of them down when it tried.
- *
  * @module features/right-panel/ui/TabUnreadDot
  */
 import type { CanvasView } from '@/layers/shared/lib';

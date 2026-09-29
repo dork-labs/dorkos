@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  AgentManifestFileSchema,
   AgentManifestSchema,
   AgentRuntimeSchema,
-  EnabledToolGroupsSchema,
   UpdateAgentRequestSchema,
   ResolveAgentsRequestSchema,
   ResolveAgentsResponseSchema,
@@ -128,7 +128,7 @@ describe('UpdateAgentRequestSchema — new fields', () => {
 
   it('accepts empty object (all fields optional)', () => {
     const result = UpdateAgentRequestSchema.parse({});
-    // Fields with defaults (description, capabilities, personaEnabled, enabledToolGroups)
+    // Fields with defaults (description, capabilities, personaEnabled)
     // will be included with their default values when parsed
     expect(result.name).toBeUndefined();
     expect(result.persona).toBeUndefined();
@@ -265,59 +265,6 @@ describe('AgentRuntimeSchema', () => {
   });
 });
 
-describe('EnabledToolGroupsSchema', () => {
-  it('defaults to empty object when parsed with undefined', () => {
-    expect(EnabledToolGroupsSchema.parse(undefined)).toEqual({});
-  });
-
-  it('accepts partial overrides', () => {
-    const result = EnabledToolGroupsSchema.parse({ tasks: false });
-    expect(result).toEqual({ tasks: false });
-  });
-
-  it('accepts all fields', () => {
-    const result = EnabledToolGroupsSchema.parse({
-      tasks: true,
-      relay: false,
-      mesh: true,
-      adapter: false,
-    });
-    expect(result).toEqual({ tasks: true, relay: false, mesh: true, adapter: false });
-  });
-});
-
-describe('AgentManifestSchema with enabledToolGroups', () => {
-  it('includes enabledToolGroups in parsed manifest', () => {
-    const manifest = AgentManifestSchema.parse({
-      ...baseManifest,
-      enabledToolGroups: { tasks: false },
-    });
-    expect(manifest.enabledToolGroups).toEqual({ tasks: false });
-  });
-
-  it('defaults enabledToolGroups to empty object when omitted', () => {
-    const manifest = AgentManifestSchema.parse(baseManifest);
-    expect(manifest.enabledToolGroups).toEqual({});
-  });
-});
-
-describe('UpdateAgentRequestSchema — enabledToolGroups', () => {
-  it('accepts enabledToolGroups in a partial update', () => {
-    const result = UpdateAgentRequestSchema.parse({ enabledToolGroups: { relay: false } });
-    expect(result.enabledToolGroups).toEqual({ relay: false });
-  });
-
-  it('accepts enabledToolGroups as empty object', () => {
-    const result = UpdateAgentRequestSchema.parse({ enabledToolGroups: {} });
-    expect(result.enabledToolGroups).toEqual({});
-  });
-
-  it('accepts update without enabledToolGroups', () => {
-    const result = UpdateAgentRequestSchema.parse({ name: 'new-name' });
-    expect(result.name).toBe('new-name');
-  });
-});
-
 describe('AgentManifestSchema — model and effort (execution defaults, E2)', () => {
   it('keeps a model and an effort the agent names', () => {
     const manifest = AgentManifestSchema.parse({
@@ -437,5 +384,153 @@ describe('UpdateAgentRequestSchema — account', () => {
 
   it('refuses an empty account — a caller gets told, unlike a file on disk', () => {
     expect(UpdateAgentRequestSchema.safeParse({ account: '' }).success).toBe(false);
+  });
+});
+
+describe('AgentManifestFileSchema — the read-time fold of retired permission fields (spec agent-permissions D13)', () => {
+  // A legacy manifest file keeps meaning what a person set: each retired field
+  // becomes areas of the agent's permissions, and the field disappears. Every
+  // row reads the parse, never the fold function alone, because the parse is
+  // what every file read goes through.
+  const ALL_BLOCKED = {
+    rooms: 'blocked',
+    tasks: 'blocked',
+    agents: 'blocked',
+    messages: 'blocked',
+    connections: 'blocked',
+    packages: 'blocked',
+    settings: 'blocked',
+    safety: 'blocked',
+    permissions: 'blocked',
+    reach: 'blocked',
+  };
+
+  it('folds roomsManage: true into Rooms Allowed and drops the field', () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      enabledToolGroups: { roomsManage: true },
+    });
+    expect(m.permissions).toEqual({ areas: { rooms: 'allowed' } });
+    expect(m).not.toHaveProperty('enabledToolGroups');
+  });
+
+  it('folds roomsManage: false into Rooms Blocked (an explicit choice)', () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      enabledToolGroups: { roomsManage: false },
+    });
+    expect(m.permissions).toEqual({ areas: { rooms: 'blocked' } });
+  });
+
+  it.each([
+    ['tasks', 'tasks'],
+    ['relay', 'messages'],
+    ['mesh', 'agents'],
+    ['adapter', 'connections'],
+  ])('folds the %s switch into %s: true is Allowed, false is Blocked', (key, area) => {
+    expect(
+      AgentManifestFileSchema.parse({ ...baseManifest, enabledToolGroups: { [key]: true } })
+        .permissions
+    ).toEqual({ areas: { [area]: 'allowed' } });
+    expect(
+      AgentManifestFileSchema.parse({ ...baseManifest, enabledToolGroups: { [key]: false } })
+        .permissions
+    ).toEqual({ areas: { [area]: 'blocked' } });
+  });
+
+  it('adds no permissions when no switch is set (inherit), and drops the field', () => {
+    const m = AgentManifestFileSchema.parse({ ...baseManifest, enabledToolGroups: {} });
+    expect(m.permissions).toBeUndefined();
+    expect(m).not.toHaveProperty('enabledToolGroups');
+  });
+
+  it("folds tierCeiling: 'observe' into every area Blocked", () => {
+    const m = AgentManifestFileSchema.parse({ ...baseManifest, tierCeiling: 'observe' });
+    expect(m.permissions).toEqual({ areas: ALL_BLOCKED });
+    expect(m).not.toHaveProperty('tierCeiling');
+  });
+
+  it.each(['act', 'destructive'])("folds tierCeiling: '%s' into nothing", (ceiling) => {
+    // `act` never needed a fold: destructive actions ask by the permission
+    // model's own rule. `destructive` never limited anything.
+    const m = AgentManifestFileSchema.parse({ ...baseManifest, tierCeiling: ceiling });
+    expect(m.permissions).toBeUndefined();
+    expect(m).not.toHaveProperty('tierCeiling');
+  });
+
+  it('lets the ceiling outrank a documentation switch that was on', () => {
+    // The ceiling was the one legacy field that really limited the agent; a
+    // switch that was only ever about docs must not widen a capped agent.
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      tierCeiling: 'observe',
+      enabledToolGroups: { relay: true, roomsManage: true },
+    });
+    expect(m.permissions?.areas).toEqual(ALL_BLOCKED);
+  });
+
+  it('never overwrites an area set explicitly, whatever the legacy fields say', () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      enabledToolGroups: { roomsManage: true, tasks: false },
+      permissions: {
+        areas: { rooms: 'ask', tasks: 'allowed' },
+        actions: { 'rooms.merge': 'blocked' },
+      },
+    });
+    expect(m.permissions).toEqual({
+      areas: { rooms: 'ask', tasks: 'allowed' },
+      actions: { 'rooms.merge': 'blocked' },
+    });
+  });
+
+  it("keeps a phase-1 Rooms setting beside tierCeiling: 'observe', and Blocks the rest", () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      tierCeiling: 'observe',
+      permissions: { areas: { rooms: 'allowed' } },
+    });
+    expect(m.permissions?.areas).toEqual({ ...ALL_BLOCKED, rooms: 'allowed' });
+  });
+
+  it('drops a legacy value of the wrong type as absent', () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      tierCeiling: 'everything',
+      enabledToolGroups: { tasks: 'yes' },
+    });
+    expect(m.permissions).toBeUndefined();
+  });
+
+  it('parses an area key a newer build knows', () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      permissions: { areas: { future: 'allowed' } },
+    });
+    expect(m.permissions?.areas).toEqual({ future: 'allowed' });
+  });
+
+  it('fails the parse loudly on a state that is not one of the three', () => {
+    expect(
+      AgentManifestFileSchema.safeParse({
+        ...baseManifest,
+        permissions: { areas: { rooms: 'yes' } },
+      }).success
+    ).toBe(false);
+    expect(
+      AgentManifestSchema.safeParse({ ...baseManifest, permissions: { areas: { rooms: 'yes' } } })
+        .success
+    ).toBe(false);
+  });
+
+  it('never lets the generic agent PATCH carry permissions or the retired fields', () => {
+    const parsed = UpdateAgentRequestSchema.parse({
+      permissions: { areas: { rooms: 'allowed' } },
+      enabledToolGroups: { roomsManage: true, tasks: false },
+      tierCeiling: 'observe',
+    });
+    expect(parsed).not.toHaveProperty('permissions');
+    expect(parsed).not.toHaveProperty('enabledToolGroups');
+    expect(parsed).not.toHaveProperty('tierCeiling');
   });
 });

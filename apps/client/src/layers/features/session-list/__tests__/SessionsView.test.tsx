@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -45,33 +45,6 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     runtime: 'claude-code',
     ...overrides,
   };
-}
-
-/**
- * Wrapper whose server config registers two named Claude accounts, so the
- * per-account warning notices can resolve their operator labels.
- */
-function AccountsWrapper({ children }: { children: React.ReactNode }) {
-  const transport = createMockTransport({
-    getConfig: vi.fn().mockResolvedValue({
-      claudeCode: {
-        resolvedAccount: '/Users/dev/.claude',
-        inherited: true,
-        accounts: [
-          { path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: true },
-          { path: '/Users/dev/.claude3', label: 'Spare', isAccountRoot: true },
-        ],
-      },
-    }),
-  });
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return (
-    <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>
-        <TooltipProvider>{children}</TooltipProvider>
-      </TransportProvider>
-    </QueryClientProvider>
-  );
 }
 
 function Wrapper({ children }: { children: React.ReactNode }) {
@@ -135,101 +108,5 @@ describe('SessionsView', () => {
       wrapper: Wrapper,
     });
     expect(screen.getByText('No conversations yet')).toBeDefined();
-  });
-
-  // Per-runtime listing degradations (ADR-0310) surface as a quiet,
-  // runtime-named notice — never a blank or broken list (spec task 4.2).
-  describe('per-runtime listing warnings', () => {
-    it('renders a runtime-named notice with the server reason as its tooltip', () => {
-      render(
-        <SessionsView
-          activeSessionId={null}
-          groupedSessions={[{ label: 'Today', sessions: [makeSession()] }]}
-          warnings={[{ runtime: 'opencode', message: 'OpenCode server is starting' }]}
-          onSessionClick={() => {}}
-        />,
-        { wrapper: Wrapper }
-      );
-      const notice = screen.getByTestId('session-list-warning-opencode');
-      expect(notice.textContent).toContain('Couldn’t load OpenCode sessions');
-      expect(notice.getAttribute('title')).toBe('OpenCode server is starting');
-      // The rest of the list still renders — warnings are non-blocking.
-      expect(screen.getByText('Test conversation')).toBeDefined();
-    });
-
-    it('renders one notice per degraded runtime', () => {
-      render(
-        <SessionsView
-          activeSessionId={null}
-          groupedSessions={[]}
-          warnings={[
-            { runtime: 'codex', message: 'listSessions timed out after 2000ms' },
-            { runtime: 'opencode', message: 'OpenCode sidecar exited before ready' },
-          ]}
-          onSessionClick={() => {}}
-        />,
-        { wrapper: Wrapper }
-      );
-      expect(screen.getByTestId('session-list-warning-codex').textContent).toContain(
-        'Couldn’t load Codex sessions'
-      );
-      expect(screen.getByTestId('session-list-warning-opencode').textContent).toContain(
-        'Couldn’t load OpenCode sessions'
-      );
-      // The empty state still shows alongside the notices.
-      expect(screen.getByText('No conversations yet')).toBeDefined();
-    });
-
-    // Claude Code reads one store per account, so it degrades PER ACCOUNT and
-    // pushes several warnings all tagged `runtime: 'claude-code'` (spec
-    // `claude-code-accounts` §Consequence for the UI). Keyed by runtime alone,
-    // two unreadable accounts collided into duplicate React keys, duplicate test
-    // ids, and two identical sentences whose only difference hid in a tooltip.
-    it('renders one distinguishable notice per unreadable Claude account', async () => {
-      render(
-        <SessionsView
-          activeSessionId={null}
-          groupedSessions={[]}
-          warnings={[
-            {
-              runtime: 'claude-code',
-              account: '/Users/dev/.claude2',
-              message: 'Claude account /Users/dev/.claude2 could not be read: EACCES',
-            },
-            {
-              runtime: 'claude-code',
-              account: '/Users/dev/.claude3',
-              message: 'Claude account /Users/dev/.claude3 could not be read: EIO',
-            },
-          ]}
-          onSessionClick={() => {}}
-        />,
-        { wrapper: AccountsWrapper }
-      );
-
-      // One id per account, so neither notice can shadow the other.
-      const work = screen.getByTestId('session-list-warning-claude-code-/Users/dev/.claude2');
-      const spare = screen.getByTestId('session-list-warning-claude-code-/Users/dev/.claude3');
-      // Names the account, so two notices read as two different problems.
-      await waitFor(() => expect(work.textContent).toContain('Acme Corp'));
-      expect(spare.textContent).toContain('Spare');
-      expect(work.textContent).not.toBe(spare.textContent);
-      expect(work.getAttribute('title')).toBe(
-        'Claude account /Users/dev/.claude2 could not be read: EACCES'
-      );
-    });
-
-    it('renders no notice container when every runtime listed successfully', () => {
-      render(
-        <SessionsView
-          activeSessionId={null}
-          groupedSessions={[{ label: 'Today', sessions: [makeSession()] }]}
-          warnings={[]}
-          onSessionClick={() => {}}
-        />,
-        { wrapper: Wrapper }
-      );
-      expect(screen.queryByTestId('session-list-warnings')).toBeNull();
-    });
   });
 });

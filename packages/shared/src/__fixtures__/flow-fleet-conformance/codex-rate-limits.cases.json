@@ -1,0 +1,265 @@
+{
+  "contract": "fleet",
+  "about": "Codex's rate_limits payload as ledger observations (spec flow-cli-core 1.2, the rollout row; DorkOS reads the same shape from the Codex SDK). Call codexObservations(rateLimits, observedAt, 'rollout'). input.rateLimits is one rate_limits object; input.observedAt is when it was seen. Only the main limit (limit_id 'codex', or none) maps to plain windows: primary and secondary are keyed by window_minutes, not by slot: 300 is five_hour, 10080 is seven_day, any other integer of 1 or more is window:<minutes>. Any other limit becomes ONE model:<slug> bucket, the slug from limit_name, else limit_id: lowercased, every run of characters outside [a-z0-9._-] becomes '-', anything but a letter or digit trimmed from the start and '-' from the end. The bucket holds the limit's tightest window: the highest used_percent, a tie going to the longer window. used_percent is usedPct, resets_at (epoch seconds, or null) is resetsAt as UTC ISO, window_minutes is windowMinutes; a window with no integer window_minutes or no numeric used_percent is skipped. status is null, except when rate_limit_reached_type is not null: then only the window(s) that hit the limit are 'rejected': every window with used_percent >= 100, else the single tightest one (the highest used_percent, a tie going to the SHORTER window, which resets first). The other windows keep status null. A model bucket holds one window, so it is 'rejected'. plan_type becomes a { kind: 'plan', name } fact and credits a { kind: 'credits', hasCredits, unlimited, balance } fact (balance null unless a string). Every observation carries observedAt and source. expected.observations is the list in this order: windows (primary before secondary), then plan, then credits.",
+  "cases": [
+    {
+      "name": "the main limit maps by length: 300 is five_hour, 10080 is seven_day",
+      "input": {
+        "observedAt": "2026-09-26T16:00:00.000Z",
+        "rateLimits": {
+          "limit_id": "codex",
+          "primary": {"used_percent": 41.5, "window_minutes": 300, "resets_at": 1790449200},
+          "secondary": {"used_percent": 12, "window_minutes": 10080, "resets_at": 1790899200},
+          "plan_type": "pro",
+          "credits": {"has_credits": true, "unlimited": false, "balance": "12.50"},
+          "rate_limit_reached_type": null
+        }
+      },
+      "expected": {
+        "observations": [
+          {
+            "key": "five_hour",
+            "usedPct": 41.5,
+            "resetsAt": "2026-09-26T19:00:00.000Z",
+            "windowMinutes": 300,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          },
+          {
+            "key": "seven_day",
+            "usedPct": 12,
+            "resetsAt": "2026-10-02T00:00:00.000Z",
+            "windowMinutes": 10080,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          },
+          {"kind": "plan", "name": "pro", "observedAt": "2026-09-26T16:00:00.000Z", "source": "rollout"},
+          {
+            "kind": "credits",
+            "hasCredits": true,
+            "unlimited": false,
+            "balance": "12.50",
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no limit_id is the main limit; slots do not decide the key",
+      "input": {
+        "observedAt": "2026-09-26T16:00:00.000Z",
+        "rateLimits": {
+          "primary": {"used_percent": 5, "window_minutes": 10080, "resets_at": null},
+          "secondary": {"used_percent": 7, "window_minutes": 60, "resets_at": null}
+        }
+      },
+      "expected": {
+        "observations": [
+          {
+            "key": "seven_day",
+            "usedPct": 5,
+            "resetsAt": null,
+            "windowMinutes": 10080,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          },
+          {
+            "key": "window:60",
+            "usedPct": 7,
+            "resetsAt": null,
+            "windowMinutes": 60,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          }
+        ]
+      }
+    },
+    {
+      "name": "another limit becomes one model bucket holding its tightest window",
+      "input": {
+        "observedAt": "2026-09-26T16:00:00.000Z",
+        "rateLimits": {
+          "limit_id": "codex_bengalfox",
+          "limit_name": "GPT-5.3-Codex-Spark",
+          "primary": {"used_percent": 30, "window_minutes": 300, "resets_at": 1790449200},
+          "secondary": {"used_percent": 64, "window_minutes": 10080, "resets_at": 1790899200}
+        }
+      },
+      "expected": {
+        "observations": [
+          {
+            "key": "model:gpt-5.3-codex-spark",
+            "usedPct": 64,
+            "resetsAt": "2026-10-02T00:00:00.000Z",
+            "windowMinutes": 10080,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a tie goes to the longer window",
+      "input": {
+        "observedAt": "2026-09-26T16:00:00.000Z",
+        "rateLimits": {
+          "limit_id": "premium",
+          "primary": {"used_percent": 50, "window_minutes": 300, "resets_at": null},
+          "secondary": {"used_percent": 50, "window_minutes": 10080, "resets_at": null}
+        }
+      },
+      "expected": {
+        "observations": [
+          {
+            "key": "model:premium",
+            "usedPct": 50,
+            "resetsAt": null,
+            "windowMinutes": 10080,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          }
+        ]
+      }
+    },
+    {
+      "name": "reached type set means rejected, and nothing more",
+      "input": {
+        "observedAt": "2026-09-26T16:00:00.000Z",
+        "rateLimits": {
+          "limit_id": "codex",
+          "primary": {"used_percent": 100, "window_minutes": 300, "resets_at": 1790449200},
+          "rate_limit_reached_type": "rate_limit_reached"
+        }
+      },
+      "expected": {
+        "observations": [
+          {
+            "key": "five_hour",
+            "usedPct": 100,
+            "resetsAt": "2026-09-26T19:00:00.000Z",
+            "windowMinutes": 300,
+            "status": "rejected",
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a limit hit marks only the window at its limit, not the week",
+      "input": {
+        "observedAt": "2026-09-26T16:00:00.000Z",
+        "rateLimits": {
+          "limit_id": "codex",
+          "primary": {"used_percent": 100, "window_minutes": 300, "resets_at": 1790449200},
+          "secondary": {"used_percent": 30, "window_minutes": 10080, "resets_at": 1790899200},
+          "rate_limit_reached_type": "rate_limit_reached"
+        }
+      },
+      "expected": {
+        "observations": [
+          {
+            "key": "five_hour",
+            "usedPct": 100,
+            "resetsAt": "2026-09-26T19:00:00.000Z",
+            "windowMinutes": 300,
+            "status": "rejected",
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          },
+          {
+            "key": "seven_day",
+            "usedPct": 30,
+            "resetsAt": "2026-10-02T00:00:00.000Z",
+            "windowMinutes": 10080,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          }
+        ]
+      }
+    },
+    {
+      "name": "with no window at 100, the tightest is marked; a tie goes to the shorter window",
+      "input": {
+        "observedAt": "2026-09-26T16:00:00.000Z",
+        "rateLimits": {
+          "primary": {"used_percent": 97, "window_minutes": 10080, "resets_at": null},
+          "secondary": {"used_percent": 97, "window_minutes": 300, "resets_at": null},
+          "rate_limit_reached_type": "rate_limit_reached"
+        }
+      },
+      "expected": {
+        "observations": [
+          {
+            "key": "seven_day",
+            "usedPct": 97,
+            "resetsAt": null,
+            "windowMinutes": 10080,
+            "status": null,
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          },
+          {
+            "key": "five_hour",
+            "usedPct": 97,
+            "resetsAt": null,
+            "windowMinutes": 300,
+            "status": "rejected",
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a model bucket's one window is marked when its limit is hit",
+      "input": {
+        "observedAt": "2026-09-26T16:00:00.000Z",
+        "rateLimits": {
+          "limit_id": "premium",
+          "primary": {"used_percent": 60, "window_minutes": 300, "resets_at": null},
+          "rate_limit_reached_type": "rate_limit_reached"
+        }
+      },
+      "expected": {
+        "observations": [
+          {
+            "key": "model:premium",
+            "usedPct": 60,
+            "resetsAt": null,
+            "windowMinutes": 300,
+            "status": "rejected",
+            "observedAt": "2026-09-26T16:00:00.000Z",
+            "source": "rollout"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a window with no usable length or percentage is skipped; bad credits are left out",
+      "input": {
+        "observedAt": "2026-09-26T16:00:00.000Z",
+        "rateLimits": {
+          "primary": {"used_percent": 20, "window_minutes": null, "resets_at": null},
+          "secondary": {"used_percent": "high", "window_minutes": 10080},
+          "plan_type": "",
+          "credits": {"has_credits": true}
+        }
+      },
+      "expected": {"observations": []}
+    },
+    {
+      "name": "something that is not an object gives nothing",
+      "input": {"observedAt": "2026-09-26T16:00:00.000Z", "rateLimits": null},
+      "expected": {"observations": []}
+    }
+  ]
+}

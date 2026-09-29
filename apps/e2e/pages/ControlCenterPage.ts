@@ -4,8 +4,8 @@ import { type Page, type Locator } from '@playwright/test';
  * Page Object for the Control Center flyout (spec `full-power-defaults`, D7).
  *
  * The flyout opens from the ⚡ glyph in the top-bar cluster — the one always-
- * present anchor — and holds the global Trust Dial, the power switches and the
- * overrides ledger. Located by role and testid, never by layout: the flyout is a
+ * present anchor — and holds the permission preset picker, the power switches
+ * and the overrides ledger. Located by role and testid, never by layout: the flyout is a
  * portalled popover, so its geometry is not the test's to promise.
  */
 export class ControlCenterPage {
@@ -33,6 +33,11 @@ export class ControlCenterPage {
     this.remoteAccessSwitch = page.getByRole('switch', { name: 'Remote access' });
   }
 
+  /** The Careful · Balanced · Full power picker. */
+  get presetPicker(): Locator {
+    return this.page.getByRole('radiogroup', { name: 'Preset' });
+  }
+
   /** Open the flyout from the glyph and wait for its body to render. */
   async open() {
     await this.trigger.click();
@@ -44,7 +49,7 @@ export class ControlCenterPage {
    *
    * @param kind - Which surface the row deep-links to.
    */
-  overrideRow(kind: 'runtime' | 'session' | 'task' | 'binding'): Locator {
+  overrideRow(kind: 'runtime' | 'session' | 'task' | 'binding' | 'agent-permission'): Locator {
     return this.page.getByTestId(`override-row-${kind}`);
   }
 }

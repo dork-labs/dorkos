@@ -17,7 +17,7 @@ Under the gate right now, per that same line:
 
 | Surface                                        | Status                                                          |
 | ---------------------------------------------- | --------------------------------------------------------------- |
-| Obsidian plugin                                | Built but under-tested                                          |
+| Obsidian plugin                                | Retired; link the migration guide, never promise an install     |
 | Windows x64 desktop                            | Early alpha, never confirmed by a real end-user install         |
 | Mesh+Relay multi-agent coordination            | Shipped, unverified end to end                                  |
 | Marketplace Claude-Code-superset compatibility | Shipped, unverified end to end                                  |

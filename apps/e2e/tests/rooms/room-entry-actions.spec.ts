@@ -574,9 +574,10 @@ test.describe('Rooms — every message gets a menu', () => {
     // it on. So this assertion is the round trip, not an optimistic insert.
     await expect(roomsPage.threadEntries).toHaveCount(2, { timeout: SERVER_ROUND_TRIP_MS });
     await expect(roomsPage.threadEntries.nth(1)).toContainText('the cache is cold');
-    // One connector per reply, and none for the root: the root is the thing the
+    // One line under the root counting its replies: the root is the thing the
     // replies hang off, not one of them.
-    await expect(roomsPage.threadConnectors).toHaveCount(1);
+    await expect(roomsPage.threadDivider).toHaveCount(1);
+    await expect(roomsPage.threadDivider).toHaveText('1 reply');
 
     // The room did NOT grow a message. It grew a line saying there is a thread,
     // which is the whole of what the room pays for an aside of any length.

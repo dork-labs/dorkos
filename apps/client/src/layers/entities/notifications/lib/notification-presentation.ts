@@ -15,15 +15,18 @@ import {
   CircleAlert,
   Clock,
   Download,
+  Hourglass,
   LogIn,
   Mail,
   MessageSquare,
+  RotateCcw,
   ShieldQuestion,
   Sparkles,
   WifiOff,
   type LucideIcon,
 } from 'lucide-react';
 import type { NotificationDTO, NotificationKind } from '@dorkos/shared/notification-schemas';
+import { toSession } from '@/layers/shared/lib';
 
 /**
  * The Settings tab that holds every runtime's sign-in.
@@ -76,6 +79,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'signin.required': LogIn,
   'update.installed': Download,
   'report.daily': Sparkles,
+  'account.limited': Hourglass,
+  'account.reset': RotateCcw,
 };
 
 /** How loudly a notification draws. */
@@ -281,7 +286,7 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
 
   switch (subject.type) {
     case 'session':
-      return { to: '/session', search: { session: subject.id } };
+      return toSession({ session: subject.id });
     case 'run':
       return { to: '/', search: { detail: 'failed-run', itemId: subject.id } };
     case 'task':
@@ -296,7 +301,7 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
       // the note came from and where an answer would go.
       return sessionId === undefined
         ? { to: '/team', search: {} }
-        : { to: '/session', search: { session: sessionId } };
+        : toSession({ session: sessionId });
     default:
       return null;
   }

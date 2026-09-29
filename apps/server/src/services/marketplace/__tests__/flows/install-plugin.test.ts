@@ -110,7 +110,11 @@ async function stagePackage(opts: {
 async function buildDeps(): Promise<{
   dorkHome: string;
   extensionCompiler: { compile: ReturnType<typeof vi.fn> };
-  extensionManager: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+  extensionManager: {
+    enable: ReturnType<typeof vi.fn>;
+    disable: ReturnType<typeof vi.fn>;
+    forgetRunApproval: ReturnType<typeof vi.fn>;
+  };
   logger: Logger;
 }> {
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'install-plugin-home-'));
@@ -122,6 +126,7 @@ async function buildDeps(): Promise<{
     extensionManager: {
       enable: vi.fn().mockResolvedValue({ extension: {}, reloadRequired: true }),
       disable: vi.fn().mockResolvedValue({ extension: {}, reloadRequired: true }),
+      forgetRunApproval: vi.fn().mockResolvedValue(undefined),
     },
     logger: buildLogger(),
   };
@@ -258,16 +263,13 @@ describe('PluginInstallFlow', () => {
     const result = await flow.install(pkgPath, manifest, {});
 
     expect(result.ok).toBe(true);
-    // New package present, previous contents replaced.
+    // New package present. `old.txt`, which no install recorded, is a person's
+    // file and is kept (DOR-2245).
     expect(await pathExists(path.join(installRoot, '.dork', 'manifest.json'))).toBe(true);
-    expect(await pathExists(path.join(installRoot, 'old.txt'))).toBe(false);
-    // No leftover backup sibling under plugins/.
+    expect(await pathExists(path.join(installRoot, 'old.txt'))).toBe(true);
+    // No leftover backup or staging sibling under plugins/ (staging is a sibling now).
     const pluginEntries = await readdir(path.join(deps.dorkHome, 'plugins'));
-    expect(pluginEntries.some((e) => e.includes('.dorkos-bak-'))).toBe(false);
-
-    const stagingPrefix = 'dorkos-install-install-plugin-overwrite-plugin-';
-    const tmpEntries = await readdir(tmpdir());
-    expect(tmpEntries.some((e) => e.startsWith(stagingPrefix))).toBe(false);
+    expect(pluginEntries).toEqual(['overwrite-plugin']);
   });
 
   it('disables extensions the reinstalled version dropped and keeps the ones it retains', async () => {
@@ -316,6 +318,11 @@ describe('PluginInstallFlow', () => {
     expect(deps.extensionManager.disable).toHaveBeenCalledTimes(1);
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
     expect(deps.extensionManager.disable).not.toHaveBeenCalledWith('ext-b');
+    // The dropped one also loses its approval, so it asks again if a later
+    // version brings it back; the retained one keeps it (DOR-2383).
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'drift-plugin');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledTimes(1);
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a', installRoot);
     // The retained extension is re-enabled against the new bundle.
     expect(deps.extensionManager.enable).toHaveBeenCalledWith('ext-b');
 

@@ -172,6 +172,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       // fixture built on it would leave that path unexercised (DOR-1022).
       displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
       rolePromptDismissedAt: '2026-08-05T12:00:00.000Z',
+      identityPromptDismissedAt: '2026-08-05T12:00:00.000Z',
     },
     workbench: { defaultViewers: { csv: 'file' }, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
     tunnel: {
@@ -207,9 +208,11 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       claudeCode: {
         defaultAccount: '/Users/me/.claude2',
         accounts: [
-          { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
-          { id: 'claude2', path: '/Users/me/.claude2', label: null },
+          { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp', color: '#12ab9f' },
+          { id: 'claude2', path: '/Users/me/.claude2', label: null, color: null },
         ],
+        defaultAccountColor: '#0d9488',
+        dismissedFolders: ['/Users/me/.claude-old'],
         defaultModel: 'opus',
         defaultEffort: 'high',
         defaultTrustStop: null,
@@ -282,7 +285,10 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
     expect(pathsWithVerdict('withhold').sort()).toEqual([
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
+      'cloud.previousLinkProof',
       'connectors.rawMcpServers[].url',
+      // Not a secret: absolute paths on this machine that no agent needs (DOR-2383).
+      'extensions.approvedSources',
       'mcp.apiKey',
       'providers',
       'runtimes.codex.credentialRef',

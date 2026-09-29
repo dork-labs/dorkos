@@ -14,8 +14,6 @@ import { useFleetContextRollup } from '@/layers/entities/session';
  * - **Nothing to say** — hidden entirely (no known readings AND nothing near
  *   full or compacted); never renders "0 near full".
  *
- * The whole-runtime-failure case is already surfaced by the ADR-0310
- * `warnings[]` block in `SessionsView`, so the bar does not re-report it.
  * Placement-agnostic: it renders its own row and can sit anywhere.
  */
 export function FleetContextBar() {

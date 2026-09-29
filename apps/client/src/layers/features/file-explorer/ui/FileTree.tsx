@@ -55,6 +55,14 @@ interface FileTreeProps {
   readOnly?: boolean;
   /** Whether rows draw the "who last touched this" column. Defaults to false. */
   provenance?: boolean;
+  /** Whether entries can be copied (Copy, Paste, Duplicate, Alt-drop). Defaults to true. */
+  copyable?: boolean;
+  /** Whether entries are files on this machine's disk. Defaults to true. See `FileTreeRow`. */
+  onDisk?: boolean;
+  /** Upload files dropped from outside the app onto a row. See `FileTreeRow`. */
+  onUpload?: (toDir: string, files: File[]) => void;
+  /** Open the file picker to upload into a folder. */
+  onPickUpload?: (toDir: string) => void;
 }
 
 /**
@@ -187,14 +195,15 @@ export function FileTree(props: FileTreeProps) {
   const [rootDropTarget, setRootDropTarget] = useState(false);
   const { onCopyInto, onMove } = props;
   const readOnly = props.readOnly === true;
+  const copyable = props.copyable !== false;
   const handleRootDragOver = useCallback(
     (e: React.DragEvent) => {
       if (readOnly || !hasFilePathDrag(e.dataTransfer.types)) return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
+      e.dataTransfer.dropEffect = e.altKey && copyable ? 'copy' : 'move';
       setRootDropTarget(true);
     },
-    [readOnly]
+    [readOnly, copyable]
   );
   // A dragged path only ever names a row that is on screen — that is what made
   // it draggable — so the rows are where its `isDir` comes from.
@@ -214,10 +223,10 @@ export function FileTree(props: FileTreeProps) {
       const from = readFilePathDrag(e.dataTransfer);
       if (from === null) return;
       e.preventDefault();
-      if (e.altKey) copyDropped(from, ROOT_KEY);
+      if (e.altKey && copyable) copyDropped(from, ROOT_KEY);
       else onMove(from, ROOT_KEY);
     },
-    [copyDropped, onMove, readOnly]
+    [copyDropped, onMove, readOnly, copyable]
   );
 
   const renderRow = (row: FlatRow) => (
@@ -247,6 +256,10 @@ export function FileTree(props: FileTreeProps) {
       onCopyPath={props.onCopyPath}
       readOnly={props.readOnly}
       provenance={props.provenance}
+      copyable={props.copyable}
+      onDisk={props.onDisk}
+      onUpload={props.onUpload}
+      onPickUpload={props.onPickUpload}
     />
   );
 
@@ -314,9 +327,10 @@ function useKeyboardNav(props: FileTreeProps, activate: (entry: ExplorerEntry) =
       // — Cmd on a Mac, Ctrl everywhere else — and the rename input above has
       // already returned, so typing a name keeps its own copy and paste.
       if (e.metaKey || e.ctrlKey) {
-        // A read-only tree has nothing to copy INTO and nothing to paste, so
-        // the modifier ladder is skipped whole rather than each rung guarded.
-        if (props.readOnly === true) return;
+        // A read-only tree has nothing to copy INTO and nothing to paste, and
+        // a tree without copies has neither either, so the modifier ladder is
+        // skipped whole rather than each rung guarded.
+        if (props.readOnly === true || props.copyable === false) return;
         const key = e.key.toLowerCase();
         if (key === 'c' && current) {
           e.preventDefault();

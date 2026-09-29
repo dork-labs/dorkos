@@ -217,6 +217,342 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
       expect(held.heldUpdate).toEqual(fileDoc('agents-version.ts'));
     });
 
+    /**
+     * This window's OWN autosave, echoed back, is not somebody else's change
+     * (DOR-2213).
+     *
+     * The editor writes through on every debounced keystroke, and the server
+     * answers every write with a `canvas` frame at a higher `rev`. The hold
+     * above could not tell that echo from an agent's push, so a person typing
+     * in a file-backed document was told their agent had changed it — twice
+     * per edit, once for Milkdown's renormalise-on-mount save alone.
+     */
+    describe('while editing: this window’s own echo versus somebody else’s change', () => {
+      const markdown = (text: string): UiCanvasContent => ({
+        type: 'markdown',
+        content: text,
+        sourcePath: 'notes.md',
+      });
+
+      /** A frame for `doc-a` at `rev`, carrying `content`. */
+      const frame = (content: UiCanvasContent, rev: number) => ({
+        documentId: 'doc-a',
+        document: serverDocument({ id: 'doc-a', content, rev }),
+        change: 'updated' as const,
+      });
+
+      beforeEach(() => {
+        setSessionCanvasTransport(fakeTransport());
+        useAppStore
+          .getState()
+          .hydrateCanvasFromSnapshot(SESSION, [
+            serverDocument({ id: 'doc-a', content: markdown('v1'), rev: 5 }),
+          ]);
+        useAppStore.getState().setDocumentEditing('doc-a', true);
+      });
+
+      it('holds nothing for the echo of its own autosave, and takes its rev', () => {
+        useAppStore.getState().setDocumentContent('doc-a', markdown('v1, edited'));
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1, edited'), 6));
+
+        const doc = useAppStore.getState().openDocuments[0]!;
+        expect(doc.heldUpdate).toBeNull();
+        expect(doc.content).toEqual(markdown('v1, edited'));
+        expect(doc.rev).toBe(6);
+      });
+
+      it('holds nothing for an echo whose keys arrive in a different order', () => {
+        // The server re-parses the content, so the same document can come back
+        // with its fields in schema order rather than the order they were sent.
+        useAppStore.getState().setDocumentContent('doc-a', markdown('v1, edited'));
+        const reordered = { sourcePath: 'notes.md', content: 'v1, edited', type: 'markdown' };
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(reordered as UiCanvasContent, 6));
+
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toBeNull();
+      });
+
+      it('holds nothing for an echo that arrives after the next save, and keeps the newer one', () => {
+        // A slow round trip: the second debounced save went out before the first
+        // one's echo came back. That echo is still ours — and it is OLDER than
+        // what is on screen, so it must not replace it either.
+        useAppStore.getState().setDocumentContent('doc-a', markdown('v1, e'));
+        useAppStore.getState().setDocumentContent('doc-a', markdown('v1, edited'));
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1, e'), 6));
+
+        let doc = useAppStore.getState().openDocuments[0]!;
+        expect(doc.heldUpdate).toBeNull();
+        expect(doc.content).toEqual(markdown('v1, edited'));
+
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1, edited'), 7));
+        doc = useAppStore.getState().openDocuments[0]!;
+        expect(doc.heldUpdate).toBeNull();
+        expect(doc.rev).toBe(7);
+      });
+
+      it('still holds the agent’s push that lands between its own write and that write’s echo', () => {
+        useAppStore.getState().setDocumentContent('doc-a', markdown('v1, edited'));
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('the agent’s v2'), 6));
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1, edited'), 7));
+
+        const doc = useAppStore.getState().openDocuments[0]!;
+        // The echo that followed must not quietly take the agent's offer away.
+        expect(doc.heldUpdate).toEqual(markdown('the agent’s v2'));
+        expect(doc.content).toEqual(markdown('v1, edited'));
+      });
+
+      it('still holds the agent’s push that lands after the echo', () => {
+        useAppStore.getState().setDocumentContent('doc-a', markdown('v1, edited'));
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1, edited'), 6));
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('the agent’s v2'), 7));
+
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(
+          markdown('the agent’s v2')
+        );
+      });
+
+      it('spends each write on one echo, so a later push of the same words is held', () => {
+        useAppStore.getState().setDocumentContent('doc-a', markdown('v1, edited'));
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1, edited'), 6));
+        useAppStore.getState().setDocumentContent('doc-a', markdown('v1, edited again'));
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1, edited again'), 7));
+
+        // Somebody else puts the earlier words back. That write was already
+        // answered for, so it cannot vouch for this frame too.
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1, edited'), 8));
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('v1, edited'));
+      });
+
+      it('still holds a change another window made to the same document', () => {
+        // Two windows of one person write as the same author, so nothing on the
+        // row tells them apart — only what THIS window sent does. A second
+        // window's draft is a real conflict and gets the choice.
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('the other tab'), 6));
+
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(
+          markdown('the other tab')
+        );
+      });
+
+      it('holds nothing for a frame that changes nothing on screen', () => {
+        // Another window's write that says what is already here has no other
+        // version to offer.
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1'), 6));
+
+        const doc = useAppStore.getState().openDocuments[0]!;
+        expect(doc.heldUpdate).toBeNull();
+        expect(doc.rev).toBe(6);
+      });
+
+      /**
+       * What is on screen can move BACKWARDS mid-edit (review round 1): a refused
+       * earlier write puts its `previous` back, and a snapshot taken before a
+       * write resets the row. The echo of the newest write outstanding is then
+       * the only thing that says what the server really holds, so it lands whole.
+       */
+      it('lands the newest echo whole after an earlier refused write put older words back', async () => {
+        let refuseFirst!: (err: Error) => void;
+        const update = vi
+          .fn()
+          .mockImplementationOnce(
+            () =>
+              new Promise((_resolve, reject) => {
+                refuseFirst = reject;
+              })
+          )
+          .mockImplementationOnce(() => new Promise(() => {}));
+        setSessionCanvasTransport(fakeTransport({ updateSessionCanvasDocument: update }));
+
+        useAppStore.getState().setDocumentContent('doc-a', markdown('A'));
+        useAppStore.getState().setDocumentContent('doc-a', markdown('B'));
+        refuseFirst(new Error('refused'));
+        await vi.waitFor(() => {
+          expect(useAppStore.getState().openDocuments[0]!.content).toEqual(markdown('v1'));
+        });
+
+        // B landed on the server. Its echo must put B on screen, not leave v1.
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('B'), 6));
+        const doc = useAppStore.getState().openDocuments[0]!;
+        expect(doc.content).toEqual(markdown('B'));
+        expect(doc.heldUpdate).toBeNull();
+      });
+
+      it('lands the newest echo whole after a snapshot from before it reset the row', () => {
+        useAppStore.getState().setDocumentContent('doc-a', markdown('D'));
+        // A reconnect's snapshot, taken before D reached the server.
+        useAppStore
+          .getState()
+          .hydrateCanvasFromSnapshot(SESSION, [
+            serverDocument({ id: 'doc-a', content: markdown('v1'), rev: 5 }),
+          ]);
+        expect(useAppStore.getState().openDocuments[0]!.content).toEqual(markdown('v1'));
+
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('D'), 6));
+        const doc = useAppStore.getState().openDocuments[0]!;
+        expect(doc.content).toEqual(markdown('D'));
+        expect(doc.heldUpdate).toBeNull();
+      });
+
+      it('withdraws a held version once the server is back to what is on screen', () => {
+        // Another window writes X, then puts v1 back. X is nobody's any more.
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('X'), 6));
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('X'));
+
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1'), 7));
+        const doc = useAppStore.getState().openDocuments[0]!;
+        expect(doc.heldUpdate).toBeNull();
+        expect(doc.rev).toBe(7);
+      });
+
+      it('withdraws a held version only for an update, never for a re-open', () => {
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('X'), 6));
+        // Another window opens the same file again. The row it lands on says v1,
+        // but opening a file is not somebody choosing v1 over X.
+        useAppStore.getState().applyCanvasEvent(SESSION, {
+          ...frame(markdown('v1'), 7),
+          change: 'opened' as const,
+        });
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('X'));
+      });
+
+      it('spends the older writes along with the one an echo matched', () => {
+        useAppStore.getState().setDocumentContent('doc-a', markdown('A'));
+        useAppStore.getState().setDocumentContent('doc-a', markdown('B'));
+        // B's echo: A's is behind it and can only arrive with a lower rev.
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('B'), 6));
+
+        // So a later frame carrying A is somebody else putting A back.
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('A'), 7));
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('A'));
+      });
+
+      it('forgets its writes when the window binds a session again', () => {
+        useAppStore.getState().setDocumentContent('doc-a', markdown('A'));
+        useAppStore.getState().loadCanvasForSession(SESSION);
+        useAppStore
+          .getState()
+          .hydrateCanvasFromSnapshot(SESSION, [
+            serverDocument({ id: 'doc-a', content: markdown('v1'), rev: 5 }),
+          ]);
+        useAppStore.getState().setDocumentEditing('doc-a', true);
+
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('A'), 6));
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('A'));
+      });
+
+      it('forgets its writes to a document this window closes', () => {
+        useAppStore.getState().setDocumentContent('doc-a', markdown('A'));
+        useAppStore.getState().closeCanvasDocument('doc-a');
+        // The same row comes back (another window re-opened it).
+        useAppStore
+          .getState()
+          .hydrateCanvasFromSnapshot(SESSION, [
+            serverDocument({ id: 'doc-a', content: markdown('v1'), rev: 5 }),
+          ]);
+        useAppStore.getState().setDocumentEditing('doc-a', true);
+
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('A'), 6));
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('A'));
+      });
+
+      it('forgets its writes to a document the stream says was closed', () => {
+        useAppStore.getState().setDocumentContent('doc-a', markdown('A'));
+        useAppStore.getState().applyCanvasEvent(SESSION, { documentId: 'doc-a', closed: true });
+        useAppStore
+          .getState()
+          .hydrateCanvasFromSnapshot(SESSION, [
+            serverDocument({ id: 'doc-a', content: markdown('v1'), rev: 5 }),
+          ]);
+        useAppStore.getState().setDocumentEditing('doc-a', true);
+
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('A'), 6));
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('A'));
+      });
+
+      /**
+       * A pin or an activate changes the order, never what a document says
+       * (review round 2). Mid-edit it takes the row's bookkeeping and has no say
+       * over what is on offer, either way.
+       */
+      describe('a pin or an activate mid-edit', () => {
+        /** A reorder frame for `doc-a`, carrying whatever the row held. */
+        const reorder = (
+          content: UiCanvasContent,
+          rev: number,
+          change: 'pinned' | 'activated',
+          pinned = false
+        ) => ({
+          documentId: 'doc-a',
+          document: { ...serverDocument({ id: 'doc-a', content, rev }), pinned },
+          change,
+        });
+
+        it('does not withdraw a version the person has not answered for', () => {
+          useAppStore.getState().setDocumentContent('doc-a', markdown('B'));
+          useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('B'), 6));
+          useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('X'), 7));
+          expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('X'));
+
+          // Another window pins the document. The row it carries says B, which is
+          // what is on screen — and still nobody chose between B and X.
+          useAppStore
+            .getState()
+            .applyCanvasEvent(SESSION, reorder(markdown('B'), 8, 'pinned', true));
+
+          const doc = useAppStore.getState().openDocuments[0]!;
+          expect(doc.heldUpdate).toEqual(markdown('X'));
+          expect(doc.pinned).toBe(true);
+          expect(doc.rev).toBe(8);
+        });
+
+        it('offers nothing when it carries the words from before a write in flight', () => {
+          useAppStore.getState().setDocumentContent('doc-a', markdown('B'));
+          // Activated before B reached the server, so the row still says v1.
+          useAppStore.getState().applyCanvasEvent(SESSION, reorder(markdown('v1'), 6, 'activated'));
+
+          const doc = useAppStore.getState().openDocuments[0]!;
+          expect(doc.heldUpdate).toBeNull();
+          expect(doc.content).toEqual(markdown('B'));
+          expect(doc.rev).toBe(6);
+        });
+
+        it('does not spend the write its real echo will need', () => {
+          useAppStore.getState().setDocumentContent('doc-a', markdown('B'));
+          // B reached the server; a pin lands and carries it before B's echo.
+          useAppStore.getState().applyCanvasEvent(SESSION, reorder(markdown('B'), 6, 'pinned'));
+          // A reconnect's snapshot from before either puts v1 back on screen.
+          useAppStore
+            .getState()
+            .hydrateCanvasFromSnapshot(SESSION, [
+              serverDocument({ id: 'doc-a', content: markdown('v1'), rev: 5 }),
+            ]);
+
+          // B's own echo is still recognised as ours, and lands.
+          useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('B'), 7));
+          const doc = useAppStore.getState().openDocuments[0]!;
+          expect(doc.heldUpdate).toBeNull();
+          expect(doc.content).toEqual(markdown('B'));
+        });
+      });
+
+      it('does not count a write the server refused as its own', async () => {
+        setSessionCanvasTransport(
+          fakeTransport({
+            updateSessionCanvasDocument: vi.fn().mockRejectedValue(new Error('refused')),
+          })
+        );
+        useAppStore.getState().setDocumentContent('doc-a', markdown('never landed'));
+        await vi.waitFor(() => {
+          expect(useAppStore.getState().openDocuments[0]!.content).toEqual(markdown('v1'));
+        });
+
+        // So a later frame carrying those words came from somewhere else.
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('never landed'), 6));
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(
+          markdown('never landed')
+        );
+      });
+    });
+
     it('ignores an event for a session this window has left', () => {
       useAppStore.getState().applyCanvasEvent('sess-other', {
         documentId: 'doc-a',

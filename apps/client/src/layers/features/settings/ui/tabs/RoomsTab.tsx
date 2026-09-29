@@ -1,5 +1,6 @@
 /**
- * Rooms settings — how far agents may carry a conversation on their own.
+ * Rooms settings — how far agents may carry a conversation on their own, and
+ * how many conversations one agent may work in at once (DOR-2104).
  *
  * The four numbers behind the cascade guard and the turn budget, offered for the
  * first time (DOR-1430). Before this panel they were reachable only by editing
@@ -10,6 +11,8 @@
  * @module features/settings/ui/tabs/RoomsTab
  */
 import {
+  MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS,
+  MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
   MAX_TOTAL_TURNS_PER_HOUR_BOUNDS,
   ROOM_TURN_LIMIT_BOUNDS,
   ROOM_TURN_LIMIT_DEFAULTS,
@@ -77,8 +80,12 @@ const LIMIT_FIELDS: readonly LimitField[] = [
   },
 ];
 
+/** The label on the conversations-at-once field, and its accessible name. */
+const CONCURRENCY_LABEL = 'Conversations at once';
+
 /**
- * How far agents may carry a conversation without you.
+ * How far agents may carry a conversation without you, and how many
+ * conversations one agent may work in at the same time.
  *
  * **The numbers stay on screen when the switch goes off.** They are disabled,
  * not cleared and not hidden: turning the limits off is a temporary posture, and
@@ -86,15 +93,17 @@ const LIMIT_FIELDS: readonly LimitField[] = [
  * re-typing job. The server keeps them for the same reason.
  */
 export function RoomsTab() {
-  const { limits, unsupported, loadError, setLimits } = useRoomTurnLimits();
+  const { limits, unsupported, loadError, maxConcurrentTurnsPerAgent, setLimits } =
+    useRoomTurnLimits();
 
   return (
     <div className="space-y-6">
       {/* No heading: the Settings dialog draws the panel's own header. */}
       <p className="text-muted-foreground text-xs">
-        Agents in a room can answer each other without being asked. These limits decide how far that
-        goes before the room steps in, and every message you send starts the counts over. A single
-        room can be given limits of its own, in the panel beside it.
+        How your agents work in rooms: how far they may answer each other without being asked, and
+        how many conversations one agent may work in at once. Every message you send starts the
+        reply counts over, and a single room can be given reply limits of its own, in the panel
+        beside it.
       </p>
 
       {limits === null ? (
@@ -177,6 +186,31 @@ export function RoomsTab() {
                 />
               </SettingRow>
             ))}
+          </FieldCardContent>
+        </FieldCard>
+      )}
+
+      {/* Its own card, and never disabled by the switch above: the switch is
+          about agents answering each other, and this applies to every turn an
+          agent takes — yours included. Shown only once the server has said
+          what it is, for the same reason the limits wait for their read. A
+          change binds the very next message; nothing already running stops. */}
+      {limits !== null && maxConcurrentTurnsPerAgent !== null && (
+        <FieldCard>
+          <FieldCardContent>
+            <SettingRow
+              orientation="vertical"
+              label={CONCURRENCY_LABEL}
+              description={`How many conversations one agent may work in at the same time. Higher is faster, but turns that change the same files can collide. Default: ${MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}.`}
+            >
+              <BoundedNumberInput
+                aria-label={CONCURRENCY_LABEL}
+                value={maxConcurrentTurnsPerAgent}
+                min={MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS.min}
+                max={MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS.max}
+                onCommit={(next) => setLimits({ maxConcurrentTurnsPerAgent: next })}
+              />
+            </SettingRow>
           </FieldCardContent>
         </FieldCard>
       )}

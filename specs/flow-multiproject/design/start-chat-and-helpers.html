@@ -1,0 +1,299 @@
+<h2>7 · Two new core pieces: "start a chat here" and helpers' items</h2>
+<p class="subtitle">
+  Two questions on one page. Pick one in each. These are core DorkOS features, so any extension can
+  use them, not just flow.
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 12px/1.5 system-ui;
+  }
+  .ax-win {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    overflow: hidden;
+    color: #18181b;
+  }
+  .ax-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f4f4f5;
+  }
+  .ax-title {
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .ax-body {
+    padding: 14px 12px;
+    color: #71717a;
+    min-height: 40px;
+  }
+  .ax-muted {
+    color: #71717a;
+    font-size: 11px;
+  }
+  .ax-comp {
+    margin: 0 12px 10px;
+    border: 1px solid #d4d4d8;
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  .ax-draft {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    color: #18181b;
+  }
+  .ax-note {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    font-size: 11px;
+    color: #3f3f46;
+    background: #f4f4f5;
+    border-radius: 6px;
+    padding: 1px 7px;
+    margin: 0 12px 6px;
+  }
+  .ax-send {
+    float: right;
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 6px;
+    background: #18181b;
+    color: #fff;
+  }
+  .ax-dlg {
+    width: 320px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    padding: 12px 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    color: #18181b;
+  }
+  .ax-code {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    background: #fafafa;
+    border: 1px solid #f4f4f5;
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin: 6px 0;
+  }
+  .ax-b {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    border: 1px solid #d4d4d8;
+    background: #fff;
+    color: #18181b;
+  }
+  .ax-b.pri {
+    background: #18181b;
+    color: #fff;
+    border-color: #18181b;
+  }
+  .ax-toast {
+    width: 300px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 8px 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #18181b;
+  }
+  .ax-pop {
+    width: 300px;
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 8px 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    color: #18181b;
+  }
+  .ax-r {
+    display: flex;
+    gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid #f4f4f5;
+    align-items: center;
+  }
+  .ax-g {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ax-state {
+    font-size: 10px;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid #e4e4e7;
+    color: #3f3f46;
+    flex: none;
+  }
+  .ax-h {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #71717a;
+    margin: 6px 0 2px;
+  }
+  .ax-lnk {
+    font-size: 11px;
+    color: #18181b;
+    text-decoration: underline;
+    flex: none;
+  }
+  .ax-q {
+    font-weight: 600;
+    font-size: 15px;
+    margin: 22px 0 4px;
+    color: #18181b;
+  }
+</style>
+
+<div class="ax-q">
+  Question 1 · You click "Triage now" (or "Set up flow here", "Reconnect"). What happens?
+</div>
+<p class="subtitle" style="margin-top: 0">
+  An extension asks DorkOS to start a chat in a project with a command. It must never run on its
+  own.
+</p>
+
+<div class="options">
+  <div class="option" data-choice="chat-a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>A new chat opens with the command typed in, not sent (my pick)</h3>
+      <p>
+        You see exactly what will run, and you press Enter. You can edit it first. Nothing runs
+        until you do.
+      </p>
+      <div class="ax">
+        <div class="ax-win">
+          <div class="ax-head">
+            <span class="ax-title">New chat</span
+            ><span class="ax-muted">~/Keep/dork-os/dorkos</span>
+          </div>
+          <div class="ax-body">(empty chat)</div>
+          <div class="ax-note">⧉ Drafted by Flow · <u>Clear</u></div>
+          <div class="ax-comp">
+            <span class="ax-draft">/flow:triage</span><span class="ax-send">Send ↵</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="chat-b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>A small "Start this?" box, then it runs</h3>
+      <p>
+        One more click, but you stay where you are. The chat runs in the background, and a note
+        tells you where it is.
+      </p>
+      <div class="ax">
+        <div class="ax-dlg">
+          <div style="font-weight: 600">Start a chat in dorkos?</div>
+          <div class="ax-muted">Flow wants to run this for you:</div>
+          <div class="ax-code">/flow:triage</div>
+          <div style="text-align: right">
+            <span class="ax-b">Cancel</span> <span class="ax-b pri">Start</span>
+          </div>
+        </div>
+        <div style="height: 10px"></div>
+        <div class="ax-toast"><span>Started in a new chat</span><span class="ax-b">Open</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ax-q">
+  Question 2 · A chat hands items to helpers. How does the status-bar list show that?
+</div>
+<p class="subtitle" style="margin-top: 0">
+  This is the "3 items" list you picked (it opens up from the status bar). Some helpers run inside
+  this chat. Others get their own chat.
+</p>
+
+<div class="options">
+  <div class="option" data-choice="helper-a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>One list; a helper with its own chat gets an "Open its chat" link (my pick)</h3>
+      <p>
+        You care about the items, not who does them. The link is there when you want to look closer.
+      </p>
+      <div class="ax">
+        <div class="ax-pop">
+          <div class="ax-r">
+            <span class="ax-g">DOR-2401 Keep the old API?</span
+            ><span class="ax-state">Needs you</span>
+          </div>
+          <div class="ax-r">
+            <span class="ax-g">DOR-2387 Out-of-usage banner</span
+            ><span class="ax-state">Building</span><span class="ax-lnk">Open its chat</span>
+          </div>
+          <div class="ax-r" style="border: 0">
+            <span class="ax-g">DOR-2412 Faster sidebar</span><span class="ax-state">In review</span>
+          </div>
+          <div class="ax-muted" style="padding-top: 4px"><u>Open dorkos in Flow →</u></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="helper-b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Grouped: "This chat" and "Helpers"</h3>
+      <p>
+        Shows clearly who's doing what. Takes more room, and most of the time the split doesn't
+        matter.
+      </p>
+      <div class="ax">
+        <div class="ax-pop">
+          <div class="ax-h">This chat</div>
+          <div class="ax-r">
+            <span class="ax-g">DOR-2401 Keep the old API?</span
+            ><span class="ax-state">Needs you</span>
+          </div>
+          <div class="ax-h">Helpers · 2</div>
+          <div class="ax-r">
+            <span class="ax-g">DOR-2387 Out-of-usage banner</span
+            ><span class="ax-state">Building</span><span class="ax-lnk">Open</span>
+          </div>
+          <div class="ax-r" style="border: 0">
+            <span class="ax-g">DOR-2412 Faster sidebar</span><span class="ax-state">In review</span>
+          </div>
+          <div class="ax-muted" style="padding-top: 4px"><u>Open dorkos in Flow →</u></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 18px; color: #18181b">
+  <h3>Either way</h3>
+  <ul>
+    <li>
+      The helper's own chat shows the same chip, with just its item, so you can find your way back
+      and forth.
+    </li>
+    <li>
+      If a chat was started by an extension, its first message says so ("Drafted by Flow"), so you
+      always know where it came from.
+    </li>
+  </ul>
+</div>

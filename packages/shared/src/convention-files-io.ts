@@ -9,7 +9,7 @@
  * @module shared/convention-files-io
  */
 import { join } from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import { withFileLock } from './atomic-write.js';
 import type { ConventionFileName } from './convention-files.js';
 import { MANIFEST_DIR } from './manifest.js';
@@ -71,4 +71,43 @@ export async function writeConventionFile(
 ): Promise<void> {
   const filePath = join(projectPath, MANIFEST_DIR, filename);
   await withFileLock(filePath, (write) => write(content));
+}
+
+/**
+ * Write a convention file only when none exists yet, under the same per-path
+ * lock as {@link writeConventionFile}.
+ *
+ * A marketplace agent's persona and memory belong to the agent, not to the
+ * package that shipped it (ADR 260923-163516): an install may seed a missing
+ * `SOUL.md`, `NOPE.md` or `MEMORY.md`, but must never replace one, because an
+ * update or reinstall runs the same scaffold over files the agent already has.
+ * Any existing entry counts, an empty file included: emptying a memory is a
+ * choice, not an absence.
+ *
+ * The existence check and the write happen inside one {@link withFileLock}
+ * critical section, so two writers in this process never both write. A second
+ * process creating the file in that window is the cross-process residual
+ * `./atomic-write.js` documents for every writer here.
+ *
+ * @param projectPath - Absolute path to the agent's project directory
+ * @param filename - Convention file name, from `CONVENTION_FILES`
+ * @param content - File content to write when the file is absent
+ * @returns `true` when this call wrote the file, `false` when one was already there
+ */
+export async function writeConventionFileIfAbsent(
+  projectPath: string,
+  filename: ConventionFileName,
+  content: string
+): Promise<boolean> {
+  const filePath = join(projectPath, MANIFEST_DIR, filename);
+  return withFileLock(filePath, async (write) => {
+    try {
+      await lstat(filePath);
+      return false;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+    await write(content);
+    return true;
+  });
 }

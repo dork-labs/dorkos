@@ -22,7 +22,11 @@ import {
 } from '@/layers/shared/ui';
 import { packageDisplayLabel } from '@/layers/shared/lib';
 import type { PackageScope } from '@dorkos/shared/marketplace-schemas';
-import { usePermissionPreview, useInstalledPackages } from '@/layers/entities/marketplace';
+import {
+  PreviewRefusedNotice,
+  usePermissionPreview,
+  useInstalledPackages,
+} from '@/layers/entities/marketplace';
 import { useConfig } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { AgentPicker } from '@/layers/features/tasks';
@@ -140,18 +144,17 @@ export function InstallConfirmationDialog() {
   // show the GLOBAL scope's effects and conflicts for a non-global install.
   const needsAgent = effectiveScope === 'agent-local' && !selectedAgentId;
 
-  const { data: detail, isLoading: previewLoading } = usePermissionPreview(pkg?.name ?? null, {
+  const {
+    data: detail,
+    isLoading: previewLoading,
+    error: previewError,
+  } = usePermissionPreview(pkg?.name ?? null, {
     enabled: pkg !== null && !needsAgent,
     ...(selectedProjectPath ? { projectPath: selectedProjectPath } : {}),
   });
 
   const preview = needsAgent ? null : (detail?.preview ?? null);
 
-  // The folder this install is supposed to stay inside, so the preview can say
-  // so out loud. A global install lands under the DorkOS data directory; an
-  // agent-local one lands under that agent's own `.dork` folder. Unknown config
-  // (still loading, or an embedded host that reports none) leaves it undefined
-  // and the preview simply makes no containment claim.
   const { data: config } = useConfig();
   const installBase = selectedProjectPath ? `${selectedProjectPath}/.dork` : config?.dorkHome;
 
@@ -175,8 +178,16 @@ export function InstallConfirmationDialog() {
       (p) => p.name === pkg?.name && occupiesScope(p.scope, effectiveScope)
     );
 
+  // A package the server would not preview is one it will not install (the
+  // same validation runs on both), so the button never offers it (DOR-2314).
+  const previewRefused = !needsAgent && previewError !== null;
   const installDisabled =
-    install.isPending || previewLoading || hasBlockingConflicts || pkg === null || needsAgent;
+    install.isPending ||
+    previewLoading ||
+    previewRefused ||
+    hasBlockingConflicts ||
+    pkg === null ||
+    needsAgent;
 
   const buttonLabel = computeInstallButtonLabel({
     isPending: install.isPending,
@@ -187,8 +198,20 @@ export function InstallConfirmationDialog() {
   async function handleInstall() {
     if (!pkg) return;
     try {
-      const opts = selectedProjectPath ? { projectPath: selectedProjectPath } : undefined;
-      await install.mutateAsync({ name: pkg.name, options: opts });
+      // What the person was just shown the package runs, sent back untouched:
+      // the install refuses a package that now runs anything else, and a
+      // global plugin installed this way loads without a second card (DOR-2306).
+      const opts = {
+        ...(selectedProjectPath && { projectPath: selectedProjectPath }),
+        ...(detail?.disclosed && {
+          approvedDisclosure: detail.disclosed,
+          approvedContentHash: detail.contentHash,
+        }),
+      };
+      await install.mutateAsync({
+        name: pkg.name,
+        options: Object.keys(opts).length > 0 ? opts : undefined,
+      });
       close();
     } catch {
       // Error — toast already fired. Leave the dialog open so the user can retry.
@@ -271,6 +294,7 @@ export function InstallConfirmationDialog() {
                 </p>
               )}
               {previewLoading && <p className="text-muted-foreground text-sm">Loading preview…</p>}
+              {previewRefused && <PreviewRefusedNotice error={previewError} />}
               {preview && <PermissionPreviewSection preview={preview} installBase={installBase} />}
             </ResponsiveDialogBody>
 

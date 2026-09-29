@@ -14,6 +14,15 @@ vi.mock('@/layers/features/right-panel', () => ({
   RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
 }));
 
+// The account badge reads the session's account through real hooks and has its
+// own suite (`features/status/__tests__/AccountBadge.test.tsx`, gate included);
+// here it is a stub that says where the bar puts it and which session it names.
+vi.mock('@/layers/features/status', () => ({
+  AccountBadge: ({ sessionId }: { sessionId: string | null }) => (
+    <span data-testid="account-badge">{`account of ${sessionId ?? 'none'}`}</span>
+  ),
+}));
+
 // Mock app store (used by CommandPaletteTrigger)
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
@@ -311,5 +320,23 @@ describe('SessionHeader', () => {
       originLabel: 'Ana & DorkBot',
     });
     expect(screen.getByText('Ana & DorkBot')).toBeInTheDocument();
+  });
+
+  // --- Account badge (spec claude-account-ui §6.3) ---
+
+  it('puts the account badge in the chips, after the origin chip, for the open session', () => {
+    renderBar({ sessionId: 'session-7', origin: 'task', originLabel: 'Nightly groom' });
+    const origin = screen.getByTestId('session-origin-chip');
+    const badge = screen.getByTestId('account-badge');
+    expect(badge).toHaveTextContent('account of session-7');
+    // After the origin chip, in the same chips zone.
+    expect(origin.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(badge.parentElement).toBe(origin.parentElement);
+  });
+
+  it('still offers the account badge when the session has no origin chip', () => {
+    renderBar({ sessionId: 'session-7' });
+    expect(screen.queryByTestId('session-origin-chip')).not.toBeInTheDocument();
+    expect(screen.getByTestId('account-badge')).toHaveTextContent('account of session-7');
   });
 });

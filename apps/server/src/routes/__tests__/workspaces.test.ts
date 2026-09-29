@@ -13,7 +13,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import workspaceRoutes from '../workspaces.js';
-import { setWorkspaceManager, setWorkspaceRoot } from '../../services/workspace/index.js';
+import {
+  setWorkspaceManager,
+  setWorkspaceRoot,
+  UnsafeWorkspaceSourceError,
+} from '../../services/workspace/index.js';
 import type { WorkspaceManager, Workspace } from '@dorkos/shared/workspace';
 
 const fixtureTarget = swappableServer();
@@ -62,6 +66,17 @@ describe('workspaces routes', () => {
       .query({ path: '/root/core/DOR-84/x' });
     expect(res.status).toBe(200);
     expect(res.body.workspace.id).toBe('w1');
+  });
+
+  it('POST / answers 400 for a source git would misread (DOR-2326)', async () => {
+    const app = mountWith({
+      ensure: vi.fn().mockRejectedValue(new UnsafeWorkspaceSourceError('ext::sh')),
+    });
+    const res = await request(fixtureTarget.mount(app))
+      .post('/api/workspaces')
+      .send({ projectKey: 'core', key: 'k', source: 'ext::sh' });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('UNSAFE_WORKSPACE_SOURCE');
   });
 
   it('DELETE returns 200 + blocked:dirty for a dirty workspace (not 409)', async () => {

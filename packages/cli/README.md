@@ -208,6 +208,15 @@ These talk to a running DorkOS server so you (or an agent in any runtime) can dr
 | `dorkos task create ...`                         | Create a scheduled task                                               |
 | `dorkos task trigger <id>`                       | Run a task now                                                        |
 | `dorkos task runs`                               | List recent task runs                                                 |
+| `dorkos marketplace installed`                   | List every installed marketplace package, and where it lives          |
+| `dorkos marketplace outdated`                    | List only the packages that have an update                            |
+| `dorkos marketplace installed --verify`          | Also say whether each package's files changed since install           |
+| `dorkos marketplace check-files <name>`          | Check a package an older DorkOS installed, so updates keep your edits |
+| `dorkos permissions`                             | Show the preset, every area, and which agents differ                  |
+| `dorkos permissions set <area> <state>`          | Change one area or action for everyone (or `set --preset <name>`)     |
+| `dorkos permissions history`                     | Show recent permission changes, each with its id                      |
+| `dorkos permissions undo <id>`                   | Undo one change from the history                                      |
+| `dorkos agent permissions <agent>`               | Show or change what one agent may do                                  |
 | `dorkos room export <room>`                      | Save a channel or DM's history as a file (`--out`, `--force`)         |
 | `dorkos activity`                                | Show the activity feed (`--actor`, `--category`, `--type`, `--limit`) |
 | `dorkos capabilities`                            | List the actions this DorkOS accepts by name (the live catalog)       |
@@ -216,6 +225,8 @@ These talk to a running DorkOS server so you (or an agent in any runtime) can dr
 | `dorkos version --check`                         | Show the server and latest version                                    |
 
 Run any command with `--help` for its full options (for example `dorkos task create --help`).
+
+To add or change marketplace packages, use `dorkos install <package>`, `dorkos marketplace update --apply` and `dorkos uninstall <package>`. An update prints what each new version runs and asks before it installs anything.
 
 `dorkos capabilities` asks the running server for its live catalog: the actions it accepts by name, each with how risky it is. `dorkos call <id>` runs one of them and prints the result as JSON. Together they let an agent in any runtime, including Codex and OpenCode, find out what it can do and do it, without needing DorkOS's in-app tools.
 
@@ -235,20 +246,20 @@ None are required if you already have the [Claude Code CLI](https://docs.anthrop
 
 `DORKOS_BOUNDARY` limits which folders DorkOS may touch. `DORKOS_CORS_ORIGIN` adds websites that are allowed to call your server, on top of the ones DorkOS already trusts (an advanced setting; the default is safe for local use).
 
-| Variable               | Default           | What it does                                   |
-| ---------------------- | ----------------- | ---------------------------------------------- |
-| `DORKOS_PORT`          | `4242`            | Server port                                    |
-| `DORKOS_HOST`          | `localhost`       | Server host (use `0.0.0.0` for Docker)         |
-| `DORKOS_DEFAULT_CWD`   | Current directory | Default folder for new sessions                |
-| `DORKOS_BOUNDARY`      | Home directory    | Folders DorkOS may touch                       |
-| `DORK_HOME`            | `~/.dork`         | Where DorkOS keeps its data                    |
-| `LOG_LEVEL`            | `info`            | How much to log                                |
-| `DORKOS_TASKS_ENABLED` | `true`            | Turn the Tasks scheduler on or off             |
-| `DORKOS_OPEN`          | `true`            | Open the browser on startup                    |
-| `DORKOS_RELAY_ENABLED` | `true`            | Turn agent messaging (Relay) on or off         |
-| `DORKOS_CORS_ORIGIN`   | (none)            | Extra websites allowed to call your server     |
-| `DORKOS_TRUST_PROXY`   | `false`           | Count rate limits per client behind your proxy |
-| `MCP_API_KEY`          | (none)            | A fixed MCP key for servers nobody signs into  |
+| Variable               | Default           | What it does                                                                    |
+| ---------------------- | ----------------- | ------------------------------------------------------------------------------- |
+| `DORKOS_PORT`          | `4242`            | Server port                                                                     |
+| `DORKOS_HOST`          | `localhost`       | Server host (use `0.0.0.0` for Docker)                                          |
+| `DORKOS_DEFAULT_CWD`   | Current directory | Default folder for new sessions                                                 |
+| `DORKOS_BOUNDARY`      | Home directory    | Folders DorkOS may touch                                                        |
+| `DORK_HOME`            | `~/.dork`         | Where DorkOS keeps its data                                                     |
+| `LOG_LEVEL`            | `info`            | How much to log                                                                 |
+| `DORKOS_TASKS_ENABLED` | `true`            | Turn the Tasks scheduler on or off                                              |
+| `DORKOS_OPEN`          | `true`            | Open the browser on startup                                                     |
+| `DORKOS_RELAY_ENABLED` | `true`            | Turn agent messaging (Relay) on or off. Overrules the Settings switch while set |
+| `DORKOS_CORS_ORIGIN`   | (none)            | Extra websites allowed to call your server                                      |
+| `DORKOS_TRUST_PROXY`   | `false`           | Count rate limits per client behind your proxy                                  |
+| `MCP_API_KEY`          | (none)            | A fixed MCP key for servers nobody signs into                                   |
 
 **Remote access**
 

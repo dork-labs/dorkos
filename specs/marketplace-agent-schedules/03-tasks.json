@@ -1,0 +1,74 @@
+{
+  "spec": "specs/marketplace-agent-schedules/02-specification.md",
+  "slug": "marketplace-agent-schedules",
+  "generatedAt": "2026-09-24T16:40:00.000Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-09-24",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Ownership from the record",
+      "subject": "[marketplace-agent-schedules] [P1] Decide schedule ownership from the installed-files record",
+      "description": "File: apps/server/src/services/tasks/task-file-update.ts.\n\nAdd `export type PackageOwnership = { owned: false } | { owned: true; by: 'record' | 'legacy' }` and `export async function packageOwnershipOf(filePath, ctx: PackageOwnershipContext): Promise<PackageOwnership>`; `isPackageOwned` becomes `(await packageOwnershipOf(...)).owned`. Delete `isPackageOwnedAgent`.\n\nAlgorithm: (1) resolve the file through its deepest existing ancestor (realpath of the file, else realpath(parent) joined with the basename, recursively), because the create door asks about a file that does not exist yet and macOS temp dirs are symlinks. (2) Candidates, de-duplicated by resolved path: each packageOnlyRoots entry containing the file -> `<root>/<first segment>` with legacy 'location'; each sharedInstallRoots entry containing the file -> `<root>/<first segment>` with legacy 'marker'; agentDir when it contains the file -> legacy 'marker'. (3) Per candidate, `readInstalledFiles(installRoot)` from ../marketplace/lib/installed-files.js: a record with uninstalledAt claims nothing; otherwise rel = POSIX relative path, owned iff (rel in record.files OR rel at/under an ownedPaths entry) AND !matchesUserEditable(rel, record.userEditable) (from @dorkos/marketplace) -> {owned:true, by:'record'}. No record: 'location' -> owned; 'marker' -> owned iff installRoot has .dork/manifest.json or .dork/install-metadata.json -> {owned:true, by:'legacy'}. (4) otherwise {owned:false}. The bytes are deliberately NOT compared (not isProvenPackageFile): an edited shipped file is still replaced on update.\n\nRewrite the TSDoc of isPackageOwned, PackageOwnershipContext and packageOwnershipContext for the record rule and the legacy fallback.\n\nTests (package-owned-agent.test.ts, real records via writeInstalledFiles): listed shipped schedule refused; listed but bytes changed still refused; userEditable listed file editable; unlisted file in a recorded agent install editable; uninstalledAt record claims nothing; legacy agent (either marker) refused; plugin record-less refused by location; unlisted file in recorded plugin install editable; no-mesh and deregistered agent still refused for a listed file in a global agent package. Mutation checks: drop userEditable clause, add hash check, drop uninstalledAt clause, legacy answers false.",
+      "activeForm": "Reading ownership from the installed-files record",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Ownership from the record",
+      "subject": "[marketplace-agent-schedules] [P1] Let the create door file schedules under a recorded package agent",
+      "description": "File: apps/server/src/services/tasks/lifecycle/create-task.ts. Replace the isPackageOwnedAgent block with, before the 'already exists' check: `const ownership = await packageOwnershipOf(path.join(home.skillsDir, slug, SKILL_FILENAME), packageOwnershipContext(deps.dorkHome, home.projectPath))`; when owned, return 409 code 'schedule_package_owned' with, for by 'record': `This agent's package already has a schedule called \"<slug>\", so DorkOS didn't make another one with that name. Pick a different name.` and for by 'legacy': `This agent's package was installed by an older version of DorkOS, so DorkOS can't yet tell the package's files from yours, and a schedule made here could be lost at the package's next update. Update or reinstall the package once, then try again.` Rewrite the block comment (DOR-2272).\n\nAlso rewrite both refusal sentences in lifecycle/update-task-file.ts to: `This schedule came with an installed package, so DorkOS didn't change it: the package's next update would put its own version back. You can switch it on or off, or change when it runs, here. To change what it does, make your own copy.` and (grant) `This schedule came with an installed package, so DorkOS didn't change how much it may do: the package's next update would put its own setting back. You can still approve it as it stands, and it will run at the level the package asks for. To give it more, make your own copy.` Update any test that pins the old wording.\n\nTests: recorded agent package (project and global) create succeeds into <agentDir>/.agents/skills/<slug>/SKILL.md and a follow-up edit succeeds; create of a listed name the person deleted refused with the package-name message; legacy agent create refused with the legacy message and nothing written; hand-made agent unchanged. Mutation: remove the ownership call -> the listed-name and legacy tests fail.",
+      "activeForm": "Opening the create door for package agents",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — Ownership from the record",
+      "subject": "[marketplace-agent-schedules] [P1] Pin the sync rules for a person's schedule under a package agent",
+      "description": "Discovery (task-file-watcher.ts, task-reconciler.ts) asks isPackageOwnedInRoot, which now goes through packageOwnershipOf. Add integration tests (next to skills-root-discovery.integration.test.ts / package-owned-approval.integration.test.ts): with a recorded agent package registered as a project root, (a) a person's unlisted schedule is reported packageOwned false, so switching `enabled` in its file reaches the row; (b) a listed shipped schedule keeps the row's switch against the file (FB-26). Mutation: make packageOwnershipOf ignore the record -> (a) fails.",
+      "activeForm": "Pinning discovery's sync rules",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.1"],
+      "parallelWith": ["1.2"],
+      "issue": null
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — Ownership from the record",
+      "subject": "[marketplace-agent-schedules] [P1] Docs, ADR and changelog",
+      "description": "contributing/marketplace-installs.md §7: rewrite the isPackageOwned paragraphs (record rule, userEditable, uninstalledAt, legacy fallback per install root, both doors ask the same question) and remove the 'open follow-up work' sentence. ADR 260924-163130 (draft) already written with the spec. One changelog fragment in changelog/unreleased/ (writing-for-humans): you can now make a schedule for an agent you installed from the marketplace, it survives the package's updates, and a refused edit to a package's own schedule offers Make my own copy.",
+      "activeForm": "Updating docs and changelog",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.2"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — Make my own copy",
+      "subject": "[marketplace-agent-schedules] [P2] Offer Make my own copy when an edit is refused",
+      "description": "query-client.ts: the MutationCache onError skips the toast when `(error as {code?}).code` is in `mutation.meta?.inlineErrorCodes` (string[]); document it in the module header. use-tasks.ts: useUpdateTask({ inlineErrorCodes }) per caller, exporting PACKAGE_OWNED_SCHEDULE_CODE; only the edit form passes it (the approval card's refused-level line relies on the toast).\n\ntask-form-values.ts: `copyFormValues(values)` returns the values with name `<name>-copy`, cut so the result fits MAX_NAME_LENGTH (100).\n\nTaskFormInner.tsx: new prop `onMakeCopy?: (values: ScheduleFormValues) => void`. When the edit mutation's error has code 'schedule_package_owned', render a notice (role=status) above the footer: the server sentence, then `The package's schedule keeps running unless you switch it off.`, and a Button 'Make my own copy' that calls onMakeCopy(copyFormValues(currentValues)). The notice stays until the next save.\n\nCreateTaskDialog.tsx: `isCopy` flag set only through applyFormValues(values, true) from onMakeCopy and cleared by every other form load; while set, render the create form (title 'New Schedule', no enable switch, no Delete, editTask undefined) on those values.\n\nTests: query-client suppresses only the listed code; copyFormValues trims; a refused edit shows the sentence and the button and no toast; clicking it shows 'New Schedule' with the edited prompt, `<name>-copy` and the same agent; Create calls createTask with them. Eyeball screenshots of the notice and the copy form in the dev app (desktop and phone width).",
+      "activeForm": "Adding Make my own copy",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.2"],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}

@@ -30,6 +30,15 @@ export interface SelectedTemplate {
   tags?: string[];
   /** Primary category. */
   category?: string;
+  /**
+   * The marketplace package this template IS, when it came from the gallery's
+   * marketplace listing (DOR-2325). Such an agent is created through the
+   * marketplace installer, held to what its preview showed, rather than cloned
+   * from `source`. Absent for a custom template URL, which is cloned and shown.
+   */
+  packageName?: string;
+  /** The marketplace it came from, alongside {@link packageName}. */
+  marketplace?: string;
 }
 
 export type ConflictStatus =

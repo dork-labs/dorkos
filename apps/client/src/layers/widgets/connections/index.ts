@@ -1,10 +1,7 @@
 /**
- * Connections widget — the /connections page and its two regions: Messaging
- * (where people and platforms reach your agents) and Accounts (services your
- * agents can act on for you).
+ * Connections widget — the /connections page: one list of apps (yours, then
+ * all apps), each connected app's side panel, and the dialogs the page opens.
  *
  * @module widgets/connections
  */
 export { ConnectionsPage } from './ui/ConnectionsPage';
-export { MessagingRegion } from './ui/MessagingRegion';
-export { AccountsRegion } from './ui/AccountsRegion';

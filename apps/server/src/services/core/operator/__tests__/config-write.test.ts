@@ -77,6 +77,36 @@ describe('applyGuardedConfigWrite', () => {
     return configManager.get('runtimes').claudeCode.defaultTrustStop;
   }
 
+  describe('the permissions section (spec `agent-permissions` D10)', () => {
+    it('keeps the refusal code `dorkos config set` compares as a literal', async () => {
+      // If you are changing this, change `packages/cli/src/config-write.ts` too.
+      const { USE_PERMISSIONS_API_CODE } = await import('../config-write.js');
+      expect(USE_PERMISSIONS_API_CODE).toBe('USE_PERMISSIONS_API');
+    });
+
+    it('refuses any permissions key from every door, even the operator, and writes nothing', () => {
+      // Only the permission routes write it, because only they carry a person's
+      // yes AND an audit event. The operator authority is the strongest one this
+      // function knows, so its refusal is the one that proves the rule.
+      for (const authority of [LOCAL_OPERATOR_AUTHORITY, OPERATOR_TOOL_AUTHORITY]) {
+        const result = applyGuardedConfigWrite({
+          patch: { permissions: { preset: 'full' } },
+          authority,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        expect(result.ok).toBe(false);
+        if (result.ok || result.kind !== 'refused') throw new Error('unreachable');
+        expect(result.refusal).toMatchObject({
+          status: 400,
+          code: 'USE_PERMISSIONS_API',
+          paths: ['permissions'],
+        });
+      }
+      expect(configManager.get('permissions').preset).toBeNull();
+    });
+  });
+
   describe('as `dorkos config set`, under the operator authority', () => {
     it('writes an operator-only setting and leaves a line naming the leaf and the door', async () => {
       // The write the CLI could always make, now with the record it never left.
@@ -150,27 +180,6 @@ describe('applyGuardedConfigWrite', () => {
       expect(storedStop()).toBe('autonomy');
     });
 
-    it('still lets the person turn standing permissions off with login off', async () => {
-      // `approvals.standingGrants` needs login ON over HTTP, because a caller
-      // there could pre-arm it. At the terminal that rule would refuse the
-      // person the PROTECTIVE direction — switching it off — on the one surface
-      // `standing-grant-posture.ts` says has to work with no server running.
-      configManager.set('approvals', {
-        ...configManager.get('approvals'),
-        standingGrants: true,
-      });
-
-      const result = applyGuardedConfigWrite({
-        patch: { approvals: { standingGrants: false } },
-        authority: LOCAL_OPERATOR_AUTHORITY,
-        source: 'dorkos config set',
-        writer: { kind: 'unattributed' },
-      });
-
-      expect(result.ok).toBe(true);
-      expect(configManager.get('approvals').standingGrants).toBe(false);
-    });
-
     it('refuses a value the schema will not take, instead of storing it', async () => {
       const result = applyGuardedConfigWrite({
         patch: { server: { port: 'notanumber' } },
@@ -185,6 +194,54 @@ describe('applyGuardedConfigWrite', () => {
       // The old `setDot` path wrote this string into the file, and the server
       // then silently ran on a default it never mentioned.
       expect(configManager.get('server').port).toBe(4242);
+    });
+  });
+
+  describe('a default account written with ~ (runtimes.claudeCode.defaultAccount)', () => {
+    /** Exactly the patch `dorkos config set runtimes.claudeCode.defaultAccount <value>` sends. */
+    function configSet(value: string | null): void {
+      const result = applyGuardedConfigWrite({
+        patch: { runtimes: { claudeCode: { defaultAccount: value } } },
+        authority: LOCAL_OPERATOR_AUTHORITY,
+        source: 'dorkos config set',
+        writer: { kind: 'unattributed' },
+      });
+      expect(result.ok).toBe(true);
+    }
+
+    function storedDefault(): unknown {
+      return configManager.getDot('runtimes.claudeCode.defaultAccount');
+    }
+
+    it('stores ~/.claude2 from `dorkos config set` as the absolute folder', () => {
+      configSet('~/.claude2');
+      expect(storedDefault()).toBe(path.join(os.homedir(), '.claude2'));
+    });
+
+    it('stores an absolute folder unchanged, and null as null', () => {
+      configSet('/Users/dev/.claude2');
+      expect(storedDefault()).toBe('/Users/dev/.claude2');
+      configSet(null);
+      expect(storedDefault()).toBeNull();
+    });
+
+    it('expands a pre-0.65.0 activeAccount the heal carries across on the next runtimes write', () => {
+      configManager.set('runtimes', {
+        ...configManager.get('runtimes'),
+        claudeCode: {
+          ...configManager.get('runtimes').claudeCode,
+          defaultAccount: null,
+          activeAccount: '~/.claude2',
+        } as never,
+      });
+      const result = applyGuardedConfigWrite({
+        patch: { runtimes: { claudeCode: { persistentSession: true } } },
+        authority: LOCAL_OPERATOR_AUTHORITY,
+        source: 'dorkos config set',
+        writer: { kind: 'unattributed' },
+      });
+      expect(result.ok).toBe(true);
+      expect(storedDefault()).toBe(path.join(os.homedir(), '.claude2'));
     });
   });
 
@@ -337,6 +394,58 @@ describe('applyGuardedConfigWrite', () => {
         displayName: 'Dorian',
         source: { kind: 'agent', agentName: 'DorkBot' },
       });
+    });
+  });
+
+  describe('recording a Files & commands move (spec `agent-permissions` D10)', () => {
+    it('tells the listener exactly which stops moved, after the write lands', async () => {
+      const { onTrustStopChange } = await import('../config-write.js');
+      const heard: unknown[] = [];
+      onTrustStopChange((moves, write) => heard.push({ moves, source: write.source }));
+      try {
+        const result = applyGuardedConfigWrite({
+          patch: { runtimes: { defaultTrustStop: 'ask', codex: { defaultTrustStop: 'act' } } },
+          authority: LOCAL_OPERATOR_AUTHORITY,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        expect(result.ok).toBe(true);
+        expect(heard).toEqual([
+          {
+            moves: [
+              { before: null, after: 'ask' },
+              { runtime: 'codex', before: null, after: 'act' },
+            ],
+            source: 'dorkos config set',
+          },
+        ]);
+      } finally {
+        onTrustStopChange(undefined);
+      }
+    });
+
+    it('stays quiet for a write that moves no stop, and for a refused one', async () => {
+      const { onTrustStopChange } = await import('../config-write.js');
+      const heard: unknown[] = [];
+      onTrustStopChange((moves) => heard.push(moves));
+      try {
+        applyGuardedConfigWrite({
+          patch: { ui: { theme: 'dark' } },
+          authority: LOCAL_OPERATOR_AUTHORITY,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        // Full autonomy with no acknowledgement is refused, so nothing moved.
+        applyGuardedConfigWrite({
+          patch: { runtimes: { claudeCode: { defaultTrustStop: 'autonomy' } } },
+          authority: LOCAL_OPERATOR_AUTHORITY,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        expect(heard).toEqual([]);
+      } finally {
+        onTrustStopChange(undefined);
+      }
     });
   });
 

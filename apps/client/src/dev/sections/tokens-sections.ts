@@ -7,23 +7,11 @@ import type { PlaygroundSection } from '../playground-registry';
  */
 export const TOKENS_SECTIONS: PlaygroundSection[] = [
   {
-    id: 'semantic-colors',
-    title: 'Semantic Colors',
+    id: 'client-surface-color',
+    title: 'Client Surface Color',
     page: 'tokens',
     category: 'Colors',
-    keywords: [
-      'color',
-      'palette',
-      'theme',
-      'background',
-      'foreground',
-      'primary',
-      'secondary',
-      'destructive',
-      'muted',
-      'accent',
-      'brand',
-    ],
+    keywords: ['surface', 'color', 'client', 'background'],
   },
   {
     id: 'status-colors',
@@ -38,6 +26,13 @@ export const TOKENS_SECTIONS: PlaygroundSection[] = [
     page: 'tokens',
     category: 'Colors',
     keywords: ['color', 'sidebar', 'navigation', 'panel'],
+  },
+  {
+    id: 'account-palette',
+    title: 'Account palette',
+    page: 'tokens',
+    category: 'Colors',
+    keywords: ['account', 'palette', 'color', 'dot', 'contrast', 'claude', 'identity'],
   },
   {
     id: 'typography',
@@ -68,10 +63,10 @@ export const TOKENS_SECTIONS: PlaygroundSection[] = [
     keywords: ['shadow', 'elevation', 'depth', 'box-shadow'],
   },
   {
-    id: 'icon-and-button-sizes',
-    title: 'Icon & Button Sizes',
+    id: 'client-icon-sizes',
+    title: 'Client Icon Sizes',
     page: 'tokens',
     category: 'Layout',
-    keywords: ['icon', 'button', 'size', 'height', 'width', 'dimension'],
+    keywords: ['icon', 'size', 'height', 'width', 'dimension', 'mobile'],
   },
 ];

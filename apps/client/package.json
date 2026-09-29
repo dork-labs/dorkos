@@ -3,14 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    "./App": "./src/App.tsx",
-    "./stores/app-store": "./src/layers/shared/model/app-store/index.ts",
-    "./contexts/TransportContext": "./src/layers/shared/model/TransportContext.tsx",
-    "./lib/direct-transport": "./src/layers/shared/lib/direct-transport.ts",
-    "./lib/platform": "./src/layers/shared/lib/platform.ts",
-    "./lib/transport": "./src/layers/shared/lib/transport/index.ts"
-  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -28,6 +20,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dork-labs/cloud-api": "workspace:*",
+    "@dork-labs/ui": "workspace:*",
     "@dorkos/extension-api": "workspace:*",
     "@dorkos/icons": "workspace:*",
     "@dorkos/marketplace": "workspace:*",

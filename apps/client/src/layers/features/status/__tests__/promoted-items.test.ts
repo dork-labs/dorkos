@@ -6,18 +6,24 @@ import {
   type StatusPromotionContext,
 } from '../model/status-bar-registry';
 
-/** A resting session: connected, default everything, nothing to report. */
+/**
+ * A resting session: connected, default everything, nothing to report — and no
+ * usage or context reading yet, since either one now shows whenever it exists
+ * (spec `claude-account-ui` §6.8).
+ */
 function restingContext(overrides: Partial<StatusPromotionContext> = {}): StatusPromotionContext {
   return {
     cwd: '/work/repo',
     git: { dirty: false, onDefaultBranch: true },
-    contextPercent: 12,
+    contextPercent: null,
     connectionState: 'connected',
     permissionMode: 'default',
     permissionDescriptor: null,
     plan: null,
     runtime: { isDefault: true, canSelect: false },
-    usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
+    account: null,
+    usage: null,
+    usageStale: false,
     subagentsInFlight: 0,
     ...overrides,
   };

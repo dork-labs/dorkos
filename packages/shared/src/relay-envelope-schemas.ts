@@ -419,6 +419,28 @@ export const TaskDispatchPayloadSchema = z
      * no effort, so a receiver never has to know which those are.
      */
     effort: EffortLevelSchema.optional(),
+    /**
+     * Which Claude account this run should start on, as a registry id
+     * (DOR-2384) — the schedule's own `account`, carried so a run dispatched
+     * over relay launches on the same subscription a direct run would.
+     *
+     * The receiver hands it to the runtime as the launch `accountHint`, the top
+     * rung of the account ladder. No guard applies: a schedule's account is the
+     * operator's approved choice. Only a run that starts a conversation reads
+     * it, and an id no longer registered falls through the ladder. Absent means
+     * the agent's account, then the default — every envelope written before
+     * this field existed.
+     */
+    account: z.string().min(1).optional(),
+    /**
+     * The home of the task's agent, when it has one (spec `agent-home-desk`
+     * §3.2 row 12). The receiver hands it to the runtime as
+     * `MessageOpts.forAgent`, so identity is read from that home and a `cwd`
+     * that resolves to another agent's home is refused. Carried beside `cwd`,
+     * which alone would already decide identity, so it can only narrow what a
+     * forged envelope could claim. Absent for an agent-less task.
+     */
+    forAgent: z.string().min(1).optional(),
   })
   .openapi('TaskDispatchPayload');
 
@@ -463,6 +485,82 @@ export const TASK_CANCEL_SUBJECT_PREFIX = 'relay.control.task-cancel.';
  * button press — not from an agent that guessed a run id.
  */
 export const TASK_SCHEDULER_PRINCIPAL = 'relay.system.tasks.scheduler';
+
+// === Server-owned destinations ===
+
+/**
+ * Destination namespaces only the server may send to (DOR-2432).
+ *
+ * `relay.system.*` carries the server's own traffic: a scheduled run's
+ * dispatch (`relay.system.tasks.*`), a tool approval's answer
+ * (`relay.system.approval.*`), and the notices DorkOS posts. `relay.control.*`
+ * carries its stop signals. A handler on one of these subjects acts on what the
+ * message says, so an agent that can send here can forge a task run or answer
+ * its own approval (DOR-2416, DOR-2431). Those handlers also check the sender;
+ * this is the door in front of them.
+ *
+ * The bus holds the matching sender rule (`SERVER_DESTINATION_SENDERS` in
+ * `@dorkos/relay`); refusing a mailbox here (`SERVER_MANAGED_PREFIXES`) is a
+ * third, separate rule. This lives in shared so the adapter config schemas can
+ * refuse a webhook whose inbound subject lands here.
+ */
+export const SERVER_DESTINATION_PREFIXES = ['relay.system.', 'relay.control.'] as const;
+
+/** One server-owned subject agents may still send to, with the reason it is safe. */
+export interface AgentSendableServerSubject {
+  /** The exact subject. Never a prefix or a pattern. */
+  readonly subject: string;
+  /** Why an agent needs it, and why no handler there trusts what it says. */
+  readonly reason: string;
+}
+
+/**
+ * The server-owned subjects an agent may send to anyway. Empty on purpose.
+ *
+ * Audited 2026-09 (DOR-2432): no agent workflow sends to either namespace.
+ * The scheduler, the stop paths, the approval bridges and the notifiers all
+ * publish as server principals, and the only mailbox there,
+ * `relay.system.console`, has no reader that acts on it. An entry added here
+ * must name the exact subject and say why its handler is safe to reach, and the
+ * test that pins this list must change with it.
+ */
+export const AGENT_SENDABLE_SERVER_SUBJECTS: readonly AgentSendableServerSubject[] = [];
+
+/**
+ * The refusal every agent-facing send path returns for a server-owned address.
+ * Names the rule, so the model reading it knows not to retry another spelling.
+ */
+export const SERVER_DESTINATION_REFUSAL =
+  'relay.system.* and relay.control.* addresses belong to DorkOS; agents cannot send to them.';
+
+/**
+ * Whether a message sent to `subject` could land in a server-owned namespace,
+ * and is not on {@link AGENT_SENDABLE_SERVER_SUBJECTS}.
+ *
+ * A subject may carry wildcards (`relay.*.console`, `relay.>`), and a publish
+ * delivers to every mailbox its pattern matches, so this asks whether the
+ * pattern COULD match a server subject, not only whether it is written as one.
+ * Tokens compare without regard to case: the bus matches case-sensitively
+ * today, and refusing `relay.SYSTEM.*` as well costs nothing legitimate.
+ *
+ * @param subject - The destination (or reply address) a caller asked for.
+ */
+export function reachesServerDestination(subject: string): boolean {
+  if (AGENT_SENDABLE_SERVER_SUBJECTS.some((entry) => entry.subject === subject)) return false;
+  const tokens = subject.split('.');
+  return SERVER_DESTINATION_PREFIXES.some((prefix) => {
+    const prefixTokens = prefix.slice(0, -1).split('.');
+    for (let i = 0; i < prefixTokens.length; i++) {
+      const token = tokens[i];
+      if (token === undefined) return false;
+      if (token === '>') return true;
+      if (token === '*') continue;
+      if (token.toLowerCase() !== prefixTokens[i]) return false;
+    }
+    // A server subject has at least one token past the prefix.
+    return tokens.length > prefixTokens.length;
+  });
+}
 
 /** Every relay subject the scheduler publishes under. */
 export const TASK_SUBJECT_PREFIX = 'relay.system.tasks.';

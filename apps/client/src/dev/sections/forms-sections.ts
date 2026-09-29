@@ -7,55 +7,7 @@ import type { PlaygroundSection } from '../playground-registry';
  */
 export const FORMS_SECTIONS: PlaygroundSection[] = [
   // FormShowcases — Primitives
-  {
-    id: 'input',
-    title: 'Input',
-    page: 'forms',
-    category: 'Primitives',
-    keywords: ['text', 'field', 'form', 'type', 'placeholder', 'disabled'],
-  },
-  {
-    id: 'textarea',
-    title: 'Textarea',
-    page: 'forms',
-    category: 'Primitives',
-    keywords: ['text', 'multiline', 'form', 'input', 'field'],
-  },
-  {
-    id: 'switch',
-    title: 'Switch',
-    page: 'forms',
-    category: 'Primitives',
-    keywords: ['toggle', 'checkbox', 'boolean', 'on', 'off', 'setting'],
-  },
-  {
-    id: 'select',
-    title: 'Select',
-    page: 'forms',
-    category: 'Primitives',
-    keywords: ['dropdown', 'picker', 'option', 'choice', 'form'],
-  },
-  {
-    id: 'tabs',
-    title: 'Tabs',
-    page: 'forms',
-    category: 'Primitives',
-    keywords: ['tab', 'navigation', 'panel', 'switch', 'content'],
-  },
-  {
-    id: 'checkbox',
-    title: 'Checkbox',
-    page: 'forms',
-    category: 'Primitives',
-    keywords: ['check', 'tick', 'multi-select', 'boolean', 'form', 'toggle'],
-  },
-  {
-    id: 'radiogroup',
-    title: 'RadioGroup',
-    page: 'forms',
-    category: 'Primitives',
-    keywords: ['radio', 'single-select', 'option', 'choice', 'form', 'group'],
-  },
+
   {
     id: 'segmentedcontrol',
     title: 'SegmentedControl',
@@ -64,11 +16,11 @@ export const FORMS_SECTIONS: PlaygroundSection[] = [
     keywords: ['segmented', 'toggle', 'switch', 'radio', 'choice', 'trust', 'thumb', 'slide'],
   },
   {
-    id: 'label',
-    title: 'Label',
+    id: 'permissionstateswitch',
+    title: 'PermissionStateSwitch',
     page: 'forms',
     category: 'Primitives',
-    keywords: ['label', 'form', 'accessibility', 'input', 'htmlfor'],
+    keywords: ['permission', 'blocked', 'ask', 'allowed', 'area', 'floor', 'switch'],
   },
   {
     id: 'command',

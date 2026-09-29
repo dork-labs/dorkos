@@ -26,6 +26,9 @@
  * @module server/services/rooms/canvas/tests/room-canvas-turn
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
@@ -171,6 +174,8 @@ describe('a room turn’s canvas commands', () => {
       externalAuthor: false,
       agentPath: ANA,
       cwd: ANA,
+      additionalDirectories: [],
+      worktree: files?.worktreePath ?? null,
       sessionId: null,
       entry,
       prompt: entry.body.text,
@@ -323,18 +328,21 @@ describe('a room turn’s canvas commands', () => {
       // The review surface (spec `canvas-agent-seat` §8) appears only for a copy
       // that is measurably ahead, so the whole of it was unreachable from three
       // of the four runtimes.
+      // The turn stands at home and names the file by its full path in its
+      // copy (spec `agent-home-desk` §5.6): the source path decides the tree.
+      const copy = '/rooms/backend/worktrees/ana-1a2b3c4d';
       turnBehaviour = (opts) => {
         openTurn(opts);
         opts.projector.ingest({
           type: 'ui_command',
-          command: { action: 'open_diff', sourcePath: 'app.txt' },
+          command: { action: 'open_diff', sourcePath: `${copy}/app.txt` },
         });
         opts.projector.ingest({ type: 'turn_end' });
         return { accepted: true, canonicalId: opts.sessionId };
       };
       await createSessionRoomTurnRunner().run(
         turnRequest({
-          worktreePath: ANA,
+          worktreePath: copy,
           branch: 'room/ana',
           repoPath: '/rooms/backend/repo',
           ahead: 3,
@@ -345,6 +353,79 @@ describe('a room turn’s canvas commands', () => {
       const [document] = harness.service.canvas.list(room.id);
       expect(document?.treeKind).toBe('worktree');
       expect(document?.aheadOfMain).toBe(3);
+      // Stored relative to that copy, as the review and the merge read it — an
+      // absolute path is refused there. Seeded: storing the path as sent
+      // reddens this.
+      expect((document?.content as { sourcePath?: string }).sourcePath).toBe('app.txt');
+    });
+
+    it('labels the copy whichever spelling of it the turn and the file use', async () => {
+      // The turn's grants name the copy by its REAL path (`/private/tmp/…` on
+      // macOS, a symlinked home anywhere) while the dispatcher may hold another
+      // spelling. One folder, one tree. Seeded: comparing the raw strings
+      // reddens this (the document falls to "in Ana's project" and the review
+      // surface never appears).
+      const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-spell-')));
+      try {
+        const realCopy = path.join(scratch, 'real', 'worktrees', 'ana-1a2b3c4d');
+        fs.mkdirSync(realCopy, { recursive: true });
+        fs.symlinkSync(path.join(scratch, 'real'), path.join(scratch, 'link'));
+        const linkedCopy = path.join(scratch, 'link', 'worktrees', 'ana-1a2b3c4d');
+        turnBehaviour = (opts) => {
+          openTurn(opts);
+          opts.projector.ingest({
+            type: 'ui_command',
+            command: { action: 'open_diff', sourcePath: path.join(realCopy, 'app.txt') },
+          });
+          opts.projector.ingest({ type: 'turn_end' });
+          return { accepted: true, canonicalId: opts.sessionId };
+        };
+        await createSessionRoomTurnRunner().run(
+          turnRequest({
+            worktreePath: linkedCopy,
+            branch: 'room/ana',
+            repoPath: '/rooms/backend/repo',
+            ahead: 1,
+            behind: 0,
+          })
+        );
+
+        const [document] = harness.service.canvas.list(room.id);
+        expect(document?.treeKind).toBe('worktree');
+        expect(document?.aheadOfMain).toBe(1);
+        expect((document?.content as { sourcePath?: string }).sourcePath).toBe('app.txt');
+      } finally {
+        fs.rmSync(scratch, { recursive: true, force: true });
+      }
+    });
+
+    it('stores a file whose name starts with two dots relative to the copy too', async () => {
+      // `..notes.md` is a file INSIDE the copy; only a first segment of exactly
+      // `..` leaves it. Seeded: rejecting any relative path starting with `..`
+      // stores it absolute, which the review refuses.
+      const copy = '/rooms/backend/worktrees/ana-1a2b3c4d';
+      turnBehaviour = (opts) => {
+        openTurn(opts);
+        opts.projector.ingest({
+          type: 'ui_command',
+          command: { action: 'open_diff', sourcePath: `${copy}/..notes.md` },
+        });
+        opts.projector.ingest({ type: 'turn_end' });
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+      await createSessionRoomTurnRunner().run(
+        turnRequest({
+          worktreePath: copy,
+          branch: 'room/ana',
+          repoPath: '/rooms/backend/repo',
+          ahead: 1,
+          behind: 0,
+        })
+      );
+
+      const [document] = harness.service.canvas.list(room.id);
+      expect(document?.treeKind).toBe('worktree');
+      expect((document?.content as { sourcePath?: string }).sourcePath).toBe('..notes.md');
     });
 
     it('records “not measured” when the dispatcher measured nothing', async () => {

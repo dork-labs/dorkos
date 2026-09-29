@@ -101,6 +101,8 @@ import {
   RuntimeNotRegisteredError,
 } from '../../services/core/runtime-registry.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
+import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
+import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 import { configManager } from '../../services/core/config-manager.js';
 // The real profile of the one shipped runtime whose mode ids sit outside the
 // shared enum — see the DOR-811 block in the PATCH suite.
@@ -242,6 +244,45 @@ describe('Sessions Routes', () => {
       const res = await request(server).get(`/api/sessions/${S1}`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual(session);
+    });
+
+    it("carries the account's cached usage on status before any turn (spec claude-account-fleet §6 U)", async () => {
+      const usage = {
+        runtime: 'codex',
+        accountId: 'default',
+        path: '/home/.codex',
+        label: null,
+        color: '#000',
+        subscriptionType: null,
+        plan: null,
+        credits: null,
+        spend: null,
+        windows: [],
+        state: 'unknown',
+        limit: null,
+        updatedAt: null,
+      };
+      const peek = vi.fn(() => [usage]);
+      setAccountUsageStore({ peek } as unknown as AccountUsageStore);
+      fakeRuntime = new FakeAgentRuntime('codex');
+      vi.mocked(runtimeRegistry.resolveForSession).mockResolvedValue(fakeRuntime);
+      fakeRuntime.getInternalSessionId.mockReturnValue(undefined);
+      fakeRuntime.getSession.mockResolvedValue({
+        id: S1,
+        title: 'Codex session',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        permissionMode: 'default' as const,
+        runtime: 'codex',
+      });
+      try {
+        const res = await request(server).get(`/api/sessions/${S1}`);
+        expect(res.status).toBe(200);
+        expect(res.body.status).toEqual({ lifecycle: 'idle', limit: null, accountUsage: usage });
+        expect(peek).toHaveBeenCalledWith('codex', ['default']);
+      } finally {
+        setAccountUsageStore(undefined);
+      }
     });
 
     it('fills a missing runtime tag from the resolved runtime type', async () => {

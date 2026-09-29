@@ -93,11 +93,6 @@ export function useSessionStream(sessionId: string | null, cwd: string | null): 
  * run 20260611-145454). Once the URL rekeys, {@link useSessionStream}
  * re-attaches the durable stream under the canonical id; a canonical id never
  * retires, so the redirect fires at most once per session.
- *
- * @param sessionId - The active session id, or `null` when no session is open.
- * @param onSessionIdChangeReplace - The caller's in-place URL rewrite (history
- *   `replace`, not push). Optional — embedded hosts without URL routing simply
- *   re-point their store.
  */
 export function useSessionRekeyRedirect(
   sessionId: string | null,

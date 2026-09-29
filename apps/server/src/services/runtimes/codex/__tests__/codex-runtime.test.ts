@@ -23,6 +23,15 @@ import {
   agentMessageItem,
   makeMockThread,
 } from './codex-scenarios.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 const environmentPolicy = vi.hoisted(() => ({ names: [] as string[] }));
 vi.mock('../../../core/config-manager.js', async () => {

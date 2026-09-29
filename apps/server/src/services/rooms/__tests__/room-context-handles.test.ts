@@ -342,11 +342,11 @@ describe('every @name in the room-context block reaches the member it names', ()
     // and printed WITHOUT an `@`, so the model is not invited to type one.
     const [context] = await openAndSpeak();
     const block = formatRoomContext(context!, { nonce: NONCE });
-    const you = context!.members.find((m) => m.displayName === 'You')!;
+    const you = context!.members.find((m) => m.displayName === 'the operator')!;
 
     expect(you.handle).toBeNull();
-    expect(block).toContain('You (person, cannot be mentioned)');
-    expect(handlesIn(block)).not.toContain('You');
+    expect(block).toContain('the operator (person, cannot be mentioned)');
+    expect(handlesIn(block)).not.toContain('operator');
   });
 
   it('gives two agents with the same name two different addresses', async () => {

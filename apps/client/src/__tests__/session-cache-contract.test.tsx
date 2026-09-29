@@ -161,6 +161,8 @@ function retireAnnounce(retiredSessionId: string, sessionId: string) {
       runningSubagentCount: 0,
       lifecycle: 'streaming',
       lastError: null,
+      limit: null,
+      accountUsage: null,
     },
   } as const;
 }

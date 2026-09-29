@@ -80,12 +80,6 @@ function harnessBannerLine(status: HarnessStatusResponse): BannerLine | null {
 
 /**
  * Subscribe to `approval_resolved` for as long as there is something to refresh.
- *
- * Its own component, mounted only once the project reads `ready`, because the
- * subscription needs the app-level `EventStreamProvider` and this slice is drawn
- * in trees that have none — the in-process (Obsidian) transport answers
- * `unavailable` for every project, and a hook called before that early return
- * would throw there over a stream the surface was never going to use.
  */
 function HarnessApprovalRefresh({ projectPath }: HarnessDriftBannerProps) {
   useHarnessSyncApprovalRefresh(projectPath);

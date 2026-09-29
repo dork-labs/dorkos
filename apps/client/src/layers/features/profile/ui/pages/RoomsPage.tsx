@@ -28,10 +28,6 @@ function memberWords(count: number): string {
 
 /**
  * The rooms this member is in, newest activity first.
- *
- * A list of places to go, so every row goes somewhere: tapping one opens
- * `/channels` on that room. With no router — the Obsidian embed — the rows are
- * plain text rather than buttons that do nothing.
  */
 export function RoomsPage({ member }: ProfilePageContentProps) {
   const navigate = useSafeNavigate();

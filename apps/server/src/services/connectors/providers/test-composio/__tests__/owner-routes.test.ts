@@ -18,6 +18,7 @@ import { legacyDefaultProviderInstanceId } from '../../../legacy-connection-migr
 import { ConnectorAuthenticationFlowService } from '../../../resources/authentication-flow-service.js';
 import { ConnectorOperatorQueryService } from '../../../resources/operator-query-service.js';
 import { ConnectorLifecycleService } from '../../../resources/lifecycle-service.js';
+import { ConnectorAppActionsService } from '../../../resources/app-actions-service.js';
 import { ConnectorEventSettingsService } from '../../../events/settings-service.js';
 import { ConnectorSubscriptionStore } from '../../../events/subscription-store.js';
 import { ConnectorSubscriptionService } from '../../../events/subscription-service.js';
@@ -124,7 +125,16 @@ async function fixture() {
   );
   app.use(
     '/api/connectors',
-    createConnectorResourcesRouter({ ...boundary, authentication, query, lifecycle })
+    createConnectorResourcesRouter({
+      ...boundary,
+      authentication,
+      query,
+      lifecycle,
+      actions: new ConnectorAppActionsService({ db, registry, dorkHome: dir }),
+      logos: { get: () => Promise.resolve(undefined) },
+      signIns: { refreshOnDemand: () => Promise.resolve() },
+      sessionAccess: { setAccess: () => Promise.reject(new Error('Not used by these routes.')) },
+    })
   );
   app.use(
     '/api/connectors',
@@ -290,5 +300,49 @@ describe('offline Composio through real owner and signed ingress routes', () => 
     expect(after.status).toBe(200);
     expect(result).toMatchObject({ status: 403 });
     expect(f.db.select().from(connectorEventInbox).all()).toHaveLength(1);
+  });
+
+  it('lists an app’s actions through the real Composio discovery, classified as the safety check stores them', async () => {
+    const f = await fixture();
+    const path = `/api/connectors/apps/gmail/actions?providerInstanceId=${encodeURIComponent(providerId)}`;
+    // No key yet: the way is not set up, so there is nothing to list through.
+    expect((await f.call(path)).status).toBe(404);
+    expect(
+      (
+        await f.call('/api/connectors/providers/composio/credential', 'PUT', {
+          secret: COMPOSIO_FIXTURE_KEY,
+        })
+      ).status
+    ).toBe(200);
+    const listed = await f.call(path);
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toMatchObject({
+      status: 'listed',
+      toolkit: 'gmail',
+      completeness: 'complete',
+      actions: [
+        {
+          operationSlug: 'GMAIL_FETCH_EMAILS',
+          displayName: 'Fetch emails',
+          capabilityClassification: 'read',
+          important: false,
+        },
+        {
+          operationSlug: 'GMAIL_SEND_EMAIL',
+          displayName: 'Send email',
+          capabilityClassification: 'write',
+          important: true,
+        },
+        {
+          operationSlug: 'GMAIL_DELETE_MESSAGE',
+          displayName: 'Delete message',
+          capabilityClassification: 'destructive',
+          important: false,
+        },
+      ],
+    });
+    expect((await f.call(path, 'GET', undefined, { authorization: 'Bearer program' })).status).toBe(
+      403
+    );
   });
 });

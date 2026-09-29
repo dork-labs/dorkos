@@ -152,7 +152,7 @@ async function smallTargets(page: Page, exclude: string | undefined): Promise<st
       const found: string[] = [];
       for (const element of Array.from(
         document.querySelectorAll<HTMLElement>(
-          'button, a.button, input:not([type="hidden"]), select, textarea, [role="button"]'
+          'button, a[data-slot="button"], input:not([type="hidden"]), select, textarea, [role="button"]'
         )
       )) {
         const box = element.getBoundingClientRect();
@@ -198,6 +198,13 @@ async function audit(page: Page, surface: string, exclude?: string) {
     await page.setViewportSize(size);
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+      // Axe must sample settled theme colors, not a frame during a control's color transition.
+      await page.waitForFunction(() =>
+        document
+          .getAnimations()
+          .filter((animation) => animation instanceof CSSTransition)
+          .every((animation) => animation.playState !== 'running')
+      );
       await page.addScriptTag({ path: AXE_BUNDLE });
       const results = (await page.evaluate(
         (outside) =>

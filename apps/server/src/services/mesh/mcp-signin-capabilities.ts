@@ -65,6 +65,9 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
     // only stores a token for a server that is already trusted — so it needs no
     // second approval.
     tier: 'act',
+    area: 'packages',
+    approvalDisplayFields: ['agentId', 'name'],
+    approvalSubject: { field: 'agentId', kind: 'agent' },
     input: AgentServerInput,
     output: z.object({
       flowId: z
@@ -158,6 +161,8 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
       'toolCount, tell the user what they just unlocked — "Connected — 12 tools." — and ' +
       'say plain "Connected." when no count came back (absent means uncounted, not zero).',
     tier: 'act',
+    area: null,
+    areaNote: 'only continues a sign-in mcp.signin already started',
     input: z.object({
       flowId: z.string().min(1).describe('The flow id from mcp_signin.'),
     }),
@@ -200,6 +205,9 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
     // discards the stored sign-in, because that discard is what makes the new
     // credential honest and is recovered by signing in again.
     tier: 'act',
+    area: 'packages',
+    approvalDisplayFields: ['agentId', 'name'],
+    approvalSubject: { field: 'agentId', kind: 'agent' },
     input: z.object({
       agentId: agentIdField,
       name: serverNameField,

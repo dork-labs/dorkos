@@ -34,6 +34,7 @@ const EXPECTED_TOOLS = [
   'marketplace_list_installed',
   'marketplace_recommend',
   'marketplace_install',
+  'marketplace_update',
   'marketplace_uninstall',
   'marketplace_create_package',
 ] as const;
@@ -95,11 +96,16 @@ function buildStubDeps(): MarketplaceMcpDeps {
     uninstallFlow: {
       uninstall: vi.fn(explode('uninstallFlow.uninstall')),
     } as unknown as MarketplaceMcpDeps['uninstallFlow'],
+    updateFlow: {
+      planInstallations: vi.fn(explode('updateFlow.planInstallations')),
+      applyPlan: vi.fn(explode('updateFlow.applyPlan')),
+    } as unknown as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider: {
       requestInstallConfirmation: vi.fn(explode('confirmationProvider.requestInstallConfirmation')),
       resolve: vi.fn(explode('confirmationProvider.resolve')),
     } as unknown as MarketplaceMcpDeps['confirmationProvider'],
     onPluginsChanged: vi.fn(explode('onPluginsChanged')),
+    consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -110,7 +116,7 @@ function buildStubDeps(): MarketplaceMcpDeps {
 }
 
 describe('marketplace MCP tools/list discovery', () => {
-  it('registers all 8 marketplace tools on a real McpServer', () => {
+  it(`registers all ${EXPECTED_TOOLS.length} marketplace tools on a real McpServer`, () => {
     const server = new McpServer({ name: 'tools-list-smoke', version: '1.0.0' });
     const deps = buildStubDeps();
 

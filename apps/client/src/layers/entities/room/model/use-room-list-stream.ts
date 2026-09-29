@@ -11,11 +11,15 @@
  *
  * @module entities/room/model/use-room-list-stream
  */
+import { useRef } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { RoomSummary, RoomWithRoster, ThreadSummary } from '@dorkos/shared/room-schemas';
 import { useEventSubscription } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { useRoomWorkingStore } from './live/use-room-working';
+
+/** How long roster events for one open room are gathered into a single refetch. */
+const ROSTER_REFRESH_WINDOW_MS = 50;
 
 /** Global events that change what a room list row says. */
 const ROOM_LIST_EVENTS = [
@@ -137,22 +141,6 @@ function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void
   const interrupted = queryClient.isFetching({ queryKey: roomKeys.lists() }) > 0;
   void queryClient.cancelQueries({ queryKey: roomKeys.lists() });
 
-  // `null` means "not a member here", which is not a number to overwrite.
-  //
-  // **Only ever downwards**, which is the same monotonic rule the cursor itself
-  // keeps. Reading can only reduce what is unread, so a count that would RAISE
-  // the badge is this event arriving out of order with a fresher one — the case
-  // is a `room_activity` refetch in flight when the cursor lands, whose response
-  // was computed before the cursor moved and resolves after this patch. Taking
-  // the lower of the two means whichever of them arrives last is still right.
-  //
-  // **The guard is not defensive noise.** This writes by PREFIX, so it reaches
-  // every cache entry under `lists()` — including any future key somebody nests
-  // there whose data is not a list of rooms. One such key already existed (the
-  // well-known lookup, whose data is a single room or `null`), and mapping over
-  // it threw a `TypeError` out of an event handler: on the in-process transport
-  // that takes the whole global stream down with it. That key was moved out
-  // (`roomKeys.wellKnown`), and this stays so the next one is merely ignored.
   queryClient.setQueriesData<RoomSummary[]>({ queryKey: roomKeys.lists() }, (rooms) =>
     Array.isArray(rooms)
       ? rooms.map((room) =>
@@ -277,6 +265,34 @@ export function useRoomListStream(): void {
     if (!isRoomUpdated(payload)) return;
     void queryClient.invalidateQueries({ queryKey: roomKeys.detail(payload.roomId) });
   });
+
+  // A roster that moved somewhere other than this client — an agent
+  // unregistered and taken off every channel (DOR-2095), a member removed or
+  // added from another window — changes what the OPEN room says about who will
+  // answer, its head count and its `@` picker. Same reason as `room_updated`
+  // above: nothing else refetches the detail. Both events carry the `roomId`.
+  //
+  // Coalesced per room over a short window: unregistering an agent sends one
+  // event per channel seat, and a burst for the same open room is one question,
+  // not several. A window rather than a microtask because each event on the
+  // stream arrives as its own task, so a microtask merged nothing a real burst
+  // sends. 50ms, because the server broadcasts a burst from one synchronous
+  // write — its frames land within milliseconds of each other — while a delay
+  // that short is below anything a person could see on a roster.
+  const pendingRosters = useRef(new Set<string>());
+  const refreshRoster = (payload: unknown) => {
+    if (!isRoomUpdated(payload)) return;
+    const pending = pendingRosters.current;
+    if (pending.has(payload.roomId)) return;
+    pending.add(payload.roomId);
+    const roomId = payload.roomId;
+    setTimeout(() => {
+      pending.delete(roomId);
+      void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
+    }, ROSTER_REFRESH_WINDOW_MS);
+  };
+  useEventSubscription('room_member_added', refreshRoster);
+  useEventSubscription('room_member_removed', refreshRoster);
 
   // Presence is the one room-list event that must NOT refetch. It fires when a
   // claim is taken and again every ten seconds while the work runs, so treating

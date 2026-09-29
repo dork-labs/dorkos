@@ -21,7 +21,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { recoverPassword } from '../recover-password.js';
 import { sweepExpiredAttachments } from '../routes/attachments.js';
-import { sweepExpiredExports } from '../routes/exports.js';
+import { sweepExpiredExports } from '../exports/sweep.js';
+import { drainExports } from './export-test-helpers.js';
 import { sweepExpiredAdmissions } from '../routes/invites.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from '../deletion-worker.js';
@@ -382,14 +383,17 @@ it('runs install, chat, files, local pairing, agents, export, a second community
     'agent post'
   );
 
-  // Personal export, created and downloaded.
+  // Personal export, created, built by the export worker, and downloaded.
   const exported = await expectStatus(
     await h.call(`${a}/me/export`, { cookie: host.cookie, body: {} }),
-    201,
+    202,
     'export'
   );
+  await drainExports(h.pool, h.blobStore);
   const archive = await expectStatus(
-    await h.call(`${a}/exports/${(await exported.json()).archiveId}`, { cookie: host.cookie }),
+    await h.call(`${a}/exports/${(await exported.json()).export.id}/archive`, {
+      cookie: host.cookie,
+    }),
     200,
     'export download'
   );

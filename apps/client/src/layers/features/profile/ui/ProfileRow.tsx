@@ -174,7 +174,11 @@ export function ProfileRow({ row, onNavigate, pickContent }: ProfileRowProps) {
       className={cn(shared, 'focus-ring hover:bg-muted/50', PRESS_ROW)}
       // The label and its value in one string, so a screen reader hears the row
       // rather than "Runs on" followed by an unrelated-sounding model name.
-      aria-label={row.value ? `${row.label}: ${row.value}` : row.label}
+      aria-label={
+        row.value
+          ? `${row.accessibleLabel ?? row.label}: ${row.value}`
+          : (row.accessibleLabel ?? row.label)
+      }
       aria-haspopup={row.kind === 'pick' ? 'dialog' : undefined}
       aria-describedby={row.kind === 'locked' ? reasonId : undefined}
       onClick={activate}

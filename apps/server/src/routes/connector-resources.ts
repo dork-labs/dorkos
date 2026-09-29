@@ -7,15 +7,21 @@ import {
 } from '@dorkos/shared/connector-provider';
 import { ConnectionIdSchema } from '@dorkos/shared/connector-schemas';
 import {
+  ConnectorAppActionsQuerySchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorConnectionPatchSchema,
   ConnectorReconnectRequestSchema,
+  ConnectorSessionAccessUpdateSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import { parseBody } from '../lib/route-utils.js';
 import {
   resolveConnectorOperator,
   type ConnectorOwnerBoundaryDeps,
 } from './connector-management.js';
+import {
+  ConnectorAppActionsError,
+  type ConnectorAppActionsService,
+} from '../services/connectors/resources/app-actions-service.js';
 import {
   ConnectorAuthenticationFlowError,
   type ConnectorAuthenticationFlowService,
@@ -28,6 +34,12 @@ import {
   ConnectorOperatorQueryError,
   type ConnectorOperatorQueryService,
 } from '../services/connectors/resources/operator-query-service.js';
+import type { CatalogLogoService } from '../services/connectors/resources/catalog-logos.js';
+import {
+  ConnectorSessionAccessError,
+  type ConnectorSessionAccessService,
+} from '../services/connectors/resources/session-access-service.js';
+import type { SignInRefresher } from '../services/connectors/resources/sign-in-refresh.js';
 
 const CatalogQuerySchema = z
   .object({
@@ -36,6 +48,8 @@ const CatalogQuerySchema = z
     limit: z.coerce.number().int().min(1).max(100).optional(),
   })
   .strict();
+
+const ToolkitParamSchema = z.string().min(1).max(200);
 
 /** Dependencies for the canonical provider-neutral Connections resource boundary. */
 export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps {
@@ -47,8 +61,11 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
     | 'getConnection'
     | 'disconnectImpact'
     | 'agentConnections'
+    | 'everyAgentGrants'
     | 'sessionConnections'
   >;
+  /** App logos, fetched once from the service's logo host and served from this server. */
+  readonly logos: Pick<CatalogLogoService, 'get'>;
   /** Restart-safe provider authentication flows. */
   readonly authentication: Pick<ConnectorAuthenticationFlowService, 'start' | 'reconnect' | 'poll'>;
   /** Canonical local lifecycle mutations. */
@@ -56,6 +73,12 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
     ConnectorLifecycleService,
     'rename' | 'pause' | 'resume' | 'disconnect' | 'remove'
   >;
+  /** What an app lets agents do, read on demand and kept. */
+  readonly actions: Pick<ConnectorAppActionsService, 'list'>;
+  /** Asks each service whether its sign-ins still hold when the owner looks (debounced). */
+  readonly signIns: Pick<SignInRefresher, 'refreshOnDemand'>;
+  /** The owner's per-chat app switch. */
+  readonly sessionAccess: Pick<ConnectorSessionAccessService, 'setAccess'>;
 }
 
 function owner(req: Request, res: Response, deps: ConnectorResourcesRouterDeps) {
@@ -90,6 +113,16 @@ function sendResourceError(res: Response, error: unknown): void {
           ? 409
           : 422;
     res.status(status).json({ error: error.message, code: error.code });
+    return;
+  }
+  if (error instanceof ConnectorAppActionsError) {
+    res
+      .status(error.code === 'provider_not_found' ? 404 : 502)
+      .json({ error: error.message, code: error.code });
+    return;
+  }
+  if (error instanceof ConnectorSessionAccessError) {
+    res.status(409).json({ error: error.message, code: error.code });
     return;
   }
   if (error instanceof ConnectorLifecycleError || error instanceof ConnectorOperatorQueryError) {
@@ -140,10 +173,54 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
     }
   });
 
+  router.get('/apps/:toolkit/actions', async (req, res) => {
+    const operator = owner(req, res, deps);
+    if (!operator) return;
+    try {
+      const toolkit = ToolkitParamSchema.parse(req.params.toolkit);
+      const query = ConnectorAppActionsQuerySchema.parse(req.query);
+      res.set('Cache-Control', 'private, no-store');
+      res.json(
+        await deps.actions.list(operator, {
+          providerInstanceId: query.providerInstanceId,
+          toolkit,
+        })
+      );
+    } catch (error) {
+      sendResourceError(res, error);
+    }
+  });
+
+  // Same account-free posture as the catalog it belongs to: a logo says only
+  // which apps exist. The bytes come from the service's own logo host, so they
+  // are served as inert images: never sniffed, and an SVG can run no script.
+  router.get('/catalog/logos/:serviceSlug', async (req, res) => {
+    try {
+      const logo = await deps.logos.get(req.params.serviceSlug);
+      if (!logo) {
+        // Briefly cacheable: the server itself waits before trying a failed logo again.
+        res.set('Cache-Control', 'private, max-age=300');
+        res.status(404).json({ error: 'This app has no logo.' });
+        return;
+      }
+      res.set({
+        'Content-Type': logo.contentType,
+        'Content-Length': String(logo.bytes.byteLength),
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        'Cache-Control': 'private, max-age=86400',
+      });
+      res.end(logo.bytes);
+    } catch (error) {
+      sendResourceError(res, error);
+    }
+  });
+
   router.get('/connections', async (req, res) => {
     const operator = owner(req, res, deps);
     if (!operator) return;
     try {
+      await deps.signIns.refreshOnDemand();
       res.json({
         connections: await withSignal(req, (signal) =>
           deps.query.listConnections(operator, signal)
@@ -259,11 +336,22 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
     const operator = owner(req, res, deps);
     if (!operator) return;
     try {
+      await deps.signIns.refreshOnDemand();
       res.json(
         await withSignal(req, (signal) =>
           deps.query.getConnection(operator, req.params.connectionId, signal)
         )
       );
+    } catch (error) {
+      sendResourceError(res, error);
+    }
+  });
+
+  router.get('/every-agent-grants', (req, res) => {
+    const operator = owner(req, res, deps);
+    if (!operator) return;
+    try {
+      res.json(deps.query.everyAgentGrants(operator));
     } catch (error) {
       sendResourceError(res, error);
     }
@@ -284,6 +372,27 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
     if (!operator) return;
     try {
       res.json(await deps.query.sessionConnections(operator, req.params.sessionId));
+    } catch (error) {
+      sendResourceError(res, error);
+    }
+  });
+
+  // The owner turns one app on or off for one chat's agent. Behind the same
+  // owner boundary as every other account decision, so no agent can call it.
+  router.put('/sessions/:sessionId/connections/:connectionId', async (req, res) => {
+    const operator = owner(req, res, deps);
+    if (!operator) return;
+    const body = parseBody(ConnectorSessionAccessUpdateSchema, req.body ?? {}, res);
+    if (!body) return;
+    try {
+      res.json(
+        await deps.sessionAccess.setAccess(
+          operator,
+          req.params.sessionId,
+          req.params.connectionId,
+          body
+        )
+      );
     } catch (error) {
       sendResourceError(res, error);
     }

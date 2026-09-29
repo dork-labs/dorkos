@@ -6,7 +6,7 @@
  *
  * `GET /api/capabilities/catalog` serves the agent-facing projection: bounded at
  * 50 entries, sorted by id, and COMPACT unless asked otherwise — and a compact
- * entry carries neither `surfaces` nor `toolGroup`. So a request that forgets
+ * entry carries neither `surfaces` nor `area`. So a request that forgets
  * `detail=full` comes back well-formed, 200, and useless, and a request that
  * forgets `limit` comes back TRUNCATED, which is indistinguishable from a small
  * catalog to every caller that counts what it got. Both failures render an empty
@@ -20,7 +20,7 @@ import { createSystemMethods } from '../system-methods';
 const BASE = 'http://localhost:4242/api';
 
 /** One full catalog entry, in the shape `detail=full` really serves. */
-function entry(id: string, toolName: string, toolGroup?: string) {
+function entry(id: string, toolName: string, area: string | null = null) {
   return {
     id,
     title: id,
@@ -29,7 +29,7 @@ function entry(id: string, toolName: string, toolGroup?: string) {
     inputSchema: {},
     outputSchema: {},
     surfaces: { mcp: { toolName, servers: ['external'] } },
-    ...(toolGroup ? { toolGroup } : {}),
+    area,
   };
 }
 
@@ -66,15 +66,15 @@ describe('getCapabilityCatalog', () => {
     expect(url.searchParams.get('detail')).toBe('full');
     expect(url.searchParams.get('limit')).toBe(String(MAX_CAPABILITY_LIMIT));
     // No filter asked for, so none sent — the caller gets the whole catalog.
-    expect(url.searchParams.get('toolGroup')).toBeNull();
+    expect(url.searchParams.get('area')).toBeNull();
   });
 
-  it('narrows to one grant when asked, which is what keeps the page to one request', async () => {
+  it('narrows to one area when asked, which is what keeps the page to one request', async () => {
     servePage({ catalogVersion: 'v1', generatedAt: 'now', total: 0, capabilities: [] });
 
-    await createSystemMethods(BASE).getCapabilityCatalog({ toolGroup: 'roomsManage' });
+    await createSystemMethods(BASE).getCapabilityCatalog({ area: 'rooms' });
 
-    expect(new URL(lastUrl()).searchParams.get('toolGroup')).toBe('roomsManage');
+    expect(new URL(lastUrl()).searchParams.get('area')).toBe('rooms');
   });
 
   it('unwraps the paging envelope to the catalog the port promises', async () => {
@@ -88,34 +88,34 @@ describe('getCapabilityCatalog', () => {
       returned: 1,
       offset: 0,
       detail: 'full',
-      capabilities: [entry('rooms.create', 'create_room', 'roomsManage')],
+      capabilities: [entry('rooms.create', 'create_room', 'rooms')],
     });
 
     const catalog = await createSystemMethods(BASE).getCapabilityCatalog({
-      toolGroup: 'roomsManage',
+      area: 'rooms',
     });
 
     expect(catalog).toEqual({
       catalogVersion: 'v1',
       generatedAt: '2026-01-01T00:00:00.000Z',
-      capabilities: [entry('rooms.create', 'create_room', 'roomsManage')],
+      capabilities: [entry('rooms.create', 'create_room', 'rooms')],
     });
   });
 
   it('refuses a truncated page rather than handing back a short list as a complete one', async () => {
     // The failure this exists for. Every reader DERIVES something from the whole
-    // set — the tools behind a grant, and a count rendered beside them — so a
+    // set — the tools in an area, and a count rendered beside them — so a
     // dropped tail is a wrong number with nothing failing. Loud beats short.
     servePage({
       catalogVersion: 'v1',
       generatedAt: 'now',
       total: 3,
-      capabilities: [entry('rooms.create', 'create_room', 'roomsManage')],
+      capabilities: [entry('rooms.create', 'create_room', 'rooms')],
     });
 
-    await expect(
-      createSystemMethods(BASE).getCapabilityCatalog({ toolGroup: 'roomsManage' })
-    ).rejects.toThrow(/truncated: 1 of 3/);
+    await expect(createSystemMethods(BASE).getCapabilityCatalog({ area: 'rooms' })).rejects.toThrow(
+      /truncated: 1 of 3/
+    );
   });
 
   it('accepts a page that carries everything it counted', async () => {

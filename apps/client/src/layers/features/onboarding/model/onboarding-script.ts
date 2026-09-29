@@ -13,7 +13,14 @@ import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import type { ChatMessage, GroupPosition, MessageGrouping } from '@/layers/shared/model';
 
 /** The ordered beats of the onboarding conversation. */
-export const BEAT_ORDER = ['arrival', 'personality', 'profile', 'discovery', 'handoff'] as const;
+export const BEAT_ORDER = [
+  'arrival',
+  'identity',
+  'personality',
+  'profile',
+  'discovery',
+  'handoff',
+] as const;
 
 /** One beat of the scripted conversation. */
 export type BeatId = (typeof BEAT_ORDER)[number];
@@ -24,14 +31,15 @@ export interface OnboardingBeat {
   /** DorkBot lines revealed when the beat opens. */
   lines: readonly string[];
   /** The inline widget shown once the beat's lines have all revealed. */
-  widget?: 'personality' | 'profile' | 'discovery';
+  widget?: 'identity' | 'personality' | 'profile' | 'discovery';
   /** Whether the real composer is enabled during this beat. */
   composerEnabled: boolean;
 }
 
 /**
  * The beats, in order. Arrival opens with DorkBot's greeting and rolls straight
- * into the personality prompt; the profile beat (spec `user-profile-onboarding`)
+ * into the name-and-handle question (DOR-677) — or, when there is nothing to
+ * ask, past it into the personality prompt; the profile beat (spec `user-profile-onboarding`)
  * sits between personality and discovery, so the "how should I sound" → "what
  * will we do together" arc reads as one getting-to-know-you exchange before the
  * machine-facing discovery consent. The last beat (handoff) is the only one
@@ -41,6 +49,12 @@ export const ONBOARDING_BEATS: readonly OnboardingBeat[] = [
   {
     id: 'arrival',
     lines: [...DORKBOT_ONBOARDING_LINES.arrival],
+    composerEnabled: false,
+  },
+  {
+    id: 'identity',
+    lines: [...DORKBOT_ONBOARDING_LINES.identityPrompt],
+    widget: 'identity',
     composerEnabled: false,
   },
   {

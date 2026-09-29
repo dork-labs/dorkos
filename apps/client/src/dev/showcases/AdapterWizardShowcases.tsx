@@ -60,7 +60,7 @@ function ConfigureStepShowcase() {
       <ShowcaseDemo>
         <div className="text-muted-foreground mx-auto max-w-md text-sm">
           ConfigureStep requires a TanStack Form instance from AdapterSetupWizard. Open the full
-          wizard via AdapterCard to interact with this step.
+          wizard from a chat app’s side panel (More › Settings) to interact with this step.
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

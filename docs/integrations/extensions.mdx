@@ -24,7 +24,7 @@ export function activate(api: ExtensionAPI): () => void {
 
 ## Testing locally
 
-The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. Drop your manifest and entry file there, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.
+The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. It also loads extensions that come inside an installed marketplace plugin, once you approve them. Drop your manifest and entry file there, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.
 
 ## Event subscription
 

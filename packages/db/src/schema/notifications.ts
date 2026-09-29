@@ -55,6 +55,8 @@ export const notifications = sqliteTable(
         'signin.required',
         'update.installed',
         'report.daily',
+        'account.limited',
+        'account.reset',
       ],
     }).notNull(),
 

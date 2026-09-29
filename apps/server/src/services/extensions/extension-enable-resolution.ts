@@ -13,6 +13,7 @@
  *
  * @module services/extensions/extension-enable-resolution
  */
+import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 
 /** Tier metadata for a bundled core extension (the canonical definition). */
 export interface CoreExtensionInfo {
@@ -38,6 +39,12 @@ export interface ExtensionsConfig {
    * interface only so {@link setEnabled} can carry it through untouched.
    */
   approvedToRun: string[];
+  /**
+   * Which copy of each approved extension its approval was given to, keyed by id
+   * (DOR-2383). Absent reads as empty. Carried through {@link setEnabled}
+   * untouched, like `approvedToRun`; see `extension-load-policy.ts`.
+   */
+  approvedSources?: Record<string, ExtensionApprovedSource>;
 }
 
 /**
@@ -104,12 +111,12 @@ export function isEnabled(
  * @param config - The current `extensions` config subtree.
  * @param core - Core-extension tier metadata keyed by id.
  */
-export function setEnabled(
+export function setEnabled<C extends ExtensionsConfig>(
   id: string,
   on: boolean,
-  config: ExtensionsConfig,
+  config: C,
   core: Map<string, CoreExtensionInfo>
-): ExtensionsConfig {
+): C {
   const enabled = config.enabled.filter((eid) => eid !== id);
   const disabled = config.disabled.filter((eid) => eid !== id);
   if (defaultsOn(id, core)) {

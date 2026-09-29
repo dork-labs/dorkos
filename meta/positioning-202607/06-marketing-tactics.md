@@ -1,5 +1,7 @@
 # Marketing Tactics: Low-Cost, Automatable, Low-Hanging Fruit First
 
+> **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
+
 > Positioning review deliverable (July 2026). The execution list for `05-marketing-strategy.md`. Ordered by (impact ÷ effort), lowest-hanging first within each block. Tags: [auto] = fully automatable with agents/Tasks today, [semi] = agent-drafted + human-approved, [human] = founder voice required. Anything posted publicly under Dorian's name should always get a human pass; automation drafts, humans publish.
 
 ## Block A: Free wins lying on the ground (this week, mostly hours each)

@@ -1,0 +1,534 @@
+{
+  "contract": "fleet",
+  "about": "Reading <main checkout>/.dork/flow/flow-state.json, a map of issue id to FlowRun (spec flow-cli-core 1.3). input.state is the parsed file. expected.valid says whether the whole file passes the FlowRun schema; expected.readBack is what a reader returns: the records unchanged, unknown fields included, when valid, and {} when any record is invalid (the reader is all-or-nothing). 'account', 'host' and 'runtime' are optional strings. 'host' is a bare string (cli, dorkos or cmux today) and 'runtime' is a bare string (claude-code, codex or opencode today), so a record from a future launcher or runtime still reads. 'account' is an id in that runtime's registry. 'checkpointAt', 'checkpointSha', 'drain' and 'limit' are flow's own optional fields (spec flow-handoff-dispatch 4.3 and 5.1); DorkOS need not read them, but a writer must keep them, like any unknown field. When input.write is present, it is one FlowRun upserted by its issueId through the read-modify-write store, and expected.readBack is the file afterwards: unknown fields on every other record must survive.",
+  "cases": [
+    {
+      "name": "a minimal record reads back unchanged",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z"
+          }
+        }
+      },
+      "expected": {
+        "valid": true,
+        "readBack": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "account and host read back",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "verify",
+            "status": "running",
+            "attemptCount": 1,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "account": "claude3",
+            "host": "dorkos"
+          }
+        }
+      },
+      "expected": {
+        "valid": true,
+        "readBack": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "verify",
+            "status": "running",
+            "attemptCount": 1,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "account": "claude3",
+            "host": "dorkos"
+          }
+        }
+      }
+    },
+    {
+      "name": "a host from a future launcher still reads",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 1,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "host": "some-future-launcher"
+          }
+        }
+      },
+      "expected": {
+        "valid": true,
+        "readBack": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 1,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "host": "some-future-launcher"
+          }
+        }
+      }
+    },
+    {
+      "name": "runtime reads back, and a runtime flow does not know yet still reads",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "verify",
+            "status": "running",
+            "attemptCount": 1,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "account": "default",
+            "host": "cli",
+            "runtime": "codex"
+          },
+          "issue-2": {
+            "issueId": "issue-2",
+            "identifier": "ABC-2",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "verify",
+            "status": "running",
+            "attemptCount": 1,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "runtime": "gemini-cli"
+          }
+        }
+      },
+      "expected": {
+        "valid": true,
+        "readBack": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "verify",
+            "status": "running",
+            "attemptCount": 1,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "account": "default",
+            "host": "cli",
+            "runtime": "codex"
+          },
+          "issue-2": {
+            "issueId": "issue-2",
+            "identifier": "ABC-2",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "verify",
+            "status": "running",
+            "attemptCount": 1,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "runtime": "gemini-cli"
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown fields on a record and in its provenance survive the read",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 1,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "checkpoint": {"at": "2026-09-26T17:00:00.000Z", "ref": "abc123"},
+            "provenance": {"v": 1, "harness": "claude-code", "futureField": "kept"}
+          }
+        }
+      },
+      "expected": {
+        "valid": true,
+        "readBack": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 1,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "checkpoint": {"at": "2026-09-26T17:00:00.000Z", "ref": "abc123"},
+            "provenance": {"v": 1, "harness": "claude-code", "futureField": "kept"}
+          }
+        }
+      }
+    },
+    {
+      "name": "writing one run keeps another run's unknown fields",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 1,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "checkpoint": {"ref": "abc123"},
+            "account": "claude3",
+            "host": "cmux"
+          }
+        },
+        "write": {
+          "issueId": "issue-2",
+          "identifier": "ABC-2",
+          "sessionId": "s-2",
+          "worktreePath": "/work/ABC-2",
+          "branch": "abc-2",
+          "stage": "execute",
+          "status": "running",
+          "attemptCount": 0,
+          "workerPid": 2,
+          "startedAt": "2026-09-26T16:30:00.000Z",
+          "account": "personal",
+          "host": "cli"
+        }
+      },
+      "expected": {
+        "valid": true,
+        "readBack": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 1,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "checkpoint": {"ref": "abc123"},
+            "account": "claude3",
+            "host": "cmux"
+          },
+          "issue-2": {
+            "issueId": "issue-2",
+            "identifier": "ABC-2",
+            "sessionId": "s-2",
+            "worktreePath": "/work/ABC-2",
+            "branch": "abc-2",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 2,
+            "startedAt": "2026-09-26T16:30:00.000Z",
+            "account": "personal",
+            "host": "cli"
+          }
+        }
+      }
+    },
+    {
+      "name": "a record carrying a checkpoint, drain state and a limit reads back unchanged after another run is written",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "w-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "verify",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": -1,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "account": "claude3",
+            "host": "dorkos",
+            "checkpointAt": "2026-09-26T17:00:00.000Z",
+            "checkpointSha": "4be1c2d",
+            "drain": {
+              "v": 1,
+              "rev": 12,
+              "phase": "reviewing",
+              "worker": {"host": "dorkos", "sessionId": "w-1", "account": "claude3", "cwd": "/work/ABC-1"},
+              "reviewer": {
+                "host": "cli",
+                "sessionId": "r-1",
+                "account": "claude4",
+                "cwd": "/work/ABC-1-review",
+                "pid": 5151,
+                "logFile": "/work/ABC-1/.dork/flow/drain/logs/r-1.jsonl",
+                "logOffset": 2048,
+                "pending": false,
+                "sha": "4be1c2d",
+                "worktree": "/work/ABC-1-review",
+                "tokenHash": "sha256:0f1e"
+              },
+              "pushedSha": "4be1c2d",
+              "reviewedSha": "39aa01b",
+              "verdict": "changes",
+              "reviewRound": 1,
+              "pr": null,
+              "rearmedFor": null,
+              "nudges": 0,
+              "wakeAfter": null,
+              "handoffs": [{"from": null, "to": "claude3", "at": "2026-09-26T16:40:00.000Z", "reason": "rejected"}],
+              "parkedReason": null
+            },
+            "limit": {
+              "level": "warning",
+              "account": "claude3",
+              "window": "seven_day",
+              "resetsAt": "2026-10-01T09:00:00.000Z",
+              "cause": "limit",
+              "since": "2026-09-26T17:30:00.000Z",
+              "state": "winding-down",
+              "handoffToken": null,
+              "handingOffAt": null,
+              "handoffSessionId": null,
+              "notifiedAt": null
+            }
+          }
+        },
+        "write": {
+          "issueId": "issue-2",
+          "identifier": "ABC-2",
+          "sessionId": "s-2",
+          "worktreePath": "/work/ABC-2",
+          "branch": "abc-2",
+          "stage": "execute",
+          "status": "queued",
+          "attemptCount": 0,
+          "workerPid": 2,
+          "startedAt": "2026-09-26T16:30:00.000Z"
+        }
+      },
+      "expected": {
+        "valid": true,
+        "readBack": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "w-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "verify",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": -1,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "account": "claude3",
+            "host": "dorkos",
+            "checkpointAt": "2026-09-26T17:00:00.000Z",
+            "checkpointSha": "4be1c2d",
+            "drain": {
+              "v": 1,
+              "rev": 12,
+              "phase": "reviewing",
+              "worker": {"host": "dorkos", "sessionId": "w-1", "account": "claude3", "cwd": "/work/ABC-1"},
+              "reviewer": {
+                "host": "cli",
+                "sessionId": "r-1",
+                "account": "claude4",
+                "cwd": "/work/ABC-1-review",
+                "pid": 5151,
+                "logFile": "/work/ABC-1/.dork/flow/drain/logs/r-1.jsonl",
+                "logOffset": 2048,
+                "pending": false,
+                "sha": "4be1c2d",
+                "worktree": "/work/ABC-1-review",
+                "tokenHash": "sha256:0f1e"
+              },
+              "pushedSha": "4be1c2d",
+              "reviewedSha": "39aa01b",
+              "verdict": "changes",
+              "reviewRound": 1,
+              "pr": null,
+              "rearmedFor": null,
+              "nudges": 0,
+              "wakeAfter": null,
+              "handoffs": [{"from": null, "to": "claude3", "at": "2026-09-26T16:40:00.000Z", "reason": "rejected"}],
+              "parkedReason": null
+            },
+            "limit": {
+              "level": "warning",
+              "account": "claude3",
+              "window": "seven_day",
+              "resetsAt": "2026-10-01T09:00:00.000Z",
+              "cause": "limit",
+              "since": "2026-09-26T17:30:00.000Z",
+              "state": "winding-down",
+              "handoffToken": null,
+              "handingOffAt": null,
+              "handoffSessionId": null,
+              "notifiedAt": null
+            }
+          },
+          "issue-2": {
+            "issueId": "issue-2",
+            "identifier": "ABC-2",
+            "sessionId": "s-2",
+            "worktreePath": "/work/ABC-2",
+            "branch": "abc-2",
+            "stage": "execute",
+            "status": "queued",
+            "attemptCount": 0,
+            "workerPid": 2,
+            "startedAt": "2026-09-26T16:30:00.000Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "a host that is not a string makes the file invalid",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 1,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "host": 3
+          }
+        }
+      },
+      "expected": {"valid": false, "readBack": {}}
+    },
+    {
+      "name": "an account that is not a string makes the file invalid",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 1,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "account": {"id": "claude3"}
+          }
+        }
+      },
+      "expected": {"valid": false, "readBack": {}}
+    },
+    {
+      "name": "a runtime that is not a string makes the file invalid",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "verify",
+            "status": "running",
+            "attemptCount": 1,
+            "workerPid": 4242,
+            "startedAt": "2026-09-26T16:00:00.000Z",
+            "runtime": 7
+          }
+        }
+      },
+      "expected": {"valid": false, "readBack": {}}
+    },
+    {
+      "name": "one invalid record makes the whole file read as empty",
+      "input": {
+        "state": {
+          "issue-1": {
+            "issueId": "issue-1",
+            "identifier": "ABC-1",
+            "sessionId": "s-1",
+            "worktreePath": "/work/ABC-1",
+            "branch": "abc-1",
+            "stage": "execute",
+            "status": "running",
+            "attemptCount": 0,
+            "workerPid": 1,
+            "startedAt": "2026-09-26T16:00:00.000Z"
+          },
+          "issue-2": {"issueId": "issue-2", "identifier": "ABC-2"}
+        }
+      },
+      "expected": {"valid": false, "readBack": {}}
+    }
+  ]
+}

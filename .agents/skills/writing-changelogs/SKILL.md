@@ -65,14 +65,14 @@ Changelog entries are user-facing prose, so the **`writing-for-humans`** skill s
 
 ## Good vs Bad Examples
 
-| Bad (Developer-focused)                             | Good (User-focused)                                            |
-| --------------------------------------------------- | -------------------------------------------------------------- |
-| Add obsidian_manager.py for auto vault registration | Open files in Obsidian without manual vault setup              |
-| fix: Use relative paths in theme commands           | Fix theme commands failing when run from different directories |
-| Accept 'default' as theme alias                     | Use 'default' to quickly apply the standard theme              |
-| Add changelog-populator.py hook                     | Changelog entries are now auto-generated from commits          |
-| Update AGENTS.md with new patterns                  | (Skip - internal documentation, not user-facing)               |
-| refactor: Extract helper function                   | (Skip - internal refactoring, no user impact)                  |
+| Bad (Developer-focused)                           | Good (User-focused)                                            |
+| ------------------------------------------------- | -------------------------------------------------------------- |
+| Add workspace_manager.py for auto workspace setup | Open project folders without manual setup                      |
+| fix: Use relative paths in theme commands         | Fix theme commands failing when run from different directories |
+| Accept 'default' as theme alias                   | Use 'default' to quickly apply the standard theme              |
+| Add changelog-populator.py hook                   | Changelog entries are now auto-generated from commits          |
+| Update AGENTS.md with new patterns                | (Skip - internal documentation, not user-facing)               |
+| refactor: Extract helper function                 | (Skip - internal refactoring, no user impact)                  |
 
 ## Imperative Verbs Reference
 
@@ -214,7 +214,7 @@ When converting conventional commits to changelog entries:
 
 | Commit Message                   | Changelog Entry                                                 |
 | -------------------------------- | --------------------------------------------------------------- |
-| `feat: Add obsidian_manager.py`  | Add automatic Obsidian vault registration                       |
+| `feat: Add workspace_manager.py` | Add automatic project workspace setup                           |
 | `fix(theme): Use relative paths` | Fix theme commands failing outside project root                 |
 | `feat!: Change config format`    | **BREAKING**: Change configuration format (see migration guide) |
 | `chore: Update deps`             | (skip)                                                          |
@@ -246,8 +246,8 @@ During release preparation:
 
 For each entry, mentally prepend "You can now..." - if it doesn't make sense, rewrite it.
 
-- ❌ "Add obsidian_manager.py" → "You can now add obsidian_manager.py" (nonsense)
-- ✅ "Open files in Obsidian automatically" → "You can now open files in Obsidian automatically" (makes sense)
+- ❌ "Add workspace_manager.py" → "You can now add workspace_manager.py" (nonsense)
+- ✅ "Open project folders automatically" → "You can now open project folders automatically" (makes sense)
 
 ### The "So What?" Test
 

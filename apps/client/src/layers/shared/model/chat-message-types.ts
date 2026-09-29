@@ -76,6 +76,11 @@ export interface MessageAuthor {
    * always local; never `true` for either.
    */
   isExternal?: boolean;
+  /**
+   * True when this is an agent that is no longer on the team — unregistered,
+   * with its messages kept (DOR-2095). The header says so beside the name.
+   */
+  retired?: boolean;
 }
 
 export type GroupPosition = 'only' | 'first' | 'middle' | 'last';

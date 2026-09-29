@@ -696,11 +696,11 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
 
   // The claim an agent is holding, by AUTHOR id — the id a claim carries.
   //
-  // At most one claim per agent is reachable in practice: the second claim
-  // ceiling is the agent's directory, so a turn in one room refuses a trigger in
-  // every other (`claimBusyWith`). The reduce is here for the day that stops
-  // being true, and it keeps the one it has held LONGEST rather than whichever
-  // the map iterated first, so two reads of the same state say the same thing.
+  // An agent may hold several claims at once — up to
+  // `rooms.maxConcurrentTurnsPerAgent`, one per room (`claimBusyWith`) — and
+  // this surface names one of them. It keeps the one held LONGEST rather than
+  // whichever the map iterated first, so two reads of the same state say the
+  // same thing.
   const claimByAuthorId = new Map<string, TeamClaimSource>();
   for (const claim of claims.value) {
     const held = claimByAuthorId.get(claim.authorId);

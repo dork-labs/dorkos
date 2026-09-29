@@ -40,6 +40,7 @@ import type {
   ConnectorProgramExecutionRequest,
   ConnectorReconciliationApplyRequest,
   ConnectorReconciliationApplyResponse,
+  ConnectorEveryAgentRevokeResponse,
   ConnectorReconciliationPreview,
   ConnectorReconciliationPreviewRequest,
   ConnectorUsagePage,
@@ -47,15 +48,19 @@ import type {
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import type {
   ConnectorAgentConnections,
+  ConnectorEveryAgentGrants,
   ConnectorAuthenticationFlowCreateRequest,
   ConnectorAuthenticationFlowState,
   ConnectorCatalogResourcePage,
   ConnectorConnectionDetail,
   ConnectorConnectionListResource,
   ConnectorConnectionPatch,
+  ConnectorAppActions,
   ConnectorDisconnectImpact,
   ConnectorLifecycleResult,
+  ConnectorProvidersResource,
   ConnectorReconnectRequest,
+  ConnectorSessionAccessUpdate,
   ConnectorSessionConnections,
 } from '@dorkos/shared/connector-resource-schemas';
 
@@ -65,11 +70,8 @@ const CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS = 75_000;
 /** Create the connector methods bound to a base URL. */
 export function createConnectorMethods(baseUrl: string) {
   return {
-    getConnectorProviders(): Promise<ConnectorProviderStatus[]> {
-      return fetchJSON<{ providers: ConnectorProviderStatus[] }>(
-        baseUrl,
-        '/connectors/providers'
-      ).then((r) => r.providers);
+    getConnectorProviders(): Promise<ConnectorProvidersResource> {
+      return fetchJSON<ConnectorProvidersResource>(baseUrl, '/connectors/providers');
     },
 
     putConnectorCredential(provider: string, secret: string): Promise<ConnectorProviderStatus> {
@@ -233,6 +235,17 @@ export function createConnectorMethods(baseUrl: string) {
       );
     },
 
+    getConnectorAppActions(
+      toolkit: string,
+      providerInstanceId: string
+    ): Promise<ConnectorAppActions> {
+      const params = new URLSearchParams({ providerInstanceId });
+      return fetchJSON<ConnectorAppActions>(
+        baseUrl,
+        `/connectors/apps/${encodeURIComponent(toolkit)}/actions?${params}`
+      );
+    },
+
     disconnectConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult> {
       return fetchJSON<ConnectorLifecycleResult>(
         baseUrl,
@@ -256,10 +269,26 @@ export function createConnectorMethods(baseUrl: string) {
       );
     },
 
+    getEveryAgentConnectorGrants(): Promise<ConnectorEveryAgentGrants> {
+      return fetchJSON<ConnectorEveryAgentGrants>(baseUrl, '/connectors/every-agent-grants');
+    },
+
     getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections> {
       return fetchJSON<ConnectorSessionConnections>(
         baseUrl,
         `/connectors/sessions/${encodeURIComponent(sessionId)}/connections`
+      );
+    },
+
+    setSessionConnectorAccess(
+      sessionId: string,
+      connectionId: string,
+      update: ConnectorSessionAccessUpdate
+    ): Promise<ConnectorSessionConnections> {
+      return fetchJSON<ConnectorSessionConnections>(
+        baseUrl,
+        `/connectors/sessions/${encodeURIComponent(sessionId)}/connections/${encodeURIComponent(connectionId)}`,
+        { method: 'PUT', body: JSON.stringify(update) }
       );
     },
 
@@ -328,6 +357,16 @@ export function createConnectorMethods(baseUrl: string) {
       );
     },
 
+    stopSharingConnectorWithEveryAgent(
+      connectionId: string
+    ): Promise<ConnectorEveryAgentRevokeResponse> {
+      return fetchJSON<ConnectorEveryAgentRevokeResponse>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/every-agent`,
+        { method: 'DELETE' }
+      );
+    },
+
     createConnectorManagementReview(
       input: ConnectorManagementReviewCreateRequest
     ): Promise<ConnectorManagementReviewItem> {
@@ -366,9 +405,10 @@ export function createConnectorMethods(baseUrl: string) {
     },
 
     getConnectorAgentRequests(
-      state?: 'pending' | 'resolved'
+      state?: 'pending' | 'resolved',
+      sessionId?: string
     ): Promise<ConnectorAgentRequestItem[]> {
-      const qs = buildQueryString({ state });
+      const qs = buildQueryString({ state, sessionId });
       return fetchJSON<{ requests: ConnectorAgentRequestItem[] }>(
         baseUrl,
         `/connectors/agent-requests${qs}`

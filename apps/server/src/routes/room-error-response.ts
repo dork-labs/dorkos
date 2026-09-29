@@ -12,8 +12,16 @@
  * @module routes/room-error-response
  */
 import type { Response } from 'express';
-import { RoomError, type RoomErrorCode } from '../services/rooms/index.js';
+import {
+  isOwnerRecord,
+  RoomError,
+  roomRefusalFor,
+  type AuthorRecord,
+  type RoomErrorCode,
+} from '../services/rooms/index.js';
+import { readOwnerAccount } from '../services/core/auth/index.js';
 import { logger } from '../lib/logger.js';
+import { ROOM_CALLER_LOCAL } from './room-caller-local.js';
 
 /** HTTP status for each way the room service can refuse. */
 export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
@@ -52,6 +60,8 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // because the table is total by type. 400 for the same reason — a direct
   // message is the wrong kind of room to ask this of, and no retry fixes it.
   TOOL_LEAVE_NOT_IN_DM: 400,
+  TOOL_ARCHIVE_NOT_IN_DM: 400,
+  TOOL_ARCHIVE_BRIDGED: 400,
   // The `update_room` twin, mapped for the same reason the two above are: the
   // table is total by type. 400 because a direct message is the wrong kind of
   // room to ask this of, and no retry fixes it.
@@ -158,6 +168,13 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // A 400 for the same reason: the request carried bytes that would stop being
   // a text file, and no credential or retry changes that.
   ROOM_FILE_NOT_TEXT: 400,
+  // A 409: the request is well formed and allowed, and the room already holds
+  // something at that path. What changes the answer is the person choosing to
+  // replace it, or another name.
+  ROOM_FILE_EXISTS: 409,
+  // A 400: nothing about the room or the caller changes how many files one
+  // upload may carry.
+  ROOM_UPLOAD_TOO_MANY_FILES: 400,
   // The room exists and the caller may see it; it simply has no files. A 409
   // rather than a 404, for the same reason as the two above: the answer changes
   // by giving the room a repo, not by asking about a different room.
@@ -170,6 +187,7 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   UNCOMMITTED_WORK: 409,
   BEHIND_MAIN: 409,
   MAIN_CHECKOUT_DIRTY: 409,
+  ROOM_REPO_CONFIG_UNSAFE: 409,
   SYMLINK_ESCAPES_REPO: 409,
   FILE_TOO_LARGE: 409,
   REPO_CAP_EXCEEDED: 409,
@@ -192,11 +210,29 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
  * @param err - The caught value.
  * @param context - Route label for the log line.
  */
-export function sendRoomError(res: Response, err: unknown, context: string): void {
+export function sendRoomError(
+  res: Pick<Response, 'status' | 'locals'>,
+  err: unknown,
+  context: string
+): void {
   if (err instanceof RoomError) {
-    res.status(STATUS_BY_CODE[err.code]).json({ error: err.message, code: err.code });
+    // Worded before a status is set, so nothing can leave a half-written reply.
+    const body = roomRefusalFor(err, () => ownerAsking(res));
+    res.status(STATUS_BY_CODE[err.code]).json(body);
     return;
   }
   logger.error(`[rooms] ${context} failed`, { err });
   res.status(500).json({ error: 'Internal server error' });
+}
+
+/**
+ * Whether the caller `resolveCaller` left on `res.locals` is the install's
+ * owner. `false` when no caller was resolved, so a route that refused before
+ * resolving its caller shows the operator's refusal to nobody (DOR-2457).
+ *
+ * @param res - The response, carrying the caller `resolveCaller` resolved.
+ */
+export function ownerAsking(res: Pick<Response, 'locals'>): boolean {
+  const caller = res.locals[ROOM_CALLER_LOCAL] as AuthorRecord | undefined;
+  return caller !== undefined && isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
 }

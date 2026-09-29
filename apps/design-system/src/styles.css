@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+@import '@dork-labs/ui/tailwind.css';
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}

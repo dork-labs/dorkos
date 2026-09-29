@@ -31,7 +31,6 @@ const KNOWN_TOKEN = 'tok_known_agent';
 const IDENTITY = {
   agentPath: '/Users/dev/agents/researcher',
   displayName: 'Researcher',
-  tierCeiling: 'act',
   createdAt: '2026-09-01T00:00:00.000Z',
 };
 

@@ -26,7 +26,7 @@ export function isConnectionEventSourceReady(status: ConnectionEventSourceStatus
   );
 }
 
-/** Render server-declared event delivery setup without retaining write-only secrets. */
+/** Render any event delivery setup the server asks the owner for, without retaining write-only secrets. */
 export function ConnectionEventSourceSetup({
   connectionId,
   status,
@@ -41,16 +41,10 @@ export function ConnectionEventSourceSetup({
   const [webhookSecret, setWebhookSecret] = useState('');
   const currentStatus = configure.data ?? status;
 
-  if (currentStatus.setupMode === 'managed') {
-    return (
-      <div className="bg-muted/40 rounded-lg p-3 text-sm">
-        <p className="font-medium">Delivery is managed by DorkOS</p>
-        <p className="text-muted-foreground mt-1 text-xs">
-          Each notification below still shows whether its own setup is pending or active.
-        </p>
-      </div>
-    );
-  }
+  // Your DorkOS account needs nothing set up here, and saying anything more
+  // would be a promise: whether notifications work on this route is shown by
+  // whether the app's notifications load, right where they are offered.
+  if (currentStatus.setupMode === 'managed') return null;
   if (currentStatus.setupMode === 'unavailable') {
     return (
       <p className="text-muted-foreground bg-muted/40 rounded-lg p-3 text-sm">

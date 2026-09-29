@@ -18,6 +18,7 @@ import type {
 import type {
   ConnectorCatalogPageRequest,
   ConnectorOperationClassification,
+  ConnectorOperationPage,
   ConnectorOperationPageRequest,
   ConnectorOperationRevision,
   ConnectorProviderExecuteResult,
@@ -55,10 +56,21 @@ export interface ComposioSdkClientOpts {
   baseUrl?: string;
 }
 
+/**
+ * One page of the Composio project catalog, with an optional search. The app's
+ * own catalog pages carry no search (DorkOS searches its kept list itself),
+ * but the hosted DorkOS-account catalog forwards a caller's search here: the
+ * public cloud-api contract accepts `query`, and released clients send it.
+ */
+export interface ComposioCatalogPageRequest extends ConnectorCatalogPageRequest {
+  /** Composio's `search`: matches toolkit name, slug or description upstream. */
+  query?: string;
+}
+
 /** Provider-facing operation client implemented inside the confined SDK boundary. */
 export interface ComposioOperationClient {
   /** Discover one account-free toolkit page from the project catalog. */
-  listToolkitPage(request: ConnectorCatalogPageRequest): Promise<{
+  listToolkitPage(request: ComposioCatalogPageRequest): Promise<{
     status: 'ok';
     toolkits: ConnectorToolkit[];
     nextCursor?: string;
@@ -76,7 +88,7 @@ export interface ComposioOperationClient {
   ): Promise<{
     status: 'ok';
     page: {
-      operations: Omit<ConnectorOperationRevision, 'id' | 'discoveredAt'>[];
+      operations: ConnectorOperationPage['operations'];
       nextCursor?: string;
       truncated: boolean;
     };
@@ -111,22 +123,139 @@ function rethrowDiscoveryError(error: unknown, signal: AbortSignal): never {
   throw new ComposioCatalogError('Composio catalog discovery failed. Check the provider status.');
 }
 
-/** Tags that do not contradict an explicit read-only assertion. */
-const READ_COMPATIBLE_TAGS = new Set([
-  'readOnlyHint',
+/**
+ * Composio's safety verdicts are its tags that end in `Hint`. The same `tags`
+ * list also carries category labels ("gmail", "messages", "Events
+ * Management", "deprecated") and the `important` mark; those say nothing about
+ * what an action does, so classification ignores them.
+ */
+const HINT_TAG = /Hint$/;
+
+/** Hints that do not contradict an explicit read-only verdict. */
+const READ_COMPATIBLE_HINTS = new Set(['readOnlyHint', 'idempotentHint', 'openWorldHint']);
+
+/**
+ * Composio's two verdicts for an action that makes or changes something
+ * without removing it: `createHint` (sending an email, opening an issue) and
+ * `updateHint` (editing something in place).
+ */
+const WRITE_VERDICT_HINTS = new Set(['createHint', 'updateHint']);
+
+/**
+ * Hints that do not contradict a create or update verdict. `destructiveHint`
+ * and `readOnlyHint` are deliberately absent: Composio puts `destructiveHint`
+ * on every irreversible action, including an irreversible update that also
+ * carries `updateHint`, and a read verdict beside a write verdict is a
+ * contradiction.
+ */
+const WRITE_COMPATIBLE_HINTS = new Set([
+  'createHint',
+  'updateHint',
   'idempotentHint',
   'openWorldHint',
-  'important',
 ]);
 
 /**
- * Keep uncertain operations available behind destructive approval. Only an
- * explicit, uncontradicted read-only assertion permits the read tier; unknown
- * future hints cannot silently weaken it. Idempotence does not prove read-only.
+ * Classify one action from the safety hints Composio sends, failing toward
+ * the strictest tier. Only tags ending in `Hint` count; category tags are
+ * ignored, but an unknown `…Hint` is treated as a verdict DorkOS does not
+ * understand.
+ *
+ * - `read`: `readOnlyHint`, and every hint is one of `readOnlyHint`,
+ *   `idempotentHint`, `openWorldHint`.
+ * - `write`: `createHint` or `updateHint`, and every hint is one of those or
+ *   `idempotentHint`, `openWorldHint` — so no `destructiveHint` and no
+ *   `readOnlyHint`. Composio documents `destructiveHint` as "irreversibly
+ *   removes, cancels or revokes data", so a delete never lands here.
+ * - `destructive`: everything else — a destructive verdict, contradictory
+ *   verdicts, no verdict at all, or an unknown hint. Idempotence does not
+ *   prove read-only, and a missing hint never proves safety.
+ *
+ * @param tags - The action's `tags` exactly as Composio listed them.
  */
-function classify(tags: readonly string[]): ConnectorOperationClassification {
-  return tags.includes('readOnlyHint') && tags.every((tag) => READ_COMPATIBLE_TAGS.has(tag))
-    ? 'read'
+function classifyComposioTags(tags: readonly string[]): ConnectorOperationClassification {
+  const hints = tags.filter((tag) => HINT_TAG.test(tag));
+  if (hints.includes('readOnlyHint') && hints.every((hint) => READ_COMPATIBLE_HINTS.has(hint))) {
+    return 'read';
+  }
+  if (
+    hints.some((hint) => WRITE_VERDICT_HINTS.has(hint)) &&
+    hints.every((hint) => WRITE_COMPATIBLE_HINTS.has(hint))
+  ) {
+    return 'write';
+  }
+  return 'destructive';
+}
+
+/**
+ * The Composio apps whose live action tags DorkOS has audited: every action
+ * read, its class checked, and the resulting "Read and write" list pinned by a
+ * test over a fixture of those tags. Only these apps get a `write` tier; for
+ * any other app, create and update actions stay `destructive`. Adding an app
+ * means auditing its live tags, adding them to the fixture, and pinning its
+ * write list.
+ */
+const AUDITED_WRITE_TOOLKITS = new Set(['gmail', 'googlecalendar']);
+
+/**
+ * Composio `write` actions DorkOS keeps out of "Read and write": ones that
+ * share access, redirect or forward mail, change the sending identity, change
+ * how the account delivers mail (including an automatic reply), start a
+ * subscription, or act on many items at once. They can hand data or access to
+ * someone else, so they are allowed one action at a time, like a delete.
+ * Exact slugs from Composio's Gmail and Google Calendar lists.
+ */
+const ACCOUNT_REACH_ACTIONS = new Set([
+  'GOOGLECALENDAR_ACL_INSERT',
+  'GOOGLECALENDAR_ACL_PATCH',
+  'GOOGLECALENDAR_ACL_UPDATE',
+  'GOOGLECALENDAR_ACL_WATCH',
+  'GOOGLECALENDAR_CALENDAR_LIST_WATCH',
+  'GOOGLECALENDAR_EVENTS_MOVE',
+  'GOOGLECALENDAR_EVENTS_WATCH',
+  'GOOGLECALENDAR_SETTINGS_WATCH',
+  'GMAIL_BATCH_MODIFY_MESSAGES',
+  'GMAIL_CREATE_FILTER',
+  'GMAIL_FORWARD_MESSAGE',
+  'GMAIL_PATCH_SEND_AS',
+  'GMAIL_UPDATE_SEND_AS',
+  'GMAIL_UPDATE_IMAP_SETTINGS',
+  'GMAIL_UPDATE_POP_SETTINGS',
+  'GMAIL_IMPORT_MESSAGE',
+  'GMAIL_INSERT_MESSAGE',
+  'GMAIL_UPDATE_VACATION_SETTINGS',
+]);
+
+/**
+ * The same kinds of action by name, as defense in depth for actions added
+ * later: sharing, permissions, rules, webhooks, subscriptions, secrets and
+ * transfers. A match only ever moves `write` to `destructive`, never the other
+ * way, so a pattern that matches too much costs convenience, not safety.
+ */
+const ACCOUNT_REACH_PATTERN =
+  /_ACL_|FORWARD|SEND_AS|_IMAP_|_POP_|FILTER|VACATION|AUTO_REPL|WATCH|PERMISSION|SHARING|SHARE_|COLLABORAT|MEMBERSHIP|INVITAT|_RULE|WEBHOOK|_HOOK|SUBSCRI|DEPLOY_KEY|SECRET|TRANSFER|DELEGAT|VISIBILITY|MAILBOX_SETTINGS/;
+
+/**
+ * Classify one Composio action: its safety hints ({@link classifyComposioTags}),
+ * then DorkOS's own tightening. A `write` verdict stands only for an audited
+ * app and only when the action has no reach beyond the account; otherwise the
+ * action is `destructive`.
+ *
+ * @param toolkit - The app's Composio toolkit slug, e.g. `gmail`.
+ * @param slug - The action's Composio slug, e.g. `GMAIL_SEND_EMAIL`.
+ * @param tags - The action's `tags` exactly as Composio listed them.
+ */
+function classifyComposioAction(
+  toolkit: string,
+  slug: string,
+  tags: readonly string[]
+): ConnectorOperationClassification {
+  const classification = classifyComposioTags(tags);
+  if (classification !== 'write') return classification;
+  return AUDITED_WRITE_TOOLKITS.has(toolkit) &&
+    !ACCOUNT_REACH_ACTIONS.has(slug) &&
+    !ACCOUNT_REACH_PATTERN.test(slug)
+    ? 'write'
     : 'destructive';
 }
 
@@ -222,7 +351,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
   }
 
   /** Fetch one account-free toolkit page through the no-retry generated client. */
-  async listToolkitPage(request: ConnectorCatalogPageRequest): Promise<{
+  async listToolkitPage(request: ComposioCatalogPageRequest): Promise<{
     status: 'ok';
     toolkits: ConnectorToolkit[];
     nextCursor?: string;
@@ -300,7 +429,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
   ): Promise<{
     status: 'ok';
     page: {
-      operations: Omit<ConnectorOperationRevision, 'id' | 'discoveredAt'>[];
+      operations: ConnectorOperationPage['operations'];
       nextCursor?: string;
       truncated: boolean;
     };
@@ -347,7 +476,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
       }
 
       const operations = result.items.map((item) => {
-        const classification = classify(item.tags);
+        const classification = classifyComposioAction(request.toolkit, item.slug, item.tags);
         if (item.toolkit.slug !== request.toolkit || item.version !== request.toolkitVersion) {
           throw new ComposioCatalogError(
             'Composio returned operation metadata for another version.'
@@ -363,6 +492,8 @@ export class ComposioSdkClient implements ComposioOperationClient {
           capabilityClassification: classification,
           retryPolicy: 'never' as const,
           inputSchema,
+          ...(item.name.trim() !== '' && { displayName: item.name.trim().slice(0, 200) }),
+          important: item.tags.includes('important'),
         };
       });
       return {

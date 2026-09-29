@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   createRelayNotifyUserHandler,
   type McpToolDeps,
@@ -8,6 +8,17 @@ import { NotifyBudget } from '../../relay/notify-budget.js';
 import { AdapterBindingSchema } from '@dorkos/shared/relay-schemas';
 import { resolveSenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { createCanUseTool } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
+import { resolveAgentHome } from '../agent-identity/index.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+  registerTestHomes,
+} from '../agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 vi.mock('../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => true) }));
 
@@ -1014,6 +1025,67 @@ describe('relay_notify_user', () => {
         'Topic-qualified chat',
         { from: 'relay.bridge.initiate.tg-main.123.456', serverBridgePrincipal: true }
       );
+    });
+  });
+});
+
+describe('relay_notify_user, by identity anchor', () => {
+  describe('from a folder that is nobody’s home (DOR-2091, spec `agent-home-desk` §3.1)', () => {
+    // A named-agent turn can stand in a folder that resolves to no home — the
+    // operator's default folder for an agent configured `workspace.mode:
+    // 'none'`. The sender is looked up by the session's identity anchor, which
+    // carries the turn's agent there, never by that directory, which the mesh
+    // does not place. Seeded: reverting `resolveSenderIdentity` to ask the mesh
+    // about `cwd` reddens the first case; ignoring the anchor it is handed
+    // reddens the second.
+    const SHARED_DEFAULT = '/work/shared-default';
+
+    beforeEach(() => {
+      registerTestHomes(['/agents/ana', '/agents/ben']);
+    });
+
+    afterEach(() => {
+      clearTestHomes();
+    });
+
+    /** A mesh that places exactly one directory: Ana's own folder. */
+    function anaMeshDeps(): McpToolDeps {
+      return makeMockDeps({
+        meshCore: {
+          getSubjectByPath: vi.fn((p: string) =>
+            p === '/agents/ana'
+              ? { subject: 'relay.agent.ns.agent-1', agentId: 'agent-1' }
+              : undefined
+          ),
+          get: vi.fn().mockReturnValue({ name: 'ana', displayName: 'Ana' }),
+        } as unknown as McpToolDeps['meshCore'],
+      });
+    }
+
+    it('sends as the agent the turn is for', async () => {
+      const deps = anaMeshDeps();
+      const identity = resolveSenderIdentity(
+        deps,
+        SHARED_DEFAULT,
+        resolveAgentHome(SHARED_DEFAULT, '/agents/ana')
+      );
+      expect(identity.agentId).toBe('agent-1');
+
+      const result = await createRelayNotifyUserHandler(deps, identity)({ message: 'done' });
+      expect(JSON.parse(result.content[0].text).sent).toBe(true);
+    });
+
+    it('sends as nobody for a turn for ANOTHER agent standing in Ana’s home', async () => {
+      const deps = anaMeshDeps();
+      const identity = resolveSenderIdentity(
+        deps,
+        '/agents/ana',
+        resolveAgentHome('/agents/ana', '/agents/ben')
+      );
+      expect(identity.agentId).toBeUndefined();
+
+      const result = await createRelayNotifyUserHandler(deps, identity)({ message: 'as Ana?' });
+      expect(JSON.parse(result.content[0].text).code).toBe('NOT_AN_AGENT');
     });
   });
 });

@@ -16,7 +16,9 @@ import {
   type UserConfig,
 } from '@dorkos/shared/config-schema';
 import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
+import { nameForAgents } from './room-context.js';
 import { configManager } from '../core/config-manager.js';
+import { readOperatorDisplayName } from '../core/config/operator-display-name.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { onProjectorTurnBoundary } from '../session/session-state-projector.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
@@ -88,16 +90,7 @@ export interface RoomSubsystem {
    * than a tab that happens to be open, says somebody is at the keyboard.
    */
   welcomeBack: WelcomeBackGreeter;
-  /**
-   * The one canvas writer built over this database, handed back rather than only
-   * registered.
-   *
-   * A READ-ONLY subsystem does not register it (see the construction below), so
-   * a host that wants the read half — the Obsidian embed showing this machine's
-   * session canvas — has to be given it explicitly. That is the point: the thing
-   * you can be handed is the thing you can read through, and the thing nobody
-   * registered is the thing no agent path can write through.
-   */
+  /** The canvas service built and registered over this database. */
   canvas: CanvasService;
 }
 
@@ -335,6 +328,28 @@ function readMaxCanvasOpsPerTurn(): number {
 }
 
 /**
+ * How many conversations one agent may work in at once, read live from
+ * `rooms.maxConcurrentTurnsPerAgent` (DOR-2104).
+ *
+ * Two different failures, and only one of them is handled here. A value in the
+ * file that the schema refuses (`0`, `99`, `"x"`) never reaches this function:
+ * the config manager repairs it to the shipped default, three, when it loads the
+ * file. What this catch covers is a config that cannot be read at all, and that
+ * answers ONE rather than three, because one is the direction that cannot hurt:
+ * it may make an agent wait for its other turn to finish, but never lets more
+ * turns loose in one folder than a person asked for (the contention ADR
+ * `260726-170125` measured). `claimBusyWith` reads anything below one as one
+ * too, so no path ends with an unbounded ceiling.
+ */
+function readMaxConcurrentTurnsPerAgent(): number {
+  try {
+    return configManager.get('rooms').maxConcurrentTurnsPerAgent;
+  } catch {
+    return 1;
+  }
+}
+
+/**
  * How many messages one agent may post into a room inside one turn, read live
  * from `rooms.maxPostsPerTurn` and degrading to the shipped default the same way
  * {@link readMaxAgentDepth} does (spec `tool-only-room-replies` §D9).
@@ -441,15 +456,6 @@ export function createRoomSubsystem(opts: {
     authors: AuthorRegistry;
     attachments: AttachmentRowStore;
   }) => RoomMirrorRuntime;
-  /**
-   * Whether this subsystem sits on a database it may not write (DOR-1563).
-   *
-   * Skips the handle reservations below — the one thing construction WRITES.
-   * A reader cannot take them and does not need to: they are already in any
-   * database a DorkOS has booted, which is the only kind a reader is pointed at.
-   * Without this, every Obsidian panel open logs a failed write.
-   */
-  readOnly?: boolean;
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
   const limitsFor = createRoomLimitsResolver(store);
@@ -481,21 +487,24 @@ export function createRoomSubsystem(opts: {
         return 0;
       },
     },
-    displayNameFor: (authorId) => authors.getById(authorId)?.displayName ?? 'Somebody',
+    // Named as an agent reads them: this text reaches agents (DOR-2458).
+    displayNameFor: (authorId) =>
+      nameForAgents(
+        {
+          authors,
+          isOwnerAuthor: (id) => authors.isOwner(id, readOwnerAccount()?.id ?? null),
+          operatorName: readOperatorDisplayName,
+        },
+        authorId,
+        { sentenceStart: true }
+      ) ?? 'Somebody',
     // Read per call, never captured: a person who tells DorkOS in Settings to
     // open CSVs in the plain editor must get that answer from the agent's next
     // open too, and both sides resolve through `canvasContentForFile`.
     viewerOverrides: () => readViewerOverrides(),
     ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
   });
-  // **A read-only subsystem registers NO writer.** `readOnly` means this process
-  // is pointed at somebody else's live database (the Obsidian embed, ADR
-  // `260825-194924`), and a registered service is one `control_ui` will call —
-  // which threw `SqliteError: attempt to write a readonly database` instead of
-  // refusing. With none registered, every reader degrades: `control_ui` falls
-  // through to the event it always pushed, the routes answer 503, and the embed
-  // reads through the seam it is handed instead.
-  if (opts.readOnly !== true) setCanvasService(canvas);
+  setCanvasService(canvas);
   const bridges = new BridgeStore(opts.db);
   const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
   const service = new RoomService({
@@ -574,6 +583,10 @@ export function createRoomSubsystem(opts: {
     // Read per tick, for the same reason: shortening how long a room waits on a
     // busy agent has to bind the wait that is already running.
     holdCeilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
+    // Read at every claim decision, for the same reason: raising it in Settings
+    // has to let the very next message start, and lowering it has to hold the
+    // very next one — neither may wait for a restart.
+    maxConcurrentTurnsPerAgent: readMaxConcurrentTurnsPerAgent,
     // Read per post, for the same reason: lowering the limit in Settings has to
     // bind the very next message.
     maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,
@@ -599,6 +612,9 @@ export function createRoomSubsystem(opts: {
     // captured at boot would leave the rooms domain believing forever that the
     // unbound `'local'` author is still the operator.
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+    // Read per turn: the person can rename themselves at any time, and the
+    // next turn's context has to call them by the new name (DOR-2458).
+    operatorName: readOperatorDisplayName,
     // The record-based twin, for a caller that already fetched a batch of
     // rows and would otherwise pay `isOwnerAuthor`'s re-query per member.
     isOwnerRecord: (record) => isOwnerRecord(record, readOwnerAccount()?.id ?? null),
@@ -628,7 +644,7 @@ export function createRoomSubsystem(opts: {
   // invariant: it cannot mint a handle either, so there is no race for it to
   // lose, and the reservations it would take are already in the database that
   // whichever DorkOS wrote it took them in.
-  if (!opts.readOnly) ensureHandles(opts.db, authors);
+  ensureHandles(opts.db, authors);
   const welcomeBack = new WelcomeBackGreeter({
     settings: readWelcomeBack,
     // Resolved per return rather than captured: #team is seeded during boot and
@@ -907,8 +923,14 @@ export function getRoomAuthors(): AuthorRegistry {
 // from its own module by the code that uses it, so this file does not accrue a
 // re-export for every symbol the domain happens to have.
 export { RoomService, type PostedEntry } from './room-service.js';
-export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
-export { toAuthorRef, type AuthorRecord } from './author-registry.js';
-export { resolveOperatorAuthor, peekOperatorAuthor } from './operator-author.js';
+export {
+  RoomError,
+  RoomRepoConfigUnsafeError,
+  roomRefusalFor,
+  type RoomErrorCode,
+  type RoomAgentLookup,
+} from './room-errors.js';
+export { isOwnerRecord, toAuthorRef, type AuthorRecord } from './author-registry.js';
+export { resolveOperatorAuthor } from './operator-author.js';
 export type { RoomTurnRunner } from './room-trigger.js';
 export { RoomTurnBudget } from './limits/turn-budget.js';

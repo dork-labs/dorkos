@@ -55,6 +55,11 @@ function proposal(overrides: Partial<Task> = {}): Task {
     prompt: 'Sweep the backlog and file anything stale.',
     cron: '0 3 * * *',
     timezone: 'UTC',
+    defaultCron: '0 3 * * *',
+    defaultTimezone: 'UTC',
+    timingOverridden: false,
+    packageOwned: null,
+    approvalChanges: [],
     agentId: null,
     enabled: false,
     sticky: false,
@@ -63,6 +68,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     status: 'pending_approval',
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: minutesFromLoad(-20),
@@ -1346,5 +1352,37 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
 
     await waitFor(() => expect(slot('schedule-receipt')).toBeNull());
     expect(slot('schedule-raise-refused')).toBeNull();
+  });
+});
+
+describe('what changed since the person approved it (DOR-2323)', () => {
+  it('lists the old and the new model and runtime', () => {
+    // Purpose: a schedule an agent switched to another model waits again; the
+    // card has to say what the agent changed, or approving is a guess.
+    renderCard(
+      proposal({
+        reasonSource: 'dorkos',
+        reason: 'An agent changed how this schedule runs, so it is waiting for you again.',
+        approvalChanges: [
+          { field: 'runtime', from: null, to: 'codex' },
+          { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4' },
+        ],
+      })
+    );
+
+    const changes = slot('schedule-changes');
+    expect(changes).not.toBeNull();
+    expect(changes).toHaveTextContent('Runtime: the agent’s own → codex');
+    expect(changes).toHaveTextContent('Model: claude-sonnet-4 → claude-opus-4');
+    // Kept whole at any width: a model name broken at a hyphen reads as two.
+    expect(changes!.querySelector('[data-slot="schedule-change-value"]')).toHaveClass(
+      'whitespace-nowrap'
+    );
+  });
+
+  it('draws nothing when nothing changed since an approval', () => {
+    renderCard(proposal());
+
+    expect(slot('schedule-changes')).toBeNull();
   });
 });

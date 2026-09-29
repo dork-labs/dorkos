@@ -3,10 +3,20 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import type {
   ConnectorAuthenticationFlowCreateRequest,
   ConnectorAuthenticationFlowState,
+  ConnectorLifecycleResult,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { connectorKeys } from '../api/query-keys';
+
+/**
+ * How long catalog pages are reused before they are fetched again. The server
+ * already keeps each service's app list, so a few minutes spares a request on
+ * every mount. Saving or removing a key, and linking or unlinking a DorkOS
+ * account, invalidate the whole connector scope, so a change in setup never
+ * waits this out.
+ */
+const CONNECTOR_CATALOG_STALE_TIME_MS = 5 * 60 * 1000;
 
 /** Read one bounded, account-free page from the service catalog. */
 export function useConnectorCatalog(query: string, enabled = true) {
@@ -21,7 +31,49 @@ export function useConnectorCatalog(query: string, enabled = true) {
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor,
+    // A page that came back with a warning (a service that could not list its
+    // apps) is never reused: the next mount asks again, so it can recover.
+    staleTime: (query) =>
+      query.state.data?.pages.some((page) => page.warnings.length > 0)
+        ? 0
+        : CONNECTOR_CATALOG_STALE_TIME_MS,
     enabled,
+  });
+}
+
+/** How long the browser treats an app's action list as current; the server keeps it for a day. */
+const APP_ACTIONS_STALE_MS = 5 * 60_000;
+
+/**
+ * Read what one app lets agents do through one configured way. Nothing is
+ * asked for until both are known, and a reopened panel shows the kept list
+ * at once.
+ *
+ * @param toolkit - The app's service id, e.g. `gmail`.
+ * @param providerInstanceId - The way that reaches it, or `null` when none is set up.
+ */
+export function useConnectorAppActions(toolkit: string, providerInstanceId: string | null) {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: connectorKeys.appActions(providerInstanceId ?? '', toolkit),
+    queryFn: () => transport.getConnectorAppActions(toolkit, providerInstanceId ?? ''),
+    enabled: Boolean(providerInstanceId) && toolkit !== '',
+    staleTime: APP_ACTIONS_STALE_MS,
+  });
+}
+
+/**
+ * Check again whether the DorkOS account can reach apps. Reading the catalog
+ * is what makes the server try the DorkOS account's route again when it isn't
+ * registered, so this reads one page of it first, then every connector read
+ * again, so the accounts show what that check found.
+ */
+export function useRecheckConnectorWays() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => transport.getConnectorCatalog({ limit: 1 }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
   });
 }
 
@@ -34,6 +86,13 @@ export function useConnectorConnections() {
   });
 }
 
+/**
+ * How often a disconnected account whose sign-out is still finishing re-reads
+ * its detail. The server keeps retrying on its own; this only keeps the panel
+ * honest about it, and stops the moment the sign-out settles or is refused.
+ */
+const CLEANUP_PENDING_REFRESH_MS = 15_000;
+
 /** Read owner-visible detail for one stable connection. */
 export function useConnectorConnection(connectionId: string | null, enabled = true) {
   const transport = useTransport();
@@ -41,6 +100,13 @@ export function useConnectorConnection(connectionId: string | null, enabled = tr
     queryKey: connectorKeys.connection(connectionId ?? ''),
     queryFn: () => transport.getConnectorConnection(connectionId ?? ''),
     enabled: enabled && Boolean(connectionId),
+    refetchInterval: (query) => {
+      // Only while DorkOS is actually retrying: a refused or stuck disconnect
+      // waits on the owner, and re-reading it would change nothing.
+      return query.state.data?.connection.readiness.reason === 'disconnect_finishing'
+        ? CLEANUP_PENDING_REFRESH_MS
+        : false;
+    },
   });
 }
 
@@ -61,6 +127,20 @@ export function useAgentConnectorConnections(agentId: string | null) {
     queryKey: connectorKeys.agentConnections(agentId ?? ''),
     queryFn: () => transport.getAgentConnectorConnections(agentId ?? ''),
     enabled: Boolean(agentId),
+  });
+}
+
+/**
+ * Read what every agent, including one not created yet, inherits from the
+ * owner's every-agent grants. Lives under the connections key, so any grant
+ * change that refreshes connections refreshes this too.
+ */
+export function useEveryAgentConnectorGrants(enabled = true) {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: connectorKeys.everyAgentGrants(),
+    queryFn: () => transport.getEveryAgentConnectorGrants(),
+    enabled,
   });
 }
 
@@ -181,7 +261,7 @@ export function useResumeConnectorConnection() {
 /** Disconnect a connection after the operator reviews its impact. */
 export function useDisconnectConnectorConnection() {
   const transport = useTransport();
-  return useConnectionMutation<void>((connectionId) =>
+  return useConnectionMutation<void, ConnectorLifecycleResult>((connectionId) =>
     transport.disconnectConnectorConnection(connectionId)
   );
 }
@@ -192,4 +272,29 @@ export function useRemoveConnectorConnection() {
   return useConnectionMutation<void>((connectionId) =>
     transport.removeConnectorConnection(connectionId)
   );
+}
+
+/**
+ * Turn one app on or off for one chat's agent. The server answers with the
+ * chat's access as it now stands, so the chat's list shows the server's
+ * readiness straight away and is never guessed here.
+ *
+ * @param sessionId - The chat whose access changes.
+ */
+export function useSetSessionConnectorAccess(sessionId: string) {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ connectionId, on }: { connectionId: string; on: boolean }) =>
+      transport.setSessionConnectorAccess(sessionId, connectionId, { on }),
+    meta: { suppressErrorToast: true },
+    onSuccess: (data) => {
+      queryClient.setQueryData(connectorKeys.sessionConnections(sessionId), data);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: connectorKeys.sessionConnections(sessionId),
+      });
+    },
+  });
 }

@@ -4,7 +4,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { InstallationUpdateCheck } from '@dorkos/shared/marketplace-schemas';
 import { Marketplace } from '../ui/Marketplace';
+import type { InstalledUpdatesView } from '../model/use-installed-updates-view';
 
 // ---------------------------------------------------------------------------
 // URL params mock — Marketplace reads `view`/`setView` from useMarketplaceParams.
@@ -34,6 +36,32 @@ const mockParams = vi.hoisted(() => ({
 
 vi.mock('../model/use-marketplace-params', () => ({
   useMarketplaceParams: () => mockParams,
+}));
+
+// The update check the Installed tab counts from; each test sets how many
+// installations it found stale.
+const updatesView = vi.hoisted(() => ({ staleCount: 0 }));
+
+vi.mock('../model/use-installed-updates-view', () => ({
+  useInstalledUpdatesView: (): InstalledUpdatesView => ({
+    checks: new Map(),
+    summary: {
+      available: Array.from({ length: updatesView.staleCount }, (_, i) => ({
+        installation: {
+          name: `pkg-${i}`,
+          version: '1.0.0',
+          type: 'plugin',
+          installPath: `/p/${i}`,
+        },
+        check: { installPath: `/p/${i}` } as InstallationUpdateCheck,
+      })),
+      current: 0,
+      unknown: 0,
+    },
+    isChecking: false,
+    error: null,
+    recheck: () => {},
+  }),
 }));
 
 // Stub the heavy children so the test isolates the view-switch logic.
@@ -74,6 +102,7 @@ describe('Marketplace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockParams.view = 'browse';
+    updatesView.staleCount = 0;
   });
 
   afterEach(() => cleanup());
@@ -114,5 +143,32 @@ describe('Marketplace', () => {
     render(<Marketplace />);
     expect(screen.getByRole('tab', { name: 'Browse' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Installed' })).toBeInTheDocument();
+  });
+
+  it('counts stale installations on the Installed tab, visible from Browse', () => {
+    // Purpose: staleness is visible without opening the tab, and a screen
+    // reader hears the count as words rather than a bare number.
+    updatesView.staleCount = 3;
+
+    render(<Marketplace />);
+
+    const tab = screen.getByRole('tab', { name: /^Installed\s*,\s*3 updates available$/ });
+    expect(tab).toHaveTextContent('3');
+  });
+
+  it('says "update" for one', () => {
+    updatesView.staleCount = 1;
+
+    render(<Marketplace />);
+
+    expect(
+      screen.getByRole('tab', { name: /^Installed\s*,\s*1 update available$/ })
+    ).toBeInTheDocument();
+  });
+
+  it('shows no count when nothing needs updating', () => {
+    render(<Marketplace />);
+
+    expect(screen.getByRole('tab', { name: 'Installed' })).toHaveTextContent(/^Installed$/);
   });
 });
