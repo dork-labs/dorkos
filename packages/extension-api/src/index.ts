@@ -30,6 +30,10 @@ export type {
   ExtensionReadableState,
   ProjectRef,
   TrackerItemRef,
+  DecisionActions,
+  DecisionAnswer,
+  DecisionAnswerResult,
+  ExtensionDecisionView,
 } from './extension-api.js';
 export {
   EXTENSION_EVENT_KINDS,
@@ -76,4 +80,16 @@ export type {
   ProjectsApi,
   LimitedPlan,
   CarryOverSeed,
+  InboxApi,
+  InboxLimit,
+  DecisionInput,
+  RaisedDecision,
+  DecisionOutcome,
+  DecisionActor,
+  DecisionActionEvent,
+  DecisionActionResult,
+  DecisionOffer,
+  DecisionWatch,
+  RecordedDecisionInput,
+  ProjectSettingsReader,
 } from './server-extension-api.js';

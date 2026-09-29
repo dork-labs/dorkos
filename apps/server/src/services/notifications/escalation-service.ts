@@ -323,8 +323,11 @@ export class EscalationService {
       if (this.deps.store.hasEscalated(subjectKey)) return;
       if (this.deps.store.wasAcknowledged(subjectKey)) return;
 
-      const title = entry.title(payload);
-      const body = entry.body?.(payload);
+      // A kind whose title is somebody else's words (an extension's decision)
+      // says a generic line instead, because a lock screen is not private.
+      const said = entry.escalation?.(payload);
+      const title = said ? said.title : entry.title(payload);
+      const body = said ? said.body : entry.body?.(payload);
       const location = entry.locate(payload);
 
       // Both legs are started before either is awaited, and neither can fail the
@@ -488,6 +491,12 @@ export function standingDeepLink<K extends StandingNotificationKind>(
   if (kind === 'signin.required') return `/?settings=${RUNTIMES_SETTINGS_TAB}`;
   // Settings → Extensions, where the same extension's card can turn it on.
   if (kind === 'extension.approval') return `/?settings=${EXTENSIONS_SETTINGS_TAB}`;
+  // The decision's own link, which the inbox service already checked is an
+  // in-app path (a core route or the raising extension's own `/x/<id>` page),
+  // else home, where the bell is (spec `flow-multiproject` §7.1).
+  if (kind === 'extension.decision') {
+    return (payload as NotificationPayload<'extension.decision'>).link ?? '/';
+  }
   const sessionId = (payload as NotificationPayload<'ask.pending'>).sessionId;
   return sessionPath({ session: sessionId });
 }

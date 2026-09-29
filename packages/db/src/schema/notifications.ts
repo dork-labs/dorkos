@@ -58,6 +58,7 @@ export const notifications = sqliteTable(
         'account.limited',
         'account.reset',
         'extension.approval',
+        'extension.decision',
       ],
     }).notNull(),
 

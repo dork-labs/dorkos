@@ -38,6 +38,7 @@ export default defineConfig({
     './src/schema/search.ts',
     './src/schema/notifications.ts',
     './src/schema/projects.ts',
+    './src/schema/extensions/extension-decisions.ts',
   ],
   out: './drizzle',
   dialect: 'sqlite',

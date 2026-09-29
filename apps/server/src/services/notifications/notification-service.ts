@@ -198,7 +198,7 @@ export class NotificationService {
   async resolveStanding<K extends StandingNotificationKind>(
     kind: K,
     payload: NotificationPayload<K>,
-    opts: NotifyOptions & { outcome: NotificationOutcome }
+    opts: NotifyOptions & { outcome: NotificationOutcome; unread?: boolean }
   ): Promise<NotifyResult> {
     // A standing condition that ENDED is the strongest acknowledgement there is,
     // whoever or whatever ended it — so every resolution disarms the escalation
@@ -229,6 +229,7 @@ export class NotificationService {
       return await this.raise(kind, payload, opts, {
         resolvedAt: new Date().toISOString(),
         outcome: opts.outcome,
+        ...(opts.unread ? { unread: true } : {}),
       });
     } catch (err) {
       logger.warn('[Notifications] Could not record a resolution', { err, kind });
@@ -364,7 +365,7 @@ export class NotificationService {
     kind: K,
     payload: NotificationPayload<K>,
     opts: NotifyOptions,
-    resolution: { resolvedAt?: string; outcome?: NotificationOutcome }
+    resolution: { resolvedAt?: string; outcome?: NotificationOutcome; unread?: boolean }
   ): Promise<NotifyResult> {
     const dedupeKey = notificationEntry(kind).dedupeKey(payload);
     for (let ahead = this.inFlight.get(dedupeKey); ahead; ahead = this.inFlight.get(dedupeKey)) {
@@ -387,7 +388,7 @@ export class NotificationService {
     kind: K,
     payload: NotificationPayload<K>,
     opts: NotifyOptions,
-    resolution: { resolvedAt?: string; outcome?: NotificationOutcome },
+    resolution: { resolvedAt?: string; outcome?: NotificationOutcome; unread?: boolean },
     dedupeKey: string
   ): Promise<NotifyResult> {
     const entry = notificationEntry(kind);
@@ -442,8 +443,12 @@ export class NotificationService {
       ...(body ? { body } : {}),
       payload,
       dedupeKey,
-      read: ownAction || somebodyActed(resolution.outcome),
-      ...resolution,
+      // `unread` is a resolution the person should still find waiting even
+      // though something acted: a decision an agent or a rule of theirs made
+      // while they were away ("Tell me after", spec `flow-multiproject` §7.9).
+      read: !resolution.unread && (ownAction || somebodyActed(resolution.outcome)),
+      ...(resolution.resolvedAt ? { resolvedAt: resolution.resolvedAt } : {}),
+      ...(resolution.outcome ? { outcome: resolution.outcome } : {}),
     });
 
     if (relay?.ok) {
@@ -604,7 +609,7 @@ export async function notify<K extends EventNotificationKind>(
 export async function resolveStanding<K extends StandingNotificationKind>(
   kind: K,
   payload: NotificationPayload<K>,
-  opts: NotifyOptions & { outcome: NotificationOutcome }
+  opts: NotifyOptions & { outcome: NotificationOutcome; unread?: boolean }
 ): Promise<NotifyResult> {
   if (!current) {
     logger.debug('[Notifications] Nothing recorded: no service is wired', { kind });

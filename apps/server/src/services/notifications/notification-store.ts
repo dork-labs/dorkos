@@ -713,7 +713,38 @@ export class NotificationStore {
       ...(row.readAt ? { readAt: row.readAt } : {}),
       ...(row.resolvedAt ? { resolvedAt: row.resolvedAt } : {}),
       ...(row.outcome ? { outcome: row.outcome as NotificationOutcome } : {}),
+      ...(buildDecision(kind, row.dataJson) ?? {}),
     };
+  }
+}
+
+/**
+ * Who decided an `extension.decision` history row, read back from its payload
+ * so the inbox can tell "you answered" from "decided while you were away"
+ * (spec `flow-multiproject` §7.9). Nothing for any other kind, or a payload
+ * it cannot read.
+ */
+function buildDecision(
+  kind: NotificationKind,
+  dataJson: string | null
+): { decision: NonNullable<NotificationDTO['decision']> } | undefined {
+  if (kind !== 'extension.decision' || !dataJson) return undefined;
+  try {
+    const payload = JSON.parse(dataJson) as NotificationPayload<'extension.decision'>;
+    const r = payload.resolution;
+    if (!r) return undefined;
+    return {
+      decision: {
+        extensionId: payload.extensionId,
+        resolvedBy: r.resolvedBy,
+        resolvedByLabel: r.resolvedByLabel,
+        recorded: r.recorded,
+        watch: r.watch,
+      },
+    };
+  } catch (err) {
+    logger.debug('[Notifications] Could not read a decision row', { err });
+    return undefined;
   }
 }
 
