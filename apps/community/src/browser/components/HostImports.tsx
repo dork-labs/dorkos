@@ -1,3 +1,5 @@
+import { Button, Input, Label, Notice } from '@dork-labs/ui';
+import { FileUp } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RequestError, describeError, request } from '../api.js';
 import { sha256OfFile } from '../sha256.js';
@@ -44,6 +46,17 @@ const STATES: Record<ImportState, string> = {
   cancelled: 'Cancelled',
 };
 
+/** A count with its noun, singular for one. */
+function count(value: number, noun: string): string {
+  return `${value.toLocaleString()} ${noun}${value === 1 ? '' : 's'}`;
+}
+
+/** A byte size in the largest unit that keeps it above one. */
+function size(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024).toLocaleString()} KiB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+}
+
 /** Send an export file to an import with this browser's host session. */
 async function uploadExport(importId: string, file: File): Promise<void> {
   const response = await fetch(`/api/v1/imports/${importId}/archive`, {
@@ -74,6 +87,7 @@ export function HostImportForm({ onStarted }: { onStarted: () => void }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const attempt = useRef<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   async function start(event: React.FormEvent) {
     event.preventDefault();
@@ -101,6 +115,7 @@ export function HostImportForm({ onStarted }: { onStarted: () => void }) {
       }
       setName('');
       setFile(null);
+      if (fileInput.current) fileInput.current.value = '';
       onStarted();
     } catch (cause) {
       setError(describeError(cause));
@@ -110,16 +125,16 @@ export function HostImportForm({ onStarted }: { onStarted: () => void }) {
   }
 
   return (
-    <section className="panel">
-      <h2>Move a community here</h2>
+    <section className="panel mt-4" aria-labelledby="host-import-title">
+      <h2 id="host-import-title">Move a community here</h2>
       <p className="small muted">
         Import a community’s history and files from its owner’s export. Everyone joins again
         afterwards, and the owner claims it with a link.
       </p>
       <form onSubmit={(event) => void start(event)}>
         <div className="field">
-          <label htmlFor="host-import-name">Name</label>
-          <input
+          <Label htmlFor="host-import-name">Name of the moved community</Label>
+          <Input
             id="host-import-name"
             value={name}
             maxLength={80}
@@ -128,29 +143,46 @@ export function HostImportForm({ onStarted }: { onStarted: () => void }) {
           />
         </div>
         <div className="field">
-          <label htmlFor="host-import-file">Export file (.zip)</label>
-          <input
-            id="host-import-file"
-            type="file"
-            accept=".zip,application/zip"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-          />
-          <span className="hint">Leave empty to get upload details for whoever has the file.</span>
+          <Button
+            asChild
+            variant="outline"
+            className={`justify-self-start ${busy ? 'pointer-events-none opacity-50' : ''}`}
+          >
+            <Label aria-disabled={busy} className="relative">
+              <FileUp size={16} /> {file ? 'Choose another file' : 'Choose export file'}
+              <input
+                ref={fileInput}
+                // Laid over the whole button, border included, and invisible: the target to tap
+                // is the button itself.
+                className="absolute -inset-px cursor-pointer opacity-0"
+                type="file"
+                aria-label="Export file (.zip)"
+                accept=".zip,application/zip"
+                disabled={busy}
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
+            </Label>
+          </Button>
+          <span className="hint">
+            {file
+              ? `${file.name} will be sent when the import starts.`
+              : 'Leave empty to get upload details for whoever has the file.'}
+          </span>
         </div>
-        <button className="button primary" disabled={busy}>
+        <Button type="submit" variant="default" disabled={busy}>
           Start import
-        </button>
+        </Button>
       </form>
       {error && (
-        <p role="alert" className="notice error small mt-3">
+        <Notice role="alert" tone="error" className="mt-3">
           {error}
-        </p>
+        </Notice>
       )}
       <p className="small mt-3" aria-live="polite">
         {message}
       </p>
       {link && (
-        <div className="notice mt-3">
+        <Notice tone="info" className="mt-3">
           <strong>Upload details</strong>
           <p className="small">
             Shown once. Send the export with <code>PUT</code> to this address, with the token as a
@@ -158,14 +190,14 @@ export function HostImportForm({ onStarted }: { onStarted: () => void }) {
             <code>X-Archive-SHA256</code>. The token works for 24 hours.
           </p>
           <div className="field">
-            <label htmlFor="host-import-url">Upload address</label>
-            <input id="host-import-url" readOnly value={link.url} />
+            <Label htmlFor="host-import-url">Upload address</Label>
+            <Input id="host-import-url" readOnly value={link.url} />
           </div>
           <div className="field mb-0">
-            <label htmlFor="host-import-token">Upload token</label>
-            <input id="host-import-token" readOnly value={link.token} />
+            <Label htmlFor="host-import-token">Upload token</Label>
+            <Input id="host-import-token" readOnly value={link.token} />
           </div>
-        </div>
+        </Notice>
       )}
     </section>
   );
@@ -219,7 +251,12 @@ export function HostImportStatus({
     }
   }
 
-  if (!current) return error ? <p className="small notice error">{error}</p> : null;
+  if (!current)
+    return error ? (
+      <Notice role="alert" tone="error">
+        {error}
+      </Notice>
+    ) : null;
   const report = current.report;
   return (
     <div className="mt-3" aria-label="Import">
@@ -227,37 +264,36 @@ export function HostImportStatus({
         <strong>Import:</strong> {STATES[current.state]}
       </p>
       {current.failureCode && (
-        <p className="small notice error">
+        <Notice tone="error" className="mb-2">
           {FAILURES[current.failureCode] ?? 'The import could not finish.'}
-        </p>
+        </Notice>
       )}
       {report && (
         <p className="small muted">
-          {report.channels.toLocaleString()} channels, {report.entries.toLocaleString()} messages,{' '}
-          {report.attachments.toLocaleString()} files (
-          {(report.attachmentBytes / 1024 / 1024).toFixed(1)} MiB),{' '}
-          {report.historicalMembers.toLocaleString()} past members,{' '}
-          {report.historicalAgents.toLocaleString()} past agents.
+          {count(report.channels, 'channel')}, {count(report.entries, 'message')},{' '}
+          {count(report.attachments, 'file')} ({size(report.attachmentBytes)}),{' '}
+          {count(report.historicalMembers, 'past member')},{' '}
+          {count(report.historicalAgents, 'past agent')}.
           {report.shortened > 0 &&
             ` ${report.shortened.toLocaleString()} channel names or descriptions are too long and will be shortened.`}
         </p>
       )}
       <div className="row flex-wrap gap-2">
         {current.state === 'validated' && (
-          <button className="button primary" disabled={busy} onClick={() => void act('commit')}>
+          <Button variant="default" disabled={busy} onClick={() => void act('commit')}>
             Import now
-          </button>
+          </Button>
         )}
         {['awaiting_upload', 'validating', 'validated', 'restoring'].includes(current.state) && (
-          <button className="button" disabled={busy} onClick={() => void act('cancel')}>
+          <Button variant="outline" disabled={busy} onClick={() => void act('cancel')}>
             Cancel import
-          </button>
+          </Button>
         )}
       </div>
       {error && (
-        <p role="alert" className="notice error small mt-2">
+        <Notice role="alert" tone="error" className="mt-2">
           {error}
-        </p>
+        </Notice>
       )}
     </div>
   );
