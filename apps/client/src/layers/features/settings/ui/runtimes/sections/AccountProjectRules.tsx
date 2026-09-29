@@ -268,11 +268,11 @@ export function ProjectLimitsList({ limits, nameForId }: ProjectLimitsListProps)
       <p id={captionId} className="text-muted-foreground pt-1 text-xs">
         Project limits
       </p>
-      {/* Said plainly: core shows and removes a project's list, and the Flow
-          extension's settings are where one is chosen (spec §8.5, V6). */}
+      {/* Said plainly: core shows and removes a project's list; choosing one
+          is the Flow extension's (spec §8.5, V6) or a script's. */}
       <p className="text-muted-foreground pb-1 text-xs" data-testid="project-limits-note">
-        Each project here uses only the accounts listed. Choose them in Settings → Flow, under
-        Accounts this project may use.
+        Each project here uses only the accounts listed. A project’s list is set by the Flow
+        extension or a script; remove it here to let the project use every account.
       </p>
       <ul className="divide-y">
         {limits.map(({ project, allow }) => (

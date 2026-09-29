@@ -205,7 +205,9 @@ describe('ProjectLimitsList', () => {
     );
     expect(screen.getByText('client-app')).toBeInTheDocument();
     expect(screen.getByText('Uses only Work and Main')).toBeInTheDocument();
-    expect(screen.getByTestId('project-limits-note')).toHaveTextContent('Settings → Flow');
+    expect(screen.getByTestId('project-limits-note')).toHaveTextContent(
+      'set by the Flow extension or a script'
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Let client-app use every account' }));
     await waitFor(() =>
       expect(transport.setProjectAccounts).toHaveBeenCalledWith('/work/client-app', null)
