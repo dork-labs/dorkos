@@ -352,6 +352,50 @@ describe('ConnectorLifecycleService', () => {
     expect(disconnect).toHaveBeenCalledWith('mcp:notes');
   });
 
+  it('never binds a raw MCP cleanup to an old fingerprint when it tries', async () => {
+    const raw = new FakeConnectorProvider({
+      instanceId: ConnectorProviderInstanceIdSchema.parse('raw-a'),
+      custody: 'external',
+    });
+    registry.register(raw, 'raw-material-1');
+    db.insert(connections)
+      .values({
+        id: 'connection-raw',
+        providerInstanceId: 'raw-a',
+        externalAccountRef: 'mcp:notes',
+        toolkit: 'notes',
+        label: 'Notes',
+        status: 'active',
+        lifecycleState: 'connected',
+        enabled: true,
+        grantReconciliationStatus: 'ready',
+        // Seen under the fingerprint from before another MCP server was added.
+        accountKey: 'raw-material-1',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    registry.register(raw, 'raw-material-2');
+    const disconnect = vi.spyOn(raw, 'disconnect');
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    await expect(
+      service.disconnect(
+        OWNER,
+        ConnectionIdSchema.parse('connection-raw'),
+        new AbortController().signal
+      )
+    ).resolves.toMatchObject({ externalCleanup: 'complete' });
+    expect(disconnect).toHaveBeenCalledWith('mcp:notes');
+    expect(
+      db.select().from(connections).where(eq(connections.id, 'connection-raw')).get()
+    ).toMatchObject({ externalCleanupState: 'complete', externalCleanupKey: 'raw-material-1' });
+  });
+
   it('records the key an account is signed in under when it connects', () => {
     registry.register(provider, 'material-b');
     registry.recordConnect(provider, {
