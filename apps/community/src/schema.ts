@@ -1733,10 +1733,13 @@ export const communityImportPartUploads = pgTable(
       .notNull()
       .references(() => communityImports.id, { onDelete: 'cascade' }),
     partNumber: integer('part_number').notNull(),
+    /** The size the upload declared, counted toward the import's limit while it arrives. */
+    declaredBytes: bigint('declared_bytes', { mode: 'number' }).notNull(),
     leaseUntil: timestamp('lease_until', { withTimezone: true }).notNull(),
   },
   (table) => [
     check('community_import_part_uploads_number', sql`${table.partNumber} BETWEEN 1 AND 10000`),
+    check('community_import_part_uploads_size', sql`${table.declaredBytes} > 0`),
     index('community_import_part_uploads_import_idx').on(table.importId, table.partNumber),
   ]
 );

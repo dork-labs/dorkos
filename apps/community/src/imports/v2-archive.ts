@@ -37,6 +37,23 @@ export const MAX_IMPORT_ICON_BYTES = 2 * 1024 * 1024;
 export const MAX_V2_NDJSON_BYTES = 1024 * 1024 * 1024;
 /** The most NDJSON files one export may hold: far more than a 1 TiB export in 64 MiB segments. */
 export const MAX_V2_NDJSON_FILES = 100_000;
+/**
+ * The most the data files of one export may inflate to in all: a floor for small exports, plus
+ * a multiple of the archive's own size (real NDJSON compresses a few times over, never near
+ * deflate's 1032:1), and never more than an absolute ceiling. A small archive that claims to
+ * hold far more rows than its size allows is a decompression bomb.
+ */
+export const V2_NDJSON_FLOOR_BYTES = 64 * 1024 * 1024;
+/** See {@link V2_NDJSON_FLOOR_BYTES}. */
+export const V2_NDJSON_RATIO = 32;
+/** See {@link V2_NDJSON_FLOOR_BYTES}. */
+export const V2_NDJSON_CEILING_BYTES = 128 * 1024 * 1024 * 1024;
+
+/** The most data-file bytes an archive of `archiveBytes` may inflate to. */
+export function maxNdjsonBytes(archiveBytes: number): number {
+  return Math.min(V2_NDJSON_CEILING_BYTES, V2_NDJSON_FLOOR_BYTES + V2_NDJSON_RATIO * archiveBytes);
+}
+
 /** The most entries a version 2 archive may declare, checked before its directory is read. */
 export const MAX_V2_ENTRIES = 1_000_000;
 /** The source id a restored community icon is recorded under; no attachment may use it. */
@@ -71,8 +88,10 @@ export interface OpenedExportV2 {
  * The archive is attacker-supplied, so its structure is checked before a byte of any entry is
  * inflated: only version 2 names (`manifest.json`, `community/icon`, `<collection>/NNNNNN.ndjson`,
  * `files/<uuid>/<name>`), the zip reader's own refusals (path tricks, duplicates, encryption,
- * overlaps, impossible sizes), each entry within the size its kind may be, and at most
- * {@link MAX_V2_NDJSON_FILES} data files. The manifest must parse with its strict schema, be an
+ * overlaps, impossible sizes), each entry within the size its kind may be, at most
+ * {@link MAX_V2_NDJSON_FILES} data files, and data files that inflate to no more in all than
+ * {@link maxNdjsonBytes} allows for the archive's size. Membership counts cannot exceed channels
+ * times members (or agents). The manifest must parse with its strict schema, be an
  * owner export, and list exactly the archive's data files under the right collections, and the
  * archive holds one `files/` entry per attachment it counts and the icon exactly when it names
  * one. Nothing is ever written to a path taken from the archive.
@@ -96,6 +115,8 @@ export async function openExportV2(
     let icon: ZipEntry | null = null;
     const ndjson = new Map<string, ZipEntry>();
     let files = 0;
+    let ndjsonBytes = 0;
+    const ndjsonLimit = maxNdjsonBytes(source.size);
     for await (const entry of archive.entries()) {
       if (entry.name === 'manifest.json') manifestEntry = entry;
       else if (entry.name === 'community/icon') {
@@ -108,6 +129,9 @@ export async function openExportV2(
         files++;
       } else {
         if (ndjson.size >= MAX_V2_NDJSON_FILES) throw new ImportFailure('IMPORT_TOO_LARGE');
+        // Declared sizes are binding: the reader refuses an entry that inflates past its own.
+        ndjsonBytes += entry.uncompressedSize;
+        if (ndjsonBytes > ndjsonLimit) throw new ImportFailure('IMPORT_TOO_LARGE');
         ndjson.set(entry.name, entry);
       }
     }
@@ -138,6 +162,13 @@ export async function openExportV2(
     }
     if (listed.size !== ndjson.size) throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
     if (files !== manifest.counts.attachments) throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
+    // A membership pairs one channel with one member or agent, so there cannot be more of them.
+    const { counts } = manifest;
+    if (
+      counts.channelMembers > counts.channels * counts.members ||
+      counts.agentChannelMembers > counts.channels * counts.agents
+    )
+      throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
     const declaredIcon = manifest.community.icon;
     if ((declaredIcon === null) !== (icon === null))
       throw new ImportFailure('IMPORT_ARCHIVE_INVALID');

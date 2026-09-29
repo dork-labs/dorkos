@@ -75,6 +75,46 @@ async function lockTarget(
   return job.rowCount ? communityId : null;
 }
 
+/** Rows one teardown transaction deletes at most, so a large import never holds its lock long. */
+export const TEARDOWN_BATCH_ROWS = 5_000;
+
+/**
+ * Delete the restored rows of an unclaimed import's community a batch at a time, each batch its
+ * own short transaction that locks the target again and checks for a legal hold, children
+ * before parents (and replies before the messages they answer). Returns 'held' under a legal
+ * hold, 'skipped' when the target is not there to tear down, or 'done' when no row is left.
+ */
+async function deleteRestoredRows(
+  pool: Pool,
+  importId: string
+): Promise<'done' | 'held' | 'skipped'> {
+  for (;;) {
+    const step = await transaction(pool, async (client) => {
+      const communityId = await lockTarget(client, importId, true);
+      if (!communityId) return 'skipped' as const;
+      if (await legallyHeld(client, importId, communityId)) return 'held' as const;
+      const community = await client.query<{ lifecycle: string }>(
+        'SELECT lifecycle FROM communities WHERE id=$1',
+        [communityId]
+      );
+      if (community.rows[0]?.lifecycle !== 'pending_owner') return 'done' as const;
+      for (const table of IMPORTED_TABLES) {
+        // Replies first, so no message is deleted while a reply still points at it.
+        const order = table === 'entries' ? 'ORDER BY (parent_entry_id IS NULL)' : '';
+        const deleted = await client.query(
+          // content-change: import-teardown
+          `DELETE FROM ${table} WHERE ctid IN (
+             SELECT ctid FROM ${table} WHERE community_id=$1 ${order} LIMIT $2)`,
+          [communityId, TEARDOWN_BATCH_ROWS]
+        );
+        if (deleted.rowCount) return 'more' as const;
+      }
+      return 'done' as const;
+    });
+    if (step !== 'more') return step;
+  }
+}
+
 /** What one teardown pass did. */
 export type TeardownOutcome = 'settled' | 'waiting' | 'skipped';
 
@@ -82,7 +122,8 @@ export type TeardownOutcome = 'settled' | 'waiting' | 'skipped';
  * Remove what a cancelled or failed import left behind, then its unclaimed community: the
  * rows of an abandoned ready import, every file, and finally the community itself.
  *
- * Each pass queues every stored or committed file of the community for deletion and deletes
+ * Restored rows (a ready import the host abandoned, or a version 2 restore that failed part-way)
+ * are deleted first, a batch per transaction. Then each pass queues every stored or committed file of the community for deletion and deletes
  * it, keeping failures as cleanup work the pending-deletion sweep retries. A reservation whose
  * writer may still be running is left alone until its lease runs out. Once the community owns
  * no file at all, it is removed in one transaction and the import is settled; the import row
@@ -94,6 +135,9 @@ export async function teardownImport(
   blobStore: BlobStore,
   importId: string
 ): Promise<TeardownOutcome> {
+  const rows = await deleteRestoredRows(pool, importId);
+  if (rows === 'skipped') return 'skipped';
+  if (rows === 'held') return 'waiting';
   const queued = await transaction(pool, async (client) => {
     const communityId = await lockTarget(client, importId, true);
     if (!communityId) return null;
@@ -113,8 +157,8 @@ export async function teardownImport(
       [importId]
     );
     if (unclaimed) {
-      // A ready import that the host abandoned has restored rows. They go first, children
-      // before parents, so every file below is unreferenced.
+      // Restored rows went in batches above; this catches any written since, children before
+      // parents, so every file below is unreferenced.
       for (const table of IMPORTED_TABLES) {
         // content-change: import-teardown
         await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [communityId]);

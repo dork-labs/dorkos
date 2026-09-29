@@ -45,8 +45,11 @@ CREATE TABLE community_import_part_uploads (
   lease_token uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   import_id uuid NOT NULL REFERENCES community_imports(id) ON DELETE CASCADE,
   part_number integer NOT NULL,
+  -- The size the upload declared, counted toward the import's limit while it arrives.
+  declared_bytes bigint NOT NULL,
   lease_until timestamptz NOT NULL,
-  CONSTRAINT community_import_part_uploads_number CHECK (part_number BETWEEN 1 AND 10000)
+  CONSTRAINT community_import_part_uploads_number CHECK (part_number BETWEEN 1 AND 10000),
+  CONSTRAINT community_import_part_uploads_size CHECK (declared_bytes > 0)
 );
 CREATE INDEX community_import_part_uploads_import_idx
   ON community_import_part_uploads(import_id, part_number);

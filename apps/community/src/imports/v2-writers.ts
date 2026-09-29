@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { tombstonePayloadHash } from '../content-removal.js';
+import { ERASED_ENTRY_TEXT, REMOVED_ENTRY_TEXT, type RemovedBy } from '../content/tombstones.js';
+import { ERASED_AGENT_NAME, ERASED_MEMBER_NAME } from '../erasure/erasure.js';
 import { sanitizeDisplayName } from '../storage/blob-store.js';
 import { ImportFailure, importedChannel } from './manifest.js';
 import type { V2Collection } from './v2-archive.js';
@@ -147,7 +150,39 @@ const writeAgents: BatchWriter<'agents'> = async (client, rows, scope) => {
 };
 
 /** Only the adopted owner's own memberships: everyone else's member row is historical. */
+/**
+ * Refuse unless every id in `ids` (derived) is a row of `table` in this import's community: a
+ * membership that names a channel, member, or agent the export does not hold is tampering.
+ */
+async function allRestored(
+  client: PoolClient,
+  table: 'channels' | 'members' | 'agents',
+  ids: readonly string[],
+  communityId: string
+): Promise<void> {
+  const distinct = [...new Set(ids)];
+  if (!distinct.length) return;
+  const found = await client.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM ${table} WHERE community_id=$1 AND id=ANY($2::uuid[])`,
+    [communityId, distinct]
+  );
+  invalid(found.rows[0].n !== distinct.length);
+}
+
 const writeChannelMembers: BatchWriter<'channelMembers'> = async (client, rows, scope) => {
+  const derive = (id: string) => scope.derive(id);
+  await allRestored(
+    client,
+    'channels',
+    rows.map((row) => derive(row.channel_id)),
+    scope.communityId
+  );
+  await allRestored(
+    client,
+    'members',
+    rows.map((row) => derive(row.member_id)),
+    scope.communityId
+  );
   const own = rows.filter((membership) => membership.member_id === scope.ownerSourceId);
   if (!own.length) return;
   wroteAll(
@@ -165,6 +200,63 @@ const writeChannelMembers: BatchWriter<'channelMembers'> = async (client, rows, 
       scope.communityId
     ),
     own.length
+  );
+};
+
+/**
+ * What a restored message shows. A message the export marks removed or erased shows exactly the
+ * tombstone this host writes itself (the removal sentence, or the erased sentence and author
+ * name), with the tombstone payload hash, never the text the export put there: a removed message
+ * cannot be removed again, so text planted under a removal mark would stay for good.
+ */
+function restoredContent(
+  entry: V2Row['entries'],
+  parentId: string | null
+): { text: string; authorName: string; payloadHash: string; removedBy: RemovedBy | null } {
+  if (entry.removal === null)
+    return {
+      text: entry.text,
+      authorName: entry.author_display_name,
+      payloadHash: createHash('sha256').update(entry.text).digest('hex'),
+      removedBy: null,
+    };
+  if (entry.removal === 'erased')
+    return {
+      text: ERASED_ENTRY_TEXT,
+      authorName: entry.author_agent_id ? ERASED_AGENT_NAME : ERASED_MEMBER_NAME,
+      payloadHash: tombstonePayloadHash(ERASED_ENTRY_TEXT, parentId),
+      removedBy: null,
+    };
+  const text = REMOVED_ENTRY_TEXT[entry.removal];
+  return {
+    text,
+    authorName: entry.author_display_name,
+    payloadHash: tombstonePayloadHash(text, parentId),
+    removedBy: entry.removal,
+  };
+}
+
+/**
+ * Agents' channel memberships are not restored (every agent arrives revoked), but each must
+ * name a channel and an agent of this export, like any other row.
+ */
+const checkAgentChannelMembers: BatchWriter<'agentChannelMembers'> = async (
+  client,
+  rows,
+  scope
+) => {
+  const derive = (id: string) => scope.derive(id);
+  await allRestored(
+    client,
+    'channels',
+    rows.map((row) => derive(row.channel_id)),
+    scope.communityId
+  );
+  await allRestored(
+    client,
+    'agents',
+    rows.map((row) => derive(row.agent_id)),
+    scope.communityId
   );
 };
 
@@ -187,23 +279,24 @@ const writeEntries: BatchWriter<'entries'> = async (client, rows, scope) => {
     const channelId = scope.derive(entry.channel_id);
     const seq = lastSeq.get(channelId)! + 1;
     lastSeq.set(channelId, seq);
-    const removed = entry.removal !== null && entry.removal !== 'erased';
+    const parentId = entry.parent_entry_id && scope.derive(entry.parent_entry_id);
+    const shown = restoredContent(entry, parentId);
     return {
       id: scope.derive(entry.id),
       channel_id: channelId,
       seq,
       author_member_id: entry.author_member_id && scope.derive(entry.author_member_id),
       author_agent_id: entry.author_agent_id && scope.derive(entry.author_agent_id),
-      author_display_name: entry.author_display_name,
-      text: entry.text,
-      parent_entry_id: entry.parent_entry_id && scope.derive(entry.parent_entry_id),
+      author_display_name: shown.authorName,
+      text: shown.text,
+      parent_entry_id: parentId,
       thread_root_entry_id: entry.thread_root_entry_id && scope.derive(entry.thread_root_entry_id),
       idempotency_key: `import:${entry.id}`,
-      payload_hash: createHash('sha256').update(entry.text).digest('hex'),
+      payload_hash: shown.payloadHash,
       created_at: entry.created_at,
       // The export says who removed a message, not when; its own time is the earliest honest one.
-      removed_by: removed ? entry.removal : null,
-      removed_at: removed ? entry.created_at : null,
+      removed_by: shown.removedBy,
+      removed_at: shown.removedBy ? entry.created_at : null,
       erased_at: entry.removal === 'erased' ? entry.created_at : null,
     };
   });
@@ -241,8 +334,9 @@ const writeEntries: BatchWriter<'entries'> = async (client, rows, scope) => {
      WHERE c.id=v.id AND c.community_id=$2`,
     [JSON.stringify([...lastSeq].map(([id, seq]) => ({ id, last_seq: seq }))), scope.communityId]
   );
+  // A removed or erased message has no mentions left, whatever the export says.
   const mentions = rows.flatMap((entry) =>
-    entry.mentions.map((target, index) => ({
+    (entry.removal === null ? entry.mentions : []).map((target, index) => ({
       entry_id: scope.derive(entry.id),
       position: index + 1,
       target: scope.derive(target),
@@ -318,6 +412,14 @@ const writeAttachments: BatchWriter<'attachments'> = async (client, rows, scope)
     [scope.communityId, attachments.map((attachment) => attachment.id)]
   );
   invalid(Boolean(elsewhere.rowCount));
+  // Removing or erasing a message deletes its files, so a file on one is a tampered export.
+  const onTombstone = await client.query(
+    `SELECT 1 FROM attachments a JOIN entries e ON e.community_id=a.community_id AND e.id=a.entry_id
+     WHERE a.community_id=$1 AND a.id=ANY($2::uuid[])
+       AND (e.removed_at IS NOT NULL OR e.erased_at IS NOT NULL) LIMIT 1`,
+    [scope.communityId, attachments.map((attachment) => attachment.id)]
+  );
+  invalid(Boolean(onTombstone.rowCount));
 };
 
 /**
@@ -366,6 +468,7 @@ export const STEPS: { key: V2Collection; write: BatchWriter<never> }[] = [
   { key: 'members', write: writeMembers as BatchWriter<never> },
   { key: 'agents', write: writeAgents as BatchWriter<never> },
   { key: 'channelMembers', write: writeChannelMembers as BatchWriter<never> },
+  { key: 'agentChannelMembers', write: checkAgentChannelMembers as BatchWriter<never> },
   { key: 'entries', write: writeEntries as BatchWriter<never> },
   { key: 'attachments', write: writeAttachments as BatchWriter<never> },
   { key: 'auditEvents', write: writeAuditEvents as BatchWriter<never> },

@@ -88,7 +88,8 @@ function parsePartNumber(value: string | undefined): number {
  * Take one of the import's part-upload leases, across every replica: at most
  * {@link IMPORT_PART_UPLOADS_PER_IMPORT} at once (`429` with `Retry-After` beyond that), one
  * per part number (`409`), none while a single upload or `complete` holds the upload lease, and
- * none that would take the parts past the largest export this host accepts in parts (`413`).
+ * none that would take the parts received and arriving past the largest export this host
+ * accepts in parts (`413`).
  */
 async function acquirePartLease(
   pool: Pool,
@@ -123,17 +124,22 @@ async function acquirePartLease(
         'Too many parts of this export are uploading. Try again soon.',
         PART_RETRY_AFTER_SECONDS
       );
+    // Parts received, and parts still arriving at their declared sizes.
     const others = await client.query<{ bytes: string }>(
-      `SELECT COALESCE(sum(byte_size),0)::text AS bytes FROM community_import_parts
-       WHERE import_id=$1 AND part_number<>$2`,
+      `SELECT (
+         (SELECT COALESCE(sum(byte_size),0) FROM community_import_parts
+          WHERE import_id=$1 AND part_number<>$2)
+         + (SELECT COALESCE(sum(declared_bytes),0) FROM community_import_part_uploads
+            WHERE import_id=$1)
+       )::text AS bytes`,
       [importId, partNumber]
     );
     if (Number(others.rows[0].bytes) + bytes > maxArchiveBytes)
       throw new ApiError(413, 'IMPORT_TOO_LARGE', 'This export is larger than an import accepts.');
     const leased = await client.query<{ lease_token: string }>(
-      `INSERT INTO community_import_part_uploads(import_id,part_number,lease_until)
-       VALUES($1,$2,now() + ($3 * interval '1 millisecond')) RETURNING lease_token`,
-      [importId, partNumber, IMPORT_UPLOAD_LEASE_MS]
+      `INSERT INTO community_import_part_uploads(import_id,part_number,declared_bytes,lease_until)
+       VALUES($1,$2,$3,now() + ($4 * interval '1 millisecond')) RETURNING lease_token`,
+      [importId, partNumber, bytes, IMPORT_UPLOAD_LEASE_MS]
     );
     return leased.rows[0].lease_token;
   });
@@ -176,6 +182,8 @@ export function registerImportPartRoutes(
     freeTempBytes?: () => Promise<number>;
     /** The largest export one single upload accepts, as imports report it. */
     singleMaxBytes: number;
+    /** Test seams. */
+    hooks?: { beforeCompleteHash?: (importId: string) => Promise<void> };
   }
 ): void {
   const { pool, config, blobStore, now, partSlots, uploadSlots } = deps;
@@ -375,6 +383,18 @@ export function registerImportPartRoutes(
     if (body.archiveBytes > maxArchiveBytes)
       throw new ApiError(413, 'IMPORT_TOO_LARGE', 'This export is larger than an import accepts.');
 
+    // A `complete` already checking these parts (one whose caller gave up waiting, say behind a
+    // proxy timeout) carries on without its caller; a retry is told to ask again shortly.
+    const checking = await pool.query(
+      `SELECT 1 FROM community_imports i
+       WHERE i.id=$1 AND i.upload_lease_until>=now()
+         AND EXISTS(SELECT 1 FROM community_import_parts p WHERE p.import_id=i.id)`,
+      [importId]
+    );
+    if (checking.rowCount) {
+      c.header('Retry-After', String(PART_RETRY_AFTER_SECONDS));
+      return json(c, CommunityAdminImportSchema, projectImport(row, deps.singleMaxBytes), 202);
+    }
     const lease = await acquireUploadLease(pool, importId, 'complete');
     try {
       const parts = await listParts(pool, importId);
@@ -387,11 +407,15 @@ export function registerImportPartRoutes(
         blobStore,
         parts.map((part) => ({ key: part.blob_key, byteSize: Number(part.byte_size) }))
       );
-      const matches =
-        source.size === body.archiveBytes &&
-        (await wholeExportMatches(source, body.archiveSha256, c.req.raw.signal, async () => {
-          if (!(await renewUploadLease(pool, importId, lease))) throw leaseLost();
-        }));
+      // A size that does not add up is a mistake in the request, not in the parts: they stay.
+      if (source.size !== body.archiveBytes)
+        throw archiveInvalid('The parts do not add up to the declared size.');
+      await deps.hooks?.beforeCompleteHash?.(importId);
+      // Not the request's signal: a caller that disconnects does not stop the check, which then
+      // settles the import on its own, so a retried `complete` finds the answer.
+      const matches = await wholeExportMatches(source, body.archiveSha256, async () => {
+        if (!(await renewUploadLease(pool, importId, lease))) throw leaseLost();
+      });
       if (!matches) {
         // The parts do not add up to the export the uploader meant; none of them can be trusted.
         await transaction(pool, async (client) => {
@@ -416,6 +440,8 @@ export function registerImportPartRoutes(
             'UNAUTHENTICATED',
             'The upload window for this import has closed.'
           );
+        // Belt and braces: no part can change while this request holds the upload lease (a part
+        // upload refuses to start under it), but the parts checked must be the parts committed.
         if (partFingerprint(await listParts(client, importId)) !== fingerprint) throw leaseLost();
         const moved = await client.query<ImportRow>(
           `UPDATE community_imports
@@ -454,13 +480,12 @@ function partFingerprint(parts: PartRow[]): string {
 async function wholeExportMatches(
   source: SegmentedBlobSource,
   sha256: string,
-  signal: AbortSignal,
   keepLease: () => Promise<void>
 ): Promise<boolean> {
   const hash = createHash('sha256');
   let head = Buffer.alloc(0);
   let renewedAt = Date.now();
-  for await (const chunk of source.read(0, source.size - 1, { signal })) {
+  for await (const chunk of source.read(0, source.size - 1)) {
     if (head.length < ZIP_LOCAL_HEADER.length)
       head = Buffer.concat([head, chunk.subarray(0, ZIP_LOCAL_HEADER.length - head.length)]);
     hash.update(chunk);

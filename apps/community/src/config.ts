@@ -254,6 +254,12 @@ export function parseConfig(env: Record<string, unknown>) {
       'Previous invite key ID and secret must be set together, with an ID different from the current key'
     );
   }
+  // An export arrives in at most 10,000 parts of at most one export segment each.
+  if (value.COMMUNITY_IMPORT_MAX_BYTES > 10_000 * value.COMMUNITY_EXPORT_SEGMENT_BYTES) {
+    throw new Error(
+      'COMMUNITY_IMPORT_MAX_BYTES must be at most 10,000 times COMMUNITY_EXPORT_SEGMENT_BYTES, the most an import can arrive in'
+    );
+  }
   for (const name of ['GOOGLE', 'GITHUB'] as const) {
     const id = value[`COMMUNITY_${name}_CLIENT_ID`];
     const secret = value[`COMMUNITY_${name}_CLIENT_SECRET`];

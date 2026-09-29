@@ -32,6 +32,29 @@ describe('community startup config', () => {
     expect(() => parseConfig({ ...valid, COMMUNITY_TEXT_BYTES: '0' })).toThrow();
   });
 
+  it('bounds the import settings and keeps their defaults', () => {
+    // Purpose: an import larger than 10,000 parts of one segment could never finish uploading,
+    // so that setting is refused at startup rather than discovered by a stuck upload.
+    const GIB = 1024 * 1024 * 1024;
+    expect(parseConfig(valid).imports).toEqual({
+      partConcurrency: 8,
+      maxBytes: GIB,
+      uploadHours: 24,
+    });
+    expect(
+      parseConfig({ ...valid, COMMUNITY_IMPORT_MAX_BYTES: String(1024 * GIB) }).imports.maxBytes
+    ).toBe(1024 * GIB);
+    expect(() =>
+      parseConfig({
+        ...valid,
+        COMMUNITY_IMPORT_MAX_BYTES: String(1024 * GIB),
+        COMMUNITY_EXPORT_SEGMENT_BYTES: String(64 * 1024 * 1024),
+      })
+    ).toThrow('10,000 times');
+    expect(() => parseConfig({ ...valid, COMMUNITY_IMPORT_PART_CONCURRENCY: '65' })).toThrow();
+    expect(() => parseConfig({ ...valid, COMMUNITY_IMPORT_UPLOAD_HOURS: '169' })).toThrow();
+  });
+
   it('bounds the export settings and keeps their defaults', () => {
     // Purpose: a segment below 64 MiB or above the 1 GiB blob ceiling, an archive that outlives a
     // week, or more than 8 jobs a replica must be refused at startup, not discovered mid-export.

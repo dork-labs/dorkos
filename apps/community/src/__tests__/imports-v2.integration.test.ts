@@ -9,7 +9,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { connect } from 'node:net';
 import { Zip, ZipDeflate, ZipPassThrough } from 'fflate';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { tombstonePayloadHash } from '../content-removal.js';
 import { REMOVED_ENTRY_TEXT, ERASED_ENTRY_TEXT } from '../content/tombstones.js';
+import { ERASED_MEMBER_NAME } from '../erasure/erasure.js';
 import { uuidv5 } from '../imports/derived-id.js';
 import type { ImportWorkerHooks } from '../imports/process.js';
 import { sweepImports } from '../imports/worker.js';
@@ -49,6 +51,10 @@ const KIB = 1024;
 const MIB = 1024 * KIB;
 /** Enough for four part uploads to one import and one more elsewhere, then a refusal. */
 const PART_CONCURRENCY = 5;
+/** Small enough to reach with parts that are still arriving; several times the test archive. */
+const MAX_IMPORT_BYTES = 8 * MIB;
+/** Where `complete` pauses before hashing, when a test sets it. */
+let beforeCompleteHash: (importId: string) => Promise<void> = async () => undefined;
 
 let h: TenancyHarness;
 let key = '';
@@ -62,12 +68,17 @@ const channels: { general: string; hidden: string; elsewhere: string } = {
   hidden: '',
   elsewhere: '',
 };
-const marked: { root: string; reply: string; removed: string; erased: string; mention: string } = {
+const marked = {
   root: '',
   reply: '',
   removed: '',
   erased: '',
   mention: '',
+  /** Pat's agent, a message it wrote, a message mentioning it, and a file it uploaded. */
+  agent: '',
+  byAgent: '',
+  agentMention: '',
+  agentFile: '',
 };
 
 async function count(sql: string, params: unknown[] = []): Promise<number> {
@@ -315,7 +326,11 @@ function inflatingPast(bytes: Buffer, name: string, trueSize: number): Buffer {
 
 beforeAll(async () => {
   h = await startTenancyHarness('importv2', {
-    env: { COMMUNITY_IMPORT_PART_CONCURRENCY: PART_CONCURRENCY },
+    env: {
+      COMMUNITY_IMPORT_PART_CONCURRENCY: PART_CONCURRENCY,
+      COMMUNITY_IMPORT_MAX_BYTES: MAX_IMPORT_BYTES,
+    },
+    hooks: { beforeCompleteHash: (importId) => beforeCompleteHash(importId) },
   });
   const operatorCookie = (await bootstrapHost(h, 'Vera Host', 'vera@import-v2.test')).cookie;
   key = await issueKey(h, ['communities:import', 'communities:read', 'communities:write']);
@@ -389,13 +404,49 @@ beforeAll(async () => {
     marked.erased,
     ERASED_ENTRY_TEXT,
   ]);
+  const files = [];
   for (let index = 0; index < 6; index++)
-    await seedFile(h, source, {
-      entryId: general[100 + index * 1_000].id,
-      uploaderMemberId: source.owner.memberId,
-      name: `notes-${index}.txt`,
-      bytes: 200 * KIB + index,
-    });
+    files.push(
+      await seedFile(h, source, {
+        entryId: general[100 + index * 1_000].id,
+        uploaderMemberId: source.owner.memberId,
+        name: `notes-${index}.txt`,
+        bytes: 200 * KIB + index,
+      })
+    );
+  // Pat's agent: in the general channel, the author of one message, mentioned in another, and
+  // the uploader of one file (the one on its own message).
+  const agent = await h.pool.query<{ id: string }>(
+    `INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id)
+     VALUES($1,$2,'Pat Bot','pat-bot','local-1') RETURNING id`,
+    [source.communityId, pat.memberId]
+  );
+  marked.agent = agent.rows[0].id;
+  await h.pool.query(
+    'INSERT INTO community_handles(community_id,handle,agent_id) VALUES($1,$2,$3)',
+    [source.communityId, 'pat-bot', marked.agent]
+  );
+  await h.pool.query(
+    'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
+    [source.communityId, channels.general, marked.agent]
+  );
+  marked.byAgent = general[100].id;
+  marked.agentMention = general[21].id;
+  marked.agentFile = files[0].id;
+  await h.pool.query(
+    `UPDATE entries SET author_member_id=NULL,author_agent_id=$2,author_display_name='Pat Bot'
+     WHERE id=$1`,
+    [marked.byAgent, marked.agent]
+  );
+  await h.pool.query(
+    `INSERT INTO entry_mentions(entry_id,position,community_id,mentioned_agent_id)
+     VALUES($1,1,$2,$3)`,
+    [marked.agentMention, source.communityId, marked.agent]
+  );
+  await h.pool.query(
+    'UPDATE attachments SET uploader_member_id=NULL,uploader_agent_id=$2 WHERE id=$1',
+    [marked.agentFile, marked.agent]
+  );
   const hiddenEntry = await h.pool.query<{ id: string }>(
     'SELECT id FROM entries WHERE channel_id=$1 ORDER BY seq LIMIT 1',
     [channels.hidden]
@@ -600,6 +651,45 @@ it('restores a version 2 export uploaded in parts, across a cut-off upload and a
   );
   expect(mention.rows).toEqual([{ mentioned_member_id: derive(pat.memberId) }]);
 
+  // The agent: revoked, its handle kept, its message, its mention, and its file.
+  const agent = await h.pool.query(
+    `SELECT a.owner_member_id,a.handle,a.active,a.revoked_at IS NOT NULL AS revoked,h.agent_id
+     FROM agents a JOIN community_handles h ON h.agent_id=a.id WHERE a.id=$1`,
+    [derive(marked.agent)]
+  );
+  expect(agent.rows).toEqual([
+    {
+      owner_member_id: derive(pat.memberId),
+      handle: 'pat-bot',
+      active: false,
+      revoked: true,
+      agent_id: derive(marked.agent),
+    },
+  ]);
+  expect(
+    (
+      await h.pool.query('SELECT author_member_id,author_agent_id FROM entries WHERE id=$1', [
+        derive(marked.byAgent),
+      ])
+    ).rows
+  ).toEqual([{ author_member_id: null, author_agent_id: derive(marked.agent) }]);
+  expect(
+    (
+      await h.pool.query(
+        'SELECT mentioned_member_id,mentioned_agent_id FROM entry_mentions WHERE entry_id=$1',
+        [derive(marked.agentMention)]
+      )
+    ).rows
+  ).toEqual([{ mentioned_member_id: null, mentioned_agent_id: derive(marked.agent) }]);
+  expect(
+    (
+      await h.pool.query(
+        'SELECT uploader_member_id,uploader_agent_id FROM attachments WHERE id=$1',
+        [derive(marked.agentFile)]
+      )
+    ).rows
+  ).toEqual([{ uploader_member_id: null, uploader_agent_id: derive(marked.agent) }]);
+
   // File bytes, through storage.
   const stored = await h.pool.query<{ id: string; blob_key: string; checksum: string }>(
     'SELECT id,blob_key,checksum FROM attachments WHERE community_id=$1',
@@ -682,6 +772,14 @@ it('refuses a wrong, incomplete, or too large complete, and keeps the token', as
   expect((await tooLarge.json()).code).toBe('IMPORT_TOO_LARGE');
   const missing = await complete(importId, { ...whole, parts: parts.length + 1 }, uploadToken);
   expect(missing.status).toBe(400);
+  expect((await listParts(importId, uploadToken)).parts).toHaveLength(parts.length);
+  // A size that does not add up is caught without hashing, and keeps the parts.
+  const miscounted = await complete(
+    importId,
+    { ...whole, archiveBytes: archive.length + 1 },
+    uploadToken
+  );
+  expect(miscounted.status).toBe(400);
   expect((await listParts(importId, uploadToken)).parts).toHaveLength(parts.length);
 
   const wrong = await complete(importId, { ...whole, archiveSha256: 'f'.repeat(64) }, uploadToken);
@@ -791,6 +889,177 @@ it('limits part uploads in flight per import and per replica', async () => {
   for (const created of [one, two, three]) await expectNothingLeft(created.communityId);
 });
 
+/** Rewrite the entry rows with these ids, wherever they are. */
+function withEntries(ids: string[], change: (line: Record<string, unknown>) => void) {
+  return (entries: [string, Buffer][]) => {
+    for (const name of opened.manifest.files.entries) {
+      const text = opened.files.get(name)!.toString('utf8');
+      if (!ids.some((id) => text.includes(id))) continue;
+      withLines(name, (lines) => {
+        for (const line of lines) if (ids.includes(line.id as string)) change(line);
+      })(entries);
+    }
+  };
+}
+
+// Purpose: a message the export marks removed or erased is restored as exactly the tombstone this
+// host writes, whatever text or mentions the export planted there. A removed message can never
+// be removed again, so planted text would otherwise stay for good.
+it('restores a removed or erased message as its tombstone, never the text an export plants', async () => {
+  const bytes = rebuilt(
+    withEntries([marked.removed, marked.erased], (line) => {
+      line.text = line.id === marked.removed ? 'PLANTED REMOVED' : 'PLANTED ERASED';
+      line.mentions = [pat.memberId];
+    })
+  );
+  const { importId } = await importInParts(bytes, 1 * MIB, { autoCommit: true });
+  await runImports();
+  expect(await readImport(h, importId, key)).toMatchObject({ state: 'ready' });
+  const rows = await h.pool.query(
+    `SELECT e.id,e.text,e.author_display_name,e.payload_hash,e.removed_by,
+       e.erased_at IS NOT NULL AS erased,
+       (SELECT count(*)::int FROM entry_mentions m WHERE m.entry_id=e.id) AS mentions
+     FROM entries e WHERE e.id=ANY($1) ORDER BY e.removed_by NULLS LAST`,
+    [[uuidv5(importId, marked.removed), uuidv5(importId, marked.erased)]]
+  );
+  expect(rows.rows).toEqual([
+    {
+      id: uuidv5(importId, marked.removed),
+      text: REMOVED_ENTRY_TEXT.moderator,
+      author_display_name: expect.any(String),
+      payload_hash: tombstonePayloadHash(REMOVED_ENTRY_TEXT.moderator, null),
+      removed_by: 'moderator',
+      erased: false,
+      mentions: 0,
+    },
+    {
+      id: uuidv5(importId, marked.erased),
+      text: ERASED_ENTRY_TEXT,
+      author_display_name: ERASED_MEMBER_NAME,
+      payload_hash: tombstonePayloadHash(ERASED_ENTRY_TEXT, null),
+      removed_by: null,
+      erased: true,
+      mentions: 0,
+    },
+  ]);
+}, 300_000);
+
+// Purpose (AC-14): a caller that disconnects while `complete` checks the parts (as behind a proxy
+// timeout) does not stop the check; the import moves on by itself, a retry during the check is
+// told to wait, and a retry after it is answered with the result.
+it('finishes a complete whose caller disconnected, and answers the retry', async () => {
+  const created = await createImport(h, { bearer: key });
+  const { importId, uploadToken } = created;
+  const parts = cut(archive, 1 * MIB);
+  for (const [index, part] of parts.entries())
+    await expectStatus(await putPart(importId, index + 1, part, uploadToken), 200, 'part');
+  const body = JSON.stringify({
+    parts: parts.length,
+    archiveBytes: archive.length,
+    archiveSha256: sha256(archive),
+  });
+  let reached!: () => void;
+  const paused = new Promise<void>((resolve) => (reached = resolve));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  beforeCompleteHash = async (id) => {
+    if (id !== importId) return;
+    reached();
+    await gate;
+  };
+  try {
+    const { port } = new URL(h.baseUrl);
+    const socket = connect(Number(port), '127.0.0.1');
+    socket.on('error', () => undefined);
+    await new Promise<void>((resolve) => socket.once('connect', resolve));
+    socket.write(
+      [
+        `POST /api/v1/imports/${importId}/archive/complete HTTP/1.1`,
+        `Host: 127.0.0.1:${port}`,
+        `Authorization: Bearer ${uploadToken}`,
+        'Content-Type: application/json',
+        `Content-Length: ${Buffer.byteLength(body)}`,
+        '',
+        body,
+      ].join('\r\n')
+    );
+    await paused;
+    socket.destroy();
+    const early = await complete(importId, JSON.parse(body), uploadToken);
+    expect(early.status).toBe(202);
+    expect(early.headers.get('retry-after')).toBe('5');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    release();
+    for (let attempt = 0; attempt < 250; attempt++) {
+      const row = await h.pool.query(
+        'SELECT upload_lease_token FROM community_imports WHERE id=$1',
+        [importId]
+      );
+      if (!row.rows[0].upload_lease_token) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    // Settled without any retry: the caller's disconnect did not stop it.
+    expect(await readImport(h, importId, key)).toMatchObject({ state: 'validating' });
+  } finally {
+    beforeCompleteHash = async () => undefined;
+  }
+  const retried = await expectStatus(
+    await complete(importId, JSON.parse(body), uploadToken),
+    200,
+    'retry'
+  );
+  expect((await retried.json()).state).toBe('validating');
+  await h.call(`/api/v1/host/imports/${importId}/cancel`, { bearer: key, body: {} });
+  await expectNothingLeft(created.communityId);
+}, 120_000);
+
+// Purpose: parts still arriving count toward the largest import at their declared sizes, so
+// parallel uploads cannot together pass `COMMUNITY_IMPORT_MAX_BYTES`.
+it('counts parts still arriving toward the largest import', async () => {
+  const created = await createImport(h, { bearer: key });
+  const { importId, uploadToken } = created;
+  const filler = Buffer.alloc(5 * MIB, 1);
+  filler.write('PK\u0003\u0004');
+  const held = await rawPart(importId, 1, filler, uploadToken, 1024);
+  await partUploadsInFlight(1);
+  const next = await rawPart(importId, 2, filler, uploadToken, 0, 4 * MIB);
+  expect(await next.answer).toMatch(/^HTTP\/1\.1 413/);
+  held.close();
+  await held.answer;
+  await h.call(`/api/v1/host/imports/${importId}/cancel`, { bearer: key, body: {} });
+  await expectNothingLeft(created.communityId);
+});
+
+// Purpose (review): a small archive whose data files inflate hundreds of times over (here 256
+// MiB of agent memberships from a few MiB) is refused before a row is read, as too large.
+it('refuses a data-file bomb as too large before reading it', async () => {
+  const line = Buffer.from(
+    `${JSON.stringify({ channel_id: channels.general, agent_id: randomUUID(), joined_at: '2026-01-01T00:00:00.000Z' })}\n`
+  );
+  const n = Math.floor((256 * MIB) / line.length);
+  const big = Buffer.alloc(n * line.length);
+  big.fill(line);
+  const bytes = rebuilt((entries) => {
+    entries.unshift(['agent-channel-members/000900.ndjson', big]);
+    withManifest((manifest) => {
+      const files = manifest.files as Record<string, string[]>;
+      files.agentChannelMembers = [
+        ...files.agentChannelMembers,
+        'agent-channel-members/000900.ndjson',
+      ];
+      (manifest.counts as Record<string, number>).agentChannelMembers += n;
+    })(entries);
+  });
+  expect(bytes.length).toBeLessThan(MAX_IMPORT_BYTES);
+  const { importId, communityId } = await importInParts(bytes, 1 * MIB, { autoCommit: true });
+  await runImports();
+  expect(await readImport(h, importId, key)).toMatchObject({
+    state: 'failed',
+    failureCode: 'IMPORT_TOO_LARGE',
+  });
+  await expectNothingLeft(communityId);
+}, 300_000);
+
 describe('a tampered version 2 export fails with its named code and leaves nothing', () => {
   const firstFile = () => opened.names.find((name) => name.startsWith('files/'))!;
   const channelsFile = () => opened.manifest.files.channels[0];
@@ -886,6 +1155,67 @@ describe('a tampered version 2 export fails with its named code and leaves nothi
               lines[0].channelId === channels.hidden ? channels.general : channels.hidden;
           })(entries);
         }),
+      'IMPORT_ARCHIVE_INVALID',
+    ],
+    [
+      'a file on an erased message',
+      () =>
+        rebuilt((entries) => {
+          for (const name of opened.manifest.files.attachments) {
+            if (!opened.files.get(name)!.toString('utf8').includes(marked.agentFile)) continue;
+            withLines(name, (lines) => {
+              const file = lines.find((line) => line.id === marked.agentFile)!;
+              file.entryId = marked.erased;
+            })(entries);
+          }
+        }),
+      'IMPORT_ARCHIVE_INVALID',
+    ],
+    [
+      // Every other check passes: nothing mentions the owner, so only the id clash can refuse it
+      // (a mention of a shared id would also fail, on the one-target rule).
+      'an agent with a member’s id',
+      () =>
+        rebuilt((entries) => {
+          const agent = {
+            id: source.owner.memberId,
+            owner_member_id: pat.memberId,
+            display_name: 'Twin',
+            handle: 'twin-bot',
+            active: false,
+            created_at: '2026-01-01T00:00:00.000Z',
+            revoked_at: null,
+          };
+          entries.unshift(['agents/000777.ndjson', Buffer.from(`${JSON.stringify(agent)}\n`)]);
+          withManifest((manifest) => {
+            const files = manifest.files as Record<string, string[]>;
+            files.agents = [...files.agents, 'agents/000777.ndjson'];
+            (manifest.counts as Record<string, number>).agents += 1;
+          })(entries);
+        }),
+      'IMPORT_ARCHIVE_INVALID',
+    ],
+    [
+      'an agent membership for an agent the export does not hold',
+      () =>
+        rebuilt((entries) => {
+          withLines(opened.manifest.files.agentChannelMembers[0], (lines) => {
+            lines.push({ ...lines[0], agent_id: randomUUID() });
+          })(entries);
+          withManifest((manifest) => {
+            (manifest.counts as Record<string, number>).agentChannelMembers += 1;
+          })(entries);
+        }),
+      'IMPORT_ARCHIVE_INVALID',
+    ],
+    [
+      'more memberships than channels times people',
+      () =>
+        rebuilt(
+          withManifest((manifest) => {
+            (manifest.counts as Record<string, number>).channelMembers += 1_000;
+          })
+        ),
       'IMPORT_ARCHIVE_INVALID',
     ],
     [

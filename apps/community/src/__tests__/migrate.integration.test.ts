@@ -1509,7 +1509,11 @@ it('upgrades a populated database to import parts without changing what old code
   await admin.query(`CREATE DATABASE ${name}`);
   const db = new Pool({ connectionString: url.toString() });
   try {
-    await applyBefore(db, '0023_import_parts.sql');
+    // Found by name, so renumbering the migration at merge time needs no change here.
+    await applyBefore(
+      db,
+      COMMUNITY_MIGRATIONS.find(([, filename]) => filename.endsWith('_import_parts.sql'))![1]
+    );
     const community = async () =>
       (
         await db.query<{ id: string }>(

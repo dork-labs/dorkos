@@ -175,6 +175,8 @@ export function registerImportRoutes(
     uploadIdleMs: number;
     /** Free bytes in the temporary folder. Tests replace it. */
     freeTempBytes?: () => Promise<number>;
+    /** Test seams for the part routes. */
+    partHooks?: { beforeCompleteHash?: (importId: string) => Promise<void> };
   }
 ): void {
   const { pool, blobStore, authority, now, uploadSlots, uploadIdleMs } = deps;
@@ -196,6 +198,7 @@ export function registerImportRoutes(
     uploadIdleMs,
     freeTempBytes,
     singleMaxBytes,
+    hooks: deps.partHooks,
   });
   const holds: ShortNameHolds = {
     key: shortNameHoldKey(config.authSecret),

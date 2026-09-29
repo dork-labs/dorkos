@@ -83,6 +83,8 @@ export function createCommunityApp({
     uploadIdleMs?: number;
     /** Free bytes in the temporary folder, as an upload's space check sees them. */
     freeTempBytes?: () => Promise<number>;
+    /** Runs before `complete` hashes an import's parts; tests pause there. */
+    beforeCompleteHash?: (importId: string) => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
@@ -374,6 +376,7 @@ export function createCommunityApp({
     partSlots: new UploadSlots(config.imports.partConcurrency, 5),
     uploadIdleMs: hooks?.uploadIdleMs ?? UPLOAD_IDLE_MS,
     freeTempBytes: hooks?.freeTempBytes,
+    partHooks: { beforeCompleteHash: hooks?.beforeCompleteHash },
   });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
