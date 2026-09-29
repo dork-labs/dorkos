@@ -41,13 +41,17 @@ function countNoun(count: number, noun: string): string {
  *
  * Order matches the order the surfaces list them in: questions first (their
  * window is the shortest), then capability requests, then schedules (which are
- * on no clock at all), then extensions (nothing is stopped while one waits).
+ * on no clock at all), then decisions extensions ask, then extensions waiting
+ * to be turned on (nothing is stopped while one waits).
  *
  * @param questions - Prompts agents are parked on.
  * @param requests - Capability approvals waiting.
  * @param schedules - Parked schedules waiting.
  * @param extensions - Installed extensions waiting to be turned on. Defaults to
  *   none, for a surface that does not count them.
+ * @param decisions - Decisions extensions are asking a person about (spec
+ *   `flow-multiproject` §7.5). Defaults to none. Named "decision": it is not
+ *   an agent's question in a chat, nor a request for a capability.
  * @returns The joined phrase, or `''` when nothing is waiting — a caller with
  *   nothing to count has a different sentence to say, and building one out of
  *   an empty list is how ", and undefined" reaches a screen.
@@ -56,12 +60,14 @@ export function listWaitingKinds(
   questions: number,
   requests: number,
   schedules: number,
-  extensions = 0
+  extensions = 0,
+  decisions = 0
 ): string {
   const parts = [
     questions > 0 ? countNoun(questions, 'question') : null,
     requests > 0 ? countNoun(requests, 'request') : null,
     schedules > 0 ? countNoun(schedules, 'schedule') : null,
+    decisions > 0 ? countNoun(decisions, 'decision') : null,
     extensions > 0 ? countNoun(extensions, 'extension') : null,
   ].filter((part): part is string => part !== null);
 

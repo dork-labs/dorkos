@@ -130,6 +130,11 @@ export const useAppStore = create<AppState>()(
         setCurrentAgentId: (id) =>
           set((s) => (s.currentAgentId === id ? s : { currentAgentId: id })),
 
+        // Mirrored from the server config by useSyncRequireLogin; transient.
+        requireLogin: false,
+        setRequireLogin: (value) =>
+          set((s) => (s.requireLogin === value ? s : { requireLogin: value })),
+
         // Mirrored from the profile store's explicit selection (openProfileDocked);
         // transient. Guard no-op writes so subscribers only fire on real changes.
         explicitAgentPath: null,

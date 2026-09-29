@@ -134,3 +134,104 @@ describe('InboxDecisionRow', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 });
+
+describe('InboxDecisionRow, phase 2 answers (spec flow-multiproject §7.5)', () => {
+  it('opens a note field on 👎 when the decision asks for one, and sends the note', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const { onReject } = renderRow({
+      actions: {
+        kind: 'yes-no',
+        approveLabel: 'Looks good',
+        rejectLabel: 'Needs changes',
+        onApprove: vi.fn(),
+        onReject: vi.fn(),
+        rejectNote: { onSubmit },
+      },
+    });
+    await user.click(screen.getByLabelText('Needs changes'));
+    expect(onReject).not.toHaveBeenCalled();
+    const field = screen.getByLabelText('What needs to change?');
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+    await user.type(field, '  Use the calmer red.  ');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(onSubmit).toHaveBeenCalledWith('Use the calmer red.');
+  });
+
+  it('shows a counter near the note’s limit and cancels without sending', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderRow({
+      actions: {
+        kind: 'word',
+        label: 'Answer',
+        onClick: vi.fn(),
+        input: { placeholder: 'Your answer', maxLength: 10, onSubmit },
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Answer' }));
+    await user.type(screen.getByLabelText('Answer'), 'abcdefghijKL');
+    expect(screen.getByText('10/10')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Answer', { selector: 'textarea' })).not.toBeInTheDocument();
+  });
+
+  it('draws a question’s chips with the agent’s pick marked, its deadline, and "Reply…"', async () => {
+    const user = userEvent.setup();
+    const onChoose = vi.fn();
+    const onReply = vi.fn();
+    renderRow({
+      title: 'Should the old API keep working?',
+      more: undefined,
+      actions: {
+        kind: 'choice',
+        choices: [
+          { id: 'keep', label: 'Keep it' },
+          { id: 'remove', label: 'Remove it' },
+        ],
+        defaultChoiceId: 'keep',
+        deadlineLine: 'If you don’t answer by 5pm, the agent picks “Keep it”.',
+        allowReply: true,
+        onChoose,
+        onReply,
+      },
+    });
+    expect(screen.getByRole('button', { name: /Keep it.*agent’s pick/ })).toBeInTheDocument();
+    expect(
+      screen.getByText('If you don’t answer by 5pm, the agent picks “Keep it”.')
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Remove it' }));
+    expect(onChoose).toHaveBeenCalledWith('remove');
+    await user.click(screen.getByRole('button', { name: 'Reply…' }));
+    await user.type(screen.getByLabelText('Your reply'), 'Keep it until Friday.');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(onReply).toHaveBeenCalledWith('Keep it until Friday.');
+  });
+
+  it('draws the one-time follow-up offer as a line with Yes and a quiet no', async () => {
+    const user = userEvent.setup();
+    const onAccept = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <InboxDecisionRow
+        icon={Puzzle}
+        title="Ship the banner?"
+        trail={['Ship it · you at 2:14pm']}
+        followUp={{ text: 'Shipped. Next time, ship on its own?', onAccept, onDismiss }}
+        watch={{ label: 'Sorting 12 ideas…', onWatch: vi.fn() }}
+      />
+    );
+    expect(screen.getByText('Shipped. Next time, ship on its own?')).toBeInTheDocument();
+    expect(screen.getByText(/Sorting 12 ideas…/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Yes' }));
+    expect(onAccept).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'No thanks' }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks an unseen history row', () => {
+    render(<InboxDecisionRow icon={Puzzle} title="Shipped the calmer red" unread />);
+    expect(screen.getByText('Unread.')).toBeInTheDocument();
+  });
+});

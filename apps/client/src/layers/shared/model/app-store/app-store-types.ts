@@ -80,6 +80,15 @@ export interface CoreSlice {
   setCurrentAgentId: (id: string | null) => void;
 
   /**
+   * Whether Require login is on (`auth.enabled` in the server's config), for
+   * the extension host's `getState().requireLogin` (spec `flow-multiproject`
+   * §7.10). Mirrored by `useSyncRequireLogin`; transient, never persisted.
+   */
+  requireLogin: boolean;
+  /** Set {@link requireLogin}. No-op when unchanged. */
+  setRequireLogin: (value: boolean) => void;
+
+  /**
    * Path of the agent the operator *explicitly* opened to inspect this session
    * (through the docked profile — `openProfileDocked`), or null when none has
    * been picked.
