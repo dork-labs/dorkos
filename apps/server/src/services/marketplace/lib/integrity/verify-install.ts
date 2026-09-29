@@ -29,6 +29,7 @@ import { lastCheck } from './check-results.js';
 import { lstatChain, readInstalledFiles } from '../installed-files.js';
 import { cachedHashFile } from './file-hash-cache.js';
 import { addedEffectFiles } from './strict-differences.js';
+import { keptFilesKeyOf } from './keep-unproven.js';
 
 /**
  * Whether "Check files" can record a legacy install's files (its sidecar names
@@ -113,8 +114,9 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
     added: cap(added),
     customized: cap(customized),
   };
+  const keepKey = stillThere.length > 0 ? await keptFilesKeyOf(root, record) : undefined;
   const unproven =
-    stillThere.length > 0
+    stillThere.length > 0 && keepKey !== undefined
       ? {
           unproven: {
             files: cap(stillThere),
@@ -123,6 +125,7 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
               source: record.unproven?.from ? ('fetchable' as const) : ('local' as const),
               ...(lastCheck(root) && { last: lastCheck(root)! }),
             },
+            keepKey,
           },
         }
       : {};

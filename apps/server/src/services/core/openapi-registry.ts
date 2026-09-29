@@ -3100,6 +3100,73 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
+  path: '/api/marketplace/packages/{name}/keep-files',
+  tags: ['Marketplace'],
+  summary: "Keep the files an update couldn't sort as the person's",
+  description:
+    "Make the files an update kept, because it could not tell whether they were the person's " +
+    "or left over from the earlier version, the person's: the record stops listing them, and " +
+    'nothing is moved or deleted (DOR-2341). Only a person may do this: an agent is refused ' +
+    '(`operator_only`), and under login so is anything but a signed-in session ' +
+    '(`operator_cookie_required`). Bound to `keepKey` as the installed list showed it: when a ' +
+    'kept file or the installed version changed since, the answer is 409 `kept_files_changed` ' +
+    'and nothing is written. For a global package held back from sessions, `review` (exactly as ' +
+    '`GET /held-back` listed it) also approves the package as it is now, the same as a Review.',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            projectPath: z.string().optional(),
+            installRoot: z.string().optional(),
+            keepKey: z
+              .string()
+              .describe('`integrity.unproven.keepKey` from `GET /installed?verify=true`.'),
+            review: z
+              .object({ effects: DisclosedEffectsSchema, bindsTo: z.string() })
+              .optional()
+              .describe('For a held-back global package: what it runs and what a decision binds.'),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'What was kept, and one sentence saying so',
+      content: {
+        'application/json': {
+          schema: z.object({
+            outcome: z.enum(['kept', 'not-needed']),
+            message: z.string(),
+            files: z.array(z.string()).optional(),
+            approved: z.boolean().optional(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or an invalid package name',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Not a person (`operator_only`, `operator_cookie_required`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The kept files changed since they were shown (`kept_files_changed`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
   path: '/api/marketplace/packages/{name}/uninstall',
   tags: ['Marketplace'],
   summary: 'Uninstall a marketplace package',

@@ -737,6 +737,7 @@ export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UP
           files: ['commands/old-review.md', 'notes/team-style.md', 'prompts/review.md.dork-old'],
           running: ['commands/old-review.md'],
           check: { source: 'fetchable' as const },
+          keepKey: 'sha256:kept',
         },
       },
     };
