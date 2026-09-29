@@ -60,11 +60,11 @@ export interface ExtensionManagerLike {
    */
   forgetRunApproval(id: string, installRoot?: string): Promise<void>;
   /**
-   * Re-scan, and move any id whose running copy changed onto its new copy
-   * (spec `flow-multiproject` §9.2). Optional: a manager without it is only
-   * ever told about ids through {@link enable}.
+   * Ask for a background re-scan that moves any id whose running copy changed
+   * onto its new copy (spec `flow-multiproject` §9.2). Optional: a manager
+   * without it is only ever told about ids through {@link enable}.
    */
-  refreshCopies?(): Promise<unknown>;
+  requestRefresh?(): void;
 }
 
 /** Constructor dependencies for {@link PluginInstallFlow}. */
@@ -235,10 +235,10 @@ export class PluginInstallFlow {
    * only after the plugin is in place, and those two are what prove a copy's
    * trusted origin (spec `flow-multiproject` §9.1), so a copy that should now
    * take over from an older one of the same origin is picked up here, not at
-   * the next unrelated re-scan.
+   * the next unrelated re-scan. It runs after the install answers.
    */
-  async refreshExtensionCopies(): Promise<void> {
-    await this.deps.extensionManager.refreshCopies?.();
+  refreshExtensionCopies(): void {
+    this.deps.extensionManager.requestRefresh?.();
   }
 
   private async activate(

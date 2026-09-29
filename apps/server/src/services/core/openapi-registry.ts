@@ -4788,8 +4788,9 @@ registry.registerPath({
   tags: ['Extensions'],
   summary: 'Stop trusting a source',
   description:
-    'Extensions from the source that are already on stay on, each keeping its own approval; ' +
-    'new copies from it ask again. The same person bar as trusting applies.',
+    'Extensions from the source that are turned on stay on exactly as they are: each gets its ' +
+    'own approval, pinned to that copy. A newer copy or a new extension from the source waits ' +
+    'for a person again. The same person bar as trusting applies.',
   request: {
     body: { content: { 'application/json': { schema: TrustedSourceRequestSchema } } },
   },

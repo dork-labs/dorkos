@@ -54,6 +54,13 @@ export interface ExtensionRecord {
    */
   trustedOrigin?: ExtensionOrigin;
   /**
+   * DorkOS's installer put this project copy here, but its folder no longer
+   * holds what was installed (an agent, a `git pull` or a re-clone changed
+   * it). It has no trusted origin, so it runs only if a person approves this
+   * exact copy.
+   */
+  changedSinceInstall?: boolean;
+  /**
    * The path of the copy that runs instead of this one, when both came from
    * the same trusted origin and that copy is newer (spec `flow-multiproject`
    * §9.2). Only a shadowed copy carries it; the copy that runs never does.
@@ -127,6 +134,12 @@ export interface ExtensionRecordPublic {
    * other list (the loader, Settings, the tools) holds only the copies that run.
    */
   shadowedBy: string | null;
+  /**
+   * `true` when DorkOS installed this copy into a project but its files
+   * changed afterwards, so it no longer counts as coming from where it was
+   * installed from and needs its own OK. Absent otherwise.
+   */
+  changedSinceInstall?: true;
 }
 
 /** The interface an extension module must export. */

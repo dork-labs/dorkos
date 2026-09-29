@@ -165,6 +165,18 @@ export function ExtensionCard({
                 data-testid={`extension-needs-approval-${extension.id}`}
               >
                 <p className="text-sm font-medium">This extension is waiting for you</p>
+                {/* A project copy DorkOS installed whose files changed since
+                    (spec flow-multiproject §9.1): it no longer counts as coming
+                    from where it was installed from, so it asks on its own. */}
+                {extension.changedSinceInstall && (
+                  <p
+                    className="text-status-warning-fg text-sm"
+                    data-testid={`extension-changed-since-install-${extension.id}`}
+                  >
+                    Its files changed after DorkOS installed it, so DorkOS can’t tell where this
+                    copy came from. It won’t run until you check it and say yes.
+                  </p>
+                )}
                 {/* One sentence shared with the Activity inbox's ⓘ panel
                     (DOR-2517), so the two places that ask say the same thing. */}
                 <p className="text-muted-foreground text-sm">

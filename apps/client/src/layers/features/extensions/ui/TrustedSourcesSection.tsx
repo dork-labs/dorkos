@@ -18,8 +18,9 @@ function formatTrustedAt(iso: string): string {
  *
  * Drawn only when there is at least one: a person trusts a source from the
  * one-time offer right after turning an extension on, so an empty list would
- * be a heading with nothing to do under it. "Stop trusting" keeps what is
- * already on running; only new extensions from that source ask again.
+ * be a heading with nothing to do under it. "Stop trusting" keeps each
+ * extension that is on now running as that exact copy; a newer copy or a new
+ * extension from the source waits for the person's yes.
  */
 export function TrustedSourcesSection() {
   const { data: sources = [] } = useTrustedSources();
@@ -31,8 +32,9 @@ export function TrustedSourcesSection() {
       <div className="space-y-1">
         <h3 className="text-sm font-semibold">Trusted sources</h3>
         <p className="text-muted-foreground text-sm">
-          Extensions DorkOS installs from these places turn on without asking. Ones you already use
-          keep running if you stop trusting a source; new ones will ask first.
+          Extensions DorkOS installs from these places turn on without asking. If you stop trusting
+          one, the extensions from it that are on now keep running exactly as they are. Newer
+          versions and anything new from it won’t run until you say yes.
         </p>
       </div>
       <ul className="divide-y rounded-xl border">

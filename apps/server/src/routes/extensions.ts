@@ -284,10 +284,14 @@ export function createExtensionsRouter(
   });
 
   // POST /api/extensions/reload -- Re-scan filesystem and recompile changed
+  //
+  // The scan reads every known project, so it runs after this answers: the
+  // reply is the list as it stands, and clients hear what the scan changed
+  // from the `extension_reloaded` broadcast.
   router.post('/reload', async (_req, res) => {
     try {
-      const extensions = await extensionManager.reload();
-      res.json(extensions);
+      extensionManager.requestRefresh();
+      res.json(extensionManager.listPublic());
     } catch (err) {
       logger.error('[Extensions] Failed to reload extensions', err);
       res.status(500).json({ error: 'Failed to reload extensions' });

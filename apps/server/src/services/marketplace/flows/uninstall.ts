@@ -33,6 +33,7 @@
  *
  * @module services/marketplace/flows/uninstall
  */
+import { forgetProjectInstall } from '../lib/provenance/project-install-index.js';
 import { copyFile, lstat, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
@@ -340,8 +341,30 @@ export class UninstallFlow {
       const result = await withInstallTargetLock(located.installRoot, () =>
         this.removeLocated(req, located)
       );
-      if (result) return result;
+      if (result) {
+        await this.forgetInstallRecord(located.installRoot);
+        return result;
+      }
       triedEmpty.add(located.installRoot);
+    }
+  }
+
+  /**
+   * Forget the installer's record of a project install that is gone (spec
+   * `flow-multiproject` §9.1): that record is what proves where a project
+   * copy of an extension came from, so a folder written at the same path
+   * later must not inherit it. Best-effort: the package is already removed.
+   *
+   * @param installRoot - The removed package's install folder.
+   */
+  private async forgetInstallRecord(installRoot: string): Promise<void> {
+    try {
+      await forgetProjectInstall(this.deps.dorkHome, installRoot);
+    } catch (err) {
+      this.deps.logger.warn('[uninstall] could not forget the project install record', {
+        installRoot,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

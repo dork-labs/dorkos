@@ -140,6 +140,20 @@ describe('ExtensionsSettingsTab', () => {
     expect(screen.getByTestId('extension-card-ext-b')).toBeInTheDocument();
   });
 
+  it('says plainly when a project copy changed after DorkOS installed it', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({ scope: 'local', approvedToRun: false, changedSinceInstall: true }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    expect(await screen.findByTestId('extension-changed-since-install-test-ext')).toHaveTextContent(
+      'Its files changed after DorkOS installed it'
+    );
+  });
+
   it('shows scope badge on each card', async () => {
     mockFetch({ '/api/extensions': [makeExtension({ scope: 'local' })] });
 

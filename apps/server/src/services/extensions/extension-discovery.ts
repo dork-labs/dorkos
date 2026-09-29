@@ -11,7 +11,7 @@ import {
 } from './extension-enable-resolution.js';
 import { isApprovedCopy, isFromTrustedSource } from './extension-load-policy.js';
 import { mergePluginRecords, type DiscoveredRecord } from './extension-precedence.js';
-import { readTrustedInstalls, trustedOriginOf } from './extension-trusted-origin.js';
+import { inspectCopy, proveOrigin, readTrustedInstalls } from './extension-trusted-origin.js';
 import { logger } from '../../lib/logger.js';
 import {
   satisfiesMinHostVersion,
@@ -126,8 +126,9 @@ export class ExtensionDiscovery {
     // machine's own install records, never from a file inside the project.
     const installs = await readTrustedInstalls(this.dorkHome);
     for (const rec of pluginRecords) {
-      const origin = trustedOriginOf(rec, installs);
-      if (origin) rec.trustedOrigin = origin;
+      const proof = proveOrigin(rec, installs, await inspectCopy(rec));
+      if (proof.origin) rec.trustedOrigin = proof.origin;
+      if (proof.changedSinceInstall) rec.changedSinceInstall = true;
     }
 
     // Ids a plugin copy from a trusted source already speaks for: a project's

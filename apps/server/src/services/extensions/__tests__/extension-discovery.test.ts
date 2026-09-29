@@ -6,10 +6,12 @@ import { ExtensionDiscovery } from '../extension-discovery.js';
 import type { HostVersion } from '../extension-host-version.js';
 import { mayRunExtensionCode } from '../extension-load-policy.js';
 import {
+  inspectCopy,
   readTrustedInstalls,
   trustedOriginOf,
   type TrustedInstalls,
 } from '../extension-trusted-origin.js';
+import { extensionDigestsOf } from '../../marketplace/lib/provenance/extension-digest.js';
 import { recordProjectInstall } from '../../marketplace/lib/provenance/project-install-index.js';
 import { normalizeTrustedSource } from '../../marketplace/lib/provenance/trusted-source.js';
 import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
@@ -989,11 +991,14 @@ describe('ExtensionDiscovery', () => {
       const root = path.join(tmpDir, name);
       const dir = await carried(path.join(root, '.dork', 'plugins'), version);
       const normalized = normalizeTrustedSource(source);
+      const installRoot = path.join(root, '.dork', 'plugins', 'flow');
       await recordProjectInstall(dorkHome, {
         projectPath: root,
-        installRoot: path.join(root, '.dork', 'plugins', 'flow'),
+        installRoot,
         name: 'flow',
         ...(normalized ? { source: normalized } : {}),
+        // What the installer records: each carried folder's digest.
+        extensionDigests: await extensionDigestsOf(installRoot),
       });
       return { root, dir };
     }
@@ -1012,6 +1017,12 @@ describe('ExtensionDiscovery', () => {
           version,
           type: 'plugin',
           installedAt: '2026-09-29T00:00:00.000Z',
+          // Fetched at the default branch unless a test says otherwise.
+          sourceKey: {
+            cloneUrl: 'https://github.com/dork-labs/marketplace',
+            subpath: '',
+            ref: 'HEAD',
+          },
           ...sidecar,
         })
       );
@@ -1050,7 +1061,7 @@ describe('ExtensionDiscovery', () => {
         const installs = await readTrustedInstalls(dorkHome);
         const [record] = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
-        expect(trustedOriginOf(record!, installs)).toEqual(ORIGIN);
+        expect(trustedOriginOf(record!, installs, await inspectCopy(record!))).toEqual(ORIGIN);
         expect(record!.trustedOrigin).toEqual(ORIGIN);
       });
 
@@ -1059,14 +1070,22 @@ describe('ExtensionDiscovery', () => {
         const [record] = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
         expect(record!.trustedOrigin).toBeUndefined();
-        expect(trustedOriginOf(record!, await readTrustedInstalls(dorkHome))).toBeNull();
+        expect(
+          trustedOriginOf(record!, await readTrustedInstalls(dorkHome), await inspectCopy(record!))
+        ).toBeNull();
       });
 
       it('trusts a project copy only through the install index', async () => {
         const recorded = await installedProject('recorded', '1.0.0');
         const recordedCopy = { path: recorded.dir, scope: 'local' as const, sourcePlugin: 'flow' };
-        expect(trustedOriginOf(recordedCopy, await readTrustedInstalls(dorkHome))).toEqual(ORIGIN);
-        expect(trustedOriginOf(recordedCopy, none)).toBeNull();
+        expect(
+          trustedOriginOf(
+            recordedCopy,
+            await readTrustedInstalls(dorkHome),
+            await inspectCopy(recordedCopy)
+          )
+        ).toEqual(ORIGIN);
+        expect(trustedOriginOf(recordedCopy, none, await inspectCopy(recordedCopy))).toBeNull();
       });
 
       it('gives an unrecorded project copy none, whatever its own sidecar claims', async () => {
@@ -1084,14 +1103,18 @@ describe('ExtensionDiscovery', () => {
         );
         const copy = { path: dir, scope: 'local' as const, sourcePlugin: 'flow' };
 
-        expect(trustedOriginOf(copy, await readTrustedInstalls(dorkHome))).toBeNull();
+        expect(
+          trustedOriginOf(copy, await readTrustedInstalls(dorkHome), await inspectCopy(copy))
+        ).toBeNull();
       });
 
       it('gives a record written before sources were recorded none (no backfill)', async () => {
         const { dir } = await installedProject('old', '1.0.0', null);
         const copy = { path: dir, scope: 'local' as const, sourcePlugin: 'flow' };
 
-        expect(trustedOriginOf(copy, await readTrustedInstalls(dorkHome))).toBeNull();
+        expect(
+          trustedOriginOf(copy, await readTrustedInstalls(dorkHome), await inspectCopy(copy))
+        ).toBeNull();
       });
     });
 
@@ -1282,6 +1305,93 @@ describe('ExtensionDiscovery', () => {
           tmpDir,
         ]);
         expect(results.filter((r) => r.id === 'flow')).toHaveLength(1);
+      });
+    });
+
+    describe('security review attacks (DOR-2527)', () => {
+      it('a folder rewritten at a recorded project path never takes over the approved flow', async () => {
+        const a = await installedProject('a', '1.0.0');
+        const b = await installedProject('b', '1.1.0');
+        // An agent, a `git pull` or a re-clone writes v99 over B's copy.
+        await writeManifest(b.dir, { id: 'flow', name: 'Flow', version: '99.0.0' });
+        await fs.writeFile(path.join(b.dir, 'server.ts'), 'export default () => {};\n');
+        const config = approve({ path: a.dir, sourcePlugin: 'flow', trustedOrigin: ORIGIN });
+
+        const results = await discovery.discover(null, config, EMPTY_CORE, [a.root, b.root]);
+        const running = results.find((r) => r.id === 'flow' && !r.shadowedBy);
+
+        expect(running?.path).toBe(a.dir);
+        expect(
+          results.some((r) => r.path === b.dir && r.manifest.version === '99.0.0' && !r.shadowedBy)
+        ).toBe(false);
+      });
+
+      it('says a recorded project copy changed since install, and gives it no origin', async () => {
+        const b = await installedProject('b', '1.1.0');
+        await fs.writeFile(path.join(b.dir, 'index.ts'), 'export function activate() {}\n');
+        const trusting: ExtensionsConfig = {
+          ...EMPTY_CONFIG,
+          trustedSources: [{ source: SOURCE, trustedAt: '2026-09-29T00:00:00.000Z' }],
+        };
+
+        const [record] = await discovery.discover(null, trusting, EMPTY_CORE, [b.root]);
+
+        expect(record).toMatchObject({ path: b.dir, changedSinceInstall: true });
+        expect(record?.trustedOrigin).toBeUndefined();
+        expect(mayRunExtensionCode(record!, trusting)).toBe(false);
+      });
+
+      it('gives a symlinked global plugin no origin, whatever its linked sidecar says', async () => {
+        const elsewhere = path.join(tmpDir, 'dev-checkout', 'flow');
+        await writeManifest(path.join(elsewhere, '.dork', 'extensions', 'flow'), {
+          id: 'flow',
+          name: 'Flow',
+          version: '9.0.0',
+        });
+        await fs.writeFile(
+          path.join(elsewhere, '.dork', 'install-metadata.json'),
+          JSON.stringify({
+            name: 'flow',
+            version: '9.0.0',
+            type: 'plugin',
+            installedAt: '2026-09-29T00:00:00.000Z',
+            sourceRepo: 'https://github.com/dork-labs/marketplace',
+            sourceKey: {
+              cloneUrl: 'https://github.com/dork-labs/marketplace',
+              subpath: '',
+              ref: 'HEAD',
+            },
+          })
+        );
+        await fs.mkdir(path.join(dorkHome, 'plugins'), { recursive: true });
+        await fs.symlink(elsewhere, path.join(dorkHome, 'plugins', 'flow'));
+        const trusting: ExtensionsConfig = {
+          ...EMPTY_CONFIG,
+          trustedSources: [{ source: SOURCE, trustedAt: '2026-09-29T00:00:00.000Z' }],
+        };
+
+        const [record] = await discovery.discover(null, trusting, EMPTY_CORE);
+
+        expect(record?.sourcePlugin).toBe('flow');
+        expect(record?.trustedOrigin).toBeUndefined();
+        expect(mayRunExtensionCode(record!, trusting)).toBe(false);
+      });
+
+      it.each([
+        ['refs/pull/7/head', false],
+        ['refs/remotes/origin/main', false],
+        ['0123456789abcdef0123456789abcdef01234567', false],
+        ['HEAD', true],
+        ['main', true],
+        ['refs/heads/release', true],
+        ['refs/tags/v1.2.0', true],
+      ])('a global install fetched at %s has a trusted origin: %s', async (ref, trusted) => {
+        await globalPlugin('1.0.0', {
+          sourceRepo: 'https://github.com/dork-labs/marketplace',
+          sourceKey: { cloneUrl: 'https://github.com/dork-labs/marketplace', subpath: '', ref },
+        });
+        const [record] = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
+        expect(record?.trustedOrigin ?? null).toEqual(trusted ? ORIGIN : null);
       });
     });
 

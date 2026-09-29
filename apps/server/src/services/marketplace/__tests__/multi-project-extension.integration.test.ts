@@ -19,6 +19,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { initBoundary } from '../../../lib/boundary.js';
 import { buildInstallerForTests } from './installer-harness.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import { UninstallFlow } from '../flows/uninstall.js';
+import { readProjectInstalls } from '../lib/provenance/project-install-index.js';
 import type { ExtensionsConfig } from '../../extensions/extension-enable-resolution.js';
 
 /** The `extensions` config the manager reads and writes, held in memory. */
@@ -131,7 +134,9 @@ describe('one extension across many projects, from one approved source', () => {
       projectPath,
     });
     expect(result.ok).toBe(true);
-    return path.join(result.installPath, '.dork', 'extensions', 'flow');
+    // The re-scan that picks up the new copy runs after the install answers.
+    await manager.whenIdle();
+    return path.join(result.installPath, '.dork', 'extensions', ids[0] ?? 'flow');
   }
 
   it("loads B's newer copy with no new approval item, and A's copy reports shadowedBy", async () => {
@@ -168,11 +173,13 @@ describe('one extension across many projects, from one approved source', () => {
 
     expect(await manager.trustSource('someone/else')).toBe('unproven');
     expect(await manager.trustSource('dork-labs/marketplace')).toBe('added');
+    await manager.whenIdle();
     expect(manager.trustOfferFor('flow')).toBeNull();
     expect(await manager.trustSource('dork-labs/marketplace')).toBe('already');
 
     // Stop trusting: what is on stays on; the approval it already had stands.
     expect(await manager.untrustSource('dork-labs/marketplace')).toBe(true);
+    await manager.whenIdle();
     expect(stored.value.trustedSources).toEqual([]);
     expect(mayRunExtensionCode(manager.get('flow')!, stored.value)).toBe(true);
   });
@@ -183,11 +190,13 @@ describe('one extension across many projects, from one approved source', () => {
     expect(isPendingApproval(flow, stored.value)).toBe(true);
 
     expect(await manager.trustSource('dork-labs/marketplace')).toBe('added');
+    await manager.whenIdle();
     expect(mayRunExtensionCode(manager.get('flow')!, stored.value)).toBe(true);
     expect(isPendingApproval(manager.get('flow')!, stored.value)).toBe(false);
     expect(stored.value.approvedToRun).toEqual([]);
 
     expect(await manager.untrustSource('dork-labs/marketplace')).toBe(true);
+    await manager.whenIdle();
     // Already on, so it stays on: it now holds an approval of its own.
     expect(stored.value.approvedToRun).toEqual(['flow']);
     expect(mayRunExtensionCode(manager.get('flow')!, stored.value)).toBe(true);
@@ -197,5 +206,71 @@ describe('one extension across many projects, from one approved source', () => {
     const extra = manager.get('flow-extra')!;
     expect(extra.trustedOrigin?.source).toBe('dork-labs/marketplace');
     expect(isPendingApproval(extra, stored.value)).toBe(true);
+  });
+
+  it('forgets the install record on uninstall, so a folder written back at that path proves nothing', async () => {
+    const aCopy = await installInto('repo-a', '1.0.0');
+    await manager.approveToRun('flow');
+    const bCopy = await installInto('repo-b', '1.2.0');
+    expect(manager.get('flow')?.path).toBe(bCopy);
+
+    const uninstall = new UninstallFlow({
+      dorkHome,
+      extensionManager: manager,
+      adapterManager: { removeAdapter: vi.fn() },
+      logger: noopLogger,
+    });
+    await uninstall.uninstall({ name: PLUGIN, projectPath: path.join(root, 'repo-b') });
+    const records = await readProjectInstalls(dorkHome);
+    expect(records.map((r) => r.projectPath)).toEqual([path.join(root, 'repo-a')]);
+
+    // The same folder comes back (a re-clone, a `git pull`) carrying v99.
+    await cp(await writeVersion('99.0.0'), path.dirname(path.dirname(path.dirname(bCopy))), {
+      recursive: true,
+    });
+    await manager.reload();
+    await manager.whenIdle();
+
+    const running = manager.get('flow');
+    expect(running?.path).toBe(aCopy);
+    expect(mayRunExtensionCode(running!, stored.value)).toBe(true);
+  });
+
+  it('records no source for an install fetched at a pull-request ref', async () => {
+    const projectPath = path.join(root, 'repo-pr');
+    await mkdir(projectPath, { recursive: true });
+    const fixture = await writeVersion('5.0.0');
+    const harness = buildInstallerForTests(dorkHome, { extensionManager: manager });
+    harness.spies.gitLookup.mockResolvedValue({
+      kind: 'found',
+      commitSha: commitFor('5.0.0pr'),
+      refName: 'refs/pull/7/head',
+    });
+    harness.spies.gitFetch.mockImplementation(
+      async (req: { destDir: string; commitSha: string }) => {
+        await cp(fixture, req.destDir, { recursive: true });
+        return req.commitSha;
+      }
+    );
+    // A marketplace entry pinned to a pull request's head: GitHub serves it
+    // through the parent repository's URL, whoever wrote it.
+    vi.spyOn(harness.resolver, 'resolve').mockResolvedValue({
+      kind: 'git',
+      packageName: PLUGIN,
+      pluginSource: {
+        source: 'url',
+        url: 'https://github.com/dork-labs/marketplace.git',
+        ref: 'refs/pull/7/head',
+      },
+    });
+    const result = await harness.installer.install({
+      name: PLUGIN,
+      source: 'https://github.com/dork-labs/marketplace.git',
+      projectPath,
+    });
+    expect(result.ok).toBe(true);
+    const record = (await readProjectInstalls(dorkHome)).find((r) => r.projectPath === projectPath);
+    expect(record).toBeDefined();
+    expect(record?.source).toBeUndefined();
   });
 });

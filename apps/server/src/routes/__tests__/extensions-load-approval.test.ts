@@ -159,6 +159,7 @@ describe('POST /api/extensions/:id/approve', () => {
     revokeRunApproval: ReturnType<typeof vi.fn>;
     listPublic: ReturnType<typeof vi.fn>;
     listShadowedPublic: ReturnType<typeof vi.fn>;
+    requestRefresh: ReturnType<typeof vi.fn>;
     trustOfferFor: ReturnType<typeof vi.fn>;
     readBundle: ReturnType<typeof vi.fn>;
   };
@@ -183,6 +184,7 @@ describe('POST /api/extensions/:id/approve', () => {
       revokeRunApproval: vi.fn().mockResolvedValue(stubPublic(false)),
       listPublic: vi.fn().mockReturnValue([]),
       listShadowedPublic: vi.fn().mockReturnValue([]),
+      requestRefresh: vi.fn(),
       trustOfferFor: vi.fn().mockReturnValue(null),
       readBundle: vi.fn().mockImplementation(async (id: string) =>
         // Mirrors the real `ExtensionManager.readBundle` gate: an extension a
@@ -525,6 +527,7 @@ describe('GET /api/extensions/:id/bundle', () => {
     readBundle: ReturnType<typeof vi.fn>;
     listPublic: ReturnType<typeof vi.fn>;
     listShadowedPublic: ReturnType<typeof vi.fn>;
+    requestRefresh: ReturnType<typeof vi.fn>;
     trustOfferFor: ReturnType<typeof vi.fn>;
   };
 
@@ -540,6 +543,7 @@ describe('GET /api/extensions/:id/bundle', () => {
         ),
       listPublic: vi.fn().mockReturnValue([]),
       listShadowedPublic: vi.fn().mockReturnValue([]),
+      requestRefresh: vi.fn(),
       trustOfferFor: vi.fn().mockReturnValue(null),
     };
 

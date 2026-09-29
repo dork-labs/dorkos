@@ -155,6 +155,8 @@ export class ExtensionManager {
    * `shadowedBy`, and nowhere else: they never compile or run.
    */
   private shadowed: ExtensionRecord[] = [];
+  /** The tail of the scan queue: scans run one at a time, in order. */
+  private scans: Promise<void> = Promise.resolve();
   /**
    * The known project roots discovery scans besides the working directory, or
    * null before the composition root wires the project registry in.
@@ -196,7 +198,8 @@ export class ExtensionManager {
   async initialize(cwd: string | null): Promise<void> {
     this.currentCwd = cwd;
     await this.compiler.cleanStaleCache();
-    await this.reload();
+    // Nothing runs yet, so there is nothing to switch: scan, then start below.
+    await this.enqueue(() => this.rescan());
 
     for (const record of this.extensions.values()) {
       if (this.needsServer(record)) {
@@ -215,8 +218,51 @@ export class ExtensionManager {
     }
   }
 
-  /** Re-scan filesystem and recompile changed extensions. */
+  /**
+   * Re-scan every root, recompile, and move every id whose running copy
+   * changed onto its new copy (see {@link switchCopies}). Every re-scan goes
+   * through here — `POST /api/extensions/reload`, `reload_extensions`, a
+   * working-directory change, a new project, an install — so a copy that was
+   * replaced never keeps its old server code running.
+   *
+   * @returns The public records after the scan.
+   */
   async reload(): Promise<ExtensionRecordPublic[]> {
+    await this.enqueue(() => this.switchCopies());
+    return this.listPublic();
+  }
+
+  /**
+   * Ask for a {@link reload} without waiting for it: the scan reads every
+   * known project, so a request handler answers first and clients learn what
+   * changed from the `extension_reloaded` broadcast. Scans run one at a time.
+   */
+  requestRefresh(): void {
+    void this.enqueue(() => this.switchCopies()).catch((err) => {
+      logger.warn('[Extensions] A background re-scan failed', err);
+    });
+  }
+
+  /** Resolves once every scan asked for so far has finished. */
+  whenIdle(): Promise<void> {
+    return this.scans.then(
+      () => undefined,
+      () => undefined
+    );
+  }
+
+  /** Run `job` after every scan queued before it, one at a time. */
+  private enqueue<T>(job: () => Promise<T>): Promise<T> {
+    const next = this.scans.then(job, job);
+    this.scans = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  }
+
+  /** The scan itself: discover, record, bind old approvals, compile. */
+  private async rescan(): Promise<void> {
     const config = configManager.get('extensions');
     const projects = await this.readProjectRoots();
     const discovered = await this.discovery.discover(
@@ -236,7 +282,6 @@ export class ExtensionManager {
 
     await this.compileEnabled();
     this.emitChanged();
-    return this.listPublic();
   }
 
   /**
@@ -273,9 +318,7 @@ export class ExtensionManager {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
-        void this.refreshCopies().catch((err) => {
-          logger.warn('[Extensions] Could not re-scan after the known projects changed', err);
-        });
+        this.requestRefresh();
       }, debounceMs);
       timer.unref?.();
     });
@@ -299,11 +342,12 @@ export class ExtensionManager {
   /**
    * Re-scan, then move every id whose running copy changed onto its new copy:
    * restart its server half there, and tell connected clients. An id that may
-   * now run for the first time (its source was just trusted) starts too.
+   * now run for the first time (its source was just trusted) starts too, and
+   * one that may no longer run stops.
    *
    * @returns The ids whose copy, or whose right to run, changed.
    */
-  async refreshCopies(): Promise<string[]> {
+  private async switchCopies(): Promise<string[]> {
     const before = new Map(
       [...this.extensions.values()].map((rec) => [
         rec.id,
@@ -313,7 +357,7 @@ export class ExtensionManager {
         },
       ])
     );
-    await this.reload();
+    await this.rescan();
     const approvals = configManager.get('extensions');
     const changed: string[] = [];
     for (const rec of this.extensions.values()) {
@@ -507,16 +551,20 @@ export class ExtensionManager {
       trustedSources: [...trusted, { source, trustedAt: new Date().toISOString() }],
     });
     logConfigWrite('trusting a code source', 'extensions', before, configManager.get('extensions'));
-    await this.refreshCopies();
+    // Copies from it may run now; the scan that starts them runs after this
+    // answer, and clients hear from the `extension_reloaded` broadcast.
     this.emitChanged();
+    this.requestRefresh();
     return 'added';
   }
 
   /**
-   * Stop trusting `source` (spec `flow-multiproject` §9.3). Extensions already
-   * turned on stay on: each copy that runs today only because of this source
-   * is given its own approval first, so nothing the person is using stops. New
-   * copies from the source ask again. Only the person-bar route may call this.
+   * Stop trusting `source` (spec `flow-multiproject` §9.3). Extensions from it
+   * that are turned ON stay on, exactly as they are: each copy that runs today
+   * only because of this source is given its own approval, pinned to that copy
+   * (its folder and plugin, never the origin), so nothing the person is using
+   * stops. Everything else from the source — a turned-off extension, a newer
+   * copy, a new extension — asks again. Only the person-bar route may call this.
    *
    * @param source - A normalized `owner/repo`.
    * @returns Whether the source was trusted.
@@ -530,8 +578,12 @@ export class ExtensionManager {
     for (const rec of this.extensions.values()) {
       if (rec.origin !== 'user' || rec.trustedOrigin?.source !== source) continue;
       if (isApprovedCopy(rec, before)) continue;
+      if (!isEnabled(rec.id, before, this.coreExtensions)) continue;
       if (!approvedToRun.includes(rec.id)) approvedToRun.push(rec.id);
-      approvedSources[rec.id] = approvedSourceOf(rec);
+      // Pinned to this copy alone: no origin, so a newer copy from the source
+      // does not ride on it.
+      const { origin: _origin, ...pinned } = approvedSourceOf(rec);
+      approvedSources[rec.id] = pinned;
     }
     configManager.set('extensions', {
       ...before,
@@ -545,8 +597,8 @@ export class ExtensionManager {
       before,
       configManager.get('extensions')
     );
-    await this.refreshCopies();
     this.emitChanged();
+    this.requestRefresh();
     return true;
   }
 

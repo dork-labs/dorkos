@@ -52,8 +52,17 @@ export interface ProjectInstallRecord {
    * is none. The only proof of where a project copy came from: the install's
    * own sidecar lives inside the project, where anyone can commit one. Records
    * written before this field existed are not backfilled, for that reason.
+   * Absent too when the install was fetched at a ref outside the repository's
+   * own branches and tags (`isTrustableRef`).
    */
   source?: string;
+  /**
+   * What each extension folder the plugin carried held when the installer put
+   * it there, keyed by folder name (`extensionDigestsOf`). A project copy has
+   * a trusted origin only while its folder still matches, so code written to
+   * the same path afterwards (an agent, a `git pull`) never inherits it.
+   */
+  extensionDigests?: Record<string, string>;
 }
 
 /** On-disk shape of the index. */
@@ -119,6 +128,29 @@ export function recordProjectInstall(
       record,
     ],
     { replaceCorrupt: true }
+  );
+}
+
+/**
+ * Forget the record for one install folder, because its package was
+ * uninstalled. Unconditional, unlike {@link forgetProjectInstalls}: the
+ * uninstall is the proof. Writes nothing when there is no such record.
+ *
+ * @param dorkHome - Resolved DorkOS data directory.
+ * @param installRoot - The install folder whose package was removed.
+ */
+export async function forgetProjectInstall(dorkHome: string, installRoot: string): Promise<void> {
+  const root = path.resolve(installRoot);
+  let installs: ProjectInstallRecord[];
+  try {
+    installs = await readProjectInstalls(dorkHome);
+  } catch {
+    // A corrupt index is moved aside by the next install; nothing to forget.
+    return;
+  }
+  if (!installs.some((record) => path.resolve(record.installRoot) === root)) return;
+  await mutate(dorkHome, async (current) =>
+    current.filter((record) => path.resolve(record.installRoot) !== root)
   );
 }
 
@@ -212,6 +244,12 @@ function mutate(
   return next;
 }
 
+/** Whether a value is a plain map of folder name to digest string. */
+function isDigestMap(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  return Object.values(value).every((digest) => typeof digest === 'string');
+}
+
 /**
  * Parse index text, or `null` when it is not the shape this module writes.
  * Every field of every record is checked: these strings decide what the
@@ -232,15 +270,14 @@ function parseIndex(raw: string): ProjectInstallRecord[] | null {
   const records: ProjectInstallRecord[] = [];
   for (const item of installs) {
     if (typeof item !== 'object' || item === null) return null;
-    const { projectPath, installRoot, name, commitSha, subpath, source } = item as Record<
-      string,
-      unknown
-    >;
+    const { projectPath, installRoot, name, commitSha, subpath, source, extensionDigests } =
+      item as Record<string, unknown>;
     if (typeof projectPath !== 'string' || typeof installRoot !== 'string') return null;
     if (typeof name !== 'string') return null;
     if (commitSha !== undefined && typeof commitSha !== 'string') return null;
     if (subpath !== undefined && typeof subpath !== 'string') return null;
     if (source !== undefined && typeof source !== 'string') return null;
+    if (extensionDigests !== undefined && !isDigestMap(extensionDigests)) return null;
     records.push({
       projectPath,
       installRoot,
@@ -248,6 +285,9 @@ function parseIndex(raw: string): ProjectInstallRecord[] | null {
       ...(commitSha !== undefined && { commitSha }),
       ...(subpath !== undefined && { subpath }),
       ...(source !== undefined && { source }),
+      ...(extensionDigests !== undefined && {
+        extensionDigests: extensionDigests as Record<string, string>,
+      }),
     });
   }
   return records;

@@ -138,5 +138,6 @@ export function toPublic(
     hasDataProxy: record.hasDataProxy,
     approvedToRun: mayRunExtensionCode(record, approvals),
     shadowedBy: record.shadowedBy ?? null,
+    ...(record.changedSinceInstall ? { changedSinceInstall: true as const } : {}),
   };
 }

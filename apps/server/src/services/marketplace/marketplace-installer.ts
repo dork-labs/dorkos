@@ -62,7 +62,8 @@ import {
 import { materializePackageSchedules } from './lib/materialize-schedules.js';
 import { withInstallTargetLock } from './transaction.js';
 import { recordProjectInstall } from './lib/provenance/project-install-index.js';
-import { normalizeTrustedSource } from './lib/provenance/trusted-source.js';
+import { trustedSourceOfInstall } from './lib/provenance/trusted-source.js';
+import { extensionDigestsOf } from './lib/provenance/extension-digest.js';
 import { validatePackageSchedules } from './lib/validate-package-schedules.js';
 import { discoverExtensionIds } from './lib/staged-extensions.js';
 import {
@@ -501,7 +502,15 @@ export class MarketplaceInstaller implements InstallerLike {
         // Where it came from, recorded HERE rather than trusted from the
         // sidecar inside the project later: this record is the only proof of
         // a project copy's origin (spec `flow-multiproject` §9.1).
-        const source = normalizeTrustedSource(deriveSourceProvenance(resolved).sourceRepo);
+        // Only a branch or tag of the source repository counts, and each
+        // carried extension folder's digest is kept so a later write to the
+        // same path never inherits the origin.
+        const source = trustedSourceOfInstall({
+          sourceRepo: deriveSourceProvenance(resolved).sourceRepo,
+          sourceKey: staged.sourceKey,
+        });
+        const extensionDigests =
+          source !== null ? await extensionDigestsOf(result.installPath) : {};
         try {
           await recordProjectInstall(this.deps.dorkHome, {
             projectPath: req.projectPath,
@@ -510,6 +519,7 @@ export class MarketplaceInstaller implements InstallerLike {
             ...(staged.commitSha !== undefined && { commitSha: staged.commitSha }),
             ...(staged.sourceKey !== undefined && { subpath: staged.sourceKey.subpath }),
             ...(source !== null && { source }),
+            ...(Object.keys(extensionDigests).length > 0 && { extensionDigests }),
           });
         } catch (err) {
           // Best-effort like the sidecar: the package is installed; at worst
@@ -526,16 +536,8 @@ export class MarketplaceInstaller implements InstallerLike {
       // plugin's extensions came from (spec `flow-multiproject` §9.1), and both
       // land after the plugin flow enabled them. Re-scan now, so a newer copy
       // of an extension installed from an approved source takes over at once.
-      if (result.type === 'plugin') {
-        try {
-          await this.deps.pluginFlow.refreshExtensionCopies();
-        } catch (err) {
-          this.deps.logger.warn('[marketplace-installer] could not re-scan extensions', {
-            packageName: result.packageName,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
+      // It runs in the background, after this install answers.
+      if (result.type === 'plugin') this.deps.pluginFlow.refreshExtensionCopies();
 
       await this.reportTerminalOutcome({
         resolved,
