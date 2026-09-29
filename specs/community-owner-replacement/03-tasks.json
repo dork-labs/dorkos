@@ -15,9 +15,7 @@
       "size": "large",
       "priority": "high",
       "dependencies": [],
-      "parallelWith": [
-        "2.1"
-      ],
+      "parallelWith": ["2.1"],
       "issue": null
     },
     {
@@ -25,14 +23,12 @@
       "phase": 2,
       "phaseName": "P2 — The replacement contract on the Community server",
       "subject": "[community-owner-replacement] [P2] Add the owner-replacement schemas, scope, and migration",
-      "description": "Add the wire contract and storage for specs/community-owner-replacement/02-specification.md (\"Wire schemas\", \"Data model\", \"Scope and authority\"). Build order: after the host-operator import migration (0019) and the takedown migration (0020) are on main; take the next free migration number at build time and land one migration PR at a time.\n\nScope:\n- `packages/shared/src/community-admin-wire.ts`: reason (`owner_left_group`, `owner_unreachable`, `other`), state, request (reference `^[A-Za-z0-9 ._#-]{1,80}$`, no `:` or `/`), replacement (with `notice.verifiedAddress`, `wait`, `claimReissuedAt`, `cooldownUntil`, `claimantNamed`), create response, list, claim-token schemas; `communities:ownership` in `CommunityAdminHostApiKeyScopeSchema`, with the scope-array maximum one higher than main's at build time; `ownerReplacement` on `CommunityAdminHostProjectionSchema`.\n- `packages/shared/src/community-wire.ts`: notice read (with owner `options`), objection, object-preflight, object, claim preflight, claim schemas and route constants; `NOTICE_DELIVERY_UNAVAILABLE`, `OWNER_REPLACEMENT_OPEN`, `OWNER_REPLACEMENT_COOLDOWN` in `CommunityWireErrorCodeSchema`. TSDoc on every export.\n- One migration: `owner_replacements` (issuer and subject stored together, `after_objection`, `verified_address`, `claim_reissued_at`, every shape check, `UNIQUE (community_id, idempotency_actor, idempotency_key)`, the partial unique index on open states, the objected index, composite tenant foreign keys to `members(community_id,id)`); `owner_replacement_object_tokens`; `host_api_keys_scopes` gains `communities:ownership` and its cardinality ceiling grows by one over main's. Do **not** add the host audit `system` or tenant audit `host` actor kinds: the takedown migration (0020) adds both. Mirror in `src/schema.ts`; list in `src/migrate.ts`.\n- `host-keys.js issue --scope communities:ownership`; the host page's scope checkbox (`HostApiKeys.tsx`).\n- `deletion-worker.ts` deletes replacements and object tokens with the tenant.\n\nAcceptance criteria:\n- Schema tests: every strict schema refuses an extra field; the reference refuses `:`, `/`, `<`, a newline, and 81 characters; a scope array one longer than the new maximum is refused.\n- Migration tests (real Postgres): two open rows for one community violate the partial index; a closed and an open row are allowed; the same idempotency key in two communities is allowed and twice in one is not; a `completed` row without `new_owner_member_id`, a closed row with a `claim_token_hash`, a subject without an issuer, and a `prior_owner_member_id` from another community each violate a check or foreign key; a key with an unknown scope, or more scopes than the new ceiling, is refused.\n- The offline key command issues a working `communities:ownership` key.\n- Existing tenancy and administration isolation suites pass unchanged. `pnpm verify` green.",
+      "description": "Add the wire contract and storage for specs/community-owner-replacement/02-specification.md (\"Wire schemas\", \"Data model\", \"Scope and authority\"). Build order: after the host-operator import migration (0019) and the takedown migration (0020) are on main; take the next free migration number at build time and land one migration PR at a time.\n\nScope:\n- `packages/shared/src/community-admin-wire.ts`: reason (`owner_left_group`, `owner_unreachable`, `other`), state, request (reference `^[A-Za-z0-9 ._#-]{1,80}$`, no `:` or `/`), replacement (with `notice.verifiedAddress`, `wait`, `claimReissuedAt`, `cooldownUntil`, `claimantNamed`), create response, list, claim-token schemas; `communities:ownership` in `CommunityAdminHostApiKeyScopeSchema`, with the scope-array maximum one higher than main's at build time; `ownerReplacement` on `CommunityAdminHostProjectionSchema`.\n- `packages/shared/src/community-wire.ts`: notice read (with owner `options`), objection, object-preflight, object, claim preflight, claim schemas and route constants; `NOTICE_DELIVERY_UNAVAILABLE`, `OWNER_REPLACEMENT_OPEN`, `OWNER_REPLACEMENT_COOLDOWN` in `CommunityWireErrorCodeSchema`. TSDoc on every export.\n- One migration: `owner_replacements` (issuer and subject stored together, `after_objection`, `verified_address`, `claim_reissued_at`, every shape check, `UNIQUE (community_id, requested_by_host_actor, idempotency_key)`, the partial unique index on open states, the objected index, composite tenant foreign keys to `members(community_id,id)`); `owner_replacement_object_tokens`; `host_api_keys_scopes` gains `communities:ownership` and its cardinality ceiling grows by one over main's. Do **not** add the host audit `system` or tenant audit `host` actor kinds: the takedown migration (0020) adds both. Mirror in `src/schema.ts`; list in `src/migrate.ts`.\n- `host-keys.js issue --scope communities:ownership`; the host page's scope checkbox (`HostApiKeys.tsx`).\n- `deletion-worker.ts` deletes replacements and object tokens with the tenant.\n\nAcceptance criteria:\n- Schema tests: every strict schema refuses an extra field; the reference refuses `:`, `/`, `<`, a newline, and 81 characters; a scope array one longer than the new maximum is refused.\n- Migration tests (real Postgres): two open rows for one community violate the partial index; a closed and an open row are allowed; the same idempotency key in two communities is allowed and twice in one is not; a `completed` row without `new_owner_member_id`, a closed row with a `claim_token_hash`, a subject without an issuer, and a `prior_owner_member_id` from another community each violate a check or foreign key; a key with an unknown scope, or more scopes than the new ceiling, is refused.\n- The offline key command issues a working `communities:ownership` key.\n- Existing tenancy and administration isolation suites pass unchanged. `pnpm verify` green.",
       "activeForm": "Adding the owner-replacement contract and migration",
       "size": "medium",
       "priority": "high",
       "dependencies": [],
-      "parallelWith": [
-        "1.1"
-      ],
+      "parallelWith": ["1.1"],
       "issue": null
     },
     {
@@ -44,10 +40,7 @@
       "activeForm": "Building the host owner-replacement routes",
       "size": "large",
       "priority": "high",
-      "dependencies": [
-        "1.1",
-        "2.1"
-      ],
+      "dependencies": ["1.1", "2.1"],
       "parallelWith": [],
       "issue": null
     },
@@ -56,13 +49,11 @@
       "phase": 2,
       "phaseName": "P2 — The replacement contract on the Community server",
       "subject": "[community-owner-replacement] [P2] Run the owner-replacement timeline, send the notices, and end it when the owner or host acts",
-      "description": "Build the timeline, the notices with object-only links, and the end hooks per specs/community-owner-replacement/02-specification.md (\"Which wait applies\", \"Timeline worker\", \"Object-only link\", \"What the owner can actually do\", \"Things that end an open replacement\", \"Audit\", and the email copy under \"User Experience\").\n\nScope:\n- `src/owner-replacement/state.ts` (allowed transitions), `end.ts` (one helper that closes an open replacement inside the caller's transaction: state, `ended_at`, all tokens dead, audits per the table, `owner_replacement.ended` unless the owner acted), `worker.ts` (notice resolution → `waiting` with `claimable_after` = resolved + N only for accepted mail to an address marked verified (by any sign-in service; the server never sets it), with `after_objection` and `after_withdrawal` false and a reason other than `owner_left_group`, else + U; the 48-hour reminder once; `claimable` with `claim_expires_at` = +14 days; `expired`), `options.ts` (keep always; transfer only in `active` with a password; delete only with a password), `object-tokens.ts` (mint one per send attempt through the 1.1 hook, hash at rest, never delete one when an attempt fails, single use, dead once the request closes).\n- `src/mail/messages.ts`: notice, reminder, claim-reissued (each with an object-only link to `/keep-ownership#<token>`), ended (withdrawn, expired), and completed messages, minimal as the spec says (what is happening, the deadline, how to object), with the transfer and delete sentences only when `options.ts` allows them; UTC dates with the day spelled out; `/c/<uuid>` link; never a claim token, reason, reference, or legal-hold wording.\n- Hooks: `POST /owner/transfer` and `POST /owner/deletion` → `superseded`; host `suspend`, host-started deletion, and the takedown's community deletion → `withdrawn` (beside the deletion-notice withdrawal in `host-lifecycle.ts`, and in the takedown route that is on main by then).\n\nAcceptance criteria:\n- AC-4 the right wait: verified, accepted, `owner_unreachable` → N from acceptance; password-only account with accepted mail → U; `550` → U at once; 72 hours of `421` → U; with verified accepted mail, still U for a request after an objection, a request 29 days after a withdrawal (N at 31 days), and reason `owner_left_group`. Injected clocks.\n- AC-9 (host and owner-action half): transfer (in `active`, with password), deletion request, suspension, host-started deletion, and cancel each close an open replacement in every open state, write the listed audits, and leave no live claim or object token.\n- AC-15 mail content over every message kind, including the conditional transfer and delete sentences for each combination of lifecycle and password.\n- AC-16 expiry after 14 days claimable, owner emailed, tokens dead.\n- AC-19 (token half): tokens stored only as hashes; each notice, reminder, and reissue message carries a distinct live token; a send that times out after the fake accepted the body is retried and delivered again, and both delivered links still object (the first ends the request, the second answers the same success).\n- The reminder is queued once, 48 hours before `claimable_after`, and never moves the date. A transition that races an objection or cancel (barrier) does nothing.\n- AC-11 (timeline half); AC-13 for these transitions. Hold, release, archive, restore, limits, and short-name changes leave an open replacement untouched.\n- `pnpm verify` green.",
+      "description": "Build the timeline, the notices with object-only links, and the end hooks per specs/community-owner-replacement/02-specification.md (\"Which wait applies\", \"Timeline worker\", \"Object-only link\", \"What the owner can actually do\", \"Things that end an open replacement\", \"Audit\", and the email copy under \"User Experience\").\n\nScope:\n- `src/owner-replacement/state.ts` (allowed transitions), `end.ts` (one helper that closes an open replacement inside the caller's transaction: state, `ended_at`, all tokens dead, audits per the table, `owner_replacement.ended` unless the owner acted; see below), `worker.ts` (notice resolution → `waiting` with `claimable_after` = resolved + N only for accepted mail to an address marked verified (by any sign-in service; the server never sets it), with `after_objection` and `after_withdrawal` false and a reason other than `owner_left_group`, else + U; the 48-hour reminder once; `claimable` with `claim_expires_at` = +14 days; `expired`), `options.ts` (keep always; transfer only in `active` with a password; delete only with a password), `object-tokens.ts` (mint one per send attempt through the 1.1 hook, hash at rest, never delete one when an attempt fails, single use, dead once the request closes).\n- `src/mail/messages.ts`: notice, reminder, claim-reissued (each with an object-only link to `/keep-ownership#<token>`), ended (withdrawn, expired), and completed messages, minimal as the spec says (what is happening, the deadline, how to object), with the transfer and delete sentences only when `options.ts` allows them; UTC dates with the day spelled out; `/c/<uuid>` link; never a claim token, reason, reference, or legal-hold wording.\n- Hooks: `POST /owner/transfer` and `POST /owner/deletion` → `superseded`; host `suspend`, host-started deletion, and the takedown's community deletion → `withdrawn` (beside the deletion-notice withdrawal in `host-lifecycle.ts`, and in the takedown route that is on main by then).\n\nThe end helper re-reads the replacement under the community lock: the owner_replacements row joined into `hostProjectionSql` by a `FOR UPDATE OF c` read (host-lifecycle.ts, owner-claims.ts) may be stale once the lock is granted. It also sets `withdrawn_cause` on a withdrawal and clears `claimant_oidc_issuer` and `claimant_oidc_subject` whenever a request closes (`claimant_named` stays).\n\nAcceptance criteria:\n- AC-4 the right wait: verified, accepted, `owner_unreachable` → N from acceptance; password-only account with accepted mail → U; `550` → U at once; 72 hours of `421` → U; with verified accepted mail, still U for a request after an objection, a request 29 days after a withdrawal (N at 31 days), and reason `owner_left_group`. Injected clocks.\n- AC-9 (host and owner-action half): transfer (in `active`, with password), deletion request, suspension, host-started deletion, and cancel each close an open replacement in every open state, write the listed audits, and leave no live claim or object token.\n- AC-15 mail content over every message kind, including the conditional transfer and delete sentences for each combination of lifecycle and password.\n- AC-16 expiry after 14 days claimable, owner emailed, tokens dead.\n- AC-19 (token half): tokens stored only as hashes; each notice, reminder, and reissue message carries a distinct live token; a send that times out after the fake accepted the body is retried and delivered again, and both delivered links still object (the first ends the request, the second answers the same success).\n- The reminder is queued once, 48 hours before `claimable_after`, and never moves the date. A transition that races an objection or cancel (barrier) does nothing.\n- AC-11 (timeline half); AC-13 for these transitions. Hold, release, archive, restore, limits, and short-name changes leave an open replacement untouched.\n- `pnpm verify` green.",
       "activeForm": "Running the owner-replacement timeline and notices",
       "size": "large",
       "priority": "high",
-      "dependencies": [
-        "2.2"
-      ],
+      "dependencies": ["2.2"],
       "parallelWith": [],
       "issue": null
     },
@@ -75,9 +66,7 @@
       "activeForm": "Building the objection, object-link, admission, and claim routes",
       "size": "large",
       "priority": "high",
-      "dependencies": [
-        "2.3"
-      ],
+      "dependencies": ["2.3"],
       "parallelWith": [],
       "issue": null
     },
@@ -90,12 +79,8 @@
       "activeForm": "Building the browser surfaces for owner replacement",
       "size": "large",
       "priority": "medium",
-      "dependencies": [
-        "2.4"
-      ],
-      "parallelWith": [
-        "3.2"
-      ],
+      "dependencies": ["2.4"],
+      "parallelWith": ["3.2"],
       "issue": null
     },
     {
@@ -107,12 +92,8 @@
       "activeForm": "Telling the owner in the DorkOS app",
       "size": "medium",
       "priority": "medium",
-      "dependencies": [
-        "2.4"
-      ],
-      "parallelWith": [
-        "3.1"
-      ],
+      "dependencies": ["2.4"],
+      "parallelWith": ["3.1"],
       "issue": null
     }
   ]

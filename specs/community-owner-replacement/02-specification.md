@@ -118,7 +118,7 @@ Open states: `notifying`, `waiting`, `claimable`. Closed: `completed`, `objected
 
 An owner who has left often cannot sign in: there is no password reset by email, `/change-password` is disabled, and an organization's single sign-on account may be closed. So the notice and the reminder each carry a link that can do exactly one thing: object.
 
-- **Token.** `owner_replacement_object_tokens(id uuid PK, replacement_id uuid NOT NULL REFERENCES owner_replacements(id) ON DELETE CASCADE, community_id uuid NOT NULL, token_hash text NOT NULL UNIQUE, outbox_id uuid NULL, created_at, used_at NULL)`. The mail worker mints a token when it sends a notice or reminder, stores only its hash, and puts `<COMMUNITY_PUBLIC_URL>/keep-ownership#<token>` in the message. Each send attempt mints its own token, and the worker **never deletes** a minted token when an attempt fails: an SMTP timeout after the body was sent may still have delivered the message. Extra live tokens are harmless, because each can only object and all of them die with the request. The plaintext exists only in the message.
+- **Token.** `owner_replacement_object_tokens(id uuid PK, replacement_id uuid NOT NULL, community_id uuid NOT NULL, token_hash text NOT NULL UNIQUE, outbox_id uuid NULL, created_at NOT NULL (from the injected clock, no default), used_at NULL)`, with `(community_id, replacement_id)` referencing `owner_replacements(community_id, id) ON DELETE CASCADE`. The mail worker mints a token when it sends a notice or reminder, stores only its hash, and puts `<COMMUNITY_PUBLIC_URL>/keep-ownership#<token>` in the message. Each send attempt mints its own token, and the worker **never deletes** a minted token when an attempt fails: an SMTP timeout after the body was sent may still have delivered the message. Extra live tokens are harmless, because each can only object and all of them die with the request. The plaintext exists only in the message.
 - **Power.** Object, and nothing else. It is not a session, cannot sign in, cannot read the community, and cannot transfer, delete, or export. Emailing it is safe because the only thing it can do keeps the status quo.
 - **Single use and expiry.** A token is live while it is unused and its replacement is open. Using one marks it `used_at` and closes the replacement as `objected`, which makes every other token for that replacement dead too. It expires with the request: when the replacement closes for any reason, its tokens stop working (the check joins the replacement's state; the rows are deleted with the replacement's community).
 - **Routes.** `POST /api/v1/owner-replacements/object-preflight { token }` (public, rate limited per caller) answers `{ communityName, claimableAfter }` for a live token, and one identical `403 FORBIDDEN` ("This link no longer works.") for anything else. `POST /api/v1/owner-replacements/object { token }` does the objection. A `GET` never objects, so a mail scanner that fetches the link changes nothing: the page at `/keep-ownership` reads the token from the fragment, preflights it, and asks the person to press **Keep ownership**. Replaying a used token for a replacement that is `objected` answers the same success page ("You kept ownership."); any other closed state answers "This request has already ended." with no further detail.
@@ -190,7 +190,7 @@ An owner whose account has no password (single sign-on only) can keep ownership 
 
 ### Things that end an open replacement
 
-Each runs inside the transaction that causes it, after its own locks, and writes `ended_at` and the state, kills every claim and object token, writes the audits listed under "Audit", and queues `owner_replacement.ended` to the owner unless the owner did it.
+Each runs inside the transaction that causes it, after its own locks, re-reads the replacement under the community lock (a replacement joined into a projection read before the lock was granted may be stale), and writes `ended_at` and the state (with `withdrawn_cause` on a withdrawal), clears the named account's `claimant_oidc_issuer` and `claimant_oidc_subject` (they identify a person and must not outlive the open request; `claimant_named` stays), kills every claim and object token, writes the audits listed under "Audit", and queues `owner_replacement.ended` to the owner unless the owner did it.
 
 | Event                                                                                        | State        | Where                                                                              |
 | -------------------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------- |
@@ -308,6 +308,7 @@ export const CommunityAdminOwnerReplacementSchema = z.strictObject({
   claimExpiresAt: timestamp.nullable(),
   claimReissuedAt: timestamp.nullable(),
   endedAt: timestamp.nullable(),
+  withdrawnBecause: z.enum(['cancelled', 'suspended', 'deletion']).nullable(), // set on a withdrawn replacement
   cooldownUntil: timestamp.nullable(), // set on an objected replacement
 });
 export const CommunityAdminOwnerReplacementCreateResponseSchema = z.strictObject({
@@ -343,12 +344,14 @@ Two migrations, both after `0020` (takedown), each at the next free number when 
 - **Mail (task 1.1):** `notice_outbox` and its index on `(state, next_attempt_at)`.
 - **Replacement (task 2.1):**
   - `host_api_keys_scopes`: the subset gains `communities:ownership` and the cardinality ceiling grows by one over `main`'s.
-  - `owner_replacements(id uuid PK, community_id uuid NOT NULL REFERENCES communities(id), state text NOT NULL CHECK (…eight…), reason text NOT NULL CHECK (…three…), reference text NULL CHECK (reference ~ '^[A-Za-z0-9 ._#-]{1,80}$'), claimant_oidc_issuer text NULL, claimant_oidc_subject text NULL CHECK (length BETWEEN 1 AND 255), claim_token_hash text NULL UNIQUE, claim_reissued_at timestamptz NULL, requested_by_host_actor text NOT NULL CHECK (~ '^(person|api_key):'), idempotency_actor text NOT NULL, idempotency_key text NOT NULL, payload_hash text NOT NULL, after_objection boolean NOT NULL, after_withdrawal boolean NOT NULL, prior_owner_member_id uuid NOT NULL, new_owner_member_id uuid NULL, notice_state text NOT NULL DEFAULT 'pending' CHECK IN ('pending','accepted','failed'), notice_resolved_at timestamptz NULL, verified_address boolean NULL, claimable_after timestamptz NULL, reminder_queued_at timestamptz NULL, claim_expires_at timestamptz NULL, requested_at timestamptz NOT NULL, ended_at timestamptz NULL)`, with:
-    - `UNIQUE (community_id, idempotency_actor, idempotency_key)`;
+  - `owner_replacements(id uuid PK, community_id uuid NOT NULL REFERENCES communities(id), state text NOT NULL CHECK (…eight…), reason text NOT NULL CHECK (…three…), reference text NULL CHECK (reference ~ '^[A-Za-z0-9 ._#-]{1,80}$'), claimant_named boolean NOT NULL, claimant_oidc_issuer text NULL, claimant_oidc_subject text NULL CHECK (length BETWEEN 1 AND 255), claim_token_hash text NULL UNIQUE, claim_reissued_at timestamptz NULL, requested_by_host_actor text NOT NULL CHECK (~ '^(person|api_key):'), idempotency_key text NOT NULL, payload_hash text NOT NULL, after_objection boolean NOT NULL, after_withdrawal boolean NOT NULL, withdrawn_cause text NULL CHECK IN ('cancelled','suspended','deletion'), prior_owner_member_id uuid NOT NULL, new_owner_member_id uuid NULL, notice_state text NOT NULL DEFAULT 'pending' CHECK IN ('pending','accepted','failed'), notice_resolved_at timestamptz NULL, verified_address boolean NULL, claimable_after timestamptz NULL, reminder_queued_at timestamptz NULL, claim_expires_at timestamptz NULL, requested_at timestamptz NOT NULL, ended_at timestamptz NULL)`, with:
+    - `UNIQUE (community_id, requested_by_host_actor, idempotency_key)` (the requesting actor is the idempotency actor);
     - a partial unique index `ON owner_replacements(community_id) WHERE state IN ('notifying','waiting','claimable')`;
     - an index on `(community_id, ended_at DESC) WHERE state = 'objected'` for the cooling-off check;
     - composite tenant foreign keys `(community_id, prior_owner_member_id)` and `(community_id, new_owner_member_id)` to `members(community_id, id)`;
     - `(claimant_oidc_issuer IS NULL) = (claimant_oidc_subject IS NULL)`;
+    - `claimant_named` records whether the request names an account and outlives it (the host list reads it); while the request is open, `(claimant_oidc_issuer IS NOT NULL) = claimant_named`; once it closes the issuer and subject are cleared (they would re-identify an erased member beside the husked `new_owner_member_id`), and a request that named no account never gains one;
+    - `withdrawn_cause` is set exactly when the state is `withdrawn`;
     - shape checks: `claimable_after` is null in `notifying` and set in `waiting` and `claimable` (a replacement closed before its notice resolved keeps it null); `claim_expires_at` is set in `claimable` and `completed`; `ended_at` is set exactly in the closed states; `new_owner_member_id` is set exactly in `completed`; `claim_token_hash` is null in every closed state.
   - `owner_replacement_object_tokens` as above.
 - The deletion worker deletes replacements, tokens, and outbox rows with the tenant. Member erasure leaves `owner_replacements` alone: it references member rows, which erasure husks rather than deletes.
@@ -531,6 +534,8 @@ None open. Resolved while specifying, under the operator's standing instruction,
 - RFC 5321 (SMTP reply classes), RFC 5322 (mailbox syntax), RFC 7208 (SPF), RFC 6376 (DKIM), RFC 7489 (DMARC), OpenID Connect Core 1.0 §8 (pairwise subject identifiers)
 
 ## Changelog
+
+- **2026-09-29** — Task 2.1 review (DOR-2538): `withdrawn_cause` and `withdrawnBecause`; `claimant_named`, with the named issuer and subject cleared when a request closes; `idempotency_actor` dropped in favour of `requested_by_host_actor`; end hooks re-read the replacement under the community lock; object tokens bound to their request's community and dated from the injected clock.
 
 - **2026-09-29** — Task 1.1 (DOR-2537): pinned `nodemailer` 10.0.1 and `smtp-server` 3.19.9, the newest releases past the 21-day dependency cooldown, instead of "latest 7.x".
 

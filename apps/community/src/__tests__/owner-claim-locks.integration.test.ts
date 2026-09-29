@@ -78,19 +78,27 @@ async function claimantCookie(token: string, label: string): Promise<string> {
   return signup(`Claimant ${label}`, `claimant-${label}@locks.test`, cookieOf(preflight));
 }
 
-async function waitForBlockedQuery(fragment: string): Promise<void> {
+/**
+ * Wait until `count` sessions wait, directly or behind another waiter, on a lock held by
+ * `holderPid`. A second request for the same row queues behind the first waiter's tuple lock,
+ * so the chain is followed. Matching by blocker, not by query text, cannot miss a statement
+ * longer than what Postgres keeps of it.
+ */
+async function waitForBlockedBy(holderPid: number, count: number): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt++) {
-    const result = await pool.query<{ blocked: boolean }>(
-      `SELECT EXISTS(
-         SELECT 1 FROM pg_stat_activity
-         WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE $1
-       ) AS blocked`,
-      [`%${fragment}%`]
+    const result = await pool.query<{ waiting: number }>(
+      `WITH RECURSIVE blocked(pid) AS (
+         SELECT $1::int
+         UNION
+         SELECT a.pid FROM pg_stat_activity a JOIN blocked b ON b.pid=ANY(pg_blocking_pids(a.pid))
+       )
+       SELECT count(*)::int - 1 AS waiting FROM blocked`,
+      [holderPid]
     );
-    if (result.rows[0].blocked) return;
+    if (result.rows[0].waiting >= count) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  throw new Error(`Request did not block on ${fragment}`);
+  throw new Error(`Fewer than ${count} requests blocked on the held community`);
 }
 
 async function bounded(response: Promise<Response>): Promise<Response> {
@@ -177,8 +185,10 @@ for (const mutation of ['reissue', 'revoke'] as const) {
       await blocker.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [
         pending.communityId,
       ]);
+      const blockerPid = (await blocker.query<{ pid: number }>('SELECT pg_backend_pid() AS pid'))
+        .rows[0].pid;
       const claim = bounded(jsonRequest('/api/v1/owner-claims/claim', {}, claimant));
-      await waitForBlockedQuery('FOR UPDATE OF c');
+      await waitForBlockedBy(blockerPid, 1);
 
       // A claim blocked on the community must not hold the grant. The old
       // grant-first order fails this NOWAIT probe and forms G→C against the
@@ -196,7 +206,7 @@ for (const mutation of ['reissue', 'revoke'] as const) {
           ? `/api/v1/host/communities/${pending.communityId}/owner-claims/reissue`
           : `/api/v1/host/communities/${pending.communityId}/owner-claims/${pending.grantId}/revoke`;
       const mutate = bounded(jsonRequest(mutationPath, {}));
-      await waitForBlockedQuery('SELECT lifecycle FROM communities WHERE id=$1 FOR UPDATE');
+      await waitForBlockedBy(blockerPid, 2);
       await blocker.query('COMMIT');
 
       const [claimResponse, mutationResponse] = await Promise.all([claim, mutate]);

@@ -53,10 +53,12 @@ const replacement = {
   claimExpiresAt: null,
   claimReissuedAt: null,
   endedAt: null,
+  withdrawnBecause: null,
   cooldownUntil: null,
 } as const;
 
 const adminNotice = {
+  role: 'admin',
   replacementId: ID,
   state: 'waiting',
   reason: 'owner_left_group',
@@ -67,6 +69,7 @@ const adminNotice = {
 
 const ownerNotice = {
   ...adminNotice,
+  role: 'owner',
   reference: 'ABC-123',
   claimReissuedAt: null,
   options: { keep: true, transfer: false, delete: true, needsPassword: false },
@@ -276,6 +279,11 @@ describe('owner replacement wire schemas', () => {
     expect(parse(adminNotice).success).toBe(true);
     expect(parse(ownerNotice).success).toBe(true);
     expect(parse({ ...adminNotice, reference: 'ABC-123' }).success).toBe(false);
+    // The role decides the view: an admin view labelled as the owner's is refused, and back.
+    const { role: _role, ...unlabelled } = adminNotice;
+    expect(parse({ ...unlabelled, role: 'owner' }).success).toBe(false);
+    expect(parse({ ...ownerNotice, role: 'admin' }).success).toBe(false);
+    expect(parse(unlabelled).success).toBe(false);
     const { options: _options, ...ownerWithoutOptions } = ownerNotice;
     expect(parse(ownerWithoutOptions).success).toBe(false);
     expect(
@@ -290,10 +298,34 @@ describe('owner replacement wire schemas', () => {
   });
 
   // Purpose: fails if the session objection takes anything but a replacement id.
-  it('takes a uuid for the session objection', () => {
+  it('takes an id for the session objection', () => {
     expect(
-      CommunityWireOwnerReplacementObjectionRequestSchema.safeParse({ replacementId: 'x' }).success
+      CommunityWireOwnerReplacementObjectionRequestSchema.safeParse({ replacementId: '' }).success
     ).toBe(false);
+    expect(CommunityWireOwnerReplacementObjectionRequestSchema.safeParse({}).success).toBe(false);
+  });
+
+  // Purpose: fails if the host cannot tell why a request was withdrawn, or if a cause outside
+  // the three the storage allows could be sent.
+  it('says why a withdrawn request was withdrawn', () => {
+    for (const cause of ['cancelled', 'suspended', 'deletion']) {
+      expect(
+        CommunityAdminOwnerReplacementSchema.safeParse({
+          ...replacement,
+          state: 'withdrawn',
+          endedAt: AT,
+          withdrawnBecause: cause,
+        }).success
+      ).toBe(true);
+    }
+    expect(
+      CommunityAdminOwnerReplacementSchema.safeParse({
+        ...replacement,
+        withdrawnBecause: 'expired',
+      }).success
+    ).toBe(false);
+    const { withdrawnBecause: _cause, ...withoutCause } = replacement;
+    expect(CommunityAdminOwnerReplacementSchema.safeParse(withoutCause).success).toBe(false);
   });
 
   // Purpose: fails if a malformed token is refused by the schema (a 400) instead of reaching the

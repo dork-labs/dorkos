@@ -1,17 +1,12 @@
 import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { z } from 'zod';
+import type { CommunityAdminHostApiKeyScopeSchema } from '@dorkos/shared/community-admin-wire';
 import { describeError, request } from '../api.js';
 import { describeReauthenticationError } from '../account-controls.js';
 import { FocusDialog } from './CommunityAdministration.js';
 
-type Scope =
-  | 'communities:read'
-  | 'communities:write'
-  | 'communities:lifecycle'
-  | 'communities:import'
-  | 'communities:legal_hold'
-  | 'communities:takedown'
-  | 'communities:ownership';
+type Scope = z.infer<typeof CommunityAdminHostApiKeyScopeSchema>;
 type HostApiKey = {
   id: string;
   label: string;

@@ -79,9 +79,9 @@ export function projectCommunity(row: HostCommunityRow, actor: HostActor) {
 /**
  * Select every host-visible column; append a `WHERE` or `ORDER BY` for the rows wanted.
  *
- * Whitespace is collapsed so the statement stays well inside the 1,024 bytes Postgres keeps of
- * a running query (`track_activity_query_size`): the lock-order tests find a waiting request by
- * the `FOR UPDATE OF c` a route appends, and a longer statement loses that suffix.
+ * The joined `owner_replacements` row is the open replacement, if any (a closed one has an
+ * `ended_at`). With `FOR UPDATE OF c` only the community is locked, so that row is read as of
+ * the statement's snapshot and may be stale once the lock is granted.
  */
 export const hostProjectionSql = `SELECT c.id,c.name,c.description,c.lifecycle,c.lifecycle_version,
   c.settings_version,c.created_at,c.suspended_from_state,c.held_from_state,c.deletion_notice_at,
@@ -95,10 +95,7 @@ export const hostProjectionSql = `SELECT c.id,c.name,c.description,c.lifecycle,c
   r.id AS replacement_id,r.state AS replacement_state,r.claimable_after AS replacement_after
   FROM communities c LEFT JOIN community_deletion_jobs j ON j.community_id=c.id
   LEFT JOIN community_imports i ON i.community_id=c.id
-  LEFT JOIN owner_replacements r ON r.community_id=c.id AND r.ended_at IS NULL`.replace(
-  /\s+/g,
-  ' '
-);
+  LEFT JOIN owner_replacements r ON r.community_id=c.id AND r.ended_at IS NULL`;
 
 /**
  * The host's refusal when its own legal hold stands in the way of deleting a community. Only

@@ -1893,7 +1893,6 @@ export const noticeOutbox = pgTable(
 
 const OPEN_OWNER_REPLACEMENT_STATES = sql`('notifying','waiting','claimable')`;
 const CLOSED_OWNER_REPLACEMENT_STATES = sql`('completed','objected','withdrawn','superseded','expired')`;
-const HOST_ACTOR_PATTERN = sql`'^(person|api_key):[A-Za-z0-9_-]{1,200}$'`;
 
 /**
  * A host's request to make the account named in it the owner of a community whose owner has
@@ -1911,16 +1910,23 @@ export const ownerReplacements = pgTable(
     reason: text('reason').notNull(),
     /** The host's own pointer; never shown to admins or members, never in mail or audit. */
     reference: text('reference'),
+    /** Whether the request names an account; kept after it closes, for the host's list. */
+    claimantNamed: boolean('claimant_named').notNull(),
+    /**
+     * The named account's OIDC issuer and subject. They identify a person, so they live only as
+     * long as the request: the helper that closes a request (task 2.3's `end.ts`) clears them.
+     */
     claimantOidcIssuer: text('claimant_oidc_issuer'),
     claimantOidcSubject: text('claimant_oidc_subject'),
     claimTokenHash: text('claim_token_hash').unique(),
     claimReissuedAt: timestamp('claim_reissued_at', { withTimezone: true }),
     requestedByHostActor: text('requested_by_host_actor').notNull(),
-    idempotencyActor: text('idempotency_actor').notNull(),
     idempotencyKey: text('idempotency_key').notNull(),
     payloadHash: text('payload_hash').notNull(),
     afterObjection: boolean('after_objection').notNull(),
     afterWithdrawal: boolean('after_withdrawal').notNull(),
+    /** Why a withdrawn request was withdrawn; set on exactly the withdrawn ones. */
+    withdrawnCause: text('withdrawn_cause'),
     priorOwnerMemberId: uuid('prior_owner_member_id').notNull(),
     newOwnerMemberId: uuid('new_owner_member_id'),
     noticeState: text('notice_state').notNull().default('pending'),
@@ -1959,11 +1965,11 @@ export const ownerReplacements = pgTable(
     ),
     check(
       'owner_replacements_requested_by_host_actor_check',
-      sql`${table.requestedByHostActor} ~ ${HOST_ACTOR_PATTERN}`
+      sql`${table.requestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$'`
     ),
     check(
-      'owner_replacements_idempotency_actor_check',
-      sql`${table.idempotencyActor} ~ ${HOST_ACTOR_PATTERN}`
+      'owner_replacements_withdrawn_cause_check',
+      sql`${table.withdrawnCause} IN ('cancelled','suspended','deletion')`
     ),
     check(
       'owner_replacements_idempotency_key_check',
@@ -1977,6 +1983,14 @@ export const ownerReplacements = pgTable(
     check(
       'owner_replacements_claimant',
       sql`(${table.claimantOidcIssuer} IS NULL) = (${table.claimantOidcSubject} IS NULL)`
+    ),
+    check(
+      'owner_replacements_claimant_named',
+      sql`(${table.claimantNamed} OR ${table.claimantOidcIssuer} IS NULL) AND (${table.state} NOT IN ${OPEN_OWNER_REPLACEMENT_STATES} OR (${table.claimantOidcIssuer} IS NOT NULL) = ${table.claimantNamed})`
+    ),
+    check(
+      'owner_replacements_withdrawn_cause',
+      sql`(${table.state} = 'withdrawn') = (${table.withdrawnCause} IS NOT NULL)`
     ),
     check(
       'owner_replacements_notice',
@@ -2023,7 +2037,7 @@ export const ownerReplacements = pgTable(
     uniqueIndex('owner_replacements_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('owner_replacements_idempotency').on(
       table.communityId,
-      table.idempotencyActor,
+      table.requestedByHostActor,
       table.idempotencyKey
     ),
     uniqueIndex('owner_replacements_open_unique')
@@ -2056,7 +2070,8 @@ export const ownerReplacementObjectTokens = pgTable(
       .references(() => communities.id),
     tokenHash: text('token_hash').notNull().unique(),
     outboxId: uuid('outbox_id'),
-    createdAt: time('created_at'),
+    /** Set from the caller's clock; no default. */
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     usedAt: timestamp('used_at', { withTimezone: true }),
   },
   (table) => [

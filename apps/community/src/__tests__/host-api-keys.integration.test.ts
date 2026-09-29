@@ -22,7 +22,7 @@ import {
   pairInstall,
   preflightOwnerClaim,
   startTenancyHarness,
-  waitForLockWaiters,
+  waitForBlockedBy,
   type TenancyHarness,
 } from './tenancy-test-harness.js';
 
@@ -433,9 +433,9 @@ it('rows 12 and 16: a key suspends and resumes, and a revocation that commits wh
     h,
     'SELECT 1 FROM communities WHERE id=$1 FOR UPDATE',
     [a],
-    async (release) => {
+    async (release, holderPid) => {
       const pending = suspend(doomed.secret);
-      await waitForLockWaiters(h, 1, 'FOR UPDATE OF c');
+      await waitForBlockedBy(h, holderPid, 1);
       await expectStatus(
         await call(`/api/v1/host/api-keys/${doomed.id}/revoke`, {
           cookie: operatorCookie,

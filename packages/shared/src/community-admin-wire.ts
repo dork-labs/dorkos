@@ -476,6 +476,11 @@ export const CommunityAdminOwnerReplacementSchema = z.strictObject({
   claimExpiresAt: timestamp.nullable(),
   claimReissuedAt: timestamp.nullable(),
   endedAt: timestamp.nullable(),
+  /**
+   * On a `withdrawn` replacement: the host cancelled it, suspended the community, or started
+   * deleting it. Null in every other state.
+   */
+  withdrawnBecause: z.enum(['cancelled', 'suspended', 'deletion']).nullable(),
   /** On an `objected` replacement: when the host may ask again. */
   cooldownUntil: timestamp.nullable(),
 });

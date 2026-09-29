@@ -14,7 +14,6 @@ import { CommunityAdminHostProjectionSchema } from '@dorkos/shared/community-adm
 import type { CommunityAuth } from '../auth.js';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
 import { createHostAuthority, type HostApiKeyScope } from '../host/authority.js';
-import { hostProjectionSql } from '../host/communities.js';
 import { parseHostKeyCommand, runHostKeyCommand } from '../host-keys.js';
 import { ApiError } from '../http.js';
 import { COMMUNITY_MIGRATIONS, migrate } from '../migrate.js';
@@ -93,11 +92,11 @@ function notifying(community: { id: string; owner: string }, overrides: Row = {}
     state: 'notifying',
     reason: 'owner_unreachable',
     reference: null,
+    claimant_named: false,
     claimant_oidc_issuer: null,
     claimant_oidc_subject: null,
     claim_token_hash: hex(),
     requested_by_host_actor: 'api_key:6f2d0c4e-0c0a-4f7e-9a51-0d9d6b6a1c11',
-    idempotency_actor: 'api_key:6f2d0c4e-0c0a-4f7e-9a51-0d9d6b6a1c11',
     idempotency_key: randomUUID(),
     payload_hash: hex(),
     after_objection: false,
@@ -122,10 +121,11 @@ const claimableFields: Row = {
   state: 'claimable',
   claim_expires_at: claimExpiresAt,
 };
-/** Closing a request: its end date, and no live claim token. */
+/** Closing a request: its end date, no live claim token, and a cause when withdrawn. */
 const closed = (state: string, from: Row = {}): Row => ({
   ...from,
   state,
+  withdrawn_cause: state === 'withdrawn' ? 'cancelled' : null,
   ended_at: endedAt,
   claim_token_hash: null,
 });
@@ -183,15 +183,23 @@ describe('owner_replacements', () => {
       // Closed while waiting or claimable: the dates stay.
       notifying(a, closed('objected', waitingFields)),
       notifying(a, closed('withdrawn', claimableFields)),
+      notifying(a, { ...closed('withdrawn'), withdrawn_cause: 'suspended' }),
+      notifying(a, { ...closed('withdrawn', waitingFields), withdrawn_cause: 'deletion' }),
+      // A named request once closed: the identity is cleared, the flag stays for the list.
+      notifying(a, {
+        ...closed('completed', claimableFields),
+        new_owner_member_id: a.owner,
+        claimant_named: true,
+      }),
       notifying(a, {
         ...closed('superseded', waitingFields),
+        claimant_named: true,
         claimant_oidc_issuer: 'https://idp.example',
         claimant_oidc_subject: 'subject-1',
         reminder_queued_at: resolvedAt,
         claim_reissued_at: resolvedAt,
         reference: 'CASE-123 #4.5_x',
         requested_by_host_actor: 'person:u_7Kq9',
-        idempotency_actor: 'person:u_7Kq9',
       }),
     ];
     for (const row of shapes) {
@@ -232,7 +240,6 @@ describe('owner_replacements', () => {
       notifying(a, {
         ...key,
         ...closed('withdrawn'),
-        idempotency_actor: 'person:another',
         requested_by_host_actor: 'person:another',
       })
     );
@@ -275,18 +282,29 @@ describe('owner_replacements', () => {
     ],
     [
       'a subject without an issuer',
-      () => notifying(a, { claimant_oidc_subject: 'subject-1' }),
+      () =>
+        notifying(a, {
+          ...closed('objected'),
+          claimant_named: true,
+          claimant_oidc_subject: 'subject-1',
+        }),
       'owner_replacements_claimant',
     ],
     [
       'an issuer without a subject',
-      () => notifying(a, { claimant_oidc_issuer: 'https://idp.example' }),
+      () =>
+        notifying(a, {
+          ...closed('objected'),
+          claimant_named: true,
+          claimant_oidc_issuer: 'https://idp.example',
+        }),
       'owner_replacements_claimant',
     ],
     [
       'a subject longer than 255 characters',
       () =>
         notifying(a, {
+          claimant_named: true,
           claimant_oidc_issuer: 'https://idp.example',
           claimant_oidc_subject: 's'.repeat(256),
         }),
@@ -351,6 +369,45 @@ describe('owner_replacements', () => {
       'a closed request with no end date',
       () => notifying(a, { ...closed('objected'), ended_at: null }),
       'owner_replacements_ended',
+    ],
+    [
+      'an open request that names an account without its identity',
+      () => notifying(a, { claimant_named: true }),
+      'owner_replacements_claimant_named',
+    ],
+    [
+      'an open request with an identity it does not name',
+      () =>
+        notifying(a, {
+          claimant_oidc_issuer: 'https://idp.example',
+          claimant_oidc_subject: 'subject-1',
+        }),
+      'owner_replacements_claimant_named',
+    ],
+    [
+      'a closed request with an identity it did not name',
+      () =>
+        notifying(a, {
+          ...closed('expired', claimableFields),
+          claimant_oidc_issuer: 'https://idp.example',
+          claimant_oidc_subject: 'subject-1',
+        }),
+      'owner_replacements_claimant_named',
+    ],
+    [
+      'a withdrawn request without its cause',
+      () => notifying(a, { ...closed('withdrawn'), withdrawn_cause: null }),
+      'owner_replacements_withdrawn_cause',
+    ],
+    [
+      'a cause on a request that was not withdrawn',
+      () => notifying(a, { ...closed('objected'), withdrawn_cause: 'cancelled' }),
+      'owner_replacements_withdrawn_cause',
+    ],
+    [
+      'an unknown withdrawal cause',
+      () => notifying(a, { ...closed('withdrawn'), withdrawn_cause: 'expired' }),
+      'owner_replacements_withdrawn_cause_check',
     ],
     [
       'an unknown state',
@@ -422,20 +479,49 @@ describe('owner_replacement_object_tokens', () => {
     const replacementB = await insert(notifying(b));
     const hash = hex();
     // Two send attempts for one request each get a token, and a failed one is kept.
-    await token({ replacement_id: replacementA, community_id: a.id, token_hash: hash });
-    await token({ replacement_id: replacementA, community_id: a.id, token_hash: hex() });
+    await token({
+      created_at: requestedAt,
+      replacement_id: replacementA,
+      community_id: a.id,
+      token_hash: hash,
+    });
+    await token({
+      created_at: requestedAt,
+      replacement_id: replacementA,
+      community_id: a.id,
+      token_hash: hex(),
+    });
     await refusedBy(
-      token({ replacement_id: replacementB, community_id: b.id, token_hash: hash }),
+      token({
+        created_at: requestedAt,
+        replacement_id: replacementB,
+        community_id: b.id,
+        token_hash: hash,
+      }),
       'owner_replacement_object_tokens_token_hash_key'
     );
     await refusedBy(
-      token({ replacement_id: replacementA, community_id: a.id, token_hash: 'plain-token' }),
+      token({
+        created_at: requestedAt,
+        replacement_id: replacementA,
+        community_id: a.id,
+        token_hash: 'plain-token',
+      }),
       'owner_replacement_object_tokens_token_hash_check'
     );
     await refusedBy(
-      token({ replacement_id: replacementA, community_id: b.id, token_hash: hex() }),
+      token({
+        created_at: requestedAt,
+        replacement_id: replacementA,
+        community_id: b.id,
+        token_hash: hex(),
+      }),
       'owner_replacement_object_tokens_tenant_fk'
     );
+    // The date comes from the caller's clock; the table supplies none.
+    await expect(
+      token({ replacement_id: replacementA, community_id: a.id, token_hash: hex() })
+    ).rejects.toMatchObject({ code: '23502', column: 'created_at' });
     await h.pool.query('DELETE FROM owner_replacements WHERE id=$1', [replacementA]);
     expect(
       (
@@ -524,18 +610,6 @@ describe('the communities:ownership scope', () => {
 });
 
 describe('the host projection', () => {
-  // Purpose: fails if the projection grows past what Postgres keeps of a running statement, which
-  // would hide the `FOR UPDATE OF c` suffix the lock-order tests look for.
-  it('stays short enough for a locking route to be seen waiting', async () => {
-    const statement = `${hostProjectionSql} WHERE c.id=$1 FOR UPDATE OF c`;
-    const kept = (
-      await h.pool.query<{ bytes: number }>(
-        "SELECT setting::int AS bytes FROM pg_settings WHERE name='track_activity_query_size'"
-      )
-    ).rows[0].bytes;
-    expect(Buffer.byteLength(statement)).toBeLessThan(kept);
-  });
-
   async function projected(): Promise<unknown> {
     const response = await expectStatus(
       await h.call(`/api/v1/host/communities/${a.id}`, { cookie: operatorCookie }),
@@ -593,9 +667,9 @@ describe('deleting a community', () => {
     const open = await insert(notifying(a));
     await insert(notifying(a, closed('objected')));
     await h.pool.query(
-      `INSERT INTO owner_replacement_object_tokens(replacement_id,community_id,token_hash)
-       VALUES($1,$2,$3)`,
-      [open, a.id, hex()]
+      `INSERT INTO owner_replacement_object_tokens(replacement_id,community_id,token_hash,created_at)
+       VALUES($1,$2,$3,$4)`,
+      [open, a.id, hex(), requestedAt]
     );
     const keptInB = await insert(notifying(b));
     const version = (
