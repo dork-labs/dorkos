@@ -4,6 +4,7 @@ covers:
   - 'fix(connections): true labels, one way-name table and honest key checks (DOR-2505 review)'
   - 'fix(connections): plain words in agent requests and no more "delete" or "can''t be undone" for high-risk actions (DOR-2505)'
   - 'fix(connections): high-risk wording everywhere, Nango-only 404, key status that updates (DOR-2505 review 2)'
+  - 'fix(connections): keep saying a key is being checked while the check runs (DOR-2505 review 3)'
 ---
 
 ### Changed

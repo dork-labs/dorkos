@@ -1533,6 +1533,44 @@ describe('ConnectorProviderBootstrapper', () => {
       expect((await composioStatus())?.recheckAt).toBeUndefined();
     });
 
+    it('keeps saying it is checking while an automatic check is running, then settles', async () => {
+      vi.useFakeTimers();
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      // The first listing fails; later ones wait until the test answers them.
+      let answer: ((ok: boolean) => void) | undefined;
+      const client = scriptedComposioClient(() =>
+        client.listings === 1
+          ? Promise.reject(new ComposioApiError(503, 'Service unavailable'))
+          : new Promise((resolve, reject) => {
+              answer = (ok) =>
+                ok ? resolve([]) : reject(new ComposioApiError(503, 'Service unavailable'));
+            })
+      );
+      const bootstrapper = makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+      const composio = async () =>
+        (await bootstrapper.listStatuses()).find((s) => s.type === 'composio');
+
+      // Each automatic check that fires is read mid-probe: still failing, still checking.
+      for (const delay of WAY_RECHECK_DELAYS_MS.slice(0, 2)) {
+        await vi.advanceTimersByTimeAsync(delay);
+        const during = await composio();
+        expect(during?.error).toBe(KEY_CHECK_COPY.checkingAgain);
+        expect(during?.recheckAt).toEqual(expect.any(String));
+        answer!(false);
+        await vi.advanceTimersByTimeAsync(0);
+      }
+
+      // The next check succeeds: nothing left to say and nothing to wait for.
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS[2]);
+      expect((await composio())?.recheckAt).toEqual(expect.any(String));
+      answer!(true);
+      await vi.advanceTimersByTimeAsync(0);
+      const after = await composio();
+      expect(after?.error).toBeUndefined();
+      expect(after?.recheckAt).toBeUndefined();
+    });
+
     it('reads a 404 as a wrong address only for the Nango server the person points at', async () => {
       vi.useFakeTimers();
       secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');

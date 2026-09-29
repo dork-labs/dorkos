@@ -17,7 +17,7 @@ function useProvidersResource<T>(select: (resource: ConnectorProvidersResource) 
     // While DorkOS has a key re-check scheduled, read again now and then so
     // "checks again on its own" gives way to the next line once it stops.
     refetchInterval: (query) =>
-      query.state.data?.providers?.some((status) => status.recheckAt !== undefined)
+      query.state.data?.providers.some((status) => status.recheckAt !== undefined)
         ? PROVIDERS_RECHECK_POLL_MS
         : false,
   });

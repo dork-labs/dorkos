@@ -712,6 +712,8 @@ export class ConnectorProviderBootstrapper {
       this._clearRecheck(spec.type);
       return;
     }
+    // `_queueSwap` marks the way as checking while the probe runs, which the
+    // key's status reads as a check under way.
     this._wayFailed(spec.type, () => this._queueSwap(spec));
   }
 
@@ -1006,7 +1008,8 @@ export class ConnectorProviderBootstrapper {
     const previousInstanceId = this._instanceBySpecType.get(spec.type) ?? spec.defaultInstanceId;
     if (previousInstanceId) this._registry.unregisterProviderInstance(previousInstanceId);
     this._instanceBySpecType.delete(spec.type);
-    this._lastError.delete(spec.type);
+    // The last failure stays until this check settles, so a status read while
+    // the probe runs still says what went wrong and that DorkOS is on it.
     try {
       const provider = await spec.create();
       if (provider) {
@@ -1026,6 +1029,7 @@ export class ConnectorProviderBootstrapper {
         this._registry.recordSignInStatus(provider, accounts, listingStartedAt);
         await this._renameServices(provider, spec.logLabel);
       }
+      this._lastError.delete(spec.type);
       this._clearRecheck(spec.type);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1072,7 +1076,9 @@ export class ConnectorProviderBootstrapper {
   private async _statusFor(spec: ManagedProviderSpec): Promise<ConnectorProviderStatus> {
     const failure = this._lastError.get(spec.type);
     const recheck = this._rechecks.get(spec.type);
-    const error = failure && keyCheckLine(spec.type, failure, recheck !== undefined);
+    // A check running right now counts as one scheduled: its time is now.
+    const recheckDueAt = this._checking.has(spec.type) ? Date.now() : recheck?.dueAt;
+    const error = failure && keyCheckLine(spec.type, failure, recheckDueAt !== undefined);
     const liveInstanceId = this._instanceBySpecType.get(spec.type);
     const live = liveInstanceId
       ? this._registry.resolveProviderInstance(liveInstanceId)
@@ -1097,7 +1103,8 @@ export class ConnectorProviderBootstrapper {
           ? MANAGED_CUSTODY_CANONICAL_SENTENCE
           : custodyDisclosure(spec.custody),
       ...(error && { error }),
-      ...(error && recheck && { recheckAt: new Date(recheck.dueAt).toISOString() }),
+      ...(error &&
+        recheckDueAt !== undefined && { recheckAt: new Date(recheckDueAt).toISOString() }),
     };
   }
 }
