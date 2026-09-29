@@ -84,6 +84,7 @@ import { sessionPath } from '@dorkos/shared/session-link';
 import { logger } from '../../lib/logger.js';
 import {
   notificationEntry,
+  resolvePerKind,
   type NotificationPayload,
   type StandingNotificationKind,
 } from './notification-registry.js';
@@ -118,6 +119,28 @@ const PUBLISH_TTL_MS = 30_000;
  * contract worth a shared module.
  */
 const RUNTIMES_SETTINGS_TAB = 'runtimes';
+
+/** The Settings tab an extension waiting to run opens (DOR-2517). Same reasoning. */
+const EXTENSIONS_SETTINGS_TAB = 'extensions';
+
+/**
+ * Whether a standing kind may escalate at all: only when its registry tier is
+ * `blocking` (DOR-2517).
+ *
+ * The tier is the registry's one knob for loudness, and `blocking` is the only
+ * tier allowed to reach a phone. Until `extension.approval` arrived every
+ * standing kind happened to be `blocking`, so nothing enforced it; a `notable`
+ * standing kind would have armed a timer and pushed like the rest.
+ *
+ * @param kind - Which standing kind.
+ * @param payload - Its payload, for a kind whose tier varies by payload.
+ */
+function escalates<K extends StandingNotificationKind>(
+  kind: K,
+  payload: NotificationPayload<K>
+): boolean {
+  return resolvePerKind(notificationEntry(kind).tier, payload) === 'blocking';
+}
 
 /**
  * How far back a boot may reach when catching up on conditions that were already
@@ -185,6 +208,11 @@ export class EscalationService {
    * @param payload - That kind's payload, which is also what the push will say.
    */
   arm<K extends StandingNotificationKind>(kind: K, payload: NotificationPayload<K>): void {
+    // The tier gate (DOR-2517): only `blocking` may escalate, and the registry
+    // entry is where a kind says how loud it is. Checked here as well as in
+    // `armEscalation` because a test or a future caller can reach this method
+    // directly, and a timer armed for a `notable` kind would push to a phone.
+    if (!escalates(kind, payload)) return;
     this.armIn(kind, payload, this.delayMs());
   }
 
@@ -238,6 +266,9 @@ export class EscalationService {
 
     const at = this.now();
     for (const condition of conditions) {
+      // The same tier gate `arm` runs: a `notable` condition standing at boot
+      // is still not something to push about.
+      if (!escalates(condition.kind, condition.payload)) continue;
       const age = at - condition.since;
       if (age > BOOT_CATCH_UP_WINDOW_MS) continue;
       if (age >= delayMs) {
@@ -455,6 +486,8 @@ export function standingDeepLink<K extends StandingNotificationKind>(
   // the chat's "Fix sign-in" button opens, so a phone tap, a desktop click and
   // an in-app click all land on the button that fixes it.
   if (kind === 'signin.required') return `/?settings=${RUNTIMES_SETTINGS_TAB}`;
+  // Settings → Extensions, where the same extension's card can turn it on.
+  if (kind === 'extension.approval') return `/?settings=${EXTENSIONS_SETTINGS_TAB}`;
   const sessionId = (payload as NotificationPayload<'ask.pending'>).sessionId;
   return sessionPath({ session: sessionId });
 }
@@ -520,6 +553,10 @@ export function armEscalation<K extends StandingNotificationKind>(
   payload: NotificationPayload<K>
 ): void {
   try {
+    // The tier gate, at the door every caller uses (DOR-2517). `raiseStanding`
+    // calls this for every standing kind, and not every standing kind is
+    // `blocking`: `extension.approval` is `notable` and must never push.
+    if (!escalates(kind, payload)) return;
     current?.arm(kind, payload);
   } catch (err) {
     logger.warn('[Escalation] Could not start the clock on a blocking condition', { err, kind });

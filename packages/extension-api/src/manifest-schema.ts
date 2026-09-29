@@ -150,6 +150,13 @@ export const ExtensionManifestSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
   /** Short description shown in settings UI. */
   description: z.string().optional(),
+  /**
+   * What the extension does, written to finish the sentence "This adds a Flow
+   * tab that …" (e.g. "shows what your agents are working on"). DorkOS uses it
+   * in the one line that asks a person to turn the extension on, so keep it
+   * plain and short.
+   */
+  purpose: z.string().max(120).optional(),
   /** Author name or identifier. */
   author: z.string().optional(),
   /** Minimum DorkOS version required (semver). If host is older, extension cannot be enabled. */

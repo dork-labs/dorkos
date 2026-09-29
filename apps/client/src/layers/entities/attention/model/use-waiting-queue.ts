@@ -18,6 +18,8 @@ import { useMemo } from 'react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { Task } from '@dorkos/shared/types';
+import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
+import { usePendingExtensionApprovals } from '@/layers/entities/extension';
 import { deriveWaitingItems, type WaitingItem } from './derive-waiting-items';
 import { usePendingApprovals } from './use-pending-approvals';
 import { usePendingInteractions } from './use-pending-interactions';
@@ -38,11 +40,17 @@ export interface WaitingQueueState {
   /** Schedules an agent proposed and parked, oldest first. */
   schedules: readonly Task[];
   /**
-   * The same three queues, flattened to one id/kind per item — what an
+   * Installed extensions waiting for a person to turn them on, oldest first
+   * (DOR-2517). Counted like every other waiting item, and never a blockage:
+   * nothing is stopped while one waits.
+   */
+  extensionApprovals: readonly PendingExtensionApproval[];
+  /**
+   * The same four queues, flattened to one id/kind per item — what an
    * agreement check against {@link deriveAttentionSignals} compares against.
-   * Its length always equals `approvals.length + asks.length + schedules.length`;
-   * it exists so that arithmetic is expressed once, through the shared
-   * derivation, rather than reassembled at every call site.
+   * Its length always equals the four lengths summed; it exists so that
+   * arithmetic is expressed once, through the shared derivation, rather than
+   * reassembled at every call site.
    */
   items: readonly WaitingItem[];
   /** True when the approval queue could not be read. */
@@ -53,24 +61,27 @@ export interface WaitingQueueState {
 
 /**
  * Everything waiting on the operator that the Inbox popover renders and
- * counts: capability approvals, prompts agents are parked on, and schedules
- * an agent proposed and never armed.
+ * counts: capability approvals, prompts agents are parked on, schedules an
+ * agent proposed and never armed, and installed extensions waiting to be
+ * turned on (DOR-2517).
  *
  * Wraps the same three reads `useAttentionSignals` gathers beside it
  * (`usePendingApprovals`, `usePendingInteractions`, `usePendingScheduleApprovals`)
- * so the popover has one call to make instead of three, and derives `items`
- * through {@link deriveWaitingItems} rather than letting a caller re-sum the
- * three lengths by hand.
+ * plus `usePendingExtensionApprovals`, which Heads up deliberately does not
+ * read (an extension waiting is not a blockage), so the popover has one call to
+ * make instead of four, and derives `items` through {@link deriveWaitingItems}
+ * rather than letting a caller re-sum the lengths by hand.
  */
 export function useWaitingQueue(): WaitingQueueState {
   const { approvals, isError, retry } = usePendingApprovals();
   const { interactions: asks } = usePendingInteractions();
   const { schedules } = usePendingScheduleApprovals();
+  const { approvals: extensionApprovals } = usePendingExtensionApprovals();
 
   const items = useMemo(
-    () => deriveWaitingItems({ approvals, asks, schedules }),
-    [approvals, asks, schedules]
+    () => deriveWaitingItems({ approvals, asks, schedules, extensionApprovals }),
+    [approvals, asks, schedules, extensionApprovals]
   );
 
-  return { approvals, asks, schedules, items, isError, retry };
+  return { approvals, asks, schedules, extensionApprovals, items, isError, retry };
 }

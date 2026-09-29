@@ -320,6 +320,9 @@ export const CONFIG_DISCLOSURE = {
   // including the home directory. An agent needs none of it — the refusal it
   // reads already names the id to ask the person about — so it stays in.
   'extensions.approvedSources': 'withhold',
+  // The copies a person declined in the inbox (DOR-2517): absolute paths on
+  // this machine again, and nothing an agent needs to do its work.
+  'extensions.dismissedApprovals': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',

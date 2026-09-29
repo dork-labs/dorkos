@@ -33,6 +33,11 @@ describe('listWaitingKinds', () => {
     expect(listWaitingKinds(2, 1, 3)).toBe('2 questions, 1 request, and 3 schedules');
   });
 
+  it('names an extension waiting to be turned on as an extension, last (DOR-2517)', () => {
+    expect(listWaitingKinds(0, 0, 0, 1)).toBe('1 extension');
+    expect(listWaitingKinds(1, 0, 0, 2)).toBe('1 question and 2 extensions');
+  });
+
   it('leaves out a kind with nothing waiting rather than reporting a zero', () => {
     // "1 question, 0 requests, and 2 schedules" is three facts where one of them
     // is noise.

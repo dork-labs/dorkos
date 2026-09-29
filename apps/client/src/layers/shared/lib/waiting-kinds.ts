@@ -1,9 +1,10 @@
 /**
  * The nouns the cockpit counts "what's waiting on you" in.
  *
- * **Three different objects, and none of them stands in for another.** A prompt
+ * **Different objects, and none of them stands in for another.** A prompt
  * an agent is parked on is a QUESTION; a capability hold is a REQUEST; a
- * schedule an agent proposed is a SCHEDULE. They share one badge and one queue,
+ * schedule an agent proposed is a SCHEDULE; an installed extension waiting to
+ * be turned on is an EXTENSION (DOR-2517). They share one badge and one queue,
  * which is exactly why the words have to stay apart — a person who reads "3
  * approvals" and finds two questions and a proposed cron has been told
  * something untrue about their own machine.
@@ -40,20 +41,28 @@ function countNoun(count: number, noun: string): string {
  *
  * Order matches the order the surfaces list them in: questions first (their
  * window is the shortest), then capability requests, then schedules (which are
- * on no clock at all).
+ * on no clock at all), then extensions (nothing is stopped while one waits).
  *
  * @param questions - Prompts agents are parked on.
  * @param requests - Capability approvals waiting.
  * @param schedules - Parked schedules waiting.
+ * @param extensions - Installed extensions waiting to be turned on. Defaults to
+ *   none, for a surface that does not count them.
  * @returns The joined phrase, or `''` when nothing is waiting — a caller with
  *   nothing to count has a different sentence to say, and building one out of
  *   an empty list is how ", and undefined" reaches a screen.
  */
-export function listWaitingKinds(questions: number, requests: number, schedules: number): string {
+export function listWaitingKinds(
+  questions: number,
+  requests: number,
+  schedules: number,
+  extensions = 0
+): string {
   const parts = [
     questions > 0 ? countNoun(questions, 'question') : null,
     requests > 0 ? countNoun(requests, 'request') : null,
     schedules > 0 ? countNoun(schedules, 'schedule') : null,
+    extensions > 0 ? countNoun(extensions, 'extension') : null,
   ].filter((part): part is string => part !== null);
 
   if (parts.length === 0) return '';

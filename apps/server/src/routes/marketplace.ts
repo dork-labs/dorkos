@@ -114,6 +114,10 @@ import {
 } from '../services/marketplace/lib/package-paths.js';
 import { locateInstallRoot } from '../services/marketplace/lib/locate-install.js';
 import {
+  KeptFilesChangedError,
+  keepPackageFiles,
+} from '../services/marketplace/lib/integrity/keep-files.js';
+import {
   installCountsProvider,
   enrichWithInstallCounts,
 } from '../services/marketplace/install-counts.js';
@@ -310,6 +314,20 @@ const ApplyUpdatesBodySchema = z
     // The token an earlier call's `requires_confirmation` answer carried, once
     // a person has approved the card (an agent's apply only).
     confirmationToken: z.string().min(1).optional(),
+  })
+  .strict();
+
+/**
+ * Body schema for `POST /api/marketplace/packages/:name/keep-files` (DOR-2341):
+ * the key and, for a held-back global package, the review exactly as the
+ * person was shown them.
+ */
+const KeepFilesRequestBodySchema = z
+  .object({
+    projectPath: z.string().optional(),
+    installRoot: z.string().optional(),
+    keepKey: z.string().min(1),
+    review: z.object({ effects: DisclosedEffectsSchema, bindsTo: z.string().min(1) }).optional(),
   })
   .strict();
 
@@ -1264,6 +1282,67 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const mapped = mapErrorToStatus(err);
       if (mapped.status >= 500) {
         logger.error(`[Marketplace] Failed to check the files of ${req.params.name}`, err);
+      }
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  // POST /packages/:name/keep-files -- a person's "Keep these as mine" for the
+  // files an update kept but nothing could sort (DOR-2341). The same bar as
+  // deciding a held-back package: claiming files decides what every later
+  // update keeps, so an agent cannot, and under login only a signed-in session
+  // can. Moves and deletes nothing; see `services/marketplace/lib/integrity/keep-files.ts`.
+  router.post('/packages/:name/keep-files', async (req, res) => {
+    const authority = readCallerAuthority(req, res);
+    if (!trustedCaller(authority)) {
+      if (!resolveDecisionAuthority(authority).allowed) {
+        return res.status(403).json({
+          error: 'Only you can keep these files as yours, not an agent.',
+          code: 'operator_only',
+        });
+      }
+      return res.status(403).json({
+        error:
+          'DorkOS requires sign-in, so a person signed in to the app has to do this. Open ' +
+          'DorkOS, go to Marketplace, then Installed, and press Keep these as mine on the package.',
+        code: OPERATOR_COOKIE_REQUIRED_CODE,
+      });
+    }
+    const parsed = KeepFilesRequestBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    }
+    try {
+      assertPackageName(req.params.name);
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
+      const root = await locateInstallRoot({
+        dorkHome,
+        name: req.params.name,
+        ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
+        ...(parsed.data.installRoot !== undefined && { installRoot: parsed.data.installRoot }),
+      });
+      if (root === null) throw new PackageNotInstalledError(req.params.name);
+      const global = confined.projectPath === undefined;
+      const result = await keepPackageFiles({
+        dorkHome,
+        root,
+        name: req.params.name,
+        global,
+        keepKey: parsed.data.keepKey,
+        ...(global && parsed.data.review && { review: parsed.data.review }),
+      });
+      if (result.approved) await heldBackCards.onGranted();
+      return res.json(result);
+    } catch (err) {
+      if (err instanceof KeptFilesChangedError) {
+        return res.status(409).json({ error: err.message, code: 'kept_files_changed' });
+      }
+      const mapped = mapErrorToStatus(err);
+      if (mapped.status >= 500) {
+        logger.error(`[Marketplace] Failed to keep the files of ${req.params.name}`, err);
       }
       return res.status(mapped.status).json(mapped.body);
     }

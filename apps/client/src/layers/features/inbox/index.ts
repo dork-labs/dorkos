@@ -15,6 +15,12 @@ export type { InboxListProps } from './ui/InboxList';
 export { InboxRow } from './ui/InboxRow';
 export type { InboxRowProps } from './ui/InboxRow';
 export { InboxGroupRow } from './ui/InboxGroupRow';
+export { InboxDecisionRow } from './ui/InboxDecisionRow';
+export type {
+  InboxDecisionRowProps,
+  InboxDecisionYesNo,
+  InboxDecisionWord,
+} from './ui/InboxDecisionRow';
 export type { InboxGroupRowProps } from './ui/InboxGroupRow';
 export { useOpenNotification } from './model/use-open-notification';
 export { groupActivityRows, MIN_BURST_SIZE } from './lib/group-activity-rows';
