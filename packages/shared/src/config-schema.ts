@@ -79,6 +79,29 @@ export const ExtensionApprovedSourceSchema = z.object({
 /** The one copy of an extension a person approved to run code. */
 export type ExtensionApprovedSource = z.infer<typeof ExtensionApprovedSourceSchema>;
 
+/**
+ * A copy of an extension a person said "Not now" to (DOR-2517).
+ *
+ * Declining removes, disables and revokes nothing: the extension stays
+ * installed, and Settings → Extensions can still turn it on. This only stops
+ * the Activity inbox asking about the same copy again. It asks again when the
+ * path, the carrying plugin or the version changes, because then it is a
+ * different thing to decide about.
+ */
+export const ExtensionDismissedApprovalSchema = z.object({
+  /** Absolute path of the extension directory the person declined. */
+  path: z.string().min(1),
+  /** The installed marketplace plugin that carries it, when it came inside one. */
+  plugin: z.string().min(1).optional(),
+  /** The manifest version the person declined. */
+  version: z.string().min(1),
+  /** When they said "Not now". ISO 8601. */
+  dismissedAt: z.string(),
+});
+
+/** A copy of an extension a person said "Not now" to. */
+export type ExtensionDismissedApproval = z.infer<typeof ExtensionDismissedApprovalSchema>;
+
 /** One canonical route inside the local DorkOS installation. */
 export const CommunityInstallationPathSchema = z.enum([
   '/',
@@ -2682,8 +2705,27 @@ export const UserConfigSchema = z.object({
        * `operator-only` for the same reason as `approvedToRun`.
        */
       approvedSources: z.record(z.string(), ExtensionApprovedSourceSchema).default(() => ({})),
+      /**
+       * The copies a person said "Not now" to in the Activity inbox, keyed by
+       * extension id (DOR-2517). Each entry silences the inbox row for that
+       * exact path, plugin and version; any change asks again. Cleared for an
+       * id when that id is approved.
+       *
+       * `operator-only`, like `approvedSources`: it records a person's answer
+       * to a consent question, and an agent that could write it could hide the
+       * question from them.
+       */
+      dismissedApprovals: z
+        .record(z.string(), ExtensionDismissedApprovalSchema)
+        .default(() => ({})),
     })
-    .default(() => ({ enabled: [], disabled: [], approvedToRun: [], approvedSources: {} })),
+    .default(() => ({
+      enabled: [],
+      disabled: [],
+      approvedToRun: [],
+      approvedSources: {},
+      dismissedApprovals: {},
+    })),
   mcp: z
     .object({
       enabled: z.boolean().default(true),

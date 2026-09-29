@@ -114,6 +114,18 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     resetsAt: '2026-08-24T20:00:00.000Z',
     resetConfirmedAt: '2026-08-24T20:01:00.000Z',
   },
+  'extension.approval': {
+    id: 'flow',
+    name: 'Flow',
+    version: '1.2.0',
+    path: '/home/me/.dork/plugins/flow/.dork/extensions/flow',
+    plugin: 'flow',
+    sourceLabel: 'flow plugin · dork-labs/marketplace',
+    why: 'You installed the flow plugin. This adds a Flow tab. It runs as you.',
+    runsInServer: true,
+    adds: 'It adds a Flow tab',
+    added: 'Flow tab added',
+  },
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
@@ -134,6 +146,9 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'report.daily': 'quiet',
   'account.limited': 'notable',
   'account.reset': 'notable',
+  // Waiting on a person, but nothing is stuck: it badges the bell and never
+  // reaches a phone (DOR-2517).
+  'extension.approval': 'notable',
 };
 
 /**
@@ -142,7 +157,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
  * destructive capability waiting on a person can reach the escalation ladder,
  * plus `signin.required`, which DOR-1657 did the same for once the sign-in watch
  * gained a store that answers "is this credential still dead?" and an edge where
- * it stops being one.
+ * it stops being one, plus `extension.approval` (DOR-2517), whose "is it still
+ * waiting?" store is the extension manager.
  */
 const STANDING: NotificationKind[] = [
   'ask.pending',
@@ -150,6 +166,7 @@ const STANDING: NotificationKind[] = [
   'approval.pending',
   'session.error',
   'signin.required',
+  'extension.approval',
 ];
 
 describe('notification registry', () => {
@@ -214,6 +231,7 @@ describe('notification registry', () => {
       'ask.pending',
       'dead-letter.created',
       'dm.received',
+      'extension.approval',
       'mention.received',
       'report.daily',
       'run.completed',
@@ -379,6 +397,40 @@ describe('notification registry', () => {
       expect(
         (entry.relay as (p: typeof blocked) => string)({ ...blocked, status: 'completed' })
       ).toBe('opt-in');
+    });
+  });
+
+  describe('an extension waiting to be turned on (DOR-2517)', () => {
+    const entry = notificationEntry('extension.approval');
+    const waiting = PAYLOADS['extension.approval'];
+
+    it('asks a question while it waits, and says why on the second line', () => {
+      expect(entry.title(waiting)).toBe('Turn on Flow?');
+      expect(entry.body?.(waiting)).toBe(waiting.why);
+    });
+
+    it('reads as what happened once it was answered', () => {
+      expect(entry.title({ ...waiting, answer: 'approved' })).toBe('You turned on Flow');
+      expect(entry.body?.({ ...waiting, answer: 'approved' })).toBe('Flow tab added');
+      expect(entry.title({ ...waiting, answer: 'dismissed' })).toBe('Flow is off for now');
+      expect(entry.body?.({ ...waiting, answer: 'dismissed' })).toBeUndefined();
+    });
+
+    it('is one condition per copy and version, whatever the answer', () => {
+      expect(entry.dedupeKey({ ...waiting, answer: 'approved' })).toBe(entry.dedupeKey(waiting));
+      expect(entry.dedupeKey({ ...waiting, version: '1.3.0' })).not.toBe(entry.dedupeKey(waiting));
+      expect(entry.dedupeKey({ ...waiting, path: '/elsewhere/flow' })).not.toBe(
+        entry.dedupeKey(waiting)
+      );
+    });
+
+    it('files its subject as this version of this extension', () => {
+      expect(entry.locate(waiting).subjectId).toBe('flow@1.2.0');
+    });
+
+    it('never puts the path on screen', () => {
+      expect(entry.title(waiting)).not.toContain(waiting.path);
+      expect(entry.body?.(waiting) ?? '').not.toContain(waiting.path);
     });
   });
 

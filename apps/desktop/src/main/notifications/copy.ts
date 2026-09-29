@@ -23,6 +23,9 @@ const REPLY_PLACEHOLDER_MAX_LENGTH = 120;
 /** The Settings tab a dead sign-in opens. Mirrors the client's own constant. */
 const RUNTIMES_SETTINGS_TAB = 'runtimes';
 
+/** The Settings tab an extension waiting to be turned on opens (DOR-2517). Same mirror. */
+const EXTENSIONS_SETTINGS_TAB = 'extensions';
+
 /**
  * What to call a session in a sentence — the working directory's own name,
  * the identity fallback every session surface uses when nothing has named the
@@ -170,6 +173,9 @@ export function notificationDeepLink(dto: NotificationDTO): string {
   // inbox row goes (`notificationLink` in the client). Three surfaces, one
   // destination.
   if (dto.kind === 'signin.required') return `/?settings=${RUNTIMES_SETTINGS_TAB}`;
+  // Settings → Extensions, where the extension's card can turn it on: the same
+  // destination its inbox row and its arrival banner open.
+  if (dto.kind === 'extension.approval') return `/?settings=${EXTENSIONS_SETTINGS_TAB}`;
 
   switch (dto.subject.type) {
     case 'session':

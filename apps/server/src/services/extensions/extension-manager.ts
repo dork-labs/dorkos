@@ -40,6 +40,15 @@ import {
   isApprovedCopy,
   mayRunExtensionCode,
 } from './extension-load-policy.js';
+
+/**
+ * Why {@link ExtensionManager.dismissApproval} refused, when it did.
+ *
+ * - `not_found` — no extension has that id.
+ * - `core` — it ships with DorkOS, so there is nothing to decline.
+ * - `stale` — the copy on disk is no longer the one the person was shown.
+ */
+export type DismissApprovalRefusal = 'not_found' | 'core' | 'stale';
 import { logger } from '../../lib/logger.js';
 
 export type { CreateExtensionResult, ReloadExtensionResult, TestExtensionResult };
@@ -94,6 +103,12 @@ export class ExtensionManager {
    * tier-aware enable resolution during {@link reload} (phase 3).
    */
   private coreExtensions: Map<string, CoreExtensionInfo>;
+  /**
+   * Who hears that the set of extensions waiting for a person may have changed
+   * (DOR-2517). The Activity inbox's live source subscribes; see
+   * `extension-approval-queue.ts`.
+   */
+  private changeListeners = new Set<() => void>();
 
   constructor(dorkHome: string, coreExtensions: CoreExtensionInfo[] = []) {
     this.dorkHome = dorkHome;
@@ -159,7 +174,43 @@ export class ExtensionManager {
     this.bindUnsourcedApprovals(records);
 
     await this.compileEnabled();
+    this.emitChanged();
     return this.listPublic();
+  }
+
+  /**
+   * Hear about every change that can move an extension into or out of the set
+   * waiting for a person: a re-scan, a working-directory change, enabling or
+   * disabling, approving, withdrawing an approval, or a "Not now" (DOR-2517).
+   *
+   * Says only that something MAY have changed. The listener reads the records
+   * and diffs them itself, so a missed or doubled call cannot leave it wrong.
+   *
+   * @param listener - Called after each such change. Must not throw; a throw is
+   *   logged and swallowed so it cannot fail the change that produced it.
+   * @returns A function that removes the listener.
+   */
+  onChange(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => {
+      this.changeListeners.delete(listener);
+    };
+  }
+
+  /** Every discovered extension record, in discovery order. */
+  listRecords(): ExtensionRecord[] {
+    return Array.from(this.extensions.values());
+  }
+
+  /** Tell every {@link onChange} listener, isolating each one's failure. */
+  private emitChanged(): void {
+    for (const listener of this.changeListeners) {
+      try {
+        listener();
+      } catch (err) {
+        logger.warn('[Extensions] A change listener threw', err);
+      }
+    }
   }
 
   /**
@@ -340,6 +391,7 @@ export class ExtensionManager {
       }
     }
 
+    this.emitChanged();
     return {
       extension: toPublic(record, configManager.get('extensions')),
       reloadRequired: true,
@@ -371,6 +423,7 @@ export class ExtensionManager {
     record.bundleReady = false;
     record.error = undefined;
 
+    this.emitChanged();
     return {
       extension: toPublic(record, configManager.get('extensions')),
       reloadRequired: true,
@@ -401,14 +454,24 @@ export class ExtensionManager {
     // plugin beside the id, replacing whatever copy an earlier approval named.
     const extensions = configManager.get('extensions');
     const source = approvedSourceOf(record);
-    if (!isApprovedCopy(record, extensions)) {
-      configManager.set('extensions', {
+    const dismissed = extensions.dismissedApprovals ?? {};
+    if (!isApprovedCopy(record, extensions) || dismissed[id]) {
+      // A "Not now" for this id is answered by the approval, so it goes too
+      // (DOR-2517): a later withdrawal plus reinstall asks again rather than
+      // staying silenced by a decline the person has since reversed.
+      const next = {
         ...extensions,
         approvedToRun: extensions.approvedToRun.includes(id)
           ? extensions.approvedToRun
           : [...extensions.approvedToRun, id],
         approvedSources: { ...(extensions.approvedSources ?? {}), [id]: source },
-      });
+      };
+      if (dismissed[id]) {
+        const remainingDismissals = { ...dismissed };
+        delete remainingDismissals[id];
+        next.dismissedApprovals = remainingDismissals;
+      }
+      configManager.set('extensions', next);
       logConfigWrite(
         'approving an extension to run',
         'extensions',
@@ -424,7 +487,63 @@ export class ExtensionManager {
       }
     }
 
+    this.emitChanged();
     return toPublic(record, configManager.get('extensions'));
+  }
+
+  /**
+   * Record that a person said "Not now" to this extension in the Activity
+   * inbox (DOR-2517).
+   *
+   * **Never destructive.** It uninstalls, disables and revokes nothing — the
+   * extension stays exactly as it was, and Settings → Extensions can still turn
+   * it on. It only stops the inbox asking about this copy at this version.
+   *
+   * Refuses when the copy on disk is not the one the person was shown: an
+   * answer to an out-of-date row must not silence something they never saw.
+   * Only the caller-facing route may call this, after the same person bar that
+   * guards approving (`routes/extensions-approval.ts`).
+   *
+   * @param id - Extension id.
+   * @param expected - The path and version the person's row showed.
+   * @returns `{ ok: true }`, or why it refused.
+   */
+  dismissApproval(
+    id: string,
+    expected: { path: string; version: string }
+  ): { ok: true } | { ok: false; reason: DismissApprovalRefusal } {
+    const record = this.extensions.get(id);
+    if (!record) return { ok: false, reason: 'not_found' };
+    if (record.origin === 'core') return { ok: false, reason: 'core' };
+    if (
+      path.resolve(expected.path) !== path.resolve(record.path) ||
+      expected.version !== record.manifest.version
+    ) {
+      return { ok: false, reason: 'stale' };
+    }
+
+    const before = configManager.get('extensions');
+    configManager.set('extensions', {
+      ...before,
+      dismissedApprovals: {
+        ...(before.dismissedApprovals ?? {}),
+        [id]: {
+          path: path.resolve(record.path),
+          ...(record.sourcePlugin ? { plugin: record.sourcePlugin } : {}),
+          version: record.manifest.version,
+          dismissedAt: new Date().toISOString(),
+        },
+      },
+    });
+    logConfigWrite(
+      'declining an extension for now',
+      'extensions',
+      before,
+      configManager.get('extensions')
+    );
+
+    this.emitChanged();
+    return { ok: true };
   }
 
   /**
@@ -494,6 +613,7 @@ export class ExtensionManager {
     }
 
     await this.serverLifecycle.shutdown(id);
+    this.emitChanged();
   }
 
   /** Initialize server-side extension code (delegated to server lifecycle). */

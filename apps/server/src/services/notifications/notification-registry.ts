@@ -350,6 +350,41 @@ export interface NotificationPayloads {
     /** The full rundown, already written for a person. */
     summary: string;
   };
+  /**
+   * An installed extension is waiting for a person to let it run (DOR-2517).
+   *
+   * Built by `services/extensions/extension-approval-queue.ts` from the
+   * extension's own discovery record and manifest, never from free text an
+   * extension can make longer. `path` is on the payload because the copy is
+   * part of what the question is about, but it is never in a title or body.
+   */
+  'extension.approval': {
+    /** Extension id. */
+    id: string;
+    /** Manifest name, e.g. "Flow". */
+    name: string;
+    /** Manifest version of the copy that would run. */
+    version: string;
+    /** Resolved path of that copy. Never shown in a title or body. */
+    path: string;
+    /** The plugin it came inside, or `null` for a direct install. */
+    plugin: string | null;
+    /** The mono source line, e.g. "flow plugin · dork-labs/marketplace". */
+    sourceLabel: string;
+    /** The second line: what happens and why. */
+    why: string;
+    /** Whether it has a server half. */
+    runsInServer: boolean;
+    /** "It adds a Flow tab", or `null` when the manifest does not say. */
+    adds: string | null;
+    /** The same in the past tense for the history row ("Flow tab added"), or `null`. */
+    added: string | null;
+    /**
+     * How the person answered. Set only on the resolution edge, so the one
+     * history row reads as what happened rather than as the question.
+     */
+    answer?: 'approved' | 'dismissed';
+  };
 }
 
 /** The payload one kind of notification is raised with. */
@@ -399,7 +434,12 @@ export type NotificationStorageRule = 'event' | 'standing' | 'standing-recorded'
  * two cannot drift.
  */
 export type StandingNotificationKind =
-  'ask.pending' | 'schedule.parked' | 'approval.pending' | 'session.error' | 'signin.required';
+  | 'ask.pending'
+  | 'schedule.parked'
+  | 'approval.pending'
+  | 'session.error'
+  | 'signin.required'
+  | 'extension.approval';
 
 /**
  * The standing kinds that ALSO write a row the moment they begin — the
@@ -957,6 +997,41 @@ const ENTRIES: NotificationRegistryMap = {
     relay: 'never',
   },
 
+  'extension.approval': {
+    kind: 'extension.approval',
+    // `notable`, never `blocking` (DOR-2517): it counts in "Needs you" and
+    // badges the bell, and it never reaches a phone. Nothing is stuck while it
+    // waits — the person installed something and has one more click to make —
+    // so a push about it would spend the alarm on news that is not urgent. The
+    // tier gate in `escalation-service.ts` is what makes that true.
+    tier: 'notable',
+    storage: 'standing',
+    // `system`: the answer lives in the bell and in Settings → Extensions, not
+    // in any one session or room.
+    subjectType: 'system',
+    // The subject is this version of this extension, which is exactly what the
+    // question is about: a "Not now" holds until the version changes. The
+    // history row's "Turn it on" reads both halves back off it.
+    locate: (p) => ({ subjectId: `${p.id}@${p.version}` }),
+    title: (p) =>
+      p.answer === 'approved'
+        ? `You turned on ${p.name}`
+        : p.answer === 'dismissed'
+          ? `${p.name} is off for now`
+          : `Turn on ${p.name}?`,
+    body: (p) =>
+      p.answer === 'approved'
+        ? (p.added ?? undefined)
+        : p.answer === 'dismissed'
+          ? undefined
+          : p.why,
+    // Per copy and version: a different copy or a newer version is a new
+    // question, and the escalation ledger would otherwise answer it with the
+    // old one's history.
+    dedupeKey: (p) => `ext-approval:${p.id}:${p.path}:${p.version}`,
+    relay: 'never',
+  },
+
   'report.daily': {
     // The one kind whose title AND body are already fully written when they
     // arrive — `shift-report.ts` composes both from the day's actual counts,
@@ -1030,6 +1105,11 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * and its resolution edge is the next turn on that runtime that gets through,
  * both seen by `services/observability/runtime-signin-watch.ts` — see
  * `emitters/runtime-signin.ts`.
+ *
+ * `extension.approval` joined them in DOR-2517. It is raised and resolved by
+ * `services/extensions/extension-approval-queue.ts`, which follows the extension
+ * manager; it writes a history row only for an answer (`approved` or
+ * `dismissed`), never for a copy that simply went away.
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
@@ -1048,6 +1128,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'report.daily',
   'account.limited',
   'account.reset',
+  'extension.approval',
 ];
 
 /**

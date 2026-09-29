@@ -9019,6 +9019,95 @@
           "approvals"
         ]
       },
+      "PendingExtensionApprovalsResponse": {
+        "type": "object",
+        "properties": {
+          "approvals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingExtensionApproval"
+            }
+          }
+        },
+        "required": [
+          "approvals"
+        ]
+      },
+      "PendingExtensionApproval": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "plugin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "runsInServer": {
+            "type": "boolean"
+          },
+          "adds": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "since": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "path",
+          "plugin",
+          "sourceLabel",
+          "runsInServer",
+          "adds",
+          "since",
+          "why"
+        ]
+      },
+      "DismissExtensionApprovalRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path",
+          "version"
+        ]
+      },
       "ApprovalDecisionResponse": {
         "type": "object",
         "properties": {
@@ -13547,7 +13636,8 @@
           "update.installed",
           "report.daily",
           "account.limited",
-          "account.reset"
+          "account.reset",
+          "extension.approval"
         ]
       },
       "NotificationTier": {
@@ -13622,7 +13712,8 @@
           "cancelled",
           "approved",
           "rejected",
-          "cleared"
+          "cleared",
+          "dismissed"
         ]
       },
       "MarkNotificationsReadResponse": {
@@ -59127,6 +59218,110 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PendingApprovalsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/pending-approvals": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "List extensions waiting to be turned on",
+        "description": "Every installed extension that is waiting for a person to let it run, oldest first (DOR-2517). An extension is listed when it was installed by a person or the marketplace (DorkOS’s own never ask), is not turned off, may not run yet, and has not been declined with \"Not now\" at its current path, plugin and version. The Activity inbox draws one row per item. `sourceLabel` and `why` are display text and are never used to decide trust.",
+        "responses": {
+          "200": {
+            "description": "Extensions waiting to be turned on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingExtensionApprovalsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/dismiss-approval": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Say \"Not now\" to an extension waiting to be turned on",
+        "description": "Records that a person declined this copy of the extension at this version, so the Activity inbox stops asking until its path, plugin or version changes. Never destructive: nothing is uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body names the copy the person was shown; if the copy on disk is no longer that one the answer is refused with `stale_approval`. The same person bar as approving applies: a caller naming itself an agent is refused in every posture, and a signed-in person is required when login is on. There is no MCP tool for this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissExtensionApprovalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Declined for now"
+          },
+          "400": {
+            "description": "Invalid extension id or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent or another site cannot answer this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The extension ships with DorkOS, or the copy changed since the person saw it (`stale_approval`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
