@@ -229,6 +229,13 @@ describe('AgentRequestDialog', () => {
     expect(await screen.findByRole('checkbox', { name: 'List' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Send' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Delete' })).not.toBeChecked();
+    // A destructive action is marked "High risk", never by its stored class
+    // or a verb it may not be (the service calls sending "destructive" too).
+    expect(
+      screen.getByText('High-risk actions need a separate choice.', { exact: false })
+    ).toBeVisible();
+    expect(screen.getAllByText('High risk')).toHaveLength(1);
+    expect(screen.queryByText('destructive')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Grant access' }));
     await waitFor(() =>

@@ -464,6 +464,50 @@ describe('ManagementReviewDialog', () => {
     expect(screen.getByText('This will remove this account from 1 agent.')).toBeInTheDocument();
   });
 
+  it('marks the older of two identical-looking actions with a quiet hint', async () => {
+    const twice: ConnectorManagementReviewItem = {
+      reviewRequestId: 'review-twice',
+      requesterKind: 'program',
+      action: { version: 1, kind: 'disconnect', connectionId: 'connection-1' as never },
+      context: {
+        kind: 'disconnect',
+        connection: CONNECTION_CONTEXT,
+        affectedAgentCount: 1,
+        everyAgent: false,
+        affectedOperations: [
+          {
+            operationRevisionId: 'send-old',
+            operationSlug: 'gmail.send',
+            toolkitVersion: '2026-08-01',
+            capabilityClassification: 'destructive',
+          },
+          {
+            operationRevisionId: 'send-new',
+            operationSlug: 'gmail.send',
+            toolkitVersion: '2026-09-01',
+            capabilityClassification: 'destructive',
+          },
+        ],
+      },
+      targetStatus: 'available',
+      state: 'pending',
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2099-09-06T01:00:00.000Z',
+    };
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorManagementReview).mockResolvedValue(twice);
+    renderWith(
+      transport,
+      <ManagementReviewDialog reviewRequestId="review-twice" open onOpenChange={vi.fn()} />
+    );
+
+    expect(await screen.findAllByText('Send')).toHaveLength(2);
+    expect(screen.getAllByText('Older version')).toHaveLength(1);
+    // The class reads as a risk, never as a verb the action may not be.
+    expect(screen.getAllByText('High risk')).toHaveLength(2);
+    expect(screen.queryByText(/2026-0/)).not.toBeInTheDocument();
+  });
+
   it('says plainly when an agent keeps access through every agent, and when every agent loses it', async () => {
     const removal: ConnectorManagementReviewItem = {
       reviewRequestId: 'review-remove',
@@ -746,7 +790,7 @@ describe('ManagementReviewDialog', () => {
         completedAt: '2026-09-06T00:11:00.000Z',
       },
       heading: 'Sign-in didn’t finish',
-      detail: /You can connect it yourself on the Connections page\./,
+      detail: 'Sign-in didn’t finish. You can connect it yourself on the Connections page.',
     },
     {
       poll: {
@@ -759,7 +803,8 @@ describe('ManagementReviewDialog', () => {
         completedAt: '2026-09-06T01:00:00.000Z',
       },
       heading: 'Sign-in didn’t finish',
-      detail: /You can connect it yourself on the Connections page\./,
+      detail:
+        'The sign-in took too long and ended. You can connect it yourself on the Connections page.',
     },
     {
       poll: {
@@ -773,7 +818,8 @@ describe('ManagementReviewDialog', () => {
         completedAt: '2026-09-06T00:10:01.000Z',
       },
       heading: 'Sign-in didn’t finish',
-      detail: /provider response was lost/i,
+      detail:
+        'DorkOS couldn’t tell whether the sign-in started. You can connect it yourself on the Connections page.',
     },
   ])('shows the terminal authentication state as $heading', async ({ poll, heading, detail }) => {
     const user = userEvent.setup();

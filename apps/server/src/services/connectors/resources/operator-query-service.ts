@@ -46,6 +46,7 @@ import {
 } from '@dorkos/shared/connector-resource-schemas';
 import {
   ConnectorProviderCapabilitySetSchema,
+  connectionWayName,
   type ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
@@ -530,7 +531,7 @@ export class ConnectorOperatorQueryService {
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
         custody: connectorProviderInstances.custody,
-        displayName: connectorProviderInstances.displayName,
+        providerType: connectorProviderInstances.type,
         capabilityJson: connectorProviderInstances.capabilityJson,
       })
       .from(connections)
@@ -1097,7 +1098,7 @@ export class ConnectorOperatorQueryService {
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
         custody: connectorProviderInstances.custody,
-        displayName: connectorProviderInstances.displayName,
+        providerType: connectorProviderInstances.type,
         capabilityJson: connectorProviderInstances.capabilityJson,
       })
       .from(connections)
@@ -1290,17 +1291,14 @@ export class ConnectorOperatorQueryService {
 
   private providerDisclosure(provider: ConnectorProvider): ConnectorProviderDisclosure {
     const row = this.db
-      .select({
-        displayName: connectorProviderInstances.displayName,
-        mode: connectorProviderInstances.mode,
-      })
+      .select({ mode: connectorProviderInstances.mode })
       .from(connectorProviderInstances)
       .where(eq(connectorProviderInstances.id, provider.instanceId))
       .get();
     const capabilities = provider.getCapabilities();
     return {
       providerInstanceId: provider.instanceId,
-      displayName: row?.displayName ?? provider.type,
+      displayName: connectionWayName(provider.type),
       mode: row?.mode ?? 'byo',
       custody: capabilities.custody,
       payer: row?.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
@@ -1314,7 +1312,7 @@ export class ConnectorOperatorQueryService {
   ): ConnectorProviderDisclosure {
     return {
       providerInstanceId: row.providerInstanceId as ConnectorProviderInstanceId,
-      displayName: row.displayName,
+      displayName: connectionWayName(row.providerType),
       mode: row.mode,
       custody: row.custody,
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
@@ -1323,14 +1321,12 @@ export class ConnectorOperatorQueryService {
     };
   }
 
+  /**
+   * A way's plain name, worked out from its type every time it is read, so a
+   * name stored by an older version never reaches anyone.
+   */
   private providerDisplayName(provider: ConnectorProvider): string {
-    return (
-      this.db
-        .select({ displayName: connectorProviderInstances.displayName })
-        .from(connectorProviderInstances)
-        .where(eq(connectorProviderInstances.id, provider.instanceId))
-        .get()?.displayName ?? provider.type
-    );
+    return connectionWayName(provider.type);
   }
 
   /** The live every-agent grant on one connection, or null when there is none. */

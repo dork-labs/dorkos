@@ -14,7 +14,7 @@ import type {
   ConnectorCatalogProviderRoute,
   ConnectorCatalogService,
 } from '@dorkos/shared/connector-resource-schemas';
-import { providerName } from './presentation';
+import { connectionWayName } from '@dorkos/shared/connector-schemas';
 
 /** Every route that can sign in to the app, in the catalog's order. */
 export function accountRoutes(
@@ -80,7 +80,7 @@ export function isCatalogOutage(
 
 /** How the person knows a way: their DorkOS account, or the service their key is for. */
 export function wayName(way: ConnectorAppWay): string {
-  return way.kind === 'dorkos_account' ? 'Your DorkOS account' : providerName(way.type);
+  return connectionWayName(way.kind === 'dorkos_account' ? 'dorkos-managed' : way.type);
 }
 
 /**

@@ -792,7 +792,7 @@ export const WAY_CAPABILITY_COPY = {
   noNotifications: 'Notifications aren’t available for apps connected this way.',
   /** A person's own Composio key is an account key, which can't run actions. */
   accountKeyCannotRunActions:
-    'This key can sign in to apps but can’t run their actions. Change it to a Composio project key in Settings › Connections.',
+    'This key can sign in to apps but can’t run their actions. Change it to a project key from your Composio dashboard.',
 } as const;
 
 /**
@@ -817,8 +817,28 @@ export const ACCESS_ENDED_COPY = {
 export const KEY_CHECK_COPY = {
   /** The service turned the key down (it answered 401 or 403). */
   refused: 'The service turned this key down. Check it’s the right key, then save it again.',
-  /** The check failed some other way, which can pass: DorkOS checks again. */
-  unchecked: 'DorkOS couldn’t check this key just now. It checks again on its own.',
+  /** The check failed a way that can pass, and DorkOS has a re-check scheduled. */
+  checkingAgain: 'DorkOS couldn’t check this key just now. It checks again on its own.',
+  /** The check failed and DorkOS has stopped checking on its own. */
+  stoppedChecking:
+    'DorkOS couldn’t check this key and has stopped trying on its own. Save it again to check it now.',
+  /**
+   * Nothing answered at the service's address (a name that doesn't resolve, a
+   * refused connection, a 404 on the base address).
+   *
+   * @param type - The way's type: `'nango'` names the person's own server.
+   * @param recheckScheduled - Whether DorkOS will check it again on its own.
+   */
+  unreachable(type: string, recheckScheduled: boolean): string {
+    const lead =
+      type === 'nango'
+        ? 'DorkOS couldn’t reach your Nango server.'
+        : 'DorkOS couldn’t reach Composio.';
+    if (recheckScheduled) return `${lead} It checks again on its own.`;
+    return type === 'nango'
+      ? `${lead} Check that it’s running and its address is right, then save the key again.`
+      : `${lead} Check your internet connection, then save the key again.`;
+  },
 } as const;
 
 /**
@@ -843,28 +863,54 @@ export const SIGN_IN_COPY = {
   failed: 'Sign-in didn’t finish. Try again.',
 } as const;
 
+/** The service behind each way, by the way's type: what its key or server is called. */
+const SERVICE_NAMES: Readonly<Record<string, string>> = {
+  'dorkos-managed': 'DorkOS',
+  composio: 'Composio',
+  nango: 'Nango',
+  mcp: 'MCP',
+  'test-connector': 'Test connector',
+};
+
 /**
- * How a person knows each way DorkOS reaches apps, by the way's type. The
- * server stores this as the way's display name, so every surface that names a
- * way ("How it's connected", the connect dialog, the catalog's warnings) says
- * the same words and never the raw type.
+ * How a person knows each way DorkOS reaches apps, by the way's type. Every
+ * surface that names a way (Settings › Connections, "How it's connected", the
+ * connect dialog, the catalog's warnings, an agent's recommendation) reads it
+ * from here, and the server works it out from the stored type when it reads a
+ * way, so a stored raw name never reaches anyone.
  */
 const WAY_NAMES: Readonly<Record<string, string>> = {
   'dorkos-managed': 'Your DorkOS account',
   composio: 'Your Composio key',
   nango: 'Your Nango server',
-  mcp: 'Your MCP server',
-  'test-connector': 'Test connections',
+  // Raw MCP talks straight to the app's own server, never one the person runs.
+  mcp: 'The app’s own MCP server',
+  'test-connector': 'Your test key',
 };
 
+/** "Composio" from `composio`; an unknown type is title-cased. */
+function titleCase(type: string): string {
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
 /**
- * The plain name of one way DorkOS reaches apps. An unknown type is
- * title-cased rather than shown as a raw slug.
+ * The name of the service behind a way, for a key's own label ("Composio
+ * project key", "Nango API key"). An unknown type is title-cased.
+ *
+ * @param type - The way's type, e.g. `'composio'`.
+ */
+export function connectionServiceName(type: string): string {
+  return SERVICE_NAMES[type] ?? titleCase(type);
+}
+
+/**
+ * The plain name of one way DorkOS reaches apps. An unknown type is named as
+ * one of the person's own keys rather than shown as a raw slug.
  *
  * @param type - The way's type, e.g. `'composio'` or `'dorkos-managed'`.
  */
 export function connectionWayName(type: string): string {
-  return WAY_NAMES[type] ?? type.charAt(0).toUpperCase() + type.slice(1);
+  return WAY_NAMES[type] ?? `Your ${titleCase(type)} key`;
 }
 
 /**
@@ -887,14 +933,16 @@ export function connectionUsageLine(route: {
 
 /**
  * Plain words for what one app action can do, shown in place of its stored
- * class. They match the access levels' words ("Read", "Read and write").
+ * class. `destructive` is "High risk", never "Delete": the service marks
+ * sending, sharing, forwarding and actions it hasn't sorted as destructive
+ * too, so all the words can promise is that it needs more care.
  */
 export const OPERATION_CLASSIFICATION_LABELS: Readonly<
   Record<ConnectorOperationClassification, string>
 > = {
   read: 'Read',
   write: 'Write',
-  destructive: 'Delete',
+  destructive: 'High risk',
 };
 
 /** Plain words for a connected account's sign-in state, shown in place of its stored value. */

@@ -1509,6 +1509,48 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(instanceStatus(composioInstance)).toBe('unavailable');
     });
 
+    it('says it checks again only while a check is scheduled, and what to do once it stops', async () => {
+      vi.useFakeTimers();
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      const client = scriptedComposioClient(() =>
+        Promise.reject(new ComposioApiError(503, 'Service unavailable'))
+      );
+      const bootstrapper = makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+      const composioError = async () =>
+        (await bootstrapper.listStatuses()).find((s) => s.type === 'composio')?.error;
+
+      expect(await composioError()).toBe(KEY_CHECK_COPY.checkingAgain);
+      for (const delay of WAY_RECHECK_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+
+      // Every automatic check is spent: nothing is scheduled, so it never
+      // claims DorkOS will check again.
+      expect(await composioError()).toBe(KEY_CHECK_COPY.stoppedChecking);
+    });
+
+    it('says plainly when nothing answered at the service address', async () => {
+      vi.useFakeTimers();
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      const client = scriptedComposioClient(() =>
+        Promise.reject(
+          Object.assign(new TypeError('fetch failed'), { cause: { code: 'ENOTFOUND' } })
+        )
+      );
+      const bootstrapper = makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+      const composioError = async () =>
+        (await bootstrapper.listStatuses()).find((s) => s.type === 'composio')?.error;
+
+      expect(await composioError()).toBe(
+        'DorkOS couldn’t reach Composio. It checks again on its own.'
+      );
+      for (const delay of WAY_RECHECK_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+      expect(await composioError()).toBe(
+        'DorkOS couldn’t reach Composio. Check your internet connection, then save the key again.'
+      );
+      expect(await composioError()).not.toMatch(/fetch failed|ENOTFOUND/);
+    });
+
     it('checks a way that failed for a passing reason again by itself, waiting longer each time, until it answers', async () => {
       vi.useFakeTimers();
       secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
@@ -1522,7 +1564,7 @@ describe('ConnectorProviderBootstrapper', () => {
 
       await bootstrapper.registerBootProviders();
       expect(client.listings).toBe(1);
-      expect((await bootstrapper.reload('composio')).error).toBe(KEY_CHECK_COPY.unchecked);
+      expect((await bootstrapper.reload('composio')).error).toBe(KEY_CHECK_COPY.checkingAgain);
       expect(client.listings).toBe(2);
 
       // First wait: 30 seconds. Still down, so the next wait doubles.
@@ -1615,7 +1657,7 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(instanceStatus(composioInstance)).toBe('unavailable');
       expect((await bootstrapper.listStatuses()).find((s) => s.type === 'composio')).toMatchObject({
         registered: false,
-        error: KEY_CHECK_COPY.unchecked,
+        error: KEY_CHECK_COPY.checkingAgain,
       });
       // An outage is not a sign-in that ended.
       expect(signIn(gmail)).toBe('active');

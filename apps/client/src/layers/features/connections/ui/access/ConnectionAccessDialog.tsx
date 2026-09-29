@@ -26,6 +26,7 @@ import {
   selectionsFromPreview,
   type AgentOperationSelections,
 } from '../../lib/reconciliation-selection';
+import { olderVersionIds } from '../../lib/older-versions';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
 import { AccessOutcome } from './AccessOutcome';
 
@@ -183,6 +184,7 @@ function ReconciliationEditor({
       ) : (
         <div className="space-y-2">
           {preview.agents.map((agent) => {
+            const older = olderVersionIds(preview.candidates);
             const selected = new Set(selections[agent.agentId] ?? []);
             const read = revisionIdsForAccessLevel(preview.candidates, 'read');
             const readWrite = revisionIdsForAccessLevel(preview.candidates, 'read-write');
@@ -295,6 +297,9 @@ function ReconciliationEditor({
                                 <Badge size="xs" variant="outline">
                                   No longer available
                                 </Badge>
+                              )}
+                              {older.has(candidate.operationRevisionId) && (
+                                <span className="text-muted-foreground text-xs">Older version</span>
                               )}
                             </div>
                           </div>

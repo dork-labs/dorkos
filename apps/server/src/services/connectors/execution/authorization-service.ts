@@ -375,7 +375,7 @@ export class ConnectorExecutionAuthorizationService {
     if (row.classification !== expectedClassification) {
       return refuse(
         'CONNECTOR_CAPABILITY_MISMATCH',
-        'This action is a different kind than this tool runs. Use the tool for its kind: read, write or destructive.'
+        'This action is a different kind than this tool runs. Use the tool named for its kind: the read, write or destructive tool.'
       );
     }
     if (row.toolkit !== row.operationToolkit) {

@@ -30,6 +30,7 @@ import {
   managementOperationLabel,
   presentManagementReview,
 } from '../lib/management-review-presentation';
+import { olderVersionIds } from '../lib/older-versions';
 
 /**
  * A tool or program's request to change a connection, with the owner's
@@ -73,10 +74,6 @@ export function ManagementReviewDialog({
   const authenticationState = poll.isError
     ? 'check_failed'
     : (poll.data?.state ?? (checkAuthentication ? 'checking' : 'required'));
-  const authenticationFailureReason =
-    poll.data?.state === 'failed' || poll.data?.state === 'start_unknown'
-      ? poll.data.reason
-      : undefined;
   const presentation = useMemo(() => (review ? presentManagementReview(review) : null), [review]);
 
   const decide = (decision: 'approved' | 'denied') => {
@@ -168,17 +165,19 @@ export function ManagementReviewDialog({
                   <p className="text-muted-foreground text-sm">
                     {authenticationState === 'connected'
                       ? 'Sign-in finished and the account is ready.'
-                      : authenticationState === 'failed' ||
-                          authenticationState === 'expired' ||
-                          authenticationState === 'start_unknown'
-                        ? `${authenticationFailureReason ?? 'Sign-in didn’t finish in time.'} You can connect it yourself on the Connections page.`
-                        : authenticationState === 'pending' ||
-                            authenticationState === 'starting' ||
-                            authenticationState === 'checking'
-                          ? 'Finish signing in to the service. This page will update when the account is ready.'
-                          : authenticationState === 'check_failed'
-                            ? 'The account may still be connected. Check again before starting another request.'
-                            : 'Approval did not connect an account. Continue to the service and finish signing in.'}
+                      : authenticationState === 'expired'
+                        ? 'The sign-in took too long and ended. You can connect it yourself on the Connections page.'
+                        : authenticationState === 'start_unknown'
+                          ? 'DorkOS couldn’t tell whether the sign-in started. You can connect it yourself on the Connections page.'
+                          : authenticationState === 'failed'
+                            ? 'Sign-in didn’t finish. You can connect it yourself on the Connections page.'
+                            : authenticationState === 'pending' ||
+                                authenticationState === 'starting' ||
+                                authenticationState === 'checking'
+                              ? 'Finish signing in to the service. This page will update when the account is ready.'
+                              : authenticationState === 'check_failed'
+                                ? 'The account may still be connected. Check again before starting another request.'
+                                : 'Approval did not connect an account. Continue to the service and finish signing in.'}
                   </p>
                   {authenticationState === 'check_failed' ? (
                     <Button onClick={() => void poll.refetch()} disabled={poll.isFetching}>
@@ -280,6 +279,7 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
       : context.kind === 'remove_agent_access' || context.kind === 'disconnect'
         ? context.affectedOperations
         : [];
+  const older = olderVersionIds(operations);
   const agent =
     context.kind === 'set_agent_access' || context.kind === 'remove_agent_access'
       ? context.agent
@@ -333,7 +333,12 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
                 key={operation.operationRevisionId}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
               >
-                <span className="text-sm">{managementOperationLabel(operation.operationSlug)}</span>
+                <span className="text-sm">
+                  {managementOperationLabel(operation.operationSlug)}
+                  {older.has(operation.operationRevisionId) && (
+                    <span className="text-muted-foreground ml-2 text-xs">Older version</span>
+                  )}
+                </span>
                 <Badge
                   size="xs"
                   variant={

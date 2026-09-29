@@ -4,12 +4,11 @@ import {
   CONNECTOR_SIGN_IN_ENDED_CODES,
   type ConnectorSignInEndedCode,
 } from '@dorkos/shared/connector-provider';
-import {
-  CONNECTION_READINESS_COPY,
-  type ConnectionId,
-  type ConnectorExecutionResponse,
-  type ConnectorExecutionTarget,
-  type ConnectorProviderExecuteResult,
+import type {
+  ConnectionId,
+  ConnectorExecutionResponse,
+  ConnectorExecutionTarget,
+  ConnectorProviderExecuteResult,
 } from '@dorkos/shared/connector-schemas';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import type { GrantedApproval } from '../../core/capabilities/tier-enforcement.js';
@@ -282,7 +281,9 @@ export class ConnectorExecutionBroker {
           return {
             status: 'error',
             code: 'MANAGED_EXECUTION_CONTEXT_UNAVAILABLE',
-            message: CONNECTION_READINESS_COPY.access_updating.agent,
+            // Not retryable, so it never tells the agent to try again soon.
+            message:
+              'Access to this account through the person’s DorkOS account isn’t ready, so the action didn’t run. Tell the person: they can check it on the Connections page in the DorkOS app.',
             retryable: false,
           };
         }

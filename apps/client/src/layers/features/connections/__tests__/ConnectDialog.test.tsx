@@ -190,6 +190,34 @@ function managedService(
 }
 
 describe('ConnectDialog', () => {
+  it.each([
+    [
+      'your own Composio key',
+      'managed' as const,
+      'Any usage charges go to your own Composio account.',
+    ],
+    ['your own Nango server', 'self-host' as const, null],
+  ])('says who pays only when someone does: %s', (_way, custody, line) => {
+    const base = managedService(undefined, capabilities.authentication, 'byo');
+    const account = base.intents[0]!;
+    const service: ConnectorCatalogService = {
+      ...base,
+      intents: [
+        {
+          ...account,
+          routes: account.kind === 'account' ? [{ ...account.routes[0]!, custody }] : [],
+        } as typeof account,
+      ],
+    };
+    renderDialog(createMockTransport(), service);
+
+    const disclosure = screen.getByTestId('connect-disclosure');
+    expect(disclosure).not.toHaveTextContent('billed to you');
+    expect(disclosure).not.toHaveTextContent('covers its use');
+    if (line) expect(disclosure).toHaveTextContent(line);
+    else expect(disclosure).not.toHaveTextContent(/usage charges/);
+  });
+
   it('defaults to an available managed route, discloses custody, then waits for explicit agent access', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
@@ -707,7 +735,7 @@ describe('ConnectDialog', () => {
       renderDialog(transport, builtInGmail);
 
       expect(await screen.findByText('Couldn’t reach Gmail just now')).toBeInTheDocument();
-      expect(screen.getByText(/Composio didn’t answer/)).toBeInTheDocument();
+      expect(screen.getByText(/Your Composio key didn’t answer/)).toBeInTheDocument();
       expect(screen.queryByTestId('first-connect-step')).not.toBeInTheDocument();
       const reads = vi.mocked(transport.getConnectorCatalog).mock.calls.length;
       await user.click(screen.getByRole('button', { name: 'Retry' }));

@@ -216,18 +216,61 @@ function isCredentialRefusal(err: unknown): boolean {
   return status === 401 || status === 403;
 }
 
+/** Error codes Node's fetch gives when nothing answered at the address. */
+const UNREACHABLE_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EHOSTUNREACH']);
+
 /**
- * The one line a person reads under their key after a failed check. A spec's
- * own refusal is copy DorkOS wrote for the person (Nango's missing encryption
- * key); anything else is the service's or a library's text, which goes to the
- * log and is replaced by a plain line.
+ * Whether a failed check means nothing answered at the service's address: a
+ * name that doesn't resolve, a refused connection, or a 404 on the base URL.
+ */
+function isUnreachable(err: unknown): boolean {
+  if ((err as { status?: unknown } | null)?.status === 404) return true;
+  const cause = (err as { cause?: { code?: unknown } } | null)?.cause;
+  return typeof cause?.code === 'string' && UNREACHABLE_CODES.has(cause.code);
+}
+
+/**
+ * What a failed key check was, kept so the person's line can be worked out
+ * when it is read: whether DorkOS will check again depends on the re-check
+ * that is scheduled at that moment, not when the check failed.
+ */
+type KeyCheckFailure =
+  | { readonly kind: 'spec_refusal'; readonly line: string }
+  | { readonly kind: 'refused' | 'unreachable' | 'failed' };
+
+/**
+ * Classify one failed key check. A spec's own refusal is copy DorkOS wrote for
+ * the person (Nango's missing encryption key); anything else is the service's
+ * or a library's text, which goes to the log only.
  *
  * @param spec - The way whose key was checked.
  * @param err - What the check threw.
  */
-function keyCheckLine(spec: ManagedProviderSpec, err: unknown): string {
-  if (spec.isRefusal(err) && err instanceof Error) return err.message;
-  return isCredentialRefusal(err) ? KEY_CHECK_COPY.refused : KEY_CHECK_COPY.unchecked;
+function keyCheckFailure(spec: ManagedProviderSpec, err: unknown): KeyCheckFailure {
+  if (spec.isRefusal(err) && err instanceof Error)
+    return { kind: 'spec_refusal', line: err.message };
+  if (isCredentialRefusal(err)) return { kind: 'refused' };
+  return { kind: isUnreachable(err) ? 'unreachable' : 'failed' };
+}
+
+/**
+ * The one line under a key whose last check failed.
+ *
+ * @param type - The way's type, which names the service in the line.
+ * @param failure - What the check was.
+ * @param recheckScheduled - Whether DorkOS will check it again on its own.
+ */
+function keyCheckLine(type: string, failure: KeyCheckFailure, recheckScheduled: boolean): string {
+  switch (failure.kind) {
+    case 'spec_refusal':
+      return failure.line;
+    case 'refused':
+      return KEY_CHECK_COPY.refused;
+    case 'unreachable':
+      return KEY_CHECK_COPY.unreachable(type, recheckScheduled);
+    case 'failed':
+      return recheckScheduled ? KEY_CHECK_COPY.checkingAgain : KEY_CHECK_COPY.stoppedChecking;
+  }
 }
 
 /**
@@ -300,7 +343,7 @@ export class ConnectorProviderBootstrapper {
   private _managedCloudRecovery: Promise<void> | undefined;
   private readonly _instanceBySpecType = new Map<string, ConnectorProvider['instanceId']>();
   /** Last refusal/connection-check failure per provider type, surfaced on the status DTO. */
-  private readonly _lastError = new Map<string, string>();
+  private readonly _lastError = new Map<string, KeyCheckFailure>();
   /** Swaps and re-checks per own-key way, run one after another. */
   private readonly _wayQueues = new Map<string, Promise<void>>();
   /** The waiting automatic check per way (spec type, or the DorkOS account's type). */
@@ -630,7 +673,7 @@ export class ConnectorProviderBootstrapper {
       const message = err instanceof Error ? err.message : String(err);
       this._registry.unregisterProviderInstance(instanceId);
       this._instanceBySpecType.delete(spec.type);
-      this._lastError.set(spec.type, keyCheckLine(spec, err));
+      this._lastError.set(spec.type, keyCheckFailure(spec, err));
       logger.error(`[Connectors] ${spec.logLabel} stopped answering: ${message}`);
       this._ownKeyWayFailed(spec, err);
     }
@@ -978,7 +1021,7 @@ export class ConnectorProviderBootstrapper {
       this._clearRecheck(spec.type);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this._lastError.set(spec.type, keyCheckLine(spec, err));
+      this._lastError.set(spec.type, keyCheckFailure(spec, err));
       if (spec.isRefusal(err)) {
         logger.error(`[Connectors] ${spec.logLabel} refused: ${message}`);
         this._clearRecheck(spec.type);
@@ -1019,7 +1062,8 @@ export class ConnectorProviderBootstrapper {
 
   /** Build one provider's reference-free status DTO. */
   private async _statusFor(spec: ManagedProviderSpec): Promise<ConnectorProviderStatus> {
-    const error = this._lastError.get(spec.type);
+    const failure = this._lastError.get(spec.type);
+    const error = failure && keyCheckLine(spec.type, failure, this._rechecks.has(spec.type));
     const liveInstanceId = this._instanceBySpecType.get(spec.type);
     const live = liveInstanceId
       ? this._registry.resolveProviderInstance(liveInstanceId)
@@ -1043,7 +1087,7 @@ export class ConnectorProviderBootstrapper {
         spec.custody === 'managed'
           ? MANAGED_CUSTODY_CANONICAL_SENTENCE
           : custodyDisclosure(spec.custody),
-      ...(error !== undefined && { error }),
+      ...(error && { error }),
     };
   }
 }

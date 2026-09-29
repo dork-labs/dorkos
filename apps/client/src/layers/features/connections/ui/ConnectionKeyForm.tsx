@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
+import { connectionServiceName } from '@dorkos/shared/connector-schemas';
 import { useSaveConnectorCredential } from '@/layers/entities/connectors';
 import { Button, Label, PasswordInput } from '@/layers/shared/ui';
-import { providerName } from '../lib/presentation';
 
 /** Props for {@link ConnectionKeyForm}. */
 export interface ConnectionKeyFormProps {
@@ -32,7 +32,7 @@ export function ConnectionKeyForm({
   const [secret, setSecret] = useState('');
   const save = useSaveConnectorCredential();
   const inputId = useId();
-  const name = providerName(type);
+  const name = connectionServiceName(type);
 
   return (
     <form

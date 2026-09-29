@@ -36,6 +36,7 @@ import {
   SelectValue,
   Skeleton,
 } from '@/layers/shared/ui';
+import { olderVersionIds } from '../lib/older-versions';
 import { offerableAccounts } from '../lib/readiness';
 import { AgentRequestEventScopes } from './AgentRequestEventScopes';
 
@@ -151,6 +152,7 @@ export function AgentRequestDialog({
     const requested = new Set(request.data.requestedOperations);
     return preview.data.candidates.filter((candidate) => requested.has(candidate.operationSlug));
   }, [preview.data, request.data]);
+  const olderRequested = useMemo(() => olderVersionIds(requestedOperations), [requestedOperations]);
   const hasEventRequest = Boolean(request.data?.requestedEvents.length);
   const eventSelectionKey = `${request.data?.requestId ?? ''}:${connectionId}`;
   const eventScopes = hasEventRequest
@@ -293,7 +295,7 @@ export function AgentRequestDialog({
                   <fieldset className="space-y-2">
                     <legend className="text-sm font-medium">Allowed actions</legend>
                     <p className="text-muted-foreground text-xs">
-                      Read and write actions start selected. Destructive actions need a separate
+                      Read and write actions start selected. High-risk actions need a separate
                       choice.
                     </p>
                     {preview.isPending ? (
@@ -312,6 +314,7 @@ export function AgentRequestDialog({
                     ) : (
                       <ul className="space-y-2" data-testid="agent-request-actions">
                         {requestedOperations.map((candidate) => {
+                          const olderVersion = olderRequested.has(candidate.operationRevisionId);
                           const checked = operationRevisionIds.includes(
                             candidate.operationRevisionId
                           );
@@ -356,6 +359,11 @@ export function AgentRequestDialog({
                                 {!candidate.supported && (
                                   <span className="text-muted-foreground mt-0.5 block text-xs">
                                     No longer available
+                                  </span>
+                                )}
+                                {olderVersion && (
+                                  <span className="text-muted-foreground mt-0.5 block text-xs">
+                                    Older version
                                   </span>
                                 )}
                               </span>

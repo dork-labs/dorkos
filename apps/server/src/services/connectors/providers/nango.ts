@@ -129,14 +129,14 @@ export function assertNangoEncryptionKey(key: string | undefined): void {
     throw new NangoEncryptionKeyError(
       'Your Nango server needs its encryption key before DorkOS uses it, or sign-ins would be ' +
         'stored unencrypted. Set NANGO_ENCRYPTION_KEY where DorkOS runs to the same key your ' +
-        'Nango server uses, then save your key again.'
+        'Nango server uses, then restart DorkOS.'
     );
   }
   const decoded = Buffer.from(key, 'base64');
   if (decoded.length !== REQUIRED_ENCRYPTION_KEY_BYTES) {
     throw new NangoEncryptionKeyError(
       `NANGO_ENCRYPTION_KEY is the wrong length: it has ${decoded.length} bytes, and it needs ` +
-        `32, written in base64. Use the same key your Nango server uses.`
+        `32, written in base64. Use the same key your Nango server uses, then restart DorkOS.`
     );
   }
 }
