@@ -94,6 +94,7 @@ if (config.oidc)
 configureServerTimeouts(server);
 // A crash while an export was arriving or being restored leaves its temporary folder behind.
 void sweepImportTempDirs(IMPORT_UPLOAD_LEASE_MS * 2).catch(() => undefined);
+let sweepingPendingBlobs = false;
 const cleanup = setInterval(() => {
   void sweepExpiredAttachments(pool, blobStore).catch((error: unknown) => {
     console.error(
@@ -113,12 +114,21 @@ const cleanup = setInterval(() => {
       error instanceof Error ? error.name : 'unknown'
     );
   });
-  void sweepPendingBlobDeletions(pool, blobStore).catch((error: unknown) => {
-    console.error(
-      'Community pending blob cleanup unavailable',
-      error instanceof Error ? error.name : 'unknown'
-    );
-  });
+  // One pending-deletion sweep at a time on this replica: a slow one (a batch of slow storage
+  // deletes) is never joined by the next tick's, which would pick the same files.
+  if (!sweepingPendingBlobs) {
+    sweepingPendingBlobs = true;
+    void sweepPendingBlobDeletions(pool, blobStore)
+      .catch((error: unknown) => {
+        console.error(
+          'Community pending blob cleanup unavailable',
+          error instanceof Error ? error.name : 'unknown'
+        );
+      })
+      .finally(() => {
+        sweepingPendingBlobs = false;
+      });
+  }
   void sweepCommunityDeletions(pool, blobStore, undefined, { shortNameHolds }).catch(
     (error: unknown) => {
       console.error(
