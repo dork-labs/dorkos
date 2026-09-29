@@ -34,6 +34,25 @@ import {
   type CommunityApprovalCheck,
 } from '@/layers/entities/community';
 
+/**
+ * What to say when a connection could not start.
+ *
+ * One refusal gets its own words: an address that leads to a host holding
+ * several communities (the server's `COMMUNITY_SELECTION_REQUIRED`). The
+ * address is right as far as it goes, so "check the address" would send the
+ * person looking for a typo that is not there; they need one community's own
+ * link. Every other failure keeps the general message.
+ */
+function startErrorMessage(error: unknown): string {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'COMMUNITY_SELECTION_REQUIRED'
+  )
+    return 'That address has more than one community on it. Enter the link for the one you want: its short address, like https://spaces.example.com/acme, or its full link, which has /c/ in it.';
+  return 'Couldn’t connect. Check the community address and try again.';
+}
+
 /** What the connect dialog was opened for. */
 export interface ConnectCommunityRequest {
   /** A connection that is not connected yet (pending or needing reconnection), or `null` for the form. */
@@ -402,7 +421,7 @@ function ConnectCommunityBody({
           </div>
           {start.error && (
             <p role="alert" className="text-destructive text-sm">
-              Couldn’t connect. Check the community address and try again.
+              {startErrorMessage(start.error)}
             </p>
           )}
         </ResponsiveDialogBody>

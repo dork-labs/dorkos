@@ -169,6 +169,30 @@ describe('ConnectCommunityDialog', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
+  it('asks for one community’s own link when the address is a host with several', async () => {
+    const user = userEvent.setup();
+    const selectionRequired = Object.assign(
+      new Error('Choose a specific community from this host and use its community link.'),
+      { status: 409, code: 'COMMUNITY_SELECTION_REQUIRED' }
+    );
+    const transport = createMockTransport({
+      listCommunityConnections: vi.fn().mockResolvedValue([]),
+      startCommunityConnection: vi.fn().mockRejectedValue(selectionRequired),
+    });
+    mount(transport, { ref: null });
+    const address = screen.getByLabelText('Community address');
+    await waitFor(() => expect(address).toBeEnabled());
+    await user.type(address, 'https://spaces.example.com');
+    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('That address has more than one community on it.');
+    expect(alert).toHaveTextContent('https://spaces.example.com/acme');
+    expect(alert).toHaveTextContent('/c/');
+    expect(alert).not.toHaveTextContent('Check the community address');
+    // The address stays, so the person can add the community's part to it.
+    expect(address).toHaveValue('https://spaces.example.com');
+  });
+
   it('closes and hands over the Community once it is approved', async () => {
     const transport = createMockTransport({
       listCommunityConnections: vi
