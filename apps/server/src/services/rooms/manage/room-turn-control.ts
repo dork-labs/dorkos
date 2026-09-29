@@ -222,6 +222,8 @@ export class RoomTurnControl {
     ) {
       return 0;
     }
+    // This writes the usual "stopped" notice into the room; harmless, since the revocation
+    // purges the room right after (`RemoteMirrorStore.purgeRevoked`).
     return this.triggers.haltAgent(room, authorId, ownerAuthorId);
   }
 

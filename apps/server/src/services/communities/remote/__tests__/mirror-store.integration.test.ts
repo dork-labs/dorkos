@@ -495,6 +495,25 @@ describe('RemoteMirrorStore', () => {
     expect(harness.store.getRoom(localRoomId)).toBeNull();
   });
 
+  // Purpose (DOR-2339 review): membership is per room, so an agent's owner can hold readable
+  // mirrors it never joined. Revoking its enrollment must skip those rather than refuse the
+  // whole revocation, or its memberships are never removed and the turn it does have keeps
+  // running. It fails if one unjoined mirror makes the revocation reject.
+  it('revokes an enrollment even when the owner has a mirror the agent never joined', async () => {
+    const { harness, mirrors, runner, agent, bridge } = await heldTurnInMirror();
+    mirrors.ensureRoom(roomInput(REF_A, 'other', harness.human));
+
+    await expect(
+      bridge.revokeEnrollment(REF_A, 'local-ana', harness.human)
+    ).resolves.toBeUndefined();
+    await harness.service.triggersIdle();
+
+    expect(runner.interrupted).toHaveLength(1);
+    expect(harness.service.listActiveClaims()).toEqual([]);
+    const general = mirrors.localRoomIdForOwner(REF_A, 'general', harness.human)!;
+    expect(harness.store.getMember(general, agent.id)).toBeNull();
+  });
+
   // Purpose (DOR-2339 guard): the revocation's stop skips the visibility check, so it must not
   // become a way round it. A caller who cannot see a room still cannot stop a turn in it: the
   // ordinary Stop refuses a revoked mirror, and the revocation's stop refuses any room that is

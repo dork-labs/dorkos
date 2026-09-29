@@ -5,6 +5,7 @@
  * @module services/communities/remote/remote-room-subscription-bridge
  */
 import { CommunityEntrySchema, type CommunityEntry } from '@dorkos/shared/community-adapter';
+import { RoomError } from '../../rooms/room-errors.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import type { CommunityOutboxStore } from './community-outbox-store.js';
@@ -325,15 +326,24 @@ export class RemoteRoomSubscriptionBridge {
    * Stop one agent's turn in a mirror during a revocation. A mirror revoked a moment ago is
    * unreadable to its owner too, so the ordinary Stop would refuse it as missing and the turn
    * would keep running (DOR-2339); only the revocation itself may stop it without seeing it.
+   *
+   * Membership is per room, so the owner can hold readable mirrors this agent never joined.
+   * Nothing runs for it there, so those answer `0` rather than failing the whole revocation.
    */
-  private stopAgentForRevocation(
+  private async stopAgentForRevocation(
     localRoomId: string,
     authorId: string,
     ownerAuthorId: string
   ): Promise<number> {
-    return this.mirrors.isRevokedMirrorOf(localRoomId, ownerAuthorId)
-      ? this.service.haltAgentInRevokedMirror(localRoomId, authorId, ownerAuthorId)
-      : this.service.haltAgent(localRoomId, authorId, ownerAuthorId);
+    if (this.mirrors.isRevokedMirrorOf(localRoomId, ownerAuthorId)) {
+      return this.service.haltAgentInRevokedMirror(localRoomId, authorId, ownerAuthorId);
+    }
+    try {
+      return await this.service.haltAgent(localRoomId, authorId, ownerAuthorId);
+    } catch (error) {
+      if (error instanceof RoomError && error.code === 'MEMBER_NOT_FOUND') return 0;
+      throw error;
+    }
   }
 
   /** Apply a successful owner-qualified room discovery before any stream frame can dispatch. */
