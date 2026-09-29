@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "8f3b36fb-ab6e-4797-95ab-456bc6608735",
+  "id": "177e1ce6-87ba-4f4e-ba2f-f0005157f034",
   "prevId": "33555465-cc33-48b6-a752-25ac24d32f07",
   "tables": {
     "a2a_tasks": {
@@ -3618,6 +3618,13 @@
         },
         "external_cleanup_key": {
           "name": "external_cleanup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "account_key": {
+          "name": "account_key",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

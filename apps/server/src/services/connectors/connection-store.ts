@@ -456,6 +456,7 @@ export class ConnectionStore {
     }
     const now = new Date().toISOString();
     const id = existing?.id ?? ulid();
+    const accountKey = this.storedExecutionConfigDigest(provider.instanceId) ?? null;
     // Closing an account clears `enabled` as well as the lifecycle state
     // (`ConnectorLifecycleService.disconnect`), so bringing one back has to
     // restore BOTH. Restoring only the lifecycle state lands a row that reads
@@ -484,6 +485,7 @@ export class ConnectionStore {
         createdAt: existing?.created_at ?? now,
         updatedAt: now,
         lastVerifiedAt: now,
+        accountKey,
       })
       .onConflictDoUpdate({
         target: [connections.providerInstanceId, connections.externalAccountRef],
@@ -496,6 +498,7 @@ export class ConnectionStore {
           ...(restoringDisconnected && { enabled: true, pausedBy: null }),
           updatedAt: now,
           lastVerifiedAt: now,
+          accountKey,
         },
       })
       .run();
@@ -792,8 +795,26 @@ export class ConnectionStore {
     for (const account of listed) {
       if (isSignInStatus(account.status)) reported.set(account.externalAccountRef, account.status);
     }
-    if (reported.size === 0) return [];
     const now = new Date().toISOString();
+    // Every account this listing includes is reachable through the instance's
+    // current key: that key is the one that can end its access at the service.
+    const accountKey = this.storedExecutionConfigDigest(instanceId);
+    const listedRefs = [...new Set(listed.map((account) => account.externalAccountRef))];
+    if (accountKey !== undefined && listedRefs.length > 0) {
+      this.db
+        .update(connections)
+        .set({ accountKey })
+        .where(
+          and(
+            eq(connections.providerInstanceId, instanceId),
+            eq(connections.lifecycleState, 'connected'),
+            isNull(connections.removedAt),
+            inArray(connections.externalAccountRef, listedRefs)
+          )
+        )
+        .run();
+    }
+    if (reported.size === 0) return [];
     return this.db.transaction((tx) => {
       const kept = tx
         .select({

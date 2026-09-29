@@ -1202,6 +1202,44 @@ describe('ManagedAuthoritySyncService', () => {
       expect(db.select().from(connections).get()?.externalCleanupState).toBe('complete');
     });
 
+    it('ends the Resume, Sign in again loop: a resume refused again after a sign-in closes it as gone', async () => {
+      db.update(connections)
+        .set({ enabled: false, pausedBy: 'owner' })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) =>
+        rejected(command, 'connection_unavailable')
+      );
+      const resume = () =>
+        service().transition({
+          connectionId: CONNECTION_ID,
+          managedConnectionId: MANAGED_CONNECTION_ID,
+          lifecycle: 'active',
+          providerInstanceId: PROVIDER_ID,
+          executionConfigGeneration: 1,
+          owner: OWNER,
+          signal: new AbortController().signal,
+        });
+      await resume();
+      expect(db.select().from(connections).get()).toMatchObject({
+        lifecycleState: 'connected',
+        status: 'expired',
+      });
+      // The person signs in again; the account reads signed in once more.
+      db.update(connections)
+        .set({ status: 'active' })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      clock += 60_000;
+      await resume();
+      // Signing in can't fix it: gone, with "connect it again" and its end unconfirmed.
+      expect(db.select().from(connections).get()).toMatchObject({
+        lifecycleState: 'disconnected',
+        closedBecause: 'service_gone',
+        externalCleanupState: 'unknown',
+      });
+    });
+
     it('finishes a disconnect the ended link refused even after the account was removed', async () => {
       // The live incident: the link ended, Disconnect was refused, the person
       // removed the app, then linked the same DorkOS account again.

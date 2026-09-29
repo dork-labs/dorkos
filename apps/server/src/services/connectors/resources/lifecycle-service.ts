@@ -300,19 +300,24 @@ export class ConnectorLifecycleService {
       return this.result(row.connectionId, sync.externalCleanup, sync.authoritySync);
     }
     const alreadyClosed = row.lifecycleState === 'disconnected';
+    let unconfirmed = false;
     if (!alreadyClosed) {
+      // Only the key the account was last seen under can end its access. Not
+      // the key set up now (changed, or never seen under it): no try could
+      // prove anything, so the end is unconfirmed from the start.
+      const currentKey = this.options.registry.storedExecutionConfigDigest(row.providerInstanceId);
+      unconfirmed =
+        row.mode !== 'managed' && (row.accountKey === null || row.accountKey !== currentKey);
       this.options.db.transaction((tx) => {
         this.options.registry.recordDisconnect(row.connectionId);
         tx.update(connections)
           .set({
             enabled: false,
             pausedBy: null,
-            externalCleanupState: 'pending',
+            externalCleanupState: unconfirmed ? 'unknown' : 'pending',
             externalCleanupAttempts: 0,
             externalCleanupRetryAt: null,
-            // The key it was reached through: only that key can end its access.
-            externalCleanupKey:
-              this.options.registry.storedExecutionConfigDigest(row.providerInstanceId) ?? null,
+            externalCleanupKey: row.accountKey,
           })
           .where(eq(connections.id, row.connectionId))
           .run();
@@ -322,6 +327,7 @@ export class ConnectorLifecycleService {
       connectionId: row.connectionId,
       reason: 'connection_removed',
     });
+    if (unconfirmed) return this.result(row.connectionId, 'failed');
     if (row.mode === 'managed')
       return this.result(row.connectionId, 'pending', {
         status: 'failed',
@@ -570,6 +576,7 @@ export class ConnectorLifecycleService {
         lifecycleState: connections.lifecycleState,
         removedAt: connections.removedAt,
         externalCleanupState: connections.externalCleanupState,
+        accountKey: connections.accountKey,
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         executionConfigGeneration: connectorProviderInstances.executionConfigGeneration,
@@ -599,10 +606,7 @@ export class ConnectorLifecycleService {
   }
 }
 
-/**
- * A stored cleanup state as a lifecycle result reports it: `unknown` (DorkOS
- * couldn't confirm the access ended) reads as not finished.
- */
+/** A stored cleanup state as a result reports it: `unknown` (unconfirmed) reads as failed. */
 function publicCleanup(
   state: 'not_required' | 'pending' | 'complete' | 'failed' | 'unknown'
 ): ConnectorLifecycleResult['externalCleanup'] {

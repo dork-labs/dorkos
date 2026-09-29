@@ -15,13 +15,17 @@
  * cleanup other than complete or not required. "Another way works" means a
  * different way DorkOS reaches apps answers, can run actions and reaches this
  * app. "Checked again soon" means DorkOS is checking the way right now or has
- * a check of it scheduled (`checking` / `nextCheckAt`).
+ * a check of it scheduled (`checking` / `nextCheckAt`). From row 4 on, the
+ * cleanup owed is one DorkOS will still try: `pending`, or a DorkOS-account
+ * `failed` that linking again sends again. No line promises DorkOS finishes
+ * a cleanup it will never try (row 3b).
  *
  * | #  | Facts                                                                    | state         | reason                       | fix (by)                                      |
  * | -- | ------------------------------------------------------------------------ | ------------- | ---------------------------- | --------------------------------------------- |
  * | 1  | disconnected, the DorkOS account's service has no such account anymore  | `gone`        | `gone_at_service`            | `connect_new` (person), with the service's page |
  * | 2  | disconnected, nothing owed, way up                                       | `gone`        | `disconnected`               | `connect_again` (person)                      |
  * | 3  | disconnected, nothing owed, way down                                     | `gone`        | `disconnected`               | `connect_new` (person)                        |
+ * | 3b | disconnected, cleanup DorkOS never tries again (own key out of tries or unknown; DorkOS account unknown), any way | `gone` | `disconnect_stuck` | `remove` (person), with the service's page |
  * | 4  | disconnected, cleanup owed, way up, DorkOS still trying                  | `gone`        | `disconnect_finishing`       | `retry` (dorkos, retryAt)                     |
  * | 5  | disconnected, cleanup owed, way down but checked again soon              | `gone`        | `disconnect_finishing`       | `wait` (dorkos, retryAt)                      |
  * | 6  | disconnected, cleanup owed, way down: own key refused                    | `gone`        | `disconnect_stuck`           | `fix_key` (person)                            |
@@ -329,6 +333,13 @@ function disconnectedReadiness(facts: ConnectionReadinessFacts): ConnectionReadi
       action: way.status === 'up' ? 'connect_again' : 'connect_new',
       fixableBy: 'person',
     });
+  }
+  // A cleanup DorkOS will never try again, whatever the way does: an own-key
+  // one that ran out of tries, or one whose end can't be confirmed (another
+  // key, a closed or gone account). Nothing may promise DorkOS finishes it.
+  // A DorkOS-account `failed` is different: linking again re-sends it.
+  if (cleanup === 'unknown' || (facts.mode === 'byo' && cleanup === 'failed')) {
+    return stuck('unconfirmed', facts.toolkit);
   }
   if (way.status === 'up') {
     // DorkOS keeps trying on its own while the way answers: an own-key cleanup

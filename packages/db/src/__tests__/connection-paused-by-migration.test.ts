@@ -124,7 +124,7 @@ describe('0125 connection paused_by migration', () => {
     expect(columns).not.toContain('reconnect_was_paused');
   });
 
-  it('hands an own-key disconnect whose one try failed, or never ran, to DorkOS’s retry', () => {
+  it('re-arms only own-key cleanups that never failed, and leaves the rest for the person', () => {
     db.$client
       .prepare(
         `INSERT INTO connector_provider_instances
@@ -149,6 +149,15 @@ describe('0125 connection paused_by migration', () => {
           'disconnected', 0, 'unknown', ?, ?)`
       )
       .run(NOW, NOW);
+    db.$client
+      .prepare(
+        `INSERT INTO connections
+         (id, provider_instance_id, external_account_ref, toolkit, label, status,
+          lifecycle_state, enabled, external_cleanup_state, created_at, updated_at)
+         VALUES ('own-key-pending', 'instance', 'ref-pending', 'gmail', 'x', 'active',
+          'disconnected', 0, 'pending', ?, ?)`
+      )
+      .run(NOW, NOW);
 
     runMigrations(db);
 
@@ -158,9 +167,12 @@ describe('0125 connection paused_by migration', () => {
           'SELECT external_cleanup_state AS state, external_cleanup_key AS key FROM connections WHERE id = ?'
         )
         .get(id);
-    // Tried again through the key the instance last worked with.
-    expect(state('own-key')).toEqual({ state: 'pending', key: 'key-digest-a' });
-    expect(state('own-key-unknown')).toEqual({ state: 'pending', key: 'key-digest-a' });
+    // Never failed: tried again through the key the instance last worked with.
+    expect(state('own-key-pending')).toEqual({ state: 'pending', key: 'key-digest-a' });
+    // A try already failed, or none was recorded: the key may have changed, so
+    // a retry could read "not found" as done. The person removes it instead.
+    expect(state('own-key')).toEqual({ state: 'unknown', key: null });
+    expect(state('own-key-unknown')).toEqual({ state: 'unknown', key: null });
     // The hosted side said its own cleanup failed; that stays its word.
     expect(state('dorkos-account')).toEqual({ state: 'failed', key: null });
   });

@@ -58,6 +58,8 @@ describe('ConnectorLifecycleService', () => {
         lifecycleState: 'connected',
         enabled: true,
         grantReconciliationStatus: 'ready',
+        // Connected under the key saved now.
+        accountKey: 'material-a',
         createdAt: NOW,
         updatedAt: NOW,
       })
@@ -260,6 +262,75 @@ describe('ConnectorLifecycleService', () => {
       enabled: false,
       externalCleanupState: 'unknown',
     });
+  });
+
+  it('never counts an account’s access ended through a key it was never seen under', async () => {
+    // Connected under key A; the person saves key B (from another project),
+    // then disconnects. Key B can't see the account, so "not found" from it
+    // would prove nothing while the sign-in made under A lives on.
+    const disconnect = vi.spyOn(provider, 'disconnect');
+    registry.register(provider, 'material-b');
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    await expect(
+      service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal)
+    ).resolves.toMatchObject({ lifecycle: 'disconnected', externalCleanup: 'failed' });
+    expect(disconnect).not.toHaveBeenCalled();
+    expect(db.select().from(connections).get()).toMatchObject({
+      lifecycleState: 'disconnected',
+      externalCleanupState: 'unknown',
+      externalCleanupKey: 'material-a',
+    });
+    expect(authorityCleanup.revokeConnection).toHaveBeenCalledWith({
+      connectionId: CONNECTION_ID,
+      reason: 'connection_removed',
+    });
+  });
+
+  it('records the key an account is signed in under when it connects', () => {
+    registry.register(provider, 'material-b');
+    registry.recordConnect(provider, {
+      externalAccountRef: 'provider-account-a' as never,
+      toolkit: 'gmail',
+      label: 'Work Gmail',
+      status: 'active',
+      custody: 'self-host',
+    });
+    expect(db.select().from(connections).get()?.accountKey).toBe('material-b');
+  });
+
+  it('ends the access through a new key once a listing under it includes the account', async () => {
+    const disconnect = vi.spyOn(provider, 'disconnect');
+    registry.register(provider, 'material-b');
+    // The same project, with a new key: its listing includes the account.
+    registry.recordSignInStatus(
+      provider,
+      [
+        {
+          externalAccountRef: 'provider-account-a' as never,
+          toolkit: 'gmail',
+          label: 'Work Gmail',
+          status: 'active',
+          custody: 'self-host',
+        },
+      ],
+      NOW
+    );
+    expect(db.select().from(connections).get()?.accountKey).toBe('material-b');
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    await expect(
+      service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal)
+    ).resolves.toMatchObject({ externalCleanup: 'complete' });
+    expect(disconnect).toHaveBeenCalledWith('provider-account-a');
   });
 
   it('ends the access only through the key it was reached through, never a different one', async () => {

@@ -87,6 +87,13 @@ export const connections = sqliteTable(
      * same key: a different key can't see it, so its "not found" proves nothing.
      */
     externalCleanupKey: text('external_cleanup_key'),
+    /**
+     * The setup fingerprint (own key) this account was last seen under: when
+     * it was connected, or when a listing under that key included it. A key
+     * from another project never sees the account, so this says which key can
+     * end its access at the service.
+     */
+    accountKey: text('account_key'),
     authConfigRef: text('auth_config_ref'),
     grantReconciliationStatus: text('grant_reconciliation_status', {
       enum: ['ready', 'migration_needs_reconcile'],

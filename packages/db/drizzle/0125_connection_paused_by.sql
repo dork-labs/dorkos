@@ -3,6 +3,7 @@ ALTER TABLE `connections` ADD `closed_because` text;--> statement-breakpoint
 ALTER TABLE `connections` ADD `external_cleanup_attempts` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE `connections` ADD `external_cleanup_retry_at` text;--> statement-breakpoint
 ALTER TABLE `connections` ADD `external_cleanup_key` text;--> statement-breakpoint
+ALTER TABLE `connections` ADD `account_key` text;--> statement-breakpoint
 ALTER TABLE `connector_managed_authority_outbox` ADD `rejection_code` text;--> statement-breakpoint
 -- HAND-ADDED backfill, before `reconnect_was_paused` goes. A "Sign in again"
 -- pauses its account while it runs, and until now nothing lifted that pause
@@ -39,18 +40,22 @@ WHERE lifecycle_state = 'connected' AND enabled = 0 AND EXISTS (
 UPDATE connections SET paused_by = 'owner'
 WHERE lifecycle_state = 'connected' AND enabled = 0 AND paused_by IS NULL;--> statement-breakpoint
 -- HAND-ADDED backfill: removing an own-key account's access at the service
--- is now DorkOS's job, retried on its own, instead of a "try disconnecting
--- again" button. Hand the disconnects whose one try failed, and those closed
--- before DorkOS recorded cleanup at all, to that retry, through the key the
--- instance last worked with (the best that is known about them).
-UPDATE connections SET external_cleanup_state = 'pending'
-WHERE lifecycle_state = 'disconnected' AND external_cleanup_state IN ('failed', 'unknown')
-AND provider_instance_id IN (SELECT id FROM connector_provider_instances WHERE mode = 'byo');--> statement-breakpoint
+-- is now DorkOS's job, retried on its own, but only through the key the
+-- account was reached through. Nothing recorded which key that was, so only a
+-- disconnect whose cleanup never had a failed try is re-armed, under the key
+-- the instance last worked with. One whose try already failed, or whose
+-- cleanup was never recorded, may have failed because the key had changed: a
+-- retry under today's key could read "not found" as done while the sign-in
+-- lives on. Those become unconfirmed, and the person is shown where to remove
+-- the access themselves.
 UPDATE connections SET external_cleanup_key = (
   SELECT execution_config_digest FROM connector_provider_instances p
   WHERE p.id = connections.provider_instance_id
 )
 WHERE lifecycle_state = 'disconnected' AND external_cleanup_state = 'pending'
+AND provider_instance_id IN (SELECT id FROM connector_provider_instances WHERE mode = 'byo');--> statement-breakpoint
+UPDATE connections SET external_cleanup_state = 'unknown'
+WHERE lifecycle_state = 'disconnected' AND external_cleanup_state = 'failed'
 AND provider_instance_id IN (SELECT id FROM connector_provider_instances WHERE mode = 'byo');--> statement-breakpoint
 -- HAND-ADDED backfill: name why each already-refused hosted command was
 -- refused, from the words stored with it, so a refused link is sent again once

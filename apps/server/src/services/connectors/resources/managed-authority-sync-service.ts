@@ -18,6 +18,7 @@ import {
   eq,
   isNull,
   inArray,
+  ne,
   lte,
   or,
   sessionConnectionOverrides,
@@ -1140,9 +1141,12 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
    * means depends on the change, and only one case is read as "gone":
    *
    * - A resume: the hosted side also refuses one this way when the account's
-   *   sign-in there isn't active or doesn't match, so it is never read as
-   *   gone. The account stays paused here and its sign-in is recorded as
-   *   ended, so "Sign in again" is its one fix.
+   *   sign-in there isn't active or doesn't match, so the first refusal is
+   *   not read as gone. The account stays paused here and its sign-in is
+   *   recorded as ended, so "Sign in again" is its one fix. When a resume is
+   *   refused again after the account was signed in again since (it reads
+   *   signed in once more), signing in can't fix it: the account closes as
+   *   gone, which ends the Resume, Sign in again, Resume loop.
    * - A disconnect: its access can't be confirmed ended, so the cleanup stays
    *   owed as unknown and the person is shown where to end it themselves.
    * - Any other change (who can use it, a pause, a notification): the hosted
@@ -1172,6 +1176,31 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       return;
     }
     if (command.kind === 'set_connection_lifecycle' && command.lifecycle === 'active') {
+      const account = tx
+        .select({ status: connections.status })
+        .from(connections)
+        .where(eq(connections.id, row.connectionId))
+        .get();
+      // A refused lifecycle change of this account before, while it stayed
+      // connected, can only have been a resume (a refused pause closes it).
+      const refusedBefore =
+        tx
+          .select({ commandId: connectorManagedAuthorityOutbox.commandId })
+          .from(connectorManagedAuthorityOutbox)
+          .where(
+            and(
+              eq(connectorManagedAuthorityOutbox.connectionId, row.connectionId),
+              eq(connectorManagedAuthorityOutbox.scopeKind, 'connection_lifecycle'),
+              eq(connectorManagedAuthorityOutbox.state, 'rejected'),
+              eq(connectorManagedAuthorityOutbox.rejectionCode, 'connection_unavailable'),
+              ne(connectorManagedAuthorityOutbox.commandId, row.commandId)
+            )
+          )
+          .get() !== undefined;
+      if (refusedBefore && account?.status === 'active') {
+        this.closeAsGone(tx, row.connectionId as ConnectionId, now);
+        return;
+      }
       tx.update(connections)
         .set({ status: 'expired', updatedAt: now })
         .where(
@@ -1190,10 +1219,15 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .where(eq(connections.id, row.connectionId))
       .get();
     if (open?.lifecycleState !== 'connected') return;
-    this.stageLocalLifecycle(tx, row.connectionId as ConnectionId, 'disconnected');
+    this.closeAsGone(tx, row.connectionId as ConnectionId, now);
+  }
+
+  /** Close one account here as gone for this link, its end at the service unconfirmed. */
+  private closeAsGone(tx: ConnectorDbTransaction, connectionId: ConnectionId, now: string): void {
+    this.stageLocalLifecycle(tx, connectionId, 'disconnected');
     tx.update(connections)
       .set({ externalCleanupState: 'unknown', closedBecause: 'service_gone', updatedAt: now })
-      .where(eq(connections.id, row.connectionId))
+      .where(eq(connections.id, connectionId))
       .run();
   }
 

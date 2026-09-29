@@ -537,6 +537,65 @@ describe('deriveConnectionReadiness truth table', () => {
     expect(ownKey.copy.owner).toContain('Add that same key again');
   });
 
+  describe('never promises a cleanup DorkOS won’t run', () => {
+    const neverRetried: Array<[string, Partial<ConnectionReadinessFacts>]> = [
+      ['own key out of tries', { mode: 'byo', externalCleanup: 'failed' }],
+      ['own key unconfirmed', { mode: 'byo', externalCleanup: 'unknown' }],
+      ['DorkOS account unconfirmed', { mode: 'managed', externalCleanup: 'unknown' }],
+    ];
+    const ways: Array<[string, ConnectionWayHealth]> = [
+      ['way up', UP],
+      ['own key refused', down('own_key_unavailable')],
+      ['own key re-checked soon', { ...down('own_key_unavailable'), nextCheckAt: RETRY_AT }],
+      ['own key being checked', { ...down('own_key_unavailable'), checking: true }],
+      ['DorkOS account unlinked', down('dorkos_account_unlinked')],
+      [
+        'DorkOS account re-checked soon',
+        { ...down('dorkos_account_unavailable'), nextCheckAt: RETRY_AT },
+      ],
+      ['way unreachable', down('unreachable')],
+    ];
+    it.each(
+      neverRetried.flatMap(([cleanup, f]) => ways.map(([way, w]) => [cleanup, way, f, w] as const))
+    )('%s, %s: remove it, with no promise DorkOS finishes', (_cleanup, _way, cleanupFacts, way) => {
+      const r = deriveConnectionReadiness(
+        facts({ lifecycle: 'disconnected', toolkit: 'gmail', ...cleanupFacts, way })
+      );
+      expect(r).toMatchObject({
+        state: 'gone',
+        reason: 'disconnect_stuck',
+        fix: { action: 'remove', fixableBy: 'person' },
+        serviceAccessPage: { service: 'Google' },
+      });
+      expect(r.copy.owner).toContain('couldn’t confirm its access ended');
+      expect(r.copy.owner).not.toMatch(/finishes it on its own|still removing|same key/);
+    });
+
+    it('keeps DorkOS’s promise only for a cleanup it will try again', () => {
+      // An own-key cleanup still pending waits for that same key.
+      expect(
+        deriveConnectionReadiness(
+          facts({
+            lifecycle: 'disconnected',
+            externalCleanup: 'pending',
+            way: down('own_key_unavailable'),
+          })
+        ).fix?.action
+      ).toBe('fix_key');
+      // A DorkOS-account cleanup the hosted side said failed goes again on a relink.
+      expect(
+        deriveConnectionReadiness(
+          facts({
+            lifecycle: 'disconnected',
+            externalCleanup: 'failed',
+            mode: 'managed',
+            way: down('dorkos_account_unlinked'),
+          })
+        ).copy.owner
+      ).toContain('Link this computer to the same DorkOS account again');
+    });
+  });
+
   it('carries when DorkOS next tries an own-key cleanup on its own', () => {
     const finishing = deriveConnectionReadiness(
       facts({ lifecycle: 'disconnected', externalCleanup: 'pending', cleanupRetryAt: RETRY_AT })

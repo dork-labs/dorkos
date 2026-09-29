@@ -413,6 +413,55 @@ describe('ConnectorAuthenticationFlowService', () => {
     ).toEqual({ state: 'not_required' });
   });
 
+  it('never lets a new sign-in cancel a cleanup DorkOS is sending at that moment', async () => {
+    const existing = insertActiveConnection(db);
+    db.update(connections)
+      .set({ accountKey: 'material-a' })
+      .where(eq(connections.id, existing))
+      .run();
+    let release!: () => void;
+    const sent = vi.spyOn(provider, 'disconnect').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    const lifecycle = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows: service,
+      authorityCleanup: {
+        revokeConnection: vi.fn(),
+        revokeAgent: vi.fn(),
+        revokeAgentConnection: vi.fn(),
+      },
+    });
+    const disconnecting = lifecycle.disconnect(OWNER, existing, new AbortController().signal);
+    await vi.waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
+
+    // The same account signs in again while the delete is still out: it could
+    // land after the new sign-in and end it, so the sign-in waits.
+    const started = await service.start(OWNER, {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      label: 'Original',
+      idempotencyKey: 'while-sending',
+    });
+    await expect(service.poll(OWNER, started.flowId)).resolves.toMatchObject({
+      state: 'failed',
+    });
+    expect(
+      db
+        .select({ state: connections.externalCleanupState })
+        .from(connections)
+        .where(eq(connections.id, existing))
+        .get()
+    ).toEqual({ state: 'pending' });
+
+    release();
+    await expect(disconnecting).resolves.toMatchObject({ externalCleanup: 'complete' });
+  });
+
   it('does not let an earlier initial flow reuse an identity acknowledged after it began', async () => {
     const existing = insertActiveConnection(db);
     registry.recordDisconnect(existing);
