@@ -4,6 +4,7 @@ covers:
   - "fix(extensions): prove a copy's origin by its content, and move every re-scan onto the new copy (DOR-2527)"
   - 'fix(extensions): vouch for the whole plugin folder, check it at every load, and never stall on a hung extension (DOR-2527)'
   - 'fix(extensions): run origin-trusted copies from a verified snapshot, cache folder digests, and dispose a hung start (DOR-2527)'
+  - 'fix(extensions): pin "Stop trusting" to each copy''s digest and run it from its snapshot (DOR-2527)'
 ---
 
 ### Changed
