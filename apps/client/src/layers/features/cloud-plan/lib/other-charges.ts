@@ -36,13 +36,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * Format a billing period as the days it covers, e.g. `Sep 1 – Sep 30`.
  *
- * The contract's `periodEnd` is exclusive — a calendar month ends at the first
- * instant of the next — so the last day shown is the day before it.
+ * The contract's `periodEnd` is exclusive and falls on midnight UTC — a
+ * calendar month ends at the first instant of the next — so the last day shown
+ * is the day before it. An end that is not on midnight UTC is outside that
+ * promise and is shown as sent, because moving it back a day would drop a day
+ * the period partly covers.
  *
  * @param periodStart - When the period started, as an ISO-8601 timestamp.
  * @param periodEnd - When the period ends, exclusive, as an ISO-8601 timestamp.
  */
 export function formatPeriod(periodStart: string, periodEnd: string): string {
-  const lastDay = new Date(new Date(periodEnd).getTime() - DAY_MS);
+  const end = new Date(periodEnd);
+  const lastDay = end.getTime() % DAY_MS === 0 ? new Date(end.getTime() - DAY_MS) : end;
   return `${PERIOD_DATE.format(new Date(periodStart))} – ${PERIOD_DATE.format(lastDay)}`;
 }

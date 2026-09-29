@@ -28,6 +28,7 @@ vi.mock('../../config-manager.js', () => ({
 const { assignSeat, listSeats, readNudge, readPlanOverview, readUsage } =
   await import('../plan.js');
 const { isCloudLinked, problemOf } = await import('../v1-client.js');
+const { logger } = await import('../../../../lib/logger.js');
 
 /** Route a stubbed `fetch` by `/v1` path, answering with a status and a body. */
 function stubFetch(routes: Record<string, { status: number; body: unknown }>) {
@@ -129,6 +130,7 @@ describe('the plan reads', () => {
   });
 
   it('keeps the inference rows when the other-charges block is malformed', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     // One bad row must not turn the whole read into a failure and take the
     // credits breakdown down with it.
     const [row] = usageWithOtherChargesFixture.otherCharges.rows;
@@ -144,6 +146,18 @@ describe('the plan reads', () => {
     const usage = await readUsage('seat');
     expect(usage?.rows).toEqual(usageWithOtherChargesFixture.rows);
     expect(usage?.otherCharges).toBeUndefined();
+    // A billed charge the card cannot show must not vanish without a trace.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/otherCharges/);
+  });
+
+  it('logs nothing when the block is readable or was never sent', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    stubFetch({ '/v1/usage': { status: 200, body: usageWithOtherChargesFixture } });
+    await readUsage('seat');
+    stubFetch({ '/v1/usage': { status: 200, body: usageFixture } });
+    await readUsage('seat');
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('reads the nudge as the service reduced it', async () => {

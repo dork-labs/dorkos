@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(cloud-api): carry charges that are not inference on GET /v1/usage (DOR-2316)'
+  - 'fix(cloud-api): trace a dropped other-charges block and pin period edges to midnight UTC (DOR-2316)'
 ---
 
 ### Added

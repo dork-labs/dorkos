@@ -298,12 +298,17 @@ export const UsageRowSchema = z
  * nothing is resold, so there is no difference to publish. `unit` and
  * `displayName` are server-supplied strings a client renders exactly as given,
  * so no unit, rate or allowance is named by this package.
+ *
+ * A period's edges fall on midnight UTC, and `periodEnd` is exclusive, so a
+ * calendar month runs from the 1st to the 1st of the next month.
  */
 export const OtherChargeRowSchema = z
   .object({
-    periodStart: TimestampSchema.describe('When this billing period started, inclusive.'),
+    periodStart: TimestampSchema.describe(
+      'When this billing period started, inclusive. Midnight UTC.'
+    ),
     periodEnd: TimestampSchema.describe(
-      'When this billing period ends, exclusive: the first instant after it. A calendar month ends at the start of the next.'
+      'When this billing period ends, exclusive: the first instant after it, at midnight UTC. A calendar month ends at the start of the next.'
     ),
     units: z
       .number()
@@ -364,7 +369,7 @@ export const UsageResponseSchema = z
     otherCharges: OtherChargesSchema.optional()
       .catch(undefined)
       .describe(
-        'Charges in the window that are not inference. A service that has none, or predates the field, omits it. A malformed block is dropped rather than failing the whole answer, so the inference rows still arrive.'
+        'Charges in the window that are not inference. A service that has none, or predates the field, omits it. Parsed with this package`s zod schema, a malformed block is dropped and the inference rows still arrive; a JSON Schema validator fails the whole response instead.'
       ),
     denomination: denominationField,
   })
