@@ -4,6 +4,7 @@ covers:
   - 'feat(server): keep each Claude account to the projects it may work in (DOR-2526)'
   - 'feat(client): show and set where each Claude account may work (DOR-2526)'
   - 'docs: keep an account to its projects, in the guides and the spec (DOR-2526)'
+  - "fix(server): judge a schedule's account by its agent's folder, and never fail a launch over the account check (DOR-2526)"
 ---
 
 ### Added
