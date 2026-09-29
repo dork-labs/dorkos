@@ -227,8 +227,8 @@ describe('ConnectorAgentRequestService', () => {
     probes: {
       /** Whether the destination check at each call (0-based) passes. */
       authorize?: (call: number) => boolean;
-      /** Throws to fail a trigger at the service for the given call (0-based). */
-      reconcileTrigger?: (call: number) => void;
+      /** Throws to fail a trigger at the service for the given call (0-based) or update. */
+      reconcileTrigger?: (call: number, eventType: string) => void;
     } = {}
   ) {
     let triggerCalls = 0;
@@ -255,7 +255,7 @@ describe('ConnectorAgentRequestService', () => {
         definitions,
       })),
       reconcileTrigger: vi.fn<ConnectorEventCapability['reconcileTrigger']>(async (input) => {
-        probes.reconcileTrigger?.(triggerCalls++);
+        probes.reconcileTrigger?.(triggerCalls++, input.definition.eventType);
         return {
           status: 'found' as const,
           trigger: {
@@ -294,6 +294,8 @@ describe('ConnectorAgentRequestService', () => {
       () => NOW.toISOString()
     );
     return {
+      store,
+      subscriptions,
       grants: new ConnectorEventGrantService(
         store,
         subscriptions,
@@ -2793,6 +2795,181 @@ describe('ConnectorAgentRequestService', () => {
       expect(review).toMatchObject({ state: 'pending', resolutionJson: null });
       // What the late approval switched on is stopped too.
       expect(withdraw.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('taking a pick back leaves the person’s own updates as they were (fix round 3)', () => {
+    function subscriptionRow(id: string) {
+      return db.$client
+        .prepare(
+          'SELECT scope_version, enabled, revoked_at, removed_at FROM connector_event_subscriptions WHERE id = ?'
+        )
+        .get(id) as {
+        scope_version: number;
+        enabled: number;
+        revoked_at: string | null;
+        removed_at: string | null;
+      };
+    }
+
+    async function failedPick(
+      fixture: ReturnType<typeof realEventGrants>,
+      eventScopes: typeof fixture.scopes
+    ) {
+      const requests = service({ eventGrants: fixture.grants, resume: undefined });
+      const created = await requests.create(principal(), {
+        ...INPUT,
+        requestedEvents: ['gmail.event_0', 'gmail.event_1'],
+      });
+      grantLive(['revision-read']);
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes,
+        })
+      ).rejects.toThrow();
+      await expect(
+        requests.resolve(OWNER, created.requestId, { decision: 'denied' })
+      ).resolves.toMatchObject({ status: 'denied' });
+    }
+
+    it('uses the person’s live update as it is, and it stays live after the pick fails', async () => {
+      // The reviewer's probe: event_0 is live at v1; the agent's pick of both
+      // updates fails after the review was prepared.
+      let failSecond = false;
+      const fixture = realEventGrants(2, {
+        reconcileTrigger: (_call, eventType) => {
+          if (failSecond && eventType === 'gmail.event_1') throw new Error('second trigger failed');
+        },
+      });
+      const own = await fixture.subscriptions.create(
+        OWNER,
+        fixture.scopes[0]!,
+        new AbortController().signal
+      );
+      expect(own.state).toBe('active');
+      const before = subscriptionRow(own.id);
+      failSecond = true;
+
+      await failedPick(fixture, fixture.scopes);
+
+      expect(subscriptionRow(own.id)).toEqual(before);
+      expect(fixture.store.active(own.id, before.scope_version)).toBeDefined();
+    });
+
+    it('puts back an update the pick took over, exactly as it was', async () => {
+      let failSecond = false;
+      const fixture = realEventGrants(2, {
+        reconcileTrigger: (_call, eventType) => {
+          if (failSecond && eventType === 'gmail.event_1') throw new Error('second trigger failed');
+        },
+      });
+      const own = await fixture.subscriptions.create(
+        OWNER,
+        fixture.scopes[0]!,
+        new AbortController().signal
+      );
+      // Another review already selected it, so this pick takes it over.
+      db.$client
+        .prepare(
+          `INSERT INTO connector_event_consent_commands
+            (owner_kind, owner_id, review_id, request_hash, selections_json, created_at)
+           VALUES ('local_install', 'install-1', 'other-review', 'hash', ?, ?)`
+        )
+        .run(
+          JSON.stringify([{ selection: { subscriptionId: own.id, scopeVersion: 1 } }]),
+          NOW.toISOString()
+        );
+      const before = subscriptionRow(own.id);
+      failSecond = true;
+
+      await failedPick(fixture, fixture.scopes);
+
+      expect(subscriptionRow(own.id)).toEqual(before);
+      expect(fixture.store.active(own.id, 1)).toBeDefined();
+    });
+
+    it('counts the person’s live update as set up, without taking it over', async () => {
+      const fixture = realEventGrants(1);
+      const own = await fixture.subscriptions.create(
+        OWNER,
+        fixture.scopes[0]!,
+        new AbortController().signal
+      );
+      const before = subscriptionRow(own.id);
+      const requests = service({ eventGrants: fixture.grants, resume: undefined });
+      const created = await requests.create(principal(), {
+        ...INPUT,
+        requestedEvents: ['gmail.event_0'],
+      });
+      grantLive(['revision-read']);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+          eventScopes: fixture.scopes,
+        })
+      ).resolves.toMatchObject({ status: 'granted', grantedEvents: ['gmail.event_0'] });
+      expect(subscriptionRow(own.id)).toEqual(before);
+    });
+
+    it('puts back a taken-over update even when it had been stopped', async () => {
+      const fixture = realEventGrants(1, { authorize: () => true });
+      const signal = new AbortController().signal;
+      const own = await fixture.subscriptions.create(OWNER, fixture.scopes[0]!, signal);
+      fixture.store.revoke(OWNER, own.id, NOW.toISOString());
+      const before = subscriptionRow(own.id);
+      expect(before.revoked_at).not.toBeNull();
+
+      await expect(
+        fixture.grants.approve(OWNER, { reviewId: 'review-1', scopes: fixture.scopes }, signal)
+      ).resolves.toMatchObject({ state: 'ready' });
+      expect(subscriptionRow(own.id).revoked_at).toBeNull();
+      fixture.grants.withdraw(OWNER, 'review-1', NOW.toISOString());
+
+      expect(subscriptionRow(own.id)).toEqual(before);
+    });
+
+    it('never touches a generation the owner changed after the pick', async () => {
+      const fixture = realEventGrants(1);
+      const signal = new AbortController().signal;
+      // An agent's pick switches a new update on.
+      await expect(
+        fixture.grants.approve(OWNER, { reviewId: 'review-1', scopes: fixture.scopes }, signal)
+      ).resolves.toMatchObject({ state: 'ready' });
+      const picked = db.$client
+        .prepare('SELECT id, scope_version FROM connector_event_subscriptions')
+        .get() as { id: string; scope_version: number };
+      // The owner then sets the same update up again on the page: a new generation.
+      await fixture.subscriptions.create(OWNER, fixture.scopes[0]!, signal);
+      const edited = subscriptionRow(picked.id);
+      expect(edited.scope_version).toBe(picked.scope_version + 1);
+
+      fixture.grants.withdraw(OWNER, 'review-1', NOW.toISOString());
+
+      expect(subscriptionRow(picked.id)).toEqual(edited);
+      expect(fixture.store.active(picked.id, edited.scope_version)).toBeDefined();
+    });
+
+    it('never puts back a taken-over update the owner changed after the pick', async () => {
+      const fixture = realEventGrants(1);
+      const signal = new AbortController().signal;
+      const own = await fixture.subscriptions.create(OWNER, fixture.scopes[0]!, signal);
+      fixture.store.revoke(OWNER, own.id, NOW.toISOString());
+      // The pick takes the stopped update over.
+      await expect(
+        fixture.grants.approve(OWNER, { reviewId: 'review-1', scopes: fixture.scopes }, signal)
+      ).resolves.toMatchObject({ state: 'ready' });
+      // The owner then sets it up again on the page: a newer generation.
+      await fixture.subscriptions.create(OWNER, fixture.scopes[0]!, signal);
+      const edited = subscriptionRow(own.id);
+
+      fixture.grants.withdraw(OWNER, 'review-1', NOW.toISOString());
+
+      expect(subscriptionRow(own.id)).toEqual(edited);
+      expect(fixture.store.active(own.id, edited.scope_version)).toBeDefined();
     });
   });
 

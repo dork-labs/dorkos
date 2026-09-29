@@ -6,7 +6,7 @@ import type {
   ConnectorReceiveScope,
 } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
-import { recoverEventReview } from './subscription-review.js';
+import { recoverEventReview, storedEventReview } from './subscription-review.js';
 import { ConnectorSubscriptionStore } from './subscription-store.js';
 import {
   ConnectorSubscriptionService,
@@ -140,14 +140,15 @@ export class ConnectorEventGrantService implements ConnectorEventGrantPort {
   }
 
   /**
-   * Stop every subscription generation a review prepared or switched on, and
-   * forget the review's consent, in one transaction (DOR-2503). A generation
-   * that has since moved on (the owner changed it on the page) is left alone.
-   * A subscription the review created (its first generation) also leaves the
-   * owner's list, since they never set it up; one that existed before stays
-   * on it, stopped. Any trigger at the service is retired by the existing
-   * cleanup maintenance (`ConnectorSubscriptionService.recoverCleanup`), which
-   * picks up bindings no live subscription uses.
+   * Take a review back so everything is exactly as it was before it, in one
+   * transaction (DOR-2503): a subscription the review created is stopped and
+   * leaves the owner's list; one it took over is put back as it was (version,
+   * on or off, stopped or not, on the list or not); one it used as it was is
+   * left alone. Then the review's consent is forgotten, so a different pick
+   * can be approved under the same review. A generation that has moved on
+   * since (the owner changed it) is never touched. Any trigger at the service
+   * no live subscription uses is retired by the existing cleanup maintenance
+   * (`ConnectorSubscriptionService.recoverCleanup`).
    */
   withdraw(owner: ConnectorOwnerAuthority, reviewId: string, now: string): void {
     const ownerId = owner.kind === 'user' ? owner.userId : owner.installationId;
@@ -158,28 +159,33 @@ export class ConnectorEventGrantService implements ConnectorEventGrantPort {
         )
         .get(owner.kind, ownerId, reviewId) as { selections_json: string } | undefined;
       if (!command) return;
-      const parsed: unknown = JSON.parse(command.selections_json);
-      const selections = Array.isArray(parsed)
-        ? parsed.flatMap((item: unknown) => {
-            const selection =
-              item && typeof item === 'object' && 'selection' in item ? item.selection : null;
-            return selection &&
-              typeof selection === 'object' &&
-              'subscriptionId' in selection &&
-              typeof selection.subscriptionId === 'string' &&
-              'scopeVersion' in selection &&
-              typeof selection.scopeVersion === 'number'
-              ? [{ subscriptionId: selection.subscriptionId, scopeVersion: selection.scopeVersion }]
-              : [];
-          })
-        : [];
       const stop = this.store.db.$client.prepare(
-        `UPDATE connector_event_subscriptions SET enabled = 0, revoked_at = ?, updated_at = ?,
-         removed_at = CASE WHEN ? = 1 THEN ? ELSE removed_at END, scope_version = scope_version + 1
+        `UPDATE connector_event_subscriptions SET enabled = 0, revoked_at = ?, removed_at = ?,
+         updated_at = ?, scope_version = scope_version + 1
          WHERE id = ? AND scope_version = ? AND revoked_at IS NULL`
       );
-      for (const { subscriptionId, scopeVersion } of selections)
-        stop.run(now, now, scopeVersion, now, subscriptionId, scopeVersion);
+      const restore = this.store.db.$client.prepare(
+        `UPDATE connector_event_subscriptions SET scope_version = ?, enabled = ?, revoked_at = ?,
+         removed_at = ?, definition_id = ?, binding_id = ?, updated_at = ?
+         WHERE id = ? AND scope_version = ?`
+      );
+      for (const item of storedEventReview(command.selections_json)) {
+        const { subscriptionId, scopeVersion } = item.selection;
+        if (item.adopted) continue;
+        if (item.prior)
+          restore.run(
+            item.prior.scopeVersion,
+            item.prior.enabled ? 1 : 0,
+            item.prior.revokedAt,
+            item.prior.removedAt,
+            item.prior.definitionId,
+            item.prior.bindingId,
+            now,
+            subscriptionId,
+            scopeVersion
+          );
+        else stop.run(now, now, now, subscriptionId, scopeVersion);
+      }
       this.store.db.$client
         .prepare(
           'DELETE FROM connector_event_consent_commands WHERE owner_kind = ? AND owner_id = ? AND review_id = ?'

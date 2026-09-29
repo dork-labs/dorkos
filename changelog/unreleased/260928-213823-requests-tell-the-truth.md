@@ -3,6 +3,7 @@ covers:
   - 'fix(connections): agents ask for apps by level, and every request says what happens next (DOR-2503)'
   - 'fix(connections): a request whose updates fail can still be answered, and ends on time (DOR-2503)'
   - 'fix(connections): taking an answer back stops its updates, and a new pick works (DOR-2503)'
+  - 'fix(connections): a failed pick leaves your own updates exactly as they were (DOR-2503)'
 ---
 
 ### Changed
@@ -14,5 +15,5 @@ covers:
 ### Fixed
 
 - An agent can no longer open a new card for the same app just by rewording its reason. It keeps one open request per app, and it can't open requests faster than you could answer them
-- If the updates you pick for an agent can't be set up, you can pick them again, answer without updates, or say no, instead of the request getting stuck. Updates you didn't end up allowing never arrive. A request whose updates never start ends on time, and the agent is told it won't get updates
+- If the updates you pick for an agent can't be set up, you can pick them again, answer without updates, or say no, instead of the request getting stuck. Updates you didn't end up allowing never arrive, and updates you'd already set up yourself are left exactly as they were. A request whose updates never start ends on time, and the agent is told it won't get updates
 - On Codex and OpenCode, an agent waiting for your answer no longer gives up with an error while you’re still deciding
