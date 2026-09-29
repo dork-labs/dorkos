@@ -28,7 +28,11 @@ export type {
   ExtensionAPI,
   ExtensionPointId,
   ExtensionReadableState,
+  ExtensionPageProps,
+  ExtensionPageOptions,
   ProjectRef,
+  StatusBarItemOptions,
+  StatusBarSlotContext,
   TrackerItemRef,
 } from './extension-api.js';
 export {

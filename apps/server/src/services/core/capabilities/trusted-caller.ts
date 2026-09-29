@@ -85,7 +85,7 @@
  * removing a package source (DOR-502) is operator-only with no approval card
  * behind it, and `dorkos marketplace add` is a documented terminal verb whose only
  * credential is an API key — so a cookie bar there is a lockout, not a hardening
- * (`services/marketplace/source-write-policy.ts`). That route asked this module
+ * (`services/marketplace/sources/source-write-policy.ts`). That route asked this module
  * for a boolean it then threw away, so it now reads `resolveDecisionAuthority`
  * directly instead of minting a gate-bypass marker it never used. Nothing about
  * that route's posture changed.

@@ -167,7 +167,7 @@ export function createShapesRouter(deps: ShapesRouterDeps): Router {
   /**
    * Run the tier gate for the apply this route is about to perform itself.
    *
-   * Deliberately the same sequence `routes/marketplace.ts` uses, in the same
+   * Deliberately the same sequence `routes/marketplace/context.ts` uses, in the same
    * order, so the two cannot drift in what they accept: read the caller's
    * authority once through the shared reader, mint a trusted marker if it is a
    * person, otherwise attribute the call to whatever agent identity resolved and

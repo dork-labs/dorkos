@@ -21,7 +21,12 @@ import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 
 function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
   return {
-    registry: { register: vi.fn().mockReturnValue(vi.fn()) },
+    registry: {
+      register: vi.fn().mockReturnValue(vi.fn()),
+      getContributions: vi.fn().mockReturnValue([]),
+      setTabMarker: vi.fn(),
+      clearTabMarkers: vi.fn(),
+    },
     dispatcherContext: {
       getStore: () => ({}) as ReturnType<ExtensionAPIDeps['dispatcherContext']['getStore']>,
       setTheme: vi.fn(),

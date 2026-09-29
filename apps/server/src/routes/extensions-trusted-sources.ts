@@ -19,7 +19,7 @@ import { TrustedSourceRequestSchema } from '@dorkos/shared/extension-approval-sc
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
-import { normalizeTrustedSource } from '../services/marketplace/lib/provenance/trusted-source.js';
+import { normalizeTrustedSource } from '../services/marketplace/lib/trusted-source.js';
 import { logger } from '../lib/logger.js';
 import { configManager } from '../services/core/config-manager.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';

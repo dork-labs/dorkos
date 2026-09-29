@@ -101,7 +101,8 @@ export interface TestExtensionResult {
    * bundle. Nothing about the code was executed.
    */
   phase?: 'approval' | 'compilation' | 'activation';
-  contributions?: Record<ExtensionPointId, number>;
+  /** Registrations per UI slot, plus `pages` for `registerPage`. */
+  contributions?: Record<ExtensionPointId | 'pages', number>;
   errors?: Array<{
     text: string;
     location?: { file: string; line: number; column: number };

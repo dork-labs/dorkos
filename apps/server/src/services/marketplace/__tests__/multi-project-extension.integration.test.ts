@@ -20,8 +20,8 @@ import path from 'node:path';
 import { initBoundary } from '../../../lib/boundary.js';
 import { buildInstallerForTests } from './installer-harness.js';
 import { noopLogger } from '@dorkos/shared/logger';
-import { UninstallFlow } from '../flows/uninstall.js';
-import { readProjectInstalls } from '../lib/provenance/project-install-index.js';
+import { UninstallFlow } from '../flows/uninstall/uninstall.js';
+import { readProjectInstalls } from '../lib/project-install-index.js';
 import type { ExtensionsConfig } from '../../extensions/extension-enable-resolution.js';
 
 /** The `extensions` config the manager reads and writes, held in memory. */

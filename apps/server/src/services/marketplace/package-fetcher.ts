@@ -48,12 +48,12 @@ import {
   type ResolvedSourceDescriptor,
   type SourceKey,
 } from '@dorkos/marketplace';
-import type { MarketplaceCache } from './marketplace-cache.js';
+import type { MarketplaceCache } from './cache/marketplace-cache.js';
 import type { MarketplaceSource } from './types.js';
 import { relativePathResolver } from './source-resolvers/relative-path.js';
 import { gitResolver } from './source-resolvers/git.js';
 import { npmResolver } from './source-resolvers/npm.js';
-import { assertSafeGitRemote } from './source-url-policy.js';
+import { assertSafeGitRemote } from './sources/source-url-policy.js';
 import { validateBoundary } from '../../lib/boundary.js';
 import {
   GitRefNotFoundError,
@@ -869,7 +869,7 @@ export function isFileUrl(source: string): boolean {
  *
  * Exported so every local-source code path shares one conversion (DOR-412):
  * `PackageFetcher`'s own `file://` handling here, and
- * `MarketplaceInstaller.buildFetchableSource`'s `marketplaceRoot`
+ * `PackageStager.buildFetchableSource`'s `marketplaceRoot`
  * population, previously each carried their own `new URL(source).pathname`,
  * which left directory names with spaces percent-encoded and mishandled
  * Windows drive letters.

@@ -247,6 +247,7 @@ import type {
   ConnectorUsagePage,
 } from './connector-schemas.js';
 import type { SearchQuery, SearchResponse } from './search-schemas.js';
+import type { ProjectInfo, ProjectRef } from './project-schemas.js';
 import type {
   ConnectorAgentConnections,
   ConnectorEveryAgentGrants,
@@ -1513,6 +1514,15 @@ export interface Transport
   scanWorktrees(): Promise<WorktreeScanResult>;
   /** Resolve an absolute path (e.g. a session cwd) to its containing workspace, or null. */
   resolveWorkspace(absPath: string): Promise<Workspace | null>;
+
+  // --- Projects (git main checkouts; spec `flow-multiproject` §6.1) ---
+  /** Every known project whose folder exists, by name. */
+  listProjects(): Promise<ProjectInfo[]>;
+  /**
+   * The project a folder belongs to: its git main checkout, or null when the
+   * folder is in no repository. A lookup never adds the folder to the list.
+   */
+  resolveProject(cwd: string): Promise<ProjectRef | null>;
 
   /** Server health check. */
   health(): Promise<HealthResponse>;

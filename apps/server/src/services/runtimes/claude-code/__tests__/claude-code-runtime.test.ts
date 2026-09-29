@@ -130,7 +130,7 @@ vi.mock('../../../marketplace/installed-scanner.js', () => ({
 }));
 // Which global packages a person approved is decided in the marketplace layer
 // (DOR-2306); the runtime must hand the SDK that list and nothing wider.
-vi.mock('../../../marketplace/global-plugin-consent.js', () => ({
+vi.mock('../../../marketplace/consent/global-plugin-consent.js', () => ({
   listConsentedPluginNames: _mockListConsentedPluginNames,
 }));
 vi.mock('../messaging/plugin-activation.js', () => ({

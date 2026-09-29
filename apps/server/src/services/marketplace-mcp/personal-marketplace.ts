@@ -15,7 +15,7 @@
 import { mkdir, writeFile, access } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
-import type { MarketplaceSourceManager } from '../marketplace/marketplace-source-manager.js';
+import type { MarketplaceSourceManager } from '../marketplace/sources/marketplace-source-manager.js';
 
 /** Source name used when registering the personal marketplace. */
 export const PERSONAL_MARKETPLACE_NAME = 'personal' as const;

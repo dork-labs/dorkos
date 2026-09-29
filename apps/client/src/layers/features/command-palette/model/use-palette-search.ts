@@ -12,7 +12,12 @@ import {
 } from './palette-ranking';
 import { scopeKey, type PaletteScope } from './palette-scope';
 import type { PaletteUsage } from './use-palette-usage';
-import type { FeatureItem, CommandItemData, QuickActionItem } from './use-palette-items';
+import type {
+  FeatureItem,
+  CommandItemData,
+  QuickActionItem,
+  PaletteAddOnPage,
+} from './use-palette-items';
 
 /** What every searchable row carries, whatever kind of thing it stands for. */
 interface SearchableItemBase {
@@ -68,7 +73,8 @@ export type SearchableItem =
   | (SearchableItemBase & { type: 'command'; data: CommandItemData })
   | (SearchableItemBase & { type: 'quick-action'; data: QuickActionItem })
   | (SearchableItemBase & { type: 'room'; data: RoomSummary })
-  | (SearchableItemBase & { type: 'dm'; data: RoomSummary });
+  | (SearchableItemBase & { type: 'dm'; data: RoomSummary })
+  | (SearchableItemBase & { type: 'page'; data: PaletteAddOnPage });
 
 export interface SearchResult {
   item: SearchableItem;

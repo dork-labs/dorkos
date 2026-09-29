@@ -44,7 +44,7 @@ const API_KEY_FILE_NAME = 'api-key';
 
 /**
  * The HTTP error envelope returned by the marketplace routes. The router
- * uses `mapErrorToStatus` in `apps/server/src/routes/marketplace.ts` to map
+ * uses `mapErrorToStatus` in `apps/server/src/routes/marketplace/shared.ts` to map
  * service errors into this shape, so the CLI can detect conflict reports
  * and validation errors without parsing free-form messages.
  */

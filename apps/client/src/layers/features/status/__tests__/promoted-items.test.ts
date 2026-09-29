@@ -25,6 +25,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     usage: null,
     usageStale: false,
     subagentsInFlight: 0,
+    extensionItems: [],
     ...overrides,
   };
 }
@@ -179,6 +180,7 @@ describe('selectPromotedItems — a degraded session', () => {
         runtime: { isDefault: false, canSelect: false },
         git: { dirty: true, onDefaultBranch: false },
         subagentsInFlight: 3,
+        extensionItems: [],
         usage: { kind: 'subscription', utilization: 0.95, state: 'exhausted' },
       }),
       pins: [],

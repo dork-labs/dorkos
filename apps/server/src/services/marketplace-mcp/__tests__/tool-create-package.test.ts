@@ -59,7 +59,7 @@ function buildTokenProvider() {
 
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import type { MarketplaceSource } from '../../marketplace/types.js';
-import type { MarketplaceSourceManager } from '../../marketplace/marketplace-source-manager.js';
+import type { MarketplaceSourceManager } from '../../marketplace/sources/marketplace-source-manager.js';
 import { createCreatePackageHandler } from '../tool-create-package.js';
 
 /** Build a logger whose every method is a `vi.fn()` spy. */

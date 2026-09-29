@@ -13,8 +13,8 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { MarketplaceJson } from '@dorkos/marketplace';
-import type { CachedMarketplace, MarketplaceCache } from '../marketplace-cache.js';
-import type { MarketplaceSourceManager } from '../marketplace-source-manager.js';
+import type { CachedMarketplace, MarketplaceCache } from '../cache/marketplace-cache.js';
+import type { MarketplaceSourceManager } from '../sources/marketplace-source-manager.js';
 import type { MarketplaceSource } from '../types.js';
 import {
   AmbiguousPackageError,

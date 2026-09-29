@@ -242,6 +242,11 @@ vi.mock('@/layers/features/files', () => ({
   useFiles: () => ({ data: { files: [] } }),
 }));
 
+import {
+  DEFAULT_SESSION_STREAM_STATE,
+  useSessionStreamStore,
+  type SessionStreamState,
+} from '@/layers/entities/session';
 import { ChatPanel } from '../ui/ChatPanel';
 
 beforeAll(() => {
@@ -270,6 +275,7 @@ beforeEach(() => {
   mockChatStatus = 'idle';
   mockPromptSuggestions = [];
   useExtensionRegistry.setState({ slots: createInitialSlots() });
+  useSessionStreamStore.setState({ sessions: {} });
   localStorage.clear();
 });
 
@@ -286,6 +292,45 @@ describe('ChatPanel status line', () => {
     expect(screen.getByTestId('status-line')).toBeTruthy();
     expect(screen.queryByLabelText(/input extras/)).toBeNull();
     expect(screen.queryByText('Swipe to collapse')).toBeNull();
+  });
+});
+
+describe('ChatPanel turn status', () => {
+  // The browser suite's "a turn is running" signal (ChatPage.turnRunning). It
+  // must follow the turn's own status exactly, both ways.
+  it('mirrors the turn status onto the panel', () => {
+    mockChatStatus = 'streaming';
+    const { rerender } = render(<ChatPanel sessionId="test" />);
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-turn-status', 'streaming');
+
+    mockChatStatus = 'idle';
+    rerender(<ChatPanel sessionId="test" />);
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-turn-status', 'idle');
+  });
+
+  // The rendered status collapses a turn parked on a person into `idle`, so the
+  // panel carries the server's lifecycle too — without it, a spec waiting for
+  // the turn to end would return while an approval is still up.
+  it('mirrors a parked turn as blocked, though its rendered status reads idle', () => {
+    mockChatStatus = 'idle';
+    useSessionStreamStore.setState({
+      sessions: {
+        test: {
+          ...DEFAULT_SESSION_STREAM_STATE,
+          // Only the lifecycle is read here; the rest of the status is irrelevant.
+          status: { lifecycle: 'blocked' } as SessionStreamState['status'],
+        },
+      },
+    });
+    render(<ChatPanel sessionId="test" />);
+    const panel = screen.getByTestId('chat-panel');
+    expect(panel).toHaveAttribute('data-turn-status', 'idle');
+    expect(panel).toHaveAttribute('data-turn-lifecycle', 'blocked');
+  });
+
+  it('carries no lifecycle before the session hydrates', () => {
+    render(<ChatPanel sessionId="test" />);
+    expect(screen.getByTestId('chat-panel')).not.toHaveAttribute('data-turn-lifecycle');
   });
 });
 

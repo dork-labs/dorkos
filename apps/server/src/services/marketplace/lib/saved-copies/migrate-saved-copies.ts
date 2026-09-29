@@ -32,7 +32,7 @@ import {
   readInstalledFiles,
   writeInstalledFiles,
   type InstalledFiles,
-} from '../installed-files.js';
+} from '../records/installed-files.js';
 import { declaredLocationsOf } from '../integrity/strict-differences.js';
 import {
   freeSavedFileName,

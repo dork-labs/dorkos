@@ -911,6 +911,13 @@
       "when": 1790665320090,
       "tag": "0129_known_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "6",
+      "when": 1790667691475,
+      "tag": "0130_room_attachment_community_id",
+      "breakpoints": true
     }
   ]
 }

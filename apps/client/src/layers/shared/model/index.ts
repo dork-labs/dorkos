@@ -22,6 +22,7 @@ export {
 } from './use-theme';
 export { useReportIssue } from './report-issue/use-report-issue';
 export { useIsMobile } from './media/use-is-mobile';
+export { useMediaQuery } from './media/use-media-query';
 export { useIsBelowDesktop } from './media/use-is-below-desktop';
 export { useIsTouchOnly } from './media/use-is-touch-only';
 export { useVisualViewportBottomInset } from './viewport/use-visual-viewport-inset';
@@ -155,6 +156,14 @@ export {
   type SettingsTabContribution,
   type RightPanelContribution,
   type SuggestionChipContribution,
+  type ExtensionPageContribution,
+  type StatusBarContribution,
+  type TabMarker,
+  useTabMarker,
+  menuExtensionPages,
+  useMenuExtensionPages,
+  useExtensionPageAtPath,
+  type ExtensionPageAtPath,
 } from './extension-registry';
 export { dialogSearchSchema, mergeDialogSearch, type DialogSearch } from './dialog-search-schema';
 export {

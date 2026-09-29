@@ -485,7 +485,7 @@ export function registerHeldProcessTests(deps: HeldProcessDeps): void {
       // Settles honestly: the composer comes back, and no red failure card —
       // a turn the person stopped is not a turn that failed.
       await expect(stop).toBeHidden({ timeout: SERVER_ROUND_TRIP_MS });
-      await expect(chatPage.inferenceStreaming).toBeHidden({ timeout: SERVER_ROUND_TRIP_MS });
+      await chatPage.waitForTurnToEnd(SERVER_ROUND_TRIP_MS);
       await expect(chatPage.input).toBeEnabled();
       await expect(page.getByTestId('error-message-block')).toHaveCount(0);
 

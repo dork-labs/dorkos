@@ -10,6 +10,8 @@ import type {
 import type { SessionContextUsage } from '@dorkos/shared/session-stream';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { Workspace } from '@dorkos/shared/workspace';
+import type { StatusBarSlotContext } from '@dorkos/extension-api';
+import type { StatusBarContribution } from '@/layers/shared/model';
 import type { SessionStatusData } from '@/layers/entities/session';
 import {
   CwdItem,
@@ -36,6 +38,7 @@ import {
 } from '@/layers/features/status';
 import { AgentIdentityChip } from './AgentIdentityChip';
 import { AccountStatusItem } from './AccountStatusItem';
+import { ExtensionStatusItems } from './ExtensionStatusItems';
 
 /** The Plan switch's declared mode, current state, and toggle. */
 export interface PlanChipState {
@@ -148,6 +151,13 @@ export interface StatusItemNodesInput {
    * keeping the avatar.
    */
   density: StatusDensity;
+  /**
+   * The items extensions added that show for this chat, and the slot context
+   * they are drawn with (spec `flow-multiproject` §6.6). `items` is already
+   * filtered by each item's own `when` and in order; empty means the
+   * `extensions` slot has nothing to draw.
+   */
+  extensions: { ctx: StatusBarSlotContext; items: readonly StatusBarContribution[] };
 }
 
 /** A usage with every cost figure removed, for a runtime that cannot track cost. */
@@ -224,6 +234,13 @@ export function buildStatusItemNodes(
   const accountPromotion = accountChipPromotion(input.account);
   if (accountPromotion !== null) {
     nodes.account = <AccountStatusItem sessionId={sessionId} account={input.account} />;
+  }
+
+  // Everything extensions added, as one slot beside the account chip.
+  if (input.extensions.items.length > 0) {
+    nodes.extensions = (
+      <ExtensionStatusItems ctx={input.extensions.ctx} items={input.extensions.items} />
+    );
   }
 
   nodes.model = (

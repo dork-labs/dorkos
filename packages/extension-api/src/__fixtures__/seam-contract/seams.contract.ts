@@ -9,11 +9,14 @@
  * fails in whichever repo moved. Bump `CONTRACT_VERSION` in the PR that
  * changes it: minor for an added member, major for a removal or a narrowing.
  *
- * Phase 2 PR (a) declares the project and tracker-item seams. Each later phase
- * adds its own members here.
+ * Phase 2 PR (a) declared the project and tracker-item seams (1.0.0). PR (c)
+ * adds the client seams: pages, the status-bar slot, the tab marker, in-app
+ * navigation and `currentProject` (1.1.0). Each later phase adds its own
+ * members here.
  *
  * @module extension-api/__fixtures__/seam-contract
  */
+import type { ComponentType } from 'react';
 
 /** A project as core knows it: a git main checkout. */
 export interface ProjectRef {
@@ -71,4 +74,88 @@ export interface SessionInfoSeams {
   trackerItems: { id: string; via: 'this-chat' | 'own-chat' }[];
   /** @deprecated The newest `this-chat` item. */
   trackerItem?: { id: string };
+}
+
+/** The UI slots an extension can probe with `isSlotAvailable`. */
+export type ExtensionPointId =
+  | 'sidebar.footer'
+  | 'dashboard.sections'
+  | 'command-palette.items'
+  | 'dialog'
+  | 'settings.tabs'
+  | 'right-panel'
+  | 'status-bar';
+
+/** The `ExtensionReadableState` members this contract covers. */
+export interface ExtensionReadableStateSeams {
+  /** The project of `currentCwd`; null for no project or while resolving. */
+  currentProject: ProjectRef | null;
+}
+
+/** Props every extension page receives. */
+export interface ExtensionPageProps {
+  /** Values of the page path's `:param` segments. */
+  readonly params: Readonly<Record<string, string>>;
+  /** The URL's query, flat. */
+  readonly search: Readonly<Record<string, string>>;
+  /** Replace query keys; null removes a key. Writes the URL. */
+  setSearch(next: Record<string, string | null>): void;
+}
+
+/** How an extension page is named and listed. */
+export interface ExtensionPageOptions {
+  /** Title for the page bar, tab, palette and phone menu. */
+  title: string;
+  /** Icon, sized by the host with `className`. */
+  icon?: ComponentType<{ className?: string }>;
+  /** List it in the palette and the phone "Add-ons" menu. Default true. */
+  menu?: boolean;
+}
+
+/** What a status-bar item is given, for the chat whose status bar it sits in. */
+export interface StatusBarSlotContext {
+  /** The chat's session id. */
+  readonly sessionId: string;
+  /** The chat's working folder, or null. */
+  readonly cwd: string | null;
+  /** The project of `cwd`, or null. */
+  readonly project: ProjectRef | null;
+  /** Every tracker item the chat works on, newest first. */
+  readonly trackerItems: readonly TrackerItemRef[];
+  /** True at phone width. */
+  readonly compact: boolean;
+}
+
+/** How a status-bar item is named, ordered and shown. */
+export interface StatusBarItemOptions {
+  /** Accessible name of the item's region. */
+  label: string;
+  /** Order among extension items; lower first. Default 100. */
+  priority?: number;
+  /** Whether to show for this chat. Pure; reads only `ctx`. */
+  when?(ctx: StatusBarSlotContext): boolean;
+  /** Whether it needs attention. Pure; reads only `ctx`. */
+  urgent?(ctx: StatusBarSlotContext): boolean;
+}
+
+/** The `ExtensionAPI` members this contract covers. */
+export interface ExtensionAPISeams {
+  /** Mount a full page at /x/<extensionId>/<path>. */
+  registerPage(
+    path: string,
+    component: ComponentType<ExtensionPageProps>,
+    options: ExtensionPageOptions
+  ): () => void;
+  /** Add an item to the chat status bar. */
+  registerStatusBarItem(
+    id: string,
+    component: ComponentType<StatusBarSlotContext>,
+    options: StatusBarItemOptions
+  ): () => void;
+  /** Mark one of this extension's right-panel tabs; null clears it. */
+  setTabMarker(tabId: string, marker: 'attention' | null): void;
+  /** Navigate in-app: core routes and this extension's own '/x/<id>/…' pages. */
+  navigate(path: string): void;
+  /** Whether a UI slot is rendered in the current host context. */
+  isSlotAvailable(slot: ExtensionPointId): boolean;
 }

@@ -15,7 +15,7 @@ import type {
   PermissionPreview,
   ResolveLatestOptions,
 } from '../types.js';
-import type { DisclosedEffects } from '../disclosed-effects.js';
+import type { DisclosedEffects } from '../preview/disclosed-effects.js';
 import type { InstallationRecord, PackageScope } from '../installed-scanner.js';
 
 /**
@@ -44,7 +44,7 @@ export interface InstallerLike {
 }
 
 /**
- * Structural interface for {@link import('../marketplace-source-manager.js').MarketplaceSourceManager}.
+ * Structural interface for {@link import('../sources/marketplace-source-manager.js').MarketplaceSourceManager}.
  * Declared locally so tests can mock with `vi.fn()` without constructing
  * the concrete class.
  */

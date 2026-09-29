@@ -6,12 +6,25 @@ import type {
   ExtensionEvent,
   ExtensionEventKind,
   ExtensionEventDeclaration,
+  ExtensionPageOptions,
+  ExtensionPageProps,
+  ProjectRef,
+  StatusBarItemOptions,
+  StatusBarSlotContext,
 } from '@dorkos/extension-api';
 import { isExtensionEventDeclared } from '@dorkos/extension-api';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
-import type { CommandPaletteContribution } from '@/layers/shared/model';
+import type {
+  CommandPaletteContribution,
+  ExtensionPageContribution,
+  StatusBarContribution,
+} from '@/layers/shared/model';
 import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
 import { internalRoutePath } from '@/layers/shared/lib/link-navigation';
+import {
+  EXTENSION_PAGE_PATH_PATTERN,
+  parseExtensionPagePath,
+} from '@/layers/shared/lib/extension-page-path';
 import { toast } from 'sonner';
 import type { ExtensionAPIDeps } from './types';
 import { extensionApiUrl } from './extension-api-url';
@@ -21,6 +34,9 @@ const DEFAULT_PRIORITY = 50;
 
 /** Lucide icon name used as a fallback for extension commands. */
 const FALLBACK_ICON = 'puzzle';
+
+/** Default order of an extension's status-bar item among the others (spec §11.1). */
+const DEFAULT_STATUS_BAR_PRIORITY = 100;
 
 /**
  * Construct a per-extension API object wrapping host primitives.
@@ -38,6 +54,7 @@ export function createExtensionAPI(
   declaredEvents: readonly ExtensionEventDeclaration[] = []
 ): { api: ExtensionAPI; cleanups: Array<() => void> } {
   const cleanups: Array<() => void> = [];
+  let markersQueuedForCleanup = false;
 
   const api: ExtensionAPI = {
     id: extId,
@@ -135,6 +152,93 @@ export function createExtensionAPI(
       return unsub;
     },
 
+    registerPage(
+      path: string,
+      component: ComponentType<ExtensionPageProps>,
+      options: ExtensionPageOptions
+    ): () => void {
+      if (!EXTENSION_PAGE_PATH_PATTERN.test(path)) {
+        throw new Error(
+          `[extensions] ${extId}: registerPage path ${JSON.stringify(path)} is not '' or ` +
+            "lowercase segments and ':param' placeholders, e.g. 'p/:name'"
+        );
+      }
+      // The title names the page in its bar, its tab, the palette and the phone
+      // menu, and the menus sort by it. An untyped extension can hand anything
+      // here, so a page with no usable title is refused rather than drawn blank
+      // (or crashing a sort) in four places.
+      const title = typeof options?.title === 'string' ? options.title.trim() : '';
+      if (!title) {
+        console.warn(
+          `[extensions] ${extId}: registerPage('${path}') needs options.title, a non-empty string; the page was not added`
+        );
+        return () => {};
+      }
+      const id = `${extId}:${path}`;
+      if (deps.registry.getContributions('pages').some((page) => page.id === id)) {
+        console.warn(
+          `[extensions] ${extId} registered the page '${path}' twice; the later one wins`
+        );
+      }
+      const contribution: ExtensionPageContribution = {
+        id,
+        extensionId: extId,
+        path,
+        component,
+        title,
+        // Kept as given: every surface draws it through `ContributedIcon`, which
+        // falls back to a puzzle piece for anything it cannot render.
+        icon: options.icon,
+        menu: options.menu !== false,
+      };
+      const unsub = deps.registry.register('pages', contribution);
+      cleanups.push(unsub);
+      return unsub;
+    },
+
+    registerStatusBarItem(
+      id: string,
+      component: ComponentType<StatusBarSlotContext>,
+      options: StatusBarItemOptions
+    ): () => void {
+      const contribution: StatusBarContribution = {
+        id: `${extId}:${id}`,
+        extensionId: extId,
+        label: options.label,
+        priority: options.priority ?? DEFAULT_STATUS_BAR_PRIORITY,
+        component,
+        // Bound to `options` so an author may write them as methods that use
+        // `this`; the host calls them bare.
+        when: options.when?.bind(options),
+        urgent: options.urgent?.bind(options),
+      };
+      const unsub = deps.registry.register('status-bar', contribution);
+      cleanups.push(unsub);
+      return unsub;
+    },
+
+    setTabMarker(tabId: string, marker: 'attention' | null): void {
+      const contributionId = `${extId}:${tabId}`;
+      const owned = deps.registry
+        .getContributions('right-panel')
+        .some((contribution) => contribution.id === contributionId);
+      if (!owned) {
+        console.warn(
+          `[extensions] ${extId} asked to mark the tab '${tabId}', which it has not registered ` +
+            "with registerComponent('right-panel', …)"
+        );
+        return;
+      }
+      // Marks live in the registry, apart from the contributions they sit on,
+      // so they are cleared with the extension (spec §6.7). Queued once, the
+      // first time this extension marks anything.
+      if (!markersQueuedForCleanup) {
+        markersQueuedForCleanup = true;
+        cleanups.push(() => deps.registry.clearTabMarkers(extId));
+      }
+      deps.registry.setTabMarker(contributionId, marker);
+    },
+
     executeCommand(command: UiCommand): void {
       // Origin 'agent': extension code is programmatic — not an explicit human
       // tab pick — so it must not persist over the user's per-agent right-panel
@@ -162,6 +266,13 @@ export function createExtensionAPI(
       const target = internalRoutePath(path);
       if (target === null) {
         console.warn(`[extensions] ${extId} asked to navigate to an unknown route:`, path);
+        return;
+      }
+      // Pages under `/x/` are scoped: an extension may send you to its own,
+      // never to another extension's (spec `flow-multiproject` invariant 11).
+      const page = parseExtensionPagePath(new URL(target, 'http://x.invalid').pathname);
+      if (page !== null && page.extensionId !== extId) {
+        console.warn(`[extensions] ${extId} asked to navigate to another extension's page:`, path);
         return;
       }
       deps.navigate({ to: target });
@@ -247,8 +358,8 @@ export function createExtensionAPI(
 /**
  * Project raw app store state into the read-only extension state shape.
  *
- * Maps the app store's `selectedCwd`, `sessionId`, and `currentAgentId` fields
- * to the `ExtensionReadableState` interface. `currentAgentId` is resolved from
+ * Maps the app store's `selectedCwd`, `sessionId`, `currentAgentId` and
+ * `currentProject` fields to the `ExtensionReadableState` interface. `currentAgentId` is resolved from
  * the selected cwd by `useSyncCurrentAgentId`; it is null when no agent is
  * registered there or resolution hasn't completed.
  */
@@ -257,11 +368,15 @@ function projectState(store: unknown): ExtensionReadableState {
     selectedCwd?: string | null;
     sessionId?: string | null;
     currentAgentId?: string | null;
+    currentProject?: ProjectRef | null;
   };
   return {
     currentCwd: s.selectedCwd ?? null,
     activeSessionId: s.sessionId ?? null,
     agentId: s.currentAgentId ?? null,
+    // The store's own object, never a copy: `subscribe` diffs by identity, and
+    // the store only replaces it when the root or name really changed.
+    currentProject: s.currentProject ?? null,
   };
 }
 
@@ -331,6 +446,17 @@ function adaptToContribution(
         icon: FALLBACK_ICON,
         action: `ext:${id}`,
         category: 'feature' as const,
+      };
+    case 'status-bar':
+      // `registerStatusBarItem` is the documented way in; this keeps
+      // `registerComponent('status-bar', …)` from registering something the bar
+      // cannot draw. Always shown, never urgent.
+      return {
+        ...base,
+        extensionId: id.slice(0, id.indexOf(':')),
+        label,
+        priority: options?.priority ?? DEFAULT_STATUS_BAR_PRIORITY,
+        component,
       };
     default: {
       // Exhaustive check for future slot additions

@@ -24,7 +24,7 @@ The one idea that explains most of the design: **installing a Shape is not apply
 | Production adapters (resolver, config, list) | `apps/server/src/services/shapes/shape-services.ts`                                                                                   |
 | Shape routes (list + apply)                  | `apps/server/src/routes/shapes.ts`                                                                                                    |
 | Install flow (stages, does not activate)     | `apps/server/src/services/marketplace/flows/install-shape.ts`                                                                         |
-| Uninstall teardown                           | `apps/server/src/services/marketplace/flows/uninstall.ts`                                                                             |
+| Uninstall teardown                           | `apps/server/src/services/marketplace/flows/uninstall/uninstall.ts`                                                                   |
 | Update (advisory → replace)                  | `apps/server/src/services/marketplace/flows/update.ts`                                                                                |
 | Manifest schema + cross-field rules          | `packages/marketplace/src/manifest-schema.ts` (`ShapeManifestSchema`)                                                                 |
 | Client apply surface (the only caller)       | `apps/client/src/layers/features/shapes/ui/ShapeSwitcherDialog.tsx`                                                                   |
@@ -150,7 +150,7 @@ Reconciliation of a renamed/dropped schedule therefore happens at the next **app
 
 ## Uninstall teardown
 
-`UninstallFlow.teardownShape` (`flows/uninstall.ts`) runs when a `type: 'shape'` package is removed and `deactivateShape !== false`:
+`UninstallSideEffects.teardownShape` (`flows/uninstall/side-effects.ts`) runs when a `type: 'shape'` package is removed and `deactivateShape !== false`:
 
 1. **Delete the Shape's schedules — always, active or not.** `deleteSchedulesForShape(shapeName)` with no `keepNames` removes every directory the receipt names for this Shape, across scopes, so a Shape's tick never keeps firing after the Shape is gone.
 2. **If this is the active Shape:** disable the extensions it turned on (`manifest.activates`, the reverse of apply's enable step) and `clearActiveShape()` so the pointer never dangles at a deleted install.
@@ -208,18 +208,18 @@ for (const id of manifest.activates) await extensionManager.disable(id);
 
 Every seam has a co-located suite. The pure engines run against fakes; the flows run against a temp `dorkHome`.
 
-| Suite                                                                           | Covers                                                                                                                              |
-| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/services/shapes/__tests__/apply-shape.test.ts`                 | Apply: fatal-vs-degrade, extension swap, schedule create/re-bind/reconcile, offers, active write, slug keying.                      |
-| `apps/server/src/services/shapes/__tests__/shape-schedule-service.test.ts`      | File-first create, receipt-gated overwrite/teardown, adapted-copy survival, empty-dir refusal, re-bind move.                        |
-| `apps/server/src/services/shapes/__tests__/schedule-write-receipt.test.ts`      | The receipt file: durability across restart, path-spelling matches, concurrent writes, adoption run-once, unreadable-file handling. |
-| `apps/server/src/services/shapes/__tests__/rebind-schedules.test.ts`            | Agent-create seam: matchName + receipt + still-global gating; user/other-Shape schedules untouched.                                 |
-| `apps/server/src/services/marketplace/__tests__/flows/install-shape.test.ts`    | Stage-not-activate; no extension enable at install.                                                                                 |
-| `apps/server/src/services/marketplace/__tests__/flows/uninstall.test.ts`        | Teardown: schedules always, extensions + active-clear only when active, `deactivateShape: false` suppression.                       |
-| `apps/server/src/services/marketplace/__tests__/flows/update.test.ts`           | Advisory-by-default; apply → replace path.                                                                                          |
-| `apps/server/src/routes/__tests__/shapes.test.ts`                               | Route wiring, slug validation, 404 mapping.                                                                                         |
-| `apps/client/src/layers/features/shapes/__tests__/ShapeSwitcherDialog.test.tsx` | Single apply surface, arrival offer + schedule-summary line, focus highlight, degradation notes.                                    |
-| `apps/client/src/layers/entities/shapes/__tests__/apply-shape-*.test.ts`        | The reusable apply action + client-side layout apply.                                                                               |
+| Suite                                                                              | Covers                                                                                                                              |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/services/shapes/__tests__/apply-shape.test.ts`                    | Apply: fatal-vs-degrade, extension swap, schedule create/re-bind/reconcile, offers, active write, slug keying.                      |
+| `apps/server/src/services/shapes/__tests__/shape-schedule-service.test.ts`         | File-first create, receipt-gated overwrite/teardown, adapted-copy survival, empty-dir refusal, re-bind move.                        |
+| `apps/server/src/services/shapes/__tests__/schedule-write-receipt.test.ts`         | The receipt file: durability across restart, path-spelling matches, concurrent writes, adoption run-once, unreadable-file handling. |
+| `apps/server/src/services/shapes/__tests__/rebind-schedules.test.ts`               | Agent-create seam: matchName + receipt + still-global gating; user/other-Shape schedules untouched.                                 |
+| `apps/server/src/services/marketplace/flows/__tests__/install-shape.test.ts`       | Stage-not-activate; no extension enable at install.                                                                                 |
+| `apps/server/src/services/marketplace/flows/uninstall/__tests__/uninstall.test.ts` | Teardown: schedules always, extensions + active-clear only when active, `deactivateShape: false` suppression.                       |
+| `apps/server/src/services/marketplace/flows/__tests__/update.test.ts`              | Advisory-by-default; apply → replace path.                                                                                          |
+| `apps/server/src/routes/__tests__/shapes.test.ts`                                  | Route wiring, slug validation, 404 mapping.                                                                                         |
+| `apps/client/src/layers/features/shapes/__tests__/ShapeSwitcherDialog.test.tsx`    | Single apply surface, arrival offer + schedule-summary line, focus highlight, degradation notes.                                    |
+| `apps/client/src/layers/entities/shapes/__tests__/apply-shape-*.test.ts`           | The reusable apply action + client-side layout apply.                                                                               |
 
 ```bash
 pnpm vitest run apps/server/src/services/shapes                         # apply + schedule + re-bind

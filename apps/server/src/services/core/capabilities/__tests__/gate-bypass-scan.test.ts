@@ -211,7 +211,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/extensions.ts':
         'the cockpit REST route — runs the same person bar as the approval routes beside it (DOR-1507): the trusted-Origin bar, the cookie bar under login, then the agent bar in both postures',
       'services/marketplace/flows/install-plugin.ts':
-        'turns on the extensions a package it just installed brought with it; reaching it at all means already having cleared the install tier gate at routes/marketplace.ts',
+        'turns on the extensions a package it just installed brought with it; reaching it at all means already having cleared the install tier gate at routes/marketplace/package-actions.ts',
       'services/shapes/apply-shape.ts':
         'applies a Shape that DECLARES which extensions it wants; the ids come from installed content, not from a caller, and applyShape is itself on this list and tier-gated (DOR-625)',
     },
@@ -234,7 +234,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/extensions.ts': 'the same route, behind the same person bar — see the enable entry',
       'services/marketplace/flows/install-plugin.ts':
         'rolls back extensions it turned on when the rest of an install failed',
-      'services/marketplace/flows/uninstall.ts':
+      'services/marketplace/flows/uninstall/side-effects.ts':
         'turns off the extensions a package being removed brought with it, behind the uninstall tier gate (uninstallFlow.uninstall is itself on this list)',
       'services/shapes/apply-shape.ts':
         'turns off the extensions the PREVIOUS Shape turned on; same gate as the enable entry',
@@ -330,11 +330,11 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'removes an installed package from disk, which cannot be undone',
     call: 'uninstallFlow.uninstall(',
     allowed: {
-      'routes/marketplace.ts':
+      'routes/marketplace/package-actions.ts':
         'the cockpit + CLI REST route — runs the tier gate via authorizeCapability first (DOR-467)',
       'services/marketplace-mcp/tool-uninstall.ts':
         'the marketplace.uninstall capability handler — reached only through registry.invoke, which gates',
-      'services/marketplace/marketplace-installer.ts':
+      'services/marketplace/installer/update.ts':
         'the first half of an in-place update (uninstall then install); its callers are gated, not this',
     },
   },
@@ -342,7 +342,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'points this install at a package feed it will fetch and run code from',
     call: 'sourceManager.add(',
     allowed: {
-      'routes/marketplace.ts':
+      'routes/marketplace/sources.ts':
         'the cockpit + CLI REST route — refuses any caller the agent bar (resolveDecisionAuthority) turns away, with no approval that could unlock it (DOR-502). Deliberately NOT the cookie bar: `dorkos marketplace add` is a terminal verb whose only credential is an API key, so demanding a cookie is a lockout (source-write-policy.ts)',
       'services/marketplace-mcp/personal-marketplace.ts':
         'the boot-time bootstrap of the local personal marketplace; no request reaches it and the source it registers is always a file:// URL under this dork home',
@@ -352,7 +352,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'drops a package feed, silently taking away every package it served',
     call: 'sourceManager.remove(',
     allowed: {
-      'routes/marketplace.ts':
+      'routes/marketplace/sources.ts':
         'the cockpit + CLI REST route — refuses any caller the agent bar (resolveDecisionAuthority) turns away (DOR-502); see the add entry above for why the cookie bar is not copied here',
     },
   },
@@ -392,8 +392,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'runs the tier gate for a caller that performs the effect itself, instead of via registry.invoke',
     call: 'authorizeCapability(',
     allowed: {
-      'routes/marketplace.ts':
-        'the legacy marketplace mutation routes, which own a response contract the cockpit and CLI depend on',
+      'routes/marketplace/context.ts':
+        'the legacy marketplace mutation routes, which own a response contract the cockpit and CLI depend on; their shared `authorize` helper',
       'services/core/capabilities/tier-enforcement.ts': 'the definition itself',
     },
   },
@@ -449,7 +449,14 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // what the scan covers.
     call: 'trustedCaller(',
     allowed: {
-      'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',
+      'routes/marketplace/context.ts':
+        'a person clicking Install or Uninstall in their own cockpit: the tier gate and the batch-update check every marketplace route group shares',
+      'routes/marketplace/package-actions.ts':
+        'a person clicking Install in their own cockpit: their approval of what the package runs is recorded with the install',
+      'routes/marketplace/updates.ts':
+        'a person applying the updates they were shown in their own cockpit, which asks no second time',
+      'routes/marketplace/held-back.ts':
+        'a person deciding a held-back package in their own terminal or app, the same bar as deciding an approval card (`routes/approvals.ts`)',
       'routes/agents.ts':
         'a person creating an agent from a template or a marketplace package in their own app (DOR-2325). It does not skip a gate: a person is SHOWN what a template brings (409 `template_needs_review`) and creates it with the hash they saw, and a package is held to the preview they saw. Everyone else gets an approval card for a template and is refused a package',
       'routes/workspaces.ts':

@@ -24,6 +24,7 @@ import type { RoomCanvasSlice } from './app-store-room-canvas';
 import type { RightPanelSlice } from './app-store-right-panel';
 import type { PipSlice } from './app-store-pip';
 import type { RecentCwd } from './app-store-helpers';
+import type { ProjectRef } from '@dorkos/shared/project-schemas';
 
 // ---------------------------------------------------------------------------
 // Core slice interface (defined here so slice files can use it via AppState)
@@ -78,6 +79,17 @@ export interface CoreSlice {
   currentAgentId: string | null;
   /** Set the resolved current-agent id (null clears it). No-op when unchanged. */
   setCurrentAgentId: (id: string | null) => void;
+
+  /**
+   * The project {@link selectedCwd} belongs to — its git main checkout — or
+   * null when the folder is in no repository, or while that is still being
+   * asked (spec `flow-multiproject` §6.4). Kept fresh by
+   * `useCurrentProjectSync`; transient, never persisted. The extension host
+   * reads it for `api.getState().currentProject`.
+   */
+  currentProject: ProjectRef | null;
+  /** Set the resolved current project (null clears it). No-op when the root and name are unchanged. */
+  setCurrentProject: (project: ProjectRef | null) => void;
 
   /**
    * Path of the agent the operator *explicitly* opened to inspect this session

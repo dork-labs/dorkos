@@ -22,14 +22,23 @@ import {
 import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
 
-/** All known extension slot IDs for contribution counting. */
-const ALL_EXTENSION_SLOTS: ExtensionPointId[] = [
+/**
+ * Everything the harness counts: every UI slot, plus `pages`, which is not a
+ * slot (`registerPage` mounts a route) but is a contribution an author wants
+ * to see counted.
+ */
+export type ContributionCountKey = ExtensionPointId | 'pages';
+
+/** All known contribution kinds, for counting. */
+const ALL_CONTRIBUTION_KEYS: ContributionCountKey[] = [
   'dashboard.sections',
   'command-palette.items',
   'settings.tabs',
   'sidebar.footer',
   'dialog',
   'right-panel',
+  'status-bar',
+  'pages',
 ];
 
 /**
@@ -70,6 +79,21 @@ export class MockExtensionAPI {
     return () => {};
   }
 
+  /** Register a page (counted under `pages`, returns cleanup no-op). */
+  registerPage(_path: string, _component: unknown, _options: unknown): () => void {
+    this.counts['pages'] = (this.counts['pages'] ?? 0) + 1;
+    return () => {};
+  }
+
+  /** Register a status-bar item (counted, returns cleanup no-op). */
+  registerStatusBarItem(_id: string, _component: unknown, _options: unknown): () => void {
+    this.counts['status-bar'] = (this.counts['status-bar'] ?? 0) + 1;
+    return () => {};
+  }
+
+  /** No-op: tab markers draw nothing headless. */
+  setTabMarker(): void {}
+
   /** No-op: UI command execution. */
   executeCommand(): void {}
 
@@ -81,7 +105,7 @@ export class MockExtensionAPI {
 
   /** Returns stub state with all nulls. */
   getState(): ExtensionReadableState {
-    return { currentCwd: null, activeSessionId: null, agentId: null };
+    return { currentCwd: null, activeSessionId: null, agentId: null, currentProject: null };
   }
 
   /** No-op: state subscription. */
@@ -106,10 +130,10 @@ export class MockExtensionAPI {
   }
 
   /** Return registration counts for all known slots (zero for unused). */
-  getContributions(): Record<ExtensionPointId, number> {
+  getContributions(): Record<ContributionCountKey, number> {
     return Object.fromEntries(
-      ALL_EXTENSION_SLOTS.map((slot) => [slot, this.counts[slot] ?? 0])
-    ) as Record<ExtensionPointId, number>;
+      ALL_CONTRIBUTION_KEYS.map((key) => [key, this.counts[key] ?? 0])
+    ) as Record<ContributionCountKey, number>;
   }
 }
 
