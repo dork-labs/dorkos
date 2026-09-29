@@ -28,6 +28,7 @@ import { useAppStore } from '@/layers/shared/model';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useApplyUpdatesWithToast } from '../model/use-apply-updates-with-toast';
 import { useCheckFilesWithToast } from '../model/use-check-files-with-toast';
+import { useKeepFilesWithToast } from '../model/use-keep-files-with-toast';
 import { useInstalledUpdatesView } from '../model/use-installed-updates-view';
 import { useFocusRescue, type FocusRescue } from '../model/use-focus-rescue';
 import {
@@ -45,6 +46,14 @@ import { InstalledUpdatesSummary } from './InstalledUpdatesSummary';
 import { InstallationUpdateStatus } from './InstallationUpdateStatus';
 import { ConfirmUpdatesDialog } from './ConfirmUpdatesDialog';
 import { canCheckFiles, InstallationIntegrityNote } from './InstallationIntegrityNote';
+import { KeepFilesDialog, type UnprovenFiles } from './KeepFilesDialog';
+
+/** The kept files an installation's integrity lists, if any (DOR-2322). */
+function unprovenOf(integrity: InstallIntegrity | undefined): UnprovenFiles | undefined {
+  return integrity?.status === 'clean' || integrity?.status === 'modified'
+    ? integrity.unproven
+    : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Package row sub-component
@@ -64,6 +73,8 @@ interface PackageRowProps {
   isCheckingFiles: boolean;
   /** Check the files of an installation an older DorkOS made against the version installed. */
   onCheckFilesClick: () => void;
+  /** Open the confirm step for keeping the files an update kept as the person's (DOR-2341). */
+  onKeepFilesClick: () => void;
   /** Open the Shape switcher to apply this Shape (Shapes only). */
   onApplyClick: () => void;
   /** Update this installation (offered only when an update is available). */
@@ -169,6 +180,7 @@ function PackageRow({
   integrity,
   isCheckingFiles,
   onCheckFilesClick,
+  onKeepFilesClick,
   onApplyClick,
   onUpdateClick,
   onUninstallClick,
@@ -265,6 +277,7 @@ function PackageRow({
           label={label}
           onCheckFiles={onCheckFilesClick}
           isCheckingFiles={isCheckingFiles}
+          onKeepFiles={onKeepFilesClick}
         />
         {/* A package whose npm libraries did not install is on disk and usable
             but incomplete, and that outlives the toast the person dismissed at
@@ -391,6 +404,10 @@ export function InstalledPackagesView() {
   // (DOR-2197): one verified request beside the list, never one per row.
   const { data: integrityByPath } = useInstalledIntegrity();
   const checkFiles = useCheckFilesWithToast();
+  const keepFiles = useKeepFilesWithToast();
+  // The installation whose kept files the person is being asked to keep
+  // (DOR-2341), snapshotted when the confirm step opens.
+  const [keeping, setKeeping] = useState<InstalledPackage | null>(null);
 
   // Track which installation (by installPath — unique per scope, unlike the
   // package name) is in the confirm-uninstall window.
@@ -523,6 +540,7 @@ export function InstalledPackagesView() {
                 integrity={integrityByPath?.get(pkg.installPath)}
                 isCheckingFiles={isCheckingFiles(pkg)}
                 onCheckFilesClick={() => handleCheckFilesClick(pkg)}
+                onKeepFilesClick={() => setKeeping(pkg)}
                 onApplyClick={() => openShapeSwitcherToShape(pkg.name)}
                 onUpdateClick={() => {
                   if (updateState.kind !== 'update-available') return;
@@ -550,6 +568,16 @@ export function InstalledPackagesView() {
         integrityByPath={integrityByPath}
         onCancel={() => setConfirmingUpdate(null)}
         onConfirm={handleConfirmUpdate}
+      />
+
+      <KeepFilesDialog
+        installation={keeping}
+        unproven={keeping ? unprovenOf(integrityByPath?.get(keeping.installPath)) : undefined}
+        onCancel={() => setKeeping(null)}
+        onConfirm={(options) => {
+          if (keeping) keepFiles.mutate({ name: keeping.name, options });
+          setKeeping(null);
+        }}
       />
     </div>
   );

@@ -66,11 +66,13 @@ You can connect several accounts for one service: each account is its own row. T
 
 ## Agents can ask, but you decide
 
-An agent can ask for a service and explain why it needs access. The request does not reveal your private account list and does not grant anything.
+An agent can ask for a service and explain why it needs access. It asks for one of the same two levels you choose from: **Read** (look at things there) or **Read and write** (also change things there). The request does not reveal your private account list and does not grant anything.
 
-Most of the time you answer right where the agent asked: a card appears in that chat or room, walking you through signing in (if needed) and then "Let DorkBot use Gmail?" — named for the agent that asked — with the reason it gave. The card is always about that one agent; if it also needs to know when something new happens (like a new email), the card sends you to the full review on Connections instead, so you can choose exactly what it hears about. You can also open **Connections** directly, where every pending request waits in a **Needs you** strip at the top.
+You answer with one card, wherever you meet the request. In the chat or room where the agent asked, the card walks you through signing in (if needed) and then "Let DorkBot use Gmail?" — named for the agent that asked — with the reason it gave, starting on the level it asked for. The card is always about that one agent. If it also wants to know when something new happens (like a new email), the card asks you right after which updates it gets. You can also open **Connections** directly, where every pending request waits in a **Needs you** strip at the top and opens the same card.
 
-If the request is still attached to a live turn, the agent receives the result there, right on the card. After a restart, DorkOS can continue the exact recorded session once. A denied, expired, failed, or deleted request grants no access.
+An agent keeps one open request per app. Asking again, even with a different reason, doesn't add a second card, and an agent can't open requests faster than you could answer them.
+
+If the request is still attached to a live turn, the agent receives the result there, right on the card. Whatever you answer, the agent is told plainly what happens next, including what you left out, such as "you can read Gmail, but not change anything in it". After a restart, DorkOS can continue the exact recorded session once. A denied, expired, failed, or deleted request grants no access.
 
 ## Actions and notifications are separate
 

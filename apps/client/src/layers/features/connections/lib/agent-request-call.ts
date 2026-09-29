@@ -5,10 +5,10 @@
  * The call itself is the anchor: it is already a durable part of the
  * transcript on every runtime, at exactly the point the agent asked, and it
  * survives a reload. Which request it opened is read from its result once the
- * call returns, and from the request's own intent (service, reason, actions)
- * while the call is still held open waiting for the owner, because a held call
- * has no result yet. The server reuses one open request per intent, so the
- * intent names one request.
+ * call returns, and from the app it asked for while the call is still held
+ * open waiting for the owner, because a held call has no result yet. The
+ * server keeps one open request per agent and app, whatever the reason says
+ * (DOR-2497), so the app names one request.
  *
  * @module features/connections/lib/agent-request-call
  */
@@ -35,8 +35,6 @@ export interface ConnectionRequestIntent {
   readonly serviceSlug: string;
   /** The agent's own reason. */
   readonly reason: string;
-  /** The service actions it named. */
-  readonly requestedOperations: readonly string[];
 }
 
 /** Parse JSON without throwing; anything unreadable is `undefined`. */
@@ -64,11 +62,9 @@ export function connectionRequestIntent(
 ): ConnectionRequestIntent | undefined {
   const parsed = parseJson(input);
   if (!isRecord(parsed)) return undefined;
-  const { serviceSlug, reason, requestedOperations } = parsed;
+  const { serviceSlug, reason } = parsed;
   if (typeof serviceSlug !== 'string' || typeof reason !== 'string') return undefined;
-  if (!Array.isArray(requestedOperations)) return undefined;
-  const operations = requestedOperations.filter((item): item is string => typeof item === 'string');
-  return { serviceSlug, reason, requestedOperations: operations };
+  return { serviceSlug, reason };
 }
 
 /**
@@ -92,15 +88,11 @@ export function connectionRequestIdFromResult(result: string | undefined): strin
   return undefined;
 }
 
-function sameOperations(left: readonly string[], right: readonly string[]): boolean {
-  if (left.length !== right.length) return false;
-  const set = new Set(left);
-  return right.every((item) => set.has(item));
-}
-
 /**
  * The request a call opened, among one conversation's requests: the exact id
- * when the call returned, otherwise the newest request with the call's intent.
+ * when the call returned, otherwise the newest request for the call's app. A
+ * reworded or raised ask reuses the open request, so the reason and level are
+ * not compared.
  *
  * @param requests - The conversation's requests, as the owner reads them.
  * @param call - The call's arguments and result.
@@ -116,11 +108,6 @@ export function findCallRequest(
   const intent = connectionRequestIntent(call.input);
   if (!intent) return undefined;
   return requests
-    .filter(
-      (request) =>
-        request.serviceSlug === intent.serviceSlug &&
-        request.reason === intent.reason &&
-        sameOperations(request.requestedOperations, intent.requestedOperations)
-    )
+    .filter((request) => request.serviceSlug === intent.serviceSlug)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
 }

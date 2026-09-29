@@ -1821,6 +1821,7 @@ async function start() {
     readers: (communityRef, ownerAuthorId) =>
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
     attachmentBytes: roomAttachmentBytes,
+    publishRevisions: (localRoomId, seqs) => roomService.publishEntryRevisions(localRoomId, seqs),
   });
   remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
     bridge: remoteCommunityBridge.current,
@@ -3349,6 +3350,8 @@ async function start() {
       managedConnectorAuthority.reconcileEventSubscription(id, version, signal),
     ready: (id: string, version: number) =>
       managedConnectorAuthority.eventSubscriptionReady(id, version),
+    stage: (id: string, version: number) =>
+      managedConnectorAuthority.stageEventSubscriptionChange(id, version),
   };
   const connectorEventGrants = new ConnectorEventGrantService(
     connectorEventSubscriptions,
@@ -3534,7 +3537,6 @@ async function start() {
       runtimePrincipals: connectorRuntimePrincipals,
       authority: requestAuthority,
       bootEpoch: connectorBootEpoch,
-      managedAuthority: managedConnectorAuthority,
       eventGrants: connectorEventGrants,
       authentication: connectorAuthenticationFlows,
       resume: {

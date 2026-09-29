@@ -15,7 +15,12 @@ import { logger } from '../../../lib/logger.js';
 import type { RoomAttachmentStore } from '../../rooms/attachments/room-attachment-store.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { dropRoomFromIndex, optimizeSearchIndex, reindexRoomEntries } from '../../search/index.js';
-import type { MirrorPurge, NativeMirrorEntry, RemoteMirrorStore } from './mirror-store.js';
+import type {
+  AppliedRedactions,
+  MirrorPurge,
+  NativeMirrorEntry,
+  RemoteMirrorStore,
+} from './mirror-store.js';
 import {
   RemoteRedactionFeedUnsupportedError,
   type RemoteCommunityAdapter,
@@ -51,6 +56,12 @@ export interface RemoteRedactionSyncDeps {
   readers: (communityRef: CommunityRef, ownerAuthorId: string) => RedactionFeedReader | null;
   /** Where the files of a purged mirror's entries live. */
   attachmentBytes?: Pick<RoomAttachmentStore, 'delete'>;
+  /**
+   * Tell the mirrored room's open readers which of its entries were rewritten, once the rewrite
+   * has committed. `RoomService.publishEntryRevisions` in production: it reads the rows back from
+   * the log, so the frames carry the tombstone and never the text it replaced.
+   */
+  publishRevisions?: (localRoomId: string, seqs: readonly number[]) => void;
   now?: () => number;
 }
 
@@ -62,7 +73,8 @@ export interface RemoteRedactionSyncDeps {
  * cursor is stored, in one SQLite transaction. Once per sync that changed anything, an FTS5
  * `optimize` and a WAL checkpoint follow; with the database's `secure_delete`, the replaced text
  * then leaves the database file, the search index's storage, and the write-ahead log, not only
- * the rows a query can see. It never dispatches a local agent: a change to an old message is not
+ * the rows a query can see. Once a page commits, any open window of the room replaces the changed
+ * messages in place (DOR-2336). It never dispatches a local agent: a change to an old message is not
  * new work.
  *
  * What it cannot reach, by design: anything a local agent already saved (session transcripts,
@@ -193,7 +205,11 @@ export class RemoteRedactionSync {
           throw error;
         }
         this.unsupportedAt.delete(connection);
-        if (this.apply(room, page.items, page.nextCursor)) changed = true;
+        const applied = this.apply(room, page.items, page.nextCursor);
+        if (applied) {
+          changed = true;
+          this.announce(applied);
+        }
         if (!page.hasMore) return;
       }
     } finally {
@@ -205,9 +221,13 @@ export class RemoteRedactionSync {
    * Rewrite one page into the mirror and re-index the rows it changed, in one transaction, so
    * search never answers with text the room log no longer has.
    *
-   * @returns Whether any local row changed.
+   * @returns The mirror's local room and the rows that changed, or `null` when none did.
    */
-  private apply(room: RedactionSyncRoom, items: NativeMirrorEntry[], nextCursor: string): boolean {
+  private apply(
+    room: RedactionSyncRoom,
+    items: NativeMirrorEntry[],
+    nextCursor: string
+  ): AppliedRedactions | null {
     const { db } = this.deps;
     return db.transaction(
       () => {
@@ -218,12 +238,30 @@ export class RemoteRedactionSync {
           items,
           nextCursor
         );
-        if (!applied?.changedSeqs.length) return false;
+        if (!applied?.changedSeqs.length) return null;
         reindexRoomEntries(db, applied.localRoomId, applied.changedSeqs);
-        return true;
+        return applied;
       },
       { behavior: 'immediate' }
     );
+  }
+
+  /**
+   * Put a committed rewrite in front of anyone looking at the room: its open windows replace the
+   * changed messages in place, and the room list and Threads re-read, since a thread's preview
+   * quotes its first message and an erased author's name changes on the roster. Only ever called
+   * with a page {@link RemoteMirrorStore.applyRedactions} rewrote, so the room is always a mirror.
+   * A failure is logged and never undoes the rewrite: the next open of the room reads the log.
+   */
+  private announce(applied: AppliedRedactions): void {
+    try {
+      this.deps.publishRevisions?.(applied.localRoomId, applied.changedSeqs);
+    } catch (error) {
+      logger.warn('[communities] could not update open windows after replacing messages', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    eventFanOut.broadcast('room_updated', { roomId: applied.localRoomId });
   }
 
   /**

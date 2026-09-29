@@ -6,6 +6,13 @@
       "default": true,
       "geo_lat": "39.96",
       "geo_long": "-83.00"
+    },
+    {
+      "region_id": "aws-fixture-unknown-1",
+      "name": "Fixture region without a known location",
+      "default": false,
+      "geo_lat": "",
+      "geo_long": ""
     }
   ]
 }

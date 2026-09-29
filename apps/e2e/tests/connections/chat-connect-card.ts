@@ -16,7 +16,7 @@ const REQUEST_INPUT = {
   version: 1,
   serviceSlug: 'slack',
   reason: 'Summarise today’s messages',
-  requestedOperations: ['slack.messages.list'],
+  access: 'read',
   requestedEvents: [],
 };
 

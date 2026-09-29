@@ -17,7 +17,7 @@ import {
 } from '@dorkos/shared/connector-provider';
 import type {
   ConnectorAgentRequestAuthenticationInput,
-  ConnectorAgentRequestDecision,
+  ConnectorAgentRequestDecisionInput,
 } from '@dorkos/shared/connector-agent-request-schemas';
 import type {
   ConfigureConnectionEventSource,
@@ -424,7 +424,7 @@ export function createConnectorMethods(baseUrl: string) {
 
     resolveConnectorAgentRequest(
       requestId: string,
-      input: ConnectorAgentRequestDecision
+      input: ConnectorAgentRequestDecisionInput
     ): Promise<ConnectorAgentRequestItem> {
       return fetchJSON<ConnectorAgentRequestItem>(
         baseUrl,

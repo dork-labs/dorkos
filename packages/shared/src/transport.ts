@@ -162,6 +162,9 @@ import type {
   ListInstalledOptions,
   CheckFilesOptions,
   CheckFilesResult,
+  KeepFilesOptions,
+  KeepFilesResult,
+  HeldBackPackage,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
@@ -223,7 +226,7 @@ import type { FeedbackListItem, FeedbackSubmission } from './telemetry-events.js
 import type { ConnectorProviderStatus } from './connector-provider.js';
 import type {
   ConnectorAgentRequestAuthenticationInput,
-  ConnectorAgentRequestDecision,
+  ConnectorAgentRequestDecisionInput,
 } from './connector-agent-request-schemas.js';
 import type {
   ConnectionId,
@@ -2382,6 +2385,24 @@ export interface Transport
   checkPackageFiles(name: string, opts?: CheckFilesOptions): Promise<CheckFilesResult>;
 
   /**
+   * "Keep these as mine" for the files an update kept but nothing could sort
+   * (`POST /api/marketplace/packages/:name/keep-files`, DOR-2341). Moves and
+   * deletes nothing. Rejects with the server's sentence when the files changed
+   * since they were shown, or the caller is not the person.
+   *
+   * @param name - Installed package name. Will be URL-encoded.
+   * @param opts - The installation, the key it was shown with, and for a
+   *   held-back global package the review it was shown.
+   */
+  keepPackageFiles(name: string, opts: KeepFilesOptions): Promise<KeepFilesResult>;
+
+  /**
+   * Every global package held back from sessions, with what it runs and what a
+   * decision binds (`GET /api/marketplace/held-back`, DOR-2306).
+   */
+  listHeldBackPackages(): Promise<HeldBackPackage[]>;
+
+  /**
    * List every installation of a single package across all scopes (global +
    * each agent), each enriched with its capability summary (`provides`:
    * command/skill counts + hooks). Used by the package detail drawer to
@@ -3240,7 +3261,7 @@ export interface Transport
   /** Deny or grant an exact account and access set for one agent request. */
   resolveConnectorAgentRequest(
     requestId: string,
-    input: ConnectorAgentRequestDecision
+    input: ConnectorAgentRequestDecisionInput
   ): Promise<ConnectorAgentRequestItem>;
 
   /** Start account authentication in the context of one exact agent request. */

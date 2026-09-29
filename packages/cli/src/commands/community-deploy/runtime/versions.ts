@@ -9,7 +9,13 @@ import type { FlySessionReadOptions } from '../tigris-session.js';
 import type { NeonReadOptions } from '../neon-read.js';
 
 const VersionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
-const FlyVersionSchema = z.object({ Name: z.literal('fly'), Version: VersionSchema }).passthrough();
+/**
+ * `Name` is the base name of the running executable (flyctl `buildinfo`). The binary ships as
+ * `flyctl` with a `fly` link, and Linux resolves the link, so the same install reports either.
+ */
+const FlyVersionSchema = z
+  .object({ Name: z.string().regex(/^(?:fly|flyctl)(?:\.exe)?$/u), Version: VersionSchema })
+  .passthrough();
 
 type CommunityProvider = 'fly' | 'neon';
 
