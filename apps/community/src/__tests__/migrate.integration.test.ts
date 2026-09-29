@@ -217,7 +217,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -407,7 +407,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
     expect(
       (
         await db.query(
@@ -1445,7 +1445,7 @@ it('upgrades a populated database to imports without changing what old code does
   await admin.query(`CREATE DATABASE ${name}`);
   const db = new Pool({ connectionString: url.toString() });
   try {
-    await applyBefore(db, '0017_imports.sql');
+    await applyBefore(db, '0019_imports.sql');
     await db.query(
       `INSERT INTO "user"(id,name,email,"emailVerified") VALUES ('u-owner','Owner','o@up.test',true)`
     );
