@@ -449,9 +449,12 @@ test.describe('Connections — session access status', () => {
     await chatPage.goto(sessionId, { dir: agentDir });
     await chatPage.sendAndLand('Hello connectors');
     // The reply has begun; let the turn close before the reloads below, so none
-    // of them lands on a live turn. (Not `waitForResponse`: it first waits up to
-    // 10s for a streaming indicator this instant scenario may never show.)
-    await expect(chatPage.inferenceStreaming).toBeHidden();
+    // of them lands on a live turn. While a turn runs the composer is relabelled
+    // "Compose next — will send when ready", and `input` matches only the idle
+    // "Message…" label, so this waits for the turn to end. New chat tests in this
+    // file must pass their own session id: earlier cases leave a turn running in
+    // the seeded folder's newest chat (DOR-2545).
+    await expect(chatPage.input).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`session=${sessionId}`));
 
     // The session's connector surface lives in the right panel's Session tab.
