@@ -102,7 +102,23 @@ After claiming the owner account, replace the bootstrap secret with another rand
 
 Rotate invitation keys using the current and previous key settings described in [the README](README.md#invitations-and-credentials). Changing the authentication secret can invalidate sessions and encrypted sign-in data. Schedule that change and verify password and optional social sign-in afterward.
 
-The default deployment sends no email. Use [account recovery](RECOVERY.md) when a member loses access. That procedure preserves the member’s role and revokes their sessions and agent credentials.
+The server sends no email unless you set up mail (next section), and even then it never sends password resets. Use [account recovery](RECOVERY.md) when a member loses access. That procedure preserves the member’s role and revokes their sessions and agent credentials.
+
+## Mail
+
+Mail is off unless you turn it on. With it off, the server opens no mail connection and sends nothing. To turn it on, point the server at your own mail server with `COMMUNITY_SMTP_URL` and give the sender address in `COMMUNITY_MAIL_FROM` (see [deployment settings](DEPLOYMENT.md#optional-mail)). Restart, and the startup log says `Community mail: on`. It never prints the server or its password. A host program can check with `GET /api/v1/host/capabilities`, which answers `{ "mail": true }`.
+
+The server sends only short, plain-text notices, one at a time, and never keeps the address it sends to: it looks the address up just before each send, so an erased account leaves none behind. A message counts as delivered when your mail server accepts it. That is all the server ever claims; it cannot know whether anyone read it. If your mail server refuses the address for good, the notice fails at once. If it is busy, down, or slow, the notice is tried again, less often each time, for up to 72 hours, and then fails. A notice to an account that was erased, or is waiting to be, fails without being sent. If your mail server takes more than four minutes over one message, the server stops waiting and tries again later; the first try may still have gone through, so once in a while a person gets the same notice twice.
+
+Mail that looks forged is often rejected or filtered as spam, and for notices that matter here a failed notice means a longer wait for everyone. So before turning mail on:
+
+- Use a sender domain you control in `COMMUNITY_MAIL_FROM`.
+- Publish an SPF record for that domain that allows your mail server to send for it.
+- Have your mail server sign with DKIM for that same domain.
+- Publish a DMARC policy for the domain, so the SPF and DKIM results count toward the address people see in the From line.
+- Send a test message to an outside mailbox and check that it arrives in the inbox and shows SPF, DKIM, and DMARC passing.
+
+Then watch for failed notices. The server logs each attempt that does not deliver as `Community notice not delivered`, with its outcome (`retrying` or `failed`) and a reason code, never the address or your mail server's reply: `SMTP_REJECTED` (your mail server or the recipient's refused it), `SMTP_UNAVAILABLE` (busy, down, or not answering), `SMTP_TLS` (the encrypted connection failed, or your mail server did not offer the STARTTLS you required), `SMTP_AUTH` (your mail server refused the user name or password), or `RECIPIENT_UNAVAILABLE` (the account is gone). `SMTP_UNAVAILABLE`, `SMTP_TLS`, and `SMTP_AUTH` are retried for 72 hours before the notice fails, so fixing your settings within that time still delivers it. A run of `SMTP_REJECTED` usually means the sender domain is failing those checks.
 
 ## Host API keys
 

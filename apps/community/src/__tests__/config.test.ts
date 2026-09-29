@@ -426,4 +426,178 @@ describe('community startup config', () => {
       })
     ).toThrow('COMMUNITY_EVIDENCE_S3_ENDPOINT must use HTTPS');
   });
+
+  it('sends no mail unless the host sets both mail settings, and keeps the replacement defaults', () => {
+    // Purpose: fails if mail turns on by default, or if the owner-replacement waits drift from
+    // 14, 30 and 90 days when nothing is set.
+    const config = parseConfig(valid);
+    expect(config.mail).toBeNull();
+    expect(config.ownerReplacement).toEqual({
+      noticeDays: 14,
+      unreachableDays: 30,
+      objectionCooldownDays: 90,
+    });
+    // Compose passes an unset setting through as an empty string.
+    expect(parseConfig({ ...valid, COMMUNITY_SMTP_URL: '', COMMUNITY_MAIL_FROM: '' }).mail).toBe(
+      null
+    );
+  });
+
+  it('reads an encrypted SMTP server, its credentials, and one sender mailbox', () => {
+    // Purpose: fails if implicit TLS, required STARTTLS, default ports, percent-encoded
+    // credentials, or a named sender are read wrongly, or if loopback loses its plain-text carve-out.
+    const from = 'Example Community <notices@example.com>';
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_SMTP_URL: 'smtps://mailer:p%40ss%2Fword@smtp.example.com',
+        COMMUNITY_MAIL_FROM: from,
+      }).mail
+    ).toEqual({
+      smtp: {
+        host: 'smtp.example.com',
+        port: 465,
+        secure: true,
+        requireTLS: false,
+        auth: { user: 'mailer', pass: 'p@ss/word' },
+      },
+      from: { name: 'Example Community', address: 'notices@example.com' },
+    });
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_SMTP_URL: 'smtp://smtp.example.com?starttls=required',
+        COMMUNITY_MAIL_FROM: 'notices@example.com',
+      }).mail
+    ).toEqual({
+      smtp: {
+        host: 'smtp.example.com',
+        port: 587,
+        secure: false,
+        requireTLS: true,
+        auth: null,
+      },
+      from: { name: null, address: 'notices@example.com' },
+    });
+    for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+      const mail = parseConfig({
+        ...valid,
+        COMMUNITY_SMTP_URL: `smtp://${host}:2525`,
+        COMMUNITY_MAIL_FROM: '"Relay, Local" <notices@example.com>',
+      }).mail;
+      expect(mail?.smtp).toMatchObject({ port: 2525, secure: false, requireTLS: false });
+      expect(mail?.from).toEqual({ name: 'Relay, Local', address: 'notices@example.com' });
+    }
+  });
+
+  it('treats localhost as 127.0.0.1 for a plain relay, and refuses port 0', () => {
+    // Purpose: fails if the no-encryption exemption trusts a name lookup for localhost, is fooled
+    // by upper case, or accepts port 0; an encrypted connection keeps its name for certificates.
+    const env = { ...valid, COMMUNITY_MAIL_FROM: 'notices@example.com' };
+    for (const url of ['smtp://localhost', 'smtp://LocalHost:2525'])
+      expect(parseConfig({ ...env, COMMUNITY_SMTP_URL: url }).mail?.smtp.host, url).toBe(
+        '127.0.0.1'
+      );
+    expect(parseConfig({ ...env, COMMUNITY_SMTP_URL: 'smtps://LOCALHOST' }).mail?.smtp.host).toBe(
+      'localhost'
+    );
+    expect(parseConfig({ ...env, COMMUNITY_SMTP_URL: 'smtp://[::1]' }).mail?.smtp.host).toBe('::1');
+    for (const url of ['smtps://smtp.example.com:0', 'smtp://127.0.0.1:0'])
+      expect(() => parseConfig({ ...env, COMMUNITY_SMTP_URL: url }), url).toThrow('port 0');
+  });
+
+  it('refuses mail settings that are half set, unencrypted off loopback, or not one mailbox', () => {
+    // Purpose (AC-5): fails if one mail setting alone, plain SMTP to another machine, a stray
+    // option, a path, half a credential, or a sender that could add a header or a second
+    // address starts the server.
+    const smtp = 'smtps://smtp.example.com';
+    const from = 'notices@example.com';
+    for (const env of [
+      { COMMUNITY_SMTP_URL: smtp },
+      { COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'smtp://smtp.example.com', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'smtp://smtp.example.com:25', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'smtp://10.0.0.5', COMMUNITY_MAIL_FROM: from },
+      {
+        COMMUNITY_SMTP_URL: 'smtp://smtp.example.com?starttls=optional',
+        COMMUNITY_MAIL_FROM: from,
+      },
+      {
+        COMMUNITY_SMTP_URL: 'smtps://smtp.example.com?starttls=required',
+        COMMUNITY_MAIL_FROM: from,
+      },
+      { COMMUNITY_SMTP_URL: 'smtps://smtp.example.com?pool=true', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'smtps://smtp.example.com/relay', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'smtps://mailer@smtp.example.com', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'https://smtp.example.com', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'not a url', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: smtp, COMMUNITY_MAIL_FROM: 'not an address' },
+      { COMMUNITY_SMTP_URL: smtp, COMMUNITY_MAIL_FROM: 'a@example.com, b@example.com' },
+      { COMMUNITY_SMTP_URL: smtp, COMMUNITY_MAIL_FROM: 'notices@example.com\r\nBcc: x@evil.test' },
+      { COMMUNITY_SMTP_URL: smtp, COMMUNITY_MAIL_FROM: 'Team: a@example.com;' },
+      { COMMUNITY_SMTP_URL: smtp, COMMUNITY_MAIL_FROM: 'Name <a@example.com> <b@example.com>' },
+    ])
+      expect(() => parseConfig({ ...valid, ...env }), JSON.stringify(env)).toThrow(
+        /COMMUNITY_(SMTP_URL|MAIL_FROM)/u
+      );
+  });
+
+  it('never echoes the SMTP address or its password in a configuration error', () => {
+    // Purpose: fails if a refused mail setting prints its credentials, directly or through an
+    // error cause, where a startup crash would log them.
+    for (const url of [
+      'smtp://mailer:hunter2-secret@smtp.example.com',
+      'smtps://mailer:hunter2-secret@smtp.example.com/path',
+      'smtps://mailer:hunter2-secret@smtp.example.com?x=1',
+      'smtps://mailer:hunter2-secret@[bad',
+    ]) {
+      let caught: unknown;
+      try {
+        parseConfig({ ...valid, COMMUNITY_SMTP_URL: url, COMMUNITY_MAIL_FROM: 'n@example.com' });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught, url).toBeInstanceOf(Error);
+      const error = caught as Error;
+      expect(error.cause, url).toBeUndefined();
+      expect(error.message, url).not.toContain('hunter2');
+      expect(error.message, url).not.toContain('smtp.example.com');
+    }
+  });
+
+  it('bounds the owner-replacement waits and keeps the long wait at least the short one', () => {
+    // Purpose (AC-5): fails if a notice wait under a week, a long wait under two weeks or below
+    // the notice wait, or a cooling-off under 30 days starts the server.
+    const bounds = parseConfig({
+      ...valid,
+      COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '90',
+      COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: '180',
+      COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS: '365',
+    }).ownerReplacement;
+    expect(bounds).toEqual({ noticeDays: 90, unreachableDays: 180, objectionCooldownDays: 365 });
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '7',
+        COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: '14',
+        COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS: '30',
+      }).ownerReplacement
+    ).toEqual({ noticeDays: 7, unreachableDays: 14, objectionCooldownDays: 30 });
+    for (const env of [
+      { COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '6' },
+      { COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '91' },
+      { COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: '13' },
+      { COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: '181' },
+      {
+        COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '40',
+        COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: '39',
+      },
+      { COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '31' },
+      { COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS: '29' },
+      { COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS: '366' },
+    ])
+      expect(() => parseConfig({ ...valid, ...env }), JSON.stringify(env)).toThrow(
+        /COMMUNITY_OWNER_REPLACEMENT/u
+      );
+  });
 });

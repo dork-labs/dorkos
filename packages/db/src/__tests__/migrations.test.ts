@@ -310,7 +310,7 @@ describe('Database Migrations', () => {
       // migration 0073).
       'session_staged_context',
       // Who started a chat that no person typed into, and the counter for an
-      // extension's start limits (spec flow-multiproject §7.7, migration 0133).
+      // extension's start limits (spec flow-multiproject §7.7, migration 0135).
       'session_started_by',
       // The durable claim feed for inbound chats with no binding — metadata
       // only, never a message body (connection-scoping spec §Part 3,

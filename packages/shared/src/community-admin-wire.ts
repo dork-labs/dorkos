@@ -642,3 +642,14 @@ export const CommunityEvidenceRecordV1Schema = z.strictObject({
     .nullable(),
   notes: z.array(z.string()),
 });
+
+/**
+ * What this host can do beyond the basics, for the host page and host programs. `mail` is true
+ * only when the host has configured its own SMTP server; features that must reach a person who
+ * may no longer open the community refuse to run without it. `oidc` is true when the host's own
+ * single sign-on is configured.
+ */
+export const CommunityAdminHostCapabilitiesSchema = z.strictObject({
+  mail: z.boolean(),
+  oidc: z.boolean(),
+});

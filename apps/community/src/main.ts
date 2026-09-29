@@ -24,6 +24,8 @@ import { sweepImportTempDirs } from './imports/upload.js';
 import { configureServerTimeouts } from './http.js';
 import { createEvidenceSink, tidyEvidenceSink } from './takedown/evidence/sink.js';
 import { sweepTakedownEvidence } from './takedown/worker.js';
+import { startMailDelivery } from './mail/worker.js';
+import { pruneNoticeOutbox } from './mail/outbox.js';
 
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
@@ -151,6 +153,12 @@ const cleanup = setInterval(() => {
       error instanceof Error ? error.name : 'unknown'
     );
   });
+  void pruneNoticeOutbox(pool).catch((error: unknown) => {
+    console.error(
+      'Community notice cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
 }, 60_000);
 cleanup.unref();
 let erasing = false;
@@ -222,8 +230,15 @@ const takedownEvidence = setInterval(() => {
     });
 }, 15_000);
 takedownEvidence.unref();
+// Off unless the host configured SMTP. No feature queues mail yet, so there is nothing to
+// compose; each one that does adds its messages here.
+const mail = startMailDelivery({ config, pool, composers: {} });
 const onSignal = createSignalHandler(
-  createStop({ server, pool, timers: [cleanup, erasures, exports, imports, takedownEvidence] })
+  createStop({
+    server,
+    pool,
+    timers: [cleanup, erasures, exports, imports, takedownEvidence, ...(mail ? [mail] : [])],
+  })
 );
 process.on('SIGINT', onSignal);
 process.on('SIGTERM', onSignal);

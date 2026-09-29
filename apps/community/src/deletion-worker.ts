@@ -369,6 +369,7 @@ export async function sweepCommunityDeletions(
       'connection_pairings',
       'invites',
       'audit_events',
+      'notice_outbox',
       'agents',
       'channels',
     ]) {

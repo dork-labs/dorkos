@@ -114,6 +114,25 @@ Email and password sign-in always stays on. Someone who joined through single si
 
 To turn single sign-on off, unset the variables. Accounts made through it stay, and can sign in with a password if they added one.
 
+## Optional mail
+
+The Community sends no email unless you set this up. Mail lets it reach a person who no longer opens the community. Set both of these, or neither:
+
+| Setting               | Must be                                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `COMMUNITY_SMTP_URL`  | Your mail server: `smtps://user:password@mail.example.com:465` (encrypted from the start) or `smtp://user:password@mail.example.com:587?starttls=required` (upgraded before sending) |
+| `COMMUNITY_MAIL_FROM` | One sender, such as `notices@example.com` or `Example Community <notices@example.com>`                                                                                               |
+
+The user name and password are optional, and characters such as `@` or `/` in them must be percent-encoded (`%40`, `%2F`). Without a port, `smtps://` uses 465, `smtp://` with `starttls=required` uses 587, and a plain local `smtp://` uses 25. A plain `smtp://` address with no encryption is accepted only for a mail relay on the same machine (`127.0.0.1`, `[::1]`, or `localhost`, which is read as `127.0.0.1`). Such a relay is used as it is, even if it offers STARTTLS. The service refuses to start if only one setting is set, if mail to another machine would travel unencrypted, or if the sender is not exactly one address. Keep `COMMUNITY_SMTP_URL` in your secret store: it holds the password. Before turning mail on, read [mail in the operations guide](OPERATIONS.md#mail), which explains the sender-domain checks that keep notices out of spam folders.
+
+These settings are for replacing the owner of a community whose owner has left, which needs mail: how long the owner has to answer, and how long before a host can ask again. The service checks them at startup. Most hosts can keep the defaults.
+
+| Setting                                               | Default |     Range | What it does                                                                                       |
+| ----------------------------------------------------- | ------: | --------: | -------------------------------------------------------------------------------------------------- |
+| `COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS`             | 14 days |   7 to 90 | How long the owner has to answer, counted from when their mail server accepted the notice          |
+| `COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS`        | 30 days | 14 to 180 | The longer wait when the notice may not have reached the owner. Never shorter than the notice days |
+| `COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS` | 90 days | 30 to 365 | After an owner says no, how long before the host can ask again                                     |
+
 ## Optional terms, privacy, and report links
 
 If other people sign up on your Community, you can link your own terms, privacy notice, and a way to report abuse. Each link is optional. Leave one unset and nothing shows for it.

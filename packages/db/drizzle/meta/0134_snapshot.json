@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1d21e98c-edba-4893-b5dc-a66508ce8719",
+  "id": "0c55e502-ed6f-419a-97ef-ded6ed5316d9",
   "prevId": "9351e01a-09ab-4061-9013-572fcdcaf979",
   "tables": {
     "a2a_tasks": {
@@ -1643,7 +1643,16 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "session_metadata_agent_path_idx": {
+          "name": "session_metadata_agent_path_idx",
+          "columns": [
+            "agent_path"
+          ],
+          "isUnique": false,
+          "where": "\"session_metadata\".\"agent_path\" IS NOT NULL"
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -1826,16 +1835,7 @@
           "autoincrement": false
         }
       },
-      "indexes": {
-        "session_events_session_idx": {
-          "name": "session_events_session_idx",
-          "columns": [
-            "session_id",
-            "seq"
-          ],
-          "isUnique": false
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "session_events_session_id_seq_pk": {
@@ -2309,87 +2309,6 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
-    },
-    "session_started_by": {
-      "name": "session_started_by",
-      "columns": {
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "extension_id": {
-          "name": "extension_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "started_by_session_id": {
-          "name": "started_by_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "origin_extension_id": {
-          "name": "origin_extension_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "carried": {
-          "name": "carried",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "session_started_by_origin_created_idx": {
-          "name": "session_started_by_origin_created_idx",
-          "columns": [
-            "origin_extension_id",
-            "created_at"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "session_started_by_kind": {
-          "name": "session_started_by_kind",
-          "value": "\"session_started_by\".\"kind\" IN ('extension', 'chat')"
-        }
-      }
     },
     "workspaces": {
       "name": "workspaces",
@@ -7878,7 +7797,8 @@
           "name": "idx_room_entries_author_room",
           "columns": [
             "author_id",
-            "room_id"
+            "room_id",
+            "thread_root_entry_id"
           ],
           "isUnique": false
         }
@@ -8024,7 +7944,15 @@
           "default": 0
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_room_members_author": {
+          "name": "idx_room_members_author",
+          "columns": [
+            "author_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "room_members_room_id_author_id_pk": {
@@ -8409,7 +8337,16 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_read_cursors_thread": {
+          "name": "idx_read_cursors_thread",
+          "columns": [
+            "thread_kind",
+            "thread_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "read_cursors_user_id_thread_kind_thread_id_pk": {
@@ -8952,14 +8889,6 @@
             "local_entry_id"
           ],
           "isUnique": true
-        },
-        "idx_community_mirror_entries_room_seq": {
-          "name": "idx_community_mirror_entries_room_seq",
-          "columns": [
-            "local_room_id",
-            "remote_seq"
-          ],
-          "isUnique": false
         }
       },
       "foreignKeys": {},
@@ -9185,6 +9114,16 @@
             "state"
           ],
           "isUnique": false
+        },
+        "idx_community_outbox_remote_entry": {
+          "name": "idx_community_outbox_remote_entry",
+          "columns": [
+            "community_ref",
+            "remote_room_id",
+            "remote_entry_id"
+          ],
+          "isUnique": false,
+          "where": "\"community_outbox\".\"remote_entry_id\" IS NOT NULL"
         }
       },
       "foreignKeys": {},
