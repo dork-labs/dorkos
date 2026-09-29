@@ -9,6 +9,8 @@ covers:
   - "fix: the chat's Default account names what a send will really bill in this project (DOR-2526)"
   - "fix(server): refuse a person's schedule on an account its project may not use (DOR-2526)"
   - 'fix: tidy the account-rule wording, dialog and docs from review (DOR-2526)'
+  - "docs: say how a project's account list is set today (DOR-2526)"
+  - 'fix(config): refuse a malformed account rule in a PATCH, and say at boot when one is dropped (DOR-2526)'
 ---
 
 ### Added
