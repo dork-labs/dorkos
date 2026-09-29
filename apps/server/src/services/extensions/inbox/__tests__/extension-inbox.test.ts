@@ -541,6 +541,21 @@ describe('lifecycle', () => {
     expect(fx.inbox.listOpen()).toHaveLength(1);
   });
 
+  it('shows a decision raised into a missing folder once the folder is back, and escalates it then', async () => {
+    fx.missing.add('/repos/dorkos');
+    await fx.inbox.raise('flow', 'Flow', shipDecision());
+    expect(fx.inbox.listOpen()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
+    await flush();
+    expect(fx.sendToAll).not.toHaveBeenCalled();
+
+    fx.missing.delete('/repos/dorkos');
+    await vi.advanceTimersByTimeAsync(ONE_MINUTE);
+    await flush();
+    expect(fx.inbox.listOpen()).toHaveLength(1);
+    expect(fx.sendToAll).toHaveBeenCalledTimes(1);
+  });
+
   it('cancels, with no history row, the decisions of an extension no longer installed', async () => {
     await fx.inbox.raise('flow', 'Flow', shipDecision());
     fx.inbox.cancelUndiscovered(new Set(['other']));

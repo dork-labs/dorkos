@@ -378,6 +378,9 @@ export class ExtensionInboxService {
     });
 
     if (created) this.prune();
+    // Raised into a folder that is missing right now (an unplugged drive):
+    // hidden, and the sweep shows it once the folder is back.
+    if (this.running.has(extensionId) && !this.folderOk(row)) this.hiddenByFolder.add(row.id);
     if (this.visible(row)) {
       raiseStanding('extension.decision', payloadOf(row, this.openProjects(extensionId)), {
         arm: created,
