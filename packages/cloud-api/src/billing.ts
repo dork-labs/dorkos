@@ -290,6 +290,63 @@ export const UsageRowSchema = z
     'One row of the caller`s own usage, projected. No supplier and no price-list version appear here.'
   );
 
+/**
+ * One billing period of a charge that is not inference, such as storage
+ * beyond what an account includes.
+ *
+ * Unlike an inference row it has no seat, no model and no upstream list price:
+ * nothing is resold, so there is no difference to publish. `unit` and
+ * `displayName` are server-supplied strings a client renders exactly as given,
+ * so no unit, rate or allowance is named by this package.
+ */
+export const OtherChargeRowSchema = z
+  .object({
+    periodStart: TimestampSchema.describe('When this billing period started, inclusive.'),
+    periodEnd: TimestampSchema.describe(
+      'When this billing period ends, exclusive: the first instant after it. A calendar month ends at the start of the next.'
+    ),
+    units: z
+      .number()
+      .nonnegative()
+      .finite()
+      .describe(
+        'How much was charged for, in `unit`. The service rounds it to three decimal places.'
+      ),
+    unit: z.string().describe('What `units` counts, as a server-supplied string.'),
+    displayName: z.string().describe('The server-supplied string to show for this charge.'),
+    dorkosPriceMicro: CreditMicroSchema.describe('What DorkOS charged for this period.'),
+    costBasis: CostBasisSchema,
+  })
+  .describe(
+    'One billing period of a charge that is not inference. It has no seat, no model and no upstream list price.'
+  );
+
+/** One billing period of a charge that is not inference. */
+export type OtherChargeRow = z.infer<typeof OtherChargeRowSchema>;
+
+/**
+ * The charges in a usage window that are not inference.
+ *
+ * Kept apart from `rows` and `totals` so neither changes meaning: `totals`
+ * still sums inference only, and a client that predates this block sums
+ * exactly what it summed before.
+ */
+export const OtherChargesSchema = z
+  .object({
+    rows: z
+      .array(OtherChargeRowSchema)
+      .describe(
+        'The billing periods that started inside the window, `from` inclusive, `to` exclusive.'
+      ),
+    dorkosPriceMicro: CreditMicroSchema.describe('What DorkOS charged across these rows.'),
+  })
+  .describe(
+    'The charges in a usage window that are not inference, with their own total. Inference totals do not include them.'
+  );
+
+/** The charges in a usage window that are not inference. */
+export type OtherCharges = z.infer<typeof OtherChargesSchema>;
+
 /** `GET /v1/usage` — the caller`s own usage for a window. */
 export const UsageResponseSchema = z
   .object({
@@ -298,10 +355,17 @@ export const UsageResponseSchema = z
     groupBy: UsageGroupBySchema,
     state: UsageStateSchema,
     rows: z.array(UsageRowSchema),
-    totals: z.object({
-      listPriceMicro: MoneyMicroSchema,
-      dorkosPriceMicro: CreditMicroSchema,
-    }),
+    totals: z
+      .object({
+        listPriceMicro: MoneyMicroSchema,
+        dorkosPriceMicro: CreditMicroSchema,
+      })
+      .describe('The inference rows summed. Charges under `otherCharges` are not included.'),
+    otherCharges: OtherChargesSchema.optional()
+      .catch(undefined)
+      .describe(
+        'Charges in the window that are not inference. A service that has none, or predates the field, omits it. A malformed block is dropped rather than failing the whole answer, so the inference rows still arrive.'
+      ),
     denomination: denominationField,
   })
   .describe('The caller`s own usage for a window, grouped as asked.');
