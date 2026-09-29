@@ -5,6 +5,7 @@
  * @module services/communities/remote/pairing-service
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { logger } from '../../../lib/logger.js';
 import { CommunityRefSchema, type CommunityRef } from '@dorkos/shared/community-adapter';
 import {
   COMMUNITY_API_V1_ROUTES,
@@ -160,6 +161,22 @@ export class RemoteCommunityLookupRateLimitedError extends Error {
   }
 }
 
+/**
+ * Whether a Community answered that it is being deleted: `423 COMMUNITY_DELETION_PENDING`.
+ *
+ * The one "gone" answer the Community gives today that cannot mean anything else. A hold
+ * (`423 COMMUNITY_HELD`, reported by the access check as a read-only `archived`), an outage (5xx,
+ * unreachable) and a bare `404` (which a missing channel also answers) are deliberately NOT gone:
+ * treating them as gone would delete this installation's copy of a community that still exists.
+ */
+function isDeletionPending(error: unknown): boolean {
+  return (
+    error instanceof PinnedHttpError &&
+    error.status === 423 &&
+    error.remoteCode === 'COMMUNITY_DELETION_PENDING'
+  );
+}
+
 /** Pairing orchestration scoped to the local owner's verified author ID. */
 export class RemoteCommunityPairingService {
   private readonly busy = new Set<CommunityRef>();
@@ -178,6 +195,9 @@ export class RemoteCommunityPairingService {
    * Bind pairing to the local encrypted connection store.
    *
    * @param store - Private encrypted local connection store.
+   * @param onReconnectRequired - Revokes and purges everything derived from one owner's
+   *   connection: called when the grant is rejected, when the Community is being deleted, and
+   *   when the owner disconnects.
    */
   constructor(
     private readonly store: RemoteConnectionStore,
@@ -350,6 +370,7 @@ export class RemoteCommunityPairingService {
         await this.requireReconnect(ref, ownerKey);
         return this.store.project(await this.store.get(ref, ownerKey));
       }
+      if (isDeletionPending(error)) return this.communityBeingDeleted(ref, ownerKey, record.access);
       const unavailable = await this.store.updateAccess(ref, ownerKey, {
         state: 'unverified',
         effective: { read: false, post: false, enrollAgent: false, stream: false },
@@ -361,6 +382,37 @@ export class RemoteCommunityPairingService {
     const verified = await this.store.updateAccess(ref, ownerKey, access, await hostOperator);
     this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, verified.access!);
     return verified;
+  }
+
+  /**
+   * The Community said it is being deleted (DOR-2334). Everything this installation copied from
+   * it goes now, through the same path a rejected grant takes: streams and queued posts stop,
+   * local agents' turns in its rooms halt, and the mirrored rooms, their entries, files and
+   * search rows are purged. A deletion can still be cancelled on the Community, but every grant
+   * was revoked when it was requested, so a cancelled deletion answers the next check with a
+   * 401 and the person reconnects; the mirrors then fill again from the Community.
+   *
+   * The access is recorded as verified with nothing allowed and `deletion_pending` as the last
+   * known lifecycle, which is what the connection list shows. The bearer is kept, so that later
+   * 401 is what tells this server the deletion was cancelled or finished.
+   */
+  private async communityBeingDeleted(
+    ref: CommunityRef,
+    ownerKey: string,
+    before: CommunityConnectionAccess | null | undefined
+  ): Promise<RemoteConnectionDescriptor> {
+    await this.onReconnectRequired?.(ref, ownerKey);
+    const deleting = await this.store.updateAccess(ref, ownerKey, {
+      state: 'verified',
+      effective: NO_CAPABILITIES,
+      lastKnown: {
+        lifecycle: 'deletion_pending',
+        capabilities: NO_CAPABILITIES,
+        verifiedAt: new Date(this.timing.now()).toISOString(),
+      },
+    });
+    this.notifyAccessAuthorityChanged(ref, ownerKey, before, deleting.access!);
+    return deleting;
   }
 
   /** Begin a ten-minute verifier-bound request at the checked deployment origin. */
@@ -592,6 +644,17 @@ export class RemoteCommunityPairingService {
       const remoteRevoked = bearer
         ? await this.revokeRemoteGrant(bearer, record)
         : record.status !== 'connected';
+      // Everything copied through this connection goes with it (DOR-2334): the same path a
+      // rejected grant takes stops its streams and agents' turns and purges its mirrored rooms,
+      // their files and search rows. Before the credential is removed, and never allowed to keep
+      // the credential here: a failure is logged and the disconnect still completes.
+      try {
+        await this.onReconnectRequired?.(ref, ownerKey);
+      } catch (error) {
+        logger.warn('[communities] could not remove every copy of a disconnected community', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       await this.store.disconnect(ref, ownerKey);
       return { remoteRevoked };
     } finally {
