@@ -11,7 +11,13 @@
  */
 import { useCallback, useState } from 'react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { InboxRow, InboxGroupRow, groupActivityRows } from '@/layers/features/inbox';
+import { Puzzle } from 'lucide-react';
+import {
+  InboxDecisionRow,
+  InboxRow,
+  InboxGroupRow,
+  groupActivityRows,
+} from '@/layers/features/inbox';
 import type { AgentVisualSource } from '@/layers/entities/agent';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { InboxBellPill } from '@/layers/widgets/inbox-bell';
@@ -359,12 +365,68 @@ function InboxRowsShowcase() {
   );
 }
 
+/**
+ * The one short row that asks (DOR-2517): an extension waiting to be turned
+ * on, then the same row answered, as the Activity list keeps it.
+ */
+function DecisionRowShowcase() {
+  return (
+    <PlaygroundSection
+      title="Inbox decision row"
+      description="One short row that asks: a question for a title, a line saying why, where it came from, and ⓘ 👎 👍. ⓘ grows the row in place, never a popover."
+    >
+      <ShowcaseLabel>Waiting: an extension a plugin brought, not yet turned on</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          <InboxDecisionRow
+            icon={Puzzle}
+            title="Turn on Flow?"
+            why="You installed the flow plugin. This adds a Flow tab that shows what your agents are working on. It runs as you."
+            sourceLine="flow plugin · dork-labs/marketplace"
+            more={
+              <p>
+                None of it has run yet. Turning it on lets its code run inside DorkOS, both on this
+                machine, where it can reach anything DorkOS can, and on this page, signed in as you.
+                Turn it on only if you trust where it came from.
+              </p>
+            }
+            actions={{
+              kind: 'yes-no',
+              approveLabel: 'Turn it on',
+              rejectLabel: 'Not now',
+              onApprove: () => {},
+              onReject: () => {},
+            }}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Answered, as history</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          <InboxDecisionRow
+            icon={Puzzle}
+            title="You turned on Flow"
+            trail={['2:14pm', 'Flow tab added']}
+          />
+          <InboxDecisionRow
+            icon={Puzzle}
+            title="Flow is off for now"
+            trail={['2:14pm', 'Turn it on']}
+          />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
 /** Every Inbox showcase, in the order the panel stacks them. */
 export function InboxShowcases() {
   return (
     <>
       <BellStatesShowcase />
       <InboxRowsShowcase />
+      <DecisionRowShowcase />
     </>
   );
 }

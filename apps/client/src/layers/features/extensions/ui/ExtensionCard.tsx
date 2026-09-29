@@ -3,6 +3,7 @@ import { AlertTriangle, XCircle, Puzzle, ChevronDown, ShieldCheck } from 'lucide
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { Badge, Button, Card, Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { extensionConsentCopy } from '@/layers/entities/extension';
 
 interface ExtensionCardProps {
   /** The extension record from the server. */
@@ -164,14 +165,10 @@ export function ExtensionCard({
                 data-testid={`extension-needs-approval-${extension.id}`}
               >
                 <p className="text-sm font-medium">This extension is waiting for you</p>
+                {/* One sentence shared with the Activity inbox's ⓘ panel
+                    (DOR-2517), so the two places that ask say the same thing. */}
                 <p className="text-muted-foreground text-sm">
-                  {runsInServer
-                    ? 'None of it has run yet. Allowing it lets its code run inside DorkOS, both ' +
-                      'on this machine, where it can reach anything DorkOS can, and on this page, ' +
-                      'signed in as you. Allow it only if you trust where it came from.'
-                    : 'None of it has run yet. Allowing it lets its code run on this page, signed ' +
-                      'in as you, so it can do anything you can do in DorkOS. Allow it only if ' +
-                      'you trust where it came from.'}
+                  {extensionConsentCopy(runsInServer)}
                 </p>
                 <Button
                   size="sm"
@@ -179,7 +176,7 @@ export function ExtensionCard({
                   disabled={isSettingApproval}
                   data-testid={`extension-approve-run-${extension.id}`}
                 >
-                  Allow it to run
+                  Turn it on
                 </Button>
               </div>
             ))}
