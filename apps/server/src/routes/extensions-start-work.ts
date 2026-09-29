@@ -19,7 +19,7 @@ import type { Router } from 'express';
 import type { ExtensionStatus } from '@dorkos/extension-api';
 import { StartWorkError } from '@dorkos/extension-api/server';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
-import { getStartWorkService } from '../services/extensions/start-work.js';
+import { getStartWorkService, StartWorkInputError } from '../services/extensions/start-work.js';
 import { logger } from '../lib/logger.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
@@ -79,11 +79,12 @@ export function registerExtensionStartWorkRoute(
       if (err instanceof StartWorkError) {
         return res.status(STATUS_FOR[err.code]).json({ error: err.message, code: err.code });
       }
-      if (err instanceof TypeError) return res.status(400).json({ error: err.message });
+      if (err instanceof StartWorkInputError) {
+        return res.status(400).json({ error: err.message });
+      }
+      // Anything else is the server's own fault: logged, never shown as it is.
       logger.error('[Extensions] Failed to start work in a new chat', err);
-      return res.status(500).json({
-        error: err instanceof Error && err.message ? err.message : 'The chat could not be started.',
-      });
+      return res.status(500).json({ error: 'The chat could not be started. Try again.' });
     }
   });
 }

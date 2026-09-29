@@ -205,7 +205,7 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
     description:
       'What an extension’s outcome button calls (`api.startWork`). Starts one NEW chat in the ' +
       'project’s root on the default runtime: the prompt is sent at once as its first message, ' +
-      'the title is set, and the chat says "Started by <extension>: <reason>" as its first ' +
+      'the title is set, and the chat says "Started by the <extension> extension: <reason>" as its first ' +
       'line. The current chat is never touched and nothing navigates. The project must hold a ' +
       'copy of the extension, have been reported by it, or be one the person works in. At most ' +
       '10 starts per rolling hour and 3 running chats per extension, counted with the chats its ' +

@@ -69,6 +69,8 @@ import {
   type ContinueLaunchDeps,
 } from '../continue-service.js';
 import { CARRY_OVER_PROMPT } from '../carry-over.js';
+import { SessionStartedByStore } from '../../origin/session-started-by-store.js';
+import { StartWorkService, setStartWorkService } from '../../../extensions/start-work.js';
 
 const NOW = new Date('2026-09-27T12:00:00.000Z');
 const SINCE = '2026-09-27T11:59:00.000Z';
@@ -1530,5 +1532,90 @@ describe('continuing on another runtime', () => {
     expect(settings?.model).toBeUndefined();
     expect(settings?.effort).toBeUndefined();
     expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'default' });
+  });
+});
+
+// === A chat an extension started (spec flow-multiproject §7.7) ===============
+
+describe('carrying a chat an extension started', () => {
+  let startedBy: SessionStartedByStore;
+
+  beforeEach(() => {
+    startedBy = new SessionStartedByStore(db);
+    setStartWorkService(
+      new StartWorkService({
+        store: startedBy,
+        projects: { rootWithin: vi.fn(), listForExtension: vi.fn(), list: vi.fn() },
+        extensionName: (id) => (id === 'flow' ? 'Flow' : id),
+        now: () => Date.now(),
+        runningSessionIds: () => [],
+      })
+    );
+  });
+
+  afterEach(() => {
+    setStartWorkService(undefined);
+  });
+
+  function startedByFlow(id: string, at = new Date().toISOString()) {
+    startedBy.insert({
+      sessionId: id,
+      kind: 'extension',
+      extensionId: 'flow',
+      startedBySessionId: null,
+      originExtensionId: 'flow',
+      reason: '12 new ideas were waiting to be sorted',
+      createdAt: at,
+    });
+  }
+
+  it('keeps who started it: the new chat names the old one, its reason and its extension', async () => {
+    startedByFlow('src-1');
+    await limitedSession('src-1');
+
+    const answer = await continueSession('src-1', { account: 'spare' }, deps);
+
+    expect(answer).toEqual({ sessionId: 'new-1' });
+    expect(startedBy.get('new-1')).toMatchObject({
+      kind: 'chat',
+      startedBySessionId: 'src-1',
+      originExtensionId: 'flow',
+      reason: '12 new ideas were waiting to be sorted',
+    });
+    // It counts against Flow's limits like any chat its chats start.
+    expect(startedBy.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(2);
+  });
+
+  it('is refused past the extension’s hourly limit, and starts and writes nothing', async () => {
+    startedByFlow('src-1');
+    for (let i = 0; i < 9; i++) startedByFlow(`flow-${i}`);
+    await limitedSession('src-1');
+
+    const err = await refusal(continueSession('src-1', { account: 'spare' }, deps));
+
+    expect(err).toMatchObject({ status: 409, code: 'START_LIMIT' });
+    expect(err.message).toBe('Flow has started a lot of chats in the last hour. Try again later.');
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(startedBy.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(10);
+  });
+
+  it('forgets the row when the move does not start', async () => {
+    startedByFlow('src-1');
+    await limitedSession('src-1');
+    vi.mocked(dispatchSessionMessage).mockResolvedValueOnce({
+      refused: 'UNKNOWN_RUNTIME',
+      message: 'Unknown runtime',
+    } as never);
+
+    await refusal(continueSession('src-1', { account: 'spare' }, deps));
+
+    const minted = vi.mocked(dispatchSessionMessage).mock.calls[0]![0].sessionId;
+    expect(startedBy.get(minted)).toBeNull();
+  });
+
+  it('records nothing for a person’s own chat', async () => {
+    await limitedSession('src-1');
+    await continueSession('src-1', { account: 'spare' }, deps);
+    expect(startedBy.get('new-1')).toBeNull();
   });
 });

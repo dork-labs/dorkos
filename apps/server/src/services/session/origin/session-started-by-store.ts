@@ -15,7 +15,7 @@
  *
  * @module services/session/origin/session-started-by-store
  */
-import { and, eq, gte, inArray, sessionStartedBy, sql, type Db } from '@dorkos/db';
+import { and, eq, gte, inArray, lt, sessionStartedBy, sql, type Db } from '@dorkos/db';
 
 /** One stored start. */
 export interface StartedByRecord {
@@ -34,6 +34,15 @@ export interface StartedByRecord {
   /** When it was started (ISO 8601). */
   createdAt: string;
 }
+
+/**
+ * How long a start is kept. Well past the hour the limits look back over; after
+ * it the chat stops saying who started it, which by then is old news.
+ */
+export const STARTED_BY_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** How often {@link SessionStartedByStore.prune} runs. */
+export const STARTED_BY_PRUNE_EVERY_MS = 6 * 60 * 60 * 1000;
 
 /** Most ids one batched read asks SQLite for at once, well under its variable limit. */
 const BATCH = 500;
@@ -129,6 +138,18 @@ export class SessionStartedByStore {
       for (const row of rows) found.set(row.sessionId, row);
     }
     return found;
+  }
+
+  /**
+   * Forget starts older than {@link STARTED_BY_KEEP_MS}.
+   *
+   * @param now - The current time, in ms.
+   * @returns How many rows were removed.
+   */
+  prune(now: number): number {
+    const before = new Date(now - STARTED_BY_KEEP_MS).toISOString();
+    return this.db.delete(sessionStartedBy).where(lt(sessionStartedBy.createdAt, before)).run()
+      .changes;
   }
 
   /**

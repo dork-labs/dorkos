@@ -9,7 +9,7 @@ import { openFromCommandPalette } from '../../pages/command-palette.js';
  * One click starts the work in a NEW chat and changes nothing where you are:
  * the chat you were in keeps its messages and what you had typed. The new chat
  * has the extension's title, and its first line says who started it and why
- * ("Started by Hello World: …"). What it was asked is folded under one quiet
+ * ("Started by the Hello World extension: …"). What it was asked is folded under one quiet
  * line, so no prompt or slash command is ever the headline.
  *
  * Runs in the `chromium-extension-start-work` project against the test-mode
@@ -85,7 +85,7 @@ test.describe('Starting work in a new chat — hello-world’s “Start a chat�
     // Its first line says who started it and why, in words, never a command.
     const firstLine = page.getByTestId('started-by-line');
     await expect(firstLine).toHaveText(
-      'Started by Hello World: You asked for a hello from the Hello page'
+      'Started by the Hello World extension: You asked for a hello from the Hello page'
     );
     await expect(firstLine).not.toContainText('/');
     // Its title is the extension's, not the prompt.

@@ -222,7 +222,7 @@ const { sessionId } = await api.startWork({
 api.navigate(`/session?session=${sessionId}`);
 ```
 
-- **What the person sees.** The chat's title is yours, and its first line says "Started by Flow: 12 new ideas were waiting to be sorted". The prompt is folded under "What it was asked ▸", so write the title and reason for the person and the prompt for the agent.
+- **What the person sees.** The chat's title is yours, and its first line says "Started by the Flow extension: 12 new ideas were waiting to be sorted". The prompt is folded under "What it was asked ▸", so write the title and reason for the person and the prompt for the agent.
 - **Where it can run.** A folder inside a project that holds a copy of your extension, one your server half reported (`ctx.projects.report`), or one the person works in. Anything else is refused with `not_a_project`.
 - **Limits.** At most 10 starts in a rolling hour and 3 of your chats working at once, counted together across `api.startWork` and `ctx.sessions.start`, and including chats your chats start with `session_start`. Over either one is `start_limit`. The hourly count survives a restart.
 - **Accounts.** A start picks an account the same way any new chat does. When no account may work in the project it is refused with `account_not_allowed_here`; until account rules exist, this cannot happen, but handle it now.

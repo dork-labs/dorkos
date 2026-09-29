@@ -75,8 +75,7 @@ beforeEach(() => {
     new StartWorkService({
       store,
       projects: {
-        resolveWithin: async (dir: string) =>
-          dir.startsWith('/repos/dorkos') ? { root: DORKOS.root, name: DORKOS.name } : null,
+        rootWithin: async (dir: string) => (dir.startsWith('/repos/dorkos') ? DORKOS.root : null),
         listForExtension: async () => [],
         list: async () => [DORKOS],
       },
@@ -211,6 +210,28 @@ describe('POST /api/extensions/:id/start-work', () => {
       .send({ ...BODY, title: 'x'.repeat(81) });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/title of 1 to 80 characters/);
+    expect(launches).toHaveLength(0);
+  });
+
+  it('answers a generic 500, never the error itself, when the server fails', async () => {
+    setStartWorkService(
+      new StartWorkService({
+        store,
+        projects: {
+          rootWithin: async () => DORKOS.root,
+          listForExtension: async () => [],
+          list: async () => [DORKOS],
+        },
+        extensionName: () => 'Hello World',
+        runningSessionIds: () => [],
+        defaultRuntime: () => {
+          throw new TypeError("Cannot read properties of undefined (reading 'type')");
+        },
+      })
+    );
+    const res = await request(server).post('/api/extensions/hello/start-work').send(BODY);
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'The chat could not be started. Try again.' });
     expect(launches).toHaveLength(0);
   });
 

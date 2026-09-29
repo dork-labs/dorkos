@@ -2,8 +2,8 @@
  * Who started this chat, and what it was asked (spec `flow-multiproject` §7.7,
  * V7): the chat's first line when an extension or another chat started it.
  *
- * - {@link StartedByLine} — "Started by Flow: 12 new ideas were waiting to be
- *   sorted", or "Started from <that chat>: <reason>" with the chat as a link.
+ * - {@link StartedByLine} — "Started by the Flow extension: 12 new ideas were
+ *   waiting to be sorted", or "Started from <that chat>: <reason>" with the chat as a link.
  *   A session adornment, never a message, and never sent to the model.
  * - {@link StartedPrompt} — the prompt it was started with, which is the chat's
  *   first message, folded to one line ("What it was asked ▸") so it is there to
@@ -38,7 +38,10 @@ export function StartedByLine({ startedBy }: { startedBy: SessionStartedBy | nul
     >
       {startedBy.kind === 'extension' ? (
         <>
-          Started by <span className="text-foreground font-medium">{startedBy.extensionName}</span>
+          {/* "the … extension" in words, so a manifest named "You" or "DorkOS"
+            still reads as an extension and never as a person or the app. */}
+          Started by the{' '}
+          <span className="text-foreground font-medium">{startedBy.extensionName}</span> extension
         </>
       ) : (
         <>

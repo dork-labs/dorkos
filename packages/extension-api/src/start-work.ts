@@ -14,7 +14,7 @@ export interface StartWorkInput {
   prompt: string;
   /** The chat's title, plain words (1-80), e.g. "Sorting 12 new ideas in dorkos". */
   title: string;
-  /** Why it was started (1-200), shown as the chat's first line: "Started by Flow: <reason>". */
+  /** Why it was started (1-200), shown as the chat's first line: "Started by the Flow extension: <reason>". */
   reason: string;
 }
 
@@ -22,9 +22,17 @@ export interface StartWorkInput {
  * Why a start was refused:
  *
  * - `not_a_project`: the folder is in no project this extension may work in.
+ *   For `ctx.sessions.start` that is a project holding a copy of the
+ *   extension or one it reported; `api.startWork` also accepts a project the
+ *   person works in (a declared widening, spec §7.7: the click is a person's,
+ *   and an extension that ships inside DorkOS is in no project's files).
  * - `account_not_allowed_here`: no account may work in that project.
- * - `start_limit`: the extension started 10 chats in the last hour, or 3 of
- *   its chats are working right now.
+ * - `start_limit`: the extension and its chats started 10 chats in the last
+ *   hour, or 3 of those are working right now. Counted: `api.startWork`,
+ *   `ctx.sessions.start`, `session_start` from an in-app chat of its chain, and
+ *   a move of such a chat to another account. Not counted: `session_start`
+ *   over the external `/mcp` server with an agent token (it names no calling
+ *   chat), agent-to-agent relay messages, schedules and rooms.
  *
  * `message` is plain words, safe to show as it is. Nothing was started. Match
  * on `err.code` rather than `instanceof`: an extension bundle carries its own

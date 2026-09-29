@@ -65,7 +65,6 @@ import {
   AGENT_LAUNCH_CAP_MESSAGE,
 } from '../../../session/launch/launch-session.js';
 import { clampSchedulePermissionMode } from '../../../tasks/schedule-permission-clamp.js';
-import { getSessionStartedByStore } from '../../../session/origin/session-started-by-store.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
@@ -235,16 +234,8 @@ function reserveChatStart(
   reason: string | undefined
 ): { ok: true; reservation: StartReservation | null } | { ok: false; message: string } {
   const service = getStartWorkService();
-  const store = getSessionStartedByStore();
-  if (!parentSessionId || !service || !store) return { ok: true, reservation: null };
-  const claimed = service.reserve({
-    sessionId,
-    kind: 'chat',
-    extensionId: null,
-    startedBySessionId: parentSessionId,
-    originExtensionId: store.get(parentSessionId)?.originExtensionId ?? null,
-    reason: reason ?? null,
-  });
+  if (!parentSessionId || !service) return { ok: true, reservation: null };
+  const claimed = service.reserveFromChat({ sessionId, parentSessionId, reason: reason ?? null });
   return claimed.ok
     ? { ok: true, reservation: claimed.reservation }
     : { ok: false, message: claimed.error.message };

@@ -34,7 +34,18 @@ describe('StartedByLine', () => {
       />
     );
     expect(screen.getByTestId('started-by-line')).toHaveTextContent(
-      'Started by Flow: 12 new ideas were waiting to be sorted'
+      'Started by the Flow extension: 12 new ideas were waiting to be sorted'
+    );
+  });
+
+  it('says an extension named like a person is an extension', () => {
+    render(
+      <StartedByLine
+        startedBy={{ kind: 'extension', extensionId: 'x', extensionName: 'You', reason: 'hi' }}
+      />
+    );
+    expect(screen.getByTestId('started-by-line')).toHaveTextContent(
+      'Started by the You extension: hi'
     );
   });
 

@@ -29,7 +29,7 @@
  */
 import crypto from 'node:crypto';
 import { StartWorkError } from '@dorkos/extension-api/server';
-import type { ProjectRef } from '@dorkos/extension-api/server';
+import type { ProjectInfo, ProjectRef } from '@dorkos/extension-api/server';
 import {
   START_WORK_LIMITS,
   StartWorkRequestSchema,
@@ -72,8 +72,8 @@ export type StartWorkVia = 'api' | 'ctx';
 export interface StartWorkDeps {
   /** Where starts are kept and counted. */
   store: SessionStartedByStore;
-  /** The project registry. */
-  projects: Pick<ProjectRegistry, 'resolveWithin' | 'listForExtension' | 'list'>;
+  /** The project registry. Only read: a refused start must leave no `reported` row behind. */
+  projects: Pick<ProjectRegistry, 'rootWithin' | 'listForExtension' | 'list'>;
   /** An extension's manifest name, or its id when it is not installed. */
   extensionName: (extensionId: string) => string;
   /** Activity, for the history line a start leaves. */
@@ -174,7 +174,7 @@ export class StartWorkService {
    * @param via - Where the call came from; see {@link StartWorkVia}.
    * @returns The new chat's id.
    * @throws StartWorkError when a rule refuses it (nothing was started).
-   * @throws TypeError when the input breaks a length rule.
+   * @throws StartWorkInputError when the input breaks a length rule.
    */
   async start(
     extensionId: string,
@@ -182,7 +182,7 @@ export class StartWorkService {
     via: StartWorkVia
   ): Promise<{ sessionId: string }> {
     const parsed = StartWorkRequestSchema.safeParse(input);
-    if (!parsed.success) throw new TypeError(describeInputProblem(input));
+    if (!parsed.success) throw new StartWorkInputError(describeInputProblem(input));
     const request: StartWorkRequest = parsed.data;
     const name = this.deps.extensionName(extensionId);
 
@@ -217,7 +217,14 @@ export class StartWorkService {
       result = await dispatchSessionMessage({
         origin: { kind: 'extension-start' },
         sessionId,
-        request: { content: request.prompt, cwd: project.root, runtime: runtimeType },
+        request: {
+          content: request.prompt,
+          cwd: project.root,
+          runtime: runtimeType,
+          // One honest line for the model, so it does not take the prompt for
+          // the person's own words. It rides the context bag and is never drawn.
+          seedContext: `This chat was started by the ${name} extension: ${request.reason}`,
+        },
         clientId: `extension:${extensionId}`,
         // No agent is named: the chat runs in the project's root on the default
         // runtime, like a new chat a person opens there.
@@ -363,21 +370,75 @@ export class StartWorkService {
     return running.size;
   }
 
-  /** The project a start names, when this extension may start work there. */
+  /**
+   * The project a start names, when this extension may start work there. Only
+   * projects core already knows can qualify, so the folder is resolved without
+   * recording anything: a refused start leaves no `reported` row and spends
+   * none of the extension's report slots.
+   */
   private async projectFor(
     extensionId: string,
     folder: string,
     via: StartWorkVia
   ): Promise<ProjectRef | null> {
-    const resolved = await this.deps.projects.resolveWithin(folder, extensionId).catch(() => null);
-    if (!resolved || resolved === 'outside') return null;
+    const root = await this.deps.projects.rootWithin(folder).catch(() => null);
+    if (!root || root === 'outside') return null;
+    const toRef = (p: ProjectInfo): ProjectRef => ({ root: p.root, name: p.name });
     const scoped = await this.deps.projects.listForExtension(extensionId);
-    if (scoped.some((p) => p.root === resolved.root)) return resolved;
+    const mine = scoped.find((p) => p.root === root);
+    if (mine) return toRef(mine);
     if (via === 'api') {
-      const theirs = await this.deps.projects.list();
-      if (theirs.some((p) => p.root === resolved.root)) return resolved;
+      const theirs = (await this.deps.projects.list()).find((p) => p.root === root);
+      if (theirs) return toRef(theirs);
     }
     return null;
+  }
+
+  /**
+   * Claim a start slot for a chat started from another chat, recording who
+   * started it. The new chat inherits the parent's origin extension, so it
+   * counts against that extension's limits and is refused past them.
+   *
+   * - `session_start` passes its own `reason`, and records the parent whether
+   *   or not an extension is at the root of its chain.
+   * - A carry-over to another account (`carry: true`) records only when the
+   *   parent was itself started (the chat keeps its first line, its fold and
+   *   its place in the limits), and keeps the parent's reason.
+   *
+   * @param opts - The new chat, its parent, and how it was started.
+   */
+  reserveFromChat(opts: {
+    sessionId: string;
+    parentSessionId: string;
+    reason?: string | null;
+    carry?: boolean;
+  }): { ok: true; reservation: StartReservation | null } | { ok: false; error: StartWorkError } {
+    const parent = this.deps.store.get(opts.parentSessionId);
+    if (opts.carry && !parent) return { ok: true, reservation: null };
+    return this.reserve({
+      sessionId: opts.sessionId,
+      kind: 'chat',
+      extensionId: null,
+      startedBySessionId: opts.parentSessionId,
+      originExtensionId: parent?.originExtensionId ?? null,
+      reason: opts.carry ? (parent?.reason ?? null) : (opts.reason ?? null),
+    });
+  }
+}
+
+/**
+ * A start whose input broke a length rule. Its own class so the route answers
+ * 400 for exactly this and nothing else: any other error is the server's.
+ */
+export class StartWorkInputError extends Error {
+  /**
+   * Refuse the input.
+   *
+   * @param message - What was wrong, in plain words.
+   */
+  constructor(message: string) {
+    super(message);
+    this.name = 'StartWorkInputError';
   }
 }
 

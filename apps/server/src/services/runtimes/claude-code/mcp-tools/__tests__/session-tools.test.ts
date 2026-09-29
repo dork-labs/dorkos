@@ -50,7 +50,10 @@ vi.mock('../../../../workspace/room-session-place.js', () => ({
   })),
 }));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
-vi.mock('../../../../session/session-state-projector.js', () => ({
+vi.mock('../../../../session/session-state-projector.js', async (importOriginal) => ({
+  // The real module for everything the in-session tool set loads; only the
+  // projector the launch creates is a stand-in.
+  ...(await importOriginal<object>()),
   getOrCreateProjector: vi.fn(() => ({ cwd: undefined })),
 }));
 vi.mock('../../../../session/projector-persistence.js', () => ({
@@ -104,6 +107,7 @@ import {
   setSessionStartedByStore,
 } from '../../../../session/origin/session-started-by-store.js';
 import { StartWorkService, setStartWorkService } from '../../../../extensions/start-work.js';
+import { handRegisteredInSessionTools } from '../index.js';
 import {
   NOT_THE_CALLER_MESSAGE,
   OTHER_AGENTS_HOME_MESSAGE,
@@ -687,7 +691,7 @@ describe('session_start records who started the new session (spec flow-multiproj
     setStartWorkService(
       new StartWorkService({
         store,
-        projects: { resolveWithin: vi.fn(), listForExtension: vi.fn(), list: vi.fn() },
+        projects: { rootWithin: vi.fn(), listForExtension: vi.fn(), list: vi.fn() },
         extensionName: (id) => (id === 'flow' ? 'Flow' : id),
         runningSessionIds: () => [],
       })
@@ -775,6 +779,43 @@ describe('session_start records who started the new session (spec flow-multiproj
     expect(result.isError).toBe(true);
     const minted = vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId;
     expect(store.get(minted)).toBeNull();
+  });
+
+  it('records the calling chat and inherits its extension through the REAL in-session tool set', async () => {
+    // Every other case here hands the handler its caller. This drives what a
+    // live session drives (`createDorkOsToolServer` → `handRegisteredInSessionTools`)
+    // with only a session, so the resolver in `mcp-tools/index.ts` is what
+    // names the calling chat.
+    store.insert({
+      sessionId: 'flow-chat',
+      kind: 'extension',
+      extensionId: 'flow',
+      startedBySessionId: null,
+      originExtensionId: 'flow',
+      reason: '12 new ideas were waiting to be sorted',
+      createdAt: new Date().toISOString(),
+    });
+    const deps = makeDeps();
+    // What the tool set asks Mesh while it builds; nothing here depends on it.
+    (deps.meshCore as unknown as { getSubjectByPath: () => undefined }).getSubjectByPath = () =>
+      undefined;
+    const tools = handRegisteredInSessionTools(deps, {
+      session: { eventQueue: [], cwd: AGENT_HOME, sdkSessionId: 'flow-chat' },
+    } as never) as unknown as Array<{
+      name: string;
+      handler: (args: unknown, extra: unknown) => Promise<{ content: { text: string }[] }>;
+    }>;
+    const sessionStart = tools.find((t) => t.name === 'session_start')!;
+
+    const result = await sessionStart.handler({ ...BASE, reason: 'Split off the tests' }, {});
+    const { sessionId } = payloadOf(result) as { sessionId: string };
+
+    expect(store.get(sessionId)).toMatchObject({
+      kind: 'chat',
+      startedBySessionId: 'flow-chat',
+      originExtensionId: 'flow',
+      reason: 'Split off the tests',
+    });
   });
 
   it('records nothing when there is no calling chat (the external /mcp server)', async () => {

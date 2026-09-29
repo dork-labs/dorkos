@@ -62,7 +62,12 @@ import { SessionListBroadcaster } from '../../session/session-list-broadcaster.j
 import { applySessionOriginOverlays } from '../../session/origin/session-origin-overlays.js';
 import { _forgetTitles } from '../../session/origin/started-by-origin-overlay.js';
 import { SessionStartedByStore } from '../../session/origin/session-started-by-store.js';
-import { StartWorkService, setStartWorkService, type StartWorkDeps } from '../start-work.js';
+import {
+  StartWorkInputError,
+  StartWorkService,
+  setStartWorkService,
+  type StartWorkDeps,
+} from '../start-work.js';
 import { createDataProviderContext } from '../extension-server-api-factory.js';
 import { createInboxFixture, shipDecision } from '../inbox/__tests__/inbox-fixture.js';
 import { startSorting } from '../inbox/__tests__/fixtures/inbox-fixture.js';
@@ -73,17 +78,23 @@ const MINE: ProjectRef = { root: '/repos/mine', name: 'mine' };
 
 const info = (ref: ProjectRef): ProjectInfo => ({ ...ref, originRepo: null, lastSeenAt: '' });
 
-/** The registry: three repos under `/repos`, `/etc` outside the boundary, anything else in no repo. */
+/**
+ * The registry: three repos under `/repos`, `/etc` outside the boundary,
+ * anything else in no repo. `resolveWithin` and `report` are here only to prove
+ * a start never calls them: both record a `reported` row.
+ */
 function fakeProjects(scope: Record<string, ProjectRef[]>) {
   const all = [DORKOS, BLINTZ, MINE];
   return {
-    resolveWithin: vi.fn(async (dir: string) => {
+    rootWithin: vi.fn(async (dir: string) => {
       if (dir.startsWith('/etc')) return 'outside' as const;
-      return all.find((p) => dir === p.root || dir.startsWith(`${p.root}/`)) ?? null;
+      return all.find((p) => dir === p.root || dir.startsWith(`${p.root}/`))?.root ?? null;
     }),
     listForExtension: vi.fn(async (id: string) => (scope[id] ?? []).map(info)),
     // The projects the person works in.
     list: vi.fn(async () => [info(MINE), info(DORKOS)]),
+    resolveWithin: vi.fn(),
+    report: vi.fn(),
   };
 }
 
@@ -153,7 +164,13 @@ describe('a start', () => {
     expect(launch).toMatchObject({
       sessionId,
       origin: { kind: 'extension-start' },
-      request: { content: INPUT.prompt, cwd: DORKOS.root, runtime: 'test-mode' },
+      request: {
+        content: INPUT.prompt,
+        cwd: DORKOS.root,
+        runtime: 'test-mode',
+        // One honest line for the model; the prompt stays byte for byte.
+        seedContext: `This chat was started by the Flow extension: ${INPUT.reason}`,
+      },
       clientId: 'extension:flow',
       countsTowardLaunchCap: true,
     });
@@ -292,6 +309,9 @@ describe('refusals launch nothing', () => {
     const err = await refusal(service.start('flow', { ...INPUT, project: MINE.root }, 'ctx'));
     expect(err.code).toBe('not_a_project');
     expect(launches).toHaveLength(0);
+    // Nothing recorded: no `reported` row, no report slot spent.
+    expect(projects.resolveWithin).not.toHaveBeenCalled();
+    expect(projects.report).not.toHaveBeenCalled();
   });
 
   it('lets a person start work from the page in a project they work in', async () => {
@@ -378,9 +398,9 @@ describe('refusals launch nothing', () => {
     expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
   });
 
-  it('refuses input that breaks a length rule, as a TypeError', async () => {
+  it('refuses input that breaks a length rule, as a StartWorkInputError', async () => {
     await expect(service.start('flow', { ...INPUT, title: 'x'.repeat(81) }, 'ctx')).rejects.toThrow(
-      TypeError
+      StartWorkInputError
     );
     await expect(service.start('flow', { ...INPUT, reason: '' }, 'ctx')).rejects.toThrow(
       /Say why in 1 to 200 characters/
@@ -446,6 +466,29 @@ describe('the limits', () => {
       });
       expect(claimed.ok).toBe(true);
     }
+  });
+});
+
+describe('pruning', () => {
+  it('forgets starts older than a week, and keeps the rest', () => {
+    const now = Date.parse('2026-09-29T09:00:00.000Z');
+    const row = (sessionId: string, daysAgo: number) =>
+      store.insert({
+        sessionId,
+        kind: 'extension',
+        extensionId: 'flow',
+        startedBySessionId: null,
+        originExtensionId: 'flow',
+        reason: 'r',
+        createdAt: new Date(now - daysAgo * 24 * 60 * 60 * 1000).toISOString(),
+      });
+    row('old', 8);
+    row('week-less-a-bit', 6.9);
+    row('today', 0);
+    expect(store.prune(now)).toBe(1);
+    expect(store.get('old')).toBeNull();
+    expect(store.get('week-less-a-bit')).not.toBeNull();
+    expect(store.get('today')).not.toBeNull();
   });
 });
 

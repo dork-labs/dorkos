@@ -540,7 +540,7 @@ export type TrackerItemRef = z.infer<typeof TrackerItemRefSchema>;
  * Who started a chat that no person typed into (spec `flow-multiproject`
  * §7.7, §11.4): an extension (`api.startWork`, `ctx.sessions.start`) or another
  * chat (the `session_start` tool). The chat draws it as its first line, never
- * sent to the model: "Started by Flow: <reason>", or "Started from <that chat's
+ * sent to the model: "Started by the Flow extension: <reason>", or "Started from <that chat's
  * title>: <reason>" with a link to that chat.
  */
 export const SessionStartedBySchema = z
