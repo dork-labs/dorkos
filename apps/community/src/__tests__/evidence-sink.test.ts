@@ -227,7 +227,18 @@ it('logs a failed startup tidy instead of throwing', async () => {
       warn: (message) => warnings.push(message),
     })
   ).resolves.toBeUndefined();
-  expect(warnings).toEqual(['Community evidence cleanup unavailable']);
+  // The filesystem sink too: an evidence path that is a file, not a folder, cannot be walked.
+  const notAFolder = join(root, 'not-a-folder');
+  await writeFile(notAFolder, 'x');
+  await expect(
+    tidyEvidenceSink(new FileSystemEvidenceSink(notAFolder), {
+      warn: (message) => warnings.push(message),
+    })
+  ).resolves.toBeUndefined();
+  expect(warnings).toEqual([
+    'Community evidence cleanup unavailable',
+    'Community evidence cleanup unavailable',
+  ]);
 });
 
 describe('the evidence record', () => {
