@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { AddressInfo } from 'node:net';
@@ -75,7 +76,7 @@ let port: number;
 /** Stand up a server with `routes` attached and return its port. */
 async function listen(routes: UpgradeRoute[]): Promise<void> {
   server = createServer((_req, res) => res.end('ok'));
-  attachUpgradeRouter(server, routes);
+  attachUpgradeRouter(server, routes, new MainRequestAdmission());
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   port = (server.address() as AddressInfo).port;
 }

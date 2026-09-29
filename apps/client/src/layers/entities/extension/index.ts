@@ -24,6 +24,19 @@ export {
   type PendingExtensionApprovalsState,
 } from './model/use-pending-extension-approvals';
 export { useExtensionList } from './model/use-extension-list';
+export { runningCopiesOnly } from './lib/running-copies';
+export {
+  useTrustOfferStore,
+  useTrustOfferFor,
+  selectTrustOffer,
+  TRUST_OFFER_TTL_MS,
+  type TrustOffer,
+} from './model/trust-offer-store';
+export {
+  useTrustedSources,
+  useTrustedSourceActions,
+  trustedSourcesQueryKey,
+} from './model/use-trusted-sources';
 export {
   useExtensionApprovalActions,
   type ExtensionApprovalActions,

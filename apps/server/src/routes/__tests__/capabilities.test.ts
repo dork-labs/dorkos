@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock runtime registry before any imports that use it
@@ -108,7 +109,7 @@ import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
 import { TEST_MODE_CAPABILITIES } from '../../services/runtimes/test-mode/runtime-constants.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 
 describe('Capabilities Route', () => {

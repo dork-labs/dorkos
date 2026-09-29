@@ -1,8 +1,16 @@
-/** Complete operation discovery and exact named-agent and every-agent grant reconciliation. */
+/**
+ * Complete operation discovery and named-agent and every-agent grant
+ * reconciliation. A grant given by level keeps its level (ADR 260929-071355):
+ * every time the catalog is read here, each level's grant rows are re-derived
+ * from it, so new actions of the level's class join and actions reclassified
+ * out of it leave.
+ */
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
 import {
   and,
+  connectionAccessLevels,
+  connectionLevelFollows,
   connectionOperationGrants,
   connections,
   connectorManagedAuthorityOutbox,
@@ -13,10 +21,14 @@ import {
   connectorReconciliationCandidates,
   connectorReconciliationDefaults,
   connectorReconciliationPreviews,
+  desc,
   eq,
+  EVERY_AGENT_GRANT_SUBJECT_ID,
   inArray,
   isNull,
+  ne,
   or,
+  sql,
   type Db,
   type DbTransaction,
   type SQL,
@@ -31,6 +43,9 @@ import {
   ConnectorReconciliationPreviewSchema,
   LINK_NEEDED_TO_CHANGE_ACCESS_COPY,
   WAY_CAPABILITY_COPY,
+  accessLevelRevisionIds,
+  type ConnectorAccessLevel,
+  type ConnectorOperationClassification,
   type ConnectorOperationPage,
   type ConnectorReconciliationAgent,
   type ConnectorReconciliationApplyRequest,
@@ -38,6 +53,15 @@ import {
   type ConnectorReconciliationPreview,
   type ConnectorReconciliationPreviewRequest,
 } from '@dorkos/shared/connector-schemas';
+import { logger } from '../../lib/logger.js';
+import {
+  endEveryAgentAccessLevels,
+  markFollowerCommand,
+  readAccessLevels,
+  recordAccessLevel,
+  replaceNamedAgentGrants,
+  type StoredAccessLevel,
+} from './execution/access-levels.js';
 import {
   everyAgentGrantSubject,
   replaceEveryAgentGrants,
@@ -200,6 +224,77 @@ function managedSelectors(
 /** How long stopping a managed share waits on hosted authority before answering. */
 const HOSTED_STOP_WAIT_MS = 10_000;
 
+/**
+ * The epoch every review {@link ConnectorReconciliationService.followCatalog}
+ * records carries: never a process's own, so it can never be applied, and it
+ * marks the review as DorkOS's own so an older one can be cleared away.
+ */
+const FOLLOWER_REVIEW_EPOCH = 'level-follower';
+
+/** The newest review recorded for one connection, owner's or follower's. */
+function newestReview(tx: DbTransaction, connectionId: string) {
+  return (
+    tx
+      .select({ id: connectorReconciliationPreviews.id })
+      .from(connectorReconciliationPreviews)
+      .where(eq(connectorReconciliationPreviews.connectionId, connectionId))
+      // Insertion order breaks a tie within one clock tick.
+      .orderBy(desc(connectorReconciliationPreviews.createdAt), desc(sql`rowid`))
+      .limit(1)
+      .get()
+  );
+}
+
+/** One review's catalog: every revision and whether the service still offers it. */
+function reviewFingerprint(tx: DbTransaction, previewId: string): string {
+  return tx
+    .select({
+      id: connectorReconciliationCandidates.operationRevisionId,
+      supported: connectorReconciliationCandidates.supported,
+    })
+    .from(connectorReconciliationCandidates)
+    .where(eq(connectorReconciliationCandidates.previewId, previewId))
+    .all()
+    .map((row) => `${row.id}\0${row.supported ? 1 : 0}`)
+    .sort()
+    .join('\n');
+}
+
+/** Who the Activity trail names when a level follows the app, not a person. */
+const LEVEL_FOLLOWER: EveryAgentChangeWriter = { actorType: 'system', actorLabel: 'DorkOS' };
+
+function sameIds(left: readonly string[], right: readonly string[]): boolean {
+  const a = [...left].sort();
+  const b = [...right].sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+/** One level subject's live grant revisions on one connection, sorted. */
+function liveGrantIds(
+  tx: DbTransaction,
+  connectionId: string,
+  stored: StoredAccessLevel
+): string[] {
+  return tx
+    .select({ id: connectionOperationGrants.operationRevisionId })
+    .from(connectionOperationGrants)
+    .where(
+      and(
+        eq(connectionOperationGrants.connectionId, connectionId),
+        stored.subject.kind === 'agent'
+          ? and(
+              eq(connectionOperationGrants.subjectType, 'agent'),
+              eq(connectionOperationGrants.subjectId, stored.subject.agentId)
+            )
+          : everyAgentGrantSubject(),
+        isNull(connectionOperationGrants.revokedAt)
+      )
+    )
+    .all()
+    .map((row) => row.id)
+    .sort();
+}
+
 interface EveryAgentState {
   readonly operationRevisionIds: readonly string[];
   readonly classifications: EveryAgentChange['after'];
@@ -328,6 +423,229 @@ export class ConnectorReconciliationService {
   ): Promise<ConnectorReconciliationPreview> {
     const request = ConnectorReconciliationPreviewRequestSchema.parse(input);
     const context = this.resolveOwnedConnection(owner, request.connectionId);
+    const catalog = await this.readCatalog(context, signal);
+    const createdAt = this.now();
+    const previewId = this.createId();
+    const agents = this.snapshotAgents();
+    const recorded = this.db.transaction((tx) => {
+      const { uniqueIds, candidates } = this.recordCatalog(tx, catalog, {
+        previewId,
+        owner,
+        context,
+        createdAt,
+        consumed: false,
+      });
+      if (agents.length > 0) {
+        tx.insert(connectorReconciliationAgents)
+          .values(agents.map((agent) => ({ previewId, agentId: agent.agentId })))
+          .run();
+      }
+      // The catalog just read is the one every level follows: re-derive each
+      // level's grants from it before this snapshot records what agents hold.
+      const followed = this.followLevels(tx, {
+        ...context,
+        connectionId: request.connectionId,
+        owner,
+        agentIds: new Set(agents.map((agent) => agent.agentId)),
+        candidates,
+        now: createdAt.toISOString(),
+      });
+      const defaults = tx
+        .select({
+          agentId: connectionOperationGrants.subjectId,
+          operationRevisionId: connectionOperationGrants.operationRevisionId,
+        })
+        .from(connectionOperationGrants)
+        .innerJoin(
+          connectorOperationRevisions,
+          eq(connectorOperationRevisions.id, connectionOperationGrants.operationRevisionId)
+        )
+        .where(
+          and(
+            eq(connectionOperationGrants.connectionId, request.connectionId),
+            eq(connectionOperationGrants.subjectType, 'agent'),
+            isNull(connectionOperationGrants.revokedAt),
+            eq(connectorOperationRevisions.providerInstanceId, context.providerInstanceId),
+            eq(connectorOperationRevisions.toolkit, context.toolkit)
+          )
+        )
+        .all()
+        .filter((row) => agents.some((agent) => agent.agentId === row.agentId));
+      if (defaults.length > 0) {
+        tx.insert(connectorReconciliationDefaults)
+          .values(defaults.map((row) => ({ previewId, ...row })))
+          .run();
+      }
+      return { uniqueIds, ...followed };
+    });
+    await this.settleFollowed(recorded, signal);
+
+    return ConnectorReconciliationPreviewSchema.parse(
+      this.readPreview(
+        previewId,
+        request.connectionId,
+        agents,
+        recorded.uniqueIds,
+        createdAt,
+        context.mode !== 'managed' || this.managedAuthority !== undefined
+      )
+    );
+  }
+
+  /**
+   * Connections with at least one level on them that are connected now: the
+   * ones {@link followCatalog} keeps current without anyone opening the card.
+   */
+  levelConnectionIds(): string[] {
+    return this.db
+      .selectDistinct({ id: connectionAccessLevels.connectionId })
+      .from(connectionAccessLevels)
+      .innerJoin(connections, eq(connections.id, connectionAccessLevels.connectionId))
+      .where(and(eq(connections.lifecycleState, 'connected'), isNull(connections.removedAt)))
+      .all()
+      .map((row) => row.id)
+      .sort();
+  }
+
+  /**
+   * Read one connection's catalog on DorkOS's own initiative and re-derive
+   * every level on it (ADR 260929-071355), exactly as a preview would, so a
+   * level follows the app without anyone opening "Who can use it?". It acts
+   * for the owner of the connection's way, records the catalog as a review no
+   * one can apply (so the newest recorded catalog is always the newest
+   * review), and goes through the same close-first staging on a DorkOS
+   * account. Throws when the account or its way can't be read now.
+   *
+   * @param connectionId - The connection to follow.
+   * @param signal - Aborts the catalog read.
+   */
+  async followCatalog(
+    connectionId: string,
+    signal: AbortSignal,
+    appVersion: string
+  ): Promise<void> {
+    const binding = this.db
+      .select({
+        ownerKind: connectorProviderInstances.ownerKind,
+        ownerId: connectorProviderInstances.ownerId,
+      })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(eq(connections.id, connectionId))
+      .get();
+    if (!binding?.ownerKind || !binding.ownerId) {
+      throw new ConnectorReconciliationError('connection_not_found', 'Connection not found.');
+    }
+    const owner: ConnectorOwnerAuthority =
+      binding.ownerKind === 'user'
+        ? { kind: 'user', userId: binding.ownerId }
+        : { kind: 'local_install', installationId: binding.ownerId };
+    const context = this.resolveOwnedConnection(owner, connectionId);
+    const catalog = await this.readCatalog(context, signal);
+    const createdAt = this.now();
+    const agents = this.snapshotAgents();
+    const followed = this.db.transaction((tx) => {
+      const newest = newestReview(tx, connectionId);
+      const previewId = this.createId();
+      const { candidates } = this.recordCatalog(tx, catalog, {
+        previewId,
+        owner,
+        context,
+        createdAt,
+        consumed: true,
+      });
+      const result = this.followLevels(tx, {
+        ...context,
+        connectionId,
+        owner,
+        agentIds: new Set(agents.map((agent) => agent.agentId)),
+        candidates,
+        now: createdAt.toISOString(),
+      });
+      // Nothing moved and the catalog reads exactly as the newest review
+      // does: the review just recorded says nothing new, so it goes again.
+      // Otherwise it replaces this connection's older follower reviews, so
+      // they never pile up; an owner's review is never removed.
+      const unchanged =
+        !result.changed &&
+        newest !== undefined &&
+        reviewFingerprint(tx, newest.id) === reviewFingerprint(tx, previewId);
+      tx.delete(connectorReconciliationPreviews)
+        .where(
+          unchanged
+            ? eq(connectorReconciliationPreviews.id, previewId)
+            : and(
+                eq(connectorReconciliationPreviews.connectionId, connectionId),
+                eq(connectorReconciliationPreviews.bootEpoch, FOLLOWER_REVIEW_EPOCH),
+                ne(connectorReconciliationPreviews.id, previewId)
+              )!
+        )
+        .run();
+      tx.insert(connectionLevelFollows)
+        .values({ connectionId, followedAt: createdAt.toISOString(), appVersion })
+        .onConflictDoUpdate({
+          target: connectionLevelFollows.connectionId,
+          set: { followedAt: createdAt.toISOString(), appVersion },
+        })
+        .run();
+      return result;
+    });
+    await this.settleFollowed(followed, signal);
+  }
+
+  /**
+   * Whether DorkOS followed this connection's levels since `since` under this
+   * very version: a boot inside the follow interval then has nothing to
+   * catch up on. A new version always follows, since it can classify
+   * actions differently.
+   *
+   * @param connectionId - The connection.
+   * @param since - The start of the interval, as an ISO time.
+   * @param appVersion - The running DorkOS version.
+   */
+  followedSince(connectionId: string, since: string, appVersion: string): boolean {
+    const follow = this.db
+      .select()
+      .from(connectionLevelFollows)
+      .where(eq(connectionLevelFollows.connectionId, connectionId))
+      .get();
+    return follow !== undefined && follow.appVersion === appVersion && follow.followedAt >= since;
+  }
+
+  /** Record what following levels changed, and send any hosted command it staged. */
+  private async settleFollowed(
+    followed: { commandIds: string[]; everyAgentChange?: EveryAgentChange },
+    signal: AbortSignal
+  ): Promise<void> {
+    if (followed.everyAgentChange) {
+      await this.record(followed.everyAgentChange, LEVEL_FOLLOWER);
+    }
+    for (const commandId of followed.commandIds) {
+      // The change is staged and retried from the outbox; a slow or failed
+      // delivery must not keep the owner from seeing who can use the account.
+      try {
+        await this.managedAuthority!.deliverAgentGrantReplacement(commandId, signal);
+      } catch (error) {
+        logger.warn('[Connectors] Could not deliver a level change yet', {
+          commandId,
+          err: String(error),
+        });
+      }
+    }
+  }
+
+  /**
+   * Discover one connection's complete catalog: the current version, plus
+   * every older version a live grant still names, to say which of those the
+   * service still offers.
+   */
+  private async readCatalog(
+    context: ReturnType<ConnectorReconciliationService['resolveOwnedConnection']>,
+    signal: AbortSignal
+  ) {
     const provider = this.registry.resolveProviderInstance(
       ConnectorProviderInstanceIdSchema.parse(context.providerInstanceId)
     );
@@ -376,7 +694,7 @@ export class ConnectorReconciliationService {
       )
       .where(
         and(
-          eq(connectionOperationGrants.connectionId, request.connectionId),
+          eq(connectionOperationGrants.connectionId, context.connectionId),
           // Every-agent revisions are re-verified exactly like named-agent ones,
           // so a revision the provider no longer offers shows as unsupported.
           or(eq(connectionOperationGrants.subjectType, 'agent'), everyAgentGrantSubject()),
@@ -400,143 +718,127 @@ export class ConnectorReconciliationService {
       );
       verifiedByVersion.set(toolkitVersion, new Set(exact.map(operationIdentity)));
     }
+    return { discovered, existingGrantRows, verifiedByVersion };
+  }
 
-    const createdAt = this.now();
-    const previewId = this.createId();
-    const agents = this.snapshotAgents();
-    const candidateIds = this.db.transaction((tx) => {
-      const supportById = new Map<string, boolean>();
-      const ids: string[] = [];
-      for (const operation of discovered) {
-        const existing = tx
-          .select({ id: connectorOperationRevisions.id })
-          .from(connectorOperationRevisions)
-          .where(
-            and(
-              eq(connectorOperationRevisions.providerInstanceId, operation.providerInstanceId),
-              eq(connectorOperationRevisions.toolkit, operation.toolkit),
-              eq(connectorOperationRevisions.operationSlug, operation.operationSlug),
-              eq(connectorOperationRevisions.toolkitVersion, operation.toolkitVersion),
-              eq(connectorOperationRevisions.schemaHash, operation.schemaHash),
-              eq(
-                connectorOperationRevisions.capabilityClassification,
-                operation.capabilityClassification
-              ),
-              eq(connectorOperationRevisions.retryPolicy, operation.retryPolicy),
-              eq(
-                connectorOperationRevisions.providerRevisionRef,
-                operation.providerRevisionRef ?? ''
-              )
-            )
-          )
-          .get();
-        const id = existing?.id ?? this.createId();
-        if (!existing) {
-          tx.insert(connectorOperationRevisions)
-            .values({
-              id,
-              ...operation,
-              inputSchemaJson: JSON.stringify(operation.inputSchema),
-              discoveredAt: createdAt.toISOString(),
-            })
-            .run();
-        }
-        ids.push(id);
-        supportById.set(id, true);
-      }
-
-      for (const row of existingGrantRows) {
-        ids.push(row.id);
-        const evidence = verifiedByVersion.get(row.toolkitVersion);
-        supportById.set(
-          row.id,
-          Boolean(
-            evidence?.has(
-              operationIdentity({
-                providerInstanceId: ConnectorProviderInstanceIdSchema.parse(row.providerInstanceId),
-                toolkit: row.toolkit,
-                operationSlug: row.operationSlug,
-                toolkitVersion: row.toolkitVersion,
-                schemaHash: row.schemaHash,
-                providerRevisionRef: row.providerRevisionRef,
-                capabilityClassification: row.capabilityClassification,
-                retryPolicy: row.retryPolicy,
-                inputSchema: JSON.parse(row.inputSchemaJson) as Record<string, unknown>,
-              })
-            )
-          )
-        );
-      }
-      const uniqueIds = [...new Set(ids)].sort();
-
-      tx.insert(connectorReconciliationPreviews)
-        .values({
-          id: previewId,
-          ...ownerColumns(owner),
-          connectionId: request.connectionId,
-          providerInstanceId: context.providerInstanceId,
-          bootEpoch: this.bootEpoch,
-          executionConfigGeneration: context.executionConfigGeneration,
-          completeRevisionSetHash: revisionSetHash(uniqueIds),
-          createdAt: createdAt.toISOString(),
-          expiresAt: new Date(createdAt.getTime() + this.previewTtlMs).toISOString(),
-        })
-        .run();
-      if (uniqueIds.length > 0) {
-        tx.insert(connectorReconciliationCandidates)
-          .values(
-            uniqueIds.map((operationRevisionId) => ({
-              previewId,
-              operationRevisionId,
-              supported: supportById.get(operationRevisionId) ?? false,
-            }))
-          )
-          .run();
-      }
-      if (agents.length > 0) {
-        tx.insert(connectorReconciliationAgents)
-          .values(agents.map((agent) => ({ previewId, agentId: agent.agentId })))
-          .run();
-      }
-      const defaults = tx
-        .select({
-          agentId: connectionOperationGrants.subjectId,
-          operationRevisionId: connectionOperationGrants.operationRevisionId,
-        })
-        .from(connectionOperationGrants)
-        .innerJoin(
-          connectorOperationRevisions,
-          eq(connectorOperationRevisions.id, connectionOperationGrants.operationRevisionId)
-        )
+  /**
+   * Record a discovered catalog as one review: its revisions, and which of
+   * them the service still offers. A `consumed` review is a catalog DorkOS
+   * read on its own (a follower review, {@link FOLLOWER_REVIEW_EPOCH}); it is
+   * recorded so the newest review is always the newest catalog, and can never
+   * be applied.
+   */
+  private recordCatalog(
+    tx: DbTransaction,
+    catalog: Awaited<ReturnType<ConnectorReconciliationService['readCatalog']>>,
+    input: {
+      readonly previewId: string;
+      readonly owner: ConnectorOwnerAuthority;
+      readonly context: ReturnType<ConnectorReconciliationService['resolveOwnedConnection']>;
+      readonly createdAt: Date;
+      readonly consumed: boolean;
+    }
+  ) {
+    const { discovered, existingGrantRows, verifiedByVersion } = catalog;
+    const supportById = new Map<string, boolean>();
+    const classificationById = new Map<string, ConnectorOperationClassification>();
+    const ids: string[] = [];
+    for (const operation of discovered) {
+      const existing = tx
+        .select({ id: connectorOperationRevisions.id })
+        .from(connectorOperationRevisions)
         .where(
           and(
-            eq(connectionOperationGrants.connectionId, request.connectionId),
-            eq(connectionOperationGrants.subjectType, 'agent'),
-            isNull(connectionOperationGrants.revokedAt),
-            eq(connectorOperationRevisions.providerInstanceId, context.providerInstanceId),
-            eq(connectorOperationRevisions.toolkit, context.toolkit)
+            eq(connectorOperationRevisions.providerInstanceId, operation.providerInstanceId),
+            eq(connectorOperationRevisions.toolkit, operation.toolkit),
+            eq(connectorOperationRevisions.operationSlug, operation.operationSlug),
+            eq(connectorOperationRevisions.toolkitVersion, operation.toolkitVersion),
+            eq(connectorOperationRevisions.schemaHash, operation.schemaHash),
+            eq(
+              connectorOperationRevisions.capabilityClassification,
+              operation.capabilityClassification
+            ),
+            eq(connectorOperationRevisions.retryPolicy, operation.retryPolicy),
+            eq(connectorOperationRevisions.providerRevisionRef, operation.providerRevisionRef ?? '')
           )
         )
-        .all()
-        .filter((row) => agents.some((agent) => agent.agentId === row.agentId));
-      if (defaults.length > 0) {
-        tx.insert(connectorReconciliationDefaults)
-          .values(defaults.map((row) => ({ previewId, ...row })))
+        .get();
+      const id = existing?.id ?? this.createId();
+      if (!existing) {
+        tx.insert(connectorOperationRevisions)
+          .values({
+            id,
+            ...operation,
+            inputSchemaJson: JSON.stringify(operation.inputSchema),
+            discoveredAt: input.createdAt.toISOString(),
+          })
           .run();
       }
-      return uniqueIds;
-    });
+      ids.push(id);
+      supportById.set(id, true);
+      classificationById.set(id, operation.capabilityClassification);
+    }
 
-    return ConnectorReconciliationPreviewSchema.parse(
-      this.readPreview(
-        previewId,
-        request.connectionId,
-        agents,
-        candidateIds,
-        createdAt,
-        context.mode !== 'managed' || this.managedAuthority !== undefined
-      )
-    );
+    for (const row of existingGrantRows) {
+      ids.push(row.id);
+      classificationById.set(row.id, row.capabilityClassification);
+      const evidence = verifiedByVersion.get(row.toolkitVersion);
+      supportById.set(
+        row.id,
+        Boolean(
+          evidence?.has(
+            operationIdentity({
+              providerInstanceId: ConnectorProviderInstanceIdSchema.parse(row.providerInstanceId),
+              toolkit: row.toolkit,
+              operationSlug: row.operationSlug,
+              toolkitVersion: row.toolkitVersion,
+              schemaHash: row.schemaHash,
+              providerRevisionRef: row.providerRevisionRef,
+              capabilityClassification: row.capabilityClassification,
+              retryPolicy: row.retryPolicy,
+              inputSchema: JSON.parse(row.inputSchemaJson) as Record<string, unknown>,
+            })
+          )
+        )
+      );
+    }
+    const uniqueIds = [...new Set(ids)].sort();
+
+    tx.insert(connectorReconciliationPreviews)
+      .values({
+        id: input.previewId,
+        ...ownerColumns(input.owner),
+        connectionId: input.context.connectionId,
+        providerInstanceId: input.context.providerInstanceId,
+        // A follower's review carries its own epoch, so it can never match a
+        // running process's and is told apart from every owner's review.
+        bootEpoch: input.consumed ? FOLLOWER_REVIEW_EPOCH : this.bootEpoch,
+        executionConfigGeneration: input.context.executionConfigGeneration,
+        completeRevisionSetHash: revisionSetHash(uniqueIds),
+        createdAt: input.createdAt.toISOString(),
+        expiresAt: new Date(input.createdAt.getTime() + this.previewTtlMs).toISOString(),
+        ...(input.consumed && { consumedAt: input.createdAt.toISOString() }),
+      })
+      .run();
+    if (uniqueIds.length > 0) {
+      tx.insert(connectorReconciliationCandidates)
+        .values(
+          uniqueIds.map((operationRevisionId) => ({
+            previewId: input.previewId,
+            operationRevisionId,
+            supported: supportById.get(operationRevisionId) ?? false,
+          }))
+        )
+        .run();
+    }
+    return {
+      uniqueIds,
+      candidates: uniqueIds.map((operationRevisionId) => ({
+        operationRevisionId,
+        capabilityClassification: classificationById.get(operationRevisionId)!,
+        supported: supportById.get(operationRevisionId) ?? false,
+      })),
+    };
   }
 
   private async discoverVersion(
@@ -689,6 +991,39 @@ export class ConnectorReconciliationService {
       const supported = new Set(
         candidateRows.filter((row) => row.supported).map((row) => row.operationRevisionId)
       );
+      const classificationById = new Map(
+        (candidateRows.length > 0
+          ? tx
+              .select({
+                id: connectorOperationRevisions.id,
+                classification: connectorOperationRevisions.capabilityClassification,
+              })
+              .from(connectorOperationRevisions)
+              .where(
+                inArray(
+                  connectorOperationRevisions.id,
+                  candidateRows.map((row) => row.operationRevisionId)
+                )
+              )
+              .all()
+          : []
+        ).map((row) => [row.id, row.classification] as const)
+      );
+      // A level is granted with exactly its set in this review, never more:
+      // a selection that names a level and anything else is refused.
+      const matchesLevel = (ids: readonly string[], level: ConnectorAccessLevel | undefined) =>
+        level === undefined ||
+        sameIds(
+          ids,
+          accessLevelRevisionIds(
+            candidateRows.map((row) => ({
+              operationRevisionId: row.operationRevisionId,
+              supported: row.supported,
+              capabilityClassification: classificationById.get(row.operationRevisionId)!,
+            })),
+            level
+          )
+        );
       for (const selection of request.grants) {
         if (
           !allowedAgents.has(selection.agentId) ||
@@ -697,6 +1032,12 @@ export class ConnectorReconciliationService {
           throw new ConnectorReconciliationError(
             'invalid_selection',
             'The selected agent or action was not part of this complete permission review.'
+          );
+        }
+        if (!matchesLevel(selection.operationRevisionIds, selection.level)) {
+          throw new ConnectorReconciliationError(
+            'invalid_selection',
+            'The chosen level no longer matches this app’s actions. Refresh and choose again.'
           );
         }
       }
@@ -715,7 +1056,63 @@ export class ConnectorReconciliationService {
             'The selected action was not part of this complete permission review.'
           );
         }
+        if (
+          request.everyAgent.operationRevisionIds.length > 0 &&
+          !matchesLevel(request.everyAgent.operationRevisionIds, request.everyAgent.level)
+        ) {
+          throw new ConnectorReconciliationError(
+            'invalid_selection',
+            'The chosen level no longer matches this app’s actions. Refresh and choose again.'
+          );
+        }
       }
+
+      // A level is written from the newest catalog DorkOS recorded for this
+      // account, not from this review's: a review left open in another tab
+      // must never grant an action a newer read took out of the level. The
+      // answer names what was written, so that tab sees it differs.
+      const newest = newestReview(tx, preview.connectionId);
+      const newestCandidates =
+        newest && newest.id !== preview.id
+          ? tx
+              .select({
+                operationRevisionId: connectorReconciliationCandidates.operationRevisionId,
+                supported: connectorReconciliationCandidates.supported,
+                capabilityClassification: connectorOperationRevisions.capabilityClassification,
+              })
+              .from(connectorReconciliationCandidates)
+              .innerJoin(
+                connectorOperationRevisions,
+                eq(
+                  connectorOperationRevisions.id,
+                  connectorReconciliationCandidates.operationRevisionId
+                )
+              )
+              .where(eq(connectorReconciliationCandidates.previewId, newest.id))
+              .all()
+          : candidateRows.map((row) => ({
+              operationRevisionId: row.operationRevisionId,
+              supported: row.supported,
+              capabilityClassification: classificationById.get(row.operationRevisionId)!,
+            }));
+      const grants = request.grants.map((selection) =>
+        selection.level
+          ? {
+              ...selection,
+              operationRevisionIds: accessLevelRevisionIds(newestCandidates, selection.level),
+            }
+          : selection
+      );
+      const everyAgent =
+        request.everyAgent?.level && request.everyAgent.operationRevisionIds.length > 0
+          ? {
+              ...request.everyAgent,
+              operationRevisionIds: accessLevelRevisionIds(
+                newestCandidates,
+                request.everyAgent.level
+              ),
+            }
+          : request.everyAgent;
 
       const consumed = tx
         .update(connectorReconciliationPreviews)
@@ -735,7 +1132,16 @@ export class ConnectorReconciliationService {
       }
 
       const managedCommandIds: string[] = [];
-      for (const selection of request.grants) {
+      for (const selection of grants) {
+        // The level is the owner's intent and is kept at once; on a DorkOS
+        // account the grants it derives open once hosted authority applies them.
+        recordAccessLevel(tx, {
+          connectionId: preview.connectionId,
+          subject: { kind: 'agent', agentId: selection.agentId },
+          level: selection.level,
+          createdBy: ownerRow.ownerId,
+          now,
+        });
         if (provider.mode === 'managed') {
           if (!this.managedAuthority) {
             throw new ConnectorReconciliationError(
@@ -759,46 +1165,26 @@ export class ConnectorReconciliationService {
           );
           continue;
         }
-        const selected = new Set(selection.operationRevisionIds);
-        const existing = tx
-          .select({
-            id: connectionOperationGrants.id,
-            operationRevisionId: connectionOperationGrants.operationRevisionId,
-          })
-          .from(connectionOperationGrants)
-          .where(
-            and(
-              eq(connectionOperationGrants.subjectType, 'agent'),
-              eq(connectionOperationGrants.subjectId, selection.agentId),
-              eq(connectionOperationGrants.connectionId, preview.connectionId)
-            )
-          )
-          .all();
-        for (const grant of existing) {
-          tx.update(connectionOperationGrants)
-            .set({ revokedAt: selected.has(grant.operationRevisionId) ? null : now })
-            .where(eq(connectionOperationGrants.id, grant.id))
-            .run();
-          selected.delete(grant.operationRevisionId);
-        }
-        for (const operationRevisionId of selected) {
-          tx.insert(connectionOperationGrants)
-            .values({
-              id: this.createId(),
-              subjectType: 'agent',
-              subjectId: selection.agentId,
-              agentId: selection.agentId,
-              connectionId: preview.connectionId,
-              operationRevisionId,
-              createdBy: ownerRow.ownerId,
-              createdAt: now,
-            })
-            .run();
-        }
+        replaceNamedAgentGrants(tx, {
+          connectionId: preview.connectionId,
+          agentId: selection.agentId,
+          operationRevisionIds: selection.operationRevisionIds,
+          createdBy: ownerRow.ownerId,
+          now,
+          createId: this.createId,
+        });
       }
       let everyAgentChange: EveryAgentChange | undefined;
-      if (request.everyAgent) {
+      if (everyAgent) {
         const before = readEveryAgentState(tx, preview.connectionId);
+        // An empty set stops sharing, whatever level it names.
+        recordAccessLevel(tx, {
+          connectionId: preview.connectionId,
+          subject: { kind: 'every_agent' },
+          level: everyAgent.operationRevisionIds.length > 0 ? everyAgent.level : undefined,
+          createdBy: ownerRow.ownerId,
+          now,
+        });
         if (provider.mode === 'managed') {
           // Close-first: what is left out stops now, and what is newly shared
           // opens once hosted authority applies the owner-wide command.
@@ -806,7 +1192,7 @@ export class ConnectorReconciliationService {
             this.managedAuthority!.stageEveryAgentGrantReplacement(tx, {
               connectionId: ConnectionIdSchema.parse(preview.connectionId),
               managedConnectionId: provider.managedConnectionId,
-              ...managedSelectors(tx, request.everyAgent.operationRevisionIds),
+              ...managedSelectors(tx, everyAgent.operationRevisionIds),
               providerInstanceId: ConnectorProviderInstanceIdSchema.parse(
                 preview.providerInstanceId
               ),
@@ -819,16 +1205,12 @@ export class ConnectorReconciliationService {
             tx,
             preview.connectionId,
             before,
-            requestedEveryAgentState(
-              tx,
-              preview.connectionId,
-              request.everyAgent.operationRevisionIds
-            )
+            requestedEveryAgentState(tx, preview.connectionId, everyAgent.operationRevisionIds)
           );
         } else {
           replaceEveryAgentGrants(tx, {
             connectionId: preview.connectionId,
-            operationRevisionIds: request.everyAgent.operationRevisionIds,
+            operationRevisionIds: everyAgent.operationRevisionIds,
             createdBy: ownerRow.ownerId,
             now,
             createId: this.createId,
@@ -859,6 +1241,8 @@ export class ConnectorReconciliationService {
         connectionId: preview.connectionId,
         managedCommandIds,
         everyAgentChange,
+        grants,
+        everyAgent,
       };
     });
     if (response.everyAgentChange) await this.record(response.everyAgentChange);
@@ -878,8 +1262,8 @@ export class ConnectorReconciliationService {
       reconciliationStatus: connection?.reconciliationStatus ?? 'migration_needs_reconcile',
       authoritySync:
         failed?.authoritySync ?? (pending ? { status: 'pending' } : { status: 'ready' }),
-      grants: request.grants,
-      ...(request.everyAgent ? { everyAgent: request.everyAgent } : {}),
+      grants: response.grants,
+      ...(response.everyAgent ? { everyAgent: response.everyAgent } : {}),
     });
   }
 
@@ -931,9 +1315,14 @@ export class ConnectorReconciliationService {
       const managed = row.mode === 'managed' && managedAuthority ? managedAuthority : null;
       const live = readEveryAgentState(tx, connectionId);
       const requested = managed
-        ? this.lastRequestedEveryAgent(tx, row.managedConnectionId, row.providerInstanceId)
+        ? this.lastRequestedGrants(tx, {
+            managedConnectionId: row.managedConnectionId,
+            providerInstanceId: row.providerInstanceId,
+            subject: { kind: 'every_agent' },
+          })
         : undefined;
       const revokedCount = revokeEveryAgentGrants(tx, [connectionId], now);
+      endEveryAgentAccessLevels(tx, [connectionId]);
       // Local access ends here, on the next call. A managed connection also
       // tells hosted authority, which re-checks every call on its side; the
       // command waits in the outbox if the service cannot be reached. A share
@@ -982,18 +1371,32 @@ export class ConnectorReconciliationService {
   }
 
   /**
-   * What the last owner-wide command sent to hosted authority for this managed
-   * connection asked for, whether or not it was applied. `sharing` is true when
-   * it shared anything, or when it can no longer be read (a compacted command
-   * cannot prove the sharing ended).
+   * What the last grant command sent to hosted authority for one subject of
+   * this managed connection asked for, whether or not it was applied.
+   * `sharing` is true when it granted anything, or when it can no longer be
+   * read (a compacted command cannot prove the access ended). `undefined` when
+   * no command was ever sent for the subject.
    */
-  private lastRequestedEveryAgent(
+  private lastRequestedGrants(
     tx: DbTransaction,
-    managedConnectionId: string,
-    providerInstanceId: string
-  ): { sharing: boolean; operationRevisionIds: string[] } | undefined {
+    input: {
+      readonly managedConnectionId: string;
+      readonly providerInstanceId: string;
+      readonly subject: StoredAccessLevel['subject'];
+    }
+  ):
+    | {
+        sharing: boolean;
+        operationRevisionIds: string[];
+        state: (typeof connectorManagedAuthorityOutbox.$inferSelect)['state'];
+      }
+    | undefined {
+    const every = input.subject.kind === 'every_agent';
     const last = tx
-      .select({ requestJson: connectorManagedAuthorityOutbox.requestJson })
+      .select({
+        requestJson: connectorManagedAuthorityOutbox.requestJson,
+        state: connectorManagedAuthorityOutbox.state,
+      })
       .from(connectorManagedAuthorityScopes)
       .innerJoin(
         connectorManagedAuthorityOutbox,
@@ -1001,8 +1404,15 @@ export class ConnectorReconciliationService {
       )
       .where(
         and(
-          eq(connectorManagedAuthorityScopes.managedConnectionId, managedConnectionId),
-          eq(connectorManagedAuthorityScopes.scopeKind, 'every_agent_grants')
+          eq(connectorManagedAuthorityScopes.managedConnectionId, input.managedConnectionId),
+          eq(
+            connectorManagedAuthorityScopes.scopeKind,
+            every ? 'every_agent_grants' : 'agent_grants'
+          ),
+          eq(
+            connectorManagedAuthorityScopes.subjectId,
+            input.subject.kind === 'agent' ? input.subject.agentId : EVERY_AGENT_GRANT_SUBJECT_ID
+          )
         )
       )
       .get();
@@ -1014,11 +1424,15 @@ export class ConnectorReconciliationService {
       json = undefined;
     }
     const parsed = ManagedConnectorAuthorityCommandSchema.safeParse(json);
-    if (!parsed.success || parsed.data.kind !== 'replace_every_agent_grants') {
-      return { sharing: true, operationRevisionIds: [] };
+    if (
+      !parsed.success ||
+      parsed.data.kind !== (every ? 'replace_every_agent_grants' : 'replace_agent_grants')
+    ) {
+      return { sharing: true, operationRevisionIds: [], state: last.state };
     }
+    const revisions = 'revisions' in parsed.data ? parsed.data.revisions : [];
     const wanted = new Set(
-      parsed.data.revisions.map(
+      revisions.map(
         (revision) =>
           `${revision.hostedRevisionId}\0${revision.operationSlug}\0${revision.toolkitVersion}\0${revision.schemaHash}`
       )
@@ -1033,17 +1447,147 @@ export class ConnectorReconciliationService {
             hash: connectorOperationRevisions.schemaHash,
           })
           .from(connectorOperationRevisions)
-          .where(eq(connectorOperationRevisions.providerInstanceId, providerInstanceId))
+          .where(eq(connectorOperationRevisions.providerInstanceId, input.providerInstanceId))
           .all()
           .filter((row) => wanted.has(`${row.ref}\0${row.slug}\0${row.version}\0${row.hash}`))
           .map((row) => row.id)
+          .sort()
       : [];
-    return { sharing: parsed.data.revisions.length > 0, operationRevisionIds };
+    return { sharing: revisions.length > 0, operationRevisionIds, state: last.state };
   }
 
-  private async record(change: EveryAgentChange): Promise<void> {
+  private async record(
+    change: EveryAgentChange,
+    writer: EveryAgentChangeWriter = this.writer()
+  ): Promise<void> {
     if (!this.activity) return;
-    await recordEveryAgentChange(this.activity, this.writer(), change);
+    await recordEveryAgentChange(this.activity, writer, change);
+  }
+
+  /**
+   * Re-derive every level grant on one connection from the catalog a preview
+   * just recorded (ADR 260929-071355), inside that preview's transaction.
+   *
+   * A level's grant set is exactly `accessLevelRevisionIds` of that catalog:
+   * a new action of its class joins, and an action the app no longer offers
+   * that way (reclassified wider, or gone) leaves. On this computer's own
+   * authority the rows change at once. On a DorkOS account the change is
+   * staged close-first through the hosted synchronizer, like any owner
+   * change: what leaves stops now, and what joins opens only once hosted
+   * authority applies it. A subject whose last requested set already matches
+   * is left alone, so reading the catalog again stages nothing new; one hosted
+   * authority was never asked about is always staged.
+   *
+   * @returns Hosted commands to deliver, and the every-agent change to record.
+   */
+  private followLevels(
+    tx: DbTransaction,
+    input: {
+      readonly connectionId: string;
+      readonly providerInstanceId: string;
+      readonly managedConnectionId: string;
+      readonly mode: 'managed' | 'byo';
+      readonly executionConfigGeneration: number;
+      readonly owner: ConnectorOwnerAuthority;
+      /** Agents registered now; a level of an agent that is gone is left alone. */
+      readonly agentIds: ReadonlySet<string>;
+      readonly candidates: ReadonlyArray<{
+        readonly operationRevisionId: string;
+        readonly capabilityClassification: ConnectorOperationClassification;
+        readonly supported: boolean;
+      }>;
+      readonly now: string;
+    }
+  ): { commandIds: string[]; everyAgentChange?: EveryAgentChange; changed: boolean } {
+    const commandIds: string[] = [];
+    let everyAgentChange: EveryAgentChange | undefined;
+    let changed = false;
+    const managed = input.mode === 'managed' ? this.managedAuthority : undefined;
+    // A DorkOS account's grants live in hosted authority too. Without the
+    // synchronizer that carries a change there, nothing may change here.
+    if (input.mode === 'managed' && !managed) return { commandIds, changed };
+    for (const stored of readAccessLevels(tx, input.connectionId)) {
+      if (stored.subject.kind === 'agent' && !input.agentIds.has(stored.subject.agentId)) continue;
+      const target = accessLevelRevisionIds(input.candidates, stored.level);
+      // On a DorkOS account what counts is what hosted authority was last
+      // asked for. A level it was never told about (one carried over from the
+      // owner's own key), or whose last change it refused, is always sent,
+      // whatever the rows here say.
+      const requested = managed
+        ? this.lastRequestedGrants(tx, { ...input, subject: stored.subject })
+        : undefined;
+      const held = managed
+        ? requested && requested.state !== 'rejected'
+          ? requested.operationRevisionIds
+          : undefined
+        : liveGrantIds(tx, input.connectionId, stored);
+      if (held && sameIds(held, target)) continue;
+      changed = true;
+      const before =
+        stored.subject.kind === 'every_agent'
+          ? readEveryAgentState(tx, input.connectionId)
+          : undefined;
+      const base = {
+        connectionId: ConnectionIdSchema.parse(input.connectionId),
+        managedConnectionId: input.managedConnectionId,
+        providerInstanceId: ConnectorProviderInstanceIdSchema.parse(input.providerInstanceId),
+        executionConfigGeneration: input.executionConfigGeneration,
+        owner: input.owner,
+      };
+      if (stored.subject.kind === 'agent') {
+        if (managed) {
+          const commandId = managed.stageAgentGrantReplacement(tx, {
+            ...base,
+            agentId: stored.subject.agentId,
+            ...managedSelectors(tx, target),
+          });
+          markFollowerCommand(tx, {
+            connectionId: input.connectionId,
+            subject: stored.subject,
+            commandId,
+          });
+          commandIds.push(commandId);
+        } else {
+          replaceNamedAgentGrants(tx, {
+            connectionId: input.connectionId,
+            agentId: stored.subject.agentId,
+            operationRevisionIds: target,
+            createdBy: stored.createdBy,
+            now: input.now,
+            createId: this.createId,
+          });
+        }
+        continue;
+      }
+      if (managed) {
+        const commandId = managed.stageEveryAgentGrantReplacement(tx, {
+          ...base,
+          ...managedSelectors(tx, target),
+          createdBy: stored.createdBy,
+        });
+        markFollowerCommand(tx, {
+          connectionId: input.connectionId,
+          subject: stored.subject,
+          commandId,
+        });
+        commandIds.push(commandId);
+      } else {
+        replaceEveryAgentGrants(tx, {
+          connectionId: input.connectionId,
+          operationRevisionIds: target,
+          createdBy: stored.createdBy,
+          now: input.now,
+          createId: this.createId,
+        });
+      }
+      everyAgentChange = describeEveryAgentChange(
+        tx,
+        input.connectionId,
+        before!,
+        managed ? requestedEveryAgentState(tx, input.connectionId, target) : undefined
+      );
+    }
+    return { commandIds, changed, ...(everyAgentChange ? { everyAgentChange } : {}) };
   }
 
   private resolveOwnedConnection(owner: ConnectorOwnerAuthority, connectionId: string) {
@@ -1064,6 +1608,7 @@ export class ConnectorReconciliationService {
         ownerKind: connectorProviderInstances.ownerKind,
         ownerId: connectorProviderInstances.ownerId,
         executionConfigGeneration: connectorProviderInstances.executionConfigGeneration,
+        managedConnectionId: connections.externalAccountRef,
       })
       .from(connections)
       .innerJoin(
@@ -1137,35 +1682,56 @@ export class ConnectorReconciliationService {
       ids.push(row.operationRevisionId);
       grouped.set(row.agentId, ids);
     }
+    // The level each subject holds is what the owner chose, never read back
+    // from which actions happen to match today.
+    const levels = readAccessLevels(this.db, connectionId);
+    const agentLevels = new Map<string, ConnectorAccessLevel>();
+    let everyAgentLevel: ConnectorAccessLevel | undefined;
+    for (const stored of levels) {
+      if (stored.subject.kind === 'every_agent') everyAgentLevel = stored.level;
+      else {
+        const { agentId } = stored.subject;
+        if (!agents.some((agent) => agent.agentId === agentId)) continue;
+        agentLevels.set(agentId, stored.level);
+        // A level can hold no action yet (an app with nothing to read); it is still held.
+        if (!grouped.has(agentId)) grouped.set(agentId, []);
+      }
+    }
+    const everyAgentIds = everyAgentAvailable
+      ? this.db
+          .select({ id: connectionOperationGrants.operationRevisionId })
+          .from(connectionOperationGrants)
+          .where(
+            and(
+              eq(connectionOperationGrants.connectionId, connectionId),
+              everyAgentGrantSubject(),
+              isNull(connectionOperationGrants.revokedAt)
+            )
+          )
+          .all()
+          .map((row) => row.id)
+          .filter((id) => candidateIds.includes(id))
+          .sort()
+      : [];
     return {
       previewId,
       connection,
       candidates,
       agents,
       currentGrants: [...grouped]
-        .map(([agentId, operationRevisionIds]) => ({
-          agentId,
-          operationRevisionIds: operationRevisionIds.sort(),
-        }))
+        .map(([agentId, operationRevisionIds]) => {
+          const level = agentLevels.get(agentId);
+          return {
+            agentId,
+            operationRevisionIds: operationRevisionIds.sort(),
+            ...(level && { level }),
+          };
+        })
         .sort((a, b) => a.agentId.localeCompare(b.agentId)),
       everyAgent: {
         available: everyAgentAvailable,
-        operationRevisionIds: everyAgentAvailable
-          ? this.db
-              .select({ id: connectionOperationGrants.operationRevisionId })
-              .from(connectionOperationGrants)
-              .where(
-                and(
-                  eq(connectionOperationGrants.connectionId, connectionId),
-                  everyAgentGrantSubject(),
-                  isNull(connectionOperationGrants.revokedAt)
-                )
-              )
-              .all()
-              .map((row) => row.id)
-              .filter((id) => candidateIds.includes(id))
-              .sort()
-          : [],
+        operationRevisionIds: everyAgentIds,
+        ...(everyAgentAvailable && everyAgentLevel && { level: everyAgentLevel }),
       },
       catalogComplete: true as const,
       createdAt: createdAt.toISOString(),

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The approval contract as a LIVE session actually delivers it, over the real
  * HTTP routes, the real projector, and the durable `/events` stream.
@@ -81,7 +82,7 @@ import {
 } from '../../services/session/session-state-projector.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 /**

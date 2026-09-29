@@ -253,6 +253,12 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // an entry only stops the inbox asking again. It approves, runs and grants
   // nothing either way, and losing it only means being asked once more.
   'extensions.dismissedApprovals',
+  // The code sources a person trusts outright (spec `flow-multiproject` §9.3).
+  // Ships EMPTY, so nothing runs without its own approval until a person says
+  // yes to a source. No protective carry-over: a wipe empties it, which is
+  // stricter, never looser.
+  'extensions.trustedSources[].source',
+  'extensions.trustedSources[].trustedAt',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,

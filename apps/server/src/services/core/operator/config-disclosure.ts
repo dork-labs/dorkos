@@ -332,6 +332,11 @@ export const CONFIG_DISCLOSURE = {
   // The copies a person declined in the inbox (DOR-2517): absolute paths on
   // this machine again, and nothing an agent needs to do its work.
   'extensions.dismissedApprovals': 'withhold',
+  // The code sources a person trusts (spec `flow-multiproject` §9.3). Not a
+  // secret, but nothing an agent needs to do its work, and the list says which
+  // code this machine runs without asking.
+  'extensions.trustedSources[].source': 'withhold',
+  'extensions.trustedSources[].trustedAt': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',

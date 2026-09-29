@@ -544,7 +544,14 @@ export const CommunityWireEventSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('entry'), entry: CommunityWireEntrySchema, cursor }),
   z.strictObject({
     type: z.literal('closed'),
-    reason: z.enum(['removed', 'archived', 'unavailable']),
+    /**
+     * Why the stream ended. `archived`: the community or channel became read-only. `removed`:
+     * this caller's access ended, including a community that is suspended or whose deletion
+     * was requested. `deleted`: the community's deletion finished while this stream was still
+     * open, which is rare because a deletion request already ends streams as `removed`. Added
+     * later: older DorkOS readers parse this enum strictly, fail on it, and reconnect.
+     */
+    reason: z.enum(['removed', 'archived', 'unavailable', 'deleted']),
     cursor,
   }),
 ]);
@@ -682,7 +689,11 @@ export const CommunityConnectionAccessSchema = z
     effective: CommunityWireGrantCapabilitiesSchema,
     lastKnown: z
       .strictObject({
-        lifecycle: z.enum(['active', 'archived', 'suspended', 'deletion_pending']),
+        /**
+         * `deleted` is never sent by a Community: an installation records it after seeing
+         * `deletion_pending` and then the community's `404` (DOR-2334).
+         */
+        lifecycle: z.enum(['active', 'archived', 'suspended', 'deletion_pending', 'deleted']),
         capabilities: CommunityWireGrantCapabilitiesSchema,
         verifiedAt: timestamp,
       })
@@ -723,12 +734,13 @@ export const CommunityConnectionAccessSchema = z
     }
     if (
       (access.lastKnown?.lifecycle === 'suspended' ||
-        access.lastKnown?.lifecycle === 'deletion_pending') &&
+        access.lastKnown?.lifecycle === 'deletion_pending' ||
+        access.lastKnown?.lifecycle === 'deleted') &&
       Object.values(access.lastKnown.capabilities).some(Boolean)
     ) {
       context.addIssue({
         code: 'custom',
-        message: 'Suspended or deleting access has no effective capabilities.',
+        message: 'Suspended, deleting or deleted access has no effective capabilities.',
       });
     }
   });
@@ -917,7 +929,7 @@ export const CommunityExportAuditEventRowSchema = z.strictObject({
   id,
   community_id: id,
   actor_member_id: nullableId,
-  actor_kind: z.enum(['member', 'system']),
+  actor_kind: z.enum(['member', 'system', 'host']),
   action: z.string().min(1),
   subject_id: z.string().nullable(),
   prior_state: z.string().nullable(),
@@ -1043,7 +1055,7 @@ export const CommunityExportManifestV1Schema = z.strictObject({
         id: exportId,
         community_id: exportId,
         actor_member_id: exportId.nullable(),
-        actor_kind: z.enum(['member', 'system']),
+        actor_kind: z.enum(['member', 'system', 'host']),
         action: z.string().regex(/^[a-z][a-z0-9_.]{0,79}$/),
         subject_id: z.string().min(1).max(200).nullable(),
         prior_state: z.string().max(64).nullable(),
@@ -1210,6 +1222,47 @@ export const CommunityWireOwnerErasureListResponseSchema = z.strictObject({
   erasures: z.array(CommunityWireOwnerErasureSchema),
 });
 
+/** Why the host removed something, as the takedown categories name it. */
+export const CommunityWireTakedownCategorySchema = z.enum([
+  'child_safety',
+  'illegal_content',
+  'legal_order',
+  'terms_violation',
+]);
+/** The one plain sentence each takedown category shows the owner and the author. */
+export const COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES: Record<
+  z.infer<typeof CommunityWireTakedownCategorySchema>,
+  string
+> = {
+  child_safety: 'It was removed to protect children.',
+  illegal_content: 'It was reported to the host as illegal.',
+  legal_order: 'The host received a legal order to remove it.',
+  terms_violation: "It broke the host's terms.",
+};
+/**
+ * One thing the host removed from this community, as the owner, an admin, or its author sees
+ * it. Ids, the reason, and when: never what it said.
+ */
+export const CommunityWireTakedownNoticeSchema = z.strictObject({
+  id,
+  targetKind: z.enum(['entry', 'attachment', 'icon']),
+  entryId: id.nullable(),
+  attachmentId: id.nullable(),
+  channelId: id.nullable(),
+  category: CommunityWireTakedownCategorySchema,
+  reference: z.string().nullable(),
+  createdAt: timestamp,
+  /**
+   * Whether the removed content was the caller's own or their agents'. The owner and admins see
+   * every takedown; only these are the author's, which the browser tells them about once.
+   */
+  yours: z.boolean(),
+});
+/** The host's takedowns in this community the caller may see, newest first. */
+export const CommunityWireTakedownNoticeListResponseSchema = z.strictObject({
+  takedowns: z.array(CommunityWireTakedownNoticeSchema),
+});
+
 /** Stable error codes for expected authorization, state and quota refusals. */
 export const CommunityWireErrorCodeSchema = z.enum([
   'REAUTH_REQUIRED',
@@ -1241,6 +1294,12 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'LEGAL_HOLD_ACTIVE',
   'IMPORT_ARCHIVE_INVALID',
   'IMPORT_TOO_LARGE',
+  /**
+   * `410`: the community this path names was permanently deleted. Served for as long as the
+   * Community keeps its content-free deletion record (30 days), then the path answers
+   * `404 NOT_FOUND` like any unknown id. Added later; older readers see an unknown code.
+   */
+  'COMMUNITY_DELETED',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

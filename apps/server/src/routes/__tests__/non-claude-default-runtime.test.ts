@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The default runtime is not assumed to be Claude (DOR-768, spec
  * `execution-defaults` §7).
@@ -94,7 +95,7 @@ import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 
 describe('cold-discovery routes with a non-Claude default runtime', () => {

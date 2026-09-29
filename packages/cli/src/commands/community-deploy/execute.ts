@@ -180,7 +180,17 @@ async function executeCreationStep(
     inspected = await step.boundary.inspect(createdId!);
     assertIdentity(step, inspected, expectedBindingId);
     if (inspected.id !== createdId) throw new ProviderMutationError('INVALID_RESPONSE');
-  } catch {
+  } catch (error) {
+    // The bucket exists and is this launch's, but its access keys are not on the app and could not
+    // be fetched again. That is not an uncertain creation: say exactly what is missing, so the
+    // recovery text can tell the operator how to add the keys and resume. The creation intent
+    // stays open, so a resume comes back through this inspection and nothing is created twice.
+    if (step.service === 'tigris' && safeErrorCode(error) === 'MISSING_TIGRIS_SECRETS') {
+      await persistNext(dependencies, current, {
+        lastSafeError: { category: 'invalid-response', code: 'MISSING_TIGRIS_SECRETS' },
+      });
+      throw error;
+    }
     await persistUncertain(dependencies, current);
     throw new CommunityCreationUncertainError(step.service);
   }

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RuntimeProvisionResult } from '@dorkos/shared/transport';
 
@@ -40,7 +41,7 @@ import { provisionCodex } from '../../services/runtimes/codex/provision.js';
 import { provisionClaudeCode } from '../../services/runtimes/claude-code/tooling/provision.js';
 import { provisionOllama } from '../../services/runtimes/opencode/providers/ollama-provision.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const server = listeningServer(app);
 const peerTarget = swappableServer();
 

@@ -62,7 +62,7 @@ function preview(
   };
 }
 
-function applied(everyAgent?: { operationRevisionIds: string[] }) {
+function applied(everyAgent?: { operationRevisionIds: string[]; level?: 'read' | 'read-write' }) {
   return {
     connectionId: 'connection-1' as never,
     reconciliationStatus: 'ready' as const,
@@ -93,7 +93,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview());
     vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue(
-      applied({ operationRevisionIds: ['read-v1'] })
+      applied({ operationRevisionIds: ['read-v1'], level: 'read' })
     );
     renderCard(transport, PAGE);
 
@@ -108,7 +108,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
       expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
         previewId: 'preview-1',
         grants: [],
-        everyAgent: { operationRevisionIds: ['read-v1'] },
+        everyAgent: { operationRevisionIds: ['read-v1'], level: 'read' },
       })
     );
     expect(await screen.findByText('Every agent can read Gmail.')).toBeInTheDocument();
@@ -119,10 +119,12 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     const transport = createMockTransport();
     // Ada already reads by name; choosing every agent must not rewrite her.
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview(undefined, [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1'] }])
+      preview(undefined, [
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v1'], level: 'read' },
+      ])
     );
     vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue(
-      applied({ operationRevisionIds: ['read-v1', 'send-v1'] })
+      applied({ operationRevisionIds: ['read-v1', 'send-v1'], level: 'read-write' })
     );
     renderCard(transport, PAGE);
 
@@ -141,7 +143,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
       expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
         previewId: 'preview-1',
         grants: [],
-        everyAgent: { operationRevisionIds: ['read-v1', 'send-v1'] },
+        everyAgent: { operationRevisionIds: ['read-v1', 'send-v1'], level: 'read-write' },
       })
     );
     expect(await screen.findByText('Every agent can read and write in Gmail.')).toBeInTheDocument();
@@ -151,7 +153,11 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview({ available: true, operationRevisionIds: ['read-v1', 'send-v1'] })
+      preview({
+        available: true,
+        operationRevisionIds: ['read-v1', 'send-v1'],
+        level: 'read-write',
+      })
     );
     vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue(
       applied({ operationRevisionIds: [] })
@@ -210,11 +216,15 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     const transport = createMockTransport();
     // Shared with every agent at Read and write; the chat answer is still about Ada alone.
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview({ available: true, operationRevisionIds: ['read-v1', 'send-v1'] })
+      preview({
+        available: true,
+        operationRevisionIds: ['read-v1', 'send-v1'],
+        level: 'read-write',
+      })
     );
     vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
       ...applied(),
-      grants: [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     renderCard(transport, {
       mode: 'agent',
@@ -233,7 +243,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     await waitFor(() =>
       expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
         previewId: 'preview-1',
-        grants: [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1'] }],
+        grants: [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1'], level: 'read' }],
       })
     );
   });
@@ -286,7 +296,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview());
     vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
-      ...applied({ operationRevisionIds: ['read-v1'] }),
+      ...applied({ operationRevisionIds: ['read-v1'], level: 'read' }),
       authoritySync: { status: 'pending' },
     });
     // Reading back: nothing is shared with every agent after all.

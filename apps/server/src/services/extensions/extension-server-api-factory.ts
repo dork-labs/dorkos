@@ -182,9 +182,24 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   ctx: DataProviderContext;
   getScheduledCleanups: () => Array<() => void>;
   releaseListeners: () => void;
+  dispose: () => void;
 } {
   const scheduledCleanups: Array<() => void> = [];
   const { extensionId, extensionDir, dorkHome } = deps;
+  // Set when this instance was given up on (its `register()` never finished):
+  // whatever it still does afterwards must start nothing (see `dispose`).
+  let disposed = false;
+  let toldDisposed = false;
+  const inert = (what: string): (() => void) => {
+    if (!toldDisposed) {
+      toldDisposed = true;
+      logger.warn(
+        `[ext:${extensionId}] ${what} was called after DorkOS stopped waiting for this ` +
+          `extension to start; it does nothing. Reload the extension to try again.`
+      );
+    }
+    return () => undefined;
+  };
 
   const secrets = new ExtensionSecretStore(extensionId, dorkHome);
   const settings = new ExtensionSettingsStore(dorkHome, extensionId);
@@ -206,6 +221,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   };
 
   function schedule(intervalSeconds: number, fn: () => Promise<void>): () => void {
+    if (disposed) return inert('ctx.schedule');
     const clamped = Math.max(intervalSeconds, MIN_INTERVAL_SECONDS);
     const interval = setInterval(() => {
       fn().catch((err) => {
@@ -230,6 +246,30 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     dorkHome
   );
 
+  // Every way this instance can start something that outlives the call.
+  const guardedAccounts = accounts && {
+    ...accounts,
+    onUsage: (listener: Parameters<typeof accounts.onUsage>[0]) =>
+      disposed ? inert('accounts.onUsage') : accounts.onUsage(listener),
+    registerAdvisor: (advisor: Parameters<typeof accounts.registerAdvisor>[0]) =>
+      disposed ? inert('accounts.registerAdvisor') : accounts.registerAdvisor(advisor),
+  };
+  const guardedProjects = {
+    ...projects,
+    onChange: (listener: Parameters<typeof projects.onChange>[0]) =>
+      disposed ? inert('projects.onChange') : projects.onChange(listener),
+  };
+  const guardedInbox = inbox && {
+    ...inbox,
+    onAction: (handler: Parameters<typeof inbox.onAction>[0]) =>
+      disposed ? inert('inbox.onAction') : inbox.onAction(handler),
+  };
+  const guardedProjectSettings = {
+    ...projectSettings,
+    onChange: (listener: Parameters<typeof projectSettings.onChange>[0]) =>
+      disposed ? inert('projectSettings.onChange') : projectSettings.onChange(listener),
+  };
+
   const ctx: DataProviderContext = {
     secrets,
     settings,
@@ -239,21 +279,40 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     extensionId,
     extensionDir,
     dorkHome,
-    accounts,
-    projects,
-    inbox,
+    accounts: guardedAccounts,
+    projects: guardedProjects,
+    inbox: guardedInbox,
     requirePerson: createRequirePerson(extensionName),
-    projectSettings,
+    projectSettings: guardedProjectSettings,
+  };
+
+  const releaseListeners = () => {
+    releaseAccounts();
+    releaseProjects();
+    releaseInbox();
+    releaseProjectSettings();
   };
 
   return {
     ctx,
     getScheduledCleanups: () => [...scheduledCleanups],
-    releaseListeners: () => {
-      releaseAccounts();
-      releaseProjects();
-      releaseInbox();
-      releaseProjectSettings();
+    releaseListeners,
+    /**
+     * Give up on this instance: cancel what it scheduled, release what it
+     * registered, and make every later `schedule` or listener registration a
+     * no-op (logged once). For a `register()` DorkOS stopped waiting for, which
+     * may still run on in the background (`extension-server-lifecycle.ts`).
+     */
+    dispose: () => {
+      disposed = true;
+      for (const cancel of scheduledCleanups.splice(0)) {
+        try {
+          cancel();
+        } catch {
+          /* swallow cancellation errors */
+        }
+      }
+      releaseListeners();
     },
   };
 }

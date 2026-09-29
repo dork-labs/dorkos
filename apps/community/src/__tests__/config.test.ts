@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseConfig } from '../config.js';
 import { createBlobStore, FileSystemBlobStore, S3BlobStore } from '../storage/index.js';
 
@@ -314,6 +317,287 @@ describe('community startup config', () => {
     ])
       expect(() => parseConfig({ ...valid, ...env }), JSON.stringify(env)).toThrow(
         /COMMUNITY_OIDC/u
+      );
+  });
+
+  it('has no evidence store unless the host names a driver, and refuses stray evidence settings', () => {
+    // Purpose: fails if a half-configured evidence store is silently ignored.
+    expect(parseConfig(valid).evidence).toBeNull();
+    expect(parseConfig({ ...valid, COMMUNITY_EVIDENCE_DRIVER: '' }).evidence).toBeNull();
+    expect(() => parseConfig({ ...valid, COMMUNITY_EVIDENCE_PATH: '/srv/evidence' })).toThrow(
+      'COMMUNITY_EVIDENCE_PATH is set, but COMMUNITY_EVIDENCE_DRIVER is not'
+    );
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_EVIDENCE_DRIVER: 'filesystem',
+        COMMUNITY_EVIDENCE_PATH: '/srv/evidence',
+      }).evidence
+    ).toEqual({ kind: 'filesystem', directory: '/srv/evidence' });
+    expect(parseConfig(valid).limits.takedownEvidenceAlertHours).toBe(6);
+    expect(() => parseConfig({ ...valid, COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS: '0' })).toThrow();
+    expect(() =>
+      parseConfig({ ...valid, COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS: '169' })
+    ).toThrow();
+  });
+
+  it('keeps a filesystem evidence store apart from everything the server serves, stores, or stages', async () => {
+    // Purpose (AC-14): fails if evidence could land where it is served, swept, or staged: the
+    // primary store, the web app folder, or the temporary folder, whether equal, containing, or
+    // inside, and even through a symbolic link.
+    const evidence =
+      (path: string, storage = '/srv/data/blobs') =>
+      () =>
+        parseConfig({
+          ...valid,
+          COMMUNITY_STORAGE_PATH: storage,
+          COMMUNITY_EVIDENCE_DRIVER: 'filesystem',
+          COMMUNITY_EVIDENCE_PATH: path,
+        });
+    expect(evidence('evidence')).toThrow('COMMUNITY_EVIDENCE_PATH must be an absolute path');
+    for (const path of ['/srv/data/blobs', '/srv/data/blobs/evidence', '/srv/data', '/'])
+      expect(evidence(path), path).toThrow('COMMUNITY_STORAGE_PATH');
+    const served = fileURLToPath(new URL('../../dist/', import.meta.url));
+    for (const path of [served, join(served, 'evidence'), join(served, '..')])
+      expect(evidence(path), path).toThrow('the web app folder');
+    expect(evidence(join(tmpdir(), 'evidence'))).toThrow('the temporary folder');
+    expect(evidence('/srv/evidence')).not.toThrow();
+    // A link that points into the temporary folder is still inside it.
+    const outside = await mkdtemp(join(fileURLToPath(new URL('../../', import.meta.url)), '.cfg-'));
+    try {
+      await symlink(tmpdir(), join(outside, 'link'));
+      expect(evidence(join(outside, 'link', 'evidence'))).toThrow('the temporary folder');
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('requires a separate bucket, or another endpoint, for an S3 evidence store', () => {
+    // Purpose (AC-14): fails if evidence could be written into the primary bucket.
+    const s3 = {
+      ...valid,
+      COMMUNITY_STORAGE_DRIVER: 's3',
+      COMMUNITY_S3_BUCKET: 'primary',
+      COMMUNITY_S3_REGION: 'auto',
+      COMMUNITY_S3_ENDPOINT: 'https://s3.example.com',
+      COMMUNITY_EVIDENCE_DRIVER: 's3',
+      COMMUNITY_EVIDENCE_S3_REGION: 'auto',
+    };
+    expect(() =>
+      parseConfig({
+        ...s3,
+        COMMUNITY_EVIDENCE_S3_BUCKET: 'primary',
+        COMMUNITY_EVIDENCE_S3_ENDPOINT: 'https://s3.example.com',
+      })
+    ).toThrow('different bucket');
+    expect(
+      parseConfig({
+        ...s3,
+        COMMUNITY_EVIDENCE_S3_BUCKET: 'primary',
+        COMMUNITY_EVIDENCE_S3_ENDPOINT: 'https://evidence.example.com',
+      }).evidence
+    ).toMatchObject({ kind: 's3', bucket: 'primary', endpoint: 'https://evidence.example.com' });
+    expect(
+      parseConfig({
+        ...s3,
+        COMMUNITY_EVIDENCE_S3_BUCKET: 'evidence',
+        COMMUNITY_EVIDENCE_S3_ENDPOINT: 'https://s3.example.com',
+        COMMUNITY_EVIDENCE_S3_PREFIX: 'host-a/takedowns',
+      }).evidence
+    ).toMatchObject({ bucket: 'evidence', prefix: 'host-a/takedowns' });
+    expect(() => parseConfig({ ...s3, COMMUNITY_EVIDENCE_S3_BUCKET: undefined })).toThrow(
+      'COMMUNITY_EVIDENCE_S3_BUCKET'
+    );
+    for (const prefix of ['/abs', 'a//b', 'a/../b', '..', 'a/./b', 'has space'])
+      expect(
+        () =>
+          parseConfig({
+            ...s3,
+            COMMUNITY_EVIDENCE_S3_BUCKET: 'evidence',
+            COMMUNITY_EVIDENCE_S3_PREFIX: prefix,
+          }),
+        prefix
+      ).toThrow('COMMUNITY_EVIDENCE_S3_PREFIX');
+    expect(() =>
+      parseConfig({
+        ...s3,
+        COMMUNITY_EVIDENCE_S3_BUCKET: 'evidence',
+        COMMUNITY_EVIDENCE_S3_ENDPOINT: 'http://evidence.example.com',
+      })
+    ).toThrow('COMMUNITY_EVIDENCE_S3_ENDPOINT must use HTTPS');
+  });
+
+  it('sends no mail unless the host sets both mail settings, and keeps the replacement defaults', () => {
+    // Purpose: fails if mail turns on by default, or if the owner-replacement waits drift from
+    // 14, 30 and 90 days when nothing is set.
+    const config = parseConfig(valid);
+    expect(config.mail).toBeNull();
+    expect(config.ownerReplacement).toEqual({
+      noticeDays: 14,
+      unreachableDays: 30,
+      objectionCooldownDays: 90,
+    });
+    // Compose passes an unset setting through as an empty string.
+    expect(parseConfig({ ...valid, COMMUNITY_SMTP_URL: '', COMMUNITY_MAIL_FROM: '' }).mail).toBe(
+      null
+    );
+  });
+
+  it('reads an encrypted SMTP server, its credentials, and one sender mailbox', () => {
+    // Purpose: fails if implicit TLS, required STARTTLS, default ports, percent-encoded
+    // credentials, or a named sender are read wrongly, or if loopback loses its plain-text carve-out.
+    const from = 'Example Community <notices@example.com>';
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_SMTP_URL: 'smtps://mailer:p%40ss%2Fword@smtp.example.com',
+        COMMUNITY_MAIL_FROM: from,
+      }).mail
+    ).toEqual({
+      smtp: {
+        host: 'smtp.example.com',
+        port: 465,
+        secure: true,
+        requireTLS: false,
+        auth: { user: 'mailer', pass: 'p@ss/word' },
+      },
+      from: { name: 'Example Community', address: 'notices@example.com' },
+    });
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_SMTP_URL: 'smtp://smtp.example.com?starttls=required',
+        COMMUNITY_MAIL_FROM: 'notices@example.com',
+      }).mail
+    ).toEqual({
+      smtp: {
+        host: 'smtp.example.com',
+        port: 587,
+        secure: false,
+        requireTLS: true,
+        auth: null,
+      },
+      from: { name: null, address: 'notices@example.com' },
+    });
+    for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+      const mail = parseConfig({
+        ...valid,
+        COMMUNITY_SMTP_URL: `smtp://${host}:2525`,
+        COMMUNITY_MAIL_FROM: '"Relay, Local" <notices@example.com>',
+      }).mail;
+      expect(mail?.smtp).toMatchObject({ port: 2525, secure: false, requireTLS: false });
+      expect(mail?.from).toEqual({ name: 'Relay, Local', address: 'notices@example.com' });
+    }
+  });
+
+  it('treats localhost as 127.0.0.1 for a plain relay, and refuses port 0', () => {
+    // Purpose: fails if the no-encryption exemption trusts a name lookup for localhost, is fooled
+    // by upper case, or accepts port 0; an encrypted connection keeps its name for certificates.
+    const env = { ...valid, COMMUNITY_MAIL_FROM: 'notices@example.com' };
+    for (const url of ['smtp://localhost', 'smtp://LocalHost:2525'])
+      expect(parseConfig({ ...env, COMMUNITY_SMTP_URL: url }).mail?.smtp.host, url).toBe(
+        '127.0.0.1'
+      );
+    expect(parseConfig({ ...env, COMMUNITY_SMTP_URL: 'smtps://LOCALHOST' }).mail?.smtp.host).toBe(
+      'localhost'
+    );
+    expect(parseConfig({ ...env, COMMUNITY_SMTP_URL: 'smtp://[::1]' }).mail?.smtp.host).toBe('::1');
+    for (const url of ['smtps://smtp.example.com:0', 'smtp://127.0.0.1:0'])
+      expect(() => parseConfig({ ...env, COMMUNITY_SMTP_URL: url }), url).toThrow('port 0');
+  });
+
+  it('refuses mail settings that are half set, unencrypted off loopback, or not one mailbox', () => {
+    // Purpose (AC-5): fails if one mail setting alone, plain SMTP to another machine, a stray
+    // option, a path, half a credential, or a sender that could add a header or a second
+    // address starts the server.
+    const smtp = 'smtps://smtp.example.com';
+    const from = 'notices@example.com';
+    for (const env of [
+      { COMMUNITY_SMTP_URL: smtp },
+      { COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'smtp://smtp.example.com', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'smtp://smtp.example.com:25', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'smtp://10.0.0.5', COMMUNITY_MAIL_FROM: from },
+      {
+        COMMUNITY_SMTP_URL: 'smtp://smtp.example.com?starttls=optional',
+        COMMUNITY_MAIL_FROM: from,
+      },
+      {
+        COMMUNITY_SMTP_URL: 'smtps://smtp.example.com?starttls=required',
+        COMMUNITY_MAIL_FROM: from,
+      },
+      { COMMUNITY_SMTP_URL: 'smtps://smtp.example.com?pool=true', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'smtps://smtp.example.com/relay', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'smtps://mailer@smtp.example.com', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'https://smtp.example.com', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: 'not a url', COMMUNITY_MAIL_FROM: from },
+      { COMMUNITY_SMTP_URL: smtp, COMMUNITY_MAIL_FROM: 'not an address' },
+      { COMMUNITY_SMTP_URL: smtp, COMMUNITY_MAIL_FROM: 'a@example.com, b@example.com' },
+      { COMMUNITY_SMTP_URL: smtp, COMMUNITY_MAIL_FROM: 'notices@example.com\r\nBcc: x@evil.test' },
+      { COMMUNITY_SMTP_URL: smtp, COMMUNITY_MAIL_FROM: 'Team: a@example.com;' },
+      { COMMUNITY_SMTP_URL: smtp, COMMUNITY_MAIL_FROM: 'Name <a@example.com> <b@example.com>' },
+    ])
+      expect(() => parseConfig({ ...valid, ...env }), JSON.stringify(env)).toThrow(
+        /COMMUNITY_(SMTP_URL|MAIL_FROM)/u
+      );
+  });
+
+  it('never echoes the SMTP address or its password in a configuration error', () => {
+    // Purpose: fails if a refused mail setting prints its credentials, directly or through an
+    // error cause, where a startup crash would log them.
+    for (const url of [
+      'smtp://mailer:hunter2-secret@smtp.example.com',
+      'smtps://mailer:hunter2-secret@smtp.example.com/path',
+      'smtps://mailer:hunter2-secret@smtp.example.com?x=1',
+      'smtps://mailer:hunter2-secret@[bad',
+    ]) {
+      let caught: unknown;
+      try {
+        parseConfig({ ...valid, COMMUNITY_SMTP_URL: url, COMMUNITY_MAIL_FROM: 'n@example.com' });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught, url).toBeInstanceOf(Error);
+      const error = caught as Error;
+      expect(error.cause, url).toBeUndefined();
+      expect(error.message, url).not.toContain('hunter2');
+      expect(error.message, url).not.toContain('smtp.example.com');
+    }
+  });
+
+  it('bounds the owner-replacement waits and keeps the long wait at least the short one', () => {
+    // Purpose (AC-5): fails if a notice wait under a week, a long wait under two weeks or below
+    // the notice wait, or a cooling-off under 30 days starts the server.
+    const bounds = parseConfig({
+      ...valid,
+      COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '90',
+      COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: '180',
+      COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS: '365',
+    }).ownerReplacement;
+    expect(bounds).toEqual({ noticeDays: 90, unreachableDays: 180, objectionCooldownDays: 365 });
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '7',
+        COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: '14',
+        COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS: '30',
+      }).ownerReplacement
+    ).toEqual({ noticeDays: 7, unreachableDays: 14, objectionCooldownDays: 30 });
+    for (const env of [
+      { COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '6' },
+      { COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '91' },
+      { COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: '13' },
+      { COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: '181' },
+      {
+        COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '40',
+        COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: '39',
+      },
+      { COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: '31' },
+      { COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS: '29' },
+      { COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS: '366' },
+    ])
+      expect(() => parseConfig({ ...valid, ...env }), JSON.stringify(env)).toThrow(
+        /COMMUNITY_OWNER_REPLACEMENT/u
       );
   });
 });

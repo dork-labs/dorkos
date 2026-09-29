@@ -72,6 +72,7 @@ function flowRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRe
     hasServerEntry: true,
     hasDataProxy: false,
     approvedToRun: false,
+    shadowedBy: null,
     ...overrides,
   };
 }

@@ -69,6 +69,7 @@ function makeExtension(overrides: Partial<ExtensionRecordPublic> = {}): Extensio
     hasServerEntry: false,
     hasDataProxy: false,
     approvedToRun: true,
+    shadowedBy: null,
     ...overrides,
   };
 }
@@ -137,6 +138,44 @@ describe('ExtensionsSettingsTab', () => {
       expect(screen.getByTestId('extension-card-ext-a')).toBeInTheDocument();
     });
     expect(screen.getByTestId('extension-card-ext-b')).toBeInTheDocument();
+  });
+
+  it('says plainly when a project copy changed after DorkOS installed it', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({ scope: 'local', approvedToRun: false, originProblem: 'changed' }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    expect(await screen.findByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
+      'Its files changed after DorkOS installed it'
+    );
+  });
+
+  it('says plainly when a plugin holds a shortcut to files elsewhere', async () => {
+    mockFetch({
+      '/api/extensions': [makeExtension({ approvedToRun: false, originProblem: 'linked' })],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    expect(await screen.findByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
+      'holds a shortcut to files somewhere else'
+    );
+  });
+
+  it('tells a person who approved a changed copy that any further change asks again', async () => {
+    mockFetch({
+      '/api/extensions': [makeExtension({ approvedToRun: true, originProblem: 'changed' })],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    expect(await screen.findByTestId('extension-run-allowed-test-ext')).toHaveTextContent(
+      'any further change will ask you again'
+    );
   });
 
   it('shows scope badge on each card', async () => {

@@ -118,4 +118,28 @@ describe('credentialed live gate entrypoint', () => {
       /bootstrap = await whileLauncherRuns\(resumed, capture\.next\(TIMEOUT_MS\), \{\s*ms: DELIVERED_CAPTURE_MS,\s*step: 'bootstrap-capture-after-launcher-exit',\s*\}\)/u
     );
   });
+
+  // An unreleased run must copy its tarball into the retained run directory and check the copy
+  // before any npm, profile or service call, then install and recover from that copy only. A real
+  // run costs money, so this pins the order in main; the check itself is unit-tested beside it.
+  it('checks an unreleased tarball first, installs that file, and records it as not a release', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const inspect = main.indexOf(
+      "tarball = await inspectCommunityLiveTarball(\n        config.source.path,\n        join(durableHome, 'package-under-test')\n      );"
+    );
+    expect(inspect).toBeGreaterThan(0);
+    expect(inspect).toBeLessThan(main.indexOf('await command('));
+    expect(inspect).toBeLessThan(main.indexOf('readFlySessionCredential('));
+    expect(main).toMatch(/if \(!tarball\) \{\s*const published = parsePublishedVersion\(/u);
+    // Installed and recovered from the verified copy the check returned, never the original path.
+    expect(main).toContain('tarball ? tarball.path : `dorkos@${version}`');
+    expect(main).not.toMatch(/config\.source\.path(?![\s\S]{0,80}package-under-test)/u);
+    expect(main).toMatch(/JSON\.stringify\(\{\s*version,\s*source,/u);
+    const recovery = main.slice(main.indexOf('communityLiveGateRecoveryCommand('));
+    expect(recovery.slice(0, recovery.indexOf(';'))).toContain('tarball?.path');
+  });
 });

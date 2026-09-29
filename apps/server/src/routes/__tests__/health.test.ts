@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -38,7 +39,7 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 
 describe('Health Route', () => {

@@ -870,6 +870,30 @@ export function seedExtensionsDismissedApprovals(store: {
 }
 
 /**
+ * Migration body: seed `extensions.trustedSources: []` for configs persisted
+ * before a person could trust a code source outright (spec `flow-multiproject`
+ * §9.3).
+ *
+ * Seeds the list empty. A config that predates it trusts no source, and an
+ * empty list is the strict reading: every extension keeps asking on its own.
+ * Additive and idempotent: writes only when `trustedSources` is not already an
+ * array, and never touches the other `extensions` members. A config with no
+ * `extensions` key is skipped (the schema default supplies the object on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedExtensionsTrustedSources(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ext = store.get('extensions');
+  if (!ext || typeof ext !== 'object' || Array.isArray(ext)) return;
+  if (Array.isArray((ext as { trustedSources?: unknown }).trustedSources)) return;
+  store.set('extensions', { ...(ext as Record<string, unknown>), trustedSources: [] });
+}
+
+/**
  * Migration body: backfill the `workspace` section (WorkspaceManager, DOR-84)
  * for configs persisted before it existed. Additive + idempotent — only writes
  * when the key is absent; the schema default also yields this object on read, so
@@ -4665,6 +4689,22 @@ export const CONFIG_MIGRATIONS = {
     // `accounts[].onlyProjects` — which accounts may work in which projects
     // (spec `flow-multiproject` §8, DOR-2526). See `seedAccountProjectRules`.
     seedAccountProjectRules(store);
+  },
+  // 0.93.0 has merged (DOR-2526, account project rules) and v0.89.0 is the
+  // newest tag, so 0.94.0 is the next key. Frozen from merge, not from the
+  // release bump, for the reason `'0.60.0'` above states; anything further
+  // opens `'0.95.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `extensions`, beside `dismissedApprovals`, which `'0.92.0'` writes and this
+  // body preserves.
+  '0.94.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `extensions.trustedSources` — the code sources a person trusts outright
+    // (spec `flow-multiproject` §9.3). See `seedExtensionsTrustedSources`.
+    seedExtensionsTrustedSources(store);
   },
 } as const;
 

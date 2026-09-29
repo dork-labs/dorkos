@@ -1,19 +1,26 @@
 /**
  * Pure selection rules for the "who can use it" access card: which simple
- * level an agent holds today, which agents to show first, and the exact grant
- * replacements a card decision writes. Every level maps onto the same presets
- * the exact access editor offers ({@link revisionIdsForAccessLevel}), so the
- * card can never grant anything those presets would not.
+ * level an agent holds today, which agents to show first, and the grant
+ * replacements a card decision writes. A level is saved as the level itself
+ * with exactly its set in the snapshot ({@link accessLevelRevisionIds}, the
+ * rule the server grants and follows with), so the card can never grant
+ * anything the level would not, and reads a level back as the level the owner
+ * chose, however the app's actions change (ADR 260929-071355).
  *
  * @module features/connections/lib/access-card-selection
  */
-import type {
-  ConnectorReconciliationCandidate,
-  ConnectorReconciliationGrantSelection,
-  ConnectorReconciliationPreview,
-  ConnectorRequestAccess,
+import {
+  accessLevelRevisionIds,
+  type ConnectorReconciliationEveryAgentSelection,
+  type ConnectorReconciliationGrantSelection,
+  type ConnectorReconciliationPreview,
+  type ConnectorRequestAccess,
 } from '@dorkos/shared/connector-schemas';
-import { revisionIdsForAccessLevel, selectionsFromPreview } from './reconciliation-selection';
+import {
+  sameSelection,
+  selectionsFromPreview,
+  type AgentAccessSelection,
+} from './reconciliation-selection';
 
 /**
  * The two levels the card offers, the same two an agent asks for
@@ -28,27 +35,19 @@ export type HeldAccess = 'none' | CardAccessLevel | 'custom';
 /** How many agents the page mode lists before "Show all". */
 export const VISIBLE_AGENT_LIMIT = 5;
 
-function sameIds(left: readonly string[], right: readonly string[]): boolean {
-  const a = [...left].sort();
-  const b = [...right].sort();
-  return a.length === b.length && a.every((value, index) => value === b[index]);
-}
-
 /**
- * Classify one agent's current exact grant against the card's presets.
+ * What one grant is: `'none'` when it holds no action it can use now, else
+ * the level the owner chose when it has one, and `'custom'` for exact
+ * actions. A level is never guessed from which actions happen to match
+ * today, so an app that adds or reclassifies an action never turns "Read"
+ * into exact actions; and a level that holds nothing yet (a change the
+ * service has not applied) never reads as access the agent has.
  *
- * @param candidates - The preview's complete operation snapshot.
- * @param granted - The agent's current operation revision ids.
- * @returns `'custom'` whenever the set is anything other than an exact preset.
+ * @param grant - The agent's (or every agent's) current revisions and level.
  */
-export function heldAccess(
-  candidates: ConnectorReconciliationCandidate[],
-  granted: readonly string[]
-): HeldAccess {
-  if (granted.length === 0) return 'none';
-  if (sameIds(granted, revisionIdsForAccessLevel(candidates, 'read'))) return 'read';
-  if (sameIds(granted, revisionIdsForAccessLevel(candidates, 'read-write'))) return 'read-write';
-  return 'custom';
+export function heldAccess(grant: Partial<AgentAccessSelection> | undefined): HeldAccess {
+  if ((grant?.operationRevisionIds?.length ?? 0) === 0) return 'none';
+  return grant?.level ?? 'custom';
 }
 
 /**
@@ -86,7 +85,7 @@ export function rankAgents(
 ): ConnectorReconciliationPreview['agents'] {
   const current = selectionsFromPreview(preview);
   const rank = (agentId: string): number => {
-    if ((current[agentId] ?? []).length > 0) return 0;
+    if (heldAccess(current[agentId]) !== 'none') return 0;
     const preferred = preferredAgentIds.indexOf(agentId);
     if (preferred >= 0) return 1 + preferred / (preferredAgentIds.length + 1);
     if (systemAgentIds.includes(agentId)) return 2;
@@ -111,7 +110,7 @@ export interface CardDecision {
 }
 
 /**
- * The exact replacement sets a card decision writes, limited to the agents the
+ * The replacement sets a card decision writes, limited to the agents the
  * card is about (`scope`) and to those whose set actually changes. An agent
  * outside the scope is never written, whatever it holds.
  *
@@ -122,6 +121,8 @@ export interface CardDecision {
  *   never quietly changes anyone else.
  * - A picked agent with exact per-action access keeps it untouched: the card
  *   cannot express that set, so it never overwrites it.
+ * - A level is written as the level with exactly its set in the snapshot, so
+ *   it keeps following the app afterwards.
  * - An agent in scope that had access and is no longer picked loses it, and
  *   is named in {@link CardDecision.removedAgentIds} so the card can say so.
  * - A preset holder moved from Read and write to Read is named in
@@ -153,7 +154,9 @@ export function cardDecision(
   }
 ): CardDecision {
   const current = selectionsFromPreview(preview);
-  const target = level ? revisionIdsForAccessLevel(preview.candidates, level) : null;
+  const target: AgentAccessSelection | null = level
+    ? { operationRevisionIds: accessLevelRevisionIds(preview.candidates, level), level }
+    : null;
   const inScope = new Set(scope);
   const changes: ConnectorReconciliationGrantSelection[] = [];
   const removedAgentIds: string[] = [];
@@ -161,12 +164,12 @@ export function cardDecision(
   let needsLevel = false;
   for (const agent of preview.agents) {
     if (!inScope.has(agent.agentId)) continue;
-    const before = current[agent.agentId] ?? [];
-    const held = heldAccess(preview.candidates, before);
-    let after: string[];
+    const before = current[agent.agentId] ?? { operationRevisionIds: [] };
+    const held = heldAccess(before);
+    let after: AgentAccessSelection;
     if (!picked.has(agent.agentId)) {
-      after = [];
-      if (before.length > 0) removedAgentIds.push(agent.agentId);
+      after = { operationRevisionIds: [] };
+      if (held !== 'none') removedAgentIds.push(agent.agentId);
     } else if (held === 'none') {
       if (!target) needsLevel = true;
       after = target ?? before;
@@ -178,8 +181,8 @@ export function cardDecision(
     } else {
       after = target;
     }
-    if (!sameIds(before, after)) {
-      changes.push({ agentId: agent.agentId, operationRevisionIds: after });
+    if (!sameSelection(before, after)) {
+      changes.push({ agentId: agent.agentId, ...after });
     }
   }
   return { changes, removedAgentIds, downgradedAgentIds, needsLevel };
@@ -194,7 +197,7 @@ export interface EveryAgentDecision {
    * The complete every-agent set to send, or `undefined` to leave sharing as
    * it is. An empty set stops sharing with every agent.
    */
-  everyAgent?: { operationRevisionIds: string[] };
+  everyAgent?: ConnectorReconciliationEveryAgentSelection;
   /** "Every agent" is picked but the switch is mixed, so there is no level yet. */
   needsLevel: boolean;
 }
@@ -211,12 +214,13 @@ export function initialWhoCanUse(preview: ConnectorReconciliationPreview): WhoCa
 
 /**
  * The every-agent set a page-card decision writes (ADR 260926-192625). It
- * follows the same presets as the checklist, so "every agent" can never be
+ * follows the same levels as the checklist, so "every agent" can never be
  * given anything a picked agent could not.
  *
- * - "Every agent" with a level sends that level's exact set, unless it already
- *   holds it. A set the card can't express (exact actions) is left alone until
- *   the person touches the level switch, as for an agent.
+ * - "Every agent" with a level sends that level and its set, unless it already
+ *   holds that level. A set the card can't express (exact actions) is left
+ *   alone until the person touches the level switch, as for an agent. A level
+ *   with nothing in it yet shares nothing.
  * - "Only agents I pick" stops sharing when it is shared now, and otherwise
  *   sends nothing, so a card that never touched the question never writes it.
  * - Where sharing with every agent is unavailable, nothing is ever sent.
@@ -235,36 +239,33 @@ export function everyAgentDecision(
     levelTouched,
   }: { who: WhoCanUse; level: CardAccessLevel | null; levelTouched: boolean }
 ): EveryAgentDecision {
-  const before = preview.everyAgent.operationRevisionIds;
   if (!preview.everyAgent.available) return { needsLevel: false };
+  const held = heldAccess(preview.everyAgent);
   if (who === 'picked') {
-    return before.length > 0
+    return held !== 'none'
       ? { everyAgent: { operationRevisionIds: [] }, needsLevel: false }
       : { needsLevel: false };
   }
-  const held = heldAccess(preview.candidates, before);
   if (held === 'custom' && !levelTouched) return { needsLevel: false };
-  if (!level) return { needsLevel: before.length === 0 };
-  const target = revisionIdsForAccessLevel(preview.candidates, level);
-  return sameIds(before, target)
+  if (!level) return { needsLevel: held === 'none' };
+  const target = accessLevelRevisionIds(preview.candidates, level);
+  return held === level || target.length === 0
     ? { needsLevel: false }
-    : { everyAgent: { operationRevisionIds: target }, needsLevel: false };
+    : { everyAgent: { operationRevisionIds: target, level }, needsLevel: false };
 }
 
 /**
- * Where the level switch starts for "Every agent": the preset every agent
+ * Where the level switch starts for "Every agent": the level every agent
  * holds, Read when it is not shared yet, and `null` ("mixed", nothing
- * selected) when the shared set is exact actions the card can't express — so
+ * selected) when every agent holds exact actions the card can't express — so
  * the card never says "Read" while every agent can in fact write or delete.
- * A set drifts to exact actions without anyone choosing it, when the app adds
- * a new action to a preset.
  *
  * @param preview - Server snapshot.
  */
 export function initialEveryAgentLevel(
   preview: ConnectorReconciliationPreview
 ): CardAccessLevel | null {
-  const held = heldAccess(preview.candidates, preview.everyAgent.operationRevisionIds);
+  const held = heldAccess(preview.everyAgent);
   return held === 'custom' ? null : initialCardLevel([held]);
 }
 
@@ -328,8 +329,12 @@ export function agentHeldAccess(
   agentId: string,
   countEveryAgent = true
 ): HeldAccess {
-  const own = selectionsFromPreview(preview)[agentId] ?? [];
+  const own = heldAccess(selectionsFromPreview(preview)[agentId]);
   const shared =
-    countEveryAgent && preview.everyAgent.available ? preview.everyAgent.operationRevisionIds : [];
-  return heldAccess(preview.candidates, [...new Set([...own, ...shared])]);
+    countEveryAgent && preview.everyAgent.available ? heldAccess(preview.everyAgent) : 'none';
+  if (own === 'none') return shared;
+  if (shared === 'none') return own;
+  // Exact actions on either side are something no level describes.
+  if (own === 'custom' || shared === 'custom') return 'custom';
+  return own === 'read-write' || shared === 'read-write' ? 'read-write' : 'read';
 }

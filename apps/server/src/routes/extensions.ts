@@ -36,6 +36,7 @@ import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
+import { registerTrustedSourceRoutes } from './extensions-trusted-sources.js';
 import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
@@ -155,10 +156,15 @@ export function createExtensionsRouter(
     });
   });
 
-  // GET /api/extensions -- List all discovered extensions with status
+  // GET /api/extensions -- List all discovered extensions with status: every
+  // copy that runs, then each older copy a newer one of the same trusted
+  // source shadows, with `shadowedBy` set (spec `flow-multiproject` §9.2).
   router.get('/', async (_req, res) => {
     try {
-      const extensions = extensionManager.listPublic();
+      const extensions = [
+        ...extensionManager.listPublic(),
+        ...extensionManager.listShadowedPublic(),
+      ];
       res.json(extensions);
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions', err);
@@ -279,10 +285,14 @@ export function createExtensionsRouter(
   });
 
   // POST /api/extensions/reload -- Re-scan filesystem and recompile changed
+  //
+  // The scan reads every known project, so it runs after this answers: the
+  // reply is the list as it stands, and clients hear what the scan changed
+  // from the `extension_reloaded` broadcast.
   router.post('/reload', async (_req, res) => {
     try {
-      const extensions = await extensionManager.reload();
-      res.json(extensions);
+      extensionManager.requestRefresh();
+      res.json(extensionManager.listPublic());
     } catch (err) {
       logger.error('[Extensions] Failed to reload extensions', err);
       res.status(500).json({ error: 'Failed to reload extensions' });
@@ -639,6 +649,7 @@ export function createExtensionsRouter(
   });
 
   registerExtensionApprovalRoutes(router, extensionManager, SAFE_EXT_ID);
+  registerTrustedSourceRoutes(router, extensionManager);
   registerExtensionInboxRoutes(router, extensionManager, dorkHome, SAFE_EXT_ID);
 
   return router;

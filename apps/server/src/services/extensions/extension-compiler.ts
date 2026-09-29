@@ -1,5 +1,11 @@
 import { build, version as esbuildVersion } from 'esbuild';
 import type { BuildOptions } from 'esbuild';
+import {
+  PLUGIN_CHANGED_CODE,
+  containmentPlugin,
+  containmentRootOf,
+  stillPinned,
+} from './extension-plugin-guard.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -306,6 +312,8 @@ interface BuildContext {
   manifestPath: string;
   buildKey: string;
   cwd: string;
+  /** The plugin folder every import must stay inside, or null for no limit. */
+  containRoot: string | null;
 }
 
 /** Per-build state: when it started, the tree before it, and what esbuild read. */
@@ -341,14 +349,26 @@ export class ExtensionCompiler {
    *          Also returns the `sourceHash` for cache keying.
    */
   async compile(record: ExtensionRecord): Promise<CompileResult> {
-    const entryResult = await this.resolveEntryPoint(record.path);
+    return this.guarded(record, () => this.compileClient(record));
+  }
+
+  /** The body of {@link compile}, run inside {@link guarded}. */
+  private async compileClient(record: ExtensionRecord): Promise<CompileResult> {
+    const runDir = record.runPath ?? record.path;
+    const entryResult = await this.resolveEntryPoint(runDir);
     if ('error' in entryResult) {
       return { error: entryResult.error, sourceHash: '' };
     }
 
     const { entryPath, isPrecompiled } = entryResult;
     if (!isPrecompiled) {
-      return this.compileCached(record.id, entryPath, record.path, CLIENT_TARGET);
+      return this.compileCached(
+        record.id,
+        entryPath,
+        runDir,
+        CLIENT_TARGET,
+        containmentRootOf(record)
+      );
     }
 
     let source: string;
@@ -380,7 +400,60 @@ export class ExtensionCompiler {
         sourceHash: '',
       };
     }
-    return this.compileCached(record.id, record.serverEntryPath, record.path, SERVER_TARGET);
+    // A copy that runs from its snapshot bundles the snapshot's entry point.
+    const entryPath = record.runPath
+      ? path.join(record.runPath, path.relative(record.path, record.serverEntryPath))
+      : record.serverEntryPath;
+    return this.guarded(record, () =>
+      this.compileCached(
+        record.id,
+        entryPath,
+        record.runPath ?? record.path,
+        SERVER_TARGET,
+        containmentRootOf(record)
+      )
+    );
+  }
+
+  /**
+   * Hold a copy to the plugin folder digest it was judged against, before and
+   * after the bundle is built or read (`extension-plugin-guard.ts`). On a
+   * mismatch nothing is returned to run, and the record loses its trusted
+   * origin at once, so every other gate refuses it too until the next scan
+   * judges it afresh.
+   *
+   * @param record - The copy being compiled.
+   * @param run - The compile itself.
+   */
+  private async guarded(
+    record: ExtensionRecord,
+    run: () => Promise<CompileResult>
+  ): Promise<CompileResult> {
+    if (!(await stillPinned(record))) return this.refuseChanged(record);
+    const result = await run();
+    if (!(await stillPinned(record))) return this.refuseChanged(record);
+    return result;
+  }
+
+  /** The refusal for a copy whose plugin files changed since they were checked. */
+  private refuseChanged(record: ExtensionRecord): CompileResult {
+    record.trustedOrigin = undefined;
+    record.pinnedDigest = undefined;
+    record.originProblem = 'changed';
+    logger.warn(
+      `[Extensions] Not loading ${record.id}: its plugin's files changed after DorkOS checked them`
+    );
+    const message =
+      `${record.manifest.name}'s files changed after DorkOS checked them, so DorkOS didn't ` +
+      `load it. It will ask before it runs again.`;
+    return {
+      error: {
+        code: 'compilation_failed',
+        message,
+        errors: [{ text: `${PLUGIN_CHANGED_CODE}: ${message}` }],
+      },
+      sourceHash: '',
+    };
   }
 
   /**
@@ -547,7 +620,8 @@ export class ExtensionCompiler {
     extId: string,
     entryPath: string,
     extRoot: string,
-    target: BuildTarget
+    target: BuildTarget,
+    containRoot: string | null = null
   ): Promise<CompileResult> {
     const cacheDir = target.subDir ? path.join(this.cacheDir, target.subDir) : this.cacheDir;
     await this.ensureCacheDir(cacheDir);
@@ -559,8 +633,14 @@ export class ExtensionCompiler {
       target,
       cacheDir,
       manifestPath: path.join(cacheDir, `${extId}.${shortHash(entryPath)}.manifest.json`),
-      buildKey: computeBuildKey(esbuildVersion, cwd, target.options),
+      // A contained build refuses imports an uncontained one bundled, so the
+      // two never share a cached result.
+      buildKey: computeBuildKey(esbuildVersion, cwd, {
+        ...target.options,
+        ...(containRoot ? { dorkosContainedTo: containRoot } : {}),
+      }),
       cwd,
+      containRoot,
     };
 
     const check = await readCurrentManifest(ctx.manifestPath, ctx.buildKey, entryPath);
@@ -621,7 +701,12 @@ export class ExtensionCompiler {
         entryPoints: [ctx.entryPath],
         absWorkingDir: ctx.cwd,
         metafile: true,
-        plugins: [run.recorder.plugin],
+        plugins: [
+          ...(ctx.containRoot
+            ? [containmentPlugin(ctx.containRoot, target.options.external ?? [])]
+            : []),
+          run.recorder.plugin,
+        ],
       });
       code = result.outputFiles?.[0]?.text ?? '';
       inputs = result.metafile?.inputs;
@@ -699,6 +784,18 @@ export class ExtensionCompiler {
           : undefined,
       })) ?? [{ text: err instanceof Error ? err.message : 'Unknown compilation error' }],
     };
+
+    // A contained build can fail on a file outside the extension's own folder
+    // (plugin-level code, the plugin's node_modules), which the failure cache
+    // does not watch. Such a failure is never cached: the next load builds
+    // again and sees the fix.
+    if (ctx.containRoot) {
+      logger.warn(
+        `[Extensions] ${prefix}Compilation failed for ${extId} (plugin build, not cached): ` +
+          `${compilationError.errors[0]?.text}`
+      );
+      return { error: compilationError, sourceHash: '' };
+    }
 
     if (isEnvironmentFailure(err)) {
       logger.error(

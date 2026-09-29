@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 
 // Per-session operational metadata. The row carries two concerns with distinct
@@ -11,37 +12,48 @@ import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 // `createdAt` is ISO 8601 text for parity with every other table in this
 // schema (a2a, activity, mesh, relay, tasks) — keeps ad-hoc `sqlite3` queries
 // and cross-table joins uniform.
-export const sessionMetadata = sqliteTable('session_metadata', {
-  // --- Immutable identity (first-write-wins; ADR-0255) ---
-  sessionId: text('session_id').primaryKey(),
-  // NULL = this session has not started yet, so nothing has said which runtime
-  // owns it. A settings change made before the first message creates the row
-  // (that is E3's pre-launch picker), and a preference is not a binding: the
-  // first turn carries the person's runtime choice and is what claims the row
-  // (DOR-812). Readers resolve an unbound row exactly like a row-less one — by
-  // inference, unpersisted — so nothing is blocked in the meantime.
-  runtime: text('runtime'),
-  agentPath: text('agent_path'),
-  // What started the session (`TurnOrigin.kind`), written by the same
-  // first-write-wins statement that binds the runtime and never overwritten.
-  // Server-held, unlike the best-effort `Session.origin`, so it is what decides
-  // whether a limited session may carry its work to another account (spec
-  // `claude-account-fleet` D9). NULL = bound before this column existed.
-  launchOrigin: text('launch_origin'),
-  // The episode `resetsAt` (else `since`) of the last usage limit core resumed
-  // this session from by itself (spec `claude-account-fleet` D9 "Wait, then
-  // resume by itself"): at most one automatic resume per window reset. Kept
-  // here, not on the `session_limits` row, because the resumed turn's own
-  // `turn_start` deletes that row. NULL = never resumed automatically.
-  lastAutoResumeFor: text('last_auto_resume_for'),
-  createdAt: text('created_at').notNull(),
-  // --- Mutable per-session settings (last-write-wins; ADR-0260) ---
-  // NULL = "no explicit preference; use the runtime's default."
-  permissionMode: text('permission_mode'),
-  model: text('model'),
-  effort: text('effort'),
-  fastMode: integer('fast_mode', { mode: 'boolean' }),
-});
+export const sessionMetadata = sqliteTable(
+  'session_metadata',
+  {
+    // --- Immutable identity (first-write-wins; ADR-0255) ---
+    sessionId: text('session_id').primaryKey(),
+    // NULL = this session has not started yet, so nothing has said which runtime
+    // owns it. A settings change made before the first message creates the row
+    // (that is E3's pre-launch picker), and a preference is not a binding: the
+    // first turn carries the person's runtime choice and is what claims the row
+    // (DOR-812). Readers resolve an unbound row exactly like a row-less one — by
+    // inference, unpersisted — so nothing is blocked in the meantime.
+    runtime: text('runtime'),
+    agentPath: text('agent_path'),
+    // What started the session (`TurnOrigin.kind`), written by the same
+    // first-write-wins statement that binds the runtime and never overwritten.
+    // Server-held, unlike the best-effort `Session.origin`, so it is what decides
+    // whether a limited session may carry its work to another account (spec
+    // `claude-account-fleet` D9). NULL = bound before this column existed.
+    launchOrigin: text('launch_origin'),
+    // The episode `resetsAt` (else `since`) of the last usage limit core resumed
+    // this session from by itself (spec `claude-account-fleet` D9 "Wait, then
+    // resume by itself"): at most one automatic resume per window reset. Kept
+    // here, not on the `session_limits` row, because the resumed turn's own
+    // `turn_start` deletes that row. NULL = never resumed automatically.
+    lastAutoResumeFor: text('last_auto_resume_for'),
+    createdAt: text('created_at').notNull(),
+    // --- Mutable per-session settings (last-write-wins; ADR-0260) ---
+    // NULL = "no explicit preference; use the runtime's default."
+    permissionMode: text('permission_mode'),
+    model: text('model'),
+    effort: text('effort'),
+    fastMode: integer('fast_mode', { mode: 'boolean' }),
+  },
+  // `listSessionIdsForAgentPath` answers "which sessions belong to this agent"
+  // for every agent's session list, and there is one row per session ever
+  // started, so without this it read the whole table per request.
+  (t) => [
+    index('session_metadata_agent_path_idx')
+      .on(t.agentPath)
+      .where(sql`${t.agentPath} IS NOT NULL`),
+  ]
+);
 
 export type SessionMetadata = typeof sessionMetadata.$inferSelect;
 export type NewSessionMetadata = typeof sessionMetadata.$inferInsert;

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -86,7 +87,7 @@ const target = swappableServer();
 
 /** A finished app with the production API mounts. */
 function bootApp() {
-  const app = createApp();
+  const app = createApp({ admission: new MainRequestAdmission() });
   finalizeApp(app);
   return target.mount(app);
 }

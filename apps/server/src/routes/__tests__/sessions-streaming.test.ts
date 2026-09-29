@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
@@ -73,7 +74,7 @@ import {
 } from '../../services/session/session-state-projector.js';
 import { collectTriggeredTurn } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 /**

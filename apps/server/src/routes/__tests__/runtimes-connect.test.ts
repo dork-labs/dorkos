@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // --- Module mocks (never spawn/network/store for real through the route) -----
@@ -86,7 +87,7 @@ import {
 } from '../../services/runtimes/opencode/providers/ollama.js';
 import type { OllamaPullResult } from '@dorkos/shared/runtime-connect';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 
 /**
  * ONE listener for the whole file (DOR-483). Requests target `server`, never

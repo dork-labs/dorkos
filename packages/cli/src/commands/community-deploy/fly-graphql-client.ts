@@ -5,18 +5,22 @@
  */
 import {
   FLY_TIGRIS_CREATE_MUTATION,
+  FLY_TIGRIS_CREDENTIALS_QUERY,
   FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   createTigrisVariables,
   parseTigrisCreateResponse,
+  parseTigrisCredentialsResponse,
   parseTigrisDeleteResponse,
   parseTigrisReadResponse,
   parseTigrisTermsResponse,
   FlyGraphqlContractError,
   type FlyGraphqlContractErrorCode,
   type TigrisAddOnIdentity,
+  type TigrisBucketCredentials,
   type TigrisCreateInput,
+  type TigrisCreateResult,
 } from './fly-graphql-contract.js';
 import { SAFE_PROVIDER_IDENTIFIER_PATTERN } from './provider-identifiers.js';
 
@@ -176,8 +180,9 @@ export class FlyTigrisGraphqlClient {
    * the mutation. The caller must inspect by provider-issued provenance and must not retry blindly.
    *
    * @param input - Validated creation identity selected by the consented plan.
+   * @returns The bucket's identity, and its access keys when Fly sent them (in memory only).
    */
-  async createTigris(input: TigrisCreateInput): Promise<TigrisAddOnIdentity> {
+  async createTigris(input: TigrisCreateInput): Promise<TigrisCreateResult> {
     let variables: ReturnType<typeof createTigrisVariables>;
     try {
       variables = createTigrisVariables(input);
@@ -196,6 +201,24 @@ export class FlyTigrisGraphqlClient {
       throw new FlyGraphqlClientError('INVALID_RESPONSE');
     }
     return this.request(FLY_TIGRIS_READ_QUERY, { id: addOnId }, parseTigrisReadResponse, false);
+  }
+
+  /**
+   * Read one bucket's access keys by its exact ID, for a resumed launch that has none in memory.
+   *
+   * @param addOnId - Provider-issued add-on ID already recorded in the launch journal.
+   * @returns Redacting credentials, or null when Fly returned none.
+   */
+  async readTigrisCredentials(addOnId: string): Promise<TigrisBucketCredentials | null> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(addOnId)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_TIGRIS_CREDENTIALS_QUERY,
+      { id: addOnId },
+      (response) => parseTigrisCredentialsResponse(response, addOnId),
+      false
+    );
   }
 
   /** Delete one exact Tigris name after the caller independently reverified its journal binding. */

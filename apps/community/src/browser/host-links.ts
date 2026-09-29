@@ -42,23 +42,31 @@ export function useHostLinks(): CommunityWireHostLinks {
   return links;
 }
 
+/** What one Report link names: always the community, and a message or one of its files. */
+export type ReportSubject = { entryId?: string; attachmentId?: string };
+
+const MAIL_LABELS = { community: 'Community', entry: 'Message', attachment: 'File' } as const;
+
 /**
  * Build the address a Report link opens: the host's report target plus the community ID and,
- * when a message is being reported, its entry ID. Nothing else is added — no message text, name
- * or handle — so the host looks the report up itself. A `mailto:` target gets the IDs in the body.
- * The host's own query is kept byte for byte, minus any `community` or `entry` it already had.
+ * when a message is being reported, its entry ID, and for one of its files the attachment ID.
+ * Nothing else is added — no message text, file name, author name or handle — so the host looks
+ * the report up itself. A `mailto:` target gets the IDs in the body. The host's own query is
+ * kept byte for byte, minus any `community`, `entry` or `attachment` it already had.
  * Returns `null`, never throws, for a target that is not a valid report address, so a bad value
  * hides the link instead of breaking the page.
  */
 export function reportAbuseHref(
   target: string,
   communityId: string,
-  entryId?: string
+  subject: ReportSubject = {}
 ): string | null {
-  const ids = [['community', communityId], ...(entryId ? [['entry', entryId]] : [])] as const;
+  const ids: (readonly [keyof typeof MAIL_LABELS, string])[] = [['community', communityId]];
+  if (subject.entryId) ids.push(['entry', subject.entryId]);
+  if (subject.attachmentId) ids.push(['attachment', subject.attachmentId]);
   const mailbox = parseCommunityReportMailto(target);
   if (mailbox) {
-    const body = ids.map(([key, id]) => `${key === 'entry' ? 'Message' : 'Community'}: ${id}`);
+    const body = ids.map(([key, id]) => `${MAIL_LABELS[key]}: ${id}`);
     return `${mailbox}?body=${encodeURIComponent(body.join('\n'))}`;
   }
   try {
@@ -73,7 +81,7 @@ export function reportAbuseHref(
   const path = queryAt === -1 ? withoutHash : withoutHash.slice(0, queryAt);
   const kept = (queryAt === -1 ? '' : withoutHash.slice(queryAt + 1))
     .split('&')
-    .filter((pair) => pair && !/^(?:community|entry)(?:=|$)/u.test(pair));
+    .filter((pair) => pair && !/^(?:community|entry|attachment)(?:=|$)/u.test(pair));
   const ours = ids.map(([key, id]) => `${key}=${encodeURIComponent(id)}`);
   return `${path}?${[...kept, ...ours].join('&')}${hash}`;
 }

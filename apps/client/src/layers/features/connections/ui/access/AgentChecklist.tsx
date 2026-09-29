@@ -60,7 +60,7 @@ export function AgentChecklist({
         (agent, index) =>
           index < VISIBLE_AGENT_LIMIT ||
           picked.has(agent.agentId) ||
-          (current[agent.agentId] ?? []).length > 0
+          heldAccess(current[agent.agentId]) !== 'none'
       );
   const nameOf = (agentId: string) =>
     preview.agents.find((agent) => agent.agentId === agentId)?.displayName;
@@ -70,7 +70,7 @@ export function AgentChecklist({
       <legend className="sr-only">Agents that can use {serviceName}</legend>
       {visible.map((agent) => {
         const id = `${baseId}-${agent.agentId}`;
-        const held = heldAccess(preview.candidates, current[agent.agentId] ?? []);
+        const held = heldAccess(current[agent.agentId]);
         const loses =
           decision.removedAgentIds.includes(agent.agentId) ||
           decision.downgradedAgentIds.includes(agent.agentId);

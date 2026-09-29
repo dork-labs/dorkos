@@ -290,6 +290,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       // Not a secret: absolute paths on this machine that no agent needs (DOR-2383).
       'extensions.approvedSources',
       'extensions.dismissedApprovals',
+      'extensions.trustedSources[].source',
+      'extensions.trustedSources[].trustedAt',
       'mcp.apiKey',
       'providers',
       'runtimes.claudeCode.accounts[].onlyProjects',

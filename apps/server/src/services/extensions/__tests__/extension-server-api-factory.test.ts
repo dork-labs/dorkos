@@ -558,4 +558,43 @@ describe('createDataProviderContext', () => {
       expect(registered.size).toBe(before);
     });
   });
+
+  describe('dispose (a register() DorkOS stopped waiting for, DOR-2527 R3)', () => {
+    it('cancels what it scheduled, and makes every later schedule or listener a logged no-op', async () => {
+      vi.useFakeTimers();
+      try {
+        const { ctx, dispose, getScheduledCleanups } = buildCtx();
+        const before = vi.fn(async () => undefined);
+        ctx.schedule(60, before);
+        dispose();
+        const { logger } = await import('../../../lib/logger.js');
+
+        // The hung register() finishes later and tries to start things.
+        const after = vi.fn(async () => undefined);
+        const cancel = ctx.schedule(60, after);
+        const offProjects = ctx.projects?.onChange(() => undefined);
+        const offInbox = ctx.inbox?.onAction(async () => ({ resolve: 'answered' as const }));
+        const offUsage = ctx.accounts?.onUsage(() => undefined);
+        vi.advanceTimersByTime(10 * 60_000);
+
+        expect(before).not.toHaveBeenCalled();
+        expect(after).not.toHaveBeenCalled();
+        expect(getScheduledCleanups()).toEqual([]);
+        expect(() => {
+          cancel();
+          offProjects?.();
+          offInbox?.();
+          offUsage?.();
+        }).not.toThrow();
+        // Said once, not once per call.
+        expect(
+          vi
+            .mocked(logger.warn)
+            .mock.calls.filter(([msg]) => String(msg).includes('stopped waiting'))
+        ).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });

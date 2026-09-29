@@ -11,6 +11,7 @@ import { rememberCommunity } from './remembered-community.js';
 import { ErasureBanner } from './components/Erasure.js';
 import { ConnectDorkOS } from './connect/ConnectDorkOS.js';
 import { communityLink } from './connect/community-link.js';
+import { TakedownBanner } from './takedowns/TakedownNotices.js';
 import {
   communityBasePath,
   describeError,
@@ -31,9 +32,12 @@ import type { Channel, Community, CommunityLifecycle, Me } from './types.js';
 function isCommunityUnavailable(cause: unknown): cause is RequestError {
   return (
     cause instanceof RequestError &&
-    ['COMMUNITY_UNAVAILABLE', 'COMMUNITY_SUSPENDED', 'COMMUNITY_DELETION_PENDING'].includes(
-      cause.code
-    )
+    [
+      'COMMUNITY_UNAVAILABLE',
+      'COMMUNITY_SUSPENDED',
+      'COMMUNITY_DELETION_PENDING',
+      'COMMUNITY_DELETED',
+    ].includes(cause.code)
   );
 }
 
@@ -478,6 +482,11 @@ export function CommunityApp() {
           </Notice>
         )}
         <ErasureBanner communityId={community!.id} />
+        <TakedownBanner
+          key={`${community!.id}:${me.member.memberId}`}
+          communityId={community!.id}
+          memberId={me.member.memberId}
+        />
         {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
         {settings ? (
           <Manage

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
@@ -34,7 +35,7 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 
 /** Build a fake runtime whose checkDependencies yields the given checks. */

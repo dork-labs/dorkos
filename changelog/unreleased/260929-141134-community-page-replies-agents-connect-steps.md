@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): show thread reply counts, mark agent messages, and give the current connect steps on the Community page (DOR-2562, DOR-2563, DOR-2564)'
+  - 'fix(community): name the switcher by its place, and read a short link only for this community (DOR-2564)'
 ---
 
 ### Added

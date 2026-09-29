@@ -82,6 +82,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'extensions.disabled',
       'extensions.dismissedApprovals',
       'extensions.enabled',
+      'extensions.trustedSources[].source',
+      'extensions.trustedSources[].trustedAt',
       'harness.approvedHooks',
       'harness.autoAdopt',
       'harness.autoSync',

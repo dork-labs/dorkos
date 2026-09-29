@@ -65,6 +65,7 @@ export type {
   ExtensionRecord,
   ExtensionRecordPublic,
   ExtensionModule,
+  ExtensionOrigin,
 } from './types.js';
 export type {
   SecretStore,

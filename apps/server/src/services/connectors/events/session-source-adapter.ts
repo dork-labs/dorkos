@@ -1,6 +1,7 @@
 /** Fixed event source for the shared durable private-session acceptance path. */
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  and,
   eq,
   connectorEventInbox,
   connectorEventReceipts,
@@ -251,12 +252,19 @@ export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessage
   }
 
   private async prepareTargetOnce(ref: EventRef): Promise<EventRef> {
+    // The whole source key, so the lookup is the unique index's; by source_id alone it read
+    // every receipt ever written, once per connector event.
     const existing = this.subscriptions.db
       .select()
       .from(sessionMessageAcceptanceReceipts)
-      .where(eq(sessionMessageAcceptanceReceipts.sourceId, ref.inboxId))
-      .all()
-      .find((row) => row.sourceKind === this.kind && row.sourceGeneration === ref.sourceGeneration);
+      .where(
+        and(
+          eq(sessionMessageAcceptanceReceipts.sourceKind, this.kind),
+          eq(sessionMessageAcceptanceReceipts.sourceId, ref.inboxId),
+          eq(sessionMessageAcceptanceReceipts.sourceGeneration, ref.sourceGeneration)
+        )
+      )
+      .get();
     if (existing) return ref; // Recovery must use this receipt's origin; never mint a replacement target.
     const row = this.row(ref.inboxId);
     const scope = this.claimScope(row, ref, this.now());

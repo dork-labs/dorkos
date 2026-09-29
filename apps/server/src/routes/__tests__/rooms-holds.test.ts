@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * Two rooms, one agent, measured THROUGH THE ROUTES.
  *
@@ -75,7 +76,7 @@ import { createApp, finalizeApp } from '../../app.js';
 import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
 import type { RoomTurnRequest, RoomTurnResult } from '../../services/rooms/room-trigger.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const server = listeningServer(app);
 

@@ -14,6 +14,8 @@ amends: null
 
 Accepted (owner decision A on DOR-2466, 2026-09-28).
 
+Amended by `260929-071355` (DOR-2506, 2026-09-29): a level is now stored as the owner's intent and follows the app by class, so a "Read" grant no longer keeps exactly the revisions it had; exact actions still do. `levelIncludes` moved to `packages/shared/src/connector-schemas.ts`.
+
 ## Context
 
 The access levels read one rule (`levelIncludes`): "Read" grants `read` actions, "Read and write" adds `write`, and no level ever grants `destructive`, which is allowed one action at a time. Composio's classifier (`classify` in `packages/connector-providers/src/composio/sdk-client.ts`) only ever returned `read` or `destructive`, so every Composio app offered "Read" alone, and sending an email or adding an event meant picking exact actions.

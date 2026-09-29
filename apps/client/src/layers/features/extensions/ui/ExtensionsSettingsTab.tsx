@@ -11,6 +11,7 @@ import {
   useSetExtensionRunApproval,
 } from '../api/queries';
 import { ExtensionCard } from './ExtensionCard';
+import { TrustedSourcesSection } from './TrustedSourcesSection';
 
 /** Extensions tab in the Settings dialog — manage discovered extensions. */
 export function ExtensionsSettingsTab() {
@@ -151,6 +152,8 @@ export function ExtensionsSettingsTab() {
           </section>
         </>
       )}
+
+      <TrustedSourcesSection />
 
       <div className="flex justify-end">
         <Button
