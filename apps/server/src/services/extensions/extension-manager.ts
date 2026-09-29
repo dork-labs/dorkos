@@ -58,7 +58,8 @@ export type DismissApprovalRefusal = 'not_found' | 'core' | 'stale';
  * install; absent means "not compared").
  */
 export interface ExpectedCopy {
-  path: string;
+  /** Absent when the caller does not know it (the Settings card); then not compared. */
+  path?: string;
   version: string;
   plugin?: string | null;
 }
@@ -73,7 +74,9 @@ export interface ExpectedCopy {
  * @param expected - The copy the person's row showed.
  */
 export function isExpectedCopy(record: ExtensionRecord, expected: ExpectedCopy): boolean {
-  if (path.resolve(expected.path) !== path.resolve(record.path)) return false;
+  if (expected.path !== undefined && path.resolve(expected.path) !== path.resolve(record.path)) {
+    return false;
+  }
   if (expected.version !== record.manifest.version) return false;
   if (expected.plugin !== undefined && expected.plugin !== (record.sourcePlugin ?? null)) {
     return false;
@@ -625,6 +628,25 @@ export class ExtensionManager {
    *   carries the same id (DOR-2383), so it is kept, and that copy keeps running.
    */
   async forgetRunApproval(id: string, installRoot?: string): Promise<void> {
+    // A "Not now" (or "Stop it") recorded for a copy inside the package being
+    // removed goes with it (DOR-2517): a reinstall is a new decision, even at
+    // the same version and path. One recorded for a copy elsewhere is about
+    // another package and stays. `revokeRunApproval` passes no install root,
+    // so the dismissal it just recorded is never undone here.
+    const dismissal = configManager.get('extensions').dismissedApprovals?.[id];
+    if (installRoot && dismissal && isPathWithin(dismissal.path, installRoot)) {
+      const before = configManager.get('extensions');
+      const remaining = { ...(before.dismissedApprovals ?? {}) };
+      delete remaining[id];
+      configManager.set('extensions', { ...before, dismissedApprovals: remaining });
+      logConfigWrite(
+        'forgetting a "Not now" for an extension being removed',
+        'extensions',
+        before,
+        configManager.get('extensions')
+      );
+    }
+
     const extensions = configManager.get('extensions');
     const sources = extensions.approvedSources ?? {};
     const recorded = sources[id];

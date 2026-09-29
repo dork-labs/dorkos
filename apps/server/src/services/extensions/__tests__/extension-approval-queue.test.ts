@@ -434,6 +434,58 @@ describe('an extension waiting to run asks in the inbox', () => {
     });
   });
 
+  describe('uninstalling forgets a "Not now" for the removed copy', () => {
+    /** Uninstall the plugin the way `flows/uninstall.ts` does, then rescan. */
+    async function uninstallPlugin(plugin = 'flow'): Promise<void> {
+      const root = path.join(dorkHome, 'plugins', plugin);
+      await manager.forgetRunApproval(EXT_ID, root);
+      fs.rmSync(root, { recursive: true, force: true });
+      await manager.reload();
+      await queue.sync();
+    }
+
+    it('asks again after "Not now", uninstall, and a reinstall at the same version', async () => {
+      await installPlugin();
+      const [shown] = await pending();
+      await request(server)
+        .post(`/api/extensions/${EXT_ID}/dismiss-approval`)
+        .send({ path: shown.path, version: shown.version });
+      await queue.sync();
+      expect(await pending()).toEqual([]);
+
+      await uninstallPlugin();
+      expect(state.extensions.dismissedApprovals).toEqual({});
+      await installPlugin();
+
+      expect(await pending()).toEqual([expect.objectContaining({ id: EXT_ID, version: '1.0.0' })]);
+    });
+
+    it('asks again after "Stop it", uninstall, and a reinstall at the same version', async () => {
+      await installPlugin();
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({});
+      await request(server).post(`/api/extensions/${EXT_ID}/revoke`).send({});
+      await queue.sync();
+      expect(await pending()).toEqual([]);
+
+      await uninstallPlugin();
+      await installPlugin();
+
+      expect(await pending()).toEqual([expect.objectContaining({ id: EXT_ID, version: '1.0.0' })]);
+    });
+
+    it('keeps a "Not now" for a copy outside the package being removed', async () => {
+      await installPlugin();
+      const [shown] = await pending();
+      await request(server)
+        .post(`/api/extensions/${EXT_ID}/dismiss-approval`)
+        .send({ path: shown.path, version: shown.version });
+
+      await manager.forgetRunApproval(EXT_ID, path.join(dorkHome, 'plugins', 'other'));
+
+      expect(Object.keys(state.extensions.dismissedApprovals)).toEqual([EXT_ID]);
+    });
+  });
+
   describe('approving from a row binds only the copy the row showed', () => {
     it('refuses when another copy took its place, and turns nothing on', async () => {
       await installPlugin();
@@ -459,6 +511,22 @@ describe('an extension waiting to run asks in the inbox', () => {
       expect(state.extensions.approvedToRun).not.toContain(EXT_ID);
       expect(state.extensions.approvedSources).toEqual({});
       fs.rmSync(project, { recursive: true, force: true });
+    });
+
+    it('binds what the Settings card shows: version and plugin, without a path', async () => {
+      await installPlugin();
+
+      const wrong = await request(server)
+        .post(`/api/extensions/${EXT_ID}/approve`)
+        .send({ version: '9.9.9', plugin: 'flow' });
+      expect(wrong.status).toBe(409);
+      expect(state.extensions.approvedToRun).toEqual([]);
+
+      const right = await request(server)
+        .post(`/api/extensions/${EXT_ID}/approve`)
+        .send({ version: '1.0.0', plugin: 'flow' });
+      expect(right.status).toBe(200);
+      expect(state.extensions.approvedToRun).toEqual([EXT_ID]);
     });
 
     it('refuses a different plugin or version, and approves the exact copy', async () => {
@@ -605,7 +673,7 @@ describe('the why line', () => {
     await installPlugin('flow', { name: 'Flow' }, { throughInstaller: false });
 
     const [approval] = await pending();
-    expect(approval.why).toBe('An agent added the flow plugin to DorkOS. It runs as you.');
+    expect(approval.why).toBe('The flow plugin was added to DorkOS. It runs as you.');
     expect(approval.sourceLabel).toBe('flow plugin · not from the installer');
   });
 
@@ -622,7 +690,7 @@ describe('the why line', () => {
 
     const [approval] = await pending();
     expect(approval).toMatchObject({ id: 'solo', plugin: null });
-    expect(approval.why).toBe('An agent added Solo to DorkOS. It runs as you.');
+    expect(approval.why).toBe('Solo was added to DorkOS. It runs as you.');
     expect(approval.sourceLabel).toMatch(/^added in /);
   });
 

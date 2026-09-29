@@ -89,6 +89,13 @@ export function useDisableExtension() {
   });
 }
 
+/** The copy a Settings card shows: its id, version and carrying plugin. */
+export interface RunApprovalTarget {
+  id: string;
+  version: string;
+  plugin: string | null;
+}
+
 /** Response shape from the approve/revoke endpoints. */
 interface ExtensionApprovalResponse {
   extension: ExtensionRecordPublic;
@@ -112,11 +119,21 @@ interface ExtensionApprovalResponse {
 export function useSetExtensionRunApproval(approve: boolean) {
   const queryClient = useQueryClient();
 
-  return useMutation<ExtensionApprovalResponse, Error, string>({
-    mutationFn: async (id: string) => {
+  return useMutation<ExtensionApprovalResponse, Error, RunApprovalTarget>({
+    mutationFn: async ({ id, version, plugin }: RunApprovalTarget) => {
+      // Approving binds the copy the card shows — its version and carrying
+      // plugin — so a copy that took its place since the card was drawn is
+      // refused with `stale_approval` instead of approved (DOR-2517). The card
+      // is never told a path; the server compares what it is sent.
       const res = await fetch(
         extensionApiUrl(`/extensions/${id}/${approve ? 'approve' : 'revoke'}`),
-        { method: 'POST' }
+        approve
+          ? {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ version, plugin }),
+            }
+          : { method: 'POST' }
       );
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };

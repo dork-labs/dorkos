@@ -192,7 +192,8 @@ function contributedNouns(name: string, record: ExtensionRecord): string[] {
  * installer entered in `{dorkHome}/marketplace/project-installs.json` (a
  * sidecar inside a project proves nothing — any file can be written there).
  * Everything else arrived some other way: a folder an agent wrote with
- * `create_extension`, or one somebody copied in by hand.
+ * `create_extension`, or one somebody copied in by hand. DorkOS cannot tell
+ * those apart, so the row says only that it was added, not who added it.
  */
 type Provenance = { kind: 'installer'; from: string } | { kind: 'added'; place: string };
 
@@ -264,7 +265,7 @@ function whyLine(
   const opening =
     provenance.kind === 'installer'
       ? `You installed ${subject} from ${provenance.from}.`
-      : `An agent added ${subject} to ${provenance.place}.`;
+      : `${subject.charAt(0).toUpperCase()}${subject.slice(1)} was added to ${provenance.place}.`;
 
   const { purpose, description } = record.manifest;
   let middle = '';

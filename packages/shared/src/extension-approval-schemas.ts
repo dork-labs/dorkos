@@ -116,8 +116,12 @@ export interface ExtensionCopyIdentity {
  */
 export const ApproveExtensionRequestSchema = z
   .object({
-    /** The resolved path of the copy the row showed. */
-    path: z.string().min(1),
+    /**
+     * The resolved path of the copy the row showed. Compared when sent; the
+     * Settings card, which is never told a path, leaves it out and binds the
+     * version and plugin it shows.
+     */
+    path: z.string().min(1).optional(),
     /** The manifest version of the copy the row showed. */
     version: z.string().min(1),
     /** The plugin that carried it, or `null` for a direct install. Compared when sent. */

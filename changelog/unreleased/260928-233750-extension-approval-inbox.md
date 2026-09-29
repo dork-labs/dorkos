@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(extensions): ask again after a reinstall, bind what the Settings card shows (DOR-2517)'
   - 'fix(extensions): approve only the copy a row showed, and keep the history honest (DOR-2517)'
   - 'fix(inbox): send the exact copy with every answer, and say who added an extension (DOR-2517)'
   - 'feat(server): list extensions waiting to be turned on and raise extension.approval (DOR-2517)'

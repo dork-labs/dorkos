@@ -9110,7 +9110,6 @@
           }
         },
         "required": [
-          "path",
           "version"
         ]
       },
