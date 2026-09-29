@@ -558,6 +558,12 @@ import { KnownProjectsStore } from './services/projects/known-projects-store.js'
 import { startProjectRegistry } from './services/projects/project-feeds.js';
 import { projectRegistry } from './services/projects/project-registry.js';
 import {
+  ExtensionInboxService,
+  getExtensionInbox,
+  setExtensionInbox,
+} from './services/extensions/inbox/extension-inbox.js';
+import { createExtensionDecisionsRouter } from './routes/extension-decisions.js';
+import {
   MessageQueueStore,
   SessionEventStore,
   StagedContextStore,
@@ -1096,6 +1102,13 @@ async function start() {
   // belong to a saved project and would change on the next read.
   projectRegistry.attachStore(new KnownProjectsStore(db));
 
+  // The inbox extensions ask a person through (`ctx.inbox`, spec
+  // `flow-multiproject` §7). Before extensions start, so an extension that
+  // raises from its `register()` finds it, and so starting one can show its
+  // open decisions again and fire a deadline that passed while it was down.
+  setExtensionInbox(new ExtensionInboxService({ db, projects: projectRegistry, dorkHome }));
+  getExtensionInbox()?.prune();
+
   // A session's usage limit, kept so a restart or an idle eviction does not
   // turn a limited session back into a merely failed one (spec
   // claude-account-fleet D4).
@@ -1531,6 +1544,11 @@ async function start() {
     // inbox, and keeps asking as installs, updates and answers change the set
     // (DOR-2517). Follows the manager for the life of the process.
     startExtensionApprovalQueue(extensionManager);
+    // An extension that is no longer installed at all has nobody left to
+    // explain its open decisions: they close as "no longer needed", quietly.
+    getExtensionInbox()?.cancelUndiscovered(
+      new Set(extensionManager.listRecords().map((record) => record.id))
+    );
     logger.info('[Extensions] Extension system initialized');
   } catch (err) {
     logger.error('[Extensions] Failed to initialize extension system', err);
@@ -4728,6 +4746,12 @@ async function start() {
     createPushRouter({ subscriptions: pushSubscriptions, channel: webPushChannel })
   );
   mountedRouters.push('push');
+
+  // The bell and the Activity inbox answer extension decisions here (spec
+  // `flow-multiproject` §7.3). Always mounted: with no extension system it
+  // simply lists nothing.
+  app.use('/api/extension-decisions', createExtensionDecisionsRouter());
+  mountedRouters.push('extension-decisions');
 
   // Mount Extensions routes if extension system initialized successfully.
   if (extensionManager) {

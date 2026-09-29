@@ -6,7 +6,9 @@
  * A foundational slice. `attention` consumes it to count extensions waiting in
  * the Activity inbox's "Needs You"; `features/inbox` and `features/extensions`
  * draw from it so the inbox row and the Settings card ask the same question in
- * the same words.
+ * the same words. It also carries what extensions ask a person about
+ * (`ctx.inbox`, spec `flow-multiproject` §7): the open decisions, the answers
+ * given from the bell, and the one-time follow-up offers.
  *
  * @module entities/extension
  */
@@ -29,3 +31,14 @@ export {
   type DismissExtensionInput,
   type ExtensionAnswerInput,
 } from './model/use-extension-approval-actions';
+export {
+  useExtensionDecisions,
+  useExtensionDecisionActions,
+  useDecisionOffers,
+  markOfferShownInBell,
+  takeOffersShownInBell,
+  extensionDecisionsKey,
+  type ExtensionDecisionsState,
+  type ExtensionDecisionActions,
+  type DecisionAnswerInput,
+} from './model/use-extension-decisions';

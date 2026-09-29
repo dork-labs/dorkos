@@ -81,6 +81,15 @@ export interface CoreSlice {
   setCurrentAgentId: (id: string | null) => void;
 
   /**
+   * Whether Require login is on (`auth.enabled` in the server's config), for
+   * the extension host's `getState().requireLogin` (spec `flow-multiproject`
+   * §7.10). Mirrored by `useSyncRequireLogin`; transient, never persisted.
+   */
+  requireLogin: boolean;
+  /** Set {@link requireLogin}. No-op when unchanged. */
+  setRequireLogin: (value: boolean) => void;
+
+  /**
    * The project {@link selectedCwd} belongs to — its git main checkout — or
    * null when the folder is in no repository, or while that is still being
    * asked (spec `flow-multiproject` §6.4). Kept fresh by

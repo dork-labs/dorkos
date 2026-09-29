@@ -41,6 +41,7 @@ import type {
   MarkNotificationsReadResponse,
   NotificationChannel,
   NotificationDTO,
+  NotificationKind,
   NotificationOutcome,
 } from '@dorkos/shared/notification-schemas';
 import type { CallerPrincipal } from '../../lib/caller-principal.js';
@@ -198,7 +199,7 @@ export class NotificationService {
   async resolveStanding<K extends StandingNotificationKind>(
     kind: K,
     payload: NotificationPayload<K>,
-    opts: NotifyOptions & { outcome: NotificationOutcome }
+    opts: NotifyOptions & { outcome: NotificationOutcome; unread?: boolean }
   ): Promise<NotifyResult> {
     // A standing condition that ENDED is the strongest acknowledgement there is,
     // whoever or whatever ended it — so every resolution disarms the escalation
@@ -229,10 +230,36 @@ export class NotificationService {
       return await this.raise(kind, payload, opts, {
         resolvedAt: new Date().toISOString(),
         outcome: opts.outcome,
+        ...(opts.unread ? { unread: true } : {}),
       });
     } catch (err) {
       logger.warn('[Notifications] Could not record a resolution', { err, kind });
       return { notification: null, deduped: false };
+    }
+  }
+
+  /**
+   * Trim one owner's rows of one kind to its newest `keep`. See
+   * {@link NotificationStore.pruneOwned}.
+   *
+   * @param kind - The kind to trim.
+   * @param ownerField - The payload field naming the owner.
+   * @param owner - The owner.
+   * @param keep - How many to keep.
+   * @param protectedSubjects - Subject ids never trimmed.
+   */
+  pruneOwned(
+    kind: NotificationKind,
+    ownerField: string,
+    owner: string,
+    keep: number,
+    protectedSubjects?: ReadonlySet<string>
+  ): number {
+    try {
+      return this.store.pruneOwned(kind, ownerField, owner, keep, protectedSubjects);
+    } catch (err) {
+      logger.warn("[Notifications] Could not trim one source's history", { err, kind });
+      return 0;
     }
   }
 
@@ -364,7 +391,7 @@ export class NotificationService {
     kind: K,
     payload: NotificationPayload<K>,
     opts: NotifyOptions,
-    resolution: { resolvedAt?: string; outcome?: NotificationOutcome }
+    resolution: { resolvedAt?: string; outcome?: NotificationOutcome; unread?: boolean }
   ): Promise<NotifyResult> {
     const dedupeKey = notificationEntry(kind).dedupeKey(payload);
     for (let ahead = this.inFlight.get(dedupeKey); ahead; ahead = this.inFlight.get(dedupeKey)) {
@@ -387,7 +414,7 @@ export class NotificationService {
     kind: K,
     payload: NotificationPayload<K>,
     opts: NotifyOptions,
-    resolution: { resolvedAt?: string; outcome?: NotificationOutcome },
+    resolution: { resolvedAt?: string; outcome?: NotificationOutcome; unread?: boolean },
     dedupeKey: string
   ): Promise<NotifyResult> {
     const entry = notificationEntry(kind);
@@ -442,8 +469,12 @@ export class NotificationService {
       ...(body ? { body } : {}),
       payload,
       dedupeKey,
-      read: ownAction || somebodyActed(resolution.outcome),
-      ...resolution,
+      // `unread` is a resolution the person should still find waiting even
+      // though something acted: a decision an agent or a rule of theirs made
+      // while they were away ("Tell me after", spec `flow-multiproject` §7.9).
+      read: !resolution.unread && (ownAction || somebodyActed(resolution.outcome)),
+      ...(resolution.resolvedAt ? { resolvedAt: resolution.resolvedAt } : {}),
+      ...(resolution.outcome ? { outcome: resolution.outcome } : {}),
     });
 
     if (relay?.ok) {
@@ -604,7 +635,7 @@ export async function notify<K extends EventNotificationKind>(
 export async function resolveStanding<K extends StandingNotificationKind>(
   kind: K,
   payload: NotificationPayload<K>,
-  opts: NotifyOptions & { outcome: NotificationOutcome }
+  opts: NotifyOptions & { outcome: NotificationOutcome; unread?: boolean }
 ): Promise<NotifyResult> {
   if (!current) {
     logger.debug('[Notifications] Nothing recorded: no service is wired', { kind });
@@ -650,4 +681,27 @@ export function markRoomRead(roomId: string, uptoSeq: number): MarkNotifications
     return { ok: true, marked: 0, unreadCount: 0 };
   }
   return current.markRoomRead(roomId, uptoSeq);
+}
+
+/**
+ * Keep at most `keep` `extension.decision` history rows for one extension,
+ * from anywhere. A no-op before boot has wired a service.
+ *
+ * @param extensionId - The extension whose history is trimmed.
+ * @param keep - How many of its newest rows to keep.
+ * @param protectedSubjects - Decision ids whose history row must stay (a waiting offer).
+ */
+export function pruneExtensionHistory(
+  extensionId: string,
+  keep: number,
+  protectedSubjects?: ReadonlySet<string>
+): number {
+  if (!current) return 0;
+  return current.pruneOwned(
+    'extension.decision',
+    'extensionId',
+    extensionId,
+    keep,
+    protectedSubjects
+  );
 }

@@ -82,8 +82,106 @@ export interface ExtensionReadableState {
   currentCwd: string | null;
   activeSessionId: string | null;
   agentId: string | null;
+  /**
+   * Whether Require login is on (`auth.enabled`). When false, anyone on this
+   * computer can pass the person bar, so a setting only a person should change
+   * (an autonomy dial) should say so: "Anyone on this computer can change this.
+   * Turn on Require login so only you can." Probe with `'requireLogin' in
+   * api.getState()` to run on hosts from before it.
+   */
+  requireLogin: boolean;
   /** The project of `currentCwd`; null for no project or while resolving. */
   currentProject: ProjectRef | null;
+}
+
+/**
+ * How a person can answer an inbox decision (spec `flow-multiproject` §11.2).
+ *
+ * - `yes-no`: 👎 and 👍, each labelled as its outcome ("Send it back", "Ship
+ *   it"). `rejectAsksForNote` opens a short note before 👎 sends.
+ * - `word`: one small text button ("Sign in"). `href` opens an in-app path
+ *   (a core route or `/x/<this extension id>/…`); `input` instead shows an
+ *   inline text field whose text reaches `onAction`.
+ * - `choice`: a question with 2 to 5 chips (labels ≤ 40), the agent's pick
+ *   (`defaultChoice`) marked "agent's pick", an optional deadline
+ *   (`decideBy`, which needs `defaultChoice`), and an optional "Reply…".
+ */
+export type DecisionActions =
+  | { kind: 'yes-no'; approveLabel: string; rejectLabel: string; rejectAsksForNote?: boolean }
+  | {
+      kind: 'word';
+      label: string;
+      /** In-app path; core route or '/x/<this extension id>/…'. Ignored when `input` is set. */
+      href?: string;
+      /** Show an inline text field ("Answer"); its text reaches onAction. maxLength ≤ 2000. */
+      input?: { placeholder: string; maxLength: number };
+    }
+  | {
+      /** A question: chips, the agent's pick marked, and a deadline. */
+      kind: 'choice';
+      /** 2-5 choices; label ≤ 40. */
+      choices: { id: string; label: string }[];
+      /** The agent's pick, marked "agent's pick". Required when decideBy is set. */
+      defaultChoice?: string;
+      /**
+       * ISO time; absent = no deadline line and no timer. Earlier than raise + 5
+       * minutes (or past) is clamped to raise + 5 minutes; > 7 days throws.
+       * At the deadline core calls onAction with defaultChoice, decidedBy 'deadline'.
+       */
+      decideBy?: string;
+      /** Offer "Reply…" (free text reaches onAction as `text`). */
+      allowReply?: boolean;
+    };
+
+/** An answer given on the extension's own page (`api.answerDecision`). */
+export type DecisionAnswer =
+  | { action: 'approve' }
+  /** `note` ≤ 2000. */
+  | { action: 'reject'; note?: string }
+  /** `text` ≤ the action's `input.maxLength`. */
+  | { action: 'word'; text?: string }
+  /** A chip, or "Reply…" text (≤ 2000). */
+  | { action: 'choice'; choiceId?: string; text?: string };
+
+/** What `api.answerDecision` answers. */
+export interface DecisionAnswerResult {
+  /** Whether the answer settled it. */
+  readonly resolved: boolean;
+  /** Something to tell the person, or null. */
+  readonly message: string | null;
+  /**
+   * The checked in-app path the extension answered with, or null. The host
+   * follows it when it is a page this app serves.
+   */
+  readonly navigate: string | null;
+  /** "Sorting 12 ideas… · Watch", when the handler returned one. */
+  readonly watch: { sessionId: string; label: string } | null;
+}
+
+/** One open decision as the client sees it (scoped to the calling extension). */
+export interface ExtensionDecisionView {
+  /** Core's id for the row: what `answerDecision` takes. */
+  readonly id: string;
+  /** The extension's own key. */
+  readonly key: string;
+  /** A question or an outcome. */
+  readonly title: string;
+  /** What happens, why now, what "no" means. */
+  readonly why: string;
+  /** Shown behind ⓘ, or null. */
+  readonly detail: string | null;
+  /** The project it belongs to, or null. */
+  readonly project: ProjectRef | null;
+  /** The project heading's muted label, or null. */
+  readonly projectLabel: string | null;
+  /** When the condition began, or null. */
+  readonly since: string | null;
+  /** How to answer it. */
+  readonly actions: DecisionActions;
+  /** In-app path the title opens, or null. */
+  readonly link: string | null;
+  /** When it was first raised. */
+  readonly raisedAt: string;
 }
 
 /** Props every extension page receives. */
@@ -305,4 +403,32 @@ export interface ExtensionAPI {
 
   /** Check if a UI slot is rendered in the current host context. */
   isSlotAvailable(slot: ExtensionPointId): boolean;
+
+  // --- Inbox decisions (spec `flow-multiproject` §7) ---
+
+  /**
+   * Answer one of THIS extension's inbox decisions from its own page. Scoped
+   * server-side to this extension's id (another extension's row is 404).
+   * Attributed to the extension ("answered in Flow"), never to a person, and
+   * never returns an offer. Behind the person bar, with its residuals. A
+   * checked `navigate` in the result is followed when it is a page this app
+   * serves.
+   */
+  answerDecision(decisionId: string, answer: DecisionAnswer): Promise<DecisionAnswerResult>;
+
+  /** This extension's open decisions (scoped to its id), as the inbox shows them. */
+  listDecisions(): Promise<ExtensionDecisionView[]>;
+
+  /**
+   * Per-project settings core holds for this extension (spec §7.10): the home
+   * of anything only a person should change, such as an autonomy dial. The
+   * extension's server half can read them (`ctx.projectSettings`) and can
+   * never write them.
+   */
+  readonly projectSettings: {
+    /** The stored value for a project (any folder inside it), or null. */
+    get<T = unknown>(projectRoot: string): Promise<T | null>;
+    /** The only writer; behind the person bar. Value is JSON, ≤ 16 KiB. */
+    set(projectRoot: string, value: unknown): Promise<void>;
+  };
 }

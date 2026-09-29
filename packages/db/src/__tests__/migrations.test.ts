@@ -167,7 +167,7 @@ describe('Database Migrations', () => {
       // (connector-gateway spec §Detailed Design 2, migration 0029).
       'connected_accounts',
       // The access level the owner chose, kept as intent, and when DorkOS
-      // last followed it on its own (migration 0131).
+      // last followed it on its own (migration 0132).
       'connection_access_levels',
       'connection_level_follows',
       // Provider instances, stable DorkOS connections, immutable operation
@@ -200,6 +200,9 @@ describe('Database Migrations', () => {
       'connector_runtime_bindings',
       'connector_usage_attempts',
       'connector_usage_terminal_receipts',
+      // Decisions an extension raised in the inbox (spec flow-multiproject
+      // §7.2, migration 0131).
+      'extension_decisions',
       'handle_tombstones',
       // The project registry (spec flow-multiproject §6.1, migration 0129).
       'known_project_reporters',

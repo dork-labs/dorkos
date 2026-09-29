@@ -25,6 +25,8 @@ import { groupActivityRows } from '../lib/group-activity-rows';
 import { InboxRow } from './InboxRow';
 import { InboxGroupRow } from './InboxGroupRow';
 import { ExtensionApprovalHistoryRow } from './ExtensionApprovalHistoryRow';
+import { ExtensionDecisionHistoryRow } from './ExtensionDecisionHistoryRow';
+import { InboxAwayGroupRow } from './InboxAwayGroupRow';
 
 /**
  * The stagger the rows inherit — each row declares the child half.
@@ -47,6 +49,11 @@ export interface InboxListProps {
    * The popover uses it to close itself; a page passes nothing.
    */
   onOpened?: () => void;
+  /**
+   * The list is the bell's: a one-time offer drawn here is dismissed when the
+   * bell closes. The Activity page leaves it out.
+   */
+  inBell?: boolean;
 }
 
 /**
@@ -82,7 +89,12 @@ export interface InboxListProps {
  *
  * @param props - The {@link InboxListProps.lens} and what happens after a row opens.
  */
-export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxListProps) {
+export function InboxList({
+  lens,
+  emptyLabel = 'Nothing yet',
+  onOpened,
+  inBell = false,
+}: InboxListProps) {
   const { notifications, isLoading, isError, hasMore, loadMore, isLoadingMore } =
     useNotifications(lens);
   const openNotification = useOpenNotification();
@@ -155,7 +167,28 @@ export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxL
     <div className="min-w-0">
       <motion.div variants={staggerContainer} initial="initial" animate="animate">
         {items.map((item, index) =>
-          item.type === 'group' ? (
+          item.type === 'away' ? (
+            // Decisions an extension made while the person was away, folded
+            // into one row (spec flow-multiproject §7.9).
+            <InboxAwayGroupRow
+              key={item.id}
+              group={item}
+              index={index}
+              expanded={expandedGroups.has(item.stateKey)}
+              onToggleExpanded={() => toggleGroup(item.stateKey)}
+              onOpenNotification={openNotification}
+              onOpened={onOpened}
+              inBell={inBell}
+            />
+          ) : item.type === 'row' && item.notification.kind === 'extension.decision' ? (
+            <ExtensionDecisionHistoryRow
+              key={item.notification.id}
+              notification={item.notification}
+              onOpen={() => openNotification(item.notification)}
+              onOpened={onOpened}
+              inBell={inBell}
+            />
+          ) : item.type === 'group' ? (
             <InboxGroupRow
               key={item.id}
               group={item}

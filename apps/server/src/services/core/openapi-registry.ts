@@ -30,6 +30,7 @@ import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
 import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
+import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
@@ -7565,6 +7566,9 @@ registry.registerPath({
 
 // projection throws if a capability path shadows a hand-registered one.
 registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
+
+// Extension decisions and per-project settings (spec `flow-multiproject` §7).
+registerExtensionDecisionsOpenApi(registry);
 
 // --- Generator ---
 

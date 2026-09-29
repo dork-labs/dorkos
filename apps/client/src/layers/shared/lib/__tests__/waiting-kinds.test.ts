@@ -38,6 +38,11 @@ describe('listWaitingKinds', () => {
     expect(listWaitingKinds(1, 0, 0, 2)).toBe('1 question and 2 extensions');
   });
 
+  it('names what an extension asks as a decision, before extensions waiting (flow-multiproject §7.5)', () => {
+    expect(listWaitingKinds(0, 0, 0, 0, 1)).toBe('1 decision');
+    expect(listWaitingKinds(1, 0, 0, 1, 2)).toBe('1 question, 2 decisions, and 1 extension');
+  });
+
   it('leaves out a kind with nothing waiting rather than reporting a zero', () => {
     // "1 question, 0 requests, and 2 schedules" is three facts where one of them
     // is noise.

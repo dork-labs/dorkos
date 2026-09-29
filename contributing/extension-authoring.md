@@ -168,7 +168,7 @@ api.subscribe(
 ### State
 
 ```typescript
-// Read-only snapshot: { currentCwd, activeSessionId, agentId, currentProject }
+// Read-only snapshot: { currentCwd, activeSessionId, agentId, currentProject, requireLogin }
 api.getState(): ExtensionReadableState
 
 // Subscribe to state changes (returns unsubscribe function)
@@ -186,6 +186,27 @@ api.subscribe(
 
 The server half has the same registry as `ctx.projects` (see [`ctx.projects`](#ctxprojects)).
 
+`requireLogin` is whether Require login is on. When it is false, anyone on this computer can pass the person bar, so a setting only a person should change says so under it: "Anyone on this computer can change this. Turn on Require login so only you can."
+
+### Inbox decisions and per-project settings
+
+```typescript
+// This extension's open decisions (the ones its server half raised with ctx.inbox)
+api.listDecisions(): Promise<ExtensionDecisionView[]>
+
+// Answer one from your own page. Recorded as "answered in <your name>", never as the person.
+api.answerDecision(decisionId, { action: 'approve' }): Promise<DecisionAnswerResult>
+
+// Settings only a person writes, per project (an autonomy dial lives here)
+api.projectSettings.get(projectRoot): Promise<T | null>
+api.projectSettings.set(projectRoot, value): Promise<void> // JSON, at most 16 KiB
+```
+
+- **Scoped to you.** Every call goes to `/api/extensions/<your id>/…`, and the server answers only your own rows: another extension's decision is a 404.
+- **Attributed to the extension.** An answer given on your page is history's "… · answered in Flow at 2:14pm". Only an answer in DorkOS's own inbox is credited to the person, and only that one can carry a one-time "next time, on its own?" offer.
+- **`projectSettings.set` is the only writer.** Your server half reads them (`ctx.projectSettings`) and has no way to write them, so neither it nor any agent it runs can turn a dial up. It sits behind the person bar, with the residual the bar documents: your own page code can call it too, so it is recorded as written from the extension's page.
+- **A refusal throws** an `Error` carrying the server's sentence and `code` (`not_running`, `already_resolved`, `extension_timeout`).
+
 ### Feature detection
 
 Hosts gain seams over time, and one build of your extension should run on hosts from before and after each one. **Probe for a seam; never compare host versions:**
@@ -198,7 +219,7 @@ if (typeof api.setTabMarker === 'function') api.setTabMarker('flow-tab', 'attent
 const project = 'currentProject' in api.getState() ? api.getState().currentProject : null;
 ```
 
-On the server half, probe `ctx.projects !== undefined` the same way.
+On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`.
 
 ### Events
 
@@ -720,6 +741,106 @@ if (ctx.projects !== undefined) {
 - **A project only extensions named is second-class.** Core never looks for extension code there, and it stays out of the person's own project list until a session, agent, workspace or install is seen in it.
 - **At most 200 new projects per extension.** Each project core had not seen that you `report` or `resolve` counts once; past 200, naming another new one answers `null` and records nothing. Projects core already knows, and ones you named before, do not count.
 - **Probe before use.** `ctx.projects` is absent on hosts from before it; check `ctx.projects !== undefined` rather than a host version. Change listeners are removed on shutdown and reload.
+
+#### `ctx.inbox`
+
+Ask a person something in the Activity inbox. You decide **when** to ask (your own conditions and time limits); core owns the rest: one live row per key, the bell count, the push to a phone when nobody answers (`extension.decision` is `blocking`), the question's deadline, who decided, and the one history row.
+
+```typescript
+if (ctx.inbox !== undefined) {
+  ctx.inbox.onAction(async (event) => {
+    // event: { key, action, choiceId, decidedBy: 'person' | 'deadline', note, text, pendingActionId, offerId, project }
+    if (event.action === 'offer')
+      return { resolve: 'approved', message: 'Done. Change it any time in Flow settings.' };
+    await ship(event.key);
+    return {
+      resolve: 'approved',
+      offer: {
+        text: 'Shipped. Next time, ship on its own when the reviewer agent approves?',
+        offerId: 'auto-ship',
+        settingsPatch: { project: event.project!.root, patch: { ship: 'tell-me-after' } },
+      },
+    };
+  });
+
+  await ctx.inbox.raise({
+    key: `ship:${item.id}`, // yours; core keeps it apart from every other extension's
+    title: 'Ship the new out-of-usage banner?', // a question or an outcome, never a command or an id
+    why: "It's built, tests pass, and the reviewer agent found nothing. Shipping merges it into the app.",
+    project: checkoutPath, // any folder inside the project; the row groups under its name
+    projectLabel: 'Linear DOR',
+    actions: {
+      kind: 'yes-no',
+      approveLabel: 'Ship it',
+      rejectLabel: 'Send it back',
+      rejectAsksForNote: true,
+    },
+    link: '/x/flow/p/dorkos',
+  });
+
+  // A question with the agent's pick and a deadline core runs
+  await ctx.inbox.raise({
+    key: 'old-api',
+    title: 'Should the old API keep working?',
+    why: 'Removing it breaks two scripts. If nobody answers, it stays: the safer choice.',
+    actions: {
+      kind: 'choice',
+      choices: [
+        { id: 'keep', label: 'Keep it' },
+        { id: 'remove', label: 'Remove it' },
+      ],
+      defaultChoice: 'keep',
+      decideBy: fivePmToday,
+      allowReply: true,
+    },
+  });
+
+  await ctx.inbox.resolve('linear-down:dorkos', { outcome: 'cleared' }); // "Resolved on its own"
+  await ctx.inbox.record({
+    // decided without asking: history only ("While you were away")
+    key: 'ship:DOR-2400',
+    title: 'Shipped the calmer red',
+    why: 'The reviewer agent approved it.',
+    outcome: 'approved',
+    by: { kind: 'rule', label: "your 'Tell me after' setting" },
+    choiceLabel: 'Shipped',
+    tell: true,
+  });
+}
+```
+
+- **Every ask says why.** `why` is required: plain text, 1 to 300 characters. Write it by three rules: say what will happen and why, in plain words, never a command, a stage name or an id as the headline; say why now and what a "no" means; and let every kind of ask be something the person can hand off. Buttons read as outcomes ("Ship it", "Send it back"), not yes and no.
+- **A budget per extension.** At most 60 new decisions an hour, raised or recorded, counted over a sliding hour; past it `raise` and `record` throw `InboxLimitError` with `limit: 'rate'`. Updating an open key does not count. Activity keeps at most your newest 100 history rows, so a busy extension never pushes other things out of the person's history.
+- **Re-raising never moves a deadline.** A re-raise with the same actions keeps the deadline first set, its timer, and what a person already answered, even when its `decideBy` differs (a deadline asked as "an hour from now" moves every time you raise). Only different choices, labels or options start the question over. To set a new deadline, resolve the old question and raise a new one.
+- **A person's answer ends the deadline.** Once somebody answers (whatever your handler does with it, `keepOpen` included), the agent's pick no longer applies. While your handler has a person's answer, the deadline waits; if the handler fails, the deadline stands as before.
+- **Crediting must agree.** `resolve(key, { answering })` throws when the outcome contradicts what the person chose (👍 is `approved`, 👎 is `rejected`, a word or a choice is `answered`).
+- **One live row per key.** Raising an open key updates it in place and never pushes twice. At most 50 open decisions per extension; title ≤ 120, detail ≤ 500, a note or typed answer ≤ 2000. Breaking a limit throws `InboxLimitError` (match on `err.code === 'inbox_limit'` and `err.limit`, not `instanceof`: your bundle carries its own copy of the class) and writes nothing.
+- **Links stay in the app.** `link`, a word action's `href` and a handler's `navigate` must be a DorkOS route or `/x/<your id>/…`; anything else throws `InboxLinkError` (`inbox_link`), or, from a handler, counts as a handler error. A push opens `link`, or home.
+- **The handler has 5 seconds.** Answer `{ resolve }`, `{ keepOpen: true }` (the row stays; call `resolve(key, { outcome, answering: event.pendingActionId })` later and history credits the person), or `{ settled: true }`. A throw or a timeout keeps the row and the person sees "Flow couldn't take that. Try again."
+- **Deadlines run in core.** At `decideBy` core calls your handler with `choiceId: defaultChoice` and `decidedBy: 'deadline'`. `{ resolve }` settles it ("decided by the agent"); `{ keepOpen: true }` stops the clock with no retry; a failure retries after 1 and 5 minutes and then leaves the row with the person, saying "The agent couldn't go ahead. It needs you." A `decideBy` sooner than 5 minutes is moved to 5 minutes; more than 7 days ahead throws. A deadline fires only while you are running and have registered `onAction`, including one that passed while the server was down.
+- **Who decided.** `resolve(key, { outcome, by })` takes `{ kind: 'agent' | 'rule', label }` (history shows the label) or `{ kind: 'deadline' }`. With no `by`, it is yours: "Resolved on its own" for `cleared`, "No longer needed" for `cancelled`.
+- **"Next time, on its own?"** An `offer` on your answer is shown once, only to the person who answered in DorkOS, as a green line with Yes. Its `settingsPatch` is merged into your per-project settings as the person before your handler hears `action: 'offer'`. A patch for a project you cannot see is refused.
+- **Hidden while you are not running.** While your extension is off, or a decision's project folder is missing, its rows are hidden and kept and their clocks stop; they come back when you run again.
+- **The push says little.** A phone, a desktop banner and a chat message see "Flow needs you in 2 projects", never your title, key or project name, and at most once an hour per extension however many decisions stand; one still waiting when the hour is up gets its own push then.
+
+#### `ctx.requirePerson`
+
+Express middleware that admits only a person: the same bar as approving an extension. Put it in front of every route that changes state on a person's behalf (settings, pause and resume):
+
+```typescript
+router.put('/settings', ctx.requirePerson, saveSettings);
+router.use('/admin', ctx.requirePerson); // a whole sub-router
+```
+
+An agent that names itself is refused with "Only a person can change Flow's settings." (`extension_person_required`), and so is a request from another site. With Require login on it needs the person's cookie. Say the residual honestly: with Require login off, a local caller that does not name itself an agent passes, and in any posture your own page code does. Routes without it stay open. Decisions are not answered through your own routes: use `ctx.inbox`.
+
+#### `ctx.projectSettings`
+
+The read side of `api.projectSettings`: `get(projectRoot)` and `onChange(listener)`, called with the project root when a person changes it. There is no setter here on purpose.
+
+#### Feature detection
+
+Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`.
 
 ### Route Conventions
 

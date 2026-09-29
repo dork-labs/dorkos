@@ -13,9 +13,17 @@
       "types": "./src/capabilities.ts",
       "default": "./dist/capabilities.js"
     },
+    "./app-route-paths": {
+      "types": "./src/app-route-paths.ts",
+      "default": "./dist/app-route-paths.js"
+    },
     "./approval-schemas": {
       "types": "./src/approval-schemas.ts",
       "default": "./dist/approval-schemas.js"
+    },
+    "./extension-decision-schemas": {
+      "types": "./src/extension-decision-schemas.ts",
+      "default": "./dist/extension-decision-schemas.js"
     },
     "./extension-approval-schemas": {
       "types": "./src/extension-approval-schemas.ts",

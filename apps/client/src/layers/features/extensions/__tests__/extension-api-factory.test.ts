@@ -439,7 +439,14 @@ describe('createExtensionAPI', () => {
         activeSessionId: 'sess-xyz',
         agentId: null,
         currentProject: null,
+        requireLogin: false,
       });
+    });
+
+    it('says whether Require login is on', () => {
+      vi.mocked(deps.appStore.getState).mockReturnValue({ requireLogin: true });
+      const { api } = createExtensionAPI('my-ext', deps);
+      expect(api.getState().requireLogin).toBe(true);
     });
 
     it('projects currentProject from the app store', () => {
@@ -609,6 +616,170 @@ describe('createExtensionAPI', () => {
   });
 
   // 13. notify
+  describe('inbox decisions and project settings (spec flow-multiproject §7)', () => {
+    const decision = {
+      id: '01J0000000000000000000000D',
+      extensionId: 'my-ext',
+      extensionName: 'Mine',
+      key: 'ship',
+      title: 'Ship it?',
+      why: 'It is ready.',
+      detail: null,
+      project: { root: '/repos/dorkos', name: 'dorkos' },
+      projectLabel: null,
+      since: null,
+      actions: { kind: 'yes-no', approveLabel: 'Ship it', rejectLabel: 'Send it back' },
+      link: null,
+      raisedAt: '2026-09-29T09:00:00.000Z',
+      needsYou: false,
+      watch: null,
+      revision: 0,
+    };
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('answers through this extension’s own scoped route and follows its own /x/ page', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          resolved: true,
+          message: 'Shipping.',
+          navigate: '/x/my-ext/p/dorkos',
+          offer: null,
+          watch: null,
+        }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      const result = await api.answerDecision(decision.id, { action: 'approve' });
+
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        `/api/extensions/my-ext/decisions/${decision.id}/action`
+      );
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ action: 'approve' });
+      expect(result).toEqual({
+        resolved: true,
+        message: 'Shipping.',
+        navigate: '/x/my-ext/p/dorkos',
+        watch: null,
+      });
+      expect(deps.navigate).toHaveBeenCalledWith({ to: '/x/my-ext/p/dorkos' });
+    });
+
+    it('never follows a navigate to another extension’s page', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({
+            resolved: true,
+            message: null,
+            navigate: '/x/other-ext/p/dorkos',
+            offer: null,
+            watch: null,
+          }),
+        })
+      );
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { api } = createExtensionAPI('my-ext', deps);
+      await api.answerDecision(decision.id, { action: 'approve' });
+      expect(deps.navigate).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('checks what project settings come back against their schema', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({ value: 1, updatedAt: 42, updatedBy: 'robot' }),
+        })
+      );
+      const { api } = createExtensionAPI('my-ext', deps);
+      await expect(api.projectSettings.get('/repos/dorkos')).rejects.toThrow();
+    });
+
+    it('throws with the server’s code when an answer is refused', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 409,
+          json: vi
+            .fn()
+            .mockResolvedValue({ error: 'This was already settled.', code: 'already_resolved' }),
+        })
+      );
+      const { api } = createExtensionAPI('my-ext', deps);
+      await expect(api.answerDecision(decision.id, { action: 'approve' })).rejects.toMatchObject({
+        message: 'This was already settled.',
+        code: 'already_resolved',
+      });
+    });
+
+    it('lists this extension’s decisions as views', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ decisions: [decision], offers: [] }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const { api } = createExtensionAPI('my-ext', deps);
+      const views = await api.listDecisions();
+      expect(fetchMock.mock.calls[0][0]).toBe('/api/extensions/my-ext/decisions');
+      expect(views).toEqual([
+        {
+          id: decision.id,
+          key: 'ship',
+          title: 'Ship it?',
+          why: 'It is ready.',
+          detail: null,
+          project: decision.project,
+          projectLabel: null,
+          since: null,
+          actions: decision.actions,
+          link: null,
+          raisedAt: decision.raisedAt,
+        },
+      ]);
+    });
+
+    it('reads and writes per-project settings through the scoped routes', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({
+            value: { autonomy: 'ask-me-first' },
+            updatedAt: '2026-09-29T09:00:00.000Z',
+            updatedBy: 'extension-page',
+          }),
+        })
+        .mockResolvedValueOnce({ ok: true, status: 204, json: vi.fn() });
+      vi.stubGlobal('fetch', fetchMock);
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      expect(await api.projectSettings.get('/repos/my.app')).toEqual({ autonomy: 'ask-me-first' });
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        '/api/extensions/my-ext/project-settings?project=%2Frepos%2Fmy.app'
+      );
+      await api.projectSettings.set('/repos/my.app', { autonomy: 'just-do-it' });
+      expect(fetchMock.mock.calls[1][0]).toBe('/api/extensions/my-ext/project-settings');
+      expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'PUT' });
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+        project: '/repos/my.app',
+        value: { autonomy: 'just-do-it' },
+      });
+    });
+  });
+
   describe('notify', () => {
     it('calls toast.info by default', () => {
       const { api } = createExtensionAPI('my-ext', deps);

@@ -1,6 +1,6 @@
 import type { Hono } from 'hono';
 import { deleteCookie, setCookie } from 'hono/cookie';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import {
   CommunityAdminClaimMutationRequestSchema,
@@ -30,6 +30,19 @@ import {
 } from '../host/authority.js';
 import { ApiError, json, readJson } from '../http.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../security.js';
+
+/**
+ * Refuse an owner claim for a community whose import has not finished: until it is `ready`,
+ * the community's history is still being restored, and nobody may own it yet.
+ */
+async function assertImportReady(client: PoolClient, communityId: string): Promise<void> {
+  const unfinished = await client.query(
+    "SELECT 1 FROM community_imports WHERE community_id=$1 AND state<>'ready' FOR SHARE",
+    [communityId]
+  );
+  if (unfinished.rowCount)
+    throw new ApiError(409, 'STATE_CONFLICT', 'This community is still being imported.');
+}
 
 /** The two revoker columns of an owner claim: exactly one names the actor. */
 function revokers(actor: HostActor): [string | null, string | null] {
@@ -75,6 +88,7 @@ export function registerOwnerClaimRoutes(
       if (community.rows[0].lifecycle !== 'pending_owner') {
         throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community accepts claims.');
       }
+      await assertImportReady(client, communityId);
       await client.query(
         `UPDATE bootstrap_grants SET revoked_at=now(),revoked_by=$2,revoked_by_api_key_id=$3
          WHERE community_id=$1 AND purpose='owner_claim' AND consumed_at IS NULL AND revoked_at IS NULL`,
@@ -204,6 +218,7 @@ export function registerOwnerClaimRoutes(
         [candidate.rows[0].id, community.rows[0].id, tokenHash]
       );
       if (!grant.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'The owner claim is unavailable.');
+      await assertImportReady(client, community.rows[0].id);
       const owner = await client.query(
         "SELECT 1 FROM members WHERE community_id=$1 AND role='owner' AND active",
         [community.rows[0].id]

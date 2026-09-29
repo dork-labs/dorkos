@@ -1,6 +1,9 @@
 import type { ComponentType } from 'react';
 import type {
+  DecisionAnswer,
+  DecisionAnswerResult,
   ExtensionAPI,
+  ExtensionDecisionView,
   ExtensionPointId,
   ExtensionReadableState,
   ExtensionEvent,
@@ -14,6 +17,11 @@ import type {
 } from '@dorkos/extension-api';
 import { isExtensionEventDeclared } from '@dorkos/extension-api';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
+import {
+  DecisionActionResponseSchema,
+  ListExtensionDecisionsResponseSchema,
+  ProjectSettingsResponseSchema,
+} from '@dorkos/shared/extension-decision-schemas';
 import type {
   CommandPaletteContribution,
   ExtensionPageContribution,
@@ -348,6 +356,75 @@ export function createExtensionAPI(
     isSlotAvailable(slot: ExtensionPointId): boolean {
       return deps.availableSlots.has(slot);
     },
+
+    // --- Inbox decisions and per-project settings (spec flow-multiproject §7) ---
+    // Every URL carries THIS extension's id; the server scopes each route to it.
+
+    async answerDecision(
+      decisionId: string,
+      answer: DecisionAnswer
+    ): Promise<DecisionAnswerResult> {
+      const res = await fetch(
+        extensionApiUrl(`/extensions/${extId}/decisions/${encodeURIComponent(decisionId)}/action`),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(answer),
+        }
+      );
+      if (!res.ok) throw await requestError(res, 'answerDecision');
+      const body = DecisionActionResponseSchema.parse(await res.json());
+      // The server checked it is an in-app path. Follow it the way the
+      // extension's own `navigate` would: core routes, and this extension's
+      // own `/x/<id>/…` pages.
+      if (body.navigate) api.navigate(body.navigate);
+      return {
+        resolved: body.resolved,
+        message: body.message,
+        navigate: body.navigate,
+        watch: body.watch,
+      };
+    },
+
+    async listDecisions(): Promise<ExtensionDecisionView[]> {
+      const res = await fetch(extensionApiUrl(`/extensions/${extId}/decisions`));
+      if (!res.ok) throw await requestError(res, 'listDecisions');
+      return ListExtensionDecisionsResponseSchema.parse(await res.json()).decisions.map(
+        (decision) => ({
+          id: decision.id,
+          key: decision.key,
+          title: decision.title,
+          why: decision.why,
+          detail: decision.detail,
+          project: decision.project,
+          projectLabel: decision.projectLabel,
+          since: decision.since,
+          actions: decision.actions,
+          link: decision.link,
+          raisedAt: decision.raisedAt,
+        })
+      );
+    },
+
+    projectSettings: {
+      async get<T = unknown>(projectRoot: string): Promise<T | null> {
+        const query = new URLSearchParams({ project: projectRoot });
+        const res = await fetch(
+          extensionApiUrl(`/extensions/${extId}/project-settings?${query.toString()}`)
+        );
+        if (!res.ok) throw await requestError(res, 'projectSettings.get');
+        const body = ProjectSettingsResponseSchema.parse(await res.json());
+        return (body.value as T | null) ?? null;
+      },
+      async set(projectRoot: string, value: unknown): Promise<void> {
+        const res = await fetch(extensionApiUrl(`/extensions/${extId}/project-settings`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: projectRoot, value }),
+        });
+        if (!res.ok) throw await requestError(res, 'projectSettings.set');
+      },
+    },
   };
 
   return { api, cleanups };
@@ -356,10 +433,31 @@ export function createExtensionAPI(
 // --- Internal helpers ---
 
 /**
+ * An Error carrying the server's own sentence and code, so an extension can
+ * tell "not running" from "already settled" (`err.code`).
+ *
+ * @param res - The refused response.
+ * @param method - Which API member asked, for the fallback message.
+ */
+async function requestError(
+  res: Response,
+  method: string
+): Promise<Error & { code?: string; status: number }> {
+  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+  const error = new Error(body.error ?? `${method} failed: ${res.status}`) as Error & {
+    code?: string;
+    status: number;
+  };
+  error.status = res.status;
+  if (body.code) error.code = body.code;
+  return error;
+}
+
+/**
  * Project raw app store state into the read-only extension state shape.
  *
  * Maps the app store's `selectedCwd`, `sessionId`, `currentAgentId` and
- * `currentProject` fields to the `ExtensionReadableState` interface. `currentAgentId` is resolved from
+ * `currentProject` and `requireLogin` fields to the `ExtensionReadableState` interface. `currentAgentId` is resolved from
  * the selected cwd by `useSyncCurrentAgentId`; it is null when no agent is
  * registered there or resolution hasn't completed.
  */
@@ -369,6 +467,7 @@ function projectState(store: unknown): ExtensionReadableState {
     sessionId?: string | null;
     currentAgentId?: string | null;
     currentProject?: ProjectRef | null;
+    requireLogin?: boolean;
   };
   return {
     currentCwd: s.selectedCwd ?? null,
@@ -377,6 +476,7 @@ function projectState(store: unknown): ExtensionReadableState {
     // The store's own object, never a copy: `subscribe` diffs by identity, and
     // the store only replaces it when the root or name really changed.
     currentProject: s.currentProject ?? null,
+    requireLogin: s.requireLogin === true,
   };
 }
 

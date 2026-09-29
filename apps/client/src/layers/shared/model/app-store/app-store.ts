@@ -130,6 +130,10 @@ export const useAppStore = create<AppState>()(
         setCurrentAgentId: (id) =>
           set((s) => (s.currentAgentId === id ? s : { currentAgentId: id })),
 
+        // Mirrored from the server config by useSyncRequireLogin; transient.
+        requireLogin: false,
+        setRequireLogin: (value) =>
+          set((s) => (s.requireLogin === value ? s : { requireLogin: value })),
         // Derived from selectedCwd by useCurrentProjectSync; transient. Compared
         // by value, because every resolve answers a fresh object and the
         // extension host's subscribe fires on identity.
