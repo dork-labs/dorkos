@@ -2,6 +2,7 @@
 covers:
   - 'feat(extensions): let an extension ask a person in the inbox (DOR-2523)'
   - 'feat(inbox): draw what extensions ask, grouped by project (DOR-2523)'
+  - 'fix(extensions): show a decision raised into a missing folder once the folder is back (DOR-2523)'
 ---
 
 ### Added
