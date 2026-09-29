@@ -37,6 +37,7 @@ import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import { configManager } from '../config-manager.js';
 import {
   accountEligibility,
+  joinNames,
   projectOfFolder,
   refusalFor,
   type Ineligible,
@@ -354,7 +355,7 @@ export function notAllowedReason(verdict: Ineligible, project: ProjectRef | null
   if (verdict.reason === 'project-allowlist') return `Not used in ${verdict.project.name}`;
   const names = verdict.allowedProjects.map((p) => p.name);
   if (names.length === 0) return project ? `Not used in ${project.name}` : 'Not used anywhere';
-  return `Only for ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`}`;
+  return `Only for ${joinNames(names)}`;
 }
 
 /**
