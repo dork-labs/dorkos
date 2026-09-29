@@ -252,7 +252,7 @@ export class RemoteRoomSubscriptionBridge {
     if (!authorId) return;
     const stops = this.mirrors
       .roomIdsForOwner(communityRef, ownerAuthorId)
-      .map((localRoomId) => this.service.haltAgent(localRoomId, authorId, ownerAuthorId));
+      .map((localRoomId) => this.stopAgentForRevocation(localRoomId, authorId, ownerAuthorId));
     await Promise.all(stops);
     this.mirrors.removeAgentMembership(communityRef, ownerAuthorId, authorId);
   }
@@ -313,10 +313,27 @@ export class RemoteRoomSubscriptionBridge {
           .activeLocalAgentIds(communityRef, ownerAuthorId)
           .flatMap((localAgentId) => {
             const authorId = this.resolveLocalAgentAuthor(localAgentId);
-            return authorId ? [this.service.haltAgent(localRoomId, authorId, ownerAuthorId)] : [];
+            return authorId
+              ? [this.service.haltAgentInRevokedMirror(localRoomId, authorId, ownerAuthorId)]
+              : [];
           });
       })
     );
+  }
+
+  /**
+   * Stop one agent's turn in a mirror during a revocation. A mirror revoked a moment ago is
+   * unreadable to its owner too, so the ordinary Stop would refuse it as missing and the turn
+   * would keep running (DOR-2339); only the revocation itself may stop it without seeing it.
+   */
+  private stopAgentForRevocation(
+    localRoomId: string,
+    authorId: string,
+    ownerAuthorId: string
+  ): Promise<number> {
+    return this.mirrors.isRevokedMirrorOf(localRoomId, ownerAuthorId)
+      ? this.service.haltAgentInRevokedMirror(localRoomId, authorId, ownerAuthorId)
+      : this.service.haltAgent(localRoomId, authorId, ownerAuthorId);
   }
 
   /** Apply a successful owner-qualified room discovery before any stream frame can dispatch. */
