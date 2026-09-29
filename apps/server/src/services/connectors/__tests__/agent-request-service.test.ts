@@ -300,7 +300,7 @@ describe('ConnectorAgentRequestService', () => {
         store,
         subscriptions,
         destinations,
-        { reconcile: vi.fn(async () => false), ready: vi.fn(() => false) },
+        { reconcile: vi.fn(async () => false), ready: vi.fn(() => false), stage: vi.fn() },
         () => NOW.toISOString()
       ),
       scopes: discovered.map((definition) => ({
@@ -2812,6 +2812,17 @@ describe('ConnectorAgentRequestService', () => {
       };
     }
 
+    /** The person's own update, set up the way the page does: an owner review. */
+    async function personUpdate(fixture: ReturnType<typeof realEventGrants>) {
+      const result = await fixture.grants.approve(
+        OWNER,
+        { reviewId: 'person-page-review', scopes: [fixture.scopes[0]!] },
+        new AbortController().signal
+      );
+      expect(result.state).toBe('ready');
+      return { id: result.selections[0]!.subscriptionId };
+    }
+
     async function failedPick(
       fixture: ReturnType<typeof realEventGrants>,
       eventScopes: typeof fixture.scopes
@@ -2843,12 +2854,7 @@ describe('ConnectorAgentRequestService', () => {
           if (failSecond && eventType === 'gmail.event_1') throw new Error('second trigger failed');
         },
       });
-      const own = await fixture.subscriptions.create(
-        OWNER,
-        fixture.scopes[0]!,
-        new AbortController().signal
-      );
-      expect(own.state).toBe('active');
+      const own = await personUpdate(fixture);
       const before = subscriptionRow(own.id);
       failSecond = true;
 
@@ -2858,45 +2864,10 @@ describe('ConnectorAgentRequestService', () => {
       expect(fixture.store.active(own.id, before.scope_version)).toBeDefined();
     });
 
-    it('puts back an update the pick took over, exactly as it was', async () => {
-      let failSecond = false;
-      const fixture = realEventGrants(2, {
-        reconcileTrigger: (_call, eventType) => {
-          if (failSecond && eventType === 'gmail.event_1') throw new Error('second trigger failed');
-        },
-      });
-      const own = await fixture.subscriptions.create(
-        OWNER,
-        fixture.scopes[0]!,
-        new AbortController().signal
-      );
-      // Another review already selected it, so this pick takes it over.
-      db.$client
-        .prepare(
-          `INSERT INTO connector_event_consent_commands
-            (owner_kind, owner_id, review_id, request_hash, selections_json, created_at)
-           VALUES ('local_install', 'install-1', 'other-review', 'hash', ?, ?)`
-        )
-        .run(
-          JSON.stringify([{ selection: { subscriptionId: own.id, scopeVersion: 1 } }]),
-          NOW.toISOString()
-        );
-      const before = subscriptionRow(own.id);
-      failSecond = true;
-
-      await failedPick(fixture, fixture.scopes);
-
-      expect(subscriptionRow(own.id)).toEqual(before);
-      expect(fixture.store.active(own.id, 1)).toBeDefined();
-    });
-
     it('counts the person’s live update as set up, without taking it over', async () => {
       const fixture = realEventGrants(1);
-      const own = await fixture.subscriptions.create(
-        OWNER,
-        fixture.scopes[0]!,
-        new AbortController().signal
-      );
+      // Set up on the page, so a review already selected it.
+      const own = await personUpdate(fixture);
       const before = subscriptionRow(own.id);
       const requests = service({ eventGrants: fixture.grants, resume: undefined });
       const created = await requests.create(principal(), {
@@ -2929,7 +2900,10 @@ describe('ConnectorAgentRequestService', () => {
       expect(subscriptionRow(own.id).revoked_at).toBeNull();
       fixture.grants.withdraw(OWNER, 'review-1', NOW.toISOString());
 
-      expect(subscriptionRow(own.id)).toEqual(before);
+      // Stopped again, as before, at a newer generation: never backwards.
+      const after = subscriptionRow(own.id);
+      expect({ ...after, scope_version: 0 }).toEqual({ ...before, scope_version: 0 });
+      expect(after.scope_version).toBeGreaterThan(before.scope_version + 1);
     });
 
     it('never touches a generation the owner changed after the pick', async () => {

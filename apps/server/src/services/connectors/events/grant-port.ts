@@ -50,3 +50,11 @@ export interface ManagedEventConsentAuthority {
   reconcile(subscriptionId: string, scopeVersion: number, signal: AbortSignal): Promise<boolean>;
   ready(subscriptionId: string, scopeVersion: number): boolean;
 }
+/** Staging half the event grant service needs to take a review back durably. */
+export interface ManagedEventConsentStaging {
+  /**
+   * Durably stage the hosted command for one exact local generation, in the
+   * caller's transaction, for the outbox's recovery to deliver. Synchronous.
+   */
+  stage(subscriptionId: string, scopeVersion: number): void;
+}

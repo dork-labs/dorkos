@@ -4,6 +4,7 @@ covers:
   - 'fix(connections): a request whose updates fail can still be answered, and ends on time (DOR-2503)'
   - 'fix(connections): taking an answer back stops its updates, and a new pick works (DOR-2503)'
   - 'fix(connections): a failed pick leaves your own updates exactly as they were (DOR-2503)'
+  - 'fix(connections): a taken-back pick never moves an update backwards, and agents use your live updates as they are (DOR-2503)'
 ---
 
 ### Changed

@@ -3279,6 +3279,8 @@ async function start() {
       managedConnectorAuthority.reconcileEventSubscription(id, version, signal),
     ready: (id: string, version: number) =>
       managedConnectorAuthority.eventSubscriptionReady(id, version),
+    stage: (id: string, version: number) =>
+      managedConnectorAuthority.stageEventSubscriptionChange(id, version),
   };
   const connectorEventGrants = new ConnectorEventGrantService(
     connectorEventSubscriptions,

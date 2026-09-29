@@ -145,21 +145,27 @@ export function approvedEventSelections(
     return undefined;
   const first = requested[0]!;
   const ownerId = owner.kind === 'user' ? owner.userId : owner.installationId;
+  // One generation can sit in more than one review: an agent's request uses
+  // a subscription the person already has as it is (DOR-2503). Every review
+  // that selected exactly this set is equally valid consent, since each item
+  // below is still checked against the current generation, so the first by
+  // review id is read; a review of a different set never answers for this one.
   const candidates = store.db.$client
     .prepare(
       `SELECT selections_json FROM connector_event_consent_commands c
     WHERE c.owner_kind = ? AND c.owner_id = ? AND EXISTS (
       SELECT 1 FROM json_each(c.selections_json) item WHERE json_extract(item.value, '$.selection.subscriptionId') = ?
-      AND json_extract(item.value, '$.selection.scopeVersion') = ?) LIMIT 2`
+      AND json_extract(item.value, '$.selection.scopeVersion') = ?) ORDER BY c.review_id`
     )
     .all(owner.kind, ownerId, first.subscriptionId, first.scopeVersion) as Array<{
     selections_json: string;
   }>;
-  if (candidates.length !== 1) return undefined;
-  const stored = StoredReviewSchema.parse(JSON.parse(candidates[0]!.selections_json));
   const order = (items: ConnectorEventGrantSelection[]) =>
     stableStringify([...items].sort((a, b) => a.subscriptionId.localeCompare(b.subscriptionId)));
-  if (order(stored.map((item) => item.selection)) !== order(requested)) return undefined;
+  const stored = candidates
+    .map((candidate) => StoredReviewSchema.parse(JSON.parse(candidate.selections_json)))
+    .find((review) => order(review.map((item) => item.selection)) === order(requested));
+  if (!stored) return undefined;
   for (const { selection, scope } of stored) {
     const proposed = store.reviewedProposal(owner, selection, scope);
     if (!proposed) return undefined;

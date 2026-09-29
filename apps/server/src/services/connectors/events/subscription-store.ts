@@ -297,9 +297,9 @@ export class ConnectorSubscriptionStore {
   }
 
   /**
-   * The subscription that already delivers exactly this scope, live right now,
-   * which no other review has selected: an agent's request for the same
-   * update can use it as it is instead of taking it over (DOR-2503).
+   * The subscription that already delivers exactly this scope, live right now:
+   * an agent's request for the same update uses it as it is instead of taking
+   * it over (DOR-2503). It grants nothing new, whatever review first chose it.
    */
   liveMatch(
     owner: ConnectorOwnerAuthority,
@@ -332,14 +332,6 @@ export class ConnectorSubscriptionStore {
     const existing = this.matching(connection.id, parsed.eventType, request, filterHash);
     if (!existing || existing.definition_id !== definition.id) return undefined;
     if (!this.active(existing.id, existing.scope_version)) return undefined;
-    const selectedElsewhere = this.db.$client
-      .prepare(
-        `SELECT 1 FROM connector_event_consent_commands c, json_each(c.selections_json) item
-        WHERE json_extract(item.value, '$.selection.subscriptionId') = ?
-        AND json_extract(item.value, '$.selection.scopeVersion') = ? LIMIT 1`
-      )
-      .get(existing.id, existing.scope_version);
-    if (selectedElsewhere) return undefined;
     return { subscriptionId: existing.id, scopeVersion: existing.scope_version, connection };
   }
 
