@@ -546,9 +546,10 @@ export const CommunityWireEventSchema = z.discriminatedUnion('type', [
     type: z.literal('closed'),
     /**
      * Why the stream ended. `archived`: the community or channel became read-only. `removed`:
-     * this caller's access ended, including a community that is suspended or waiting to be
-     * deleted. `deleted`: the community itself is gone for good (added later; a reader that
-     * does not know it should treat it like `removed`).
+     * this caller's access ended, including a community that is suspended or whose deletion
+     * was requested. `deleted`: the community's deletion finished while this stream was still
+     * open, which is rare because a deletion request already ends streams as `removed`. Added
+     * later: older DorkOS readers parse this enum strictly, fail on it, and reconnect.
      */
     reason: z.enum(['removed', 'archived', 'unavailable', 'deleted']),
     cursor,
