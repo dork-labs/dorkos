@@ -11,7 +11,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { carryPersonFiles, lateWritePass } from '../../carry-over.js';
 import { computeInstalledFiles } from '../../installed-files.js';
-import { isPathProgram } from '../../package-programs.js';
+import { isPathProgram, readPackagePrograms } from '../../package-programs.js';
+import { readPackageSkills } from '../../package-skills.js';
+import { listSkillDirs } from '@dorkos/harness/scan';
 import { freeSavedName, makeInert, savedFolderCandidates } from '../saved-copies.js';
 
 let base: string;
@@ -199,5 +201,62 @@ describe('what counts as a program on PATH', () => {
     await writeTree(live, { 'bin/run+x': 'x', 'bin/script': '#!/bin/sh\n' });
     expect(await isPathProgram(path.join(live, 'bin', 'run'), 'linux')).toBe(true);
     expect(await isPathProgram(path.join(live, 'bin', 'script'), 'linux')).toBe(false);
+  });
+});
+
+// The permanent reproduction of DOR-2340
+// (research/20260926-marketplace-retained-copy-reproduction.md), as a
+// regression test: every case it records now comes out inert.
+describe.skipIf(process.platform === 'win32')('the recorded DOR-2340 reproduction', () => {
+  it('leaves no saved copy runnable, on the PATH, discovered or disclosed', async () => {
+    await writeTree(live, {
+      'bin/tool+x': '#!/bin/sh\nprintf original',
+      'settings/command+x': '#!/bin/sh\nprintf settings',
+    });
+    const rOld = await computeInstalledFiles(live, {
+      identity,
+      userEditable: ['settings/command'],
+      npmRan: false,
+    });
+    await writeTree(live, {
+      'bin/tool+x': '#!/bin/sh\nprintf edited-copy',
+      'settings/command+x': '#!/bin/sh\nprintf my-settings',
+      'skills/x/SKILL.md': '---\nname: x\ndescription: fixture\nallowed-tools: Bash\n---\nFixture',
+    });
+    await writeTree(staged, {
+      'bin/tool+x': '#!/bin/sh\nprintf new',
+      'settings/command+x': '#!/bin/sh\nprintf new-settings',
+      'skills/x': 'new package file blocks old folder',
+    });
+    const rNew = await computeInstalledFiles(staged, {
+      identity,
+      userEditable: ['settings/command'],
+      npmRan: false,
+    });
+    const { plan } = await carryPersonFiles({
+      liveRoot: live,
+      stagingDir: staged,
+      rOld,
+      rNew,
+      oldHasIdentity: true,
+    });
+
+    // carry-as and save-new-as kept 0755; now neither copy can run.
+    const savedTool = plan.actions.find((a) => a.kind === 'carry-as' && a.path === 'bin/tool');
+    expect(savedTool).toMatchObject({ savedAs: '.dork/saved/bin__tool.dork-old' });
+    expect(await runnable(staged, '.dork/saved/bin__tool.dork-old')).toBe(false);
+    expect(await runnable(staged, 'settings/command.dork-new')).toBe(false);
+    // Nothing saved is left in bin/, and only the real program is disclosed.
+    expect((await readPackagePrograms(staged, undefined)).executables).toEqual(['tool']);
+    // carry-dir-as left skills/x.dork-old/SKILL.md discoverable; now neither
+    // Harness Sync nor the disclosure reader finds the saved skill.
+    expect(
+      listSkillDirs(path.join(staged, 'skills'), 'skills', { followSymlinks: false }).skills
+    ).toEqual([]);
+    const skills = await readPackageSkills(staged, undefined);
+    expect(skills.skillTools.map((s) => s.source)).toEqual([]);
+    expect(
+      (await stat(path.join(staged, '.dork/saved/skills__x.dork-old/SKILL.md'))).isFile()
+    ).toBe(true);
   });
 });

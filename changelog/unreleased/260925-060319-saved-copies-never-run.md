@@ -2,6 +2,7 @@
 covers:
   - 'fix(security): copies saved aside by an update never run or load (DOR-2340)'
   - "fix(security): the saved-copies boot pass moves only a package's own copies and keeps approvals (DOR-2340)"
+  - 'test(marketplace): the recorded DOR-2340 reproduction as a regression test'
 ---
 
 ### Security
