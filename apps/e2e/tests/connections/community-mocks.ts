@@ -27,6 +27,8 @@ export interface CommunitySpec {
   status?: 'connected' | 'reconnect-required';
   unread?: number;
   mentions?: number;
+  /** When it first answered "not found", once that has lasted two weeks (DOR-2334). */
+  seemsGoneSince?: string;
 }
 
 function capabilities(on: boolean) {
@@ -61,6 +63,7 @@ function descriptor(community: CommunitySpec) {
             mentionCount: community.mentions ?? 0,
             verifiedAt: '2026-09-23T12:00:00.000Z',
           },
+    ...(community.seemsGoneSince ? { seemsGoneSince: community.seemsGoneSince } : {}),
   };
 }
 

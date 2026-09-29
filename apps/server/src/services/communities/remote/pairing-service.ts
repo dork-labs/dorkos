@@ -5,7 +5,9 @@
  * @module services/communities/remote/pairing-service
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { COMMUNITY_SEEMS_GONE_AFTER_MS } from '@dorkos/shared/community-connections';
 import { logger } from '../../../lib/logger.js';
+import { isCommunityDeleted } from './remote-community-adapter.js';
 import { CommunityRefSchema, type CommunityRef } from '@dorkos/shared/community-adapter';
 import {
   COMMUNITY_API_V1_ROUTES,
@@ -279,8 +281,28 @@ export class RemoteCommunityPairingService {
     await this.store.sweepExpired(ownerKey, this.busy);
     const connections = await this.store.list(ownerKey);
     return Promise.all(
-      connections.map((connection) => this.verifyWithinBudget(connection.ref, ownerKey))
+      connections.map(async (connection) =>
+        this.withGoneHint(await this.verifyWithinBudget(connection.ref, ownerKey), ownerKey)
+      )
     );
+  }
+
+  /**
+   * Say a connection "seems to be gone" once the Community has answered `404 NOT_FOUND` for it,
+   * with no pending deletion seen first, for {@link COMMUNITY_SEEMS_GONE_AFTER_MS} (DOR-2334).
+   * Only a hint the app shows beside an offer to remove the local copy: nothing is deleted on it,
+   * since a deleted community and a misconfigured host answer alike.
+   */
+  private async withGoneHint(
+    descriptor: RemoteConnectionDescriptor,
+    ownerKey: string
+  ): Promise<RemoteConnectionDescriptor> {
+    const lifecycle = descriptor.access?.lastKnown?.lifecycle;
+    if (lifecycle === 'deleted' || lifecycle === 'deletion_pending') return descriptor;
+    const since = await this.store.notFoundSince(descriptor.ref, ownerKey);
+    if (!since || this.timing.now() - Date.parse(since) < COMMUNITY_SEEMS_GONE_AFTER_MS)
+      return descriptor;
+    return { ...descriptor, seemsGoneSince: since };
   }
 
   /**
@@ -290,7 +312,7 @@ export class RemoteCommunityPairingService {
    */
   async status(ref: CommunityRef, ownerKey: string): Promise<RemoteConnectionDescriptor> {
     await this.store.sweepExpired(ownerKey, this.busy);
-    return this.sharedVerify(ref, ownerKey);
+    return this.withGoneHint(await this.sharedVerify(ref, ownerKey), ownerKey);
   }
 
   /** Start, or join, the one access re-check for this owner's connection. */
@@ -383,6 +405,12 @@ export class RemoteCommunityPairingService {
       }
       if (isDeletionPending(error))
         return this.communityGone(ref, ownerKey, record.access, 'deletion_pending');
+      // The Community keeps a record of a finished deletion for a while and answers this from it:
+      // definite, whatever this installation saw before (DOR-2334).
+      if (isCommunityDeleted(error)) {
+        await this.store.clearNotFound(ref, ownerKey);
+        return this.communityGone(ref, ownerKey, record.access, 'deleted');
+      }
       // A finished deletion removes the community's row, and the Community then answers
       // `404 NOT_FOUND`, which on its own could also be a missing channel. Having seen the
       // deletion pending, it is final (DOR-2334).
@@ -392,6 +420,14 @@ export class RemoteCommunityPairingService {
           record.access?.lastKnown?.lifecycle === 'deleted')
       )
         return this.communityGone(ref, ownerKey, record.access, 'deleted');
+      if (isNotFound(error)) {
+        // Never a deletion on its own: remembered, so a community that keeps answering this for
+        // two weeks is offered for removal (`withGoneHint`), never removed.
+        await this.store.markNotFound(ref, ownerKey, new Date(this.timing.now()).toISOString());
+      } else if (error instanceof PinnedHttpError && error.status < 500) {
+        // A definite answer from a community that exists.
+        await this.store.clearNotFound(ref, ownerKey);
+      }
       const unavailable = await this.store.updateAccess(ref, ownerKey, {
         state: 'unverified',
         effective: { read: false, post: false, enrollAgent: false, stream: false },
@@ -400,6 +436,7 @@ export class RemoteCommunityPairingService {
       this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, unavailable.access!);
       return unavailable;
     }
+    await this.store.clearNotFound(ref, ownerKey);
     const verified = await this.store.updateAccess(ref, ownerKey, access, await hostOperator);
     this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, verified.access!);
     return verified;
@@ -420,7 +457,9 @@ export class RemoteCommunityPairingService {
    * A pending deletion can be cancelled on the Community, but every grant was revoked when it
    * was requested, so a cancelled deletion answers the next check with a 401 and the person
    * reconnects; the mirrors then fill again from the Community, and their agents are added again.
-   * A finished deletion answers `404 NOT_FOUND`, recorded here as `deleted`. The bearer is kept
+   * A finished deletion answers `410 COMMUNITY_DELETED` while the Community keeps its record of
+   * it, and `404 NOT_FOUND` after; either is recorded here as `deleted` (the 404 only after the
+   * deletion was seen pending). The bearer is kept
    * either way, since it is what hears those answers.
    */
   private async communityGone(
@@ -699,6 +738,7 @@ export class RemoteCommunityPairingService {
         });
       }
       await this.store.disconnect(ref, ownerKey);
+      await this.store.clearNotFound(ref, ownerKey).catch(() => undefined);
       return { remoteRevoked };
     } finally {
       this.forgetChecks(ref, ownerKey);

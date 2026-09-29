@@ -158,9 +158,34 @@ export function remoteRoomAccessOf(
   return remoteRoomMetadata.get(projected);
 }
 
+/**
+ * The whole community was deleted (`410 COMMUNITY_DELETED`), so this room is gone with it.
+ *
+ * A {@link CommunityRoomNotFoundError}, because to a caller of the port that is exactly what it
+ * is — and every existing "room not found" path keeps working — but its own class, so the local
+ * routes can say "deleted" rather than "not available" (DOR-2334).
+ */
+export class CommunityDeletedError extends CommunityRoomNotFoundError {
+  constructor(community: CommunityRef, roomId: string) {
+    super(community, roomId);
+    this.name = 'CommunityDeletedError';
+  }
+}
+
+/** Whether a Community answered that the whole community was deleted. */
+export function isCommunityDeleted(error: unknown): boolean {
+  return (
+    error instanceof PinnedHttpError &&
+    error.status === 410 &&
+    error.remoteCode === 'COMMUNITY_DELETED'
+  );
+}
+
 /** Translate a server-authoritative room/cursor refusal into the port's safe error. */
 function remoteRoomError(error: unknown, community: CommunityRef, roomId: string): unknown {
   if (!(error instanceof PinnedHttpError)) return error;
+  // Before the 410 below: a deleted community is not a stale cursor.
+  if (isCommunityDeleted(error)) return new CommunityDeletedError(community, roomId);
   if (error.status === 410)
     return new StaleCommunityCursorError(
       community,
@@ -312,7 +337,13 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     private readonly onReconnectRequired?: (
       communityRef: CommunityRef,
       ownerKey: string
-    ) => Promise<void>
+    ) => Promise<void>,
+    /**
+     * Told when any request answers `410 COMMUNITY_DELETED`, so the connection's access check
+     * records the deletion and purges this installation's copies at once (DOR-2334). Never
+     * awaited: the request still fails as it would have.
+     */
+    private readonly onCommunityDeleted?: (communityRef: CommunityRef, ownerKey: string) => void
   ) {}
 
   getCapabilities(): CommunityCapabilities {
@@ -338,6 +369,13 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     context: CommunityReadContext | undefined,
     path: string
   ): Promise<never> {
+    if (isCommunityDeleted(error)) {
+      try {
+        this.onCommunityDeleted?.(this.community, this.ownerKey);
+      } catch {
+        // Only a nudge: the access check finds the deletion on its own schedule too.
+      }
+    }
     if (
       !context?.actingMemberId &&
       error instanceof PinnedHttpError &&
@@ -472,7 +510,9 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       this.rooms.set(roomId, result);
       return result;
     } catch (error) {
-      if (error instanceof PinnedHttpError && error.status === 404) return null;
+      // A room in a deleted community is not there, exactly as a missing one is not.
+      if (error instanceof PinnedHttpError && (error.status === 404 || isCommunityDeleted(error)))
+        return null;
       throw error;
     }
   }
@@ -583,8 +623,10 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
           } else {
             yield {
               type: 'room_closed',
+              // `deleted`: the community's deletion finished while the stream was open. To the
+              // port that is access ending; the access check that follows records the deletion.
               reason:
-                event.reason === 'removed'
+                event.reason === 'removed' || event.reason === 'deleted'
                   ? 'access-revoked'
                   : event.reason === 'archived'
                     ? 'archived'
@@ -927,7 +969,10 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
         )
       );
     } catch (error) {
-      if (error instanceof PinnedHttpError && (error.status === 400 || error.status === 404))
+      if (
+        error instanceof PinnedHttpError &&
+        (error.status === 400 || error.status === 404 || isCommunityDeleted(error))
+      )
         return [];
       throw error;
     }
@@ -1169,7 +1214,9 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     } catch (error) {
       // The local revocation above remains authoritative even if cleanup loses
       // the remote response. A confirmed remote absence is idempotent.
-      if (error instanceof PinnedHttpError && error.status === 404) return;
+      // Nothing to revoke on a deleted community either.
+      if (error instanceof PinnedHttpError && (error.status === 404 || isCommunityDeleted(error)))
+        return;
       throw error;
     }
   }

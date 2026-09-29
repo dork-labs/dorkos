@@ -340,8 +340,19 @@ export async function* pinnedSse(
         },
         (opened) => {
           if (opened.statusCode !== 200) {
-            opened.resume();
-            reject(new PinnedHttpError(opened.statusCode ?? 502));
+            // Read a bounded error body for its closed-enum code only, as a JSON call does: a
+            // refused stream says why (`410 COMMUNITY_DELETED` is not a stale cursor).
+            const status = opened.statusCode ?? 502;
+            const chunks: Buffer[] = [];
+            let size = 0;
+            opened.on('data', (chunk: Buffer) => {
+              size += chunk.length;
+              if (size <= 16 * 1024) chunks.push(chunk);
+            });
+            opened.on('end', () =>
+              reject(new PinnedHttpError(status, remoteErrorCode(Buffer.concat(chunks))))
+            );
+            opened.on('error', () => reject(new PinnedHttpError(status)));
             return;
           }
           resolve(opened);

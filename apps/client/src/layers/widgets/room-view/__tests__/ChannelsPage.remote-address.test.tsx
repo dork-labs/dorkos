@@ -39,15 +39,46 @@ vi.mock('../ui/CommunityPageHeading', () => ({
   ),
 }));
 vi.mock('@/layers/shared/model', () => ({ useIsMobile: () => false }));
+const { connections } = vi.hoisted(() => ({
+  connections: { data: [] as Array<Record<string, unknown>> },
+}));
+vi.mock('@/layers/entities/community', () => ({
+  useCommunityConnections: () => connections,
+  useEndCommunityConnection: () => ({
+    mutate: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    isError: false,
+  }),
+}));
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  connections.data = [];
   address.id = 'same-as-local-team';
   address.community = 'remote-a';
   address.thread = 'remote-thread';
 });
 
 describe('qualified channel route', () => {
+  // DOR-2334: a Community that seems to be gone (or was deleted) says so in place of its rooms,
+  // which could never load. It fails if the page still draws the remote channel.
+  it('shows a gone Community instead of its channel', () => {
+    connections.data = [
+      {
+        ref: 'remote-a',
+        label: 'Alpha',
+        status: 'connected',
+        access: null,
+        seemsGoneSince: '2026-09-01T00:00:00.000Z',
+      },
+    ];
+    render(<ChannelsPage />);
+    expect(screen.getByText('This community seems to be gone')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove local copy' })).toBeInTheDocument();
+    expect(remote).not.toHaveBeenCalled();
+  });
+
   it('does not resolve a remote ID through the local team redirect or local room surface', () => {
     render(<ChannelsPage />);
     expect(screen.getByText('Remote channel')).toBeInTheDocument();
