@@ -51,6 +51,16 @@ function definition(
   });
 }
 
+/** Whether the pinned SDK rejected a request because the resource does not exist (404). */
+function isNotFound(error: unknown, client: Sdk): boolean {
+  const apiError = (
+    client.constructor as unknown as {
+      readonly APIError?: abstract new (...args: never[]) => Error & { status?: number };
+    }
+  ).APIError;
+  return Boolean(apiError && error instanceof apiError && error.status === 404);
+}
+
 /** Exact-account event adapter shared by BYO and the managed service. */
 export class ComposioEventClient implements ConnectorEventCapability {
   private readonly sdk: Composio;
@@ -231,11 +241,26 @@ export class ComposioEventClient implements ConnectorEventCapability {
     );
   }
 
-  /** Delete only a binding whose cleanup ownership the owning service proved. */
+  /**
+   * Delete only a binding whose cleanup ownership the owning service proved.
+   *
+   * A trigger the service no longer has (it answers 404) counts as deleted.
+   * Cleanups can run concurrently, so the connected account a trigger watches
+   * may already be deleted, taking its triggers with it, before this call
+   * lands; and a retry after a lost response finds nothing to delete. Both are
+   * the state this call exists to reach.
+   */
   deleteTrigger(input: ConnectorEventMutationAuthority & { providerTriggerRef: string }) {
-    return this.mutate(input, () =>
-      this.client.triggerInstances.manage.delete(input.providerTriggerRef, { signal: input.signal })
-    );
+    return this.mutate(input, async () => {
+      try {
+        await this.client.triggerInstances.manage.delete(input.providerTriggerRef, {
+          signal: input.signal,
+        });
+      } catch (error) {
+        if (isNotFound(error, this.client)) return;
+        throw error;
+      }
+    });
   }
 
   private async mutate(

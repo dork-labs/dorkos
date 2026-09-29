@@ -96,6 +96,8 @@ Accounts are enabled after the real-account check passed. Managed notifications 
 
 Managed access runs through your linked DorkOS account. If that link ends — you unlink it, or DorkOS can no longer confirm it — the accounts you reached that way stop working locally, even though the sign-in at the service (Gmail's own consent, for example) is untouched and still live there. Linking this computer again with the same DorkOS account can bring those accounts back, unless its earlier link was removed from that account. If it was, or you link a different account or a different computer, reconnect them from **Connections** once you've linked. To end the sign-in at the service itself while the link is down, remove the access directly in that service's own account settings — look for an entry named **Composio**, not DorkOS, since Composio is who actually holds the connection.
 
+Revoking the computer from **Linked instances** on your dorkos.ai account is different: it ends those sign-ins at the service for you. DorkOS signs each app out right away, and if the service can't be reached just then, it keeps trying until the sign-in is gone. Deleting your DorkOS account does the same first. If a sign-in can't be ended yet, you're sent back to your account page, which says this can take up to a day and to request deletion again from there later; after a day, the account is deleted anyway and DorkOS records which sign-in is left so it can be ended by hand.
+
 ## Add notifications
 
 <Callout type="warn">

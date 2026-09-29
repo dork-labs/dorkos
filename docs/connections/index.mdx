@@ -132,4 +132,6 @@ These controls are boundaries inside DorkOS. They do not isolate other software 
 
 Removing an agent's access stops its next action and revokes its notification grants for that connection. Pausing a connection stops local use without deleting it. Disconnecting closes local authority first, then asks the service route to remove its private account.
 
+To keep an agent away from an app in just one chat, open that chat's details. Each app the agent was given has a switch there. Turning it off only affects that chat. Turning it back on puts back the access that chat had, and never adds any.
+
 An external cleanup can remain pending when the service is unavailable. DorkOS keeps the local connection closed while it waits. A request already sent to another service cannot be recalled.

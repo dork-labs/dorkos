@@ -11,6 +11,7 @@ import {
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorConnectionPatchSchema,
   ConnectorReconnectRequestSchema,
+  ConnectorSessionAccessUpdateSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import { parseBody } from '../lib/route-utils.js';
 import {
@@ -34,6 +35,10 @@ import {
   type ConnectorOperatorQueryService,
 } from '../services/connectors/resources/operator-query-service.js';
 import type { CatalogLogoService } from '../services/connectors/resources/catalog-logos.js';
+import {
+  ConnectorSessionAccessError,
+  type ConnectorSessionAccessService,
+} from '../services/connectors/resources/session-access-service.js';
 import type { SignInRefresher } from '../services/connectors/resources/sign-in-refresh.js';
 
 const CatalogQuerySchema = z
@@ -72,6 +77,8 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
   readonly actions: Pick<ConnectorAppActionsService, 'list'>;
   /** Asks each service whether its sign-ins still hold when the owner looks (debounced). */
   readonly signIns: Pick<SignInRefresher, 'refreshOnDemand'>;
+  /** The owner's per-chat app switch. */
+  readonly sessionAccess: Pick<ConnectorSessionAccessService, 'setAccess'>;
 }
 
 function owner(req: Request, res: Response, deps: ConnectorResourcesRouterDeps) {
@@ -112,6 +119,10 @@ function sendResourceError(res: Response, error: unknown): void {
     res
       .status(error.code === 'provider_not_found' ? 404 : 502)
       .json({ error: error.message, code: error.code });
+    return;
+  }
+  if (error instanceof ConnectorSessionAccessError) {
+    res.status(409).json({ error: error.message, code: error.code });
     return;
   }
   if (error instanceof ConnectorLifecycleError || error instanceof ConnectorOperatorQueryError) {
@@ -361,6 +372,27 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
     if (!operator) return;
     try {
       res.json(await deps.query.sessionConnections(operator, req.params.sessionId));
+    } catch (error) {
+      sendResourceError(res, error);
+    }
+  });
+
+  // The owner turns one app on or off for one chat's agent. Behind the same
+  // owner boundary as every other account decision, so no agent can call it.
+  router.put('/sessions/:sessionId/connections/:connectionId', async (req, res) => {
+    const operator = owner(req, res, deps);
+    if (!operator) return;
+    const body = parseBody(ConnectorSessionAccessUpdateSchema, req.body ?? {}, res);
+    if (!body) return;
+    try {
+      res.json(
+        await deps.sessionAccess.setAccess(
+          operator,
+          req.params.sessionId,
+          req.params.connectionId,
+          body
+        )
+      );
     } catch (error) {
       sendResourceError(res, error);
     }

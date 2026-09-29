@@ -9,6 +9,7 @@ import {
   connectorProviderInstances,
   createDb,
   eq,
+  EVERY_AGENT_GRANT_SUBJECT_ID,
   runMigrations,
   sessionConnectionOverrides,
   type Db,
@@ -991,19 +992,23 @@ describe('ConnectorOperatorQueryService', () => {
           connectionId: 'connection-a',
           source: 'this_chat',
           readiness: { state: 'unavailable', reason: 'off_for_this_chat' },
+          thisChat: 'off',
         },
       ],
     });
 
-    // Turned on with nothing of its own: nothing to use here, and no button
-    // the owner could act on (one chat's access can't be changed yet).
+    // Turned on with nothing of its own: nothing to use here, so it reads as
+    // off, and the owner's switch (the agent holds it account-wide) is the fix.
     db.update(sessionConnectionOverrides)
       .set({ state: 'attached' })
       .where(eq(sessionConnectionOverrides.sessionId, 'session-a'))
       .run();
     const empty = (await service.sessionConnections(OWNER, 'session-a')).connections[0];
-    expect(empty?.readiness).toMatchObject({ reason: 'off_for_this_chat' });
-    expect(empty?.readiness.fix).toBeUndefined();
+    expect(empty?.readiness).toMatchObject({
+      reason: 'off_for_this_chat',
+      fix: { action: 'turn_on_for_this_chat', fixableBy: 'person' },
+    });
+    expect(empty?.thisChat).toBe('off');
 
     // With its own grant, the account's own state shows through.
     db.insert(connectionOperationGrants)
@@ -1036,8 +1041,79 @@ describe('ConnectorOperatorQueryService', () => {
     // No override: the agent's own access, ready.
     db.delete(sessionConnectionOverrides).run();
     await expect(service.sessionConnections(OWNER, 'session-a')).resolves.toMatchObject({
-      connections: [{ source: 'agent', readiness: { state: 'ready', reason: 'usable' } }],
+      connections: [
+        { source: 'agent', readiness: { state: 'ready', reason: 'usable' }, thisChat: 'on' },
+      ],
     });
+  });
+
+  it('offers the per-chat switch only on accounts the agent holds account-wide and still connected', async () => {
+    // An account this agent was never given, turned on for this chat alone:
+    // no switch, because turning it on could only ever add access.
+    db.insert(connections)
+      .values({
+        id: 'connection-b',
+        providerInstanceId: PROVIDER_ID,
+        externalAccountRef: 'private-account-b',
+        toolkit: 'gmail',
+        label: 'Home Gmail',
+        status: 'active',
+        lifecycleState: 'connected',
+        enabled: true,
+        grantReconciliationStatus: 'ready',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    db.insert(sessionConnectionOverrides)
+      .values({
+        sessionId: 'session-a',
+        agentId: 'agent-a',
+        connectionId: 'connection-b',
+        state: 'detached',
+        updatedAt: NOW,
+      })
+      .run();
+    const view = await service.sessionConnections(OWNER, 'session-a');
+    const own = view.connections.find((row) => row.connectionId === 'connection-a');
+    const foreign = view.connections.find((row) => row.connectionId === 'connection-b');
+    expect(own?.thisChat).toBe('on');
+    expect(foreign).toMatchObject({ readiness: { reason: 'off_for_this_chat' } });
+    expect(foreign?.thisChat).toBeUndefined();
+    // Nothing to put back, so readiness offers no fix either.
+    expect(foreign?.readiness.fix).toBeUndefined();
+
+    // Given to every agent counts as account-wide.
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'grant-every-b',
+        subjectType: 'every_agent',
+        subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+        agentId: null,
+        connectionId: 'connection-b',
+        operationRevisionId: 'revision-a',
+        createdBy: 'operator',
+        createdAt: NOW,
+      })
+      .run();
+    const inherited = (await service.sessionConnections(OWNER, 'session-a')).connections.find(
+      (row) => row.connectionId === 'connection-b'
+    );
+    expect(inherited?.thisChat).toBe('off');
+    expect(inherited?.readiness.fix).toEqual({
+      action: 'turn_on_for_this_chat',
+      fixableBy: 'person',
+    });
+
+    // A disconnected account has nothing to switch.
+    db.update(connections)
+      .set({ lifecycleState: 'disconnected' })
+      .where(eq(connections.id, 'connection-a'))
+      .run();
+    const gone = (await service.sessionConnections(OWNER, 'session-a')).connections.find(
+      (row) => row.connectionId === 'connection-a'
+    );
+    expect(gone?.thisChat).toBeUndefined();
   });
 
   it('derives managed synchronization only from each scope current command, and a chat from its agent’s own', async () => {

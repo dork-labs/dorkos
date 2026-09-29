@@ -95,6 +95,14 @@ export class RoomVisibility {
     return this.store.getMember(roomId, viewerAuthorId) !== null;
   }
 
+  /**
+   * Whether a room is a revoked mirror of this owner's connection. Always
+   * `false` on an install with no remote communities.
+   */
+  isRevokedMirrorOf(roomId: string, ownerAuthorId: string): boolean {
+    return this.mirrorAccess?.isRevokedMirrorOf(roomId, ownerAuthorId) ?? false;
+  }
+
   /** Whether owner-wide list/search calls must enumerate through `canSee`. */
   hasRestrictedMirrors(): boolean {
     return this.mirrorAccess?.hasMirrors() ?? false;

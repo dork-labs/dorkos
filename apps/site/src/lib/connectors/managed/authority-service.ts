@@ -17,7 +17,7 @@ import {
   type ManagedConnectorAuthorityCommandStatus,
 } from '@dorkos/shared/connector-managed-schemas';
 import { stableStringify } from '@dorkos/shared/capabilities';
-import { and, asc, desc, eq, exists, gt, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
 import { schema } from '@/db/client';
 import type { getTransactionDb } from '@/db/transaction-client';
@@ -33,6 +33,25 @@ export interface ManagedConnectorPrincipal {
   keyId: string;
 }
 
+/**
+ * A revoked linked instance whose leftover connections the service ends on its
+ * own, with no key and no request from the instance.
+ *
+ * It can only finish cleanup (delete a provider account or trigger that a
+ * closed connection or subscription still owes). Every route that grants,
+ * executes or reads takes a {@link ManagedConnectorPrincipal}, which this type
+ * is not, so it can never authorize anything new.
+ */
+export interface RevokedInstanceCleanupPrincipal {
+  revokedInstance: true;
+  ownerId: string;
+  instanceId: string;
+  tenantId: string;
+}
+
+/** The authority a cleanup runs under: the live instance's key, or its revocation. */
+export type ManagedCleanupPrincipal = ManagedConnectorPrincipal | RevokedInstanceCleanupPrincipal;
+
 /** Fail-closed authority error when the linked instance changes before commit. */
 export class ManagedAuthorityUnauthorizedError extends Error {
   constructor() {
@@ -47,6 +66,20 @@ export class ManagedAuthorityProviderUnavailableError extends Error {
     super('Managed connector provider is unavailable.');
     this.name = 'ManagedAuthorityProviderUnavailableError';
   }
+}
+
+/**
+ * Whether an account lookup failed because the service no longer has the
+ * account (it answered 404), as opposed to failing for a reason that may pass.
+ *
+ * @param error - The error the account lookup threw.
+ */
+function isAccountGoneAtProvider(error: unknown): boolean {
+  return (
+    error instanceof ComposioManagedAccountError &&
+    error.code === 'provider_rejected' &&
+    error.status === 404
+  );
 }
 
 /** Exact provider material required for lifecycle health and cleanup work. */
@@ -88,6 +121,37 @@ export async function lockLiveAuthorityPrincipal(
     )
     .for('update');
   if (!live) throw new ManagedAuthorityUnauthorizedError();
+}
+
+/**
+ * Lock the authority a cleanup runs under before it commits.
+ *
+ * A live principal must still hold its exact key ({@link lockLiveAuthorityPrincipal}).
+ * A revoked principal must name an instance that is revoked and still belongs
+ * to the same owner. Revocation is final (a relink creates a new instance), so
+ * that authority never lapses once it holds.
+ *
+ * @param tx - The open transaction.
+ * @param principal - The live or revoked cleanup authority.
+ * @throws ManagedAuthorityUnauthorizedError when the authority no longer holds.
+ */
+export async function lockCleanupAuthority(
+  tx: Parameters<Parameters<ManagedConnectorDatabase['transaction']>[0]>[0],
+  principal: ManagedCleanupPrincipal
+): Promise<void> {
+  if (!('revokedInstance' in principal)) return lockLiveAuthorityPrincipal(tx, principal);
+  const [revoked] = await tx
+    .select({ id: schema.instance.id })
+    .from(schema.instance)
+    .where(
+      and(
+        eq(schema.instance.id, principal.instanceId),
+        eq(schema.instance.userId, principal.ownerId),
+        isNotNull(schema.instance.revokedAt)
+      )
+    )
+    .for('update');
+  if (!revoked) throw new ManagedAuthorityUnauthorizedError();
 }
 
 /**
@@ -212,13 +276,16 @@ export async function registerManagedProvider(
           eq(schema.managedConnectorProvider.id, input.providerInstanceId)
         )
       );
+    // A disconnected connection stays disconnected: pausing it would reopen it
+    // and orphan the account deletion its disconnect still owes.
     await tx
       .update(schema.managedConnectorConnection)
       .set({ lifecycle: 'paused', updatedAt: now })
       .where(
         and(
           eq(schema.managedConnectorConnection.tenantId, input.tenantId),
-          eq(schema.managedConnectorConnection.providerInstanceId, input.providerInstanceId)
+          eq(schema.managedConnectorConnection.providerInstanceId, input.providerInstanceId),
+          ne(schema.managedConnectorConnection.lifecycle, 'disconnected')
         )
       );
     await tx
@@ -280,10 +347,27 @@ function statusOf(row: typeof schema.managedConnectorAuthorityCommand.$inferSele
   };
 }
 
-/** Finish only the external binding captured by this still-current disconnect. */
-async function finishDisconnectCleanup(
+/**
+ * Finish only the external binding captured by this still-current disconnect.
+ *
+ * Leased (one worker deletes a binding at a time), idempotent (a replay of a
+ * finished cleanup changes nothing) and retried (a failure is recorded as
+ * `failed` and claimed again later). It runs for a live instance's own
+ * disconnect and for the disconnects the service writes when an instance is
+ * revoked; neither case locks a key, because cleanup only removes access.
+ *
+ * @param db - The site database.
+ * @param principal - The live or revoked instance the disconnect belongs to.
+ * @param command - The exact disconnect command.
+ * @param requestHash - The stored hash of that command.
+ * @param binding - The provider binding captured when the disconnect applied.
+ * @param previousStatus - The status to report when nothing changes.
+ * @param provider - Provider material; without it the cleanup stays owed.
+ * @throws ManagedAuthorityProviderUnavailableError when no provider material is available.
+ */
+export async function finishDisconnectCleanup(
   db: ManagedConnectorDatabase,
-  principal: ManagedConnectorPrincipal,
+  principal: ManagedCleanupPrincipal,
   command: Extract<
     ReturnType<typeof ManagedConnectorAuthorityCommandSchema.parse>,
     { kind: 'set_connection_lifecycle' }
@@ -332,6 +416,38 @@ async function finishDisconnectCleanup(
       conflict: false,
     };
   if (!provider || !binding) throw new ManagedAuthorityProviderUnavailableError();
+  // A live instance's disconnect can race its own reconnect under new provider
+  // material, so its cleanup deletes only while the binding's generation and
+  // this deployment's configuration are still current. A revoked instance can
+  // never reconnect: its cleanup only removes access, so it rebinds to whatever
+  // material the deployment has now and still finishes. Holding it to the old
+  // generation would strand it for good after a key rotation or a catalog change.
+  const currentMaterial =
+    'revokedInstance' in principal
+      ? sql`true`
+      : and(
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(schema.managedConnectorProvider)
+              .where(
+                and(
+                  eq(schema.managedConnectorProvider.tenantId, principal.tenantId),
+                  eq(schema.managedConnectorProvider.id, binding.providerInstanceId),
+                  eq(schema.managedConnectorProvider.enabled, true),
+                  eq(
+                    schema.managedConnectorProvider.materialGeneration,
+                    provider.materialGeneration
+                  ),
+                  eq(
+                    schema.managedConnectorProvider.configurationDigest,
+                    provider.executionConfigDigest
+                  )
+                )
+              )
+          ),
+          sql`${binding.materialGeneration} = ${provider.materialGeneration}`
+        );
   const now = new Date();
   // A lease prevents simultaneous HTTP retries from deleting the same binding.
   // This last database claim rechecks the closed scope after every preflight await.
@@ -355,24 +471,7 @@ async function finishDisconnectCleanup(
             new Date(now.getTime() - 5 * 60_000)
           )
         ),
-        exists(
-          db
-            .select({ one: sql`1` })
-            .from(schema.managedConnectorProvider)
-            .where(
-              and(
-                eq(schema.managedConnectorProvider.tenantId, principal.tenantId),
-                eq(schema.managedConnectorProvider.id, binding.providerInstanceId),
-                eq(schema.managedConnectorProvider.enabled, true),
-                eq(schema.managedConnectorProvider.materialGeneration, provider.materialGeneration),
-                eq(
-                  schema.managedConnectorProvider.configurationDigest,
-                  provider.executionConfigDigest
-                )
-              )
-            )
-        ),
-        sql`${binding.materialGeneration} = ${provider.materialGeneration}`,
+        currentMaterial,
         sql`${binding.providerUserId} = ${provider.providerUserId}`
       )
     )
@@ -393,6 +492,11 @@ async function finishDisconnectCleanup(
   } catch {
     externalCleanup = 'failed';
   }
+  if (externalCleanup === 'complete' && 'revokedInstance' in principal) {
+    // The trace is advisory: a failed read must not hold the receipt's claim
+    // until the lease expires after the account is already gone.
+    await traceReboundDeletion(db, principal, binding, provider).catch(() => undefined);
+  }
   const [updated] = await db
     .update(schema.managedConnectorAuthorityCommand)
     .set({ externalCleanup, cleanupClaimedAt: null, updatedAt: new Date() })
@@ -404,6 +508,51 @@ async function finishDisconnectCleanup(
       : previousStatus,
     conflict: false,
   };
+}
+
+/**
+ * Leave an operator trace when a revoked instance's account was deleted under
+ * provider material other than the one it was made with.
+ *
+ * Such a deletion is counted done, as it must be for the cleanup to finish,
+ * but the provider answers "not found" (which the client treats as already
+ * deleted) both when the account really is gone and when the deployment has
+ * moved to a different provider project that never held it. Only a person can
+ * tell those apart, so the line names the account for a check by hand. It
+ * carries provider ids only, never a person's name, email or account id.
+ */
+async function traceReboundDeletion(
+  db: ManagedConnectorDatabase,
+  principal: RevokedInstanceCleanupPrincipal,
+  binding: NonNullable<
+    (typeof schema.managedConnectorAuthorityCommand.$inferSelect)['cleanupBinding']
+  >,
+  provider: ManagedAuthorityProviderContext
+): Promise<void> {
+  const [current] = await db
+    .select({ configurationDigest: schema.managedConnectorProvider.configurationDigest })
+    .from(schema.managedConnectorProvider)
+    .where(
+      and(
+        eq(schema.managedConnectorProvider.tenantId, principal.tenantId),
+        eq(schema.managedConnectorProvider.id, binding.providerInstanceId)
+      )
+    )
+    .limit(1);
+  const rebound =
+    binding.materialGeneration !== provider.materialGeneration ||
+    current?.configurationDigest !== provider.executionConfigDigest;
+  if (!rebound) return;
+  console.error(
+    '[instance-revocation] Account deleted under changed provider settings; check by hand that it is gone',
+    {
+      providerInstanceId: binding.providerInstanceId,
+      providerUserId: binding.providerUserId,
+      externalAccountRef: binding.externalAccountRef,
+      boundGeneration: binding.materialGeneration,
+      currentGeneration: provider.materialGeneration,
+    }
+  );
 }
 
 /** Apply one exact idempotent authority command beneath its verified tenant. */
@@ -712,16 +861,21 @@ export async function applyManagedAuthorityCommand(
     )[0];
   if (!connection) return { status: claimed.status, conflict: false };
 
-  let account: Awaited<ReturnType<ManagedAuthorityProviderContext['accounts']['getAccount']>>;
+  let account: Awaited<
+    ReturnType<ManagedAuthorityProviderContext['accounts']['getAccount']>
+  > | null;
   try {
     account = await provider.accounts.getAccount(connection.externalAccountRef, provider.signal);
   } catch (error) {
-    if (error instanceof ComposioManagedAccountError || error instanceof Error) {
-      throw new ManagedAuthorityProviderUnavailableError();
-    }
-    throw error;
+    // An account the service no longer has will never come back, so the resume
+    // ends here as rejected. Every other failure may pass, so the command stays
+    // pending and the linked instance's retry can finish it.
+    if (isAccountGoneAtProvider(error)) account = null;
+    else if (error instanceof Error) throw new ManagedAuthorityProviderUnavailableError();
+    else throw error;
   }
   const accountMatches =
+    account !== null &&
     account.connectedAccountId === connection.externalAccountRef &&
     account.providerUserId === provider.providerUserId &&
     account.toolkit === connection.toolkit &&
@@ -819,10 +973,13 @@ export async function applyManagedAuthorityCommand(
   };
 }
 
-/** Read one command status only beneath its verified tenant and instance. */
+/**
+ * Read one command status beneath its tenant and instance, for a live
+ * instance's verified key or for a revoked instance's own cleanup.
+ */
 export async function getManagedAuthorityCommandStatus(
   db: ManagedConnectorDatabase,
-  principal: ManagedConnectorPrincipal,
+  principal: ManagedCleanupPrincipal,
   commandId: string
 ): Promise<ManagedConnectorAuthorityCommandStatus | null> {
   const [row] = await db

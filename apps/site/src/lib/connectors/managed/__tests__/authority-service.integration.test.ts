@@ -904,6 +904,100 @@ describe('hosted managed authority service', () => {
     expect(healthChecks).toBe(2);
   });
 
+  describe('when the service answers the account lookup with an error (DOR-2474)', () => {
+    /** Resume a paused connection against a loopback service that answers every request with `status`. */
+    async function resumeAgainst(status: number) {
+      const { tenant, principal } = await seedAuthority();
+      await applyManagedAuthorityCommand(db, principal, {
+        version: 1,
+        kind: 'set_connection_lifecycle',
+        commandId: `pause-before-${status}`,
+        managedConnectionId: 'gmail-personal',
+        scopeVersion: 2,
+        lifecycle: 'paused',
+      });
+      const paths: string[] = [];
+      const server = createServer((request, response) => {
+        paths.push(`${request.method} ${request.url}`);
+        response.writeHead(status, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ error: { message: 'synthetic' } }));
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const address = server.address() as AddressInfo;
+      const accounts = createComposioHostedClients({
+        apiKey: 'synthetic-project',
+        serverUserId: tenant.providerUserId,
+        authConfigByToolkit: { gmail: 'ac_gmail' },
+        baseUrl: `http://127.0.0.1:${address.port}`,
+      }).accounts;
+      const command = {
+        version: 1 as const,
+        kind: 'set_connection_lifecycle' as const,
+        commandId: `resume-after-${status}`,
+        managedConnectionId: 'gmail-personal',
+        scopeVersion: 3,
+        lifecycle: 'active' as const,
+      };
+      const provider = {
+        accounts,
+        providerUserId: tenant.providerUserId,
+        materialGeneration: 1,
+        executionConfigDigest: 'digest-a',
+        signal: new AbortController().signal,
+      };
+      const close = () => new Promise<void>((resolve) => server.close(() => resolve()));
+      return { principal, command, provider, paths, close };
+    }
+
+    it('ends the resume as rejected when the service no longer has the account', async () => {
+      const { principal, command, provider, paths, close } = await resumeAgainst(404);
+      try {
+        await expect(
+          applyManagedAuthorityCommand(db, principal, command, provider)
+        ).resolves.toEqual({
+          conflict: false,
+          status: {
+            version: 1,
+            commandId: command.commandId,
+            managedConnectionId: 'gmail-personal',
+            scopeVersion: 3,
+            state: 'rejected',
+            rejectionCode: 'connection_unavailable',
+          },
+        });
+        expect(paths).toHaveLength(1);
+        expect(paths[0]).toMatch(/^GET .*ca_private_a/);
+        // Terminal: a re-send replays the receipt and never asks the service again.
+        await expect(
+          applyManagedAuthorityCommand(db, principal, command, provider)
+        ).resolves.toMatchObject({ status: { state: 'rejected' } });
+        expect(paths).toHaveLength(1);
+        const [connection] = await db
+          .select()
+          .from(siteSchema.managedConnectorConnection)
+          .where(eq(siteSchema.managedConnectorConnection.id, 'gmail-personal'));
+        expect(connection.lifecycle).toBe('paused');
+      } finally {
+        await close();
+      }
+    });
+
+    it('keeps the resume pending for a failure that may pass', async () => {
+      const { principal, command, provider, paths, close } = await resumeAgainst(500);
+      try {
+        await expect(
+          applyManagedAuthorityCommand(db, principal, command, provider)
+        ).rejects.toMatchObject({ name: 'ManagedAuthorityProviderUnavailableError' });
+        expect(paths.length).toBeGreaterThan(0);
+        await expect(
+          getManagedAuthorityCommandStatus(db, principal, command.commandId)
+        ).resolves.toMatchObject({ state: 'pending' });
+      } finally {
+        await close();
+      }
+    });
+  });
+
   it('closes existing connection authority when provider material changes', async () => {
     const { tenant, revision, principal } = await seedAuthority();
     await applyManagedAuthorityCommand(db, principal, {

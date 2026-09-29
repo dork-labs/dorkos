@@ -23,6 +23,12 @@ import {
   Label,
 } from '@/layers/shared/ui';
 
+/** Shown after a confirmed deletion had to wait for app sign-ins to end at the service. */
+const DELETION_POSTPONED_MESSAGE =
+  "Your account hasn't been deleted yet. Some apps you connected through it are still being " +
+  'signed out, and your linked instances are already revoked. That can take up to a day. ' +
+  'Request deletion again from this page later.';
+
 /**
  * The `/account` "Danger zone": self-serve data export and account deletion
  * (GDPR/CCPA; cloud-account-management, DOR-187).
@@ -35,8 +41,17 @@ import {
  *
  * @param props.email - The signed-in account's email, used to gate the delete
  *   confirmation (the user must type it to enable the button).
+ * @param props.deletionPostponed - The emailed link was followed, but the
+ *   deletion is waiting for apps connected through the account to be signed
+ *   out at the service. The link is spent, so the person requests again here.
  */
-export function DangerZone({ email }: { email: string }) {
+export function DangerZone({
+  email,
+  deletionPostponed = false,
+}: {
+  email: string;
+  deletionPostponed?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [state, setState] = useState<'idle' | 'submitting' | 'sent'>('idle');
@@ -79,6 +94,12 @@ export function DangerZone({ email }: { email: string }) {
             </a>
           </Button>
         </div>
+
+        {deletionPostponed ? (
+          <p role="status" className="text-sm font-medium text-amber-600 dark:text-amber-400">
+            {DELETION_POSTPONED_MESSAGE}
+          </p>
+        ) : null}
 
         {/* Delete — typed confirmation, then an emailed confirmation link. */}
         <div className="flex flex-col gap-2 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">

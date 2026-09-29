@@ -284,7 +284,7 @@ export interface PermissionPreview {
   lspServers: PreviewLspServer[];
   /** Background monitors the package runs */
   monitors: PreviewMonitor[];
-  /** Programs the package puts on the agent's PATH (the files in its `bin/`) */
+  /** Programs the package puts on the agent's PATH (the runnable files in its `bin/`) */
   executables: string[];
   /** Tools each skill or command lets the agent use without asking */
   skillTools: PreviewSkillTools[];

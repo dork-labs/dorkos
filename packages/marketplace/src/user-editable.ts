@@ -5,8 +5,8 @@
  *
  * - **Reserved paths.** Some paths inside an install root always belong to the
  *   person or the installer: the package's data directory, its secrets file,
- *   the installer's own records, and the `.dork-old` / `.dork-new` copies an
- *   update saves. A package may never ship one, because the next update would
+ *   the installer's own records, the `.dork-old` / `.dork-new` copies an
+ *   update saves, and the folder saved folders go to (`.dork/saved`). A package may never ship one, because the next update would
  *   then treat a person's file as the package's.
  * - **`userEditable`.** A package can say that some of the files it ships are
  *   meant to be edited. On update an edited copy of such a file is kept, and a
@@ -25,6 +25,7 @@ import {
   PACKAGE_DATA_DIR,
   PACKAGE_MANIFEST_PATH,
   PACKAGE_SECRETS_PATH,
+  SAVED_COPIES_DIR,
   UNINSTALLED_AGENT_PATH,
 } from './constants.js';
 
@@ -37,7 +38,7 @@ const RESERVED_FILES: readonly string[] = [
 ];
 
 /** A basename ending `.dork-old` or `.dork-new`, optionally numbered (`.dork-old.2`), any case. */
-const KEPT_COPY_BASENAME = /\.dork-(?:old|new)(?:\.\d+)?$/i;
+export const KEPT_COPY_BASENAME = /\.dork-(?:old|new)(?:\.\d+)?$/i;
 
 /**
  * A path folded the way a case-insensitive volume compares names. APFS and
@@ -61,6 +62,7 @@ const IDENTITY_FILES: readonly string[] = [PACKAGE_MANIFEST_PATH, CLAUDE_PLUGIN_
 export function isReservedPackagePath(posixPath: string): boolean {
   const p = fold(posixPath);
   if (p === PACKAGE_DATA_DIR || p.startsWith(`${PACKAGE_DATA_DIR}/`)) return true;
+  if (p === SAVED_COPIES_DIR || p.startsWith(`${SAVED_COPIES_DIR}/`)) return true;
   if (RESERVED_FILES.includes(p)) return true;
   const basename = p.slice(p.lastIndexOf('/') + 1);
   return KEPT_COPY_BASENAME.test(basename);
@@ -117,7 +119,8 @@ function coversPersonOrIdentityPath(value: string): 'reserved' | 'identity' | un
     return isReservedPackagePath(pattern) ? 'reserved' : undefined;
   }
   if (IDENTITY_FILES.some((p) => covers(pattern, p))) return 'identity';
-  if ([PACKAGE_DATA_DIR, ...RESERVED_FILES].some((p) => covers(pattern, p))) return 'reserved';
+  if ([PACKAGE_DATA_DIR, SAVED_COPIES_DIR, ...RESERVED_FILES].some((p) => covers(pattern, p)))
+    return 'reserved';
   return isReservedPackagePath(prefix) ? 'reserved' : undefined;
 }
 

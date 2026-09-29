@@ -30,7 +30,9 @@
  * key is deleted (so the instance 401s and self-unlinks on its next heartbeat)
  * and `revokedAt` is stamped, while the visible row survives as "revoked"
  * history. That kills a long-idle credential (a security win) without erasing the
- * record the user relies on to understand what happened. Genuine row removal is
+ * record the user relies on to understand what happened. The apps that instance
+ * connected through the account are then ended at the service by the scheduled
+ * revoked-instance sweep, exactly as after a human revoke. Genuine row removal is
  * left to the account cascade (an unverified purge here, or a self-serve / admin
  * account delete).
  *

@@ -1431,6 +1431,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockImplementation((agentId: string) => Promise.resolve({ agentId, connections: [] })),
     getEveryAgentConnectorGrants: vi.fn().mockResolvedValue({ connections: [] }),
     getSessionConnectorConnections: vi.fn(),
+    setSessionConnectorAccess: vi.fn(),
     getAccessibleConnectorConnections: vi.fn().mockResolvedValue({ connections: [] }),
     getAccessibleConnectorOperations: vi
       .fn()

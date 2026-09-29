@@ -1,6 +1,8 @@
 /**
  * `GET /api/cron/event-retention` — apply the managed-connector event retention
- * policy and recover interrupted subscription cleanups.
+ * policy, recover interrupted subscription cleanups, and finish ending the apps
+ * of machines whose link was revoked (closing them, then deleting their
+ * sign-ins at the service).
  *
  * The second of the two routes the old combined `/api/cron/cleanup` split into;
  * the first is `/api/cron/instance-expiry`. See that file for why they are
@@ -14,6 +16,7 @@
 import { getTransactionDb } from '@/db/transaction-client';
 import { recoverManagedEventCleanup } from '@/lib/connectors/managed/event-cleanup-service';
 import { sweepManagedConnectorEventRetention } from '@/lib/connectors/managed/event-delivery-service';
+import { sweepRevokedInstances } from '@/lib/connectors/managed/instance-revocation/cleanup';
 import { env } from '@/env';
 import { cloudAccountsForwarding } from '@/lib/cloud-accounts/forward';
 import { rejectUnauthorizedCron } from '@/lib/cron/auth';
@@ -45,11 +48,19 @@ export async function GET(request: Request): Promise<Response> {
       : await sweepManagedConnectorEventRetention(getTransactionDb(), {
           signal: eventMaintenance,
         });
+    // Event cleanup runs first: it deletes revoked machines' triggers, which the
+    // sweep below must see gone before it deletes the accounts they watch.
     const eventSubscriptions = await recoverManagedEventCleanup(
       getTransactionDb(),
       eventMaintenance
     );
-    return Response.json({ ok: true, eventRetention, eventSubscriptions }, { status: 200 });
+    const revokedInstances = await sweepRevokedInstances(getTransactionDb(), {
+      signal: eventMaintenance,
+    });
+    return Response.json(
+      { ok: true, eventRetention, eventSubscriptions, revokedInstances },
+      { status: 200 }
+    );
   } catch {
     // Never surface the driver's message: it can carry connection details,
     // provider names or SQL parameter values.

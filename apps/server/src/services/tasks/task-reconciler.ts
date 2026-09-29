@@ -140,12 +140,17 @@ export class TaskReconciler {
    *   because a caller with no watcher at all — every test that drives this
    *   class directly — has no roots to tighten for, and the honest default is
    *   that nothing is tightened rather than that everything is.
+   * @param afterPeriodicPass - Run after each five-minute pass: the check for
+   *   an agent's runtime, model or effort changed outside DorkOS (DOR-2337),
+   *   so a schedule that follows it waits for a person without waiting for
+   *   its next fire. Optional for the same reason as `watchHealth`.
    */
   constructor(
     private store: TaskStore,
     private registrar: TaskRegistrar,
     private identities: ScheduleIdentityRegistry,
-    private watchHealth?: TaskWatchHealth
+    private watchHealth?: TaskWatchHealth,
+    private afterPeriodicPass?: () => Promise<void>
   ) {}
 
   /**
@@ -179,9 +184,14 @@ export class TaskReconciler {
   start(): void {
     if (this.interval) return;
     this.interval = setInterval(() => {
-      this.reconcile().catch((err) => {
-        this.report('error', '[TaskReconciler] Reconciliation failed', err);
-      });
+      this.reconcile()
+        .catch((err) => {
+          this.report('error', '[TaskReconciler] Reconciliation failed', err);
+        })
+        .then(() => this.afterPeriodicPass?.())
+        .catch((err) => {
+          this.report('error', '[TaskReconciler] The check after a pass failed', err);
+        });
     }, RECONCILE_INTERVAL_MS);
     this.interval.unref?.();
     this.sweepInterval = setInterval(() => {
