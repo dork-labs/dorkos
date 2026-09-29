@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat: keep the files an update couldn't sort as yours, from the app or the CLI (DOR-2341)"
+  - 'fix: offer Check files first, and keep the review under the same lock (DOR-2341)'
 ---
 
 ### Added
