@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(community): send notices by email through the host's own mail server (DOR-2537)"
+  - 'fix(community): harden optional mail after review (DOR-2537)'
 ---
 
 ### Added
