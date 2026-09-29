@@ -867,6 +867,9 @@ export default defineConfig({
         // it turns a core extension on for its own tests and opens chats, and a
         // chat on this leg is a real claude-code session.
         '**/extensions/extension-seams.spec.ts',
+        // Runs against the test-mode leg in `chromium-extension-start-work`, for
+        // the same reason: it opens chats, and one here would be billed.
+        '**/extensions/start-work.spec.ts',
         // Runs against the production leg in `chromium-production` below, and
         // only there. On this leg its every assertion would be vacuous: Vite's
         // shell carries no Content-Security-Policy, so a spec written to prove
@@ -1065,6 +1068,23 @@ export default defineConfig({
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
       testMatch: ['**/extensions/extension-seams.spec.ts'],
+    },
+    {
+      // Starting work in a new chat (spec `flow-multiproject` §7.7): one click
+      // on hello-world's "Start a chat" opens a second chat, which on this leg
+      // is scripted, so nothing is billed.
+      //
+      // Its own project, run AFTER the seams project rather than beside it:
+      // both turn `hello-world` on for their tests and off in `afterAll`, and
+      // fullyParallel would put the two files on concurrent workers, where one
+      // file's `afterAll` turns the extension off under the other's test.
+      name: 'chromium-extension-start-work',
+      dependencies: ['chromium-extension-seams'],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: `http://localhost:${MOCK_VITE_PORT}`,
+      },
+      testMatch: ['**/extensions/start-work.spec.ts'],
     },
     // The only project whose `baseURL` is an EXPRESS port rather than a Vite
     // one, because the production leg serves the built shell itself — which is

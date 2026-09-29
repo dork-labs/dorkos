@@ -24,6 +24,7 @@ export type { SigninResumeClaim } from './model/signin-resume/use-signin-resume-
 
 export { ChatEmptyState } from './ui/ChatEmptyState';
 export { BirthCertificate } from './ui/BirthCertificate';
+export { StartedByLine, StartedPrompt } from './ui/StartedByLine';
 export { CelebrationOverlay } from './ui/CelebrationOverlay';
 export { FirstLight } from './ui/FirstLight';
 export { TypingDots } from './ui/primitives';
