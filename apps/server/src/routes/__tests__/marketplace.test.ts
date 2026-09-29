@@ -66,12 +66,12 @@ import {
   PackageFetcher,
 } from '../../services/marketplace/package-fetcher.js';
 import type { GitTreeSource } from '../../services/marketplace/lib/git/git-tree.js';
+import { type InstallerLike } from '../../services/marketplace/installer/marketplace-installer.js';
 import {
   ConflictError,
   DisclosureChangedError,
   InvalidPackageError,
-  type InstallerLike,
-} from '../../services/marketplace/installer/marketplace-installer.js';
+} from '../../services/marketplace/installer/errors.js';
 import {
   UNSUPPORTED_GIT_REMOTE_MESSAGE,
   UnsupportedSourceUrlError,

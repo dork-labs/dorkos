@@ -54,10 +54,7 @@ import { initBoundary } from '../../../../lib/boundary.js';
 import { disclosedEffectsOf } from '../../preview/disclosed-effects.js';
 import { globalConsentRecorder, partitionGlobalPlugins } from '../global-plugin-consent.js';
 import { buildInstallerForTests } from '../../__tests__/installer-harness.js';
-import {
-  DisclosureChangedError,
-  InvalidPackageError,
-} from '../../installer/marketplace-installer.js';
+import { DisclosureChangedError, InvalidPackageError } from '../../installer/errors.js';
 import { packageContentHash, ShipsRuntimeStateError } from '../../lib/content-hash.js';
 import { readInstallMetadata } from '../../installed-metadata.js';
 

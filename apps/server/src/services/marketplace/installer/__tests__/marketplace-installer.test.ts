@@ -61,13 +61,8 @@ vi.mock('../../lib/project-install-index.js', () => ({
 }));
 
 import { validatePackage } from '@dorkos/marketplace/package-validator';
-import {
-  ConflictError,
-  DisclosureChangedError,
-  InvalidPackageError,
-  MarketplaceInstaller,
-  type InstallerDeps,
-} from '../marketplace-installer.js';
+import { MarketplaceInstaller, type InstallerDeps } from '../marketplace-installer.js';
+import { ConflictError, DisclosureChangedError, InvalidPackageError } from '../errors.js';
 import { disclosedEffectsOf } from '../../preview/disclosed-effects.js';
 import { UnsupportedSourceUrlError } from '../../sources/source-url-policy.js';
 import { reportInstallEvent } from '../../telemetry/telemetry-hook.js';

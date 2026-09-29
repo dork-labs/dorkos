@@ -71,11 +71,11 @@ import {
 import type { ConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
 import { DisclosedEffectsSchema } from '../services/marketplace/preview/disclosed-effects.js';
 import { computeTargetDir } from '../services/marketplace/flows/install-agent.js';
+import { type MarketplaceInstaller } from '../services/marketplace/installer/marketplace-installer.js';
 import {
   DisclosureChangedError,
   InvalidPackageError,
-  type MarketplaceInstaller,
-} from '../services/marketplace/installer/marketplace-installer.js';
+} from '../services/marketplace/installer/errors.js';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { PackageNameSchema } from '@dorkos/marketplace';
 

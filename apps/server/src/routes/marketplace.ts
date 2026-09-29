@@ -39,7 +39,7 @@ import {
   ConflictError,
   DisclosureChangedError,
   InvalidPackageError,
-} from '../services/marketplace/installer/marketplace-installer.js';
+} from '../services/marketplace/installer/errors.js';
 import {
   DisclosedEffectsSchema,
   disclosedEffectsOf,

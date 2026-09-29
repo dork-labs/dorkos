@@ -33,7 +33,7 @@ import {
   disclosedEffectsOf,
   sameDisclosedEffects,
 } from '../../marketplace/preview/disclosed-effects.js';
-import { DisclosureChangedError } from '../../marketplace/installer/marketplace-installer.js';
+import { DisclosureChangedError } from '../../marketplace/installer/errors.js';
 import { TokenConfirmationProvider } from '../confirmation-provider.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { createUpdateHandler, UpdateInputSchema } from '../tool-update.js';
