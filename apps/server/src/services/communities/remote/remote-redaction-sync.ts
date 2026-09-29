@@ -17,6 +17,7 @@ import { eventFanOut } from '../../core/event-fan-out.js';
 import { dropRoomFromIndex, optimizeSearchIndex, reindexRoomEntries } from '../../search/index.js';
 import type {
   AppliedRedactions,
+  MirrorAttachmentFile,
   MirrorPurge,
   NativeMirrorEntry,
   RemoteMirrorStore,
@@ -54,7 +55,7 @@ export interface RemoteRedactionSyncDeps {
   db: Db;
   mirrors: RemoteMirrorStore;
   readers: (communityRef: CommunityRef, ownerAuthorId: string) => RedactionFeedReader | null;
-  /** Where the files of a purged mirror's entries live. */
+  /** Where the files of mirrored rooms live: a purged mirror's, and a redacted entry's. */
   attachmentBytes?: Pick<RoomAttachmentStore, 'delete'>;
   /**
    * Tell the mirrored room's open readers which of its entries were rewritten, once the rewrite
@@ -169,6 +170,8 @@ export class RemoteRedactionSync {
     if (!reader) return;
     let restarted = false;
     let changed = false;
+    // Rooms whose lists and Threads should re-read, once per sync however many pages changed.
+    const touched = new Set<string>();
     try {
       for (let pageNumber = 0; pageNumber < MAX_PAGES_PER_SYNC; pageNumber++) {
         const state = this.deps.mirrors.redactionCursor(
@@ -205,14 +208,31 @@ export class RemoteRedactionSync {
           throw error;
         }
         this.unsupportedAt.delete(connection);
+        // Files first (DOR-2549): the bytes of every file this page will drop are deleted
+        // BEFORE the page is applied. Should the process stop in between, the page and its
+        // cursor were never recorded, so the next sync applies it again and no file is left on
+        // disk with nothing pointing at it; a row whose bytes are already gone just serves 404.
+        await this.deleteFiles(
+          this.deps.mirrors.plannedAttachmentDrops(
+            room.communityRef,
+            room.remoteRoomId,
+            room.ownerAuthorId,
+            page.items
+          )
+        );
         const applied = this.apply(room, page.items, page.nextCursor);
         if (applied) {
           changed = true;
+          touched.add(applied.localRoomId);
           this.announce(applied);
+          // And again for exactly the rows the page deleted: idempotent, and it covers a file
+          // the plan could not see yet.
+          await this.deleteFiles(applied.droppedAttachments);
         }
         if (!page.hasMore) return;
       }
     } finally {
+      for (const roomId of touched) eventFanOut.broadcast('room_updated', { roomId });
       if (changed) await this.scrub();
     }
   }
@@ -248,10 +268,12 @@ export class RemoteRedactionSync {
 
   /**
    * Put a committed rewrite in front of anyone looking at the room: its open windows replace the
-   * changed messages in place, and the room list and Threads re-read, since a thread's preview
-   * quotes its first message and an erased author's name changes on the roster. Only ever called
-   * with a page {@link RemoteMirrorStore.applyRedactions} rewrote, so the room is always a mirror.
-   * A failure is logged and never undoes the rewrite: the next open of the room reads the log.
+   * changed messages in place, with the files they no longer have gone from them (the frames are
+   * read back from the log after the commit). The room list and Threads re-read once the whole
+   * sync is done, not once per page, since a thread's preview quotes its first message and an
+   * erased author's name changes on the roster. Only ever called with a page
+   * {@link RemoteMirrorStore.applyRedactions} rewrote, so the room is always a mirror. A failure
+   * is logged and never undoes the rewrite: the next open of the room reads the log.
    */
   private announce(applied: AppliedRedactions): void {
     try {
@@ -261,7 +283,26 @@ export class RemoteRedactionSync {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    eventFanOut.broadcast('room_updated', { roomId: applied.localRoomId });
+  }
+
+  /**
+   * Delete the stored bytes of files a redaction drops. Idempotent: a file already gone is a
+   * success. Only files the plan or the applied page chose reach here, and both use the same
+   * rule, so a file the entry still has on the Community is never deleted. A failure is logged;
+   * the row is gone either way, so the room no longer offers the file.
+   */
+  private async deleteFiles(files: readonly MirrorAttachmentFile[]): Promise<void> {
+    const store = this.deps.attachmentBytes;
+    if (!store) return;
+    for (const file of files) {
+      try {
+        await store.delete(file.roomId, file.attachmentId, file.extension);
+      } catch (error) {
+        logger.warn('[communities] could not delete a file a Community removed; retrying later', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   /**
