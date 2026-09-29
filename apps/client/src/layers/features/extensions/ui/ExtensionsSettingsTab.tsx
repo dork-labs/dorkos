@@ -27,28 +27,35 @@ export function ExtensionsSettingsTab() {
   ]);
 
   const approvingIds = new Set([
-    ...(approveMutation.isPending && approveMutation.variables ? [approveMutation.variables] : []),
-    ...(revokeMutation.isPending && revokeMutation.variables ? [revokeMutation.variables] : []),
+    ...(approveMutation.isPending && approveMutation.variables
+      ? [approveMutation.variables.id]
+      : []),
+    ...(revokeMutation.isPending && revokeMutation.variables ? [revokeMutation.variables.id] : []),
   ]);
 
   function handleSetRunApproval(id: string, approve: boolean) {
     const mutation = approve ? approveMutation : revokeMutation;
+    const shown = extensions.find((ext) => ext.id === id);
+    if (!shown) return;
 
-    mutation.mutate(id, {
-      onSuccess: (result) => {
-        const name = result.extension.manifest.name;
-        toast.success(
-          approve
-            ? `${name} can now run inside DorkOS`
-            : `${name} has stopped running inside DorkOS`
-        );
-      },
-      onError: (err) => {
-        toast.error(approve ? 'Couldn’t let it run.' : 'Couldn’t stop it running.', {
-          description: err.message,
-        });
-      },
-    });
+    mutation.mutate(
+      { id, version: shown.manifest.version, plugin: shown.sourcePlugin ?? null },
+      {
+        onSuccess: (result) => {
+          const name = result.extension.manifest.name;
+          toast.success(
+            approve
+              ? `${name} can now run inside DorkOS`
+              : `${name} has stopped running inside DorkOS`
+          );
+        },
+        onError: (err) => {
+          toast.error(approve ? 'Couldn’t let it run.' : 'Couldn’t stop it running.', {
+            description: err.message,
+          });
+        },
+      }
+    );
   }
 
   async function handleToggle(id: string, enabled: boolean) {
