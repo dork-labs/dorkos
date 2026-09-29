@@ -22,6 +22,8 @@ import {
 } from './tenancy-test-harness.js';
 
 const MIB = 1024 * 1024;
+/** What may still arrive after an archive is deleted: the chunk the stream read ahead. */
+const ONE_CHUNK_AHEAD = MIB;
 let h: TenancyHarness;
 let operatorCookie: string;
 
@@ -208,10 +210,10 @@ describe('resumable download', () => {
     }
   });
 
-  // Purpose (AC-8): an erasure that deletes the export stops a download already running, and
-  // the next ranged request finds nothing. Fails if a download keeps streaming an erased
-  // person's data after their erasure deleted the archive.
-  it('stops a download within 16 MiB once an erasure deletes the export', async () => {
+  // Purpose (AC-8): an erasure that deletes the export stops a download already running at the
+  // next chunk, and the next ranged request finds nothing. Fails if a download keeps streaming
+  // an erased person's data after their erasure deleted the archive.
+  it('stops a download at the next chunk once an erasure deletes the export', async () => {
     const { community, xena, id } = await largeExport('Erase Download Place');
     const [first] = await segmentsOf(h, id);
     const { spy, release } = holdAfterFirstByte(first.blob_key);
@@ -228,12 +230,62 @@ describe('resumable download', () => {
       });
       expect(outcome.failed).toBe(true);
       expect(outcome.received).toBeLessThan(size);
-      expect(outcome.afterward).toBeLessThanOrEqual(DOWNLOAD_RECHECK_BYTES);
+      expect(outcome.afterward).toBeLessThanOrEqual(ONE_CHUNK_AHEAD);
     } finally {
       release();
       spy.mockRestore();
     }
     const after = await archive(community, id, { range: 'bytes=0-99' });
     expect(after.status).toBe(404);
+  });
+
+  // Purpose (DOR-2331): a host takedown deletes every ready export, and one already downloading
+  // stops at the next chunk. The takedown only queues the archive's segments, so their bytes are
+  // still in storage: fails if the download re-checks the archive only every 16 MiB, as it did.
+  it('stops a download at the next chunk once a takedown deletes the export', async () => {
+    const { community, id } = await largeExport('Takedown Download Place');
+    const [target] = (
+      await h.pool.query<{ id: string }>(
+        'SELECT id FROM entries WHERE community_id=$1 ORDER BY seq LIMIT 1',
+        [community.communityId]
+      )
+    ).rows;
+    const [first] = await segmentsOf(h, id);
+    const { spy, release } = holdAfterFirstByte(first.blob_key);
+    try {
+      const response = await archive(community, id);
+      expect(response.status).toBe(200);
+      const size = Number(response.headers.get('content-length'));
+      expect(size).toBeGreaterThan(2 * DOWNLOAD_RECHECK_BYTES);
+      const outcome = await drain(response, async () => {
+        await expectStatus(
+          await h.call(`/api/v1/host/communities/${community.communityId}/takedowns`, {
+            cookie: operatorCookie,
+            body: {
+              target: { kind: 'entry', entryId: target.id },
+              category: 'illegal_content',
+              reference: null,
+              idempotencyKey: `export-download-${id}`,
+              password: TENANCY_PASSWORD,
+            },
+          }),
+          201,
+          'take down a message'
+        );
+        release();
+      });
+      expect(outcome.failed).toBe(true);
+      expect(outcome.afterward).toBeLessThanOrEqual(ONE_CHUNK_AHEAD);
+      // The bytes are still there: only the check stopped the download.
+      const segments = await h.pool.query<{ state: string }>(
+        'SELECT state FROM managed_blobs WHERE blob_key=$1',
+        [first.blob_key]
+      );
+      expect(segments.rows[0]?.state).toBe('pending_delete');
+    } finally {
+      release();
+      spy.mockRestore();
+    }
+    expect((await archive(community, id, { range: 'bytes=0-99' })).status).toBe(404);
   });
 });

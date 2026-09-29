@@ -19,7 +19,11 @@ import {
 } from '../exports/authority.js';
 import { endExportJob, EXPORT_COLUMNS, toWireExport, type ExportRow } from '../exports/store.js';
 
-/** A download re-checks its authority after at most this many bytes... */
+/**
+ * A download re-checks the requester's authority after at most this many bytes... The archive
+ * itself is re-checked before every chunk: a takedown or an erasure that deletes it stops the
+ * download at the next chunk.
+ */
 export const DOWNLOAD_RECHECK_BYTES = 16 * 1024 * 1024;
 /** ...or this much time, whichever comes first. */
 export const DOWNLOAD_RECHECK_MS = 10_000;
@@ -276,15 +280,11 @@ export function registerExportRoutes(
     }
     const start = range?.start ?? 0;
     const end = range?.end ?? source.size - 1;
-    // Re-check the requester and the archive row itself: an erasure or takedown that deletes
-    // the export stops a download already in progress.
+    // The requester's authority is re-checked every few megabytes or seconds.
     const stillAllowed = async () => {
       const current = await requireMember(c, auth, pool).catch(() => null);
       return (
-        current !== null &&
-        current.id === member.id &&
-        (await readyRow()) !== null &&
-        (await hasExportAuthority(pool, requester))
+        current !== null && current.id === member.id && (await hasExportAuthority(pool, requester))
       );
     };
     const iterator = source.read(start, end, { signal: c.req.raw.signal })[Symbol.asyncIterator]();
@@ -294,7 +294,12 @@ export function registerExportRoutes(
       async pull(controller) {
         try {
           const next = await iterator.next();
+          // As a file download does: the end carries no bytes and is not refused, and every chunk
+          // is checked after it is read and before it is queued. The archive row goes before its
+          // bytes do, so an erasure or takedown that deletes the export stops the download here,
+          // even while its segments still wait for the cleanup sweep.
           if (next.done) return controller.close();
+          if (!(await readyRow())) throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
           if (
             sinceCheck + next.value.length > DOWNLOAD_RECHECK_BYTES ||
             Date.now() - checkedAt >= DOWNLOAD_RECHECK_MS
