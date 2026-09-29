@@ -3,6 +3,7 @@ covers:
   - 'feat(connections): keep Read meaning Read as apps change their actions (DOR-2506)'
   - 'fix(connections): follow levels on their own, and never promise a refused level (DOR-2506)'
   - 'fix(connections): keep level follows small, and keep a level DorkOS was following when refused (DOR-2506)'
+  - 'fix(connections): follow every level within 12 hours of its last follow, restarts included (DOR-2506)'
 ---
 
 ### Changed

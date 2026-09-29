@@ -9,6 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectionOperationGrants,
+  connectorOperationRevisions,
   connectorReconciliationCandidates,
   connectorReconciliationPreviews,
   eq,
@@ -388,6 +389,29 @@ describe('levels follow the app on this computer', () => {
         before.candidates
       );
       expect(h.db.select().from(connectionOperationGrants).all()).toEqual(before.grants);
+    });
+
+    it('keeps its review when only the catalog changed, so the newest review is the newest catalog', async () => {
+      await grantLevels(h);
+      const before = reviews().map((review) => review.id);
+      // A new delete action joins no level: nothing moves, but the catalog did.
+      h.catalog.push({ slug: 'gmail.empty_trash', classification: 'destructive' });
+      await follow();
+      expect(liveActions(h.db, { agentId: 'reader' })).toEqual(['gmail.list:read']);
+
+      const added = reviews().filter((review) => !before.includes(review.id));
+      expect(added).toHaveLength(1);
+      const recorded = h.db
+        .select({ slug: connectorOperationRevisions.operationSlug })
+        .from(connectorReconciliationCandidates)
+        .innerJoin(
+          connectorOperationRevisions,
+          eq(connectorOperationRevisions.id, connectorReconciliationCandidates.operationRevisionId)
+        )
+        .where(eq(connectorReconciliationCandidates.previewId, added[0]!.id))
+        .all()
+        .map((row) => row.slug);
+      expect(recorded).toContain('gmail.empty_trash');
     });
 
     it('says when it last followed an account, and under which version', async () => {

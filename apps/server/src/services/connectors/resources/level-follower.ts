@@ -3,16 +3,19 @@
  * anyone opening "Who can use it?" (ADR 260929-071355).
  *
  * A level ("Read", "Read and write") follows the app's catalog, and DorkOS
- * only learns the catalog by reading it. This reads it on its own: once at
- * boot, which also carries a classification change a DorkOS release shipped,
- * and every {@link LEVEL_FOLLOW_INTERVAL_MS} after. Each connection with a
+ * only learns the catalog by reading it. This reads it on its own, so that
+ * while the server runs no level goes longer than
+ * {@link LEVEL_FOLLOW_INTERVAL_MS} without being followed. It looks at boot and
+ * then every {@link LEVEL_FOLLOW_TICK_MS}, and each pass reads only the
+ * connections not followed within the last interval less one tick; so a
+ * restart never pushes a connection's next read past the interval. Each connection with a
  * level on it goes through {@link ConnectorReconciliationService.followCatalog},
  * the same path a preview takes, so a DorkOS account's grants still change
  * close-first and never widen before hosted authority applies them.
  *
- * The boot pass skips a connection it followed within the last interval under
- * the same DorkOS version, so a restart does not re-read every app; an update
- * always follows, since a new version can classify actions differently.
+ * A follow under an earlier DorkOS version never counts as recent, so the
+ * first pass after an update reads every app: a new version can classify
+ * actions differently.
  *
  * A pass is bounded: at most {@link LEVEL_FOLLOW_MAX_CONNECTIONS} connections,
  * one at a time, each with its own {@link LEVEL_FOLLOW_TIMEOUT_MS}. One app
@@ -23,8 +26,11 @@
 import { logger } from '../../../lib/logger.js';
 import type { ConnectorReconciliationService } from '../reconciliation-service.js';
 
-/** How often every level is checked against its app while the server runs. */
+/** The longest any level goes without being checked against its app while the server runs. */
 export const LEVEL_FOLLOW_INTERVAL_MS = 12 * 60 * 60_000;
+
+/** How often the follower looks for connections that are due. */
+export const LEVEL_FOLLOW_TICK_MS = 60 * 60_000;
 
 /** The longest one app's catalog read may take before the pass moves on. */
 export const LEVEL_FOLLOW_TIMEOUT_MS = 60_000;
@@ -45,6 +51,8 @@ export interface LevelFollowerOptions {
   now?: () => number;
   /** Override {@link LEVEL_FOLLOW_INTERVAL_MS}. */
   intervalMs?: number;
+  /** Override {@link LEVEL_FOLLOW_TICK_MS}. */
+  tickMs?: number;
   /** Override {@link LEVEL_FOLLOW_TIMEOUT_MS}. */
   timeoutMs?: number;
   /** Override {@link LEVEL_FOLLOW_MAX_CONNECTIONS}. */
@@ -55,6 +63,7 @@ export interface LevelFollowerOptions {
 export class LevelFollower {
   private readonly _reconciliation: LevelFollowerOptions['reconciliation'];
   private readonly _intervalMs: number;
+  private readonly _tickMs: number;
   private readonly _timeoutMs: number;
   private readonly _maxConnections: number;
   private readonly _appVersion: string;
@@ -70,17 +79,18 @@ export class LevelFollower {
   constructor(opts: LevelFollowerOptions) {
     this._reconciliation = opts.reconciliation;
     this._intervalMs = opts.intervalMs ?? LEVEL_FOLLOW_INTERVAL_MS;
+    this._tickMs = opts.tickMs ?? LEVEL_FOLLOW_TICK_MS;
     this._timeoutMs = opts.timeoutMs ?? LEVEL_FOLLOW_TIMEOUT_MS;
     this._maxConnections = opts.maxConnections ?? LEVEL_FOLLOW_MAX_CONNECTIONS;
     this._appVersion = opts.appVersion;
     this._now = opts.now ?? Date.now;
   }
 
-  /** Follow once now (the boot pass), then every interval until {@link stop}. Idempotent. */
+  /** Look for due connections now (the boot pass), then every tick until {@link stop}. Idempotent. */
   start(): void {
     if (this._timer) return;
-    void this.follow({ boot: true });
-    this._timer = setInterval(() => void this.follow(), this._intervalMs);
+    void this.follow();
+    this._timer = setInterval(() => void this.follow(), this._tickMs);
     this._timer.unref();
   }
 
@@ -90,24 +100,28 @@ export class LevelFollower {
     this._timer = undefined;
   }
 
-  /**
-   * Run one pass now, or join the pass already running. Never rejects.
-   *
-   * @param options - `boot` skips connections followed within the interval under this version.
-   */
-  follow(options: { boot?: boolean } = {}): Promise<void> {
+  /** Run one pass over the due connections now, or join the pass already running. Never rejects. */
+  follow(): Promise<void> {
     if (this._inFlight) return this._inFlight;
-    const run = this._run(options.boot === true).finally(() => {
+    const run = this._run().finally(() => {
       this._inFlight = undefined;
     });
     this._inFlight = run;
     return run;
   }
 
-  private async _run(boot: boolean): Promise<void> {
+  private async _run(): Promise<void> {
+    // Due: not followed since one tick short of the interval, under this
+    // version. Hourly passes then reach every connection within the interval.
+    const since = new Date(this._now() - (this._intervalMs - this._tickMs)).toISOString();
     let connectionIds: string[];
     try {
-      connectionIds = this._reconciliation.levelConnectionIds();
+      connectionIds = this._reconciliation
+        .levelConnectionIds()
+        .filter(
+          (connectionId) =>
+            !this._reconciliation.followedSince(connectionId, since, this._appVersion)
+        );
     } catch (err) {
       logger.warn('[Connectors] Could not list the apps whose access levels follow them', {
         err: String(err),
@@ -115,17 +129,14 @@ export class LevelFollower {
       return;
     }
     if (connectionIds.length > this._maxConnections) {
+      // The rest are still due at the next tick.
       logger.warn('[Connectors] Following access levels for some apps only this time', {
         count: connectionIds.length,
         max: this._maxConnections,
       });
     }
-    const since = new Date(this._now() - this._intervalMs).toISOString();
     for (const connectionId of connectionIds.slice(0, this._maxConnections)) {
       try {
-        if (boot && this._reconciliation.followedSince(connectionId, since, this._appVersion)) {
-          continue;
-        }
         await this._reconciliation.followCatalog(
           connectionId,
           AbortSignal.timeout(this._timeoutMs),
