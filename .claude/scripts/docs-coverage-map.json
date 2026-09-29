@@ -277,7 +277,7 @@
       "description": "Opt-in install telemetry: Neon + Drizzle schema, privacy contract, aggregation",
       "patterns": [
         "apps/site/src/db/",
-        "services/marketplace/telemetry-reporter"
+        "services/marketplace/telemetry/telemetry-reporter"
       ]
     },
     {

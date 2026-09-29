@@ -59,9 +59,15 @@ export { partitionSubagents } from './lib/fold-active-subagents';
 export { gitPromotionState, isUsageAbsorbed, useStatusBarPins } from './model/status-bar-registry';
 export type {
   AccountPromotionState,
+  ExtensionItemPromotion,
   StatusBarItemKey,
   StatusPromotionContext,
 } from './model/status-bar-registry';
+export {
+  evaluateExtensionStatusItems,
+  useExtensionStatusItems,
+} from './model/extension-status-items';
+export type { EvaluatedExtensionStatusItems } from './model/extension-status-items';
 export { selectPromotedItems } from './model/promoted-items';
 export { applyStatusBudget, resolveStatusBudget } from './model/status-budget';
 export type { StatusDensity, StatusBudget } from './model/status-budget';

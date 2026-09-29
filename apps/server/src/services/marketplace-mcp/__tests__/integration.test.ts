@@ -39,14 +39,20 @@ import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Logger } from '@dorkos/shared/logger';
 
-import { MarketplaceSourceManager } from '../../marketplace/marketplace-source-manager.js';
-import { MarketplaceCache } from '../../marketplace/marketplace-cache.js';
+import { MarketplaceSourceManager } from '../../marketplace/sources/marketplace-source-manager.js';
+import { MarketplaceCache } from '../../marketplace/cache/marketplace-cache.js';
 import { PackageFetcher } from '../../marketplace/package-fetcher.js';
 import type { GitTreeSource } from '../../marketplace/lib/git/git-tree.js';
-import type { InstallerLike, PreviewResult } from '../../marketplace/marketplace-installer.js';
+import type {
+  InstallerLike,
+  PreviewResult,
+} from '../../marketplace/installer/marketplace-installer.js';
 import type { InstallRequest, InstallResult, PermissionPreview } from '../../marketplace/types.js';
-import type { UninstallFlow } from '../../marketplace/flows/uninstall.js';
-import type { UninstallRequest, UninstallResult } from '../../marketplace/flows/uninstall.js';
+import type { UninstallFlow } from '../../marketplace/flows/uninstall/uninstall.js';
+import type {
+  UninstallRequest,
+  UninstallResult,
+} from '../../marketplace/flows/uninstall/support.js';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 
 import { registerMarketplaceTools } from './register-marketplace-tools.js';

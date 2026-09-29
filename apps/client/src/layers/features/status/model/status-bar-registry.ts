@@ -31,6 +31,7 @@ import {
   Users,
   UserRound,
   CircleUserRound,
+  Puzzle,
 } from 'lucide-react';
 import { useCallback } from 'react';
 import type { ConnectionState, UsageStatus } from '@dorkos/shared/types';
@@ -49,6 +50,7 @@ export type StatusBarItemKey =
   | 'git'
   | 'runtime'
   | 'account'
+  | 'extensions'
   | 'model'
   | 'cache'
   | 'context'
@@ -139,6 +141,24 @@ export interface StatusPromotionContext {
    * disagree. This one is the client's own fold of the turn it is watching.
    */
   subagentsInFlight: number;
+  /**
+   * Every status-bar item an extension added, as its own `when` and `urgent`
+   * answered for this chat (spec `flow-multiproject` §6.6). Worked out before
+   * anything renders, so the budget can rank the `extensions` item without
+   * mounting an extension's component. An item whose rule threw reads as not
+   * visible and not urgent.
+   */
+  extensionItems: readonly ExtensionItemPromotion[];
+}
+
+/** One extension status-bar item, as the promotion rules see it. */
+export interface ExtensionItemPromotion {
+  /** The item's namespaced id, `<extensionId>:<id>`. */
+  id: string;
+  /** Whether its `when` said to show it for this chat. */
+  visible: boolean;
+  /** Whether its `urgent` said it needs attention. */
+  urgent: boolean;
 }
 
 /** The two things about a working tree that can make it news. */
@@ -235,6 +255,13 @@ const SEVERITY = {
    * delegation outranks a number heading for a ceiling.
    */
   SUBAGENTS_RUNNING: 35,
+  /**
+   * An extension has something to say about this chat (spec
+   * `flow-multiproject` §6.6): live work, like a run chip, so the same weight
+   * as subagents running. An item that says it needs attention ranks with an
+   * account that does.
+   */
+  EXTENSION_ITEM: 35,
   RUNTIME_NON_DEFAULT: 30,
   GIT_DIRTY: 20,
   MODEL: 10,
@@ -432,6 +459,23 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
       ctx.account && ACCOUNT_ATTENTION_STATES.has(ctx.account.chipState)
         ? SEVERITY.ACCOUNT_ATTENTION
         : runtimeSeverity(ctx),
+  },
+  {
+    key: 'extensions',
+    label: 'Add-ons',
+    description: 'What your extensions show for this chat',
+    cluster: 'right',
+    // No popover row, so it cannot be pinned, for the reason `account` gives: a
+    // new pin value would make an older build discard the whole config file.
+    group: null,
+    icon: Puzzle,
+    // One slot for every extension item: the budget counts it once, and each
+    // extension's component draws its own short form when `compact` is set.
+    promote: (ctx) => ctx.extensionItems.some((item) => item.visible),
+    severity: (ctx) =>
+      ctx.extensionItems.some((item) => item.visible && item.urgent)
+        ? SEVERITY.ACCOUNT_ATTENTION
+        : SEVERITY.EXTENSION_ITEM,
   },
   {
     key: 'model',

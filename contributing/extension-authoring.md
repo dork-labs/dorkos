@@ -119,6 +119,12 @@ api.registerDialog(id, Component): { open: () => void; close: () => void }
 
 // Add a tab to the settings dialog
 api.registerSettingsTab(id, label, Component, { group? }): () => void
+
+// Mount a full page at /x/<your-id>/<path>
+api.registerPage(path, Page, { title, icon?, menu? }): () => void
+
+// Add an item to the chat status bar
+api.registerStatusBarItem(id, Item, { label, priority?, when?, urgent? }): () => void
 ```
 
 `registerComponent` options:
@@ -129,6 +135,8 @@ api.registerSettingsTab(id, label, Component, { group? }): () => void
 - **`visibleWhen?`** — `dashboard.sections` only: a predicate the host re-evaluates on every render. Return false to hide your section without unregistering it (useful when it has nothing to say). Omit it and the section is always visible.
 - **`group?`** — `settings.tabs` only: names the sidebar section the tab sits under in the Settings dialog (e.g. `'Agents & sessions'`, `'Access & privacy'`). Omit it and the tab lands under "Add-ons", the section reserved for contributed tabs, so a tab written before this field existed still files itself somewhere honest. Same option on `registerSettingsTab`.
 
+`registerPage` and `registerStatusBarItem` have sections of their own under [UI Slots](#ui-slots): [Pages](#pages-x) and [The status bar](#the-status-bar).
+
 ### UI Control
 
 ```typescript
@@ -138,19 +146,59 @@ api.executeCommand(command: UiCommand): void
 // Open the canvas with content
 api.openCanvas(content: UiCanvasContent): void
 
-// Navigate to a client-side route
+// Navigate in-app: a core route, or one of your own pages
 api.navigate(path: string): void
+
+// Put a dot on one of your right-panel tabs, or clear it
+api.setTabMarker(tabId: string, marker: 'attention' | null): void
+```
+
+**`navigate`** takes a core route (`/team`, `/session?dir=…`) or one of **your own** pages (`/x/<your-id>/p/dorkos?view=list`). Anything else is refused with a console warning: another extension's page, another origin (`https://…`, `//host`), or a scheme like `javascript:`.
+
+**`setTabMarker`** marks a tab you registered with `registerComponent('right-panel', tabId, …)`. Core draws a small amber dot after the tab's label and adds "something needs you" to its accessible name ("Flow, something needs you"). You choose only whether the tab is marked; you cannot change how the dot looks. Marking a tab you did not register does nothing and logs a warning. Marks clear when your extension deactivates. Use it for "something here needs the person", not for "something changed": no counts, and clear it once the person has seen what needed them.
+
+```typescript
+api.registerComponent('right-panel', 'flow-tab', FlowTab, { label: 'Flow' });
+api.subscribe(
+  (state) => state.currentProject?.name ?? null,
+  () => api.setTabMarker('flow-tab', decisionsWaiting() > 0 ? 'attention' : null)
+);
 ```
 
 ### State
 
 ```typescript
-// Read-only snapshot: { currentCwd, activeSessionId, agentId }
+// Read-only snapshot: { currentCwd, activeSessionId, agentId, currentProject }
 api.getState(): ExtensionReadableState
 
 // Subscribe to state changes (returns unsubscribe function)
 api.subscribe(selector, callback): () => void
 ```
+
+**`currentProject`** is the project the selected folder belongs to: `{ root, name }`, where `root` is the git main checkout (a worktree or a subfolder belongs to its main checkout) and `name` is a short name that is safe in a URL and never changes once given. It is `null` when the folder is in no repository, and **also `null` while core is still asking**, so treat `null` as "not known yet or none" rather than "definitely none". Subscribe to it the same way as `currentCwd`:
+
+```typescript
+api.subscribe(
+  (state) => state.currentProject,
+  (project) => console.log('Now in', project?.name ?? 'no project')
+);
+```
+
+The server half has the same registry as `ctx.projects` (see [`ctx.projects`](#ctxprojects)).
+
+### Feature detection
+
+Hosts gain seams over time, and one build of your extension should run on hosts from before and after each one. **Probe for a seam; never compare host versions:**
+
+```typescript
+if (typeof api.registerPage === 'function') api.registerPage('', Home, { title: 'Flow' });
+if (api.isSlotAvailable('status-bar'))
+  api.registerStatusBarItem('run', RunChip, { label: 'Flow run' });
+if (typeof api.setTabMarker === 'function') api.setTabMarker('flow-tab', 'attention');
+const project = 'currentProject' in api.getState() ? api.getState().currentProject : null;
+```
+
+On the server half, probe `ctx.projects !== undefined` the same way.
 
 ### Events
 
@@ -239,6 +287,9 @@ api.id: string
 | `dialog`                | Modal dialog layer                                     |
 | `settings.tabs`         | Settings dialog tabs                                   |
 | `right-panel`           | Shell-level right panel (contextual inspector) tabs    |
+| `status-bar`            | The chat status bar, beside the runtime and account    |
+
+Pages are not a slot: `registerPage` mounts a route (see [Pages](#pages-x)).
 
 > The `sidebar.tabs` and `header.actions` slots were removed when the web cockpit
 > retired the sidebar tab strip. Contribute a contextual inspector tab via
@@ -293,6 +344,74 @@ export function activate(api: ExtensionAPI): void {
 ```
 
 **When the tab appears.** Your tab is added to the right panel's tab strip and stays available wherever the panel shows: the public `registerComponent` API accepts `visibleWhen` only for `dashboard.sections`, not for the route/transport/agent predicate built-in right-panel tabs use to scope themselves, so an **extension tab is always visible**. It registers as a _contextual_ tab (never the global fallback). That has a real consequence — the panel auto-selects the first contextual tab when the active one isn't showing, so on routes where no built-in contextual tab is visible (home, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Because it can auto-open in any context, always render a useful empty state when there is nothing relevant to show.
+
+### Pages (`/x/…`)
+
+`api.registerPage(path, Page, options)` mounts a full page at **`/x/<your-id>/<path>`**. The `x/` prefix means no core route can ever take your address, now or later.
+
+- **`path`** is `''` for your home (`/x/flow`), or `/`-separated segments that are lowercase words or `:param` placeholders (`'settings'`, `'p/:name'`). Anything else throws. Registering the same path twice replaces the first, with a console warning. When two paths could answer an address, the one with more fixed words before its first `:param` wins (`p/new` beats `p/:name`).
+- **`options.title`** (required, non-empty text; a page without one is refused with a console warning) names the page in its bar, its tab, the command palette and the phone menu. **`options.icon`** is a component the host sizes with `className` (an inline SVG; you cannot import `lucide-react`). **`options.menu: false`** keeps a page out of the palette and the phone menu. Pages with a `:param` are never listed there: a menu cannot fill in the value.
+- **Your page gets** `params` (the `:param` values, decoded), `search` (the URL's query, every value exactly the text the address holds: `?v=1.10` is `'1.10'`) and `setSearch(next)`, which writes keys into the URL (`null` removes one). `setSearch` replaces the history entry rather than adding one, so writing a filter box on every keystroke leaves one Back press, not one per letter; two calls in a row both land. Keep state a person would bookmark there: `/x/flow?project=dorkos` opens the same view for whoever it is sent to.
+- **Core gives the page the whole content area and scrolls it.** Layout and padding are yours. If the page throws while drawing, core shows a "ran into a problem" message in its place, not a broken app.
+- **A reload on your page's address works.** It arrives before your extension has loaded, so core shows a skeleton until you register the page. If your extension is not installed, not allowed to run, turned off, or has no page at that address, core says which, in plain words, with a way to fix it where there is one.
+- **Where people find it:** the command palette lists your pages under "Add-ons" (type part of the title), and on a phone they are listed under "Add-ons" in the You tab. There is no sidebar entry: extensions add no app chrome of their own.
+
+```typescript
+function FlowHome({ search, setSearch }: ExtensionPageProps) {
+  return (
+    <div style={{ padding: '24px 16px' }}>
+      <h1>Flow</h1>
+      <button onClick={() => setSearch({ project: 'dorkos' })}>Show dorkos</button>
+      <p>Showing {search.project ?? 'every project'}</p>
+    </div>
+  );
+}
+
+function ProjectLens({ params }: ExtensionPageProps) {
+  return <h1>Project {params.name}</h1>;
+}
+
+export function activate(api: ExtensionAPI): void {
+  api.registerPage('', FlowHome, { title: 'Flow' });
+  api.registerPage('p/:name', ProjectLens, { title: 'Project' });
+  // Elsewhere: api.navigate('/x/flow/p/dorkos');
+}
+```
+
+### The status bar
+
+`api.registerStatusBarItem(id, Item, options)` adds an item to the status bar under a chat's composer, beside the runtime and account chips. Your component receives the chat's `StatusBarSlotContext` as props:
+
+| Field          | What it is                                                                   |
+| -------------- | ---------------------------------------------------------------------------- |
+| `sessionId`    | The chat's session id                                                        |
+| `cwd`          | The chat's folder, or `null`                                                 |
+| `project`      | The project of `cwd` (`{ root, name }`), or `null`                           |
+| `trackerItems` | Every tracker item the chat works on, newest first                           |
+| `compact`      | `true` at phone width: draw your short form (an id and a state, not a title) |
+
+Options:
+
+- **`label`** is the accessible name of your item's region.
+- **`priority?`** orders your item among other extensions' items (lower first, default 100).
+- **`when?(ctx)`** says whether to show the item for this chat (default: always). **`urgent?(ctx)`** says whether it needs attention.
+- **`when` and `urgent` must be pure and read only `ctx`.** They run while the status bar works out what fits, many times, before your component is drawn: no fetching, no reading your extension's own state, no subscribing. Anything you need to decide belongs in `ctx`, which is why `trackerItems` is on it. Core cannot enforce this beyond calling them synchronously, but anything other than `true` or `false` (a Promise, an object) reads as `false` and logs a warning once. A rule that throws hides the item (logged once), and an item that throws while drawing disappears on its own; neither takes the status bar down.
+
+All extension items share **one slot** in the bar's width budget, called "Add-ons". It shows when any item's `when` says so. It ranks with live work (like running subagents) when slots are contested, and with an account that needs you when any shown item is `urgent`. It cannot be pinned. When the bar has no room for it, it counts in the `+N` beside the `⋯`, and the Session panel behind the `⋯` lists every shown item under "Add-ons".
+
+```typescript
+api.registerStatusBarItem('run', RunChip, {
+  label: 'Flow run',
+  when: (ctx) => ctx.trackerItems.length > 0,
+  urgent: (ctx) => ctx.trackerItems.some((item) => item.runStatus === 'needs-you'),
+});
+
+function RunChip({ trackerItems, compact }: StatusBarSlotContext) {
+  const first = trackerItems[0]!;
+  if (trackerItems.length > 1) return <span>{trackerItems.length} items</span>;
+  return <span>{compact ? first.id : `${first.id} · ${first.stage ?? 'Working'}`}</span>;
+}
+```
 
 ## TypeScript vs JavaScript
 
@@ -399,6 +518,7 @@ The generalized `ensureCoreExtensions()` scanner picks the new directory up auto
 ## Limitations (v1)
 
 - No sandboxing: client-side extensions run in the browser with full DOM access; server-side extensions run in the Node.js host process.
+- The `hello-world` core extension (`apps/server/src/core-extensions/hello-world/`) is the worked example of a page, a status-bar item and a tab marker. It ships turned off.
 - No extension marketplace or auto-update mechanism.
 - Storage is local-only (no sync across machines).
 

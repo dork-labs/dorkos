@@ -34,7 +34,7 @@ The owner's promise is different: "Read" means every action this app lets agents
 
 **A level never brings back access taken away another way.** Every path that ends a subject's grants some other way ends its level in the same transaction: exact actions chosen for the agent, removing the agent's access or the agent, stopping sharing with every agent, moving a way to a DorkOS account, and disconnecting or removing the account. A level of an agent that is no longer registered is left alone.
 
-**Migration 0130** turns each live grant that matches a level in the connection's newest review (every action still offered, by class) into that level; everything else stays exact actions. Read wins when an app has no write actions, since both levels are then one set. This includes a grant picked action by action that happened to equal the whole Read (or Read and write) set: nothing recorded tells the two apart, and the card already showed such a grant as "Read". From now on it widens with the app's new read actions like any Read grant.
+**Migration 0131** turns each live grant that matches a level in the connection's newest review (every action still offered, by class) into that level; everything else stays exact actions. Read wins when an app has no write actions, since both levels are then one set. This includes a grant picked action by action that happened to equal the whole Read (or Read and write) set: nothing recorded tells the two apart, and the card already showed such a grant as "Read". From now on it widens with the app's new read actions like any Read grant.
 
 This amends ADR 260928-121730's rule that "a Read grant keeps exactly the revisions it had": that still holds for exact actions, and no longer for a level, which follows the app by class.
 

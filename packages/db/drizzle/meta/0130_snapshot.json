@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7cf1d556-0840-414e-ba12-288cebe0d99b",
+  "id": "404646d5-6a06-414c-8383-b307300d0c7d",
   "prevId": "3f14bc8b-ce6f-407b-9b79-75d0e938067e",
   "tables": {
     "a2a_tasks": {
@@ -3374,155 +3374,6 @@
           "name": "agent_connection_attachments_agent_id_connection_id_pk"
         }
       },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "connection_access_levels": {
-      "name": "connection_access_levels",
-      "columns": {
-        "subject_type": {
-          "name": "subject_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "subject_id": {
-          "name": "subject_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "connection_id": {
-          "name": "connection_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "level": {
-          "name": "level",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "follower_command_id": {
-          "name": "follower_command_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "connection_access_levels_agent_idx": {
-          "name": "connection_access_levels_agent_idx",
-          "columns": [
-            "agent_id"
-          ],
-          "isUnique": false
-        },
-        "connection_access_levels_connection_idx": {
-          "name": "connection_access_levels_connection_idx",
-          "columns": [
-            "connection_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "connection_access_levels_connection_id_connections_id_fk": {
-          "name": "connection_access_levels_connection_id_connections_id_fk",
-          "tableFrom": "connection_access_levels",
-          "tableTo": "connections",
-          "columnsFrom": [
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "connection_access_levels_subject_type_subject_id_connection_id_pk": {
-          "columns": [
-            "subject_type",
-            "subject_id",
-            "connection_id"
-          ],
-          "name": "connection_access_levels_subject_type_subject_id_connection_id_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "connection_level_follows": {
-      "name": "connection_level_follows",
-      "columns": {
-        "connection_id": {
-          "name": "connection_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "followed_at": {
-          "name": "followed_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "app_version": {
-          "name": "app_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "connection_level_follows_connection_id_connections_id_fk": {
-          "name": "connection_level_follows_connection_id_connections_id_fk",
-          "tableFrom": "connection_level_follows",
-          "tableTo": "connections",
-          "columnsFrom": [
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
@@ -7491,6 +7342,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": "''"
+        },
+        "community_attachment_id": {
+          "name": "community_attachment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",

@@ -9,6 +9,10 @@ import type { ExtensionEventsAPI } from './extension-events.js';
  * page: contributions appear in a "From your extensions" group at the top of
  * the Activity tab, in priority order. Nothing about registration changed. A
  * room-widget successor is deferred to a later phase.
+ *
+ * `status-bar` is registered through `registerStatusBarItem`, not
+ * `registerComponent`; it is listed here so `isSlotAvailable('status-bar')`
+ * can tell an extension the host has it.
  */
 export type ExtensionPointId =
   | 'sidebar.footer'
@@ -16,7 +20,35 @@ export type ExtensionPointId =
   | 'command-palette.items'
   | 'dialog'
   | 'settings.tabs'
-  | 'right-panel';
+  | 'right-panel'
+  | 'status-bar';
+
+/** A project as core knows it: a git main checkout. */
+export interface ProjectRef {
+  /** Absolute, canonical path of the main checkout. */
+  readonly root: string;
+  /**
+   * Short display name: URL-safe, unique among known projects, and stable once
+   * assigned (basename, or "basename~parent" on a clash). Safe in URLs as-is.
+   */
+  readonly name: string;
+}
+
+/** One tracker item a chat is working on, newest first in lists. */
+export interface TrackerItemRef {
+  /** The tracker identifier, e.g. `DOR-2387`. */
+  readonly id: string;
+  /** The flow stage the run is in, or null when it reports none. */
+  readonly stage: string | null;
+  /** The run's own status, or null when it reports none. */
+  readonly runStatus: string | null;
+  /** ISO-8601 time the run started. */
+  readonly startedAt: string;
+  /** 'this-chat': this chat works on it. 'own-chat': this chat started it and it runs in its own chat. */
+  readonly via: 'this-chat' | 'own-chat';
+  /** That chat's session id: the "Open its chat" target. Null for 'this-chat', or when it is not a DorkOS chat. */
+  readonly ownChatSessionId: string | null;
+}
 
 /** A project as core knows it: a git main checkout. */
 export interface ProjectRef {
@@ -50,6 +82,58 @@ export interface ExtensionReadableState {
   currentCwd: string | null;
   activeSessionId: string | null;
   agentId: string | null;
+  /** The project of `currentCwd`; null for no project or while resolving. */
+  currentProject: ProjectRef | null;
+}
+
+/** Props every extension page receives. */
+export interface ExtensionPageProps {
+  /** Values of the page path's `:param` segments. */
+  readonly params: Readonly<Record<string, string>>;
+  /** The URL's query, flat. */
+  readonly search: Readonly<Record<string, string>>;
+  /** Replace query keys; null removes a key. Writes the URL (bookmarkable). */
+  setSearch(next: Record<string, string | null>): void;
+}
+
+/** How an extension page is named and listed. */
+export interface ExtensionPageOptions {
+  /** Title for the page bar, tab, palette and phone menu, e.g. "Flow". */
+  title: string;
+  /** Icon for the page bar, tab, palette and phone menu; the host sizes it with `className`. */
+  icon?: ComponentType<{ className?: string }>;
+  /** List it in the command palette and phone "Add-ons" menu. Default true; param paths are never listed. */
+  menu?: boolean;
+}
+
+/** What a status-bar item is given, for the chat whose status bar it sits in. */
+export interface StatusBarSlotContext {
+  /** The chat's session id. */
+  readonly sessionId: string;
+  /** The chat's working folder, or null when it has none. */
+  readonly cwd: string | null;
+  /** The project `cwd` belongs to, or null for no project or while resolving. */
+  readonly project: ProjectRef | null;
+  /** Every tracker item the chat works on, newest first. */
+  readonly trackerItems: readonly TrackerItemRef[];
+  /** True at phone width: draw the short form. */
+  readonly compact: boolean;
+}
+
+/** How a status-bar item is named, ordered and shown. */
+export interface StatusBarItemOptions {
+  /** Accessible name of the item's region. */
+  label: string;
+  /** Order among extension items; lower first. Default 100. */
+  priority?: number;
+  /**
+   * Whether to show for this chat. Default: always. Pure and synchronous: read
+   * only `ctx`, never fetch, read extension state or subscribe. It runs in the
+   * status bar's budget pass; a throw hides the item.
+   */
+  when?(ctx: StatusBarSlotContext): boolean;
+  /** Whether it needs attention (raises its budget priority). Same rules as `when`. */
+  urgent?(ctx: StatusBarSlotContext): boolean;
 }
 
 /** The contract extensions receive on activation. */
@@ -126,6 +210,33 @@ export interface ExtensionAPI {
     options?: { group?: string }
   ): () => void;
 
+  /**
+   * Mount a full page at /x/<extensionId>/<path>. `path` is '' or segments with ':param'.
+   *
+   * A path with no params is listed in the command palette and the phone's
+   * "Add-ons" menu (unless `options.menu` is false). Registering the same path
+   * twice replaces the first. Returns an unsubscribe function (auto-called on
+   * deactivate).
+   */
+  registerPage(
+    path: string,
+    component: ComponentType<ExtensionPageProps>,
+    options: ExtensionPageOptions
+  ): () => void;
+
+  /**
+   * Add an item to the chat status bar, beside the runtime and account chips.
+   *
+   * The component receives the chat's {@link StatusBarSlotContext} as props.
+   * `options.when` and `options.urgent` must be pure: read only `ctx`. Returns
+   * an unsubscribe function (auto-called on deactivate).
+   */
+  registerStatusBarItem(
+    id: string,
+    component: ComponentType<StatusBarSlotContext>,
+    options: StatusBarItemOptions
+  ): () => void;
+
   // --- UI Control (wraps Phase 1 dispatcher) ---
 
   /** Execute a UI command (open panel, show toast, etc.). */
@@ -134,7 +245,22 @@ export interface ExtensionAPI {
   /** Open the canvas with the given content. */
   openCanvas(content: UiCanvasContent): void;
 
-  /** Navigate to a client-side route. */
+  /**
+   * Mark one of this extension's right-panel tabs. Core draws the dot; null clears it.
+   *
+   * `tabId` is the id passed to `registerComponent('right-panel', tabId, ...)`.
+   * Marking a tab this extension did not register does nothing. Markers clear
+   * when the extension deactivates.
+   */
+  setTabMarker(tabId: string, marker: 'attention' | null): void;
+
+  /**
+   * Navigate in-app. Accepts core routes and '/x/<id>/<path>[?query]'.
+   *
+   * Only this extension's own pages are accepted under `/x/`; anything else
+   * (another extension's page, another origin, a script URL) is refused with a
+   * console warning.
+   */
   navigate(path: string): void;
 
   // --- State ---

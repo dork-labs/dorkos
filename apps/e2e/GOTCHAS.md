@@ -121,7 +121,9 @@ it can flag a comment like "three times:"; use the marker for those.
 
 ## Dynamic Content
 
-- Assistant messages stream in token-by-token; never assert exact text content mid-stream — wait for the inference indicator to reach `hidden` first
+- Assistant messages stream in token-by-token; never assert exact text content mid-stream — wait for the turn to end first with `chatPage.waitForTurnToEnd()`
+- **Know which turn signal you want.** `chatPage.sendAndLand(text)` returns once the reply has _started_; `chatPage.waitForTurnToEnd()` returns once the turn has _ended_. The second reads `chatPage.turnRunning` (the chat panel's `data-turn-status="streaming"` or `data-turn-lifecycle="blocked"`), which mirror the turn's own state. A turn parked on an approval or a question has not ended, so `waitForTurnToEnd()` waits through it: answer the prompt first. Do not wait on the live lane's words or the composer's label instead: an Ask, a progress bar or an edited queued draft covers them while the turn is still running. And `waitForTurnToEnd()` passes at once on an idle chat, so call it only after something proved the turn began — never straight after `sendMessage` (DOR-2546).
+- **A page object may only name a testid the client renders.** `__tests__/page-object-testids.test.ts` fails when one in `pages/` appears nowhere in `apps/client/src`. It exists because `ChatPage.inferenceStreaming` pointed at `inference-indicator-streaming` for months after the component that drew it was deleted, so every wait on it passed at once or burned its timeout, and nothing said so.
 - Optimistic UI updates (e.g., message appears before server confirms) can cause stale element handles; re-locate after any mutation
 - A tool call that is already `complete` on the frame its part first mounts is never put in the DOM at all — auto-hide drops it, rather than hiding it with CSS. The mock scenarios are zero-latency and `turn_end` remounts the part as complete, so a tool-call assertion is racing a 0ms turn and will eventually lose. Turn the preference off for that test: `page.addInitScript(() => localStorage.setItem('dorkos-auto-hide-tool-calls', 'false'))`, before `goto`.
 
@@ -156,7 +158,7 @@ locator that was pointing at the wrong thing.
 - **A completed tool call's RESULT needs two things**: auto-hide off
   (`localStorage['dorkos-auto-hide-tool-calls'] = 'false'`, see Dynamic Content
   below) _and_ an expand click — the card renders collapsed to a one-line header.
-  Wait for `inference-indicator-streaming` to be hidden before that click, or
+  Wait for the turn to end (`chatPage.waitForTurnToEnd()`) before that click, or
   Playwright refuses to click a still-reflowing element and reports it as a click
   timeout rather than as an animation.
 - **`permission_denied` is not an operator's refusal.** It says the RUNTIME

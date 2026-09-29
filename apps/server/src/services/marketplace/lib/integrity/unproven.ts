@@ -9,7 +9,7 @@
  *
  * @module services/marketplace/lib/integrity/unproven
  */
-import type { InstalledFiles, UnprovenFiles } from '../installed-files.js';
+import type { InstalledFiles, UnprovenFiles } from '../records/installed-files.js';
 import { addedEffectFiles } from './strict-differences.js';
 
 /** Most kept files one {@link describeUnproven} sentence names. */

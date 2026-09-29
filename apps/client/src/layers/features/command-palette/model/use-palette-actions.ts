@@ -40,6 +40,8 @@ interface PaletteActions {
   handleSessionSelect: (sessionId: string, dir?: string | null) => void;
   /** Put a slash command into the active conversation's composer and go there. */
   handleCommandSelect: (command: string) => void;
+  /** Open an extension page by its in-app address (`/x/<extensionId>/…`). */
+  handlePageSelect: (href: string) => void;
   /**
    * Record that the operator reached an agent, for the rows that open one
    * without going through {@link PaletteActions.handleAgentSelect} — a second
@@ -234,6 +236,17 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     [closePalette, navigate, queryClient, transport, selectedCwd, recordAgentOpened]
   );
 
+  // An extension page (spec `flow-multiproject` §6.5). The href was built from
+  // the registry by `extensionPageHref`, never typed by anyone, so it goes
+  // straight to the router.
+  const handlePageSelect = useCallback(
+    (href: string) => {
+      closePalette();
+      void navigate({ href });
+    },
+    [closePalette, navigate]
+  );
+
   /**
    * Run whatever an extension registered under an action id the cockpit's own
    * switches do not know.
@@ -410,6 +423,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     handleRoomSelect,
     handleSessionSelect,
     handleCommandSelect,
+    handlePageSelect,
     recordAgentOpened,
     setDir,
     selectedCwd,

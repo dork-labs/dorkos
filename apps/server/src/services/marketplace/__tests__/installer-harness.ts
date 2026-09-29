@@ -30,20 +30,20 @@ import { noopLogger, type Logger } from '@dorkos/shared/logger';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AgentCreationResult } from '../../core/agent-creator.js';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
-import { ConflictDetector } from '../conflict-detector.js';
-import { MarketplaceCache } from '../marketplace-cache.js';
-import { MarketplaceInstaller } from '../marketplace-installer.js';
-import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
+import { ConflictDetector } from '../preview/conflict-detector.js';
+import { MarketplaceCache } from '../cache/marketplace-cache.js';
+import { MarketplaceInstaller } from '../installer/marketplace-installer.js';
+import { MarketplaceSourceManager } from '../sources/marketplace-source-manager.js';
 import { PackageFetcher } from '../package-fetcher.js';
 import { PackageResolver } from '../package-resolver.js';
-import { PermissionPreviewBuilder } from '../permission-preview.js';
+import { PermissionPreviewBuilder } from '../preview/permission-preview.js';
 import type { GitTreeSource } from '../lib/git/git-tree.js';
 import { AdapterInstallFlow } from '../flows/install-adapter.js';
 import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
 import { ShapeInstallFlow } from '../flows/install-shape.js';
 import { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
-import { UninstallFlow } from '../flows/uninstall.js';
+import { UninstallFlow } from '../flows/uninstall/uninstall.js';
 
 /**
  * The stubbed side-effect surfaces, exposed so a test can assert which ones

@@ -8,7 +8,7 @@ import type { MarketplaceJson } from '@dorkos/marketplace';
 import { initBoundary } from '../../../lib/boundary.js';
 import { CATALOG_MAX_BYTES } from '@dorkos/shared/bounded-read';
 import { MARKETPLACE_JSON_TIMEOUT_MS, PackageFetcher } from '../package-fetcher.js';
-import { MarketplaceCache, type CachedMarketplace } from '../marketplace-cache.js';
+import { MarketplaceCache, type CachedMarketplace } from '../cache/marketplace-cache.js';
 import {
   GitFetchError,
   GitRefNotFoundError,
@@ -17,7 +17,7 @@ import {
   type RemoteRef,
   type TreeRequest,
 } from '../lib/git/git-tree.js';
-import { UnsupportedSourceUrlError } from '../source-url-policy.js';
+import { UnsupportedSourceUrlError } from '../sources/source-url-policy.js';
 import type { MarketplaceSource } from '../types.js';
 
 /** Construct a fake logger that records calls for later assertion. */

@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
-import type { RightPanelContribution } from '@/layers/shared/model';
+import { useExtensionRegistry, type RightPanelContribution } from '@/layers/shared/model';
 
 // Mutable mock state — mutate per-test
 const mockSetRightPanelOpen = vi.fn();
@@ -510,5 +510,39 @@ describe('RightPanelHeader — the selected tab is never left behind an edge', (
     } finally {
       observers.restore();
     }
+  });
+});
+
+describe('RightPanelHeader — an extension’s tab marker (spec flow-multiproject §6.7)', () => {
+  afterEach(() => {
+    cleanup();
+    useExtensionRegistry.setState({ tabMarkers: {} });
+  });
+
+  it('draws an amber dot and says something needs you, only on the marked tab', () => {
+    useExtensionRegistry.getState().setTabMarker('flow:flow-tab', 'attention');
+    renderHeader([
+      makeContribution('agent', { title: 'Profile' }),
+      makeContribution('flow:flow-tab', { title: 'Flow' }),
+    ]);
+
+    const marked = screen.getByRole('tab', { name: 'Flow, something needs you' });
+    const dot = marked.querySelector('[data-slot="right-panel-tab-marker"]');
+    expect(dot).not.toBeNull();
+    expect(dot).toHaveClass('bg-status-warning-dot');
+    expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
+  });
+
+  it('returns to the plain name and no dot when the mark clears', () => {
+    useExtensionRegistry.getState().setTabMarker('flow:flow-tab', 'attention');
+    renderHeader([
+      makeContribution('agent', { title: 'Profile' }),
+      makeContribution('flow:flow-tab', { title: 'Flow' }),
+    ]);
+
+    act(() => useExtensionRegistry.getState().setTabMarker('flow:flow-tab', null));
+
+    const tab = screen.getByRole('tab', { name: 'Flow' });
+    expect(tab.querySelector('[data-slot="right-panel-tab-marker"]')).toBeNull();
   });
 });

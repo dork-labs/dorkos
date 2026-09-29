@@ -24,8 +24,8 @@ import { fileURLToPath } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import { buildInstallerForTests } from './installer-harness.js';
-import { UninstallFlow } from '../flows/uninstall.js';
-import { readInstalledFiles } from '../lib/installed-files.js';
+import { UninstallFlow } from '../flows/uninstall/uninstall.js';
+import { readInstalledFiles } from '../lib/records/installed-files.js';
 
 const FIXTURES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
 
@@ -138,11 +138,12 @@ describe('update (uninstall then install, DOR-2245 §6)', () => {
     const { installPath: root } = await harness.installer.install({ name });
     await put(root, 'config/mine.json', 'mine');
     // Since DOR-2195 the update installs the version it staged and checked,
-    // through the private installStaged, so that is where the failure goes.
-    const installer = harness.installer as unknown as {
-      installStaged: (...args: unknown[]) => Promise<unknown>;
+    // through the install step's installStaged, so that is where the failure goes.
+    const { dispatcher } = harness.installer as unknown as {
+      dispatcher: { installStaged: (...args: unknown[]) => Promise<unknown> };
     };
-    installer.installStaged = async () => {
+    const installStaged = dispatcher.installStaged;
+    dispatcher.installStaged = async () => {
       throw new Error('install half failed');
     };
     await expect(harness.installer.update({ name })).rejects.toThrow('install half failed');
@@ -157,7 +158,7 @@ describe('update (uninstall then install, DOR-2245 §6)', () => {
     expect(await readdir(path.dirname(root))).toEqual([path.basename(root)]);
 
     // A retry installs cleanly over what was left and keeps the person's file.
-    delete (installer as { installStaged?: unknown }).installStaged;
+    dispatcher.installStaged = installStaged;
     await harness.installer.install({ name });
     expect(await readFile(path.join(root, 'config', 'mine.json'), 'utf8')).toBe('mine');
     expect((await readInstalledFiles(root))?.uninstalledAt).toBeUndefined();

@@ -193,6 +193,10 @@ function inputWith(overrides: Partial<StatusItemNodesInput>): StatusItemNodesInp
     waitingOnSubagents: false,
     connectionState: 'connected',
     density: 'full',
+    extensions: {
+      ctx: { sessionId: 'ses-1', cwd: null, project: null, trackerItems: [], compact: false },
+      items: [],
+    },
     ...overrides,
   };
 }
@@ -293,6 +297,7 @@ describe('buildStatusItemNodes — one usage display, never two (spec claude-acc
         usage: ACCOUNT_USAGE,
         usageStale: false,
         subagentsInFlight: 0,
+        extensionItems: [],
       },
       pins: ['usage'],
       nodes,
@@ -550,6 +555,7 @@ function buildLine(
     usage: null,
     usageStale: false,
     subagentsInFlight: 0,
+    extensionItems: [],
   };
   return applyStatusBudget(selectPromotedItems({ ctx, pins: [], nodes }), budget);
 }
@@ -752,5 +758,33 @@ describe('buildStatusItemNodes — the runtime chip and the model item must not 
     // name appears.
     const occurrences = container.textContent?.match(/qwen2\.5-coder/g) ?? [];
     expect(occurrences).toHaveLength(1);
+  });
+});
+
+describe('buildStatusItemNodes — extension items (spec flow-multiproject §6.6)', () => {
+  const ctx = { sessionId: 'ses-1', cwd: '/repo', project: null, trackerItems: [], compact: true };
+
+  it('builds no Add-ons node when no extension item is shown', () => {
+    expect(buildStatusItemNodes(inputWith({})).extensions).toBeUndefined();
+  });
+
+  it('draws every shown item in one node, each with the chat’s context', () => {
+    const nodes = buildStatusItemNodes(
+      inputWith({
+        extensions: {
+          ctx,
+          items: [
+            {
+              id: 'flow:run-chip',
+              extensionId: 'flow',
+              label: 'Flow run',
+              component: ({ compact }) => <span>{compact ? 'short' : 'long'}</span>,
+            },
+          ],
+        },
+      })
+    );
+    render(<>{nodes.extensions}</>);
+    expect(screen.getByRole('group', { name: 'Flow run' }).textContent).toBe('short');
   });
 });

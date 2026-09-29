@@ -26,6 +26,9 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
   return {
     registry: {
       register: vi.fn().mockReturnValue(vi.fn()),
+      getContributions: vi.fn().mockReturnValue([]),
+      setTabMarker: vi.fn(),
+      clearTabMarkers: vi.fn(),
     },
     dispatcherContext: {
       getStore: () => ({}) as ReturnType<ExtensionAPIDeps['dispatcherContext']['getStore']>,
@@ -435,7 +438,16 @@ describe('createExtensionAPI', () => {
         currentCwd: '/home/kai/project',
         activeSessionId: 'sess-xyz',
         agentId: null,
+        currentProject: null,
       });
+    });
+
+    it('projects currentProject from the app store', () => {
+      const project = { root: '/home/kai/project', name: 'project' };
+      vi.mocked(deps.appStore.getState).mockReturnValue({ currentProject: project });
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      expect(api.getState().currentProject).toBe(project);
     });
 
     it('returns null for missing fields', () => {
@@ -447,6 +459,7 @@ describe('createExtensionAPI', () => {
       expect(state.currentCwd).toBeNull();
       expect(state.activeSessionId).toBeNull();
       expect(state.agentId).toBeNull();
+      expect(state.currentProject).toBeNull();
     });
 
     it('resolves agentId from the store currentAgentId (cwd matched an agent)', () => {

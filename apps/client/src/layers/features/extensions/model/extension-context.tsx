@@ -12,6 +12,7 @@ import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { registerExtensionRemount } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
 import { useSyncCurrentAgentId, useReconcileExplicitAgentPath } from '@/layers/entities/agent';
+import { useCurrentProjectSync } from '@/layers/entities/project';
 import type { LoadedExtension, ExtensionAPIDeps } from './types.js';
 import { ExtensionLoader } from './extension-loader.js';
 import { useCwdExtensionSync } from './use-cwd-extension-sync.js';
@@ -25,12 +26,20 @@ export interface ExtensionContextValue {
   loaded: Map<string, LoadedExtension>;
   /** Whether the initial extension load is complete. */
   ready: boolean;
+  /**
+   * Whether a reload is swapping the loaded set right now (a working-folder
+   * change, or a hot reload). In between, an extension's contributions are
+   * torn down and not yet back, so a surface that would otherwise say "this
+   * extension has no such page" should wait instead.
+   */
+  settling: boolean;
 }
 
 const defaultContextValue: ExtensionContextValue = {
   extensions: [],
   loaded: new Map(),
   ready: false,
+  settling: false,
 };
 
 const ExtensionContext = createContext<ExtensionContextValue>(defaultContextValue);
@@ -81,8 +90,14 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
     const loader = loaderRef.current;
     if (!loader) return;
 
-    const { extensions, loaded } = await loader.reloadAll();
-    setState({ extensions, loaded, ready: true });
+    setState((prev) => ({ ...prev, settling: true }));
+    try {
+      const { extensions, loaded } = await loader.reloadAll();
+      setState({ extensions, loaded, ready: true, settling: false });
+    } catch (err) {
+      setState((prev) => ({ ...prev, settling: false }));
+      throw err;
+    }
     // Sync TanStack Query so UI consumers of the extension list reflect the
     // cwd-scoped set immediately, not on the next poll interval.
     queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
@@ -100,6 +115,10 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
   // can tell extensions which agent they run beside (getState().agentId).
   useSyncCurrentAgentId();
 
+  // And the selected cwd's project, for getState().currentProject (spec
+  // `flow-multiproject` §6.4).
+  useCurrentProjectSync();
+
   // Heal the explicitly-opened agent path when that agent is deleted, so its
   // Profile tab disappears off /session instead of rendering AgentNotFound
   // on a stale selection.
@@ -113,7 +132,7 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
     loader
       .initialize()
       .then(({ extensions, loaded }) => {
-        setState({ extensions, loaded, ready: true });
+        setState({ extensions, loaded, ready: true, settling: false });
       })
       .catch((err: unknown) => {
         console.error('[extensions] Failed to initialize:', err);
@@ -140,13 +159,15 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
     const data = raw as { extensionIds: string[]; timestamp: number };
 
     void (async () => {
+      setState((prev) => ({ ...prev, settling: true }));
       try {
         const { extensions, loaded } = await loader.reloadExtensions(data.extensionIds);
-        setState({ extensions, loaded, ready: true });
+        setState({ extensions, loaded, ready: true, settling: false });
         // Keep TanStack Query in sync so UI consumers of useExtensions() reflect
         // the refreshed status without waiting for the next poll interval.
         queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
       } catch (err) {
+        setState((prev) => ({ ...prev, settling: false }));
         console.error('[extensions] Hot reload failed:', err);
       }
     })();

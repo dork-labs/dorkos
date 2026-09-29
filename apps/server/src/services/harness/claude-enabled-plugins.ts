@@ -29,8 +29,8 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { HarnessClaudeOnly, HarnessClaudeOnlyPlugin } from '@dorkos/shared/harness-schemas';
 import { inheritedClaudeRoot } from '../runtimes/claude-code/claude-config-dir.js';
-import { MarketplaceCache } from '../marketplace/marketplace-cache.js';
-import { MarketplaceSourceManager } from '../marketplace/marketplace-source-manager.js';
+import { MarketplaceCache } from '../marketplace/cache/marketplace-cache.js';
+import { MarketplaceSourceManager } from '../marketplace/sources/marketplace-source-manager.js';
 import { marketplaceRepoKey } from '../marketplace/lib/marketplace-repo-key.js';
 
 /**

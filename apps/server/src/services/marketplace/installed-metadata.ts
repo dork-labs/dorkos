@@ -2,7 +2,7 @@
  * Installed-package metadata sidecar.
  *
  * Each successfully installed package gets a `.dork/install-metadata.json`
- * file written by the {@link import('./marketplace-installer.js').MarketplaceInstaller}
+ * file written by the {@link import('./installer/marketplace-installer.js').MarketplaceInstaller}
  * after the install flow completes. The sidecar is intentionally separate
  * from `.dork/manifest.json` (which is the immutable source manifest copied
  * from the package archive) so install-time provenance — which marketplace
@@ -111,7 +111,7 @@ export interface InstallMetadata {
    * there would be no safe way to find out later: a generated schedule is
    * indistinguishable from a person's own skill by location alone. Uninstall
    * reads this list before the package leaves disk and deletes exactly what is
-   * on it (`flows/uninstall.ts`).
+   * on it (`flows/uninstall/uninstall.ts`).
    *
    * Only inline declarations appear here. A `skillRef` schedule is written into
    * a file the package itself ships, which uninstall removes wholesale.

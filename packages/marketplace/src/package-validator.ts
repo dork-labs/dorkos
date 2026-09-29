@@ -143,7 +143,7 @@ const SKILL_SOURCE_DIRS = [
  *
  * The list must stay identical to the installer's resolver
  * (`SKILL_SEARCH_DIRS` in
- * `apps/server/src/services/marketplace/lib/validate-package-schedules.ts`),
+ * `apps/server/src/services/marketplace/lib/schedules/validate-package-schedules.ts`),
  * which is why it is its own constant rather than a reuse of the broader list.
  * Reusing that one made publish-time accept a `tasks/`-only skill the installer
  * would then fail to find — a package that validated clean and produced a
@@ -698,7 +698,7 @@ async function checkVersionAgreement(
  * only on the server so an author hears it while they still have the manifest
  * open — `dorkos package validate` runs this, and a broken reference caught then
  * never reaches anybody's install. The server repeats the check at install
- * (`services/marketplace/lib/validate-package-schedules.ts`) because a package
+ * (`services/marketplace/lib/schedules/validate-package-schedules.ts`) because a package
  * can arrive from a source that never ran the validator.
  *
  * Deliberately NOT extended to cron validity, which is the other half. Deciding

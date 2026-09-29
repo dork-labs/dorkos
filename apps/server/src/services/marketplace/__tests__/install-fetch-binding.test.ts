@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
 import { buildInstallerForTests } from './installer-harness.js';
-import { DisclosureChangedError } from '../marketplace-installer.js';
+import { DisclosureChangedError } from '../installer/errors.js';
 import { packageContentHash } from '../lib/content-hash.js';
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');

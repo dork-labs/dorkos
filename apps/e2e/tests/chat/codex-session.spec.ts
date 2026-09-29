@@ -63,7 +63,7 @@ test.describe('Codex — account models and session resume @integration', () => 
     const replies = page.locator('[data-testid="message-item"][data-role="assistant"]');
     await expect(replies).toHaveCount(1);
     await expect(replies.last()).toContainText(marker, { timeout: 60_000 });
-    await expect(chat.inferenceStreaming).toBeHidden({ timeout: 60_000 });
+    await chat.waitForTurnToEnd();
     const sessionId = await chat.getSessionId();
     expect(sessionId).toBeTruthy();
     const contextBeforeReload = await readContextMeter();
@@ -79,7 +79,7 @@ test.describe('Codex — account models and session resume @integration', () => 
     );
     await expect(replies).toHaveCount(2);
     await expect(replies.last()).toContainText(marker, { timeout: 60_000 });
-    await expect(chat.inferenceStreaming).toBeHidden({ timeout: 60_000 });
+    await chat.waitForTurnToEnd();
     expect(await chat.getSessionId()).toBe(sessionId);
     await readContextMeter();
 

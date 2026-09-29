@@ -391,7 +391,7 @@ function readCcPluginManifest(pluginDir: string): PluginIdentity | undefined {
  * package took down `dorkos harness sync` for every other package (DOR-646).
  *
  * The keep rule is deliberately the one the marketplace permission preview
- * already applies (`services/marketplace/permission-preview.ts`): a command
+ * already applies (`services/marketplace/preview/permission-preview.ts`): a command
  * counts when it is an object whose `command` is a non-empty string, and a
  * `matcher` counts when it is a non-empty string. The preview's whole promise is
  * that it describes what the projector will do, so the two must salvage exactly

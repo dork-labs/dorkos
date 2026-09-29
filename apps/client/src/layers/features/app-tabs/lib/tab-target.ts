@@ -7,10 +7,13 @@ import {
   ListTodo,
   MessageSquare,
   MessagesSquare,
+  Puzzle,
   Store,
   Users,
   type LucideIcon,
 } from 'lucide-react';
+import { parseExtensionPagePath } from '@/layers/shared/lib';
+import type { ExtensionPageAtPath } from '@/layers/shared/model';
 
 /**
  * What a tab's href points at, and what to call it.
@@ -99,6 +102,9 @@ export const ROUTE_ICONS: Record<string, LucideIcon> = {
   '/workspaces': FolderGit2,
 };
 
+/** Fallback name for an extension page whose extension has not said what it is called. */
+const EXTENSION_PAGE_FALLBACK_LABEL = 'Add-on';
+
 /** Fallback name for a chat tab whose agent and project are both unknown. */
 const SESSION_FALLBACK_LABEL = 'Session';
 
@@ -166,5 +172,24 @@ export function fallbackTabLabel(target: TabTarget): string {
   if (target.pathname === '/session') {
     return projectName(target.dir) ?? SESSION_FALLBACK_LABEL;
   }
+  if (parseExtensionPagePath(target.pathname) !== null) return EXTENSION_PAGE_FALLBACK_LABEL;
   return ROUTE_LABELS[target.pathname] ?? UNKNOWN_ROUTE_LABEL;
+}
+
+/**
+ * The name and icon of a tab on an extension page (`/x/<extensionId>/…`),
+ * from what the extension registered: the page's own title and icon, or a
+ * puzzle piece and "Add-on" while the page is not registered (still loading,
+ * or gone). Null for a tab on any other route.
+ *
+ * @param at - The extension page at the tab's pathname, from `useExtensionPageAtPath`.
+ */
+export function extensionPageTab(
+  at: ExtensionPageAtPath | null
+): { label: string; icon: unknown } | null {
+  if (at === null) return null;
+  const page = at.match?.page;
+  // `unknown`, not a component type: it is the extension's value, and the tab
+  // draws it through `ContributedIcon`, which checks it.
+  return { label: page?.title ?? EXTENSION_PAGE_FALLBACK_LABEL, icon: page?.icon ?? Puzzle };
 }

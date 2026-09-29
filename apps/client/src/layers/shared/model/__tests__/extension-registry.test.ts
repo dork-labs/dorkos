@@ -3,8 +3,10 @@ import {
   useExtensionRegistry,
   createInitialSlots,
   isExtensionContributionId,
+  menuExtensionPages,
   SLOT_IDS,
 } from '../extension-registry';
+import type { ExtensionPageContribution } from '../extension-registry';
 import type {
   SidebarFooterContribution,
   RightPanelContribution,
@@ -270,5 +272,68 @@ describe('isExtensionContributionId', () => {
   it('is true for the namespaced id registerComponent produces', () => {
     expect(isExtensionContributionId('linear-issues:linear-loop-dashboard')).toBe(true);
     expect(isExtensionContributionId('hello-world:hello-section')).toBe(true);
+  });
+});
+
+describe('tab markers (spec flow-multiproject §6.7)', () => {
+  beforeEach(() => {
+    useExtensionRegistry.setState({ slots: createInitialSlots(), tabMarkers: {} });
+  });
+
+  it('sets and clears one tab mark', () => {
+    const { setTabMarker } = useExtensionRegistry.getState();
+    setTabMarker('flow:flow-tab', 'attention');
+    expect(useExtensionRegistry.getState().tabMarkers).toEqual({ 'flow:flow-tab': 'attention' });
+    setTabMarker('flow:flow-tab', null);
+    expect(useExtensionRegistry.getState().tabMarkers).toEqual({});
+  });
+
+  it('writes nothing when the mark does not change', () => {
+    const { setTabMarker } = useExtensionRegistry.getState();
+    setTabMarker('flow:flow-tab', 'attention');
+    const before = useExtensionRegistry.getState().tabMarkers;
+    setTabMarker('flow:flow-tab', 'attention');
+    expect(useExtensionRegistry.getState().tabMarkers).toBe(before);
+  });
+
+  it('clears only the deactivating extension’s marks', () => {
+    const { setTabMarker, clearTabMarkers } = useExtensionRegistry.getState();
+    setTabMarker('flow:a', 'attention');
+    setTabMarker('flow:b', 'attention');
+    setTabMarker('flow-extra:a', 'attention');
+    clearTabMarkers('flow');
+    expect(useExtensionRegistry.getState().tabMarkers).toEqual({ 'flow-extra:a': 'attention' });
+  });
+});
+
+describe('menuExtensionPages', () => {
+  const page = (path: string, overrides: Partial<ExtensionPageContribution> = {}) =>
+    ({
+      id: `ext:${path}`,
+      extensionId: 'ext',
+      path,
+      component: () => null,
+      title: path || 'Home',
+      menu: true,
+      ...overrides,
+    }) satisfies ExtensionPageContribution;
+
+  it('lists pages with no params that asked to be listed, by title', () => {
+    const listed = menuExtensionPages([
+      page('zeta', { title: 'Zeta' }),
+      page('p/:name'),
+      page('hidden', { menu: false }),
+      page('', { title: 'Alpha' }),
+    ]);
+    expect(listed.map((p) => p.title)).toEqual(['Alpha', 'Zeta']);
+  });
+});
+
+describe('the pages and status-bar slots exist', () => {
+  it('starts both empty', () => {
+    const slots = createInitialSlots();
+    expect(slots['pages']).toEqual([]);
+    expect(slots['status-bar']).toEqual([]);
+    expect(SLOT_IDS.STATUS_BAR).toBe('status-bar');
   });
 });

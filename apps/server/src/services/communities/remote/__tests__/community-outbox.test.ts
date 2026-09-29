@@ -479,6 +479,45 @@ describe('community outbox', () => {
     expect(post).not.toHaveBeenCalled();
   });
 
+  // DOR-2549. Purpose: the id the Community gives each uploaded file is recorded on the local
+  // row, so a later removal there is matched to exactly that file. It fails if it is thrown away.
+  it('records the Community id of each uploaded file on its local row', async () => {
+    const item = outboxItem({ attachmentIds: JSON.stringify(['file-1', 'file-2']) });
+    const uploadAttachment = vi.fn(async (_roomId: string, input: { idempotencyKey: string }) => ({
+      id: input.idempotencyKey.endsWith('file-1') ? 'community-file-1' : 'community-file-2',
+      name: 'x',
+      contentType: 'text/plain',
+      byteSize: 1,
+      checksum: 'c',
+    }));
+    const recordCommunityAttachmentId = vi.fn();
+    const delivery = new CommunityAdapterOutboxDelivery(
+      () => ({ post: vi.fn(async () => ({ id: 'remote-entry-1' })), uploadAttachment }) as never,
+      { localRoomIdForOwner: () => 'room-1', remoteEntryIdForLocal: () => null } as never,
+      { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+      { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+      {
+        get: (_roomId: string, id: string) => ({
+          id,
+          entryId: item.localEntryId,
+          size: 1,
+          extension: 'txt',
+          mimeType: 'text/plain',
+          name: 'output.txt',
+        }),
+        recordCommunityAttachmentId,
+      } as never,
+      { get: () => ({ size: 1, stream: Readable.from([Buffer.from('x')]) }) } as never,
+      { reserveOrigin: vi.fn(), recordOrigin: vi.fn() } as never
+    );
+    await delivery.deliver(item, () => true);
+
+    expect(recordCommunityAttachmentId.mock.calls).toEqual([
+      ['room-1', 'file-1', 'community-file-1'],
+      ['room-1', 'file-2', 'community-file-2'],
+    ]);
+  });
+
   it('fails a post refused while the community is held at once, and never sends it after release (AC-9)', async () => {
     // Purpose: fails if a post refused during a host hold is retried, so held-era posts would
     // flood in on release, or if the person reads the archived sentence instead of the hold's.
