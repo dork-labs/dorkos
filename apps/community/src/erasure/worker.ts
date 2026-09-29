@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { ContentChangeError } from '../content-removal.js';
 import { transaction } from '../data.js';
+import { ERASURE_WAITS_ON_TAKEDOWN_SQL } from './guards.js';
 import { eraseAccount, eraseMembership, ErasureError, type ErasureOptions } from './erasure.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 
@@ -37,16 +38,7 @@ export async function sweepErasures(
     const due = await client.query<ClaimedRequest>(
       `SELECT r.id,r.kind,r.user_id,r.community_id,r.member_id FROM erasure_requests r
        WHERE r.state IN ('scheduled','running') AND r.execute_after<=$1 AND r.next_attempt_at<=$1
-         AND NOT EXISTS (
-           SELECT 1 FROM community_takedowns t
-           WHERE t.target_kind='community'
-             AND t.evidence_state IN ('pending','retrying','failed','held_on_primary')
-             AND (
-               (r.kind='membership' AND t.community_id=r.community_id)
-               OR (r.kind='account' AND EXISTS (
-                 SELECT 1 FROM members m WHERE m.community_id=t.community_id AND m.user_id=r.user_id))
-             )
-         )
+         AND NOT ${ERASURE_WAITS_ON_TAKEDOWN_SQL}
        ORDER BY r.next_attempt_at,r.id LIMIT 1 FOR UPDATE OF r SKIP LOCKED`,
       [now]
     );

@@ -12,6 +12,7 @@ import {
 import type { CommunityAuth } from '../auth.js';
 import { requireMember, transaction } from '../data.js';
 import { ERASURE_WINDOW_HOURS } from '../erasure/erasure.js';
+import { ERASURE_WAITS_ON_TAKEDOWN_SQL } from '../erasure/guards.js';
 import { ApiError, json, readJson } from '../http.js';
 import type { ConfirmPassword } from '../password-confirmation.js';
 
@@ -48,10 +49,14 @@ interface ErasureRow {
   created_at: Date;
   completed_at: Date | null;
   cancelled_at: Date | null;
+  /** Due, but held back until the host settles a takedown's evidence. */
+  waiting_on_host?: boolean;
 }
 
 const ERASURE_COLUMNS = `r.id,r.kind,r.state,r.community_id,r.execute_after,r.created_at,
-  r.completed_at,r.cancelled_at`;
+  r.completed_at,r.cancelled_at,
+  (r.state IN ('scheduled','running') AND r.execute_after<=now()
+    AND ${ERASURE_WAITS_ON_TAKEDOWN_SQL}) AS waiting_on_host`;
 
 function projectErasure(row: ErasureRow): CommunityWireErasure {
   return {
@@ -64,6 +69,7 @@ function projectErasure(row: ErasureRow): CommunityWireErasure {
     createdAt: row.created_at.toISOString(),
     completedAt: row.completed_at?.toISOString() ?? null,
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
+    waitingOnHost: row.waiting_on_host ?? false,
   };
 }
 

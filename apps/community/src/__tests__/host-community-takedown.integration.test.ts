@@ -28,6 +28,7 @@ import { FileSystemEvidenceSink } from '../takedown/evidence/sink.js';
 import { copyDueTakedownEvidence, EVIDENCE_MAX_FAILURES } from '../takedown/worker.js';
 import {
   TENANCY_PASSWORD,
+  admit,
   bootstrapHost,
   createPendingCommunity,
   startTenancyHarness,
@@ -467,7 +468,7 @@ describe('a whole-community takedown with an evidence store', () => {
     expect((await takedownRow(h, takedown.id)).evidence_export_id).toBe(evidenceExport!.id);
 
     // What DorkOS reads: a distinct refusal on every community route, whatever the credential
-    // (the revoked grant and agent answer it before authentication), and a stream closed as
+    // (the revoked grant and agent answer it before their credential is checked), and a stream closed as
     // taken down.
     for (const [label, path, auth] of [
       ['member', `${s.base}/channels/${s.channelId}/entries`, { cookie: s.p.cookie }],
@@ -767,6 +768,26 @@ describe('authority', () => {
   });
 });
 
+describe('the daily limit under parallel requests', () => {
+  // Purpose (review): fails if one actor can pass the daily limit by sending its takedowns at
+  // the same moment, each counting before any other has committed.
+  it('accepts exactly three of four simultaneous takedowns by one key', async () => {
+    const key = await issueKey(h, operator.cookie);
+    const scenes: Scene[] = [];
+    for (const n of [1, 2, 3, 4]) scenes.push(await makeScene(h, operator.cookie, `burst${n}`));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const statuses = await Promise.all(
+      scenes.map(async (s) => (await takeDown(h, s.communityId, { bearer: key.secret })).status)
+    );
+    expect(statuses.sort()).toEqual([201, 201, 201, 429]);
+    const made = await h.pool.query(
+      "SELECT 1 FROM community_takedowns WHERE actor_api_key_id=$1 AND target_kind='community'",
+      [key.id]
+    );
+    expect(made.rowCount).toBe(3);
+  });
+});
+
 describe('reversal', () => {
   /** A scene put into `state` before its takedown, by the host or its owner. */
   async function sceneIn(
@@ -1014,6 +1035,69 @@ describe('the evidence copy', () => {
     ).rejects.toThrow(/communities_deletion_state/);
   });
 
+  // Purpose (review): fails if the copy stores an archive with a segment whose blob is gone,
+  // which would look complete and not be. The copy fails, a new export is built, and that one
+  // is stored.
+  it('refuses to copy an evidence export missing a segment', async () => {
+    const s = await makeScene(h, operator.cookie, 'gap');
+    const key = await issueKey(h, operator.cookie);
+    const takedown = await created(await takeDown(h, s.communityId, { bearer: key.secret }));
+    await drainExports(h.pool, h.blobStore);
+    const first = (await takedownRow(h, takedown.id)).evidence_export_id!;
+    await h.pool.query(
+      `DELETE FROM managed_blobs WHERE blob_key=(
+         SELECT blob_key FROM export_segments WHERE export_id=$1 ORDER BY segment_no LIMIT 1)`,
+      [first]
+    );
+    expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: false });
+    const failed = await takedownRow(h, takedown.id);
+    expect(failed).toMatchObject({
+      evidence_state: 'retrying',
+      last_error_class: 'EVIDENCE_EXPORT_FAILED',
+    });
+    expect(failed.evidence_export_id).not.toBe(first);
+    const attempt = join(evidenceDirectory, 'takedowns', takedown.id, 'attempt-1');
+    expect(await readdir(attempt).catch(() => [])).not.toContain('record.json');
+    await drainExports(h.pool, h.blobStore);
+    expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: true });
+  });
+
+  // Purpose (review, data minimisation): fails if the record keeps a former member who left
+  // nothing behind, or keeps a former member's sessions, or drops an active member's.
+  it('keeps active members with sessions and former authors without, and nobody else', async () => {
+    const s = await makeScene(h, operator.cookie, 'minimal');
+    const quiet = await admit(h, s.communityId, s.owner.cookie, {
+      name: 'Quiet Former',
+      email: `quiet-${s.slug}@x.test`,
+    });
+    for (const memberId of [s.q.memberId, quiet.memberId])
+      expect(
+        (
+          await h.call(`${s.base}/members/${memberId}`, {
+            cookie: s.owner.cookie,
+            method: 'DELETE',
+          })
+        ).status
+      ).toBe(204);
+    const key = await issueKey(h, operator.cookie);
+    const takedown = await created(await takeDown(h, s.communityId, { bearer: key.secret }));
+    await drainExports(h.pool, h.blobStore);
+    expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: true });
+    const location = (await takedownRow(h, takedown.id)).evidence_location!;
+    const record = CommunityEvidenceRecordV1Schema.parse(
+      JSON.parse((await evidenceBytes(`${location}record.json`)).toString('utf8'))
+    );
+    const byMember = new Map(record.accounts!.map((entry) => [entry.memberId, entry.account]));
+    expect([...byMember.keys()].sort()).toEqual(
+      [s.owner.memberId, s.p.memberId, s.q.memberId].sort()
+    );
+    expect(byMember.get(s.p.memberId)!.sessions.length).toBeGreaterThan(0);
+    expect(byMember.get(s.q.memberId)).toMatchObject({
+      email: `quin-${s.slug}@x.test`,
+      sessions: [],
+    });
+  });
+
   // Purpose (AC-8): fails if a takedown lets an item takedown delete its evidence export, or
   // lets the expiry sweep delete a finished one before it is copied.
   it('keeps the evidence export from every other way exports are deleted', async () => {
@@ -1103,6 +1187,25 @@ describe('erasures wait for a community takedown’s evidence', () => {
     );
     const later = new Date(Date.now() + 60 * DAY);
     expect((await sweepErasures(h.pool, { now: later })).claimed).toBe(0);
+    // P's erasure is due now, and P is told it waits on the host, never why.
+    await h.pool.query(
+      `UPDATE erasure_requests SET created_at=now()-interval '2 hours',
+         execute_after=now()-interval '1 hour' WHERE id=$1`,
+      [membership.erasure.id]
+    );
+    const waiting = async () => {
+      const response = await h.call('/api/v1/account/erasures', { cookie: s.p.cookie });
+      const text = await response.clone().text();
+      expect(text).not.toMatch(/illegal|CASE-7|takedown/i);
+      return (
+        await body<{ erasures: { id: string; waitingOnHost?: boolean }[] }>(
+          response,
+          200,
+          'erasures'
+        )
+      ).erasures.find((erasure) => erasure.id === membership.erasure.id);
+    };
+    expect((await waiting())?.waitingOnHost).toBe(true);
     expect(
       (
         await h.pool.query(
@@ -1113,6 +1216,7 @@ describe('erasures wait for a community takedown’s evidence', () => {
     ).toBe(0);
     await drainExports(h.pool, h.blobStore);
     expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: true });
+    expect((await waiting())?.waitingOnHost).toBe(false);
     const location = (await takedownRow(h, takedown.id)).evidence_location!;
     const record = CommunityEvidenceRecordV1Schema.parse(
       JSON.parse((await evidenceBytes(`${location}record.json`)).toString('utf8'))

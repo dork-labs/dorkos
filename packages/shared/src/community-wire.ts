@@ -1340,6 +1340,11 @@ export const CommunityWireErasureSchema = z.strictObject({
   createdAt: timestamp,
   completedAt: timestamp.nullable(),
   cancelledAt: timestamp.nullable(),
+  /**
+   * Due, but waiting for the host to finish a step on its side first (a takedown's copy for the
+   * authorities). Says nothing about why. Added later.
+   */
+  waitingOnHost: z.boolean().optional(),
 });
 /** One erasure request. */
 export type CommunityWireErasure = z.infer<typeof CommunityWireErasureSchema>;

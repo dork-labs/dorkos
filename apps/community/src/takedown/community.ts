@@ -105,22 +105,35 @@ export function communityTakedownLogLine(event: {
 }
 
 /**
- * Every member's account as the evidence record keeps it, read at the takedown: id, email, when
- * it was made, and each current session's start, IP address, and user agent. An erased member
- * has no account and is left out.
+ * The accounts the evidence record keeps, read at the takedown, and no more than it needs:
+ * every member active at the takedown, with each current session's start, IP address, and user
+ * agent; and a former member only while content they (or their agents) posted is still in the
+ * community, without sessions. An erased member has no account and is left out.
  */
 async function readMemberAccounts(
   client: PoolClient,
   communityId: string
 ): Promise<NonNullable<EvidenceRecord['accounts']>> {
-  const members = await client.query<{ id: string; user_id: string }>(
-    `SELECT id,user_id FROM members WHERE community_id=$1 AND user_id IS NOT NULL ORDER BY id`,
+  const members = await client.query<{ id: string; user_id: string; active: boolean }>(
+    `SELECT m.id,m.user_id,m.active FROM members m
+     WHERE m.community_id=$1 AND m.user_id IS NOT NULL
+       AND (m.active OR EXISTS (
+         SELECT 1 FROM entries e
+         WHERE e.community_id=m.community_id AND e.removed_at IS NULL AND e.erased_at IS NULL
+           AND (e.author_member_id=m.id OR e.author_agent_id IN (
+             SELECT a.id FROM agents a
+             WHERE a.community_id=m.community_id AND a.owner_member_id=m.id))))
+     ORDER BY m.id`,
     [communityId]
   );
   const accounts: NonNullable<EvidenceRecord['accounts']> = [];
   for (const member of members.rows) {
     const account = await readEvidenceAccount(client, member.user_id);
-    if (account) accounts.push({ memberId: member.id, account });
+    if (account)
+      accounts.push({
+        memberId: member.id,
+        account: member.active ? account : { ...account, sessions: [] },
+      });
   }
   return accounts;
 }
@@ -194,7 +207,15 @@ export async function createCommunityTakedown(
     throw new ApiError(409, 'STATE_CONFLICT', 'This community is already being deleted.');
 
   // The rate limit counts every community takedown this actor made in the last day, reversed
-  // ones too: a leaked key cannot take down and reverse its way past it.
+  // ones too: a leaked key cannot take down and reverse its way past it. The count runs under a
+  // per-actor lock held to commit, so parallel requests from one actor count one after another
+  // (at READ COMMITTED each sees the takedowns committed before it). Lock order is always the
+  // community row, then this actor lock: a takedown holds at most one of each, so two of them
+  // can wait on each other's actor lock only after taking different communities, never in a
+  // cycle.
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
+    `takedown-rate:${actor.kind}:${actor.id}`,
+  ]);
   const recent = await client.query<{ created_at: Date }>(
     `SELECT created_at FROM community_takedowns
      WHERE target_kind='community' AND actor_kind=$1

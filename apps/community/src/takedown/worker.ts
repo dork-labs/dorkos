@@ -214,8 +214,8 @@ export async function copyDueTakedownEvidence(
  * segment at a time, in order, each checked against the SHA-256 its blob was stored with.
  *
  * @returns The record's `archive`: the segments as written, and how to read them.
- * @throws EvidenceSinkError `EVIDENCE_EXPORT_FAILED` when the export failed, was cancelled, or
- *   is gone: the caller then builds a new one.
+ * @throws EvidenceSinkError `EVIDENCE_EXPORT_FAILED` when the export failed, was cancelled, is
+ *   gone, or is missing a segment or a segment's blob: the caller then builds a new one.
  */
 async function copyEvidenceArchive(
   pool: Pool,
@@ -230,23 +230,34 @@ async function copyEvidenceArchive(
     [claim.evidence_export_id, claim.community_id]
   );
   if (exported.rows[0]?.state !== 'ready') throw new EvidenceSinkError('EVIDENCE_EXPORT_FAILED');
-  const segments = await pool.query<{ blob_key: string; byte_size: string; checksum: string }>(
-    `SELECT s.blob_key,s.byte_size::text,m.checksum FROM export_segments s
-     JOIN managed_blobs m ON m.blob_key=s.blob_key AND m.community_id=s.community_id
+  // Every segment, with its blob's checksum if the blob is still committed. A segment whose
+  // blob row is gone, or a gap in the numbering, means the archive is incomplete: copying the
+  // rest would store a copy that looks whole and is not.
+  const segments = await pool.query<{
+    segment_no: number;
+    blob_key: string;
+    byte_size: string;
+    checksum: string | null;
+  }>(
+    `SELECT s.segment_no,s.blob_key,s.byte_size::text,m.checksum FROM export_segments s
+     LEFT JOIN managed_blobs m ON m.blob_key=s.blob_key AND m.community_id=s.community_id
+       AND m.state='committed'
      WHERE s.export_id=$1 AND s.community_id=$2 ORDER BY s.segment_no`,
     [claim.evidence_export_id, claim.community_id]
   );
+  if (segments.rows.some((segment, index) => segment.segment_no !== index + 1 || !segment.checksum))
+    throw new EvidenceSinkError('EVIDENCE_EXPORT_FAILED');
   const written: NonNullable<EvidenceRecord['archive']>['segments'] = [];
   for (const [index, segment] of segments.rows.entries()) {
     const path = `archive.zip.${String(index + 1).padStart(6, '0')}`;
     const byteSize = Number(segment.byte_size);
     const read = await blobStore.get(segment.blob_key);
     try {
-      await sink.put(`${folder}${path}`, read.body, { sha256: segment.checksum, byteSize });
+      await sink.put(`${folder}${path}`, read.body, { sha256: segment.checksum!, byteSize });
     } finally {
       read.body.destroy();
     }
-    written.push({ path, byteSize, sha256: segment.checksum });
+    written.push({ path, byteSize, sha256: segment.checksum! });
   }
   if (!written.length) throw new EvidenceSinkError('EVIDENCE_EXPORT_FAILED');
   return {
