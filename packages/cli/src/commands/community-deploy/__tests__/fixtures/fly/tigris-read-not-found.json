@@ -1,0 +1,20 @@
+{
+  "data": {
+    "addOn": null
+  },
+  "errors": [
+    {
+      "message": "Could not find Node with id 'addon_fixture_missing'",
+      "locations": [
+        {
+          "line": 1,
+          "column": 36
+        }
+      ],
+      "path": ["addOn"],
+      "extensions": {
+        "code": "NOT_FOUND"
+      }
+    }
+  ]
+}

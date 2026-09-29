@@ -99,17 +99,31 @@ export async function cleanupCommunityLiveGate(
       'neon-identity',
       retained
     );
-    const tigris = await dependencies.readTigris(tigrisBucketId);
+    // Fly answers an id it no longer has with ADD_ON_MISSING (DOR-2584). That bucket is already
+    // gone, so there is nothing of it to delete; the Neon project and the app still are. Any other
+    // failure to read it still stops cleanup with everything retained.
+    const tigris = await dependencies.readTigris(tigrisBucketId).catch((error: unknown) => {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'ADD_ON_MISSING'
+      ) {
+        return null;
+      }
+      throw error;
+    });
     if (
-      tigris.id !== tigrisBucketId ||
-      tigris.name !== context.bucketName ||
-      tigris.organization !== context.flyOrganization ||
-      tigris.appId !== fly.id ||
-      tigris.appName !== fly.name
+      tigris &&
+      (tigris.id !== tigrisBucketId ||
+        tigris.name !== context.bucketName ||
+        tigris.organization !== context.flyOrganization ||
+        tigris.appId !== fly.id ||
+        tigris.appName !== fly.name)
     ) {
       throw new CommunityLiveGateCleanupError('tigris-identity', retained);
     }
-    await dependencies.deleteTigris(tigris.name);
+    if (tigris) await dependencies.deleteTigris(tigris.name);
     retained.splice(retained.indexOf(tigrisBucketId), 1);
     await dependencies.deleteNeonProject(neon.id);
     retained.splice(retained.indexOf(neonProjectId), 1);

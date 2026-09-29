@@ -69,4 +69,32 @@ describe('Community live gate cleanup', () => {
     });
     expect(boundary.destroyFlyApp).not.toHaveBeenCalled();
   });
+
+  // DOR-2584: Fly answers a bucket id it no longer has with ADD_ON_MISSING. Cleanup of a run whose
+  // bucket is already gone must still remove the Neon project and the app.
+  it('treats a bucket Fly no longer has as gone and still cleans up the rest', async () => {
+    const boundary = dependencies();
+    boundary.readTigris.mockRejectedValue(
+      Object.assign(new Error('x'), { code: 'ADD_ON_MISSING' })
+    );
+    await expect(cleanupCommunityLiveGate(journal, boundary)).resolves.toEqual({
+      cleaned: ['bucket-1', 'neon-1', 'fly-1'],
+      retained: [],
+    });
+    expect(boundary.deleteTigris).not.toHaveBeenCalled();
+    expect(boundary.deleteNeonProject).toHaveBeenCalledWith('neon-1');
+    expect(boundary.destroyFlyApp).toHaveBeenCalledWith(journal.recoveryContext.appName);
+  });
+
+  it('still stops, keeping everything, when the bucket read fails any other way', async () => {
+    const boundary = dependencies();
+    boundary.readTigris.mockRejectedValue(
+      Object.assign(new Error('x'), { code: 'INVALID_RESPONSE' })
+    );
+    await expect(cleanupCommunityLiveGate(journal, boundary)).rejects.toMatchObject({
+      step: 'provider-operation',
+      retained: ['fly-1', 'neon-1', 'bucket-1'],
+    });
+    expect(boundary.deleteNeonProject).not.toHaveBeenCalled();
+  });
 });

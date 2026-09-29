@@ -75,7 +75,7 @@ const CredentialsEnvelopeSchema = z
   .object({
     data: z
       .object({
-        node: z
+        addOn: z
           .object({ id: SafeIdentifierSchema, environment: z.unknown().optional() })
           .strict()
           .nullable(),
@@ -86,9 +86,32 @@ const CredentialsEnvelopeSchema = z
 
 const ReadEnvelopeSchema = z
   .object({
-    data: z.object({ node: AddOnSchema.nullable() }).strict(),
+    // Fly's GraphQL has no Relay `node` root field; `addOn(id:)` is the exact-ID read (live gate,
+    // DOR-2169, 2026-09-29: `node(id:)` answered only "Field 'node' doesn't exist on type 'Queries'").
+    data: z.object({ addOn: AddOnSchema.nullable() }).strict(),
   })
   .strict();
+/**
+ * Fly's answer for an add-on id it does not know (live, 2026-09-29): `data.addOn` is null and every
+ * error is a `NOT_FOUND` on the `addOn` path. Only this exact shape means "gone"; any other error,
+ * or a not-found beside other errors, stays an invalid response.
+ */
+const AddOnNotFoundEnvelopeSchema = z
+  .object({
+    data: z.object({ addOn: z.null() }).strict(),
+    errors: z
+      .array(
+        z
+          .object({
+            path: z.tuple([z.literal('addOn')]),
+            extensions: z.object({ code: z.literal('NOT_FOUND') }).passthrough(),
+          })
+          .passthrough()
+      )
+      .min(1),
+  })
+  .strict();
+
 const DeleteEnvelopeSchema = z
   .object({
     data: z
@@ -159,11 +182,9 @@ export const FLY_TIGRIS_CREATE_MUTATION = `
  */
 export const FLY_TIGRIS_CREDENTIALS_QUERY = `
   query DorkosReadTigrisCredentials($id: ID!) {
-    node(id: $id) {
-      ... on AddOn {
-        id
-        environment
-      }
+    addOn(id: $id) {
+      id
+      environment
     }
   }
 `;
@@ -171,16 +192,14 @@ export const FLY_TIGRIS_CREDENTIALS_QUERY = `
 /** Minimal exact-ID readback used after Tigris creation. */
 export const FLY_TIGRIS_READ_QUERY = `
   query DorkosReadTigris($id: ID!) {
-    node(id: $id) {
-      ... on AddOn {
-        id
-        name
-        status
-        options
-        organization { slug }
-        addOnProvider { name }
-        app { id name }
-      }
+    addOn(id: $id) {
+      id
+      name
+      status
+      options
+      organization { slug }
+      addOnProvider { name }
+      app { id name }
     }
   }
 `;
@@ -389,15 +408,18 @@ export function parseTigrisCredentialsResponse(
   response: unknown,
   expectedId: string
 ): TigrisBucketCredentials | null {
+  if (AddOnNotFoundEnvelopeSchema.safeParse(response).success) {
+    throw new FlyGraphqlContractError('ADD_ON_MISSING');
+  }
   let parsed: z.infer<typeof CredentialsEnvelopeSchema>;
   try {
     parsed = CredentialsEnvelopeSchema.parse(response);
   } catch {
     throw invalidResponse();
   }
-  if (parsed.data.node === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
-  if (parsed.data.node.id !== expectedId) throw new FlyGraphqlContractError('BINDING_MISMATCH');
-  return tigrisCredentialsFromEnvironment(parsed.data.node.environment);
+  if (parsed.data.addOn === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
+  if (parsed.data.addOn.id !== expectedId) throw new FlyGraphqlContractError('BINDING_MISMATCH');
+  return tigrisCredentialsFromEnvironment(parsed.data.addOn.environment);
 }
 
 /**
@@ -407,14 +429,17 @@ export function parseTigrisCredentialsResponse(
  * @returns Sanitized add-on identity and binding.
  */
 export function parseTigrisReadResponse(response: unknown): TigrisAddOnIdentity {
+  if (AddOnNotFoundEnvelopeSchema.safeParse(response).success) {
+    throw new FlyGraphqlContractError('ADD_ON_MISSING');
+  }
   let parsed: z.infer<typeof ReadEnvelopeSchema>;
   try {
     parsed = ReadEnvelopeSchema.parse(response);
   } catch {
     throw invalidResponse();
   }
-  if (parsed.data.node === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
-  return sanitizeAddOn(parsed.data.node);
+  if (parsed.data.addOn === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
+  return sanitizeAddOn(parsed.data.addOn);
 }
 
 /** Parse Tigris deletion acknowledgement and bind it to the exact expected name. */

@@ -70,7 +70,7 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
           },
         })
       )
-      .mockResolvedValueOnce(json({ data: { node: identity } }));
+      .mockResolvedValueOnce(json({ data: { addOn: identity } }));
     const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
 
     const created = await client.createTigris(createInput());
@@ -96,7 +96,7 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     const request = vi.fn().mockResolvedValueOnce(
       json({
         data: {
-          node: {
+          addOn: {
             id: identity.id,
             environment: { AWS_ACCESS_KEY_ID: 'tid_a', AWS_SECRET_ACCESS_KEY: 'tsec_b' },
           },
@@ -116,6 +116,29 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
       code: 'INVALID_RESPONSE',
     });
     expect(request).toHaveBeenCalledOnce();
+  });
+
+  it('reports an id Fly does not know as a missing add-on on both exact-ID reads', async () => {
+    const notFound = {
+      data: { addOn: null },
+      errors: [
+        {
+          message: "Could not find Node with id 'addon_fixture_missing'",
+          path: ['addOn'],
+          extensions: { code: 'NOT_FOUND' },
+        },
+      ],
+    };
+    const client = new FlyTigrisGraphqlClient({
+      accessToken: 'token',
+      fetch: vi.fn().mockResolvedValueOnce(json(notFound)).mockResolvedValueOnce(json(notFound)),
+    });
+    await expect(client.readTigris('addon_fixture_missing')).rejects.toMatchObject({
+      code: 'ADD_ON_MISSING',
+    });
+    await expect(client.readTigrisCredentials('addon_fixture_missing')).rejects.toMatchObject({
+      code: 'ADD_ON_MISSING',
+    });
   });
 
   it('classifies malformed create output as uncertain without disclosing provider text', async () => {
@@ -191,7 +214,7 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     const request = vi
       .fn()
       .mockResolvedValueOnce(json({ data: { viewer: null } }))
-      .mockResolvedValueOnce(json({ data: { node: null } }));
+      .mockResolvedValueOnce(json({ data: { addOn: null } }));
     const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
 
     await expect(client.hasAcceptedTerms()).rejects.toMatchObject({

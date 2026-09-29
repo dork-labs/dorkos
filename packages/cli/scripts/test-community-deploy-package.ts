@@ -4,6 +4,11 @@ import { chmod, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import process from 'node:process';
+import {
+  checkGraphqlDocument,
+  FLY_SCHEMA_SNAPSHOT,
+  type IntrospectedSchema,
+} from './community-deploy-contract-graphql.js';
 
 const root = resolve(import.meta.dirname, '../../..');
 const cliPackage = resolve(import.meta.dirname, '..');
@@ -16,6 +21,8 @@ const dorkHome = join(temporary, 'dork-home');
 const fakeHome = join(temporary, 'home');
 const fakeBin = join(temporary, 'bin');
 const statePath = join(temporary, 'provider-state.json');
+// Every GraphQL document the packaged launcher sends, checked afterwards against Fly's schema.
+const graphqlLogPath = join(temporary, 'graphql-documents.jsonl');
 
 async function migrationCompatibilityId(): Promise<string> {
   const hash = createHash('sha256');
@@ -147,10 +154,11 @@ globalThis.fetch=async (input,init={})=>{
   if(url.endsWith('/api/v1/community')) return json({},404);
   const body=JSON.parse(String(init.body??'{}'));
   const query=String(body.query??'');
+  fs.appendFileSync(${JSON.stringify(graphqlLogPath)},JSON.stringify(query)+'\\n');
   if(query.includes('DorkosTigrisTerms')) return json({data:{viewer:{agreedToProviderTos:true}}});
-  if(query.includes('DorkosReadTigrisCredentials')) return json({data:{node:state.tigris?{id:state.tigris.id,environment:null}:null}});
+  if(query.includes('DorkosReadTigrisCredentials')) return json({data:{addOn:state.tigris?{id:state.tigris.id,environment:null}:null}});
   if(query.includes('DorkosCreateTigris')) { state.tigrisCreates++; state.tigris={id:'tigris-1',name:${JSON.stringify(appName)},status:'ready',options:null,organization:{slug:'dork-labs'},addOnProvider:{name:'tigris'},app:{id:${JSON.stringify(appName)},name:${JSON.stringify(appName)}}}; fs.writeFileSync(statePath,JSON.stringify(state)); return json({data:{createAddOn:{addOn:{...state.tigris,environment:TIGRIS_ENVIRONMENT}}}}); }
-  if(query.includes('DorkosReadTigris')) return json({data:{node:state.tigris}});
+  if(query.includes('DorkosReadTigris')) return json({data:{addOn:state.tigris}});
   return json({},500);
 };
 `;
@@ -327,6 +335,21 @@ try {
     )
   ) {
     throw new Error('Packaged launch exposed the bucket secret key');
+  }
+  // The fake answers any query, so it cannot tell whether Fly would; the schema snapshot can
+  // (DOR-2584: `node(id:)` passed every fake and failed the first real call).
+  const schema = JSON.parse(await readFile(FLY_SCHEMA_SNAPSHOT, 'utf8')) as IntrospectedSchema;
+  const documents = [
+    ...new Set(
+      (await readFile(graphqlLogPath, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as string)
+    ),
+  ];
+  const invalid = documents.flatMap((document) => checkGraphqlDocument(document, schema));
+  if (documents.length < 3 || invalid.length > 0) {
+    throw new Error(`Packaged launch sent GraphQL Fly would refuse: ${invalid.join('; ')}`);
   }
   const journal = JSON.parse(await readFile(join(journalDirectory, journalName), 'utf8')) as {
     state: string;
