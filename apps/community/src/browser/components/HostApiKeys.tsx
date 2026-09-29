@@ -9,7 +9,8 @@ type Scope =
   | 'communities:write'
   | 'communities:lifecycle'
   | 'communities:import'
-  | 'communities:legal_hold';
+  | 'communities:legal_hold'
+  | 'communities:takedown';
 type HostApiKey = {
   id: string;
   label: string;
@@ -48,6 +49,12 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
     label: 'Legal holds',
     detail:
       'Place or release a legal hold, which stops a community from being deleted, and see its note. It doesn’t stop single messages or files being removed, or a person erasing their own data. Owners are not told. See “Legal holds” in OPERATIONS.md.',
+  },
+  {
+    scope: 'communities:takedown',
+    label: 'Take down content',
+    detail:
+      'Remove one message, file, or icon by its id, for example after a legal report. It never sees what it removes.',
   },
 ];
 

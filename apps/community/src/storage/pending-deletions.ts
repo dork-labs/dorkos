@@ -10,7 +10,8 @@ import { MANAGED_BLOB_RESERVATION_TTL_MS } from './managed-blobs.js';
  * retries remain eligible forever at the one-hour cap.
  */
 export function cleanupBackoffSql(
-  attemptsColumn: 'attempts' | 'pending_blob_deletions.attempts' | 'cleanup_attempts'
+  attemptsColumn:
+    'attempts' | 'pending_blob_deletions.attempts' | 'cleanup_attempts' | 'evidence_failures'
 ): string {
   return `LEAST(interval '1 hour', interval '1 minute' * power(2, LEAST(${attemptsColumn}, 6)))`;
 }
@@ -143,6 +144,10 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
           "DELETE FROM managed_blobs WHERE blob_key=$1 AND state='pending_delete'",
           [candidate.blob_key]
         );
+        // A removed file's description goes with its bytes.
+        await client.query('DELETE FROM removed_file_blobs WHERE blob_key=$1', [
+          candidate.blob_key,
+        ]);
         attempt.outcome = 'deleted';
       });
     } catch (error) {

@@ -152,6 +152,36 @@ export type ConnectorOperationClassification = z.infer<
   typeof ConnectorOperationClassificationSchema
 >;
 
+/**
+ * An access level the owner gives an agent, or every agent, on one account:
+ * `read` is every action the app lets agents read, and `read-write` adds every
+ * action that changes something there. A level is stored as the owner's
+ * intent, not as a snapshot of today's actions, so actions the app adds or
+ * reclassifies join or leave it by class, and it never covers more than its
+ * classes (ADR 260929-071355). No level ever covers a `destructive` action;
+ * that is only ever allowed one action at a time.
+ */
+export const ConnectorAccessLevelSchema = z.enum(['read', 'read-write']);
+/** An access level the owner gives on one account. */
+export type ConnectorAccessLevel = z.infer<typeof ConnectorAccessLevelSchema>;
+
+/**
+ * Whether an access level covers an action of this safety classification:
+ * "Read" is `read` only, "Read and write" adds `write`, and no level covers
+ * `destructive`. The one rule the server grants and follows levels with, and
+ * every screen describing a level reads.
+ *
+ * @param classification - The action's stored safety classification.
+ * @param level - The access level, or `'none'`.
+ */
+export function levelIncludes(
+  classification: ConnectorOperationClassification,
+  level: 'none' | ConnectorAccessLevel
+): boolean {
+  if (level === 'none') return false;
+  return classification === 'read' || (level === 'read-write' && classification === 'write');
+}
+
 /** Provider-acknowledged retry behavior frozen into an operation revision. */
 export const ConnectorRetryPolicySchema = z.enum(['never', 'provider_idempotency_key']);
 /** Provider-acknowledged retry behavior frozen into an operation revision. */
@@ -1086,11 +1116,17 @@ export type ConnectorReconciliationPreviewRequest = z.infer<
   typeof ConnectorReconciliationPreviewRequestSchema
 >;
 
-/** Complete replacement set for one explicitly named agent. */
+/**
+ * Complete replacement set for one explicitly named agent. With a `level`, the
+ * set is exactly that level's actions in the reviewed catalog, and the agent
+ * keeps the level as the app changes; without one, the set is exact actions
+ * that stay exactly as chosen.
+ */
 export const ConnectorReconciliationGrantSelectionSchema = z
   .object({
     agentId: z.string().min(1),
     operationRevisionIds: z.array(z.string().min(1)),
+    level: ConnectorAccessLevelSchema.optional(),
   })
   .strict();
 /** Complete replacement set for one explicitly named agent. */
@@ -1107,6 +1143,8 @@ export type ConnectorReconciliationGrantSelection = z.infer<
 export const ConnectorReconciliationEveryAgentSelectionSchema = z
   .object({
     operationRevisionIds: z.array(z.string().min(1)),
+    /** The level these revisions are, kept as the app changes; absent for exact actions. */
+    level: ConnectorAccessLevelSchema.optional(),
   })
   .strict();
 /** Complete replacement set for the owner-wide "every agent" grant on one connection. */
@@ -1124,6 +1162,8 @@ export const ConnectorReconciliationEveryAgentStateSchema = z
   .object({
     available: z.boolean(),
     operationRevisionIds: z.array(z.string().min(1)),
+    /** The level the owner chose for every agent; absent for exact actions or no sharing. */
+    level: ConnectorAccessLevelSchema.optional(),
   })
   .strict();
 /** The every-agent grant as a reconciliation snapshot sees it. */
@@ -1162,6 +1202,33 @@ export const ConnectorReconciliationCandidateSchema = AccessibleConnectorOperati
 export type ConnectorReconciliationCandidate = z.infer<
   typeof ConnectorReconciliationCandidateSchema
 >;
+
+/**
+ * The exact revisions an access level covers in one complete snapshot: every
+ * action the app still offers whose class the level includes
+ * ({@link levelIncludes}), sorted. The server grants a level with exactly
+ * this set, and re-derives it every time the catalog is read again, so a
+ * level follows the app and never covers more than its classes.
+ *
+ * @param candidates - The snapshot's operations.
+ * @param level - The access level, or `'none'`.
+ */
+export function accessLevelRevisionIds(
+  candidates: ReadonlyArray<
+    Pick<
+      ConnectorReconciliationCandidate,
+      'operationRevisionId' | 'capabilityClassification' | 'supported'
+    >
+  >,
+  level: 'none' | ConnectorAccessLevel
+): string[] {
+  return candidates
+    .filter(
+      (candidate) => candidate.supported && levelIncludes(candidate.capabilityClassification, level)
+    )
+    .map((candidate) => candidate.operationRevisionId)
+    .sort();
+}
 
 /** Server-owned complete catalog snapshot used for an exact grant decision. */
 export const ConnectorReconciliationPreviewSchema = z
@@ -1226,7 +1293,7 @@ const ConnectionTargetSchema = ReviewActionBaseSchema.extend({
  * compared by class, never by guessed action names. No level covers an
  * action that can't be undone; that is only ever allowed one action at a time.
  */
-export const ConnectorRequestAccessSchema = z.enum(['read', 'read-write']);
+export const ConnectorRequestAccessSchema = ConnectorAccessLevelSchema;
 /** The access an agent asks for, by level. */
 export type ConnectorRequestAccess = z.infer<typeof ConnectorRequestAccessSchema>;
 

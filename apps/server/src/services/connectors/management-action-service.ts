@@ -1,18 +1,12 @@
 /** Concrete local effects for approved P2 connector management reviews. */
 import { ulid } from 'ulidx';
-import {
-  and,
-  connectionOperationGrants,
-  connectorOperationRevisions,
-  eq,
-  inArray,
-  type Db,
-} from '@dorkos/db';
+import { and, connectorOperationRevisions, eq, inArray, type Db } from '@dorkos/db';
 import {
   LINK_NEEDED_TO_CHANGE_ACCESS_COPY,
   type ConnectionId,
   type ConnectorManagementReviewAction,
 } from '@dorkos/shared/connector-schemas';
+import { endAgentAccessLevels, replaceNamedAgentGrants } from './execution/access-levels.js';
 import type { ConnectorAuthorityCleanupPort } from './authority-cleanup-port.js';
 import type { ConnectorManagementActionApplier } from './management-review-service.js';
 import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
@@ -130,6 +124,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
         return;
       }
       case 'set_agent_access':
+        // A reviewed set is exact actions, never a level.
         await this.replaceAgentGrants(
           owner,
           connectionId,
@@ -249,6 +244,9 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
           LINK_NEEDED_TO_CHANGE_ACCESS_COPY
         );
       }
+      // Exact actions replace any level first, so the level can never widen
+      // this agent again, even if the hosted change below does not land.
+      this.db.transaction((tx) => endAgentAccessLevels(tx, agentId, connectionId));
       const byId = new Map(valid.map((revision) => [revision.id, revision]));
       await this.managedAuthority.replaceAgentGrants({
         connectionId,
@@ -274,42 +272,15 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
 
     const now = this.now().toISOString();
     this.db.transaction((tx) => {
-      const existing = tx
-        .select({
-          id: connectionOperationGrants.id,
-          operationRevisionId: connectionOperationGrants.operationRevisionId,
-        })
-        .from(connectionOperationGrants)
-        .where(
-          and(
-            eq(connectionOperationGrants.subjectType, 'agent'),
-            eq(connectionOperationGrants.subjectId, agentId),
-            eq(connectionOperationGrants.connectionId, connectionId)
-          )
-        )
-        .all();
-      const pending = new Set(requested);
-      for (const grant of existing) {
-        tx.update(connectionOperationGrants)
-          .set({ revokedAt: pending.has(grant.operationRevisionId) ? null : now })
-          .where(eq(connectionOperationGrants.id, grant.id))
-          .run();
-        pending.delete(grant.operationRevisionId);
-      }
-      for (const operationRevisionId of pending) {
-        tx.insert(connectionOperationGrants)
-          .values({
-            id: this.createId(),
-            subjectType: 'agent',
-            subjectId: agentId,
-            agentId,
-            connectionId,
-            operationRevisionId,
-            createdBy: `owner:${owner.kind}:${ownerId(owner)}`,
-            createdAt: now,
-          })
-          .run();
-      }
+      endAgentAccessLevels(tx, agentId, connectionId);
+      replaceNamedAgentGrants(tx, {
+        connectionId,
+        agentId,
+        operationRevisionIds: requested,
+        createdBy: `owner:${owner.kind}:${ownerId(owner)}`,
+        now,
+        createId: this.createId,
+      });
     });
   }
 }

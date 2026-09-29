@@ -147,8 +147,35 @@ export function uploadArchive(
 }
 
 /**
+ * Wait until the server holds (`held`) or has given back the upload lease of an import.
+ *
+ * The lease is the server's own record that an upload is in flight, so it is the signal a
+ * test waits on instead of a guessed sleep: a dropped connection frees it only once the server
+ * notices the drop, and a busy machine can take far longer to notice than an idle one. The
+ * deadline stays well under the lease's two-minute expiry, so a lease the server never gave
+ * back still fails the wait rather than lapsing into a pass.
+ */
+export async function waitForUploadLease(
+  h: TenancyHarness,
+  importId: string,
+  held: boolean
+): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const { rows } = await h.pool.query<{ held: boolean }>(
+      'SELECT upload_lease_token IS NOT NULL AS held FROM community_imports WHERE id=$1',
+      [importId]
+    );
+    if (rows[0]?.held === held) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`The upload lease of ${importId} was never ${held ? 'taken' : 'given back'}`);
+}
+
+/**
  * Send an upload's headers and only the first `sentBytes` of its body, then drop the
- * connection, as a person whose network fails part-way does.
+ * connection, as a person whose network fails part-way does. Returns once the server has
+ * taken the upload's lease and given it back, so the drop has been fully handled.
  */
 export async function droppedUpload(
   h: TenancyHarness,
@@ -176,9 +203,10 @@ export async function droppedUpload(
     ].join('\r\n')
   );
   socket.write(archive.subarray(0, sentBytes));
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  // Drop only once the server is receiving the body, so this is a drop part-way through.
+  await waitForUploadLease(h, importId, true);
   socket.destroy();
-  await new Promise((resolve) => setTimeout(resolve, 200));
+  await waitForUploadLease(h, importId, false);
 }
 
 /** Read one import as the host sees it. */

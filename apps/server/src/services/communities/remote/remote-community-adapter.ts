@@ -427,13 +427,17 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     }
   }
 
+  /**
+   * The port's tear-down: forget what this adapter holds in memory. Idempotent.
+   *
+   * It deliberately does NOT remove the owner's connection. Ending a connection is the pairing
+   * service's `disconnect`, which also revokes the grant on the Community and purges everything
+   * copied through it (DOR-2334); a credential removed here would strand those copies.
+   */
   async disconnect(): Promise<void> {
-    try {
-      await this.store.disconnect(this.community, this.ownerKey);
-    } catch (error) {
-      if (error instanceof RemoteConnectionNotFoundError) return;
-      throw error;
-    }
+    this.rooms.clear();
+    this.attachments.clear();
+    this.admittedAgents.clear();
   }
 
   async listRooms(context?: CommunityReadContext): Promise<CommunityRoom[]> {

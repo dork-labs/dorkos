@@ -4,6 +4,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { logger } from '../../../../lib/logger.js';
 import {
   RemoteConnectionAuthorizationError,
   RemoteConnectionStore,
@@ -55,6 +56,8 @@ let waitForPoll: (() => Promise<void>) | undefined;
 let waitForExchange: (() => Promise<void>) | undefined;
 let rejectedAuthorization: string | undefined;
 let rejectedStatus = 403;
+/** The wire error code sent with a rejection, when a test needs one. */
+let rejectedCode: string | undefined;
 let rejectedPath: string | undefined;
 /** What the host says to `/me/host-access`; `undefined` models a host built before it (404). */
 let hostAccessAnswer: { status: number; body: unknown } | undefined;
@@ -132,7 +135,10 @@ beforeAll(async () => {
       req.headers.authorization === rejectedAuthorization &&
       (!rejectedPath || req.url === rejectedPath)
     ) {
-      send({ error: 'Grant rejected' }, rejectedStatus);
+      send(
+        rejectedCode ? { code: rejectedCode, message: 'Refused.' } : { error: 'Grant rejected' },
+        rejectedStatus
+      );
       return;
     }
     if (req.method === 'DELETE' && req.url === `${qualified}/me/connection`) {
@@ -945,6 +951,194 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     }
   });
 
+  // DOR-2334. What the access check treats as "the community is gone", which purges every copy
+  // this installation made of it, and what it must not.
+  describe('a community being deleted', () => {
+    async function connectedWith(owner: string) {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const revokeConnection = vi.fn(async () => undefined);
+      const service = new RemoteCommunityPairingService(store, revokeConnection);
+      const started = await service.start(
+        owner,
+        `${origin}/c/${remoteCommunityId}`,
+        'Deletion test'
+      );
+      expect((await service.poll(started.connection.ref, owner)).status).toBe('connected');
+      approved = false;
+      return { store, service, revokeConnection, ref: started.connection.ref };
+    }
+
+    afterEach(() => {
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      rejectedStatus = 403;
+      rejectedCode = undefined;
+      accessLifecycle = 'active';
+    });
+
+    // Purpose: `423 COMMUNITY_DELETION_PENDING` on the access check purges this owner's copies of
+    // exactly this community, through the revoke path, and records the deletion. It fails if the
+    // answer is treated as an outage.
+    it('purges this community’s copies when the Community says it is being deleted', async () => {
+      const { store, service, revokeConnection, ref } = await connectedWith('deleting-owner');
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = `${qualified}/me/connection-access`;
+      rejectedStatus = 423;
+      rejectedCode = 'COMMUNITY_DELETION_PENDING';
+
+      const deleting = await service.status(ref, 'deleting-owner');
+
+      expect(revokeConnection.mock.calls).toEqual([[ref, 'deleting-owner']]);
+      expect(deleting.access).toMatchObject({
+        state: 'verified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: { lifecycle: 'deletion_pending' },
+      });
+      // The bearer stays: a cancelled deletion answers the next check with 401.
+      await expect(store.personalToken(ref, 'deleting-owner')).resolves.toBeTruthy();
+      await service.disconnect(ref, 'deleting-owner');
+    });
+
+    // Purpose: nothing that is not a definite deletion purges. A hold, an outage, another 423, and
+    // a bare 404 (which a missing channel also answers) all keep every copy. It fails if the
+    // classifier widens to any of them.
+    const pending = () => {
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = `${qualified}/me/connection-access`;
+      rejectedStatus = 423;
+      rejectedCode = 'COMMUNITY_DELETION_PENDING';
+    };
+    const lastKnown = async (store: RemoteConnectionStore, ref: string, owner: string) =>
+      (await store.list(owner)).find((row) => row.ref === ref)?.access;
+
+    // Purpose (review 1): a purge that throws never fails the connection list, and the no-access
+    // deletion state is recorded whatever the purge did. It fails if the purge runs first or
+    // its error escapes.
+    it('records the deletion and answers even when the purge throws', async () => {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const revokeConnection = vi.fn(async () => {
+        throw new Error('purge failed');
+      });
+      const service = new RemoteCommunityPairingService(store, revokeConnection);
+      const started = await service.start(
+        'throwing-owner',
+        `${origin}/c/${remoteCommunityId}`,
+        'x'
+      );
+      await service.poll(started.connection.ref, 'throwing-owner');
+      approved = false;
+      pending();
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+      await expect(service.list('throwing-owner')).resolves.toHaveLength(1);
+      await expect(service.status(started.connection.ref, 'throwing-owner')).resolves.toMatchObject(
+        { access: { lastKnown: { lifecycle: 'deletion_pending' } } }
+      );
+      expect(await lastKnown(store, started.connection.ref, 'throwing-owner')).toMatchObject({
+        state: 'verified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: { lifecycle: 'deletion_pending' },
+      });
+      warn.mockRestore();
+      await service.disconnect(started.connection.ref, 'throwing-owner');
+    });
+
+    // Purpose (review 2): while a deletion stays pending, a purge that succeeded is not repeated
+    // on every check; one that failed is tried again. It fails if every check purges, or if a
+    // failed purge is never retried.
+    it('purges once while the deletion is pending, and retries only a failed purge', async () => {
+      const { service, revokeConnection, ref } = await connectedWith('once-owner');
+      pending();
+      revokeConnection.mockRejectedValueOnce(new Error('purge failed'));
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      await service.status(ref, 'once-owner');
+      await service.status(ref, 'once-owner');
+      await service.status(ref, 'once-owner');
+      await service.status(ref, 'once-owner');
+      warn.mockRestore();
+      // Failed, retried and succeeded, then left alone.
+      expect(revokeConnection).toHaveBeenCalledTimes(2);
+      await service.disconnect(ref, 'once-owner');
+    });
+
+    // Purpose (review 3): after a deletion was seen pending, the community's `404 NOT_FOUND` is
+    // final: recorded as deleted, purged if it was not yet, and not shown as merely offline. It
+    // fails if the 404 is treated as an outage after a pending deletion.
+    it('records a finished deletion after a pending one', async () => {
+      const { store, service, revokeConnection, ref } = await connectedWith('finished-owner');
+      pending();
+      revokeConnection.mockRejectedValueOnce(new Error('purge failed'));
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      await service.status(ref, 'finished-owner');
+      rejectedStatus = 404;
+      rejectedCode = 'NOT_FOUND';
+      const finished = await service.status(ref, 'finished-owner');
+      await service.status(ref, 'finished-owner');
+      warn.mockRestore();
+
+      expect(finished.access).toMatchObject({
+        state: 'verified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: { lifecycle: 'deleted' },
+      });
+      expect((await lastKnown(store, ref, 'finished-owner'))?.lastKnown?.lifecycle).toBe('deleted');
+      // The failed purge was retried by the 404, then not repeated.
+      expect(revokeConnection).toHaveBeenCalledTimes(2);
+      await service.disconnect(ref, 'finished-owner');
+    });
+
+    // Purpose (review 3): only the Community's `404 NOT_FOUND` (with its code) finishes a pending
+    // deletion. A bare 404 (an older server, a proxy) or a 5xx after a pending deletion keeps it
+    // pending. It fails if any 404 after a pending deletion counts as deleted.
+    it.each([
+      ['a bare 404', 404, undefined],
+      ['a 5xx', 503, undefined],
+    ] as Array<[string, number, string | undefined]>)(
+      'keeps a pending deletion pending on %s',
+      async (_label, status, code) => {
+        const { store, service, ref } = await connectedWith('still-pending-owner');
+        pending();
+        await service.status(ref, 'still-pending-owner');
+        rejectedStatus = status;
+        rejectedCode = code;
+        await service.status(ref, 'still-pending-owner');
+        expect((await lastKnown(store, ref, 'still-pending-owner'))?.lastKnown?.lifecycle).toBe(
+          'deletion_pending'
+        );
+        await service.disconnect(ref, 'still-pending-owner');
+      }
+    );
+
+    const notGone: Array<[string, 'hold' | number, string | undefined]> = [
+      ['a host hold (read-only)', 'hold', undefined],
+      ['a 5xx', 503, undefined],
+      ['a suspension', 503, 'COMMUNITY_SUSPENDED'],
+      ['a held write refusal', 423, 'COMMUNITY_HELD'],
+      ['an archived community', 423, 'COMMUNITY_ARCHIVED'],
+      ['a bare 404', 404, undefined],
+      ['a 404 NOT_FOUND', 404, 'NOT_FOUND'],
+    ];
+    it.each(notGone)('keeps every copy on %s', async (_label, status, code) => {
+      const { service, revokeConnection, ref } = await connectedWith('kept-owner');
+      if (status === 'hold') accessLifecycle = 'archived';
+      else {
+        rejectedAuthorization = `Bearer ${token}`;
+        rejectedPath = `${qualified}/me/connection-access`;
+        rejectedStatus = status;
+        rejectedCode = code;
+      }
+
+      const answer = await service.status(ref, 'kept-owner');
+
+      expect(revokeConnection).not.toHaveBeenCalled();
+      expect(answer.status).toBe('connected');
+      expect(answer.access?.lastKnown?.lifecycle).not.toBe('deletion_pending');
+      await service.disconnect(ref, 'kept-owner');
+    });
+  });
+
   describe('disconnect revokes the grant on the Community', () => {
     async function connected(owner: string) {
       approved = true;
@@ -967,6 +1161,41 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     afterEach(() => {
       revocationAnswer = 204;
       revocations.length = 0;
+    });
+
+    // DOR-2334. Purpose: disconnecting removes everything copied through the connection, through
+    // the same revoke path, before the credential goes; a failure there never keeps the
+    // credential. It fails if disconnect leaves the mirrors behind.
+    it('removes the mirrored copies with the connection, and completes even if that fails', async () => {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const revokeConnection = vi.fn(async () => undefined);
+      const service = new RemoteCommunityPairingService(store, revokeConnection);
+      const started = await service.start('purging-owner', origin, 'Disconnecting install');
+      expect((await service.poll(started.connection.ref, 'purging-owner')).status).toBe(
+        'connected'
+      );
+      approved = false;
+      await service.disconnect(started.connection.ref, 'purging-owner');
+      expect(revokeConnection.mock.calls).toEqual([[started.connection.ref, 'purging-owner']]);
+      await expectLocalCopyGone(store, started.connection.ref, 'purging-owner');
+
+      approved = true;
+      const failing = new RemoteCommunityPairingService(
+        store,
+        vi.fn(async () => {
+          throw new Error('purge failed');
+        })
+      );
+      const again = await failing.start('purging-owner', origin, 'Disconnecting install');
+      expect((await failing.poll(again.connection.ref, 'purging-owner')).status).toBe('connected');
+      approved = false;
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      await expect(failing.disconnect(again.connection.ref, 'purging-owner')).resolves.toEqual({
+        remoteRevoked: true,
+      });
+      warn.mockRestore();
+      await expectLocalCopyGone(store, again.connection.ref, 'purging-owner');
     });
 
     it('revokes with its own bearer at the qualified path before deleting the local copy', async () => {

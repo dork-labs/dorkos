@@ -1,2 +1,4 @@
 vitest-pg-report.json
 browser-report.json
+# Evidence stores the takedown tests write; config refuses one under the temporary folder.
+.test-evidence/

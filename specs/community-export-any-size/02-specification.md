@@ -82,6 +82,8 @@ community/icon                  ┐ the tail: small, fixed-size entries only
 manifest.json                   ┘ always the last entry before the central directory
 ```
 
+**Withheld audit rows (from `specs/community-host-takedown`).** A takedown the host chose not to tell the owner about writes its tenant audit row with `audit_events.withheld = true`. The version 2 collections query that writes an owner export's audit events (`exports/collections.ts`) reads them `WHERE ae.community_id=$1 AND NOT ae.withheld`, so an owner export never undoes `notify: false`. That query is the only place withheld rows are filtered. There is no evidence export scope: a takedown's evidence copy is its staged record (`takedown_evidence_staging`), written to the evidence store as `record.json`, never an export.
+
 The collections that can grow without bound (members, channel memberships, audit events, and the rest for symmetry) are written in **collection segments** of their own, never in the tail. A tail blob can only be split between records, so a collection written there could outgrow the 1 GiB segment ceiling; in its own segments it is cut into files of at most 100,000 rows and segments of at most `COMMUNITY_EXPORT_SEGMENT_BYTES`, like data. The tail holds only the icon (at most 25 MiB), `manifest.json` (at most 1 MiB), the central directory, and the end records.
 
 `<name>` is the attachment's display name passed through `sanitizeDisplayName` (`storage/blob-store.ts`: NFKC, control characters and slashes replaced, at most 180 characters, no leading dots), so a person opening the zip sees real file names in one folder per file. Readers never use a name from the archive as a filesystem path.
