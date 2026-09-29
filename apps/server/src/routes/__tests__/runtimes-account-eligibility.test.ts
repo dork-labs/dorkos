@@ -316,6 +316,20 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/only-projects', () => {
     );
   });
 
+  // Purpose: a project the rule already names is kept when its folder is gone,
+  // so re-saving the dialog never drops it or refuses the whole save.
+  it('keeps a project the rule already names whose folder is gone', async () => {
+    const gone = path.join(tmp, 'unplugged');
+    (claudeCode().accounts as Record<string, unknown>[])[0].onlyProjects = [gone];
+    const res = await request(server)
+      .put('/api/runtimes/claude-code/accounts/work/only-projects')
+      .send({ projects: [gone, dotted] });
+
+    expect(res.status).toBe(200);
+    const rows = claudeCode().accounts as Record<string, unknown>[];
+    expect(rows[0].onlyProjects).toEqual([gone, dotted]);
+  });
+
   it("writes Main's rule for `default`", async () => {
     const res = await request(server)
       .put('/api/runtimes/claude-code/accounts/default/only-projects')

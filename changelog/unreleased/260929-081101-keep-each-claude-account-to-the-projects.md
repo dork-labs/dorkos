@@ -5,8 +5,12 @@ covers:
   - 'feat(client): show and set where each Claude account may work (DOR-2526)'
   - 'docs: keep an account to its projects, in the guides and the spec (DOR-2526)'
   - "fix(server): judge a schedule's account by its agent's folder, and never fail a launch over the account check (DOR-2526)"
+  - 'fix(config): read a hand-edited account rule of the wrong shape as no rule (DOR-2526)'
+  - "fix: the chat's Default account names what a send will really bill in this project (DOR-2526)"
+  - "fix(server): refuse a person's schedule on an account its project may not use (DOR-2526)"
+  - 'fix: tidy the account-rule wording, dialog and docs from review (DOR-2526)'
 ---
 
 ### Added
 
-- Keep an account to the projects it belongs to. Set a work account to "Only for client-app" in Settings → Runtimes and DorkOS will never use it anywhere else, whether you, a schedule or an agent picks it. In other projects the account shows in the chat's account menu but can't be chosen, and a project can also limit which accounts it uses (DOR-2526)
+- Keep an account to the projects it belongs to. Set a work account to "Only for client-app" in Settings → Runtimes, and DorkOS will never use it for new chats anywhere else, whether you, a schedule or an agent picks it. In other projects the account shows in the chat's account menu but can't be chosen, and the menu's Default names the account a new chat there will really use. Chats already running keep their account (DOR-2526)

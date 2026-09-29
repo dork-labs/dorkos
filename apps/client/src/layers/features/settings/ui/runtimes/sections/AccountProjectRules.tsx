@@ -29,7 +29,12 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
-import { accountKeys, configKeys, useTransport } from '@/layers/shared/model';
+import {
+  accountKeys,
+  configKeys,
+  NOT_USED_IN_ANY_PROJECT,
+  useTransport,
+} from '@/layers/shared/model';
 
 /** Names joined for a sentence: `a`, `a and b`, `a, b and c`. */
 function joinNames(names: readonly string[]): string {
@@ -63,7 +68,7 @@ export function OnlyForLine({ onlyProjects }: { onlyProjects: readonly ProjectRe
   return (
     <p className="text-muted-foreground text-xs" data-testid="claude-account-only-for">
       {onlyProjects.length === 0
-        ? 'Not used in any project'
+        ? NOT_USED_IN_ANY_PROJECT
         : `Only for ${joinNames(onlyProjects.map((p) => p.name))}`}
     </p>
   );
@@ -107,6 +112,9 @@ export function LimitToProjectsDialog({
   const [chosen, setChosen] = useState<Set<string>>(
     () => new Set((current ?? []).map((p) => p.root))
   );
+  // "Only these projects" with none ticked would keep the account out of every
+  // project; say so rather than save a rule nobody meant.
+  const [emptyChoice, setEmptyChoice] = useState(false);
   const save = useMutation({
     mutationFn: () =>
       transport.setAccountOnlyProjects(accountId, mode === 'any' ? null : [...chosen]),
@@ -122,7 +130,17 @@ export function LimitToProjectsDialog({
   const extra = (current ?? []).filter((p) => !listed.some((known) => known.root === p.root));
   const all: ProjectRef[] = [...listed, ...extra];
 
+  function submit() {
+    if (mode === 'only' && chosen.size === 0) {
+      setEmptyChoice(true);
+      return;
+    }
+    setEmptyChoice(false);
+    save.mutate();
+  }
+
   function toggle(root: string, on: boolean) {
+    setEmptyChoice(false);
     setChosen((prev) => {
       const next = new Set(prev);
       if (on) next.add(root);
@@ -192,6 +210,12 @@ export function LimitToProjectsDialog({
               })}
             </div>
           )}
+          {emptyChoice && (
+            <p role="alert" className="text-destructive flex items-start gap-1.5 text-xs">
+              <CircleAlert className="mt-px size-3 shrink-0" aria-hidden />
+              <span>Tick at least one project, or choose Any project.</span>
+            </p>
+          )}
           {save.isError && (
             <p role="alert" className="text-destructive flex items-start gap-1.5 text-xs">
               <CircleAlert className="mt-px size-3 shrink-0" aria-hidden />
@@ -203,7 +227,7 @@ export function LimitToProjectsDialog({
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+          <Button size="sm" onClick={submit} disabled={save.isPending}>
             Save
           </Button>
         </ResponsiveDialogFooter>
@@ -241,8 +265,14 @@ export function ProjectLimitsList({ limits, nameForId }: ProjectLimitsListProps)
       className="rounded-md border px-3 py-1.5"
       data-testid="project-limits"
     >
-      <p id={captionId} className="text-muted-foreground py-1 text-xs">
+      <p id={captionId} className="text-muted-foreground pt-1 text-xs">
         Project limits
+      </p>
+      {/* Said plainly: core shows and removes a project's list, and the Flow
+          extension's settings are where one is chosen (spec §8.5, V6). */}
+      <p className="text-muted-foreground pb-1 text-xs" data-testid="project-limits-note">
+        Each project here uses only the accounts listed. Choose them in Settings → Flow, under
+        Accounts this project may use.
       </p>
       <ul className="divide-y">
         {limits.map(({ project, allow }) => (

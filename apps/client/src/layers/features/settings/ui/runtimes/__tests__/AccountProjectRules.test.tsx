@@ -129,6 +129,46 @@ describe('LimitToProjectsDialog', () => {
     );
   });
 
+  // Purpose: "Only these projects" with nothing ticked is refused in plain
+  // words before anything is sent.
+  it('refuses "Only these projects" with none ticked', async () => {
+    const transport = renderWith(
+      <LimitToProjectsDialog
+        open
+        onOpenChange={vi.fn()}
+        accountId="work"
+        accountName="Work"
+        current={null}
+      />
+    );
+    await userEvent.click(screen.getByRole('radio', { name: 'Only these projects' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Tick at least one project, or choose Any project.'
+    );
+    expect(transport.setAccountOnlyProjects).not.toHaveBeenCalled();
+  });
+
+  // Purpose: a project the rule names whose folder is gone stays ticked and is
+  // sent back as it was, never dropped by a save.
+  it('keeps a project whose folder is gone', async () => {
+    const gone = { root: '/work/unplugged', name: 'unplugged' };
+    const transport = renderWith(
+      <LimitToProjectsDialog
+        open
+        onOpenChange={vi.fn()}
+        accountId="work"
+        accountName="Work"
+        current={[gone]}
+      />
+    );
+    expect(await screen.findByRole('checkbox', { name: 'unplugged' })).toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(transport.setAccountOnlyProjects).toHaveBeenCalledWith('work', ['/work/unplugged'])
+    );
+  });
+
   // Purpose: a refused write shows the server's own sentence and stays open.
   it('shows why a write was refused', async () => {
     const onOpenChange = vi.fn();
@@ -165,6 +205,7 @@ describe('ProjectLimitsList', () => {
     );
     expect(screen.getByText('client-app')).toBeInTheDocument();
     expect(screen.getByText('Uses only Work and Main')).toBeInTheDocument();
+    expect(screen.getByTestId('project-limits-note')).toHaveTextContent('Settings → Flow');
     await userEvent.click(screen.getByRole('button', { name: 'Let client-app use every account' }));
     await waitFor(() =>
       expect(transport.setProjectAccounts).toHaveBeenCalledWith('/work/client-app', null)

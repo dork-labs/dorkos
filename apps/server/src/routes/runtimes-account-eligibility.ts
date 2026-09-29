@@ -45,6 +45,7 @@ import { getAccountUsageStore } from '../services/core/usage/current-usage-store
 import {
   accountDisplayName,
   joinNames,
+  NOT_USED_IN_ANY_PROJECT,
   onlyProjectsOf,
   readEligibilityRules,
   judgeEligibility,
@@ -289,7 +290,15 @@ export function mountAccountEligibilityRoutes(router: Router): void {
       let roots: string[] | null = null;
       if (parsed.data.projects !== null) {
         roots = [];
+        // A project the rule already names is kept as it is, even when its
+        // folder is gone right now (a drive may be unplugged): saving the
+        // dialog must never drop it, or refuse the whole save over it.
+        const kept = new Set((onlyProjectsOf(configManager, accountId) ?? []).map((p) => p.root));
         for (const folder of parsed.data.projects) {
+          if (kept.has(folder)) {
+            roots.push(folder);
+            continue;
+          }
           const project = await projectOfNamedFolder(folder);
           if (project === 'outside' || project === null) {
             return res.status(400).json({
@@ -321,7 +330,7 @@ export function mountAccountEligibilityRoutes(router: Router): void {
           onlyProjects === null
             ? `${name} may work in any project again`
             : onlyProjects.length === 0
-              ? `${name} may work in no project`
+              ? `${name} is now ${NOT_USED_IN_ANY_PROJECT.toLowerCase()}`
               : `${name} is now only for ${joinNames(onlyProjects.map((p) => p.name))}`,
         linkPath: '/?settings=runtimes',
         metadata: { account: accountId, onlyProjects: roots },

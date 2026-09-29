@@ -261,7 +261,7 @@ describe('continueSession', () => {
     const err = await rejection(continueSession('src-1', { account: 'spare' }, deps));
     expect(err).toBeInstanceOf(AccountNotAllowedError);
     expect((err as Error).message).toBe(
-      "project isn't set to use SPARE. Pick another account, or change which accounts project may use."
+      "project isn't set to use SPARE. Pick another account, or remove project's account limit in Settings → Runtimes."
     );
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
   });

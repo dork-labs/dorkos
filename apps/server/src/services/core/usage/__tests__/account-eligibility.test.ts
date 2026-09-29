@@ -8,6 +8,7 @@
  * the canonicalization cases use real temporary folders and the real step.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { notAllowedReason } from '../account-ranking.js';
 import { mkdtemp, mkdir, rm, symlink, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -362,7 +363,7 @@ describe('the refusal (spec §8.3)', () => {
     expect(
       describeAccountRefusal(DORK, 'Work', { reason: 'project-allowlist', project: DORK })
     ).toBe(
-      "dorkos isn't set to use Work. Pick another account, or change which accounts dorkos may use."
+      "dorkos isn't set to use Work. Pick another account, or remove dorkos's account limit in Settings → Runtimes."
     );
   });
 
@@ -394,6 +395,19 @@ describe('the refusal (spec §8.3)', () => {
         ],
       })
     ).toContain('only in client-app, client-api and x.');
+  });
+
+  it('says "not used in any project" for an account kept to none', () => {
+    // Purpose: one wording for an empty list, the same as the Settings row and
+    // the pickers show.
+    expect(
+      describeAccountRefusal(DORK, 'Work', { reason: 'only-projects', allowedProjects: [] })
+    ).toBe(
+      'Work is not used in any project. Pick another account, or change this in Settings → Runtimes.'
+    );
+    expect(notAllowedReason({ reason: 'only-projects', allowedProjects: [] }, DORK)).toBe(
+      'Not used in any project'
+    );
   });
 
   it('carries code, project and account id in the 409 body', () => {

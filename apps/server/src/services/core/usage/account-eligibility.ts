@@ -268,6 +268,12 @@ export async function projectOfFolder(cwd: string | null | undefined): Promise<P
   }
 }
 
+/**
+ * What every surface says for an account kept to no project at all (an empty
+ * `onlyProjects`): the Settings row, the pickers and the refusal sentence.
+ */
+export const NOT_USED_IN_ANY_PROJECT = 'Not used in any project';
+
 /** Names joined for a sentence: `a`, `a and b`, `a, b and c`. */
 export function joinNames(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? '';
@@ -301,14 +307,17 @@ export function describeAccountRefusal(
       : "No account is allowed to work in this folder, because it isn't in a project and every account is set to work only in certain projects. Change this in Settings → Runtimes.";
   }
   if (detail.reason === 'project-allowlist') {
-    return `${detail.project.name} isn't set to use ${account}. Pick another account, or change which accounts ${detail.project.name} may use.`;
+    return `${detail.project.name} isn't set to use ${account}. Pick another account, or remove ${detail.project.name}'s account limit in Settings → Runtimes.`;
   }
   const allowed = joinNames(detail.allowedProjects.map((p) => p.name));
-  const where = allowed ? `only in ${allowed}` : 'in no project';
-  if (!project) {
-    return `${account} is set to work ${where}, and this folder isn't in a project. Pick another account.`;
+  // One wording for an account kept to no project at all, everywhere it shows.
+  if (!allowed) {
+    return `${account} is ${NOT_USED_IN_ANY_PROJECT.toLowerCase()}. Pick another account, or change this in Settings → Runtimes.`;
   }
-  return `${account} can't be used in ${project.name}. It's set to work ${where}. Pick another account, or change this in Settings → Runtimes.`;
+  if (!project) {
+    return `${account} is set to work only in ${allowed}, and this folder isn't in a project. Pick another account.`;
+  }
+  return `${account} can't be used in ${project.name}. It's set to work only in ${allowed}. Pick another account, or change this in Settings → Runtimes.`;
 }
 
 /**

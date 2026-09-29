@@ -38,6 +38,7 @@ import { configManager } from '../config-manager.js';
 import {
   accountEligibility,
   joinNames,
+  NOT_USED_IN_ANY_PROJECT,
   projectOfFolder,
   refusalFor,
   type EligibilityConfigReader,
@@ -372,7 +373,7 @@ export async function notAllowedAccounts(ctx: AdvisorContext): Promise<RankedAcc
 export function notAllowedReason(verdict: Ineligible, project: ProjectRef | null): string {
   if (verdict.reason === 'project-allowlist') return `Not used in ${verdict.project.name}`;
   const names = verdict.allowedProjects.map((p) => p.name);
-  if (names.length === 0) return project ? `Not used in ${project.name}` : 'Not used anywhere';
+  if (names.length === 0) return NOT_USED_IN_ANY_PROJECT;
   return `Only for ${joinNames(names)}`;
 }
 

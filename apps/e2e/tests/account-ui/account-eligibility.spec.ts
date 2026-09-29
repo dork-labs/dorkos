@@ -37,7 +37,8 @@ interface ReadAccountRow {
   label: string | null;
   color: string;
   colorIsDefault?: boolean;
-  onlyProjects?: unknown;
+  /** Read back named (`{ root, name }`), stored as roots. */
+  onlyProjects?: { root: string; name: string }[] | null;
 }
 
 /** The curated config block this file reads. */
@@ -75,7 +76,11 @@ async function readStoredAccounts(request: APIRequestContext) {
     path: row.path,
     label: row.label,
     color: row.colorIsDefault ? null : row.color,
-    ...(row.onlyProjects !== undefined ? { onlyProjects: row.onlyProjects } : {}),
+    // The read names each project; the stored shape is its root, so the
+    // restore writes roots (or null), never the named form.
+    ...(row.onlyProjects !== undefined
+      ? { onlyProjects: row.onlyProjects === null ? null : row.onlyProjects.map((p) => p.root) }
+      : {}),
   }));
 }
 
