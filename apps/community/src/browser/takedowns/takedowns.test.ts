@@ -84,20 +84,25 @@ describe('takedown helpers', () => {
     expect(authorBannerText({ ...notice, targetKind: 'attachment' })).toContain(
       'one of your files'
     );
+    expect(authorBannerText({ ...notice, targetKind: 'icon' })).toContain(
+      'removed the community icon on'
+    );
   });
 
-  // Purpose: fails if a dismissal is forgotten, leaks into another community, or a blocked or
-  // corrupted store throws instead of showing the banner again.
-  it('remembers dismissed banners per community and survives blocked or bad storage', () => {
+  // Purpose: fails if a dismissal is forgotten, leaks into another community or to another
+  // member sharing this browser, or a blocked or corrupted store throws instead of showing the
+  // banner again.
+  it('remembers dismissed banners per community and member, and survives bad storage', () => {
     const storage = memoryStorage();
-    rememberSeenTakedown(community, 'a', storage);
-    rememberSeenTakedown(community, 'b', storage);
-    expect([...readSeenTakedowns(community, storage)]).toEqual(['a', 'b']);
-    expect(readSeenTakedowns('another', storage).size).toBe(0);
-    storage().setItem(`communityTakedownsSeen:${community}`, '{not json');
-    expect(readSeenTakedowns(community, storage).size).toBe(0);
+    rememberSeenTakedown(community, 'mia', 'a', storage);
+    rememberSeenTakedown(community, 'mia', 'b', storage);
+    expect([...readSeenTakedowns(community, 'mia', storage)]).toEqual(['a', 'b']);
+    expect(readSeenTakedowns('another', 'mia', storage).size).toBe(0);
+    expect(readSeenTakedowns(community, 'ada', storage).size).toBe(0);
+    storage().setItem(`communityTakedownsSeen:${community}:mia`, '{not json');
+    expect(readSeenTakedowns(community, 'mia', storage).size).toBe(0);
     const blocked = memoryStorage(true);
-    expect(() => rememberSeenTakedown(community, 'a', blocked)).not.toThrow();
-    expect(readSeenTakedowns(community, blocked).size).toBe(0);
+    expect(() => rememberSeenTakedown(community, 'mia', 'a', blocked)).not.toThrow();
+    expect(readSeenTakedowns(community, 'mia', blocked).size).toBe(0);
   });
 });

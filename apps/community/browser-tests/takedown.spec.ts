@@ -452,6 +452,9 @@ test('a child-safety takedown tells no one, and its kept copy is released only w
     const row = section.getByRole('listitem', { name: `Message ${quietEntry} takedown` });
     await expect(row).toContainText('Child safety');
     await expect(row).toContainText('Owner and author not told');
+    // The next case starts from the default reason, with its default tell box.
+    await expect(section.getByLabel('Reason', { exact: true })).toHaveValue('illegal_content');
+    await expect(section.getByLabel('Tell the owner and the author')).toBeChecked();
     await expect(row).toContainText('Kept on this server until you release it');
     await expect(row.getByRole('button', { name: 'Try again' })).toHaveCount(0);
     await expect(row.getByRole('button', { name: 'Release' })).toBeVisible();
@@ -567,10 +570,15 @@ test('with an evidence store the warning is gone, and each copy state reads plai
     await section.getByLabel('What to take down').selectOption('attachment');
     await section.getByLabel('File ID').fill(fileEntry.attachmentId);
     await section.getByLabel('Reason').selectOption('legal_order');
+    // A tell box changed by hand is kept for this case, and reset for the next one.
+    await section.getByLabel('Tell the owner and the author').uncheck();
     await section.getByLabel('Your password').fill(password);
     await section.getByRole('button', { name: 'Take down', exact: true }).click();
     const row = section.getByRole('listitem', { name: `File ${fileEntry.attachmentId} takedown` });
     await expect(row).toContainText('Legal order');
+    await expect(row).toContainText('Owner and author not told');
+    await expect(section.getByLabel('Reason', { exact: true })).toHaveValue('illegal_content');
+    await expect(section.getByLabel('Tell the owner and the author')).toBeChecked();
     await expect(row).toContainText('Saving the copy…');
     await expect(row.getByRole('button')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText(FILE_NAME);

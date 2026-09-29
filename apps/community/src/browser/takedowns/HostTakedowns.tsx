@@ -17,6 +17,7 @@ type TargetKind = 'entry' | 'attachment' | 'icon';
 type Page = { takedowns: HostTakedown[]; nextAfter: string | null; evidenceStore: boolean };
 
 const PAGE_SIZE = 20;
+const DEFAULT_CATEGORY: TakedownCategory = 'illegal_content';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const TARGETS: { value: TargetKind; label: string; idLabel?: string }[] = [
   { value: 'entry', label: 'A message', idLabel: 'Message ID' },
@@ -40,9 +41,9 @@ export function HostTakedowns({ community }: { community: TakedownCommunity }) {
   const [page, setPage] = useState<Page | null>(null);
   const [kind, setKind] = useState<TargetKind>('entry');
   const [targetId, setTargetId] = useState('');
-  const [category, setCategory] = useState<TakedownCategory>('illegal_content');
+  const [category, setCategory] = useState<TakedownCategory>(DEFAULT_CATEGORY);
   const [reference, setReference] = useState('');
-  const [notify, setNotify] = useState(defaultNotify('illegal_content'));
+  const [notify, setNotify] = useState(defaultNotify(DEFAULT_CATEGORY));
   const [password, setPassword] = useState('');
   const [releasing, setReleasing] = useState<HostTakedown | null>(null);
   const [releasePassword, setReleasePassword] = useState('');
@@ -82,15 +83,21 @@ export function HostTakedowns({ community }: { community: TakedownCommunity }) {
     setMessage('');
     try {
       await work();
-      await load();
-      setMessage(success);
-      return true;
     } catch (cause) {
       setError(describeReauthenticationError(cause, unchanged));
+      setBusy(false);
       return false;
+    }
+    // The change is made: say so, even if reading the list back fails.
+    setMessage(success);
+    try {
+      await load();
+    } catch (cause) {
+      setError(describeError(cause));
     } finally {
       setBusy(false);
     }
+    return true;
   }
 
   async function submit(event: React.FormEvent) {
@@ -126,9 +133,12 @@ export function HostTakedowns({ community }: { community: TakedownCommunity }) {
     );
     setPassword('');
     if (done) {
+      // The next case starts clean: a reason or tell box changed by hand never carries over.
       attempt.current = null;
       setTargetId('');
       setReference('');
+      setCategory(DEFAULT_CATEGORY);
+      setNotify(defaultNotify(DEFAULT_CATEGORY));
     }
   }
 

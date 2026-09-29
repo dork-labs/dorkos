@@ -851,8 +851,9 @@ describe('an item takedown with an evidence store', () => {
     const notices = async (cookie: string) =>
       CommunityWireTakedownNoticeListResponseSchema.parse(
         await body(await h.call(`${s.base}/takedowns`, { cookie }), 200, 'notices')
-      ).takedowns.map((notice) => notice.id);
-    expect(await notices(s.p.cookie)).toEqual([t.id]);
+      ).takedowns.map((notice) => ({ id: notice.id, yours: notice.yours }));
+    // The agent's owner is its author for the notice: the banner's `yours` is true for them.
+    expect(await notices(s.p.cookie)).toEqual([{ id: t.id, yours: true }]);
     expect(await notices(s.q.cookie)).toEqual([]);
   });
 

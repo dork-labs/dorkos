@@ -478,7 +478,11 @@ export function CommunityApp() {
           </Notice>
         )}
         <ErasureBanner communityId={community!.id} />
-        <TakedownBanner key={community!.id} communityId={community!.id} />
+        <TakedownBanner
+          key={`${community!.id}:${me.member.memberId}`}
+          communityId={community!.id}
+          memberId={me.member.memberId}
+        />
         {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
         {settings ? (
           <Manage

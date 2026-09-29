@@ -80,23 +80,37 @@ export function takedownDate(value: string): string {
   return new Date(value).toLocaleDateString(undefined, { dateStyle: 'long' });
 }
 
+/** What an author's banner calls the removed thing. */
+const AUTHOR_WHAT: Record<TakedownNotice['targetKind'], string> = {
+  entry: 'one of your messages',
+  attachment: 'one of your files',
+  // An icon has no author; the notices route never marks one `yours`. Said plainly all the same.
+  icon: 'the community icon',
+};
+
 /** The author's banner: what was removed, when, and why. */
 export function authorBannerText(notice: TakedownNotice): string {
-  const what = notice.targetKind === 'attachment' ? 'one of your files' : 'one of your messages';
+  const what = AUTHOR_WHAT[notice.targetKind];
   return `The host removed ${what} on ${takedownDate(notice.createdAt)}. ${categorySentence(notice.category)}`;
 }
 
 const SEEN_KEY = 'communityTakedownsSeen';
 
+/** One member's dismissals in one community: two people sharing a browser never share them. */
+function seenKey(communityId: string, memberId: string): string {
+  return `${SEEN_KEY}:${communityId}:${memberId}`;
+}
+
 /**
- * The takedowns this browser has already shown their author, per community. A convenience only:
- * without storage the banner shows again on the next visit, which is the safe side.
+ * The takedowns this browser has already shown their author, per community and member. A
+ * convenience only: without storage the banner shows again on the next visit, the safe side.
  */
 export function readSeenTakedowns(
   communityId: string,
+  memberId: string,
   storage: () => Storage = () => localStorage
 ): Set<string> {
-  const raw = readStorage(storage, `${SEEN_KEY}:${communityId}`);
+  const raw = readStorage(storage, seenKey(communityId, memberId));
   if (!raw) return new Set();
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -111,10 +125,11 @@ export function readSeenTakedowns(
 /** Remember that the author dismissed one takedown's banner in this browser. */
 export function rememberSeenTakedown(
   communityId: string,
+  memberId: string,
   takedownId: string,
   storage: () => Storage = () => localStorage
 ): void {
-  const seen = readSeenTakedowns(communityId, storage);
+  const seen = readSeenTakedowns(communityId, memberId, storage);
   seen.add(takedownId);
-  writeStorage(storage, `${SEEN_KEY}:${communityId}`, JSON.stringify([...seen]));
+  writeStorage(storage, seenKey(communityId, memberId), JSON.stringify([...seen]));
 }

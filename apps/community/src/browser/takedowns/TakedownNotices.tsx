@@ -92,10 +92,20 @@ export function RemovedByHost({
  * Tell an author, once per takedown, that the host removed one of their messages or files and
  * why. Dismissing it is remembered in this browser.
  */
-export function TakedownBanner({ communityId }: { communityId: string }) {
+export function TakedownBanner({
+  communityId,
+  memberId,
+}: {
+  communityId: string;
+  /** The signed-in member, so dismissals never carry over to someone else in this browser. */
+  memberId: string;
+}) {
   const { notices } = useTakedownNotices(communityId);
-  const [seen, setSeen] = useState(() => readSeenTakedowns(communityId));
-  const unseen = (notices ?? []).filter((notice) => notice.yours && !seen.has(notice.id));
+  const [seen, setSeen] = useState(() => readSeenTakedowns(communityId, memberId));
+  // An icon has no author, so it never gets a banner even if a notice were ever marked yours.
+  const unseen = (notices ?? []).filter(
+    (notice) => notice.yours && notice.targetKind !== 'icon' && !seen.has(notice.id)
+  );
   if (unseen.length === 0) return null;
   return (
     <div className="m-3 grid gap-2">
@@ -108,7 +118,7 @@ export function TakedownBanner({ communityId }: { communityId: string }) {
             size="sm"
             className="mt-2"
             onClick={() => {
-              rememberSeenTakedown(communityId, notice.id);
+              rememberSeenTakedown(communityId, memberId, notice.id);
               setSeen((current) => new Set(current).add(notice.id));
             }}
           >
