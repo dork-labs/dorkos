@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eraseMembership } from '../erasure/erasure.js';
-import { DOWNLOAD_RECHECK_BYTES } from '../routes/exports.js';
+import { ARCHIVE_RECHECK_BYTES, DOWNLOAD_RECHECK_BYTES } from '../routes/exports.js';
 import {
   exportCommunity,
   exportMember,
@@ -22,8 +22,13 @@ import {
 } from './tenancy-test-harness.js';
 
 const MIB = 1024 * 1024;
-/** What may still arrive after an archive is deleted: the chunk the stream read ahead. */
-const ONE_CHUNK_AHEAD = MIB;
+/** One chunk as the filesystem store reads it. */
+const STORE_CHUNK = 64 * 1024;
+/**
+ * What may still arrive after an archive is deleted: the rest of the re-check window, plus the
+ * chunk in hand and the one the stream read ahead.
+ */
+const AFTER_DELETE = ARCHIVE_RECHECK_BYTES + 2 * STORE_CHUNK;
 let h: TenancyHarness;
 let operatorCookie: string;
 
@@ -210,10 +215,10 @@ describe('resumable download', () => {
     }
   });
 
-  // Purpose (AC-8): an erasure that deletes the export stops a download already running at the
-  // next chunk, and the next ranged request finds nothing. Fails if a download keeps streaming
+  // Purpose (AC-8): an erasure that deletes the export stops a download already running within
+  // one 256 KiB re-check window, and the next ranged request finds nothing. Fails if a download keeps streaming
   // an erased person's data after their erasure deleted the archive.
-  it('stops a download at the next chunk once an erasure deletes the export', async () => {
+  it('stops a download almost at once when an erasure deletes the export', async () => {
     const { community, xena, id } = await largeExport('Erase Download Place');
     const [first] = await segmentsOf(h, id);
     const { spy, release } = holdAfterFirstByte(first.blob_key);
@@ -230,7 +235,7 @@ describe('resumable download', () => {
       });
       expect(outcome.failed).toBe(true);
       expect(outcome.received).toBeLessThan(size);
-      expect(outcome.afterward).toBeLessThanOrEqual(ONE_CHUNK_AHEAD);
+      expect(outcome.afterward).toBeLessThanOrEqual(AFTER_DELETE);
     } finally {
       release();
       spy.mockRestore();
@@ -240,9 +245,9 @@ describe('resumable download', () => {
   });
 
   // Purpose (DOR-2331): a host takedown deletes every ready export, and one already downloading
-  // stops at the next chunk. The takedown only queues the archive's segments, so their bytes are
+  // stops within one 256 KiB re-check window. The takedown only queues the archive's segments, so their bytes are
   // still in storage: fails if the download re-checks the archive only every 16 MiB, as it did.
-  it('stops a download at the next chunk once a takedown deletes the export', async () => {
+  it('stops a download almost at once when a takedown deletes the export', async () => {
     const { community, id } = await largeExport('Takedown Download Place');
     const [target] = (
       await h.pool.query<{ id: string }>(
@@ -275,7 +280,7 @@ describe('resumable download', () => {
         release();
       });
       expect(outcome.failed).toBe(true);
-      expect(outcome.afterward).toBeLessThanOrEqual(ONE_CHUNK_AHEAD);
+      expect(outcome.afterward).toBeLessThanOrEqual(AFTER_DELETE);
       // The bytes are still there: only the check stopped the download.
       const segments = await h.pool.query<{ state: string }>(
         'SELECT state FROM managed_blobs WHERE blob_key=$1',

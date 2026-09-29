@@ -19,14 +19,18 @@ import {
 } from '../exports/authority.js';
 import { endExportJob, EXPORT_COLUMNS, toWireExport, type ExportRow } from '../exports/store.js';
 
-/**
- * A download re-checks the requester's authority after at most this many bytes... The archive
- * itself is re-checked before every chunk: a takedown or an erasure that deletes it stops the
- * download at the next chunk.
- */
+/** A download re-checks the requester's authority after at most this many bytes... */
 export const DOWNLOAD_RECHECK_BYTES = 16 * 1024 * 1024;
 /** ...or this much time, whichever comes first. */
 export const DOWNLOAD_RECHECK_MS = 10_000;
+/**
+ * A download re-checks that its archive still exists after at most this many bytes... A
+ * takedown or an erasure that deletes the archive stops the download within this window, while
+ * a fast download makes one database round trip per window rather than one per chunk.
+ */
+export const ARCHIVE_RECHECK_BYTES = 256 * 1024;
+/** ...or this much time, whichever comes first. */
+export const ARCHIVE_RECHECK_MS = 250;
 
 /** Exports still open, or ended within the last week, are listed. */
 const LISTED = `(state IN ('queued','building')
@@ -290,16 +294,26 @@ export function registerExportRoutes(
     const iterator = source.read(start, end, { signal: c.req.raw.signal })[Symbol.asyncIterator]();
     let sinceCheck = 0;
     let checkedAt = Date.now();
+    let sinceArchiveCheck = 0;
+    let archiveCheckedAt = checkedAt;
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {
           const next = await iterator.next();
-          // As a file download does: the end carries no bytes and is not refused, and every chunk
-          // is checked after it is read and before it is queued. The archive row goes before its
-          // bytes do, so an erasure or takedown that deletes the export stops the download here,
-          // even while its segments still wait for the cleanup sweep.
+          // As a file download does, the end carries no bytes and is not refused, and a check runs
+          // after a chunk is read and before it is queued. The archive row goes before its bytes
+          // do, so an erasure or takedown that deletes the export stops the download here, within
+          // one window, even while its segments still wait for the cleanup sweep.
           if (next.done) return controller.close();
-          if (!(await readyRow())) throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
+          if (
+            sinceArchiveCheck + next.value.length > ARCHIVE_RECHECK_BYTES ||
+            Date.now() - archiveCheckedAt >= ARCHIVE_RECHECK_MS
+          ) {
+            if (!(await readyRow())) throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
+            sinceArchiveCheck = 0;
+            archiveCheckedAt = Date.now();
+          }
+          sinceArchiveCheck += next.value.length;
           if (
             sinceCheck + next.value.length > DOWNLOAD_RECHECK_BYTES ||
             Date.now() - checkedAt >= DOWNLOAD_RECHECK_MS

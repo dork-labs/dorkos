@@ -203,8 +203,10 @@ export async function snapshotTarget(
     // from a message that stays, are gone from it, but their bytes may still be waiting for the
     // sweep. An erased message stays erased.
     const removed = entry.erased_at ? [] : await lockRemovedFiles(client, community.id, entry.id);
-    for (const row of removed)
-      files.rows.push({ ...row, id: row.attachment_id } as EvidenceFileRow);
+    const evidenceFiles = [
+      ...files.rows.map((row) => evidenceFile(row)),
+      ...removed.map((row) => evidenceFile({ ...row, id: row.attachment_id }, true)),
+    ];
     const who = await readEvidenceAuthor(client, community.id, {
       memberId: entry.author_member_id,
       agentId: entry.author_agent_id,
@@ -216,9 +218,9 @@ export async function snapshotTarget(
         entry: await entryEvidence(client, community.id, entry),
         author: who.author,
         account: who.account,
-        files: files.rows.map(evidenceFile),
+        files: evidenceFiles,
       },
-      blobKeys: files.rows.map((row) => row.blob_key),
+      blobKeys: [...files.rows, ...removed].map((row) => row.blob_key),
       hasContent: (!entry.removed_at && !entry.erased_at) || removed.length > 0,
       entryId: entry.id,
       channelId: entry.channel_id,

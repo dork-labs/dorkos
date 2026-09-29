@@ -720,6 +720,7 @@ describe('an item takedown with an evidence store', () => {
           byteSize: Buffer.byteLength(c.bytes),
           path: `files/${c.attachmentId}`,
           sha256: c.checksum,
+          removedBeforeTakedown: false,
         },
       ],
       icon: null,
@@ -1911,7 +1912,12 @@ describe('after review', () => {
       text: REMOVED_ENTRY_TEXT.author,
     });
     expect(record.files).toEqual([
-      expect.objectContaining({ id: c.attachmentId, name: c.fileName, sha256: c.checksum }),
+      expect.objectContaining({
+        id: c.attachmentId,
+        name: c.fileName,
+        sha256: c.checksum,
+        removedBeforeTakedown: true,
+      }),
     ]);
     expect((await evidenceFile(`${folder}files/${c.attachmentId}`)).toString()).toBe(c.bytes);
     await drainCleanup(h);
@@ -1983,9 +1989,15 @@ describe('after review', () => {
     const record = CommunityEvidenceRecordV1Schema.parse(
       JSON.parse((await evidenceFile(`${folder}record.json`)).toString())
     );
+    // The message still stands, but the file was no longer part of it when it was taken down.
     expect(record.entry).toMatchObject({ contentAlreadyRemoved: false, text: c.text });
     expect(record.files).toEqual([
-      expect.objectContaining({ id: c.attachmentId, name: c.fileName, sha256: c.checksum }),
+      expect.objectContaining({
+        id: c.attachmentId,
+        name: c.fileName,
+        sha256: c.checksum,
+        removedBeforeTakedown: true,
+      }),
     ]);
     expect((await evidenceFile(`${folder}files/${c.attachmentId}`)).toString()).toBe(c.bytes);
     await drainCleanup(h);
@@ -2213,18 +2225,23 @@ describe('after review', () => {
     expect(received).toBeLessThan(size);
   });
 
-  // Purpose (DOR-2331): the icon stream stops at the next chunk once the icon is taken down, as
-  // a file does: its bytes stay in storage for the copy, so the stream alone would not end.
-  // Fails if the icon download sends the rest of the icon after the takedown.
-  it('stops an icon download in progress once the icon is taken down', async () => {
-    const s = await makeScene(h, operator.cookie, 'icon-stream');
-    const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('icon-stream')]);
+  /**
+   * Start an icon download that answers its first byte and then waits, run `interrupt` with the
+   * scene, the icon's settings version and PNG bytes, and read the rest. Returns how many bytes
+   * arrived and whether the download failed.
+   */
+  async function iconDownloadInterruptedBy(
+    label: string,
+    interrupt: (s: Scene, settingsVersion: number) => Promise<void>
+  ) {
+    const s = await makeScene(h, operator.cookie, label);
+    const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from(label)]);
     const settings = await body<{ settingsVersion: number }>(
       await h.call(`${s.base}/settings`, { cookie: s.owner.cookie }),
       200,
       'settings'
     );
-    await expectStatus(
+    const uploaded = await body<{ settingsVersion: number }>(
       await h.call(`${s.base}/settings/icon`, {
         method: 'PUT',
         cookie: s.owner.cookie,
@@ -2240,7 +2257,6 @@ describe('after review', () => {
         [s.communityId]
       )
     ).rows[0].icon_blob_key;
-    // The icon answers its first byte, then waits for the takedown.
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -2268,16 +2284,7 @@ describe('after review', () => {
       expect(response.status).toBe(200);
       const reader = response.body!.getReader();
       let received = (await reader.read()).value?.length ?? 0;
-      await created(
-        await takedown(
-          h,
-          s.communityId,
-          { bearer: keys.takedown.secret },
-          {
-            target: { kind: 'icon' },
-          }
-        )
-      );
+      await interrupt(s, uploaded.settingsVersion);
       release();
       let failed = false;
       try {
@@ -2289,11 +2296,47 @@ describe('after review', () => {
       } catch {
         failed = true;
       }
-      expect(failed).toBe(true);
-      expect(received).toBe(1);
+      return { received, failed };
     } finally {
       release();
       spy.mockRestore();
     }
+  }
+
+  // Purpose (DOR-2331): the icon stream stops at the next chunk once the icon is taken down, as
+  // a file does: its bytes stay in storage for the copy, so the stream alone would not end.
+  // Fails if the icon download sends the rest of the icon after the takedown.
+  it('stops an icon download in progress once the icon is taken down', async () => {
+    const outcome = await iconDownloadInterruptedBy('icon-stream', async (s) => {
+      await created(
+        await takedown(
+          h,
+          s.communityId,
+          { bearer: keys.takedown.secret },
+          {
+            target: { kind: 'icon' },
+          }
+        )
+      );
+    });
+    expect(outcome).toEqual({ received: 1, failed: true });
+  });
+
+  // Purpose (DOR-2331): replacing the icon also ends a download of the old one, so the old bytes
+  // are never sent after they stop being the community's. Fails without the per-chunk check.
+  it('stops an icon download in progress once the icon is replaced', async () => {
+    const outcome = await iconDownloadInterruptedBy('icon-replace', async (s, version) => {
+      await expectStatus(
+        await h.call(`${s.base}/settings/icon`, {
+          method: 'PUT',
+          cookie: s.owner.cookie,
+          headers: { 'if-match': `"${version}"` },
+          raw: Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('new icon')]),
+        }),
+        200,
+        'replace icon'
+      );
+    });
+    expect(outcome).toEqual({ received: 1, failed: true });
   });
 });

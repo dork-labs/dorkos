@@ -582,6 +582,12 @@ const evidenceFile = z.strictObject({
   /** Relative to the attempt folder. */
   path: z.string(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  /**
+   * True for a file its author or an admin had already taken out of the message before the
+   * takedown, kept only because its bytes had not been swept yet. Absent in records written
+   * before this field existed.
+   */
+  removedBeforeTakedown: z.boolean().optional(),
 });
 
 /**
