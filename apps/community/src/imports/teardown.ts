@@ -1,9 +1,12 @@
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from '../data.js';
-import { BLOB_DELETE_TIMEOUT_MS, BLOB_LOCK_TIMEOUT_MS } from '../deletion-worker.js';
 import { releaseCommunityShortNames } from '../host/short-names.js';
 import type { BlobStore } from '../storage/index.js';
-import { cleanupBackoffSql } from '../storage/pending-deletions.js';
+import {
+  BLOB_DELETE_TIMEOUT_MS,
+  BLOB_LOCK_TIMEOUT_MS,
+  cleanupBackoffSql,
+} from '../storage/pending-deletions.js';
 import { MANAGED_BLOB_RESERVATION_TTL_MS } from '../storage/managed-blobs.js';
 
 /** How long a teardown under a host legal hold waits before it looks again. */
@@ -182,12 +185,14 @@ export async function teardownImport(
       );
       continue;
     }
+    // managed_blobs before pending_blob_deletions, the order the pending-deletion sweep locks
+    // them in: the other way round, a sweep picking up this file at the same moment deadlocks.
     await transaction(pool, async (client) => {
-      await client.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [key]);
       await client.query(
         "DELETE FROM managed_blobs WHERE blob_key=$1 AND community_id=$2 AND state='pending_delete'",
         [key, queued.communityId]
       );
+      await client.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [key]);
     });
   }
 

@@ -641,6 +641,83 @@ it('stops an import teardown before its next file when a legal hold is placed', 
   expect(await count('SELECT 1 FROM communities WHERE id=$1', [target.communityId])).toBe(0);
 });
 
+// Purpose: after deleting a file, teardown drops its inventory row and then its queue row, the
+// order the pending-deletion sweep locks them in. A sweep that picked up the same file at the
+// same moment would otherwise hold the inventory row while waiting for the queue row teardown
+// holds, and Postgres would abort one of them. A held inventory row queues the sweep first and
+// teardown second, so each run exercises exactly that interleaving.
+it('lets an import teardown and the pending-deletion sweep delete one file together', async () => {
+  const target = await createImport(h, { bearer: keyImport });
+  await expectStatus(
+    await uploadArchive(h, target.importId, buildArchive(minimalManifest()), {
+      bearer: target.uploadToken,
+    }),
+    200,
+    'upload'
+  );
+  await expectStatus(
+    await h.call(`/api/v1/host/imports/${target.importId}/cancel`, {
+      bearer: keyImport,
+      body: {},
+    }),
+    200,
+    'cancel'
+  );
+  let entered!: () => void;
+  let release!: () => void;
+  const inside = new Promise<void>((resolve) => (entered = resolve));
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const deleted: string[] = [];
+  const store: BlobStore = {
+    put: (input) => h.blobStore.put(input),
+    get: (key, options) => h.blobStore.get(key, options),
+    listNamespace: (options) => h.blobStore.listNamespace(options),
+    delete: async (key, options) => {
+      deleted.push(key);
+      if (deleted.length === 1) {
+        entered();
+        await gate;
+      }
+      return h.blobStore.delete(key, options);
+    },
+  };
+  const deadlocks = async () =>
+    Number(
+      (
+        await h.pool.query<{ deadlocks: string }>(
+          'SELECT deadlocks FROM pg_stat_database WHERE datname=current_database()'
+        )
+      ).rows[0].deadlocks
+    );
+  const deadlocksBefore = await deadlocks();
+  const tearing = teardownImport(h.pool, store, target.importId);
+  await inside;
+  const [key] = deleted;
+  const holder = await h.pool.connect();
+  let sweeping: ReturnType<typeof sweepPendingBlobDeletions> | undefined;
+  try {
+    await holder.query('BEGIN');
+    await holder.query('SELECT 1 FROM managed_blobs WHERE blob_key=$1 FOR UPDATE', [key]);
+    sweeping = sweepPendingBlobDeletions(h.pool, h.blobStore, 100);
+    await waitForLockWaiters(h, 1, 'lease_expired');
+    release();
+    await waitForLockWaiters(h, 1, 'DELETE FROM managed_blobs WHERE blob_key');
+    await holder.query('COMMIT');
+    const [outcome, swept] = await Promise.all([tearing, sweeping]);
+    expect(outcome).toBe('settled');
+    expect(swept.failed).toBe(0);
+  } finally {
+    release();
+    await holder.query('ROLLBACK').catch(() => undefined);
+    holder.release();
+    await Promise.allSettled([tearing, sweeping]);
+  }
+  expect(await count('SELECT 1 FROM managed_blobs WHERE blob_key=$1', [key])).toBe(0);
+  expect(await count('SELECT 1 FROM pending_blob_deletions WHERE blob_key=$1', [key])).toBe(0);
+  expect(await count('SELECT 1 FROM communities WHERE id=$1', [target.communityId])).toBe(0);
+  expect(await deadlocks()).toBe(deadlocksBefore);
+});
+
 // Purpose: an upload token is a one-time secret. It never appears in a host read, a list,
 // the database, or any line the server logged during this whole file.
 it('never shows or logs an upload token', async () => {

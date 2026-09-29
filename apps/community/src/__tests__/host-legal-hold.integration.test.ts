@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
+import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import { drainExports } from './export-test-helpers.js';
 import { runHostKeyCommand } from '../host-keys.js';
 import type { BlobStore } from '../storage/index.js';
@@ -123,8 +124,9 @@ function legalHold(
   });
 }
 
-async function upload(c: Community, key: string) {
-  await expectStatus(
+/** Upload one unposted file as the owner and return its attachment id. */
+async function upload(c: Community, key: string): Promise<string> {
+  const response = await expectStatus(
     await h.call(`${tenant(c.id)}/channels/${c.channelId}/attachments`, {
       method: 'POST',
       cookie: c.owner.cookie,
@@ -139,6 +141,37 @@ async function upload(c: Community, key: string) {
     201,
     `upload ${key}`
   );
+  return ((await response.json()) as { attachment: { id: string } }).attachment.id;
+}
+
+/** Remove one file as the owner, which queues its bytes for the pending-deletion sweep. */
+async function removeQueued(c: Community, key: string): Promise<string> {
+  const attachmentId = await upload(c, key);
+  const [blobKey] = (
+    await h.pool.query<{ blob_key: string }>('SELECT blob_key FROM attachments WHERE id=$1', [
+      attachmentId,
+    ])
+  ).rows.map((row) => row.blob_key);
+  await expectStatus(
+    await h.call(`${tenant(c.id)}/attachments/${attachmentId}`, {
+      method: 'DELETE',
+      cookie: c.owner.cookie,
+    }),
+    204,
+    `remove ${key}`
+  );
+  return blobKey;
+}
+
+/** How many inventory and queue rows one file still has. */
+async function queueRows(blobKey: string): Promise<number> {
+  return (
+    await h.pool.query<{ n: number }>(
+      `SELECT ((SELECT count(*) FROM managed_blobs WHERE blob_key=$1)
+            + (SELECT count(*) FROM pending_blob_deletions WHERE blob_key=$1))::int AS n`,
+      [blobKey]
+    )
+  ).rows[0].n;
 }
 
 /** The owner asks to delete their community, and the deletion is made due at once. */
@@ -630,4 +663,71 @@ it('finishes the owner’s deletion once the legal hold is released', async () =
     await sweepCommunityDeletions(h.pool, h.blobStore, 100);
   }
   expect(await state(c.id)).toBeUndefined();
+});
+
+it('keeps a queued file’s bytes when a legal hold is placed before the sweep reaches it', async () => {
+  // Purpose: DOR-2553. A file removed before a hold is queued for the shared pending-deletion
+  // sweep; the hold must stop that sweep as it stops the tenant deletion worker. Once the hold
+  // is released, the sweep deletes the file as it would have.
+  const c = await community();
+  const blobKey = await removeQueued(c, 'queued');
+  await expectStatus(await legalHold('PUT', c.id), 200, 'place');
+  await sweepPendingBlobDeletions(h.pool, h.blobStore, 100);
+  expect(await storedKeys([blobKey])).toEqual([blobKey]);
+  expect(await queueRows(blobKey)).toBe(2);
+
+  await expectStatus(await legalHold('DELETE', c.id), 200, 'release');
+  await sweepPendingBlobDeletions(h.pool, h.blobStore, 100);
+  expect(await storedKeys([blobKey])).toEqual([]);
+  expect(await queueRows(blobKey)).toBe(0);
+});
+
+it('rechecks the hold under the community lock, for a hold placed after the sweep chose a file', async () => {
+  // Purpose: the sweep picks its files before it locks anything. A hold that commits between
+  // that read and the file's delete must still save it: the sweep takes the community row FOR
+  // SHARE and reads the hold under it, as placing a hold takes the row FOR UPDATE.
+  const c = await community();
+  const blobKey = await removeQueued(c, 'racing');
+  const placer = await h.pool.connect();
+  try {
+    await placer.query('BEGIN');
+    await placer.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [c.id]);
+    const sweeping = sweepPendingBlobDeletions(h.pool, h.blobStore, 100);
+    await waitForLockWaiters(h, 1, 'legal_hold_at FROM communities');
+    // What placing a hold writes, under the lock the route takes.
+    await placer.query(
+      "UPDATE communities SET legal_hold_at=now(),legal_hold_by_host_actor='person:test' WHERE id=$1",
+      [c.id]
+    );
+    await placer.query('COMMIT');
+    await sweeping;
+  } finally {
+    await placer.query('ROLLBACK').catch(() => undefined);
+    placer.release();
+  }
+  expect(await storedKeys([blobKey])).toEqual([blobKey]);
+  expect(await queueRows(blobKey)).toBe(2);
+  await expectStatus(await legalHold('DELETE', c.id), 200, 'release');
+  await sweepPendingBlobDeletions(h.pool, h.blobStore, 100);
+  expect(await storedKeys([blobKey])).toEqual([]);
+});
+
+it('never lets held files fill the pending-deletion sweep’s batch', async () => {
+  // Purpose: the sweep takes a bounded batch, oldest first. If held files were chosen and then
+  // skipped, enough of them would take every batch and no other community’s file would ever go.
+  const held = await community();
+  const other = await community();
+  const heldKey = await removeQueued(held, 'held');
+  const otherKey = await removeQueued(other, 'other');
+  // The held file is the oldest in the queue, and the other file comes right after it.
+  await h.pool.query(
+    `UPDATE pending_blob_deletions SET next_attempt_at=now()-(interval '100 years' / rank)
+     FROM (VALUES ($1,1),($2,2)) AS ordered(blob_key,rank)
+     WHERE pending_blob_deletions.blob_key=ordered.blob_key`,
+    [heldKey, otherKey]
+  );
+  await expectStatus(await legalHold('PUT', held.id), 200, 'place');
+  await sweepPendingBlobDeletions(h.pool, h.blobStore, 1);
+  expect(await storedKeys([heldKey, otherKey])).toEqual([heldKey]);
+  await expectStatus(await legalHold('DELETE', held.id), 200, 'release');
 });

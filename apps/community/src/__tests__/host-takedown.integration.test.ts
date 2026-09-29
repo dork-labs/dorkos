@@ -11,7 +11,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   CommunityAdminTakedownListSchema,
   CommunityAdminTakedownResponseSchema,
@@ -60,7 +60,8 @@ import {
   upload,
 } from './member-erasure-fixture.js';
 import { communityDigest, makeScene, requestErasure, type Scene } from './member-erasure-scenes.js';
-import { drainExports, openArchive } from './export-test-helpers.js';
+import { EXPORT_SETTINGS, drainExports, openArchive } from './export-test-helpers.js';
+import { runNextExport } from '../exports/worker.js';
 
 const DAY = 24 * 60 * 60_000;
 const EVIDENCE_ROOT = fileURLToPath(new URL('../../.test-evidence/', import.meta.url));
@@ -2095,5 +2096,68 @@ describe('after review', () => {
     }
     expect(failed).toBe(true);
     expect(received).toBeLessThan(size);
+  });
+});
+
+describe('an export starting at the same time', () => {
+  // Purpose: DOR-2330. Starting an export and a takedown both lock the content version and the
+  // export's job row. The export took the job first and the version second, the takedown the
+  // other way round (it bumps the version, then restarts every open job), so each could hold
+  // what the other waits for and Postgres aborted one. The held version row queues the takedown
+  // first and the export second.
+  it('lets an export start while a takedown restarts it, without a deadlock', async () => {
+    const c = await canary(h, operator.cookie, 'exportrace');
+    await drainExports(h.pool, h.blobStore);
+    const started = await body<{ export: { id: string } }>(
+      await h.call(`${c.s.base}/owner/export`, {
+        cookie: c.s.owner.cookie,
+        body: { password: TENANCY_PASSWORD },
+      }),
+      202,
+      'owner export'
+    );
+    const failures = vi.spyOn(console, 'error');
+    try {
+      const [takenDown, ran] = await holdingLock(
+        h,
+        'SELECT 1 FROM community_content_versions WHERE community_id=$1 FOR UPDATE',
+        [c.s.communityId],
+        async (release) => {
+          const taking = takedown(
+            h,
+            c.s.communityId,
+            { bearer: keys.takedown.secret },
+            { target: { kind: 'entry', entryId: c.entryId } }
+          );
+          await waitForLockWaiters(h, 1, 'UPDATE community_content_versions');
+          const exporting = runNextExport({
+            pool: h.pool,
+            blobStore: h.blobStore,
+            settings: EXPORT_SETTINGS,
+          });
+          await waitForLockWaiters(
+            h,
+            1,
+            'version::text AS version FROM community_content_versions'
+          );
+          await release();
+          return Promise.all([taking, exporting]);
+        }
+      );
+      expect(takenDown.status).toBe(201);
+      expect(ran).toBe(started.export.id);
+      expect(
+        failures.mock.calls.filter(([message]) => message === 'Community export attempt failed')
+      ).toEqual([]);
+    } finally {
+      failures.mockRestore();
+    }
+    // The takedown sent the job back to the start; it now runs to ready.
+    await drainExports(h.pool, h.blobStore);
+    const state = await h.pool.query<{ state: string }>(
+      'SELECT state FROM export_archives WHERE id=$1',
+      [started.export.id]
+    );
+    expect(state.rows[0].state).toBe('ready');
   });
 });
