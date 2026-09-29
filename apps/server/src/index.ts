@@ -1,3 +1,5 @@
+import { startMainListener } from './services/core/lifecycle/main-listener.js';
+import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import path from 'path';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
@@ -268,7 +270,8 @@ import { startExtensionApprovalQueue } from './services/extensions/extension-app
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
 import { warnRedundantEnabledEntries } from './services/core-extensions/warn-redundant-enabled.js';
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
-import { createExtensionsRouter } from './routes/extensions.js';
+import { createExtensionsRouter, broadcastExtensionReloaded } from './routes/extensions.js';
+import { knownProjectRootsForExtensions } from './services/projects/extension-scan-roots.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
 import { gitTreeSource } from './services/marketplace/lib/git/git-tree.js';
 import { MarketplaceSourceManager } from './services/marketplace/sources/marketplace-source-manager.js';
@@ -794,6 +797,7 @@ let turnEndReprojection: TurnEndReprojection | undefined;
  */
 let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<void>) | undefined;
 // Passive until workspace bootstrap; disposal stays terminal if startup resumes later.
+const mainRequestAdmission = new MainRequestAdmission();
 const workspaceReconcilerLifecycle = new WorkspaceReconcilerLifecycle();
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
@@ -1579,6 +1583,17 @@ async function start() {
   // Initialize Extension System
   try {
     extensionManager = new ExtensionManager(dorkHome, coreExtensions);
+    // Scan every known project's extensions, not only this folder's, and
+    // re-scan when a project is added, so which copy runs no longer depends on
+    // where the server started (spec `flow-multiproject` §9.2). Only roots core
+    // saw itself: never one only an extension reported (§6.1).
+    extensionManager.followProjects(
+      {
+        roots: (cwd) => knownProjectRootsForExtensions(projectRegistry, dorkHome, cwd),
+        onChange: (listener) => projectRegistry.onChange(listener),
+      },
+      { announce: (ids) => broadcastExtensionReloaded(ids) }
+    );
     const initialCwd = env.DORKOS_DEFAULT_CWD ?? null;
     await extensionManager.initialize(initialCwd);
     // Every extension waiting for a person to let it run asks in the Activity
@@ -3054,6 +3069,7 @@ async function start() {
     }
   };
   const app = createApp({
+    admission: mainRequestAdmission,
     connectorEventIngress: {
       verifier: (id) =>
         connectorRegistry.resolveProviderInstance(id as ConnectorProviderInstanceId)?.events,
@@ -5573,63 +5589,73 @@ async function start() {
     logger.warn(`[Auth] ${bindCheck.warning}`);
   }
 
-  const server = app.listen(PORT, host, () => {
-    logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
+  const server = startMainListener({
+    admission: mainRequestAdmission,
+    listen: () => app.listen(PORT, host),
+    onListening: (server) => {
+      logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
-    // One upgrade listener for the whole server (ADR 260805-041016): the three
-    // durable event streams plus the embedded terminal's byte channel. A second
-    // `server.on('upgrade')` listener beside this one would not work — every
-    // listener sees every upgrade, and any that does not recognize a path
-    // destroys the socket out from under the one that does.
-    attachUpgradeRouter(server, [...durableStreamRoutes, terminalUpgradeRoute(terminalManager!)]);
-    logger.info('[DorkOS] WebSocket upgrade router attached');
+      // One upgrade listener for the whole server (ADR 260805-041016): the three
+      // durable event streams plus the embedded terminal's byte channel. A second
+      // `server.on('upgrade')` listener beside this one would not work — every
+      // listener sees every upgrade, and any that does not recognize a path
+      // destroys the socket out from under the one that does.
+      attachUpgradeRouter(
+        server,
+        [...durableStreamRoutes, terminalUpgradeRoute(terminalManager!)],
+        mainRequestAdmission
+      );
+      logger.info('[DorkOS] WebSocket upgrade router attached');
 
-    // Fire-and-forget: record startup in the activity feed so the dashboard
-    // shows when the server was last (re)started.
-    activityService.emit({
-      actorType: 'system',
-      actorLabel: 'System',
-      category: 'system',
-      eventType: 'system.started',
-      summary: 'DorkOS started',
-    });
+      // Fire-and-forget: record startup in the activity feed so the dashboard
+      // shows when the server was last (re)started.
+      activityService.emit({
+        actorType: 'system',
+        actorLabel: 'System',
+        category: 'system',
+        eventType: 'system.started',
+        summary: 'DorkOS started',
+      });
 
-    // Register the anonymous daily heartbeat (Tier 1 opt-out; ADR 260713-143958).
-    // `config.telemetry.heartbeat` defaults OFF, and the send folds in the env
-    // kill switch AND the `tier1SendGate` captured at boot (BEFORE the first-run
-    // notice wrote `lastPromptedVersion`), so a first-notice boot sends nothing.
-    // Payload documented at https://dorkos.ai/telemetry (DOR-293).
-    const runtimesConfig = configManager.get('runtimes');
-    const runtimesConfigured = [
-      'claude-code',
-      ...(runtimesConfig.codex.enabled ? ['codex'] : []),
-      ...(runtimesConfig.opencode.enabled ? ['opencode'] : []),
-    ];
-    registerHeartbeat({
-      consent:
-        resolveTelemetryConsent(telemetryConfig?.heartbeat ?? false, telemetryEnv) && tier1SendGate,
-      debug: telemetryDebug,
-      dorkHome,
-      dorkosVersion: SERVER_VERSION,
-      runtimesConfigured,
-      tunnelEnabled: configManager.get('tunnel')?.enabled ?? false,
-      cloudLinked: configManager.get('cloud')?.instanceToken != null,
-      collectCounts: (): HeartbeatCounts => {
-        // Best-effort snapshot; any failure just contributes a zero.
-        let agentCount = 0;
-        try {
-          agentCount = db.select().from(agents).all().length;
-        } catch {
-          /* ignore */
-        }
-        return {
-          agents: agentCount,
-          tasks: taskStore?.getTasks().length ?? 0,
-          relayAdapters: adapterManager?.listAdapters().length ?? 0,
-        };
-      },
-    });
+      // Register the anonymous daily heartbeat (Tier 1 opt-out; ADR 260713-143958).
+      // `config.telemetry.heartbeat` defaults OFF, and the send folds in the env
+      // kill switch AND the `tier1SendGate` captured at boot (BEFORE the first-run
+      // notice wrote `lastPromptedVersion`), so a first-notice boot sends nothing.
+      // Payload documented at https://dorkos.ai/telemetry (DOR-293).
+      const runtimesConfig = configManager.get('runtimes');
+      const runtimesConfigured = [
+        'claude-code',
+        ...(runtimesConfig.codex.enabled ? ['codex'] : []),
+        ...(runtimesConfig.opencode.enabled ? ['opencode'] : []),
+      ];
+      registerHeartbeat({
+        consent:
+          resolveTelemetryConsent(telemetryConfig?.heartbeat ?? false, telemetryEnv) &&
+          tier1SendGate,
+        debug: telemetryDebug,
+        dorkHome,
+        dorkosVersion: SERVER_VERSION,
+        runtimesConfigured,
+        tunnelEnabled: configManager.get('tunnel')?.enabled ?? false,
+        cloudLinked: configManager.get('cloud')?.instanceToken != null,
+        collectCounts: (): HeartbeatCounts => {
+          // Best-effort snapshot; any failure just contributes a zero.
+          let agentCount = 0;
+          try {
+            agentCount = db.select().from(agents).all().length;
+          } catch {
+            /* ignore */
+          }
+          return {
+            agents: agentCount,
+            tasks: taskStore?.getTasks().length ?? 0,
+            relayAdapters: adapterManager?.listAdapters().length ?? 0,
+          };
+        },
+      });
+    },
   });
+  if (!server) return;
 
   // Surface port conflicts with an actionable message instead of a raw EADDRINUSE stack trace
   server.on('error', (err: NodeJS.ErrnoException) => {
@@ -5838,6 +5864,7 @@ async function start() {
 // Ordered teardown of all running services WITHOUT calling process.exit().
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
+  mainRequestAdmission.close();
   await workspaceReconcilerLifecycle.dispose();
   logger.info('[DorkOS] shutting down services');
   stopSessionContinuation?.();
@@ -5991,6 +6018,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 start().catch(async (err) => {
+  mainRequestAdmission.close();
   try {
     await workspaceReconcilerLifecycle.dispose();
   } catch (cleanupError) {

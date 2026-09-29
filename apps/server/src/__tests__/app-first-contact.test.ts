@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -76,7 +77,7 @@ function markers(): string[] {
 
 /** A finished app: real API mounts, real SPA serving, nothing else. */
 function bootApp(): express.Express {
-  const app = createApp();
+  const app = createApp({ admission: new MainRequestAdmission() });
   finalizeApp(app);
   return app;
 }

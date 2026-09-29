@@ -595,6 +595,12 @@ export const CONFIG_WRITE_POLICY = {
   // Their answer to a consent question: a caller that could write it could
   // hide the question from them.
   'extensions.dismissedApprovals': 'operator-only',
+  // The code sources a person trusts outright (spec `flow-multiproject` §9.3):
+  // every extension provably from one runs without asking. It decides which
+  // code runs, and trusting a new source is one of the three asks only a
+  // person can answer.
+  'extensions.trustedSources[].source': 'operator-only',
+  'extensions.trustedSources[].trustedAt': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
@@ -987,6 +993,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.approvedToRun',
       'extensions.approvedSources',
       'extensions.dismissedApprovals',
+      'extensions.trustedSources[].source',
+      'extensions.trustedSources[].trustedAt',
       'harness.approvedHooks',
       'harness.refusedHooks',
       'runtimes.opencode.binaryPath',

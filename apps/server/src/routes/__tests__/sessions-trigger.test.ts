@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * Trigger-only message POST: migration safety / single delivery path (ADR-0264).
  *
@@ -82,7 +83,7 @@ import {
   openEventStream,
 } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 /**

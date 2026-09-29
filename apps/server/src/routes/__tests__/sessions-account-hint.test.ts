@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * @vitest-environment node
  *
@@ -78,7 +79,7 @@ import { createApp, finalizeApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const server = createServer(app);
 

@@ -175,11 +175,19 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import type { ExtensionsConfig } from './extension-enable-resolution.js';
 
-/** The fields of an extension record that say which copy of the extension it is. */
-export type ExtensionCopy = Pick<ExtensionRecord, 'id' | 'origin' | 'path' | 'sourcePlugin'>;
+/**
+ * The fields of an extension record that say which copy of the extension it is,
+ * plus where it provably came from when this machine can say (§9.1).
+ */
+export type ExtensionCopy = Pick<ExtensionRecord, 'id' | 'origin' | 'path' | 'sourcePlugin'> &
+  Partial<Pick<ExtensionRecord, 'trustedOrigin' | 'originProblem' | 'currentDigest'>>;
 
-/** The two stored halves of a person's approvals: the ids, and the copy each is for. */
-export type ExtensionApprovals = Pick<ExtensionsConfig, 'approvedToRun' | 'approvedSources'>;
+/**
+ * The stored halves of a person's approvals: the ids, the copy each is for,
+ * and the code sources they trust outright (spec `flow-multiproject` §9.3).
+ */
+export type ExtensionApprovals = Pick<ExtensionsConfig, 'approvedToRun' | 'approvedSources'> &
+  Partial<Pick<ExtensionsConfig, 'trustedSources'>>;
 
 /**
  * The machine-readable code every refusal to run unapproved extension code
@@ -201,29 +209,103 @@ export const EXTENSION_NOT_APPROVED_ERROR =
 export function approvedSourceOf(copy: ExtensionCopy): ExtensionApprovedSource {
   const source: ExtensionApprovedSource = { path: path.resolve(copy.path) };
   if (copy.sourcePlugin) source.plugin = copy.sourcePlugin;
+  if (copy.trustedOrigin) source.origin = { ...copy.trustedOrigin };
+  // A copy that changed after DorkOS installed it is approved as its files
+  // are now, and any further change asks again (security review, DOR-2527).
+  if (copy.originProblem === 'changed' && copy.currentDigest) source.digest = copy.currentDigest;
   return source;
 }
 
 /**
+ * Whether the approval stored for this id names THIS copy by path: the same
+ * directory and the same carrying plugin. Pure.
+ *
+ * @param copy - The extension record in question.
+ * @param approvals - `config.extensions`, or the approval fields of it.
+ */
+export function isApprovedByPath(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
+  if (!approvals.approvedToRun.includes(copy.id)) return false;
+  const source = approvals.approvedSources?.[copy.id];
+  if (!source) return false;
+  const samePath =
+    path.resolve(source.path) === path.resolve(copy.path) &&
+    (source.plugin ?? null) === (copy.sourcePlugin ?? null);
+  if (!samePath) return false;
+  // A project copy whose plugin changed after DorkOS installed it never keeps
+  // running silently on a path approval: the yes must name its files as they
+  // are now (security review of DOR-2527).
+  if (copy.originProblem === 'changed') {
+    return !!source.digest && source.digest === copy.currentDigest;
+  }
+  // An approval pinned to a digest ("Stop trusting" keeping a copy that ran by
+  // its source) covers those files only: any change asks again.
+  if (source.digest) return source.digest === copy.currentDigest;
+  return true;
+}
+
+/**
+ * Whether the approval stored for this id was given to a copy with a trusted
+ * origin, and this copy provably shares it (spec `flow-multiproject` §9.1):
+ * the same plugin, installed by this machine's installer from the same
+ * `owner/repo`. A copy whose files merely claim that origin has no trusted
+ * origin at all, so it never matches. Pure.
+ *
+ * @param copy - The extension record in question.
+ * @param approvals - `config.extensions`, or the approval fields of it.
+ */
+export function isApprovedByOrigin(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
+  if (!approvals.approvedToRun.includes(copy.id)) return false;
+  const stored = approvals.approvedSources?.[copy.id]?.origin;
+  const own = copy.trustedOrigin;
+  return !!stored && !!own && stored.plugin === own.plugin && stored.source === own.source;
+}
+
+/**
+ * Whether the stored approval for this copy is pinned to a folder digest: the
+ * copy then runs from a verified snapshot of exactly those files
+ * (`extension-snapshots.ts`), never from its live folder.
+ *
+ * @param copy - The extension record in question.
+ * @param approvals - `config.extensions`, or the approval fields of it.
+ */
+export function isApprovedByDigest(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
+  const digest = approvals.approvedSources?.[copy.id]?.digest;
+  return !!digest && digest === copy.currentDigest && isApprovedByPath(copy, approvals);
+}
+
+/**
  * Whether a person approved THIS copy of the extension: its id is in
- * `approvedToRun`, and the source recorded for that id is this copy's directory
- * and carrying plugin.
+ * `approvedToRun`, and the source recorded for that id is this copy's
+ * directory and carrying plugin, or a trusted origin this copy provably
+ * shares (spec `flow-multiproject` §9.1, invariant 8).
  *
  * An id with no recorded source is not approved. Pure, like
  * {@link mayRunExtensionCode}.
  *
  * @param copy - The extension record in question.
- * @param approvals - `config.extensions`, or the two approval fields of it.
- * @returns `true` when the stored approval is for this very copy.
+ * @param approvals - `config.extensions`, or the approval fields of it.
+ * @returns `true` when the stored approval covers this very copy.
  */
 export function isApprovedCopy(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
-  if (!approvals.approvedToRun.includes(copy.id)) return false;
-  const source = approvals.approvedSources?.[copy.id];
+  return isApprovedByPath(copy, approvals) || isApprovedByOrigin(copy, approvals);
+}
+
+/**
+ * Whether this copy provably came from a code source the person trusts
+ * outright (`extensions.trustedSources`, spec `flow-multiproject` §9.3). Only
+ * a trusted origin counts, so a copy DorkOS did not install is never covered,
+ * whatever its files claim. Pure.
+ *
+ * @param copy - The extension record in question.
+ * @param approvals - `config.extensions`, or the trusted sources of it.
+ */
+export function isFromTrustedSource(
+  copy: Partial<Pick<ExtensionRecord, 'trustedOrigin'>>,
+  approvals: Partial<Pick<ExtensionsConfig, 'trustedSources'>>
+): boolean {
+  const source = copy.trustedOrigin?.source;
   if (!source) return false;
-  return (
-    path.resolve(source.path) === path.resolve(copy.path) &&
-    (source.plugin ?? null) === (copy.sourcePlugin ?? null)
-  );
+  return (approvals.trustedSources ?? []).some((trusted) => trusted.source === source);
 }
 
 /** The fields of an extension record that say which copy AND which version it is. */
@@ -282,13 +364,17 @@ export function isDismissedCopy(
  * @param copy - The extension record. `origin` is `'core'` (staged by DorkOS
  *   itself, always allowed) or `'user'`, derived from the record's path in
  *   `extension-discovery.ts`, never from its id or its manifest.
- * @param approvals - `config.extensions`: the approved ids and the copy each
- *   approval was given to.
+ * A copy that provably came from a source in `extensions.trustedSources` may
+ * run too (spec `flow-multiproject` §9.3): the person already said yes to
+ * everything from there, once.
+ *
+ * @param approvals - `config.extensions`: the approved ids, the copy each
+ *   approval was given to, and the trusted sources.
  * @returns `true` when DorkOS may execute this extension's code.
  */
 export function mayRunExtensionCode(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
   if (copy.origin === 'core') return true;
-  return isApprovedCopy(copy, approvals);
+  return isApprovedCopy(copy, approvals) || isFromTrustedSource(copy, approvals);
 }
 
 /**

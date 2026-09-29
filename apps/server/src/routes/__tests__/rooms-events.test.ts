@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `GET /api/rooms/:id/events` — the three-part contract: snapshot on a cold
  * connect, gap-free replay from `Last-Event-ID`, then live.
@@ -51,7 +52,7 @@ import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
 import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 /**

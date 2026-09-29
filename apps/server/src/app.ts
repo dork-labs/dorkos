@@ -1,3 +1,5 @@
+import type { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
+import { terminalAdmission } from './middleware/terminal-admission.js';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -183,8 +185,12 @@ function createFirstContactMarker(message: string): () => void {
 }
 
 /** Create and configure the Express application with middleware and routes. */
-export function createApp(options: { connectorEventIngress?: ConnectorSignedIngress } = {}) {
+export function createApp(options: {
+  admission: MainRequestAdmission;
+  connectorEventIngress?: ConnectorSignedIngress;
+}) {
   const app = express();
+  app.use(terminalAdmission(options.admission));
 
   // Trust one forwarded hop, for `req.protocol` and `req.secure` and nothing
   // else. A reverse proxy or the tunnel terminates TLS upstream and names the
@@ -206,9 +212,9 @@ export function createApp(options: { connectorEventIngress?: ConnectorSignedIngr
   //     brute-force limiter counted nothing.
   app.set('trust proxy', 1);
 
-  // Mounted ahead of every other `/api` handler, the host guard included: a
+  // After terminal admission, but ahead of the other `/api` handlers: a
   // request that arrives and is then rejected still proves the client reached
-  // this process, which is the only thing this line claims.
+  // this running process, which is the only thing this line claims.
   const noteFirstApiRequest = createFirstContactMarker('[Client] first API request');
   app.use('/api', (_req, _res, next) => {
     noteFirstApiRequest();

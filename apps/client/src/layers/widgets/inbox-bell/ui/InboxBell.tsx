@@ -12,6 +12,7 @@ import {
 import { internalRoutePath, listWaitingKinds, toSession } from '@/layers/shared/lib';
 import { useEventStream } from '@/layers/shared/model';
 import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
+import { useTrustOfferStore } from '@/layers/entities/extension';
 import {
   useInboxRequest,
   useMarkAllRead,
@@ -263,6 +264,7 @@ export function InboxBell() {
   const inboxRequest = useInboxRequest();
   const { connectionState } = useEventStream();
   const [open, setOpen] = useState(false);
+  const withdrawTrustOffers = useTrustOfferStore((state) => state.withdrawAll);
   // A "next time, on its own?" offer shows once (spec flow-multiproject
   // §7.8): whenever the Inbox closes, by its own button, Escape, or a click
   // that navigates, the offers it actually drew are dismissed. Offers drawn
@@ -366,7 +368,12 @@ export function InboxBell() {
           open={open}
           onOpenChange={(next) => {
             setOpen(next);
-            if (!next) setLens(undefined);
+            if (!next) {
+              setLens(undefined);
+              // A one-time "Next time, trust …?" offer ends with the bell
+              // (spec `flow-multiproject` §9.3): it never waits for later.
+              withdrawTrustOffers();
+            }
           }}
         >
           <ResponsivePopoverTrigger asChild>

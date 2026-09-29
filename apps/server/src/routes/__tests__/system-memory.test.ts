@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `GET /api/system/memory` — the operator-visible half of the registry's
  * quarantine-and-fallback design.
@@ -54,7 +55,7 @@ import {
   resetMemoryProvider,
 } from '../../services/memory/registry.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 const CUSTOM = 'acme-memory';
 

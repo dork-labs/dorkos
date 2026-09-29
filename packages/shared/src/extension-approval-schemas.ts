@@ -171,3 +171,55 @@ export function parseExtensionApprovalSubjectId(subjectId: string): ExtensionCop
   if (plugin !== null && typeof plugin !== 'string') return null;
   return { id, path, plugin, version };
 }
+
+/**
+ * The one-time follow-up a person sees right after turning on an extension
+ * whose copy provably came from a source they do not trust yet (spec
+ * `flow-multiproject` §9.3, V9): "Next time, trust everything from
+ * dork-labs/marketplace?". Returned only to the app that answered, never
+ * stored or pushed, so it shows once, on that device.
+ */
+export const ExtensionTrustOfferSchema = z
+  .object({
+    /** The exact normalized `owner/repo` "Yes" would trust. */
+    source: z.string().min(1),
+  })
+  .openapi('ExtensionTrustOffer');
+
+/** The one-time trust offer after an approval. */
+export type ExtensionTrustOffer = z.infer<typeof ExtensionTrustOfferSchema>;
+
+/** Body of `POST` and `DELETE /api/extensions/trusted-sources`. */
+export const TrustedSourceRequestSchema = z
+  .object({
+    /** A normalized `owner/repo`, as a trust offer or the trusted list named it. */
+    source: z.string().min(1).max(200),
+  })
+  .openapi('TrustedSourceRequest');
+
+/** Body of `POST` and `DELETE /api/extensions/trusted-sources`. */
+export type TrustedSourceRequest = z.infer<typeof TrustedSourceRequestSchema>;
+
+/** One code source a person trusts, as `GET /api/extensions/trusted-sources` lists it. */
+export const TrustedSourceSchema = z
+  .object({
+    /** The normalized `owner/repo`. */
+    source: z.string().min(1),
+    /** When the person trusted it. ISO 8601. */
+    trustedAt: z.string(),
+  })
+  .openapi('TrustedSource');
+
+/** One trusted code source. */
+export type TrustedSource = z.infer<typeof TrustedSourceSchema>;
+
+/** Response of `GET /api/extensions/trusted-sources`. */
+export const TrustedSourcesResponseSchema = z
+  .object({
+    /** Every trusted source, in the order they were trusted. */
+    sources: z.array(TrustedSourceSchema),
+  })
+  .openapi('TrustedSourcesResponse');
+
+/** Response of `GET /api/extensions/trusted-sources`. */
+export type TrustedSourcesResponse = z.infer<typeof TrustedSourcesResponseSchema>;

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import http from 'node:http';
 
@@ -35,7 +36,7 @@ let baseUrl: string;
 
 beforeEach(async () => {
   vi.clearAllMocks();
-  const app = createApp();
+  const app = createApp({ admission: new MainRequestAdmission() });
   await new Promise<void>((resolve) => {
     server = app.listen(0, () => {
       const addr = server.address();

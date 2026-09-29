@@ -7,7 +7,7 @@ status: specified
 
 # Terminal request admission and exclusive reset/restart ownership
 
-**Status:** Specified — design only; implementation not selected
+**Status:** Specified — admission-only A1–A5 implemented under DOR-2551; exclusive terminal actions remain deferred
 **Author:** Codex
 **Date:** 2026-09-28
 **Work item:** DOR-2481
@@ -165,7 +165,7 @@ Keep this specification, its ideation and proposed ADR indexed. Future implement
 2. **DOR-2482 design dependency:** define and review writer outcomes, cleanup permissions and DB/lock/successor ordering. Recheck current owners, including separate listeners and startup acquisitions. Do not silently expand phase 1 to solve them.
 3. **Exclusive operation adoption:** after that contract is concrete, one cohesive PR adopts the terminal owner across admin and signals, removes independent continuations, and includes T1–T6 plus D1 evidence with its owner. No intermediate deployment can claim safe destructive handoff from a void cleanup promise.
 
-Next action is DECOMPOSE the admission-only phase if selected. DOR-2481 is a design deliverable; merging it does not implement any phase.
+DOR-2481 remains the completed design deliverable. DOR-2551 implements only phase 1 (A1–A5); see the [task plan](03-tasks.md), [implementation record](04-admission-implementation.md) and [verification evidence](05-verification.md). The full specification remains `specified`: DOR-2482 must resolve the handoff contract before phases 2–3 can authorize destructive production actions.
 
 ## Open Questions
 

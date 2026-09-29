@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The queue as it actually reaches a browser: over `GET /api/sessions/:id/events`
  * (spec `persistent-session-runtime` task 2.5).
@@ -88,7 +89,7 @@ import {
   streamGenerationOf,
 } from '../../services/session/session-state-projector.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';

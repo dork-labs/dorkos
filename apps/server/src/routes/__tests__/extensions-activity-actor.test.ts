@@ -130,6 +130,9 @@ function buildApp(): express.Express {
 
   const manager = {
     listPublic: vi.fn<() => ExtensionRecordPublic[]>().mockReturnValue([]),
+    listShadowedPublic: vi.fn().mockReturnValue([]),
+    requestRefresh: vi.fn(),
+    trustOfferFor: vi.fn().mockReturnValue(null),
     get: vi.fn().mockReturnValue(stubRecord()),
   };
 

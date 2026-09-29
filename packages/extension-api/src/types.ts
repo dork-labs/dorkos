@@ -12,6 +12,17 @@ export type ExtensionStatus =
   | 'active'
   | 'activate_error';
 
+/**
+ * Where a copy of an extension came from, when this machine can prove it: the
+ * plugin that carries it and the normalized `owner/repo` it was installed from.
+ */
+export interface ExtensionOrigin {
+  /** The plugin folder that carries the extension. */
+  plugin: string;
+  /** The normalized `owner/repo`, e.g. `dork-labs/marketplace`. */
+  source: string;
+}
+
 /** Server-side record for a discovered extension. */
 export interface ExtensionRecord {
   id: string;
@@ -34,6 +45,47 @@ export interface ExtensionRecord {
    * carrying the same id asks again.
    */
   sourcePlugin?: string;
+  /**
+   * Where this copy provably came from: its plugin and the `owner/repo`
+   * DorkOS's own installer recorded fetching it from (spec
+   * `flow-multiproject` §9.1). Absent when DorkOS cannot prove it, which is
+   * always the case for a copy placed directly or committed into a repo.
+   * Never read from a file inside a project.
+   */
+  trustedOrigin?: ExtensionOrigin;
+  /**
+   * Why a copy the installer recorded has no trusted origin: `changed` (a
+   * project copy whose plugin folder no longer holds what DorkOS installed,
+   * or now holds a symbolic link) or `linked` (a global plugin holding a
+   * symbolic link). A `changed` copy runs only while a person's yes names its
+   * files exactly as they are now.
+   */
+  originProblem?: 'changed' | 'linked';
+  /**
+   * The whole plugin folder's digest now, for a `changed` copy: what a
+   * person's approval of it is pinned to.
+   */
+  currentDigest?: string;
+  /**
+   * Where this copy RUNS from, when that is not {@link ExtensionRecord.path}:
+   * the extension's folder inside a verified snapshot of its plugin under
+   * `{dorkHome}/extension-snapshots/`, for a project copy that runs by its
+   * trusted origin rather than a person's approval of this folder. Compiling,
+   * the server half and `ctx.extensionDir` all use it.
+   */
+  runPath?: string;
+  /**
+   * The plugin folder digest this copy was judged against. Every compile
+   * checks the folder still has it, before and after bundling, so files
+   * swapped after the scan never run (`extension-compiler.ts`).
+   */
+  pinnedDigest?: string;
+  /**
+   * The path of the copy that runs instead of this one, when both came from
+   * the same trusted origin and that copy is newer (spec `flow-multiproject`
+   * §9.2). Only a shadowed copy carries it; the copy that runs never does.
+   */
+  shadowedBy?: string;
   /** Structured error info (compilation failure, manifest parse error, etc.) */
   error?: { code: string; message: string; details?: string };
   /**
@@ -93,6 +145,23 @@ export interface ExtensionRecordPublic {
    * waiting on a person.
    */
   approvedToRun: boolean;
+  /**
+   * The path of the newer copy that runs instead of this one, or `null` when
+   * this is the copy that runs (spec `flow-multiproject` §9.2). Informational:
+   * when the same extension is installed in several projects from one trusted
+   * source, `GET /api/extensions` also lists each older copy with this set, so
+   * an extension can say "this project has an older copy, update it". Every
+   * other list (the loader, Settings, the tools) holds only the copies that run.
+   */
+  shadowedBy: string | null;
+  /**
+   * Why DorkOS can't vouch for where this copy came from, although its
+   * installer recorded it: `changed` (its plugin's files changed after DorkOS
+   * installed it) or `linked` (its plugin holds a shortcut to files
+   * elsewhere). Settings says so on its card. Absent otherwise. A changed
+   * copy of an id a person approved for another copy is not listed at all.
+   */
+  originProblem?: 'changed' | 'linked';
 }
 
 /** The interface an extension module must export. */
