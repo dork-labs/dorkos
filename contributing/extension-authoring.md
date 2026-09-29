@@ -811,7 +811,7 @@ if (ctx.inbox !== undefined) {
 
 - **Every ask says why.** `why` is required: plain text, 1 to 300 characters. Write it by three rules: say what will happen and why, in plain words, never a command, a stage name or an id as the headline; say why now and what a "no" means; and let every kind of ask be something the person can hand off. Buttons read as outcomes ("Ship it", "Send it back"), not yes and no.
 - **A budget per extension.** At most 60 new decisions an hour, raised or recorded, counted over a sliding hour; past it `raise` and `record` throw `InboxLimitError` with `limit: 'rate'`. Updating an open key does not count. Activity keeps at most your newest 100 history rows, so a busy extension never pushes other things out of the person's history.
-- **Re-raising never moves a deadline.** A re-raise with the same actions (the same `decideBy` as you first asked) keeps the deadline in effect, its timer, and what a person already answered; only different actions start the question over.
+- **Re-raising never moves a deadline.** A re-raise with the same actions keeps the deadline first set, its timer, and what a person already answered, even when its `decideBy` differs (a deadline asked as "an hour from now" moves every time you raise). Only different choices, labels or options start the question over. To set a new deadline, resolve the old question and raise a new one.
 - **A person's answer ends the deadline.** Once somebody answers (whatever your handler does with it, `keepOpen` included), the agent's pick no longer applies. While your handler has a person's answer, the deadline waits; if the handler fails, the deadline stands as before.
 - **Crediting must agree.** `resolve(key, { answering })` throws when the outcome contradicts what the person chose (👍 is `approved`, 👎 is `rejected`, a word or a choice is `answered`).
 - **One live row per key.** Raising an open key updates it in place and never pushes twice. At most 50 open decisions per extension; title ≤ 120, detail ≤ 500, a note or typed answer ≤ 2000. Breaking a limit throws `InboxLimitError` (match on `err.code === 'inbox_limit'` and `err.limit`, not `instanceof`: your bundle carries its own copy of the class) and writes nothing.
@@ -821,7 +821,7 @@ if (ctx.inbox !== undefined) {
 - **Who decided.** `resolve(key, { outcome, by })` takes `{ kind: 'agent' | 'rule', label }` (history shows the label) or `{ kind: 'deadline' }`. With no `by`, it is yours: "Resolved on its own" for `cleared`, "No longer needed" for `cancelled`.
 - **"Next time, on its own?"** An `offer` on your answer is shown once, only to the person who answered in DorkOS, as a green line with Yes. Its `settingsPatch` is merged into your per-project settings as the person before your handler hears `action: 'offer'`. A patch for a project you cannot see is refused.
 - **Hidden while you are not running.** While your extension is off, or a decision's project folder is missing, its rows are hidden and kept and their clocks stop; they come back when you run again.
-- **The push says little.** A phone, a desktop banner and a chat message see "Flow needs you in 2 projects", never your title, key or project name, and at most once an hour per extension however many decisions stand.
+- **The push says little.** A phone, a desktop banner and a chat message see "Flow needs you in 2 projects", never your title, key or project name, and at most once an hour per extension however many decisions stand; one still waiting when the hour is up gets its own push then.
 
 #### `ctx.requirePerson`
 

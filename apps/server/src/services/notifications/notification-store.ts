@@ -281,16 +281,31 @@ export class NotificationStore {
    * @param sinceMs - Epoch ms; older escalations do not count.
    */
   hasEscalatedSince(subjectKey: string, sinceMs: number): boolean {
-    const since = new Date(sinceMs).toISOString();
-    return this.db
+    const last = this.lastEscalatedAt(subjectKey);
+    return last !== null && last >= sinceMs;
+  }
+
+  /**
+   * When this subject (or group) was last escalated, in epoch ms, or null.
+   *
+   * @param subjectKey - The subject (or group) key.
+   */
+  lastEscalatedAt(subjectKey: string): number | null {
+    let last: number | null = null;
+    const rows = this.db
       .select({
         sentAt: notificationDeliveries.sentAt,
         detailJson: notificationDeliveries.detailJson,
       })
       .from(notificationDeliveries)
       .where(eq(notificationDeliveries.subjectKey, subjectKey))
-      .all()
-      .some((row) => row.sentAt >= since && escalatedFlag(row.detailJson));
+      .all();
+    for (const row of rows) {
+      if (!escalatedFlag(row.detailJson)) continue;
+      const at = Date.parse(row.sentAt);
+      if (!Number.isNaN(at) && (last === null || at > last)) last = at;
+    }
+    return last;
   }
 
   /**
@@ -576,10 +591,20 @@ export class NotificationStore {
    * @param keep - How many of its newest rows to keep.
    * @returns How many rows were deleted.
    */
-  pruneOwned(kind: NotificationKind, ownerField: string, owner: string, keep: number): number {
+  pruneOwned(
+    kind: NotificationKind,
+    ownerField: string,
+    owner: string,
+    keep: number,
+    protectedSubjects: ReadonlySet<string> = new Set()
+  ): number {
     const path = `$.${ownerField}`;
-    const stale = this.db
-      .select({ id: notifications.id })
+    const rows = this.db
+      .select({
+        id: notifications.id,
+        readAt: notifications.readAt,
+        subjectId: notifications.subjectId,
+      })
       .from(notifications)
       .where(
         and(
@@ -587,18 +612,26 @@ export class NotificationStore {
           sql`json_extract(${notifications.dataJson}, ${path}) = ${owner}`
         )
       )
-      .orderBy(desc(notifications.id))
-      .all()
-      .slice(keep);
-    if (stale.length === 0) return 0;
+      .orderBy(asc(notifications.id))
+      .all();
+    let excess = rows.length - keep;
+    if (excess <= 0) return 0;
+    // Oldest first, read rows before unread ones, and never a row something
+    // still draws under (a waiting follow-up offer).
+    const stale = new Set<string>();
+    for (const readOnly of [true, false]) {
+      for (const row of rows) {
+        if (excess <= 0) break;
+        if (protectedSubjects.has(row.subjectId) || stale.has(row.id)) continue;
+        if (readOnly && row.readAt === null) continue;
+        stale.add(row.id);
+        excess -= 1;
+      }
+    }
+    if (stale.size === 0) return 0;
     return this.db
       .delete(notifications)
-      .where(
-        inArray(
-          notifications.id,
-          stale.map((row) => row.id)
-        )
-      )
+      .where(inArray(notifications.id, [...stale]))
       .run().changes;
   }
 

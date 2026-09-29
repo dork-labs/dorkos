@@ -344,3 +344,97 @@ describe('a later credit’s offer is listed (client review 1)', () => {
     ]);
   });
 });
+
+describe('server re-review', () => {
+  it('pushes a question raised after the hour’s push once the hour is over (blocker)', async () => {
+    await fx.inbox.raise('flow', 'Flow', shipDecision({ key: 'a' }));
+    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
+    await flush();
+    expect(fx.sendToAll).toHaveBeenCalledTimes(1);
+    await fx.inbox.resolve('flow', 'a', { outcome: 'cleared' });
+
+    await vi.advanceTimersByTimeAsync(7 * ONE_MINUTE);
+    await fx.inbox.raise('flow', 'Flow', shipDecision({ key: 'b' }));
+    await vi.advanceTimersByTimeAsync(5 * 60 * ONE_MINUTE);
+    await flush();
+    expect(fx.sendToAll).toHaveBeenCalledTimes(2);
+    expect(fx.inbox.listOpen().map((d) => d.key)).toEqual(['b']);
+  });
+
+  it('trims read history before unread, and never the row a waiting offer sits under', async () => {
+    const record = (key: string, tell: boolean) =>
+      fx.inbox.record('flow', 'Flow', {
+        key,
+        title: key,
+        why: 'Decided while you were away.',
+        outcome: 'answered',
+        by: { kind: 'rule', label: "your 'Tell me after' setting" },
+        tell,
+      });
+    // An answered row with a waiting offer, oldest of all.
+    let pendingActionId: string | null = null;
+    fx.inbox.setHandler('flow', (event) => {
+      pendingActionId = event.pendingActionId;
+      return { keepOpen: true };
+    });
+    await fx.inbox.raise('flow', 'Flow', shipDecision({ key: 'offered' }));
+    const [open] = fx.inbox.listOpen();
+    await fx.inbox.answer(open.id, { action: 'approve' }, { kind: 'person' });
+    await fx.inbox.resolve('flow', 'offered', {
+      outcome: 'approved',
+      answering: pendingActionId!,
+      offer: { text: 'Next time?', offerId: 'o' },
+    });
+    // Then unread rows, then more read rows than the cap allows.
+    for (let i = 0; i < 10; i += 1) {
+      vi.setSystemTime(new Date(RAISED_AT.getTime() + (i + 1) * ONE_MINUTE));
+      await record(`unread-${i}`, true);
+    }
+    for (let i = 0; i < 95; i += 1) {
+      vi.setSystemTime(new Date(RAISED_AT.getTime() + (i + 20) * ONE_MINUTE));
+      await record(`read-${i}`, false);
+    }
+    const titles = fx.history().map((h) => h.title);
+    expect(titles).toHaveLength(100);
+    expect(titles).toContain('Ship the new out-of-usage banner?');
+    expect(titles.filter((t) => t.startsWith('unread-'))).toHaveLength(10);
+  });
+
+  it('refuses an answer when the question changed while the extension had it', async () => {
+    fx.inbox.setHandler('flow', async () => {
+      await fx.inbox.raise('flow', 'Flow', shipDecision({ title: 'Ship the calmer banner?' }));
+      return { resolve: 'approved' };
+    });
+    await fx.inbox.raise('flow', 'Flow', shipDecision());
+    const [open] = fx.inbox.listOpen();
+    expect(
+      await fx.inbox.answer(
+        open.id,
+        { action: 'approve', revision: open.revision },
+        { kind: 'person' }
+      )
+    ).toMatchObject({ ok: false, code: 'stale_decision' });
+    expect(fx.inbox.listOpen()[0].title).toBe('Ship the calmer banner?');
+  });
+
+  it('treats a re-raise whose only change is a moving relative deadline as the same question', async () => {
+    let pendingActionId: string | null = null;
+    fx.inbox.setHandler('flow', (event) => {
+      pendingActionId = event.pendingActionId;
+      return { keepOpen: true };
+    });
+    await fx.inbox.raise('flow', 'Flow', question(at(60)));
+    const [open] = fx.inbox.listOpen();
+    await fx.inbox.answer(open.id, { action: 'choice', choiceId: 'keep' }, { kind: 'person' });
+    await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
+    // The extension asks again with "an hour from now", which has moved.
+    await fx.inbox.raise('flow', 'Flow', question(at(70)));
+    const after = fx.inbox.listOpen()[0];
+    expect(after.revision).toBe(open.revision);
+    expect(row().pendingActionJson).not.toBeNull();
+    await expect(
+      fx.inbox.resolve('flow', 'old-api', { outcome: 'answered', answering: pendingActionId! })
+    ).resolves.toBe(true);
+    expect(fx.history()[0].body).toBe('Keep it · you');
+  });
+});

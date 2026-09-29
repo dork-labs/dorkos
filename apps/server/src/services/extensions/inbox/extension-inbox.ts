@@ -370,7 +370,10 @@ export class ExtensionInboxService {
         // A new question (different actions, or a different deadline asked
         // for) starts over; new words for the same question change nothing
         // about its deadline or what a person already said.
-        const sameQuestion = existing.actionsJson === fields.actionsJson;
+        // A deadline asked as "an hour from now" moves on every re-raise; the
+        // question is the same, so it keeps the deadline first asked for.
+        const sameQuestion =
+          withoutDeadline(existing.actionsJson) === withoutDeadline(fields.actionsJson);
         const sameWords =
           existing.title === fields.title &&
           existing.why === fields.why &&
@@ -379,7 +382,7 @@ export class ExtensionInboxService {
         tx.update(extensionDecisions)
           .set({
             ...fields,
-            ...(sameQuestion ? {} : question),
+            ...(sameQuestion ? { actionsJson: existing.actionsJson } : question),
             ...(sameQuestion && sameWords ? {} : { revision: existing.revision + 1 }),
           })
           .where(eq(extensionDecisions.id, existing.id))
@@ -575,7 +578,7 @@ export class ExtensionInboxService {
       outcome: input.outcome,
       unread: input.tell === true,
     });
-    pruneExtensionHistory(extensionId, HISTORY_ROWS_PER_EXTENSION);
+    pruneExtensionHistory(extensionId, HISTORY_ROWS_PER_EXTENSION, this.offeredIds(extensionId));
   }
 
   /**
@@ -708,6 +711,11 @@ export class ExtensionInboxService {
       return refuse(status, code, `${name} couldn't take that. Try again.`);
     }
     const result = call.result;
+    // The extension may have re-raised a changed question while it had the
+    // answer: the answer is to the old one, so it is not applied to the new.
+    if ((this.byId(row.id)?.revision ?? row.revision) !== row.revision) {
+      return refuse(409, DECISION_STALE_CODE, 'This question changed. Take another look.');
+    }
     // Somebody answered: whatever the extension does with it, the agent's pick
     // no longer applies to this question.
     this.deps.db
@@ -859,6 +867,24 @@ export class ExtensionInboxService {
     return this.running.has(extensionId) ? this.openProjects(extensionId) : 0;
   }
 
+  /** Decisions of one extension whose follow-up offer is still waiting: their history rows stay. */
+  private offeredIds(extensionId: string): Set<string> {
+    return new Set(
+      this.deps.db
+        .select({ id: extensionDecisions.id })
+        .from(extensionDecisions)
+        .where(
+          and(
+            eq(extensionDecisions.extensionId, extensionId),
+            isNotNull(extensionDecisions.offerJson),
+            isNull(extensionDecisions.offerUsedAt)
+          )
+        )
+        .all()
+        .map((row) => row.id)
+    );
+  }
+
   /** Delete resolved rows older than 30 days. @returns How many were deleted. */
   prune(): number {
     const floor = new Date(this.now() - RETENTION_MS).toISOString();
@@ -917,7 +943,11 @@ export class ExtensionInboxService {
         unread: fields.unread,
       }
     );
-    pruneExtensionHistory(row.extensionId, HISTORY_ROWS_PER_EXTENSION);
+    pruneExtensionHistory(
+      row.extensionId,
+      HISTORY_ROWS_PER_EXTENSION,
+      this.offeredIds(row.extensionId)
+    );
     return true;
   }
 
@@ -961,6 +991,7 @@ export class ExtensionInboxService {
       row.deadlineState !== null ||
       this.deadlines.has(row.id) ||
       this.answering.has(row.id) ||
+      this.firing.has(row.id) ||
       !this.running.has(row.extensionId) ||
       !this.handlers.has(row.extensionId) ||
       !this.folderOk(row)
@@ -1262,6 +1293,19 @@ function refuse(
   message: string
 ): { ok: false; status: number; code: string; message: string } {
   return { ok: false, status, code, message };
+}
+
+/**
+ * Actions JSON with a question's `decideBy` left out, to tell a re-raise of
+ * the same question (whose relative deadline moved) from a new one.
+ *
+ * @param actionsJson - The stored or incoming actions.
+ */
+function withoutDeadline(actionsJson: string): string {
+  const actions = parseJson<Record<string, unknown>>(actionsJson);
+  if (!actions || actions.kind !== 'choice') return actionsJson;
+  const { decideBy: _moving, ...rest } = actions;
+  return JSON.stringify(rest);
 }
 
 /**

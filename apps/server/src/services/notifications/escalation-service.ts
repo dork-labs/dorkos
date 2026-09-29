@@ -325,8 +325,15 @@ export class EscalationService {
       // One push per group per window: an extension with five decisions open
       // reaches a phone once, with one line that counts them.
       const group = entry.escalationGroup?.(payload);
-      if (group && this.deps.store.hasEscalatedSince(group.key, this.now() - group.windowMs)) {
-        return;
+      // A group already pushed this window waits for the window to end, then
+      // tries again: a new question raised after the first push must still
+      // reach the phone, once, if it is still standing then.
+      if (group) {
+        const last = this.deps.store.lastEscalatedAt(group.key);
+        if (last !== null && last + group.windowMs > this.now()) {
+          this.armIn(kind, payload, last + group.windowMs - this.now());
+          return;
+        }
       }
 
       // A kind whose title is somebody else's words (an extension's decision)

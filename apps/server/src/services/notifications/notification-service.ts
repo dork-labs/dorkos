@@ -246,10 +246,17 @@ export class NotificationService {
    * @param ownerField - The payload field naming the owner.
    * @param owner - The owner.
    * @param keep - How many to keep.
+   * @param protectedSubjects - Subject ids never trimmed.
    */
-  pruneOwned(kind: NotificationKind, ownerField: string, owner: string, keep: number): number {
+  pruneOwned(
+    kind: NotificationKind,
+    ownerField: string,
+    owner: string,
+    keep: number,
+    protectedSubjects?: ReadonlySet<string>
+  ): number {
     try {
-      return this.store.pruneOwned(kind, ownerField, owner, keep);
+      return this.store.pruneOwned(kind, ownerField, owner, keep, protectedSubjects);
     } catch (err) {
       logger.warn("[Notifications] Could not trim one source's history", { err, kind });
       return 0;
@@ -682,8 +689,19 @@ export function markRoomRead(roomId: string, uptoSeq: number): MarkNotifications
  *
  * @param extensionId - The extension whose history is trimmed.
  * @param keep - How many of its newest rows to keep.
+ * @param protectedSubjects - Decision ids whose history row must stay (a waiting offer).
  */
-export function pruneExtensionHistory(extensionId: string, keep: number): number {
+export function pruneExtensionHistory(
+  extensionId: string,
+  keep: number,
+  protectedSubjects?: ReadonlySet<string>
+): number {
   if (!current) return 0;
-  return current.pruneOwned('extension.decision', 'extensionId', extensionId, keep);
+  return current.pruneOwned(
+    'extension.decision',
+    'extensionId',
+    extensionId,
+    keep,
+    protectedSubjects
+  );
 }
