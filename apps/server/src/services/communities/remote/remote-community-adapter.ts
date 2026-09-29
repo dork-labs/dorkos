@@ -663,13 +663,16 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
    * @throws StaleCommunityCursorError when the cursor is no longer valid (after a restore);
    *   read again from the start.
    * @throws CommunityRoomNotFoundError when the channel is no longer readable.
+   * @param opts.from - `'end'` asks for no items and a cursor after every change so far, for a
+   *   reader that has just read the channel as it is now.
    */
   async readRedactions(
     roomId: string,
-    opts: { cursor?: string; actingMemberId?: string; signal?: AbortSignal } = {}
+    opts: { cursor?: string; from?: 'end'; actingMemberId?: string; signal?: AbortSignal } = {}
   ): Promise<RemoteRedactionPage> {
     const query = new URLSearchParams();
-    if (opts.cursor) query.set('cursor', opts.cursor);
+    if (opts.from === 'end') query.set('from', 'end');
+    else if (opts.cursor) query.set('cursor', opts.cursor);
     let data;
     try {
       data = CommunityWireRedactionPageSchema.parse(

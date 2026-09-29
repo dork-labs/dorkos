@@ -16,11 +16,12 @@ import type {
   ContinueOptionAccount,
   ContinueOptionsResponse,
 } from '@dorkos/shared/account-usage';
-import type { ServerConfig } from '@dorkos/shared/types';
+import type { ServerConfig, TrackerItemRef } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import {
   createMockAccountUsage,
   createMockSessionLimit,
+  createMockTrackerItem,
   createMockTransport,
 } from '@dorkos/test-utils';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
@@ -141,7 +142,7 @@ interface RenderOptions {
   answer: ContinueOptionsResponse;
   registered?: number;
   runtime?: string;
-  trackerItem?: { id: string } | null;
+  trackerItems?: TrackerItemRef[];
   accountId?: string | null;
   limitAccountId?: string | null;
   cancelAutoFirst?: boolean;
@@ -152,7 +153,7 @@ function renderDialog({
   answer,
   registered = 3,
   runtime = 'claude-code',
-  trackerItem = null,
+  trackerItems = [],
   accountId = 'acct-1',
   limitAccountId = null,
   cancelAutoFirst = false,
@@ -176,7 +177,7 @@ function renderDialog({
             account={{
               runtime,
               accountId,
-              trackerItem,
+              trackerItems,
               limit: limitAccountId
                 ? createMockSessionLimit('ask', { accountId: limitAccountId })
                 : null,
@@ -311,7 +312,7 @@ describe('with an advisor', () => {
   });
 
   it('uses the flow wording only for a flow run (advised and a tracker item)', async () => {
-    renderDialog({ answer: advised([row(2, 72)]), trackerItem: { id: 'DOR-2353' } });
+    renderDialog({ answer: advised([row(2, 72)]), trackerItems: [createMockTrackerItem()] });
     await radios();
     expect(
       screen.getByText("Picks up in the same folder and branch from flow's checkpoint.")

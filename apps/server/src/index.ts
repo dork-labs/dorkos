@@ -350,6 +350,7 @@ import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-m
 import {
   TokenConfirmationProvider,
   describeTemplateCreationCapability,
+  describeWorkspaceCreationCapability,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
@@ -443,6 +444,7 @@ import {
   WorkspaceReconcilerLifecycle,
   resolveWorkspaceRoot,
   setWorkspaceManager,
+  setWorkspaceApprovals,
   setWorkspaceRoot,
   type WorkspaceStore,
 } from './services/workspace/index.js';
@@ -550,6 +552,10 @@ import {
   traceRelay,
 } from './services/observability/index.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
+import { applyTrackerItemsLive } from './services/session/fleet/flow-run-link.js';
+import { KnownProjectsStore } from './services/projects/known-projects-store.js';
+import { startProjectRegistry } from './services/projects/project-feeds.js';
+import { projectRegistry } from './services/projects/project-registry.js';
 import {
   MessageQueueStore,
   SessionEventStore,
@@ -619,7 +625,8 @@ let schedulerService: TaskSchedulerService | null = null;
 let relayCore: RelayCore | undefined;
 /**
  * The marketplace's confirmation provider, once composed: the agents router
- * reads it for an agent's template creation card (DOR-2325).
+ * reads it for an agent's template creation card (DOR-2325), and the workspace
+ * service for a new workspace's card (DOR-2335).
  */
 let templateConfirmationProvider: ConfirmationProvider | undefined;
 /**
@@ -1082,6 +1089,11 @@ async function start() {
   // the person "Added context for the next reply" on a stream that survives a
   // restart, so what that receipt points at has to survive one too (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
+
+  // The project registry's saved names (spec `flow-multiproject` §6.1). Loaded
+  // here, before extensions start, because a name handed out earlier could
+  // belong to a saved project and would change on the next read.
+  projectRegistry.attachStore(new KnownProjectsStore(db));
 
   // A session's usage limit, kept so a restart or an idle eviction does not
   // turn a limited session back into a merely failed one (spec
@@ -1721,6 +1733,14 @@ async function start() {
     });
     managedWorkspaces = workspaceStore;
     setWorkspaceManager(workspaceService);
+    // A new workspace's card is raised through the marketplace's confirmation
+    // provider, composed later in boot (DOR-2335).
+    setWorkspaceApprovals(() => templateConfirmationProvider);
+    // A clone staged by a server that stopped before deciding about it is
+    // never adopted: it goes before anything else can stage (DOR-2335).
+    const staleClones = await workspaceService.sweepStaging();
+    if (staleClones > 0)
+      logger.info(`[Workspace] cleared ${staleClones} unfinished staged clone(s)`);
     workspaceReconcilerLifecycle.start(workspaceReconciler);
     logger.info('[Workspace] WorkspaceManager registered');
   }
@@ -3014,6 +3034,9 @@ async function start() {
     // `agent-permissions`). Read from the permission history in the same
     // database, when each card is read.
     suggestAlways: createAlwaysSuggestion(db),
+    // The project the asking session's folder belongs to, when the registry
+    // already knows it (spec `flow-multiproject` §6.2); a card never waits on git.
+    projectForFolder: (cwd) => projectRegistry.peek(cwd),
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
       if (capability) return { title: capability.title, tier: capability.tier };
@@ -3025,7 +3048,8 @@ async function start() {
       return (
         describeHookProjectionCapability(capabilityId) ??
         describeGlobalActivationCapability(capabilityId) ??
-        describeTemplateCreationCapability(capabilityId)
+        describeTemplateCreationCapability(capabilityId) ??
+        describeWorkspaceCreationCapability(capabilityId)
       );
     },
   });
@@ -4225,6 +4249,21 @@ async function start() {
   app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
     roomStore.resolveRoomOrigins(sessionIds);
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
+  // Live session upserts carry the flow items a chat works on, exactly as
+  // `GET /api/sessions` does, so the first upsert after a list read no longer
+  // wipes them from the client's cache (spec `flow-multiproject` §6.8, D10).
+  // The live variant never runs git: a folder not resolved yet is resolved in
+  // the background and its next event carries the items.
+  sessionListBroadcaster.setTrackerItemsOverlay(applyTrackerItemsLive);
+
+  // The project registry's feeds (spec `flow-multiproject` §6.1): seeded from
+  // agents, workspaces and installs, then fed by every live session. Its store
+  // was attached right after the database opened.
+  startProjectRegistry(projectRegistry, {
+    dorkHome,
+    agentPaths: () => meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? [],
+    workspaceSources: () => managedWorkspaces?.list().map((workspace) => workspace.source) ?? [],
+  });
 
   // Which room an Ask came from, for the two surfaces that answer that question:
   // the live fan-out of `interaction_pending`, and the list a window reads on

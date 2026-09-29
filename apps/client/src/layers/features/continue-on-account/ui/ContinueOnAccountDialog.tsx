@@ -54,7 +54,7 @@ export interface ContinueOnAccountDialogProps {
    * account, its limit (whose `accountId` names the account when the session's
    * own does not) and its flow item.
    */
-  account: Pick<SessionAccount, 'runtime' | 'accountId' | 'limit' | 'trackerItem'>;
+  account: Pick<SessionAccount, 'runtime' | 'accountId' | 'limit' | 'trackerItems'>;
   /**
    * Stop an automatic move before listing anything (from `handing-off`), so
    * neither the countdown nor flow moves the work while the person chooses.
@@ -199,7 +199,12 @@ export function ContinueOnAccountDialog({
   const canSubmit = selectedRow !== null && isSelectable(selectedRow);
   const nameOf = (row: ContinueOptionAccount) => rowName(row, sessionRuntime, nameFor);
   const { same, other } = splitByRuntime(rows, sessionRuntime);
-  const copy = carryOverCopy(data?.advised === true, account.trackerItem !== null);
+  // Only an item this chat works on itself carries over from flow's checkpoint;
+  // work it started in chats of their own stays where it runs.
+  const copy = carryOverCopy(
+    data?.advised === true,
+    account.trackerItems.some((item) => item.via === 'this-chat')
+  );
 
   // Accounts of this runtime the advisor left out. The session's own is never
   // listed, so without knowing which it is there is no honest line to show.

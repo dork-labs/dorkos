@@ -24,7 +24,13 @@ export type {
   StorageMigration,
   StorageDeclaration,
 } from './manifest-schema.js';
-export type { ExtensionAPI, ExtensionPointId, ExtensionReadableState } from './extension-api.js';
+export type {
+  ExtensionAPI,
+  ExtensionPointId,
+  ExtensionReadableState,
+  ProjectRef,
+  TrackerItemRef,
+} from './extension-api.js';
 export {
   EXTENSION_EVENT_KINDS,
   EXTENSION_EVENT_CATEGORIES,
@@ -66,6 +72,8 @@ export type {
   AdvisorRanking,
   SessionInfo,
   LimitedSessionInfo,
+  ProjectInfo,
+  ProjectsApi,
   LimitedPlan,
   CarryOverSeed,
 } from './server-extension-api.js';

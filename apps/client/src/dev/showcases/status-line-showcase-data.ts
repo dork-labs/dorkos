@@ -39,7 +39,7 @@ const NO_ACCOUNT_CHIP: SessionAccount = {
   usage: null,
   limit: null,
   chipState: 'unknown',
-  trackerItem: null,
+  trackerItems: [],
   lifecycle: 'idle',
   pending: false,
 };
@@ -339,7 +339,7 @@ const ACCT_1_CHIP: SessionAccount = {
   usage: MOCK_ACCOUNT_USAGE[0]!,
   limit: null,
   chipState: 'ok',
-  trackerItem: null,
+  trackerItems: [],
   lifecycle: 'idle',
   pending: false,
 };

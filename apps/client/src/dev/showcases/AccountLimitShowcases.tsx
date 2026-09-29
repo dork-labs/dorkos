@@ -74,7 +74,7 @@ function onAcct3(limit: SessionLimitView): LimitBannerAccount {
     accountId: 'acct-3',
     name: 'Acct 3',
     limit,
-    trackerItem: null,
+    trackerItems: [],
   };
 }
 
@@ -239,7 +239,7 @@ export function AccountLimitBannerShowcases() {
             accountId: 'default',
             name: null,
             limit: limits.codex,
-            trackerItem: null,
+            trackerItems: [],
           }}
         />
         <BannerVariant label="all-accounts-out" id="all-out" account={onAcct3(limits.allOut)} />

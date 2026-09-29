@@ -582,6 +582,25 @@ The rules an advisor lives by:
 - **A person's own pick is never refused by the advisor.** Its ranking is advice for anything a person does.
 - **Agents and relay messages need it.** When an agent (`session_start`) or a relay message names an account, core allows it only when the advisor's `launch` ranking marks that account eligible. With no advisor registered, such a pick is refused ("Agents can pick an account only after Flow is set up to say which accounts they may use."), and an advisor that fails refuses it too ("The account policy could not be checked."). Without an advisor everything else uses core's defaults: accounts ranked by weekly headroom, and a person asked what to do when an account runs out.
 
+#### `ctx.projects`
+
+The projects core knows. A project is a git main checkout: a worktree or a subfolder belongs to its main checkout, and a folder in no repository belongs to none. Each project has a short `name` that is safe in a URL and never changes once given (the folder's name, or `name~parent` when another project already had it), so `/x/<your-id>/p/<name>` stays a good bookmark.
+
+```typescript
+if (ctx.projects !== undefined) {
+  const here = await ctx.projects.resolve(someFolder); // { root, name } | null
+  const mine = await ctx.projects.list(); // ProjectInfo[]: { root, name, originRepo, lastSeenAt }
+  await ctx.projects.report('/Users/kai/dev/client-app'); // tell core about one it has not seen
+  const stop = ctx.projects.onChange(() => ctx.emit('projects-changed', null));
+}
+```
+
+- **`list()` is scoped to you.** It answers the projects that hold a copy of your extension (`.dork/extensions/<id>` or a plugin's `.dork/plugins/*/.dork/extensions/<id>`) and the ones you reported. You do not learn every folder the person works in.
+- **`resolve` and `report` pass the directory boundary and need a git repository**, else they answer `null` and record nothing. The boundary is checked twice: on the folder you name and on the repository it belongs to, so a worktree or a `.git` file inside the boundary that points at a repository outside it answers `null`. Only `report` adds a project to your own `list()`.
+- **A project only extensions named is second-class.** Core never looks for extension code there, and it stays out of the person's own project list until a session, agent, workspace or install is seen in it.
+- **At most 200 new projects per extension.** Each project core had not seen that you `report` or `resolve` counts once; past 200, naming another new one answers `null` and records nothing. Projects core already knows, and ones you named before, do not count.
+- **Probe before use.** `ctx.projects` is absent on hosts from before it; check `ctx.projects !== undefined` rather than a host version. Change listeners are removed on shutdown and reload.
+
 ### Route Conventions
 
 Routes registered on the `router` are mounted at `/api/ext/{id}/`:

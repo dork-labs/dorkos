@@ -13,6 +13,7 @@ import diffRoutes from './routes/diff.js';
 import workbenchServeRoutes from './routes/workbench-serve.js';
 import gitRoutes from './routes/git.js';
 import workspaceRoutes from './routes/workspaces.js';
+import projectRoutes from './routes/projects.js';
 import roomRoutes from './routes/rooms.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
@@ -305,6 +306,7 @@ export function createApp(options: { connectorEventIngress?: ConnectorSignedIngr
   app.use('/api/workbench', workbenchServeRoutes);
   app.use('/api/git', gitRoutes);
   app.use('/api/workspaces', workspaceRoutes);
+  app.use('/api/projects', projectRoutes);
   app.use('/api/rooms', roomRoutes);
   app.use('/api/community-connections', createCommunityConnectionsRouter());
   app.use('/api/communities', createRemoteCommunitiesRouter());

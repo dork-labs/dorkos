@@ -10,6 +10,7 @@ import {
   canOfferContinue,
   chipToneFor,
   popoverWindowLabel,
+  workingOnLine,
 } from '../lib/account-chip';
 
 /** A limit whose server sends `state` and `scope` (S4 5.1). */
@@ -101,5 +102,17 @@ describe('popoverWindowLabel', () => {
     expect(popoverWindowLabel('five_hour', '5-hour window')).toBe('5-hour');
     expect(popoverWindowLabel('seven_day', 'Weekly')).toBe('This week');
     expect(popoverWindowLabel('seven_day_opus', 'Weekly Opus')).toBe('Weekly Opus');
+  });
+});
+
+describe('workingOnLine', () => {
+  it('names the one item a chat works on', () => {
+    expect(workingOnLine([{ id: 'DOR-2387' }])).toBe('Working on DOR-2387');
+  });
+
+  it('counts several items rather than naming only the newest', () => {
+    expect(workingOnLine([{ id: 'DOR-3' }, { id: 'DOR-2' }, { id: 'DOR-1' }])).toBe(
+      'Working on 3 items'
+    );
   });
 });

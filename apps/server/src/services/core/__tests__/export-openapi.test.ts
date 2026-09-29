@@ -28,7 +28,8 @@ describe('export-openapi', () => {
     const list = JSON.stringify(schemas.SessionListResponse);
     expect(list).toContain('accountUsage');
     const session = JSON.stringify(schemas.Session);
-    for (const field of ['accountId', 'status', 'trackerItem']) expect(session).toContain(field);
+    for (const field of ['accountId', 'status', 'trackerItem', 'trackerItems'])
+      expect(session).toContain(field);
     expect(spec.paths?.['/api/sessions']?.get?.description).toContain('accountUsage');
   });
 

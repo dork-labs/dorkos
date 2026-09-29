@@ -1269,6 +1269,83 @@
           "resumed-early"
         ]
       },
+      "ProjectListResponse": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectInfo"
+            }
+          }
+        },
+        "required": [
+          "projects"
+        ]
+      },
+      "ProjectInfo": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProjectRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "originRepo": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lastSeenAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "originRepo",
+              "lastSeenAt"
+            ]
+          }
+        ]
+      },
+      "ProjectRef": {
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]+$"
+          }
+        },
+        "required": [
+          "root",
+          "name"
+        ]
+      },
+      "ProjectResolveResponse": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "project"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -1473,7 +1550,15 @@
             },
             "required": [
               "id"
-            ]
+            ],
+            "deprecated": true,
+            "description": "Deprecated: the newest run in this chat (the newest `this-chat` item of `trackerItems`), kept for older flow installs. Read `trackerItems`."
+          },
+          "trackerItems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrackerItemRef"
+            }
           },
           "userLastMessageAt": {
             "type": "string",
@@ -1612,6 +1697,50 @@
         ],
         "default": "limited"
       },
+      "TrackerItemRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "stage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "via": {
+            "type": "string",
+            "enum": [
+              "this-chat",
+              "own-chat"
+            ]
+          },
+          "ownChatSessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "stage",
+          "runStatus",
+          "startedAt",
+          "via",
+          "ownChatSessionId"
+        ]
+      },
       "SessionListWarning": {
         "type": "object",
         "properties": {
@@ -1671,6 +1800,19 @@
           "roomAuthorId": {
             "type": "string",
             "minLength": 1
+          },
+          "project": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           }
         },
         "required": [
@@ -2714,6 +2856,19 @@
           },
           "serviceAction": {
             "$ref": "#/components/schemas/ApprovalServiceAction"
+          },
+          "project": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           }
         },
         "required": [
@@ -6986,6 +7141,19 @@
               "type": "string"
             },
             "default": []
+          },
+          "project": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           }
         },
         "required": [
@@ -15625,6 +15793,99 @@
         }
       }
     },
+    "/api/projects": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "List the projects this machine knows",
+        "description": "Every git main checkout the server has seen as a session, agent, workspace or install folder whose folder exists right now, sorted by name. A root only an extension reported or a lookup named is not listed until it is seen. A project whose folder is gone is hidden, not forgotten (a drive may be unplugged). Each project's `name` is URL-safe, unique, and never changes once given: the folder's name, or `name~parent` when another project already had it. `originRepo` is the `owner/name` of a GitHub `origin` remote, else null.",
+        "responses": {
+          "200": {
+            "description": "The known projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The projects could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/resolve": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Name the project a folder belongs to",
+        "description": "The git main checkout `cwd` belongs to: a linked worktree and a subfolder both map to it, and a bare repository is its own project. A folder in no repository answers `{ \"project\": null }`, including one that only holds several repositories. A lookup never marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and the repository it belongs to must be inside the server's directory boundary (a worktree of an outside repository is refused).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "cwd",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResolveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`cwd` is missing or empty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`cwd`, or the repository it belongs to, is outside the server's directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The project could not be resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -15707,7 +15968,7 @@
           "Sessions"
         ],
         "summary": "List all sessions",
-        "description": "Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle) and its flow `trackerItem`; the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.",
+        "description": "Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle), and its flow `trackerItems` (every item it works on, newest first, including work it started in chats of their own) beside the deprecated `trackerItem` (the newest); the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.",
         "parameters": [
           {
             "schema": {

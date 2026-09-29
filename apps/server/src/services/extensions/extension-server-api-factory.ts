@@ -3,8 +3,9 @@
  *
  * Each extension gets isolated secrets, scoped storage, interval scheduling
  * with a 5-second floor, namespaced SSE event emission via {@link eventFanOut},
- * the DorkOS data directory, and read access to the agent accounts DorkOS knows
- * with the account advisor seam (spec `claude-account-fleet` §6 X1-X3).
+ * the DorkOS data directory, read access to the agent accounts DorkOS knows
+ * with the account advisor seam (spec `claude-account-fleet` §6 X1-X3), and the
+ * projects core knows, scoped to the extension (spec `flow-multiproject` §6.1).
  *
  * @module services/extensions/extension-server-api-factory
  */
@@ -22,6 +23,8 @@ import { eventFanOut } from '../core/event-fan-out.js';
 import { registerAccountAdvisor, toExtensionAccountUsage } from '../core/usage/account-advisor.js';
 import { getAccountUsageStore } from '../core/usage/current-usage-store.js';
 import { recordContinuation } from '../core/usage/session-continuation.js';
+import { createProjectsApi } from '../projects/extension-projects-api.js';
+import { projectRegistry } from '../projects/project-registry.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../../lib/logger.js';
@@ -158,16 +161,17 @@ interface CreateContextDeps {
  * - SSE event emitter via EventFanOut with `ext:{id}:{event}` namespace
  * - The resolved DorkOS data directory (`dorkHome`)
  * - `accounts`: the agent accounts, their usage, and the account advisor seam
+ * - `projects`: the projects core knows, scoped to this extension
  *
  * @param deps - Extension identity and directory info
  * @returns The context, a function to retrieve scheduled cleanup functions, and
- *   `releaseAccounts`, which removes every usage listener and advisor the
- *   extension registered (called on shutdown and reload)
+ *   `releaseListeners`, which removes every usage listener, advisor and project
+ *   change listener the extension registered (called on shutdown and reload)
  */
 export function createDataProviderContext(deps: CreateContextDeps): {
   ctx: DataProviderContext;
   getScheduledCleanups: () => Array<() => void>;
-  releaseAccounts: () => void;
+  releaseListeners: () => void;
 } {
   const scheduledCleanups: Array<() => void> = [];
   const { extensionId, extensionDir, dorkHome } = deps;
@@ -207,7 +211,8 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     eventFanOut.broadcast(`ext:${extensionId}:${event}`, data);
   }
 
-  const { accounts, release } = createAccountsApi(extensionId);
+  const { accounts, release: releaseAccounts } = createAccountsApi(extensionId);
+  const { projects, release: releaseProjects } = createProjectsApi(extensionId, projectRegistry);
 
   const ctx: DataProviderContext = {
     secrets,
@@ -219,11 +224,15 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     extensionDir,
     dorkHome,
     accounts,
+    projects,
   };
 
   return {
     ctx,
     getScheduledCleanups: () => [...scheduledCleanups],
-    releaseAccounts: release,
+    releaseListeners: () => {
+      releaseAccounts();
+      releaseProjects();
+    },
   };
 }
