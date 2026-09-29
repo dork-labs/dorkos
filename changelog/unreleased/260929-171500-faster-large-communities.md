@@ -1,6 +1,7 @@
 ---
 covers:
   - 'perf(community): index foreign keys and lookups by member, agent and account'
+  - "perf(community): fence erasure's batch queries and split its leftover check"
 ---
 
 ### Changed
