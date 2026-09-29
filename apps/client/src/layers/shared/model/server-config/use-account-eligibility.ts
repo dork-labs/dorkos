@@ -66,16 +66,20 @@ export function notAllowedLine(row: AccountEligibilityRow, projectName: string |
  * @param inputs - Anything else the launch answer depends on (the folder's
  *   agent's account, the server default), so a change to one asks again
  *   rather than naming yesterday's account.
+ * @param enabled - Ask at all; false where no picker is drawn (one account),
+ *   so a chat that cannot choose makes no request.
  */
 export function useAccountEligibility(
   folder: string | null,
-  inputs: readonly unknown[] = []
+  inputs: readonly unknown[] = [],
+  enabled = true
 ): AccountEligibilityView {
   const transport = useTransport();
   const { data } = useQuery({
     queryKey: [...accountKeys.eligibility(folder), ...inputs],
     queryFn: () => transport.getAccountEligibility(folder ?? undefined),
     staleTime: ELIGIBILITY_STALE_TIME_MS,
+    enabled,
   });
   const projectName = data?.project?.name ?? null;
   const rows = new Map((data?.accounts ?? []).map((row) => [row.id, row]));

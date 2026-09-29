@@ -118,10 +118,12 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
   // Which accounts may work in this folder's project, and what the ladder would
   // actually launch on here; silent until the server says. Asked again when the
   // agent's account or the server default changes.
-  const eligibility = useAccountEligibility(selectedCwd, [
-    agentQuery.data?.account ?? null,
-    resolvedAccount ?? null,
-  ]);
+  // Only where there is a choice to make: with one account there is no picker.
+  const eligibility = useAccountEligibility(
+    selectedCwd,
+    [agentQuery.data?.account ?? null, resolvedAccount ?? null],
+    isMultiAccount
+  );
 
   const selectable = accounts.filter((account): account is SelectableAccount =>
     Boolean(account.id)
