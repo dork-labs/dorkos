@@ -65,9 +65,9 @@ export async function prepareCommunityDeletionInventory(
 }
 
 /** How long a file deletion waits for the community row lock before it counts as failed. */
-const BLOB_LOCK_TIMEOUT_MS = 5_000;
+export const BLOB_LOCK_TIMEOUT_MS = 5_000;
 /** How long one storage delete may take while the community row is held. */
-const BLOB_DELETE_TIMEOUT_MS = 60_000;
+export const BLOB_DELETE_TIMEOUT_MS = 60_000;
 
 /**
  * Delete one due tenant in bounded, restart-safe object and database phases.

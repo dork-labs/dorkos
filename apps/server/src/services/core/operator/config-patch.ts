@@ -25,6 +25,7 @@ import { OPERATOR_ONLY_CONFIG_PATHS } from './config-write-policy.js';
 import { claudeAccountsChanged } from '../../runtimes/claude-code/account-switch.js';
 import { expandClaudeAccountHome } from '../../runtimes/claude-code/claude-config-dir.js';
 import {
+  accountRulesRefusal,
   defaultAccountColorRefusal,
   planClaudeAccountWrite,
   takeAccountsSeen,
@@ -414,6 +415,8 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   const patchObj = taken.patch;
   const colorRefusal = defaultAccountColorRefusal(patchObj);
   if (colorRefusal) return { ok: false, error: 'Validation failed', details: colorRefusal };
+  const rulesRefusal = accountRulesRefusal(patchObj);
+  if (rulesRefusal) return { ok: false, error: 'Validation failed', details: rulesRefusal };
 
   const current = configManager.getAll();
   const merged = deepMerge(current as unknown as Record<string, unknown>, patchObj);

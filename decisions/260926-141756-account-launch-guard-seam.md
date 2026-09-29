@@ -1,7 +1,7 @@
 ---
 id: 260926-141756
 title: Account routing policy belongs to an extension; core only asks its account advisor
-status: draft
+status: accepted
 created: 2026-09-26
 spec: claude-account-fleet
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: claude-account-fleet)
+Accepted. Implemented: `accounts.registerAdvisor` in `packages/extension-api/src/server-extension-api.ts`, wired by `apps/server/src/services/extensions/extension-server-api-factory.ts` and consulted through `apps/server/src/services/core/usage/account-advisor.ts` (relay picks gate in `services/relay/turn-execution-settings.ts`).
 
 ## Context
 

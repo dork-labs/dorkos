@@ -805,6 +805,12 @@
               "recommended",
               "reserved"
             ]
+          },
+          "notAllowed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           }
         },
         "required": [
@@ -1344,6 +1350,194 @@
         },
         "required": [
           "project"
+        ]
+      },
+      "AccountEligibilityResponse": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "allow": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountEligibilityRow"
+            }
+          },
+          "launch": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "ok": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "root": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ok",
+                  "accountId",
+                  "root"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "ok": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ok",
+                  "message"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "project",
+          "allow",
+          "accounts"
+        ]
+      },
+      "AccountEligibilityRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": "string"
+          },
+          "implicit": {
+            "type": "boolean"
+          },
+          "onlyProjects": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ProjectRef"
+            }
+          },
+          "allowedByAccount": {
+            "type": "boolean"
+          },
+          "allowedByProject": {
+            "type": "boolean"
+          },
+          "eligible": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "color",
+          "implicit",
+          "onlyProjects",
+          "allowedByAccount",
+          "allowedByProject",
+          "eligible"
+        ]
+      },
+      "ProjectAccountsRequest": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1
+          },
+          "allow": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "project",
+          "allow"
+        ]
+      },
+      "OnlyProjectsResponse": {
+        "type": "object",
+        "properties": {
+          "onlyProjects": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ProjectRef"
+            }
+          }
+        },
+        "required": [
+          "onlyProjects"
+        ]
+      },
+      "OnlyProjectsRequest": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "projects"
         ]
       },
       "HealthResponse": {
@@ -16436,6 +16630,208 @@
         }
       }
     },
+    "/api/runtimes/claude-code/account-eligibility": {
+      "get": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Which Claude accounts may work in a project",
+        "description": "Every Claude account (Main is `default`) as the project a folder belongs to sees it. An account may work in a project only when both rules allow it: its own (`onlyProjects`, null for any project; a list never allows a folder in no project) and the project’s (`allow`, null when the project has no list). Leave out `project` for a folder in no project.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "project",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project and every account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountEligibilityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The query is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The folder, or its repository, is outside the server's directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The rules could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/project-accounts": {
+      "put": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Choose which Claude accounts a project may use",
+        "description": "Sets the project’s allow list, or removes it with `allow: null` (every account again). Answers with the project's new eligibility. Only a person may call it: a request from another site, a caller that names itself an agent (`X-DorkOS-Agent`), and, with Require login on, a caller without a signed-in session are refused with `403`. With Require login off, a local caller that sends no agent header is trusted, and an approved extension's own browser code shares the app's page, so it passes in either posture. Each change is recorded in Activity.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectAccountsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The project and every account, after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountEligibilityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid, or it names an account that does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the folder is outside the directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The folder is not in a project (a git repository)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The change could not be saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/accounts/{id}/only-projects": {
+      "put": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Keep a Claude account to some projects",
+        "description": "Sets the projects one account may work in (`default` is Main), or frees it with `projects: null`. An account kept to projects never works in a folder that is in no project. Only a person may call it: a request from another site, a caller that names itself an agent (`X-DorkOS-Agent`), and, with Require login on, a caller without a signed-in session are refused with `403`. With Require login off, a local caller that sends no agent header is trusted, and an approved extension's own browser code shares the app's page, so it passes in either posture. Each change is recorded in Activity.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnlyProjectsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The projects the account is now kept to, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnlyProjectsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid, or a folder is not a project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "There is no such account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The change could not be saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -16868,7 +17264,7 @@
           "Sessions"
         ],
         "summary": "Send message (accept-only)",
-        "description": "ACCEPTS a message and returns immediately — it does NOT stream tokens (ADR-0264) and does NOT wait for the session to be free. If the session is idle the turn starts now; if a turn is already running the message joins the session queue and runs when that turn ends. Either way the events are delivered solely on the durable `GET /api/sessions/{id}/events` stream (the single delivery path) — `turn_start` there is the only signal that THIS message actually started running. The `202` body cannot say which of the two happened: `queuePosition` reads `1` both when the turn started immediately and when the message became the sole entry in a queue behind a still-running turn, and `outcome` carries the requested and applied disposition (queue/steer/stage), not whether a turn began. A busy session is never a `409` here — read and edit what is waiting through `/api/sessions/{id}/queue`; a `409` means the turn was refused for WHERE it would run (`DESK_NOT_OWN`: inside a room's files, or a room's agent outside its own folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the room's files), and nothing was started. The `202` also carries the CANONICAL session id: for a brand-new session this is the real id assigned during the turn (it differs from the client-supplied id), so the client re-keys its URL and `/events` subscription to it. To avoid missing the turn, a client should be subscribed to `/events` before (or concurrently with) this POST.",
+        "description": "ACCEPTS a message and returns immediately — it does NOT stream tokens (ADR-0264) and does NOT wait for the session to be free. If the session is idle the turn starts now; if a turn is already running the message joins the session queue and runs when that turn ends. Either way the events are delivered solely on the durable `GET /api/sessions/{id}/events` stream (the single delivery path) — `turn_start` there is the only signal that THIS message actually started running. The `202` body cannot say which of the two happened: `queuePosition` reads `1` both when the turn started immediately and when the message became the sole entry in a queue behind a still-running turn, and `outcome` carries the requested and applied disposition (queue/steer/stage), not whether a turn began. A busy session is never a `409` here — read and edit what is waiting through `/api/sessions/{id}/queue`; a `409` means the turn was refused for WHERE it would run (`DESK_NOT_OWN`: inside a room's files, or a room's agent outside its own folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the room's files), or because the account the new session would run on may not work in its folder's project (`account_not_allowed_here`, with `project` and `accountId`), and nothing was started. The `202` also carries the CANONICAL session id: for a brand-new session this is the real id assigned during the turn (it differs from the client-supplied id), so the client re-keys its URL and `/events` subscription to it. To avoid missing the turn, a client should be subscribed to `/events` before (or concurrently with) this POST.",
         "parameters": [
           {
             "schema": {
@@ -16911,7 +17307,7 @@
             }
           },
           "409": {
-            "description": "Refused before anything started, for where the turn would run (`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`); the body says what to do instead",
+            "description": "Refused before anything started, for where the turn would run (`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in this project (`account_not_allowed_here`, whose body also names `project` and `accountId`); the body says what to do instead",
             "content": {
               "application/json": {
                 "schema": {

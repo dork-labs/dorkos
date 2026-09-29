@@ -43,6 +43,8 @@ import { dispatchMessage, type MessageDispatchResult } from '../message-dispatch
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
+import type { AccountNotAllowedError } from '../../core/usage/account-eligibility.js';
+import type { LaunchAccountResolution } from '../../runtimes/claude-code/claude-config-dir.js';
 
 /** What {@link dispatchSessionMessage} needs to start or feed one session. */
 export interface DispatchSessionMessageOpts {
@@ -123,6 +125,9 @@ export function isAgentLaunchCapFull(): boolean {
  *   agent would stand in a folder that is not its own (`409`).
  * - `LAUNCH_CAP_FULL` — a capped launch found {@link AGENT_LAUNCH_MAX_LIVE}
  *   turns already live.
+ * - `ACCOUNT_NOT_ALLOWED` — the account this new session would run on may not
+ *   work in its folder's project, whoever picked it (`409
+ *   account_not_allowed_here`, spec `flow-multiproject` §8.4).
  */
 export interface SessionLaunchRefusal {
   /** Which check refused the launch. */
@@ -131,9 +136,12 @@ export interface SessionLaunchRefusal {
     | 'UNKNOWN_RUNTIME'
     | 'ROOM_SESSION_MOVED'
     | 'DESK_NOT_OWN'
-    | 'LAUNCH_CAP_FULL';
+    | 'LAUNCH_CAP_FULL'
+    | 'ACCOUNT_NOT_ALLOWED';
   /** The sentence a caller shows as-is. */
   message: string;
+  /** With `ACCOUNT_NOT_ALLOWED`: the refusal, with its project and account. */
+  accountError?: AccountNotAllowedError;
 }
 
 /** The dispatcher's result for a message that went through, or why none did. */
@@ -252,6 +260,49 @@ export async function dispatchSessionMessage(
   } catch (err) {
     release();
     throw err;
+  }
+}
+
+/** A runtime that can say which account a new session would launch on (Claude Code). */
+interface LaunchAccountAware {
+  checkLaunchAccount(
+    sessionId: string,
+    projectDir: string,
+    hintId?: string
+  ): Promise<LaunchAccountResolution>;
+}
+
+function isLaunchAccountAware(runtime: unknown): runtime is LaunchAccountAware {
+  return (
+    typeof runtime === 'object' &&
+    runtime !== null &&
+    typeof (runtime as LaunchAccountAware).checkLaunchAccount === 'function'
+  );
+}
+
+/**
+ * The account refusal for a session about to launch, or null. Only a runtime
+ * with accounts is asked, and only for a session no binding write has named
+ * yet; a failed read never refuses (the turn's own ladder still judges).
+ */
+async function refusedLaunchAccount(opts: {
+  sessionId: string;
+  runtimeType: string;
+  cwd: string;
+  hintId: string | undefined;
+}): Promise<AccountNotAllowedError | null> {
+  try {
+    const runtime = runtimeRegistry.get(opts.runtimeType);
+    if (!isLaunchAccountAware(runtime)) return null;
+    if ((await runtimeRegistry.resolveSessionRuntime(opts.sessionId)).bound) return null;
+    const launch = await runtime.checkLaunchAccount(opts.sessionId, opts.cwd, opts.hintId);
+    return launch.ok ? null : launch.error;
+  } catch (err) {
+    logger.warn('[POST /messages] could not check the launch account', {
+      sessionId: opts.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
   }
 }
 
@@ -388,6 +439,27 @@ async function launchSessionMessage(
   });
   if (!runtimeRegistry.has(runtimeType)) {
     return { refused: 'UNKNOWN_RUNTIME', message: `Unknown runtime: ${runtimeType}` };
+  }
+
+  // **The account rule, before anything is bound** (spec `flow-multiproject`
+  // §8.4, invariant 6). A session that has not launched yet is about to pick
+  // an account: the person's own pick (checked like any other, D7), the
+  // agent's, or a default. One that may not work in this folder's project is
+  // refused here, with the plain sentence, so nothing is written and the next
+  // send may still pick another account. Asked only of an unbound session:
+  // once one has launched, its account is a fact nothing moves.
+  const accountRefusal = await refusedLaunchAccount({
+    sessionId,
+    runtimeType,
+    cwd: effectiveCwd ?? DEFAULT_CWD,
+    hintId: accountHintRaw,
+  });
+  if (accountRefusal) {
+    return {
+      refused: 'ACCOUNT_NOT_ALLOWED',
+      message: accountRefusal.message,
+      accountError: accountRefusal,
+    };
   }
   // The registry seeds this session's model, effort and trust stop from the
   // server defaults if this call is what BINDS it — see `resolveSessionDefaults`

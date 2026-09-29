@@ -1,7 +1,7 @@
 ---
 id: 260926-141753
 title: DorkOS keeps usage per Claude account in a shared ledger it merges by observation time
-status: draft
+status: accepted
 created: 2026-09-26
 spec: claude-account-fleet
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: claude-account-fleet)
+Accepted. Implemented by the runtime-neutral store `apps/server/src/services/core/usage/account-usage-store.ts`, which persists `<dorkHome>/runtimes/<runtime>/usage/<id>.json` under the shared lock-and-rename contract; the store generalised from Claude Code to every runtime, the decision is unchanged.
 
 ## Context
 

@@ -427,6 +427,12 @@ export const ContinueAccountOptionSchema = z
     reason: z.string(),
     /** The advisor's badge, when it gave one. */
     badge: z.enum(['recommended', 'reserved']).optional(),
+    /**
+     * `true` when the account may not work in this session's project (spec
+     * `flow-multiproject` §8.4): shown so a person sees why, never pickable,
+     * and `reason` says which rule ("Only for client-app"). Absent otherwise.
+     */
+    notAllowed: z.literal(true).optional(),
   })
   .openapi('ContinueAccountOption');
 
@@ -4191,6 +4197,10 @@ export const ServerConfigSchema = z
                 description:
                   'Whether DorkOS can currently find a Claude account here — the directory exists AND holds a `projects/` directory (the structural check, spec claude-code-accounts D4). Deliberately not named `exists`: a directory that exists without `projects/` reports false. False means it contributes no sessions',
               }),
+              onlyProjects: z.array(ProjectRefSchema).nullable().optional().openapi({
+                description:
+                  'The projects this account may work in ("Only for client-app"), or null for any project (spec flow-multiproject §8). Change it with PUT /api/runtimes/claude-code/accounts/:id/only-projects, never by writing it back through PATCH /api/config. Absent on a server too old to report it',
+              }),
             })
           )
           .openapi({ description: 'The Claude accounts the operator has registered' }),
@@ -4215,6 +4225,24 @@ export const ServerConfigSchema = z
           .openapi({
             description:
               "Present only when the server process's own $CLAUDE_CONFIG_DIR decides where new sessions run (no default account is chosen) AND no row stands for that folder, so resolvedAccountId is absent: the variable and the folder it names. A launch-only override: the default account (Main) never follows it (shared account contract rev 6d)",
+          }),
+        defaultAccountOnlyProjects: z.array(ProjectRefSchema).nullable().optional().openapi({
+          description:
+            "The projects Main (this computer's own Claude sign-in, id `default`) may work in, or null for any project (spec flow-multiproject §8). Absent on a server too old to report it",
+        }),
+        projectAccounts: z
+          .array(
+            z.object({
+              project: ProjectRefSchema,
+              allow: z.array(z.string()).openapi({
+                description: 'The account ids that may work in this project; `default` is Main',
+              }),
+            })
+          )
+          .optional()
+          .openapi({
+            description:
+              'Each project that limits which accounts may work in it, by project name (spec flow-multiproject §8). A project that is not listed allows every account. Change it with PUT /api/runtimes/claude-code/project-accounts. Absent on a server too old to report it',
           }),
         accountsUnavailable: z.boolean().optional().openapi({
           description:

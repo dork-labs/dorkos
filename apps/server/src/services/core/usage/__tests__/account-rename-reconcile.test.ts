@@ -19,6 +19,7 @@ import { writeSkillFile } from '@dorkos/skills/writer';
 import { AccountUsageStore } from '../account-usage-store.js';
 import { readConfigFile } from '../account-usage-reconcile.js';
 import { moveAccountReferences, type AccountReferenceSites } from '../account-reference-move.js';
+import { renameAccountInProjectAccounts } from '../account-eligibility-writes.js';
 import { defaultAccountFolder } from '../runtime-accounts.js';
 import { TaskStore } from '../../../tasks/task-store.js';
 import type { TaskFileSync } from '../../../tasks/sync/task-file-sync.js';
@@ -76,6 +77,7 @@ function sites(overrides: Partial<AccountReferenceSites> = {}): AccountReference
       },
     },
     renameScheduleAccount: (from, to) => renameScheduleAccount(db, from, to, async () => false),
+    renameInProjectAccounts: (from, to) => renameAccountInProjectAccounts(fileConfig, from, to),
     ...overrides,
   };
 }
@@ -206,11 +208,39 @@ describe('carrying a renamed `default` row through to its references', () => {
     ]);
 
     // With the marker gone, a fresh `default` reference is the machine default.
-    expect(resolveLaunchAccountRoot({ agentAccountId: 'default', config: fileConfig })).toBe(
-      path.join(os.homedir(), '.claude')
-    );
+    expect(
+      resolveLaunchAccountRoot({ agentAccountId: 'default', config: fileConfig, project: null })
+    ).toMatchObject({ ok: true, root: path.join(os.homedir(), '.claude') });
     await store.reconcileAccounts();
     expect(store.peek('claude-code', ['default'])[0]!.accountId).toBe('default');
+  });
+
+  // Purpose: a project that allowed the account by its old id still allows it
+  // by the new one (spec `flow-multiproject` §8.1), and a root with a dot in it
+  // survives the whole-object write.
+  it('carries the rename into every project allow list', async () => {
+    await fs.writeFile(
+      configPath(),
+      JSON.stringify({
+        runtimes: {
+          claudeCode: {
+            defaultAccount: null,
+            accounts: [renamedRow()],
+            projectAccounts: {
+              '/work/client.app': { allow: ['default', 'work'] },
+              '/work/other': { allow: ['work'] },
+            },
+          },
+        },
+      })
+    );
+    const store = makeStore();
+    await store.reconcileAccounts();
+    const stored = JSON.parse(await fs.readFile(configPath(), 'utf8'));
+    expect(stored.runtimes.claudeCode.projectAccounts).toEqual({
+      '/work/client.app': { allow: ['default-2', 'work'] },
+      '/work/other': { allow: ['work'] },
+    });
   });
 
   it('keeps resolving `default` to the renamed row until its references moved', async () => {
@@ -219,9 +249,9 @@ describe('carrying a renamed `default` row through to its references', () => {
     await store.reconcileAccounts();
     expect((await storedRows())[0].renamedFrom).toBe('default');
     expect(store.peek('claude-code', ['default'])[0]!.accountId).toBe('default-2');
-    expect(resolveLaunchAccountRoot({ agentAccountId: 'default', config: fileConfig })).toBe(
-      renamedRow().path
-    );
+    expect(
+      resolveLaunchAccountRoot({ agentAccountId: 'default', config: fileConfig, project: null })
+    ).toMatchObject({ ok: true, root: renamedRow().path });
   });
 
   it('a move cut short keeps the marker, and the next reconcile finishes it', async () => {

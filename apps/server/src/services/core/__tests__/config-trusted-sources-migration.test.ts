@@ -1,5 +1,5 @@
 /**
- * The `'0.93.0'` migration: `extensions.trustedSources` is seeded as an empty
+ * The `'0.94.0'` migration: `extensions.trustedSources` is seeded as an empty
  * list (spec `flow-multiproject` §9.3), the code sources a person trusts
  * outright.
  *
@@ -12,7 +12,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
 vi.hoisted(() => {
-  process.env.DORKOS_VERSION_OVERRIDE = '0.93.0';
+  process.env.DORKOS_VERSION_OVERRIDE = '0.94.0';
 });
 
 import fs from 'fs';
@@ -78,29 +78,29 @@ describe('seedExtensionsTrustedSources', () => {
     expect(bare.data).toEqual({ ui: { theme: 'dark' } });
   });
 
-  it('is what the 0.93.0 key runs', () => {
+  it('is what the 0.94.0 key runs', () => {
     const store = memoryStore({ extensions: { enabled: [] } });
-    CONFIG_MIGRATIONS['0.93.0'](store);
+    CONFIG_MIGRATIONS['0.94.0'](store);
     expect(store.data.extensions).toEqual({ enabled: [], trustedSources: [] });
   });
 });
 
-describe('a real pre-0.93.0 config file through a real ConfigManager', () => {
+describe('a real pre-0.94.0 config file through a real ConfigManager', () => {
   const dirs: string[] = [];
 
   afterEach(() => {
     for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('really is running the 0.93.0 migration, or the rest of this file means nothing', () => {
-    expect(SERVER_VERSION).toBe('0.93.0');
+  it('really is running the 0.94.0 migration, or the rest of this file means nothing', () => {
+    expect(SERVER_VERSION).toBe('0.94.0');
   });
 
   it('gains the empty list on disk and keeps every approval', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-trusted-sources-mig-'));
     dirs.push(dir);
     const cfgPath = path.join(dir, 'config.json');
-    // What a person on 0.92.0 who turned Flow on has on disk.
+    // What a person on 0.93.0 who turned Flow on has on disk.
     fs.writeFileSync(
       cfgPath,
       JSON.stringify({
@@ -115,7 +115,7 @@ describe('a real pre-0.93.0 config file through a real ConfigManager', () => {
           },
           dismissedApprovals: {},
         },
-        __internal__: { migrations: { version: '0.92.0' } },
+        __internal__: { migrations: { version: '0.93.0' } },
       }),
       'utf-8'
     );

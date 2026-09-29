@@ -55,6 +55,7 @@ import { creditsTurnEnv } from '../../../core/cloud/credits-inference.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
+import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import { envBillsPerToken } from './per-token-billing.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
@@ -316,15 +317,24 @@ export async function resolveLaunch(args: {
   // agent setting move a live conversation's billing mid-stream. `undefined` is
   // "unknown", never an error: a session with no transcript yet legitimately has
   // no account of its own, and that is exactly the case the ladder answers.
-  const accountRoot =
-    session.accountRoot ??
-    resolveLaunchAccountRoot({
+  //
+  // The ladder keeps to the accounts that may work in this folder's project
+  // (spec `flow-multiproject` §8.4). A refusal throws the plain sentence, which
+  // the turn reports as its error; an existing session keeps its account, since
+  // the rule applies when an account is picked, not mid-conversation.
+  let accountRoot = session.accountRoot;
+  if (accountRoot === undefined) {
+    const launch = resolveLaunchAccountRoot({
       hintId: messageOpts?.accountHint,
       // The account this agent is pinned to, off the manifest already read
       // above. It reaches the spawn env and stops there — nothing writes it to
       // `session_metadata`, because disk stays the per-session truth.
       agentAccountId: manifest?.account,
+      project: await projectOfFolder(effectiveCwd),
     });
+    if (!launch.ok) throw launch.error;
+    accountRoot = launch.root;
+  }
   const accountEnv = claudeConfigDirEnv(accountRoot);
   const sdkOptions: Options = {
     cwd: effectiveCwd,

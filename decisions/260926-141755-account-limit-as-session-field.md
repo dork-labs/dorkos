@@ -1,7 +1,7 @@
 ---
 id: 260926-141755
 title: A hard usage limit is a field on the session status, not a new lifecycle value
-status: draft
+status: accepted
 created: 2026-09-26
 spec: claude-account-fleet
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: claude-account-fleet)
+Accepted. Implemented: `SessionStatus.limit` in `packages/shared/src/session-stream.ts` (nullable, default `null`) and `sessionDisplayState()` returns `limited` off it without a new lifecycle value.
 
 ## Context
 

@@ -40,6 +40,9 @@ import {
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch/launch-session.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
+import { configManager } from '../../core/config-manager.js';
+import { assertAccountEligible, projectOfFolder } from '../../core/usage/account-eligibility.js';
+import { notAllowedAccounts } from '../../core/usage/account-ranking.js';
 import { peekProjector } from '../session-state-projector.js';
 import {
   carryOverSession,
@@ -55,6 +58,8 @@ import {
   mayCarryOver,
   planningSettled,
   rankForLimit,
+  limitRankingContext,
+  cwdOf,
   readStoredLimit,
   sessionInfoOf,
   writePlan,
@@ -161,10 +166,14 @@ export async function continueOptions(sessionId: string): Promise<ContinueOption
     };
   }
   const ranking = await rankForLimit(stored);
+  // Accounts that may not work in this project are shown too, disabled, with
+  // the reason ("Only for client-app"), so a person sees why one is missing
+  // from the choices instead of wondering (spec `flow-multiproject` §8.4).
+  const notAllowed = await notAllowedAccounts(limitRankingContext(stored));
   return {
     plan: stored.limit.plan,
     ranking: {
-      accounts: ranking.accounts.map((a) => ({
+      accounts: [...ranking.accounts, ...notAllowed].map((a) => ({
         runtime: a.runtime,
         id: a.id,
         label: a.label,
@@ -173,6 +182,7 @@ export async function continueOptions(sessionId: string): Promise<ContinueOption
         eligible: a.eligible,
         reason: a.reason,
         ...(a.badge ? { badge: a.badge } : {}),
+        ...(a.notAllowed ? { notAllowed: true as const } : {}),
       })),
       recommendedId: ranking.recommendedId,
     },
@@ -300,6 +310,9 @@ export async function continueSession(
       'Only a Claude Code session can continue on another account or model for now. This one can wait for the reset.'
     );
   }
+  // The folder's project, resolved before the re-read below so nothing after
+  // it awaits (the account rule is judged against it further down).
+  const project = await projectOfFolder(cwdOf(first));
   // Read again after those awaits: the automatic handoff (or another click)
   // may have moved the work meanwhile, and everything below, up to marking
   // this continue in flight, decides from this read without awaiting.
@@ -340,6 +353,10 @@ export async function continueSession(
     );
   }
   if (!mayCarryOver(stored)) throw new ContinueError(409, 'WAIT_ONLY', WAIT_ONLY_MESSAGE);
+  // A person's own pick is held to the account rules too (spec
+  // `flow-multiproject` D7): an account that may not work in this folder's
+  // project is refused with the plain sentence, whoever picks it.
+  assertAccountEligible(configManager, targetRuntime, accountId, project);
   if (stored.claimedBy) {
     if (body.model) {
       throw new ContinueError(

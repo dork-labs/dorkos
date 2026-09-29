@@ -16,6 +16,7 @@ import {
   type ShortNameHolds,
 } from '../host/short-names.js';
 import {
+  createCommunityGated,
   hostProjectionSql,
   legalHoldActive,
   parseHostCommunityId,
@@ -31,7 +32,6 @@ import {
 import { ApiError, json, readJson } from '../http.js';
 import { hashSecret, randomToken } from '../security.js';
 import type { BlobStore } from '../storage/index.js';
-import { withReconciledTenantNamespace } from '../storage/tenant-reconciliation.js';
 
 function payloadHash(body: z.infer<typeof CommunityAdminCreateRequestSchema>): string {
   return createHash('sha256')
@@ -204,17 +204,7 @@ export function registerHostRoutes(
     const body = await readJson(c, CommunityAdminCreateRequestSchema);
     const token = randomToken();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60_000);
-    const count = await pool.query<{ count: number }>(
-      'SELECT count(*)::int AS count FROM communities'
-    );
-    if (count.rows[0].count === 0) {
-      throw new ApiError(
-        409,
-        'STATE_CONFLICT',
-        'Complete first installation before creating another community.'
-      );
-    }
-    const create = (client: PoolClient) =>
+    const result = await createCommunityGated(pool, blobStore, (client: PoolClient) =>
       createPendingCommunity(client, {
         actor,
         now,
@@ -223,21 +213,8 @@ export function registerHostRoutes(
         expiresAt,
         reservedNames: config.reservedShortNames,
         holds,
-      });
-    let result: Awaited<ReturnType<typeof createPendingCommunity>> | undefined;
-    if (count.rows[0].count === 1) {
-      const gated = await withReconciledTenantNamespace(pool, blobStore, create);
-      if (!gated.reconciliation.ready || !gated.value) {
-        throw new ApiError(
-          409,
-          'STATE_CONFLICT',
-          'Storage ownership must be reconciled before creating another community.'
-        );
-      }
-      result = gated.value;
-    } else {
-      result = await transaction(pool, create);
-    }
+      })
+    );
     c.header('Cache-Control', 'no-store');
     return json(
       c,
@@ -266,6 +243,16 @@ export function registerHostRoutes(
       if (community.rows[0].legal_hold_at) throw legalHoldActive();
       if (community.rows[0].lifecycle !== 'pending_owner') {
         throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community can be abandoned.');
+      }
+      const imported = await client.query('SELECT 1 FROM community_imports WHERE community_id=$1', [
+        communityId,
+      ]);
+      if (imported.rowCount) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'This community is being imported. Cancel its import instead.'
+        );
       }
       const unsafe = await client.query(
         `SELECT 1 WHERE

@@ -538,6 +538,8 @@ import { SessionContextStore } from './services/session/fleet/session-context-st
 import { onSessionAccountLaunched } from './services/runtimes/claude-code/accounts/account-usage-feed.js';
 import { probeForReset } from './services/runtimes/claude-code/accounts/account-probe.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
+import { renameAccountInProjectAccounts } from './services/core/usage/account-eligibility-writes.js';
+import { warnMalformedAccountRules } from './services/core/usage/account-eligibility.js';
 import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
 import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
 import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
@@ -933,6 +935,9 @@ async function start() {
     console.error(`\n${error.message}\n`);
     process.exit(1);
   }
+  // A hand-edited account rule of the wrong shape reads as "no rule" rather than
+  // refusing the file (spec `flow-multiproject` §8.1); say so once.
+  warnMalformedAccountRules(configManager, (message, meta) => logger.warn(message, meta));
   // Credential substrate (ADR-0315): resolves stored credential references to
   // secrets at each runtime's env-injection seam. Must precede any runtime spawn.
   initCredentialProvider(dorkHome);
@@ -2600,6 +2605,8 @@ async function start() {
                 },
               }
             : undefined,
+          renameInProjectAccounts: (from, to) =>
+            renameAccountInProjectAccounts(configManager, from, to),
           renameScheduleAccount: (from, to) =>
             renameScheduleAccount(db, from, to, (schedule) =>
               isPackageOwned(

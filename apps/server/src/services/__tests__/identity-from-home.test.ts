@@ -36,8 +36,11 @@ vi.mock('../core/credential-env.js', () => ({
 // part under test, so the root names the account it was handed.
 vi.mock('../runtimes/claude-code/claude-config-dir.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../runtimes/claude-code/claude-config-dir.js')>()),
-  resolveLaunchAccountRoot: (opts: { agentAccountId?: string } = {}) =>
-    `/accounts/${opts.agentAccountId ?? 'default'}`,
+  resolveLaunchAccountRoot: (opts: { agentAccountId?: string } = {}) => ({
+    ok: true,
+    root: `/accounts/${opts.agentAccountId ?? 'default'}`,
+    accountId: opts.agentAccountId ?? 'default',
+  }),
   claudeConfigDirEnv: (root: string) => ({ CLAUDE_CONFIG_DIR: root }),
 }));
 

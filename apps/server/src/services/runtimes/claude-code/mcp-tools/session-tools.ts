@@ -378,7 +378,13 @@ export function createSessionStartHandler(
     }
     if (isSessionLaunchRefusal(result)) {
       await discardUnstartedSession(sessionId);
-      return refuse(result.message, result.refused);
+      // The launch ladder's account refusal (the unnamed path: the agent's or
+      // the default account may not work in this project) reads like the
+      // named one above (spec `flow-multiproject` §8.4).
+      return refuse(
+        result.message,
+        result.refused === 'ACCOUNT_NOT_ALLOWED' ? 'ACCOUNT_REFUSED' : result.refused
+      );
     }
     if (!result.accepted) {
       await discardUnstartedSession(sessionId);
