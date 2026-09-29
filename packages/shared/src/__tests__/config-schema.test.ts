@@ -170,6 +170,7 @@ describe('UserConfigSchema', () => {
         approvedToRun: [],
         approvedSources: {},
         dismissedApprovals: {},
+        trustedSources: [],
       },
       mcp: {
         enabled: true,
@@ -557,6 +558,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         approvedToRun: [],
         approvedSources: {},
         dismissedApprovals: {},
+        trustedSources: [],
       },
       mcp: {
         enabled: true,
@@ -1932,6 +1934,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       approvedToRun: [],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     });
   });
 
@@ -1946,6 +1949,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       approvedToRun: [],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     });
   });
 
@@ -1960,6 +1964,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       approvedToRun: [],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     });
   });
 
@@ -1974,6 +1979,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       approvedToRun: [],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     });
   });
 
@@ -2008,6 +2014,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       approvedToRun: ['my-ext'],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     });
   });
 

@@ -548,6 +548,12 @@ DorkOS records only your **deviations** from each extension's default state, acr
       type: 'object',
       default: '{}',
     },
+    'extensions.trustedSources': {
+      description:
+        'Places you trust outright, like dork-labs/marketplace. Extensions DorkOS installs from one of them turn on without asking. Only you can change it.',
+      type: 'object[]',
+      default: '[]',
+    },
   }}
 />
 
@@ -562,6 +568,10 @@ You will see it the first time: the extension shows up in your Activity inbox, a
 Some extensions come inside a plugin you install from the marketplace. Those show up in Settings → Extensions too, and ask the same way.
 
 Your yes is for one copy of an extension: the one in that folder, from that plugin. Two things ask again, because in both the code has changed hands rather than been edited by you: reinstalling an extension you removed, and a different plugin bringing an extension with the same name. Updating a plugin keeps your yes for the extensions it still brings. Editing an extension you already allowed never re-asks.
+
+If you install the same plugin into several projects, you only say yes once. DorkOS remembers where it installed the plugin from, and every copy from that same place counts as the one you allowed. The newest copy runs everywhere, so a project that still has an older copy doesn't hold the others back. A copy that arrived some other way, like inside a repository you cloned, still asks on its own, even if its files claim to come from the same place. So does a copy whose plugin files changed after DorkOS installed it, for example by a `git pull`, or one holding a shortcut to files somewhere else: Settings → Extensions says so on its card. If you say yes to a changed copy, you are saying yes to its files as they are now, and any further change asks again. Only code DorkOS fetched from a branch or a tag of that place counts, never a pull request.
+
+Right after you turn on an extension, the inbox may ask once more: "Next time, trust everything from dork-labs/marketplace?" Say **Yes** and extensions DorkOS installs from there turn on without asking. You can see and remove these in Settings → Extensions → **Trusted sources**. If you remove one, the extensions from it that are on now keep running exactly as they are, but newer versions and anything new from that place won't run until you say yes. Only you can add or remove a trusted source; your agents can't.
 
 Extensions that ship with DorkOS never ask. You already installed DorkOS. DorkOS tells its own extensions apart by where their files sit, not by the name inside them, so a folder in your project cannot claim to be one.
 

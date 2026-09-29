@@ -57,6 +57,37 @@ const CommunityNavigationRefSchema = z
   .regex(/^[0-9A-Za-z][0-9A-Za-z_-]*$/, 'A community ref must be path-safe');
 
 /**
+ * Where a copy of an extension came from, when this machine can prove it (spec
+ * `flow-multiproject` §9.1): the plugin that carries it, and the `owner/repo`
+ * DorkOS's own installer recorded fetching that plugin from (lowercased, e.g.
+ * `dork-labs/marketplace`). Never read from a file inside a project.
+ */
+export const ExtensionOriginSchema = z.object({
+  /** The plugin folder that carries the extension. */
+  plugin: z.string().min(1),
+  /** The normalized `owner/repo` the plugin was installed from. */
+  source: z.string().min(1),
+});
+
+/** Where a copy of an extension provably came from. */
+export type ExtensionOrigin = z.infer<typeof ExtensionOriginSchema>;
+
+/**
+ * One code source a person trusts (spec `flow-multiproject` §9.3): every
+ * extension DorkOS installs from it runs without asking first. Only a person
+ * can add one, once per source, and only a source DorkOS's installer proved.
+ */
+export const ExtensionTrustedSourceSchema = z.object({
+  /** The normalized `owner/repo`, e.g. `dork-labs/marketplace`. */
+  source: z.string().min(1),
+  /** When the person trusted it. ISO 8601. */
+  trustedAt: z.string(),
+});
+
+/** One code source a person trusts. */
+export type ExtensionTrustedSource = z.infer<typeof ExtensionTrustedSourceSchema>;
+
+/**
  * The one copy of an extension a person approved to run code (DOR-2383).
  *
  * An approval is about code, and an id is only a name: two copies of an
@@ -74,6 +105,22 @@ export const ExtensionApprovedSourceSchema = z.object({
    * inside one; absent for an extension installed directly.
    */
   plugin: z.string().min(1).optional(),
+  /**
+   * Where the approved copy came from, when this machine can prove it (spec
+   * `flow-multiproject` §9.1): the carrying plugin and the `owner/repo` DorkOS's
+   * own installer recorded fetching it from. Present only when the approved
+   * copy had such a trusted origin. Another copy with the same trusted origin
+   * counts as approved too, so the same plugin installed into several projects
+   * asks once. A file inside a project can never supply this: it is read only
+   * from DorkOS's own install records.
+   */
+  origin: ExtensionOriginSchema.optional(),
+  /**
+   * For a copy whose plugin files changed after DorkOS installed it: the
+   * whole plugin folder's digest the person said yes to. Any further change
+   * asks again, because a path alone no longer says what is there.
+   */
+  digest: z.string().min(1).optional(),
 });
 
 /** The one copy of an extension a person approved to run code. */
@@ -2821,6 +2868,16 @@ export const UserConfigSchema = z.object({
       dismissedApprovals: z
         .record(z.string(), ExtensionDismissedApprovalSchema)
         .default(() => ({})),
+      /**
+       * The code sources a person trusts (spec `flow-multiproject` §9.3): an
+       * extension whose copy provably came from one of these runs without an
+       * approval row. Keyed on a trusted origin's `owner/repo`, so a clone
+       * that merely claims a source is never covered.
+       *
+       * `operator-only`: it decides which code runs. Trusting a new source is
+       * one of the three asks only a person can answer.
+       */
+      trustedSources: z.array(ExtensionTrustedSourceSchema).default(() => []),
     })
     .default(() => ({
       enabled: [],
@@ -2828,6 +2885,7 @@ export const UserConfigSchema = z.object({
       approvedToRun: [],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     })),
   mcp: z
     .object({

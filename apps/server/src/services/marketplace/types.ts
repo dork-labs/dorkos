@@ -405,6 +405,14 @@ export interface InstallResult {
   manifest: MarketplacePackageManifest;
   warnings: string[];
   /**
+   * Plugin installs only: the digest of the whole install folder as it was
+   * staged, taken just before the move into place (`installFolderDigest`).
+   * Absent when the staged folder could not be digested. The installer keeps
+   * it in a project install's record, where it proves the copy is still what
+   * DorkOS put there (spec `flow-multiproject` §9.1).
+   */
+  installDigest?: string;
+  /**
    * The subset of {@link InstallResult.warnings} describing npm dependency
    * problems (DOR-1341). Carried separately because these are the warnings
    * that outlive the install: the installer persists them to the package's

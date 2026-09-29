@@ -6,9 +6,13 @@
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
+import type {
+  ExtensionTrustOffer,
+  PendingExtensionApproval,
+} from '@dorkos/shared/extension-approval-schemas';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
+import { useTrustOfferStore } from './trust-offer-store';
 
 /**
  * Which copy the person answered — the one their row showed — and the name to
@@ -92,6 +96,13 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
         body: JSON.stringify({ path, version, plugin }),
       });
       if (!res.ok) throw await failureOf(res);
+      // The one-time "Next time, trust everything from <source>?" (spec
+      // `flow-multiproject` §9.3): only this window heard it, so only this
+      // window shows it, under the history row the answer leaves.
+      const body = (await res.json().catch(() => ({}))) as { trustOffer?: ExtensionTrustOffer };
+      if (body.trustOffer?.source) {
+        useTrustOfferStore.getState().offer(id, body.trustOffer.source);
+      }
     },
     onMutate: ({ id }) => removeOptimistically(queryClient, id),
     onError: (err, { name }, restore) => {

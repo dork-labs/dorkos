@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
+import { runningCopiesOnly } from '../lib/running-copies';
 
 /**
  * Fetch all discovered extensions with their current status.
@@ -26,7 +27,9 @@ export function useExtensionList() {
     queryFn: async () => {
       const res = await fetch(`${resolveApiBaseUrl()}/extensions`);
       if (!res.ok) throw new Error(`Failed to fetch extensions: ${res.status}`);
-      return res.json() as Promise<ExtensionRecordPublic[]>;
+      // An older copy a newer one shadows is listed for extensions to read,
+      // never for the app to draw or toggle (spec `flow-multiproject` §9.2).
+      return runningCopiesOnly((await res.json()) as ExtensionRecordPublic[]);
     },
     staleTime: 10_000,
     refetchInterval: 30_000,

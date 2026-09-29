@@ -340,7 +340,7 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
 
   /**
    * Every name that arms or pays for a real-money path, from AGENTS.md's table.
-   * All seventeen, not just the keys: a flag reaching a task is half of an armed
+   * All eighteen, not just the keys: a flag reaching a task is half of an armed
    * gate, and the table in AGENTS.md claims none of them is here.
    *
    * The last two joined on DOR-1856, when `scripts/harness-smoke/run.sh` became
@@ -379,6 +379,10 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
     'DORKOS_COMMUNITY_LIVE_TIGRIS_WRITES',
     'DORKOS_COMMUNITY_LIVE_CLEANUP',
     'DORKOS_COMMUNITY_LIVE_CHARGE_ACKNOWLEDGEMENT',
+    // Not an arm: it swaps the published version for an unreleased tarball. It is listed anyway,
+    // because choosing to run unreleased code against paid accounts is a decision too, and a task
+    // that passed it through would hand that choice to whatever the environment held.
+    'DORKOS_COMMUNITY_LIVE_PACKAGE_TARBALL',
   ];
 
   /**

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import {
   describe,
   it,
@@ -71,7 +72,7 @@ import { configManager } from '../../services/core/config-manager.js';
 import { canExpose } from '../../services/core/auth/exposure-guard.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const server = listeningServer(app);
 const callerTarget = swappableServer();
 

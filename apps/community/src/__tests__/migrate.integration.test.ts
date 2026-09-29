@@ -90,6 +90,7 @@ it('creates all owner, conversation, credential and auth tables in fresh Postgre
       'community_deletion_jobs',
       'community_deletion_blob_progress',
       'community_deletion_tombstones',
+      'notice_outbox',
     ]) {
       expect(names).toContain(name);
     }

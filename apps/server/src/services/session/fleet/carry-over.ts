@@ -32,6 +32,7 @@ import { configManager } from '../../core/config-manager.js';
 import { assertAccountEligible, projectOfFolder } from '../../core/usage/account-eligibility.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch/launch-session.js';
+import { getStartWorkService, type StartReservation } from '../../extensions/start-work.js';
 import {
   claudeTranscriptPath,
   gatherCarryOverSummary,
@@ -345,6 +346,63 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
   const crossRuntime = targetRuntime !== sourceRuntime;
   const capabilities = runtimeRegistry.getAllCapabilities();
   const newId = randomUUID();
+  // A chat an extension started (or one started from its chats) stays one
+  // across the move (spec `flow-multiproject` §7.7): the new chat records the
+  // limited one as its starter and keeps its reason and origin extension, so
+  // it keeps its first line, its folded prompt and its chain. A move replaces
+  // one chat with one and adds no work, so the extension's limits never refuse
+  // it and the hour does not count it; the successor counts as running.
+  const claimed = getStartWorkService()?.reserveFromChat({
+    sessionId: newId,
+    parentSessionId: source.sessionId,
+    carry: true,
+  });
+  const reservation: StartReservation | null = claimed?.ok ? claimed.reservation : null;
+  try {
+    return await launchCarriedSession(request, {
+      cwd,
+      settings,
+      sourceRuntime,
+      targetRuntime,
+      crossRuntime,
+      capabilities,
+      newId,
+      reservation,
+    });
+  } catch (err) {
+    reservation?.cancel();
+    throw err;
+  }
+}
+
+/** Everything {@link carryOverSession} resolved before the send. */
+interface CarriedLaunch {
+  cwd: string;
+  settings: Awaited<ReturnType<typeof runtimeRegistry.getSessionSettings>> & object;
+  sourceRuntime: string;
+  targetRuntime: string;
+  crossRuntime: boolean;
+  capabilities: ReturnType<typeof runtimeRegistry.getAllCapabilities>;
+  newId: string;
+  reservation: StartReservation | null;
+}
+
+/** The send, and everything after it, for {@link carryOverSession}. */
+async function launchCarriedSession(
+  request: CarryOverRequest,
+  launched: CarriedLaunch
+): Promise<string> {
+  const { source, targetAccountId, by, launch } = request;
+  const {
+    cwd,
+    settings,
+    sourceRuntime,
+    targetRuntime,
+    crossRuntime,
+    capabilities,
+    newId,
+    reservation,
+  } = launched;
   // Before the send: the row is the new session's power, and the
   // `account-handoff` origin claims it without adding the operator's stop.
   if (crossRuntime) {
@@ -393,6 +451,7 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
     meshCore: launch.meshCore,
     roomSessionPlace: launch.roomSessionPlace,
     ...(automatic ? { countsTowardLaunchCap: true, unattended: true } : {}),
+    ...(reservation ? { onSettled: () => reservation.settle() } : {}),
   });
   if (isSessionLaunchRefusal(result)) {
     if (result.accountError) throw result.accountError;
@@ -406,6 +465,7 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
     );
   }
   const newSessionId = result.canonicalId;
+  if (newSessionId !== newId) reservation?.rekey(newSessionId);
   // The new session is running: from here on nothing may reject, or a caller
   // that retries (the automatic handoff's re-fire, a person's second click)
   // would start a second one. A failed pointer is logged; the session stands.

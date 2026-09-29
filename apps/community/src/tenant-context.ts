@@ -32,10 +32,25 @@ export interface CommunityContext {
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 
 /**
+ * Whether this id names a community whose deletion finished and whose content-free deletion
+ * record has not expired yet. The record says only that the id was deleted, so answering from
+ * it reveals nothing else: no name, no content, no one who asked for it.
+ */
+export async function isDeletedCommunity(db: Queryable, communityId: string): Promise<boolean> {
+  const result = await db.query(
+    'SELECT 1 FROM community_deletion_tombstones WHERE community_id=$1 AND expires_at>now()',
+    [communityId]
+  );
+  return Boolean(result.rowCount);
+}
+
+/**
  * Resolve the request's immutable tenant before authentication or object lookup.
  *
  * Unqualified compatibility routes work only while exactly one community exists.
- * Canonical routes name a UUID and never fall back to another row.
+ * Canonical routes name a UUID and never fall back to another row. A canonical UUID whose
+ * community was deleted answers `410 COMMUNITY_DELETED` while its deletion record lasts, so a
+ * caller can tell a community that is gone from a path that never existed (`404 NOT_FOUND`).
  */
 export async function resolveCommunityContext(
   c: Context,
@@ -47,11 +62,13 @@ export async function resolveCommunityContext(
   } = {}
 ): Promise<CommunityContext> {
   const requested = c.req.param('communityId');
+  const canonicalId =
+    requested && CommunityIdSchema.safeParse(requested).success ? requested : null;
   const result = requested
-    ? CommunityIdSchema.safeParse(requested).success
+    ? canonicalId
       ? await db.query<{ id: string; lifecycle: CommunityLifecycle }>(
           'SELECT id,lifecycle FROM communities WHERE id=$1',
-          [requested]
+          [canonicalId]
         )
       : { rows: [] }
     : await db.query<{ id: string; lifecycle: CommunityLifecycle }>(
@@ -66,7 +83,12 @@ export async function resolveCommunityContext(
     );
   }
   const community = result.rows[0];
-  if (!community) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+  if (!community) {
+    // Only a canonical path names one community, so only it can learn that one was deleted.
+    if (canonicalId && (await isDeletedCommunity(db, canonicalId)))
+      throw new ApiError(410, 'COMMUNITY_DELETED', 'This community was deleted.');
+    throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+  }
   if (community.lifecycle === 'pending_owner' && !options.allowPendingOwner) {
     throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is not ready yet.');
   }

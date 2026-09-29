@@ -45,6 +45,12 @@ import type {
 } from '../../core/auth/cloud-link-client.js';
 import { logger } from '../../../lib/logger.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import {
+  endAgentAccessLevels,
+  endConnectionAccessLevels,
+  endEveryAgentAccessLevels,
+  isFollowerCommand,
+} from '../execution/access-levels.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type {
   ConnectorManagedLifecyclePort,
@@ -693,6 +699,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .set({ revokedAt: now })
       .where(eq(connectionOperationGrants.connectionId, connectionId))
       .run();
+    endConnectionAccessLevels(tx, [connectionId]);
     tx.update(connectorEventSubscriptions)
       .set({
         enabled: false,
@@ -734,6 +741,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         revisions: [],
         operationRevisionIds: [],
       });
+      endAgentAccessLevels(tx, input.agentId, input.connectionId);
       tx.delete(agentConnectionAttachments)
         .where(
           and(
@@ -1597,6 +1605,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         )
         .run();
       const committed = updated.changes === 1;
+      if (committed && state === 'rejected') this.endRefusedLevel(tx, row);
       if (committed && current && rejectionCode === 'connection_unavailable') {
         this.closeGoneAccount(tx, row, command, now);
       }
@@ -1702,27 +1711,40 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       failure.code === 'unauthorized';
     const safeReason = this.failureReason(failure);
     const nextAttemptAt = terminal ? null : this.nextAttempt(row, now);
-    const updated = this.options.db
-      .update(connectorManagedAuthorityOutbox)
-      .set({
-        state: terminal ? 'rejected' : 'pending',
-        safeReason,
-        rejectionCode: terminal ? failure.code : null,
-        attemptCount: row.attemptCount + 1,
-        nextAttemptAt,
-        leaseOwner: null,
-        leasedUntil: null,
-        updatedAt: now,
-        resolvedAt: terminal ? now : null,
-      })
-      .where(
-        and(
-          eq(connectorManagedAuthorityOutbox.commandId, row.commandId),
-          eq(connectorManagedAuthorityOutbox.state, 'pending'),
-          eq(connectorManagedAuthorityOutbox.leaseOwner, leaseOwner)
+    const updated = this.options.db.transaction((tx) => {
+      const result = tx
+        .update(connectorManagedAuthorityOutbox)
+        .set({
+          state: terminal ? 'rejected' : 'pending',
+          safeReason,
+          rejectionCode: terminal ? failure.code : null,
+          attemptCount: row.attemptCount + 1,
+          nextAttemptAt,
+          leaseOwner: null,
+          leasedUntil: null,
+          updatedAt: now,
+          resolvedAt: terminal ? now : null,
+        })
+        .where(
+          and(
+            eq(connectorManagedAuthorityOutbox.commandId, row.commandId),
+            eq(connectorManagedAuthorityOutbox.state, 'pending'),
+            eq(connectorManagedAuthorityOutbox.leaseOwner, leaseOwner)
+          )
         )
-      )
-      .run();
+        .run();
+      // A local `unauthorized` is this computer's link to the DorkOS account
+      // lapsing, not the service refusing the change: the level stays.
+      if (
+        terminal &&
+        failure.code !== 'unauthorized' &&
+        result.changes === 1 &&
+        this.isCurrent(tx, row)
+      ) {
+        this.endRefusedLevel(tx, row);
+      }
+      return result;
+    });
     if (updated.changes === 1) this.logUnsettled(row, failure, nextAttemptAt, 'warn');
     if (terminal) this.failureLog.delete(row.commandId);
     return {
@@ -1779,6 +1801,32 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         context
       );
     }
+  }
+
+  /**
+   * End the access level an owner's grant command the service refused for
+   * good was carrying (ADR 260929-071355). The refused widening never opened,
+   * so the level would promise access the agent does not have; ending it
+   * shows what the agent really holds, and choosing the level again sends it
+   * again. A command DorkOS staged on its own to follow the app is not the
+   * owner's choice: its level stays, and the next pass sends it again.
+   */
+  private endRefusedLevel(
+    tx: ConnectorDbTransaction,
+    row: typeof connectorManagedAuthorityOutbox.$inferSelect
+  ): void {
+    if (row.scopeKind !== 'agent_grants' && row.scopeKind !== 'every_agent_grants') return;
+    const subject =
+      row.scopeKind === 'agent_grants'
+        ? { kind: 'agent' as const, agentId: row.subjectId }
+        : { kind: 'every_agent' as const };
+    if (
+      isFollowerCommand(tx, { connectionId: row.connectionId, subject, commandId: row.commandId })
+    ) {
+      return;
+    }
+    if (subject.kind === 'agent') endAgentAccessLevels(tx, subject.agentId, row.connectionId);
+    else endEveryAgentAccessLevels(tx, [row.connectionId]);
   }
 
   private isCurrent(

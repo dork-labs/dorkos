@@ -15,7 +15,7 @@ import { useTasksEnabled, useTaskTemplateDialog } from '@/layers/entities/tasks'
  *
  * **On a phone it is a `+`, exactly as `/team`'s New agent is** (DOR-1747). The
  * home bar carries four tab labels — Home, Activity, Scheduled, Workspaces —
- * and the strip holding them stops shrinking at its `min-w-28` floor, so the
+ * and the strip holding them stops shrinking at its floor, so the
  * words on this button were the last thing in the row still spending width that
  * the row did not have. Measured at 390px: the actions cluster is `shrink-0`,
  * so it did not yield either, and it painted 11px past the bar's own wrapper —

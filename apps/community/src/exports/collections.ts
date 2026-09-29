@@ -157,7 +157,7 @@ function specs(scope: ExportScope): CollectionSpec[] {
       select: `SELECT ae.id,ae.community_id,ae.actor_member_id,ae.actor_kind,ae.action,ae.subject_id,
           ae.prior_state,ae.next_state,ae.changed_fields,ae.created_at,
           ae.created_at::text AS created_at_key
-        FROM audit_events ae WHERE ae.community_id=$1`,
+        FROM audit_events ae WHERE ae.community_id=$1 AND NOT ae.withheld`,
       // The key is read as text: a JavaScript Date keeps milliseconds, the column microseconds.
       keys: [
         { column: 'ae.created_at', type: 'timestamptz', field: 'created_at_key' },

@@ -536,6 +536,39 @@ export const TrackerItemRefSchema = z
 /** One tracker item a chat is working on. See {@link TrackerItemRefSchema}. */
 export type TrackerItemRef = z.infer<typeof TrackerItemRefSchema>;
 
+/**
+ * Who started a chat that no person typed into (spec `flow-multiproject`
+ * §7.7, §11.4): an extension (`api.startWork`, `ctx.sessions.start`) or another
+ * chat (the `session_start` tool). The chat draws it as its first line, never
+ * sent to the model: "Started by the Flow extension: <reason>", or "Started from <that chat's
+ * title>: <reason>" with a link to that chat.
+ */
+export const SessionStartedBySchema = z
+  .discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('extension'),
+      /** The extension's id. */
+      extensionId: z.string(),
+      /** Its manifest name, as the first line says it. */
+      extensionName: z.string(),
+      /** Why it was started (1-200). */
+      reason: z.string(),
+    }),
+    z.object({
+      kind: z.literal('chat'),
+      /** The chat that started it: the first line's link. */
+      sessionId: z.string(),
+      /** That chat's title, or null when this server cannot name it. */
+      title: z.string().nullable(),
+      /** Why it was started, or null when the chat gave no reason. */
+      reason: z.string().nullable(),
+    }),
+  ])
+  .openapi('SessionStartedBy');
+
+/** Who started a chat. See {@link SessionStartedBySchema}. */
+export type SessionStartedBy = z.infer<typeof SessionStartedBySchema>;
+
 export const SessionSchema = z
   .object({
     id: z.string().uuid(),
@@ -681,6 +714,14 @@ export const SessionSchema = z
      * their own (`via: 'own-chat'`). ABSENT when no run names this session.
      */
     trackerItems: z.array(TrackerItemRefSchema).optional(),
+    /**
+     * Who started this chat, when an extension or another chat did (spec
+     * `flow-multiproject` §7.7). Stamped from the server's own
+     * `session_started_by` row by the session-origin overlays, on the session
+     * routes and the live session list alike. ABSENT for a chat a person
+     * started.
+     */
+    startedBy: SessionStartedBySchema.optional(),
     /**
      * ISO-8601 timestamp of the last message a PERSON sent in this session —
      * the server half of the sidebar's interaction-recency order key

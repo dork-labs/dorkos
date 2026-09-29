@@ -9,8 +9,11 @@
  */
 import type { AccountUsage as CoreAccountUsage } from '@dorkos/shared/account-usage';
 import type { DecisionActions, ProjectRef } from './extension-api.js';
+import type { StartWorkInput } from './start-work.js';
 
 export type { DecisionActions, ProjectRef } from './extension-api.js';
+export type { StartWorkInput } from './start-work.js';
+export { StartWorkError } from './start-work.js';
 
 /**
  * One account's usage as an extension sees it: identity, resolved color, the
@@ -300,6 +303,24 @@ export interface DataProviderContext {
    * server half nor any agent it runs can change them.
    */
   readonly projectSettings: ProjectSettingsReader;
+  /**
+   * Start work in a new chat, decided by this extension's own rules (spec
+   * §7.7). Probe with `ctx.sessions !== undefined`.
+   */
+  readonly sessions: SessionsApi;
+}
+
+/** `ctx.sessions`: starting work in a new chat without a person (spec §7.7). */
+export interface SessionsApi {
+  /**
+   * Start work in a new chat in a project, decided by the extension's own rules
+   * (no person needed). Same input, limits, eligibility and StartWorkError as
+   * the client's api.startWork. The project must hold a copy of this extension
+   * or have been reported by it. Limits are restart-safe and include chats
+   * started from its started chats. Records startedBy { kind: 'extension' }.
+   * Eligibility refusals begin with phase 3.
+   */
+  start(input: StartWorkInput): Promise<{ sessionId: string }>;
 }
 
 /** The server half's read-only view of its per-project settings. */

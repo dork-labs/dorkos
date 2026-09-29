@@ -748,7 +748,10 @@ describe('attachments over real HTTP and Postgres', () => {
         deleted: 1,
         failed: 0,
       });
-      expect(remove).toHaveBeenCalledExactlyOnceWith(dueKey);
+      // Bounded, as it may hold the file's community row while it runs.
+      expect(remove).toHaveBeenCalledExactlyOnceWith(dueKey, {
+        signal: expect.any(AbortSignal),
+      });
       expect(
         (await pool.query('SELECT 1 FROM pending_blob_deletions WHERE blob_key=$1', [delayedKey]))
           .rowCount

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
 
 // Durable per-session completed-turn event stream for LOG-BACKED runtimes
 // (codex, opencode, test-mode). Claude-code does NOT write here — its transcript
@@ -33,9 +33,11 @@ export const sessionEvents = sqliteTable(
     payload: text('payload').notNull(),
     createdAt: text('created_at').notNull(),
   },
+  // The primary key is the only index: it already orders one session's events by
+  // seq. A second `(session_id, seq)` index sat here until the index audit
+  // (migration 0134) and cost every event written a second b-tree insert.
   (t) => ({
     pk: primaryKey({ columns: [t.sessionId, t.seq] }),
-    bySession: index('session_events_session_idx').on(t.sessionId, t.seq),
   })
 );
 

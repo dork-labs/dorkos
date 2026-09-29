@@ -20,6 +20,7 @@ import {
   useSessionChatStore,
   useSessionId,
   useSessions,
+  useSessionStartedBy,
   useSessionQueue,
   useSessionStatus,
   useSessionStreamLifecycle,
@@ -43,6 +44,7 @@ import { Conversation, NO_ASKS } from '@/layers/features/conversation';
 import type { ComposerInputHandle } from '@/layers/features/composer';
 import {
   BirthCertificate,
+  StartedByLine,
   CelebrationOverlay,
   ErrorMessageBlock,
   TaskListPanel,
@@ -152,6 +154,9 @@ export function ChatPanel({
   const { sessions: knownSessions } = useSessions();
   const needsFirstTurnProvenance =
     sessionId !== null && !knownSessions.some((session) => session.id === sessionId);
+  // Who started this chat, when an extension or another chat did (spec
+  // `flow-multiproject` §7.7): its first line, and the reason its prompt folds.
+  const startedBy = useSessionStartedBy(sessionId);
 
   const fileUpload = useFileUpload();
 
@@ -720,6 +725,7 @@ export function ChatPanel({
         className="flex h-full w-full flex-col"
       >
         <BirthCertificate sessionId={sessionId} />
+        <StartedByLine startedBy={startedBy} />
 
         <SessionTranscript
           messages={messages}
@@ -738,6 +744,7 @@ export function ChatPanel({
           runtimeLabel={runtimeAuthLabel}
           allowsDenyReason={allowsDenyReason}
           {...(landOnRow === undefined ? {} : { landOnRow })}
+          foldFirstPrompt={startedBy !== null}
         />
 
         <TerminalReasonChip terminalReason={sessionStatus?.terminalReason} />

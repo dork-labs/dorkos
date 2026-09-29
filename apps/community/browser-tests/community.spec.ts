@@ -210,7 +210,10 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(
       memberPage.getByRole('heading', { name: 'You’re in Gathering Place.' })
     ).toBeVisible();
-    await expect(memberPage.getByText('Connect this DorkOS installation')).toBeVisible();
+    await expect(memberPage.getByText('Connect DorkOS to this community')).toBeVisible();
+    await expect(memberPage.getByLabel('This community’s link')).toHaveValue(
+      new RegExp(`^${baseUrl}/c/[0-9a-f-]{36}$`, 'u')
+    );
     await memberPage.getByRole('button', { name: 'Open community' }).click();
     await expect(memberPage.getByRole('button', { name: 'Open channel navigation' })).toBeVisible({
       timeout: 15000,

@@ -7,6 +7,7 @@
  *
  * @module db/schema/community-mirrors
  */
+import { sql } from 'drizzle-orm';
 import {
   index,
   integer,
@@ -96,7 +97,6 @@ export const communityMirrorEntries = sqliteTable(
       table.remoteSeq
     ),
     uniqueIndex('community_mirror_entries_local_entry_unique').on(table.localEntryId),
-    index('idx_community_mirror_entries_room_seq').on(table.localRoomId, table.remoteSeq),
   ]
 );
 
@@ -156,6 +156,13 @@ export const communityOutbox = sqliteTable(
     ),
     index('idx_community_outbox_state_expiry').on(table.state, table.expiresAt),
     index('idx_community_outbox_ref_state').on(table.communityRef, table.state),
+    // The local copies of one Community entry (`localCopiesOf`), asked once per
+    // redaction the Community sends. The outbox is never pruned, and the other
+    // indexes stop at community_ref, so each redaction read every post this
+    // install ever delivered to that Community.
+    index('idx_community_outbox_remote_entry')
+      .on(table.communityRef, table.remoteRoomId, table.remoteEntryId)
+      .where(sql`${table.remoteEntryId} IS NOT NULL`),
   ]
 );
 

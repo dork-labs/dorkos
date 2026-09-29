@@ -222,3 +222,30 @@ describe('SessionTranscript message-index rules', () => {
     expect(rows().find((row) => row.message.id === 'canonical-1')?.isFinalMessage).toBe(true);
   });
 });
+
+describe('SessionTranscript fold of a started chat’s prompt (spec flow-multiproject §7.7)', () => {
+  const started = () => [
+    messageOnDay('1', 0, 'Sort the new ideas into the right stage.', 'user'),
+    messageOnDay('2', 0, 'Sorting them now.'),
+    messageOnDay('3', 0, 'Thanks, and do the old ones too.', 'user'),
+  ];
+
+  it('folds only the first prompt, when asked to', () => {
+    const { getByTestId, queryByText } = render(
+      <SessionTranscript sessionId="test-session" messages={started()} foldFirstPrompt />
+    );
+    expect(getByTestId('started-prompt')).toHaveTextContent('What it was asked');
+    expect(queryByText('Sort the new ideas into the right stage.')).toBeNull();
+    // The rest of the chat is drawn as messages, a person's later turn included.
+    // (Rows are captured on every render pass; the set is what was drawn.)
+    expect(new Set(rows().map((row) => row.message.id))).toEqual(new Set(['2', '3']));
+  });
+
+  it('folds nothing in a chat a person started', () => {
+    const { queryByTestId } = render(
+      <SessionTranscript sessionId="test-session" messages={started()} />
+    );
+    expect(queryByTestId('started-prompt')).toBeNull();
+    expect(new Set(rows().map((row) => row.message.id))).toEqual(new Set(['1', '2', '3']));
+  });
+});

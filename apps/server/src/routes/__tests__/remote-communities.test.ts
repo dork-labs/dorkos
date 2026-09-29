@@ -232,19 +232,25 @@ vi.mock('../../services/communities/remote/state.js', () => ({
       ? { authorId: 'opaque-local-author-a', displayName: 'Build Agent' }
       : null,
 }));
-vi.mock('../../services/communities/remote/remote-community-adapter.js', () => ({
-  RemoteRedactionFeedUnsupportedError: class RemoteRedactionFeedUnsupportedError extends Error {},
-  remoteSequenceOf: () => 1,
-  remoteAuthorOf: (entry: { id: string }) =>
-    entry.id === 'agent-wire-a' || entry.id === 'agent-echo-a'
-      ? { displayName: 'Build Agent', kind: 'agent' as const }
-      : { displayName: 'Owner', kind: 'human' as const },
-  remoteOriginIdempotencyKeyOf: (entry: { id: string }) =>
-    entry.id === 'agent-wire-a' ? 'wire-owned-key' : undefined,
-  remoteRoomAccessOf: () => ({ visibility: 'public', joined: true }),
-  remoteThreadReplySeqOf: (entry: { id: string }) =>
-    entry.id === 'root-with-replies' ? 9 : undefined,
-}));
+vi.mock('../../services/communities/remote/remote-community-adapter.js', async () => {
+  const { CommunityRoomNotFoundError } = await import('@dorkos/shared/community-adapter');
+  return {
+    CommunityDeletedError: class CommunityDeletedError extends CommunityRoomNotFoundError {},
+    isCommunityDeleted: (error: { status?: number; remoteCode?: string }) =>
+      error?.status === 410 && error?.remoteCode === 'COMMUNITY_DELETED',
+    RemoteRedactionFeedUnsupportedError: class RemoteRedactionFeedUnsupportedError extends Error {},
+    remoteSequenceOf: () => 1,
+    remoteAuthorOf: (entry: { id: string }) =>
+      entry.id === 'agent-wire-a' || entry.id === 'agent-echo-a'
+        ? { displayName: 'Build Agent', kind: 'agent' as const }
+        : { displayName: 'Owner', kind: 'human' as const },
+    remoteOriginIdempotencyKeyOf: (entry: { id: string }) =>
+      entry.id === 'agent-wire-a' ? 'wire-owned-key' : undefined,
+    remoteRoomAccessOf: () => ({ visibility: 'public', joined: true }),
+    remoteThreadReplySeqOf: (entry: { id: string }) =>
+      entry.id === 'root-with-replies' ? 9 : undefined,
+  };
+});
 // Poll the redaction feed every few milliseconds rather than every 30 seconds.
 vi.mock('../../services/communities/remote/native-redaction-follower.js', async (original) => ({
   ...(await original<object>()),

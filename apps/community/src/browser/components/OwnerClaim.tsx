@@ -18,12 +18,15 @@ import {
   rememberPendingOwnerClaim,
 } from '../owner-claim.js';
 import { HostPolicyLinks } from './HostLinks.js';
+import { ConnectDorkOS } from '../connect/ConnectDorkOS.js';
+import { communityLink } from '../connect/community-link.js';
 import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
 
 type Stage =
   'loading' | 'enter' | 'found' | 'account' | 'confirm' | 'claimed' | 'unavailable' | 'taken';
 type Account = { name: string; email: string };
-type Claimed = { id: string; name: string };
+/** The claimed community, and its short address when it has one, for the link to connect it. */
+type Claimed = { id: string; name: string; shortName: string | null };
 type Preflight = { granted: true; communityId: string; expiresAt: string };
 type ClaimResponse = { community: { id: string; name: string }; memberId: string };
 
@@ -45,7 +48,7 @@ async function ownedCommunity(communityId: string): Promise<Claimed | null> {
     const owned = memberships.find(
       (membership) => membership.communityId === communityId && membership.role === 'owner'
     );
-    return owned ? { id: owned.communityId, name: owned.name } : null;
+    return owned ? { id: owned.communityId, name: owned.name, shortName: owned.shortName } : null;
   } catch {
     return null;
   }
@@ -156,7 +159,14 @@ export function OwnerClaim() {
   async function claim(): Promise<string | null> {
     try {
       const result = await request<ClaimResponse>('/api/v1/owner-claims/claim', 'POST', {});
-      complete({ id: result.community.id, name: result.community.name });
+      // The claim answer carries no short address; the account's memberships do. Without them the
+      // community's /c/ link is shown, which connects just as well.
+      const owned = await ownedCommunity(result.community.id);
+      complete({
+        id: result.community.id,
+        name: result.community.name,
+        shortName: owned?.shortName ?? null,
+      });
       return null;
     } catch (cause) {
       // A claim that committed before its response was lost still made this account the owner.
@@ -491,13 +501,9 @@ export function OwnerClaim() {
             >
               Open community
             </Button>
-            <Notice tone="info" className="mt-4">
-              <strong>Connect this DorkOS installation</strong>
-              <p className="small muted mb-0">
-                In the DorkOS app, open Connections, then Messaging, then Communities. Each
-                installation needs its own approval.
-              </p>
-            </Notice>
+            <ConnectDorkOS
+              link={communityLink(window.location.origin, claimed.id, claimed.shortName)}
+            />
           </>
         )}
         {(stage === 'unavailable' || stage === 'taken') && (

@@ -389,4 +389,65 @@ describe('Community command dispatcher', () => {
     expect(recovery).toContain('neonctl projects list --org-id org-dorian');
     expect(recovery).toContain('Do not create or adopt a name match');
   });
+  // DOR-2559 review: a bucket whose keys never reached the app used to print the generic
+  // "unresolved creation intent… do not adopt a name match" text, which left no way forward.
+  it('tells the operator how to add the bucket keys by hand when Fly will not resend them', () => {
+    const plan = createLaunchPlan({
+      dorkosVersion: '0.76.0',
+      imageDigest: `sha256:${'a'.repeat(64)}`,
+      fly: {
+        organizationId: 'dork-labs',
+        organizationName: 'Dork Labs',
+        appName: 'dorkos-community-test',
+        region: 'ord',
+        machineSize: 'shared-cpu-1x',
+      },
+      neon: {
+        organizationId: 'org-dorian',
+        organizationName: 'Dorian',
+        projectName: 'dorkos-community-test',
+        region: 'aws-us-east-2',
+      },
+      tigris: { bucketName: 'dorkos-community-bucket', private: true },
+    });
+    const base = createInitialCommunityLaunchJournal(
+      randomUUID(),
+      plan,
+      '2026-09-21T00:00:00.000Z'
+    );
+    const stopped = {
+      ...base,
+      state: 'neon_project_created' as const,
+      pendingIntent: {
+        provider: 'tigris' as const,
+        organizationId: 'dork-labs',
+        resourceName: 'dorkos-community-bucket',
+      },
+      resources: { flyAppId: 'dorkos-community-test', tigrisBucketId: 'bucket-id' },
+      lastSafeError: {
+        category: 'invalid-response' as const,
+        code: 'MISSING_TIGRIS_SECRETS' as const,
+      },
+    };
+    const recovery = formatCommunityRecovery(stopped);
+    expect(recovery).toContain('its access keys are not on app dorkos-community-test');
+    expect(recovery).toContain(
+      'fly storage dashboard dorkos-community-bucket --app dorkos-community-test'
+    );
+    expect(recovery).toContain('fly secrets import --app dorkos-community-test --stage');
+    expect(recovery).toContain('AWS_ACCESS_KEY_ID=<key id> and AWS_SECRET_ACCESS_KEY=<secret>');
+    expect(recovery).toContain(`--resume ${base.runId}`);
+    expect(recovery).not.toContain('Unresolved Tigris creation intent');
+    expect(recovery).not.toContain('delete');
+
+    // A genuinely uncertain bucket creation keeps the cautious text.
+    const uncertain = formatCommunityRecovery({
+      ...stopped,
+      state: 'uncertain',
+      resources: { flyAppId: 'dorkos-community-test' },
+      lastSafeError: { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' },
+    });
+    expect(uncertain).toContain('Unresolved Tigris creation intent');
+    expect(uncertain).not.toContain('fly secrets import');
+  });
 });

@@ -53,7 +53,7 @@ Open **Settings › Connections**. Under **How DorkOS reaches your apps**, open 
 
 ### Connect and review
 
-Choose a service, add an optional label, and open the sign-in page. After the connection appears, choose a named agent and review the exact actions it may run. A changed action schema or classification creates a new version that stays off until another review.
+Choose a service, add an optional label, and open the sign-in page. After the connection appears, choose which agents can use it and how much they can do (see below).
 
 </Step>
 
@@ -80,6 +80,8 @@ The actions available after OAuth depend on the scopes approved during consent. 
 - **Read** lets agents look without changing anything, such as reading email or finding free time in your calendar.
 - **Read and write**, for Gmail and Google Calendar, also lets agents send, create and edit things, such as sending an email, replying, saving a draft, labeling a message or adding an event. Other apps offer **Read** only for now.
 - Some actions are never part of a level, and you allow them one at a time: deleting anything, sharing a calendar, forwarding or redirecting mail, changing who your mail is sent as or how it is delivered, turning on an automatic reply, changing many messages at once, moving an event to another calendar, and watching for changes. So is any action whose effect DorkOS can't tell for sure.
+
+A level keeps its meaning when the app changes. If the app adds a way to read your mail, agents on **Read** get it. If an action starts changing things, it leaves **Read**. It stays in **Read and write** unless it becomes one of the actions above, which no level covers. This happens the next time DorkOS reads the app's actions: every 12 hours while it runs, right after DorkOS is updated, and whenever you open **Who can use it?** A level never covers more than its kind of action. Actions you picked one by one under **Exact actions per agent** stay exactly as you picked them. An action the app changed stays off for them until you choose it again.
 
 [Composio-managed apps](https://docs.composio.dev/docs/authentication/custom-app-vs-managed-app) use shared quotas and default scopes, and their polling triggers have a 15-minute minimum interval. That interval does not describe webhook delivery or Slack and Telegram Messaging.
 

@@ -6,24 +6,31 @@ DorkOS Community runs as its own service. It keeps its sign-in, PostgreSQL datab
 
 Set these values before starting the service. Keep secrets in your deployment's secret store. Do not put them in a repository or a client-side setting.
 
-| Setting                                                                | Required           | What it does                                                                                                  |
-| ---------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `COMMUNITY_DATABASE_URL`                                               | Yes                | PostgreSQL connection URL.                                                                                    |
-| `COMMUNITY_PUBLIC_URL`                                                 | Yes                | Public HTTPS origin, with no path. Use `http://localhost` only for local work.                                |
-| `COMMUNITY_AUTH_SECRET`                                                | Yes                | Signs Community sessions. Use a unique random value with at least 32 characters.                              |
-| `COMMUNITY_INVITE_SECRET`                                              | Yes                | Signs invite links. Use a different random value with at least 32 characters.                                 |
-| `COMMUNITY_INVITE_KEY_ID`                                              | No                 | Label for the current invite-signing key. It defaults to `v1`.                                                |
-| `COMMUNITY_INVITE_PREVIOUS_KEY_ID`, `COMMUNITY_INVITE_PREVIOUS_SECRET` | No                 | Previous invite key during a short rotation. Set both or neither. Remove both after outstanding links expire. |
-| `COMMUNITY_BOOTSTRAP_SECRET`                                           | Yes                | Lets one person create the first owner. Use a different random value with at least 32 characters.             |
-| `COMMUNITY_PORT`                                                       | No                 | HTTP port. The default is `6481`.                                                                             |
-| `COMMUNITY_STORAGE_DRIVER`                                             | No                 | `filesystem` is the default. Set `s3` to store attachments in an S3-compatible bucket.                        |
-| `COMMUNITY_STORAGE_PATH`                                               | Filesystem storage | Absolute path for attachment files. The supplied image uses `/data/blobs`.                                    |
-| `COMMUNITY_S3_BUCKET`, `COMMUNITY_S3_REGION`                           | S3 storage         | Bucket and region for attachment files.                                                                       |
-| `COMMUNITY_S3_ENDPOINT`                                                | No                 | Endpoint for a compatible object store.                                                                       |
-| `COMMUNITY_S3_ACCESS_KEY_ID`, `COMMUNITY_S3_SECRET_ACCESS_KEY`         | No                 | Credentials for an S3-compatible store. Set both, or let the host supply AWS credentials.                     |
-| `COMMUNITY_ERASURE_JOURNAL`                                            | No                 | Absolute path of a file that records each finished erasure, by id only. Keep it outside your backups.         |
+| Setting                                                                          | Required            | What it does                                                                                                  |
+| -------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `COMMUNITY_DATABASE_URL`                                                         | Yes                 | PostgreSQL connection URL.                                                                                    |
+| `COMMUNITY_PUBLIC_URL`                                                           | Yes                 | Public HTTPS origin, with no path. Use `http://localhost` only for local work.                                |
+| `COMMUNITY_AUTH_SECRET`                                                          | Yes                 | Signs Community sessions. Use a unique random value with at least 32 characters.                              |
+| `COMMUNITY_INVITE_SECRET`                                                        | Yes                 | Signs invite links. Use a different random value with at least 32 characters.                                 |
+| `COMMUNITY_INVITE_KEY_ID`                                                        | No                  | Label for the current invite-signing key. It defaults to `v1`.                                                |
+| `COMMUNITY_INVITE_PREVIOUS_KEY_ID`, `COMMUNITY_INVITE_PREVIOUS_SECRET`           | No                  | Previous invite key during a short rotation. Set both or neither. Remove both after outstanding links expire. |
+| `COMMUNITY_BOOTSTRAP_SECRET`                                                     | Yes                 | Lets one person create the first owner. Use a different random value with at least 32 characters.             |
+| `COMMUNITY_PORT`                                                                 | No                  | HTTP port. The default is `6481`.                                                                             |
+| `COMMUNITY_STORAGE_DRIVER`                                                       | No                  | `filesystem` is the default. Set `s3` to store attachments in an S3-compatible bucket.                        |
+| `COMMUNITY_STORAGE_PATH`                                                         | Filesystem storage  | Absolute path for attachment files. The supplied image uses `/data/blobs`.                                    |
+| `COMMUNITY_S3_BUCKET`, `COMMUNITY_S3_REGION`                                     | S3 storage          | Bucket and region for attachment files.                                                                       |
+| `COMMUNITY_S3_ENDPOINT`                                                          | No                  | Endpoint for a compatible object store.                                                                       |
+| `COMMUNITY_S3_ACCESS_KEY_ID`, `COMMUNITY_S3_SECRET_ACCESS_KEY`                   | No                  | Credentials for an S3-compatible store. Set both, or let the host supply AWS credentials.                     |
+| `COMMUNITY_ERASURE_JOURNAL`                                                      | No                  | Absolute path of a file that records each finished erasure, by id only. Keep it outside your backups.         |
+| `COMMUNITY_EVIDENCE_DRIVER`                                                      | No                  | `filesystem` or `s3` turns on an evidence store for takedowns. Unset means none.                              |
+| `COMMUNITY_EVIDENCE_PATH`                                                        | Filesystem evidence | Absolute path of the evidence folder. Not inside, around, or equal to storage, the web app, or temp.          |
+| `COMMUNITY_EVIDENCE_S3_BUCKET`, `COMMUNITY_EVIDENCE_S3_REGION`                   | S3 evidence         | Bucket and region for evidence. It must not be the attachment bucket on the same endpoint.                    |
+| `COMMUNITY_EVIDENCE_S3_ENDPOINT`, `COMMUNITY_EVIDENCE_S3_PREFIX`                 | No                  | Endpoint for a compatible store, and a folder prefix inside the bucket.                                       |
+| `COMMUNITY_EVIDENCE_S3_ACCESS_KEY_ID`, `COMMUNITY_EVIDENCE_S3_SECRET_ACCESS_KEY` | No                  | Credentials that can only add objects. Set both, or let the host supply AWS credentials.                      |
 
-The service checks each setting before it opens its HTTP port. It rejects an incomplete sign-in pair, an incomplete invitation-key rotation pair, a non-HTTPS public address outside local development, or a filesystem path that is not absolute.
+The service checks each setting before it opens its HTTP port. It rejects an incomplete sign-in pair, an incomplete invitation-key rotation pair, a non-HTTPS public address outside local development, a filesystem path that is not absolute, an evidence setting without `COMMUNITY_EVIDENCE_DRIVER`, and an evidence store that shares a place with anything the server serves, stores, or stages.
+
+Two log lines are worth an alert, both with IDs only: `{"event":"community.takedown.evidence_failed",…}` when a copy to the evidence store fails, and `{"event":"community.takedown.evidence_overdue",…}` once an hour while a takedown's copy has waited longer than `COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS`. Two offline commands act on one takedown with only `COMMUNITY_DATABASE_URL` set: `node dist-server/takedown/commands.js evidence-retry <id>` and `node dist-server/takedown/commands.js release-held <id>` (from a source checkout, `pnpm --filter @dorkos/community takedowns:evidence-retry <id>` and `takedowns:release-held <id>`). See [operations](OPERATIONS.md#taking-down-illegal-content).
 
 Most people can keep the default limits. Restart the service after changing one. The maximums protect every Community, even when an environment variable requests more.
 
@@ -45,6 +52,7 @@ Most people can keep the default limits. Restart the service after changing one.
 | `COMMUNITY_SHORT_NAME_COOLOFF_DAYS`            |                       90 days | 365 days (0 turns it off) |
 | `COMMUNITY_NAME_LOOKUPS_PER_MINUTE`            |                     60 per IP |                600 per IP |
 | `COMMUNITY_IMPORT_UPLOADS`                     |      2 export uploads at once |                16 at once |
+| `COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS`      |                       6 hours |                 168 hours |
 
 Limits marked "per IP" count by the address that connected to the server. Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` to the header your proxy puts the caller's address in (for example `Fly-Client-IP`). It is off unless you set it; see [operations](OPERATIONS.md) before turning it on.
 
@@ -114,6 +122,25 @@ Email and password sign-in always stays on. Someone who joined through single si
 
 To turn single sign-on off, unset the variables. Accounts made through it stay, and can sign in with a password if they added one.
 
+## Optional mail
+
+The Community sends no email unless you set this up. Mail lets it reach a person who no longer opens the community. Set both of these, or neither:
+
+| Setting               | Must be                                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `COMMUNITY_SMTP_URL`  | Your mail server: `smtps://user:password@mail.example.com:465` (encrypted from the start) or `smtp://user:password@mail.example.com:587?starttls=required` (upgraded before sending) |
+| `COMMUNITY_MAIL_FROM` | One sender, such as `notices@example.com` or `Example Community <notices@example.com>`                                                                                               |
+
+The user name and password are optional, and characters such as `@` or `/` in them must be percent-encoded (`%40`, `%2F`). Without a port, `smtps://` uses 465, `smtp://` with `starttls=required` uses 587, and a plain local `smtp://` uses 25. A plain `smtp://` address with no encryption is accepted only for a mail relay on the same machine (`127.0.0.1`, `[::1]`, or `localhost`, which is read as `127.0.0.1`). Such a relay is used as it is, even if it offers STARTTLS. The service refuses to start if only one setting is set, if mail to another machine would travel unencrypted, or if the sender is not exactly one address. Keep `COMMUNITY_SMTP_URL` in your secret store: it holds the password. Before turning mail on, read [mail in the operations guide](OPERATIONS.md#mail), which explains the sender-domain checks that keep notices out of spam folders.
+
+These settings are for replacing the owner of a community whose owner has left, which needs mail: how long the owner has to answer, and how long before a host can ask again. The service checks them at startup. Most hosts can keep the defaults.
+
+| Setting                                               | Default |     Range | What it does                                                                                       |
+| ----------------------------------------------------- | ------: | --------: | -------------------------------------------------------------------------------------------------- |
+| `COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS`             | 14 days |   7 to 90 | How long the owner has to answer, counted from when their mail server accepted the notice          |
+| `COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS`        | 30 days | 14 to 180 | The longer wait when the notice may not have reached the owner. Never shorter than the notice days |
+| `COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS` | 90 days | 30 to 365 | After an owner says no, how long before the host can ask again                                     |
+
 ## Optional terms, privacy, and report links
 
 If other people sign up on your Community, you can link your own terms, privacy notice, and a way to report abuse. Each link is optional. Leave one unset and nothing shows for it.
@@ -124,7 +151,7 @@ If other people sign up on your Community, you can link your own terms, privacy 
 | `COMMUNITY_PRIVACY_URL`      | An `https://` page                        | Under the sign-in form, and in Settings, Account |
 | `COMMUNITY_REPORT_ABUSE_URL` | An `https://` page or a `mailto:` address | On each message, and in Settings, Account        |
 
-A report from a message opens your page with `?community=<id>&entry=<id>` added, so you can find what was reported. A report from Settings adds only the community. For a `mailto:` address the same IDs go in the email body. The message text, the author's name, and the reporter's name are never added. The service checks each link before it starts and refuses a plain `http://` one. It never contacts your pages itself.
+A report from a message opens your page with `?community=<id>&entry=<id>` added, so you can find what was reported. A report from one file adds `&attachment=<id>` too, so you can take down just that file. A report from Settings adds only the community. For a `mailto:` address the same IDs go in the email body. The message text, the author's name, and the reporter's name are never added. The service checks each link before it starts and refuses a plain `http://` one. It never contacts your pages itself.
 
 ## Optional Render deployment
 

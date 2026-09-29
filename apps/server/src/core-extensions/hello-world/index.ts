@@ -1,5 +1,7 @@
 import type { ExtensionAPI, ExtensionPageProps, StatusBarSlotContext } from '@dorkos/extension-api';
 
+// React is provided by the host as a global — do not import it.
+
 /**
  * Hello World extension — demonstrates the extension API.
  *
@@ -8,7 +10,8 @@ import type { ExtensionAPI, ExtensionPageProps, StatusBarSlotContext } from '@do
  * - a section on the Activity tab,
  * - a command palette item that says hello, and one that marks its tab,
  * - a page at `/x/hello-world`, listed in the command palette and the phone's
- *   "Add-ons" menu,
+ *   "Add-ons" menu, with a "Start a chat" button that starts work in a new
+ *   chat and leaves the current one alone,
  * - an item in the chat status bar, shown only when the chat has a folder,
  * - a tab in the right panel, which its command marks with a dot.
  *
@@ -34,8 +37,10 @@ export function activate(api: ExtensionAPI): () => void {
     { icon: 'hand-metal' }
   );
 
-  // A full page at /x/hello-world. The empty path is the extension's home.
-  const unregisterPage = api.registerPage('', HelloPage, { title: 'Hello' });
+  // A full page at /x/hello-world. The empty path is the extension's home. The
+  // page needs `api` for its button, so it is bound here.
+  const Page = (props: ExtensionPageProps) => <HelloPage {...props} api={api} />;
+  const unregisterPage = api.registerPage('', Page, { title: 'Hello' });
 
   // An item in the chat status bar. `when` reads only its `ctx` argument: it
   // runs while the status bar decides what fits, so it must never fetch or
@@ -107,7 +112,7 @@ function HelloSection() {
 }
 
 /** The extension's page. Core gives it the whole content area and scrolls it. */
-function HelloPage({ search, setSearch }: ExtensionPageProps) {
+function HelloPage({ search, setSearch, api }: ExtensionPageProps & { api: ExtensionAPI }) {
   const name = search.name ?? 'there';
   return (
     <div style={{ maxWidth: '40rem', margin: '0 auto', padding: '24px 16px' }}>
@@ -124,7 +129,67 @@ function HelloPage({ search, setSearch }: ExtensionPageProps) {
           style={{ display: 'block', marginTop: '4px', width: '100%', maxWidth: '20rem', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '8px', background: 'transparent', color: 'inherit', fontSize: '14px' }}
         />
       </label>
+      <StartChat api={api} />
     </div>
+  );
+}
+
+/**
+ * An outcome button (spec `flow-multiproject` V7): one click starts the work in
+ * a NEW chat in the current project, and the button turns into "Saying hello… ·
+ * Watch". Nothing navigates, and the chat you were in keeps what you typed.
+ */
+function StartChat({ api }: { api: ExtensionAPI }) {
+  const [started, setStarted] = React.useState<string | null>(null);
+  const [problem, setProblem] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  // The project of the folder the app is in, kept current: it is null while
+  // the folder is still being resolved.
+  const [project, setProject] = React.useState(() => api.getState().currentProject);
+  React.useEffect(
+    () => api.subscribe((state) => state.currentProject, (next) => setProject(next)),
+    []
+  );
+
+  const start = async () => {
+    if (!project) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      const { sessionId } = await api.startWork({
+        project: project.root,
+        prompt: 'Say hello, in one short sentence, then stop.',
+        title: `Saying hello in ${project.name}`,
+        reason: 'You asked for a hello from the Hello page',
+      });
+      setStarted(sessionId);
+    } catch (err) {
+      // `err.code` says which rule refused it; the message is already plain words.
+      setProblem(err instanceof Error ? err.message : 'The chat could not be started.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const button = { padding: '6px 12px', border: '1px solid var(--border)', borderRadius: '8px', background: 'transparent', color: 'inherit', fontSize: '13px', cursor: 'pointer' };
+  return (
+    <section style={{ marginTop: '24px' }}>
+      {started ? (
+        <p style={{ margin: 0, fontSize: '13px' }}>
+          Saying hello…{' · '}
+          <button type="button" style={{ ...button, padding: '2px 8px' }} onClick={() => api.navigate(`/session?session=${encodeURIComponent(started)}`)}>
+            Watch
+          </button>
+        </p>
+      ) : (
+        <button type="button" style={button} disabled={!project || busy} onClick={() => void start()}>
+          Start a chat
+        </button>
+      )}
+      <p style={{ margin: '8px 0 0', fontSize: '12px', color: MUTED }}>
+        {problem ?? (project ? `A new chat in ${project.name} says hello. This page stays as it is.` : 'Open a chat in one of your projects first, then come back.')}
+      </p>
+    </section>
   );
 }
 

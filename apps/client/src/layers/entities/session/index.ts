@@ -171,5 +171,5 @@ export {
   partitionSessionsByOrigin,
 } from './lib/partition-sessions-by-origin';
 export type { SessionOriginPartition } from './lib/partition-sessions-by-origin';
-export { useSessionOrigin } from './model/query/use-sessions';
+export { useSessionOrigin, useSessionStartedBy } from './model/query/use-sessions';
 export type { SessionOriginData } from './model/query/use-sessions';

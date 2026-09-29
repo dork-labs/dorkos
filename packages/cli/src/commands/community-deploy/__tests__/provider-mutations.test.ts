@@ -7,6 +7,7 @@ import {
   assertFlyAppNameAvailable,
   createFlyApp,
   deployFlyImage,
+  deployFlySecrets,
   destroyFlyApp,
   stageFlySecrets,
   verifyFlyDeployment,
@@ -234,6 +235,11 @@ cat > "$CAPTURE_STDIN"
     expect(await readFile(argsPath, 'utf8')).toBe(
       `deploy --app community-space --image ghcr.io/dork-labs/dorkos-community@${digest} --ha=false --yes`
     );
+    // flyctl v0.4.104 `secrets deploy` has no `--yes` and rejects unknown flags.
+    await expect(
+      deployFlySecrets(options(executable, { CAPTURE_ARGS: argsPath }), 'community-space')
+    ).resolves.toEqual({ operation: 'deploy' });
+    expect(await readFile(argsPath, 'utf8')).toBe('secrets deploy --app community-space');
     const inventory = {
       machines: [
         {

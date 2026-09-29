@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * An `X-DorkOS-Agent` token the server cannot verify is refused by EVERY room
  * route, rather than read as the operator (DOR-1361).
@@ -90,7 +91,7 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const server = listeningServer(app);
 

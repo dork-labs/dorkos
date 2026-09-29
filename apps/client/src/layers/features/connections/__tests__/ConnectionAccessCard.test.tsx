@@ -102,7 +102,7 @@ describe('ConnectionAccessCard — page mode', () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-gus', operationRevisionIds: ['read-v1'] }])
+      preview([{ agentId: 'agent-gus', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     vi.mocked(transport.listMeshAgents).mockResolvedValue({
       agents: [{ id: 'agent-flo', isSystem: true }],
@@ -111,7 +111,9 @@ describe('ConnectionAccessCard — page mode', () => {
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'] }],
+      grants: [
+        { agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'], level: 'read-write' },
+      ],
     });
     const onFinished = vi.fn();
     renderCard(transport, {
@@ -142,7 +144,7 @@ describe('ConnectionAccessCard — page mode', () => {
     await waitFor(() =>
       expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
         previewId: 'preview-connection-1',
-        grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+        grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
       })
     );
     // The server answered with different grants than were sent: never success.
@@ -158,7 +160,9 @@ describe('ConnectionAccessCard — page mode', () => {
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1', 'send-v1'] }],
+      grants: [
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v1', 'send-v1'], level: 'read-write' },
+      ],
     });
     const onFinished = vi.fn();
     renderCard(transport, {
@@ -190,7 +194,7 @@ describe('ConnectionAccessCard — page mode', () => {
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'pending' },
-      grants: [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     vi.mocked(transport.getConnectorConnection).mockRejectedValue(new Error('offline'));
     renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
@@ -236,7 +240,9 @@ describe('ConnectionAccessCard — one agent', () => {
       connectionId: 'connection-2' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'] }],
+      grants: [
+        { agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'], level: 'read-write' },
+      ],
     });
     renderCard(transport, {
       mode: 'agent',
@@ -266,7 +272,13 @@ describe('ConnectionAccessCard — one agent', () => {
     await waitFor(() =>
       expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
         previewId: 'preview-connection-2',
-        grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'] }],
+        grants: [
+          {
+            agentId: 'agent-bo',
+            operationRevisionIds: ['read-v1', 'send-v1'],
+            level: 'read-write',
+          },
+        ],
       })
     );
     expect(await screen.findByText('Bo can read and write in Gmail.')).toBeInTheDocument();
@@ -307,7 +319,7 @@ describe('ConnectionAccessCard — one agent', () => {
 
 describe('ConnectionAccessCard — deciding for one agent never touches anyone else', () => {
   const OTHERS: ConnectorReconciliationPreview['currentGrants'] = [
-    { agentId: 'agent-ada', operationRevisionIds: ['read-v1'] },
+    { agentId: 'agent-ada', operationRevisionIds: ['read-v1'], level: 'read' },
     { agentId: 'agent-gus', operationRevisionIds: ['read-v1', 'delete-v1'] },
   ];
 
@@ -319,7 +331,7 @@ describe('ConnectionAccessCard — deciding for one agent never touches anyone e
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     renderCard(transport, {
       mode: 'agent',
@@ -333,7 +345,7 @@ describe('ConnectionAccessCard — deciding for one agent never touches anyone e
     await waitFor(() => expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1));
     expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
       previewId: 'preview-connection-1',
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     expect(await screen.findByText('Bo can read Gmail.')).toBeInTheDocument();
   });
@@ -341,7 +353,10 @@ describe('ConnectionAccessCard — deciding for one agent never touches anyone e
   it('keeps Allow disabled when nothing would change for the fixed agent', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([...OTHERS, { agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+      preview([
+        ...OTHERS,
+        { agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' },
+      ])
     );
     renderCard(transport, {
       mode: 'agent',
@@ -357,7 +372,9 @@ describe('ConnectionAccessCard — deciding for one agent never touches anyone e
   it('never offers a lower level than the agent already holds', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'] }])
+      preview([
+        { agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'], level: 'read-write' },
+      ])
     );
     renderCard(transport, {
       mode: 'agent',
@@ -396,7 +413,7 @@ describe('ConnectionAccessCard — answering a chat request (onAllowed)', () => 
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'pending' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     const onAllowed = vi.fn();
     renderCard(transport, {
@@ -424,7 +441,7 @@ describe('ConnectionAccessCard — answering a chat request (onAllowed)', () => 
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'migration_needs_reconcile',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     const onAllowed = vi.fn();
     renderCard(transport, {
@@ -450,7 +467,7 @@ describe('ConnectionAccessCard — answering a chat request (onAllowed)', () => 
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     const onAllowed = vi.fn();
     renderCard(transport, {
@@ -471,7 +488,7 @@ describe('ConnectionAccessCard — answering a chat request (onAllowed)', () => 
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     const onAllowed = vi.fn();
     renderCard(transport, {
@@ -511,7 +528,7 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
       preview([
-        { agentId: 'agent-ada', operationRevisionIds: ['read-v1'] },
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v1'], level: 'read' },
         { agentId: 'agent-gus', operationRevisionIds: ['read-v1', 'delete-v1'] },
       ])
     );
@@ -547,8 +564,8 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
       preview([
-        { agentId: 'agent-ada', operationRevisionIds: ['read-v1', 'send-v1'] },
-        { agentId: 'agent-bo', operationRevisionIds: ['read-v1'] },
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v1', 'send-v1'], level: 'read-write' },
+        { agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' },
       ])
     );
     vi.mocked(transport.applyConnectorReconciliation).mockImplementation(async (request) => ({
@@ -581,8 +598,8 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
       expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
         previewId: 'preview-connection-1',
         grants: [
-          { agentId: 'agent-ada', operationRevisionIds: ['read-v1'] },
-          { agentId: 'agent-cy', operationRevisionIds: ['read-v1'] },
+          { agentId: 'agent-ada', operationRevisionIds: ['read-v1'], level: 'read' },
+          { agentId: 'agent-cy', operationRevisionIds: ['read-v1'], level: 'read' },
         ],
       })
     );
@@ -594,13 +611,48 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
     ).toBeInTheDocument();
   });
 
+  it('keeps showing the level the owner chose after the app changes its actions (DOR-2506)', async () => {
+    const transport = createMockTransport();
+    // Ada was given Read before the app added its current read action; Bo
+    // picked that same action by hand. Only Ada's grant is a level.
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v0'], level: 'read' },
+        { agentId: 'agent-bo', operationRevisionIds: ['read-v1'] },
+      ])
+    );
+    renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
+
+    const ada = await screen.findByRole('checkbox', { name: 'Ada' });
+    expect(ada.parentElement).toHaveTextContent('Read');
+    expect(ada.parentElement).not.toHaveTextContent('Exact actions');
+    expect(screen.getByLabelText('Now: Read')).toBeInTheDocument();
+    expect(screen.getByLabelText('Now: Exact actions')).toBeInTheDocument();
+  });
+
+  it('never shows a level the agent can use nothing of (DOR-2506)', async () => {
+    const transport = createMockTransport();
+    // Cy's "Read and write" was refused by the service: it holds no action.
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v1'], level: 'read' },
+        { agentId: 'agent-cy', operationRevisionIds: [], level: 'read-write' },
+      ])
+    );
+    renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
+
+    expect(await screen.findByLabelText('Now: Read')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Now: Read and write')).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Cy' })).not.toBeChecked();
+  });
+
   it('will not save a removal alone while a newly ticked agent still has no level', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
       preview([
-        { agentId: 'agent-ada', operationRevisionIds: ['read-v1', 'send-v1'] },
-        { agentId: 'agent-bo', operationRevisionIds: ['read-v1'] },
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v1', 'send-v1'], level: 'read-write' },
+        { agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' },
       ])
     );
     renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
@@ -661,7 +713,7 @@ describe('ConnectionAccessCard — ways out', () => {
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
 

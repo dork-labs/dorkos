@@ -13,8 +13,10 @@ import {
   parseExtensionApprovalSubject,
   useExtensionApprovalActions,
   useExtensionList,
+  useTrustOfferFor,
 } from '@/layers/entities/extension';
 import { InboxDecisionRow } from './InboxDecisionRow';
+import { TrustSourceOfferLine } from './TrustSourceOfferLine';
 
 /** Props for {@link ExtensionApprovalHistoryRow}. */
 export interface ExtensionApprovalHistoryRowProps {
@@ -33,7 +35,9 @@ export interface ExtensionApprovalHistoryRowProps {
  * server's registry entry; this adds the time and, for a "Not now", the way
  * back: "Turn it on" turns the same extension on right here while it is still
  * installed at the version the person was asked about and still off, and opens
- * Settings → Extensions otherwise.
+ * Settings → Extensions otherwise. Right after this window turned an extension
+ * on from a source the person does not trust yet, the row also carries the
+ * one-time "Next time, trust everything from …?" line.
  *
  * @param props - The stored row and how to open Settings for it.
  */
@@ -46,6 +50,10 @@ export function ExtensionApprovalHistoryRow({
   const subject = parseExtensionApprovalSubject(notification.subject.id);
   const time = formatResetTime(notification.createdAt, new Date());
   const trail: ReactNode[] = time ? [time] : [];
+  // The one-time "Next time, trust everything from …?" rides only the row
+  // this window's own approval just left (spec `flow-multiproject` §9.3).
+  const offered = useTrustOfferFor(subject?.id, notification.createdAt);
+  const trustOffer = notification.outcome === 'approved' ? offered : null;
 
   if (notification.outcome === 'dismissed') {
     const record = extensions?.find((extension) => extension.id === subject?.id);
@@ -72,7 +80,14 @@ export function ExtensionApprovalHistoryRow({
     trail.push(notification.body);
   }
 
-  return (
+  const row = (
     <InboxDecisionRow icon={Puzzle} title={notification.title} trail={trail} onOpen={onOpen} />
+  );
+  if (!trustOffer) return row;
+  return (
+    <div>
+      {row}
+      <TrustSourceOfferLine offer={trustOffer} />
+    </div>
   );
 }

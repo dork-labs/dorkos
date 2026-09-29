@@ -9,6 +9,9 @@ import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
 import { rememberCommunity } from './remembered-community.js';
 import { ErasureBanner } from './components/Erasure.js';
+import { ConnectDorkOS } from './connect/ConnectDorkOS.js';
+import { communityLink } from './connect/community-link.js';
+import { TakedownBanner } from './takedowns/TakedownNotices.js';
 import {
   communityBasePath,
   describeError,
@@ -29,9 +32,12 @@ import type { Channel, Community, CommunityLifecycle, Me } from './types.js';
 function isCommunityUnavailable(cause: unknown): cause is RequestError {
   return (
     cause instanceof RequestError &&
-    ['COMMUNITY_UNAVAILABLE', 'COMMUNITY_SUSPENDED', 'COMMUNITY_DELETION_PENDING'].includes(
-      cause.code
-    )
+    [
+      'COMMUNITY_UNAVAILABLE',
+      'COMMUNITY_SUSPENDED',
+      'COMMUNITY_DELETION_PENDING',
+      'COMMUNITY_DELETED',
+    ].includes(cause.code)
   );
 }
 
@@ -296,13 +302,15 @@ export function CommunityApp() {
           >
             Open community
           </Button>
-          <Notice tone="info" className="mt-4">
-            <strong>Connect this DorkOS installation</strong>
-            <p className="small muted mb-0">
-              In the DorkOS app, open Connections, then Messaging, then Communities. Each
-              installation needs its own approval.
-            </p>
-          </Notice>
+          <ConnectDorkOS
+            link={
+              communityShortName
+                ? communityLink(window.location.origin, community.id, communityShortName)
+                : // Not read yet for someone who just joined: the name they arrived by, when it
+                  // leads to this community, otherwise its /c/ address.
+                  `${window.location.origin}${communityBasePath(community.id)}`
+            }
+          />
         </section>
       </main>
     );
@@ -474,12 +482,21 @@ export function CommunityApp() {
           </Notice>
         )}
         <ErasureBanner communityId={community!.id} />
+        <TakedownBanner
+          key={`${community!.id}:${me.member.memberId}`}
+          communityId={community!.id}
+          memberId={me.member.memberId}
+        />
         {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
         {settings ? (
           <Manage
             communityId={community!.id}
             communityName={community!.name}
-            communityAddress={`${window.location.origin}${communityShortName ? `/${communityShortName}` : `/c/${community!.id}`}`}
+            communityAddress={communityLink(
+              window.location.origin,
+              community!.id,
+              communityShortName
+            )}
             me={me.member}
             channels={channels}
             initialSection={settingsRoute?.section ?? null}

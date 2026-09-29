@@ -27,6 +27,10 @@ export interface HostCommunityRow {
   legal_hold_reference: string | null;
   import_id: string | null;
   import_state: z.infer<typeof CommunityAdminImportStateSchema> | null;
+  /** The open owner replacement, if any. */
+  replacement_id: string | null;
+  replacement_state: 'notifying' | 'waiting' | 'claimable' | null;
+  replacement_after: Date | null;
 }
 
 /**
@@ -60,11 +64,25 @@ export function projectCommunity(row: HostCommunityRow, actor: HostActor) {
       : null,
     importId: row.import_id,
     importState: row.import_state,
+    ownerReplacement:
+      row.replacement_id && row.replacement_state
+        ? {
+            replacementId: row.replacement_id,
+            state: row.replacement_state,
+            claimableAfter: row.replacement_after?.toISOString() ?? null,
+          }
+        : null,
     createdAt: row.created_at.toISOString(),
   };
 }
 
-/** Select every host-visible column; append a `WHERE` or `ORDER BY` for the rows wanted. */
+/**
+ * Select every host-visible column; append a `WHERE` or `ORDER BY` for the rows wanted.
+ *
+ * The joined `owner_replacements` row is the open replacement, if any (a closed one has an
+ * `ended_at`). With `FOR UPDATE OF c` only the community is locked, so that row is read as of
+ * the statement's snapshot and may be stale once the lock is granted.
+ */
 export const hostProjectionSql = `SELECT c.id,c.name,c.description,c.lifecycle,c.lifecycle_version,
   c.settings_version,c.created_at,c.suspended_from_state,c.held_from_state,c.deletion_notice_at,
   c.legal_hold_at,c.legal_hold_reference,
@@ -73,9 +91,11 @@ export const hostProjectionSql = `SELECT c.id,c.name,c.description,c.lifecycle,c
   (SELECT n.short_name FROM community_short_names n
     WHERE n.community_id=c.id AND n.state='current') AS short_name,
   EXISTS(SELECT 1 FROM members m WHERE m.community_id=c.id AND m.role='owner' AND m.active) AS owner_present,
-  j.state AS deletion_state,i.id AS import_id,i.state AS import_state
+  j.state AS deletion_state,i.id AS import_id,i.state AS import_state,
+  r.id AS replacement_id,r.state AS replacement_state,r.claimable_after AS replacement_after
   FROM communities c LEFT JOIN community_deletion_jobs j ON j.community_id=c.id
-  LEFT JOIN community_imports i ON i.community_id=c.id`;
+  LEFT JOIN community_imports i ON i.community_id=c.id
+  LEFT JOIN owner_replacements r ON r.community_id=c.id AND r.ended_at IS NULL`;
 
 /**
  * The host's refusal when its own legal hold stands in the way of deleting a community. Only

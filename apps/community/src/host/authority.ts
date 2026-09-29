@@ -29,7 +29,7 @@ export type HostActor = HostPersonActor | HostKeyActor;
 
 /**
  * Every actor a host audit row can name: a person, a key, the offline key command, or the
- * server itself (the import worker). Only the identity is recorded, so any {@link HostActor}
+ * server itself (the import worker, the takedown evidence worker). Only the identity is recorded, so any {@link HostActor}
  * is one.
  */
 export type HostAuditActor =
@@ -57,13 +57,15 @@ export async function recordHostAudit(
     nextState?: string | null;
     changedFields?: readonly string[];
     subjectApiKeyId?: string | null;
+    /** SHA-256 of a takedown's record.json, on `takedown.evidence_stored`. */
+    evidenceRecordSha256?: string | null;
   }
 ): Promise<void> {
   await client.query(
     `INSERT INTO host_audit_events(
        actor_kind,actor_user_id,actor_api_key_id,subject_api_key_id,
-       community_id,action,prior_state,next_state,changed_fields
-     ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[])`,
+       community_id,action,prior_state,next_state,changed_fields,evidence_record_sha256
+     ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10)`,
     [
       actor.kind,
       actor.kind === 'person' ? actor.userId : null,
@@ -74,6 +76,7 @@ export async function recordHostAudit(
       event.priorState ?? null,
       event.nextState ?? null,
       event.changedFields ?? [],
+      event.evidenceRecordSha256 ?? null,
     ]
   );
 }

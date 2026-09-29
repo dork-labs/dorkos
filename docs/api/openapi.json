@@ -1754,6 +1754,9 @@
               "$ref": "#/components/schemas/TrackerItemRef"
             }
           },
+          "startedBy": {
+            "$ref": "#/components/schemas/SessionStartedBy"
+          },
           "userLastMessageAt": {
             "type": "string",
             "format": "date-time"
@@ -1933,6 +1936,68 @@
           "startedAt",
           "via",
           "ownChatSessionId"
+        ]
+      },
+      "SessionStartedBy": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "extension"
+                ]
+              },
+              "extensionId": {
+                "type": "string"
+              },
+              "extensionName": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "extensionId",
+              "extensionName",
+              "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chat"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "sessionId",
+              "title",
+              "reason"
+            ]
+          }
         ]
       },
       "SessionListWarning": {
@@ -9460,6 +9525,18 @@
           "why"
         ]
       },
+      "ExtensionTrustOffer": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "source"
+        ]
+      },
       "ApproveExtensionRequest": {
         "type": "object",
         "properties": {
@@ -9505,6 +9582,49 @@
         "required": [
           "path",
           "version"
+        ]
+      },
+      "TrustedSourcesResponse": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrustedSource"
+            }
+          }
+        },
+        "required": [
+          "sources"
+        ]
+      },
+      "TrustedSource": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "trustedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "trustedAt"
+        ]
+      },
+      "TrustedSourceRequest": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "source"
         ]
       },
       "ApprovalDecisionResponse": {
@@ -14923,6 +15043,67 @@
         },
         "required": [
           "project"
+        ]
+      },
+      "StartWorkResponse": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "StartWorkErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "not_a_project",
+              "account_not_allowed_here",
+              "start_limit"
+            ]
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
+      "StartWorkRequest": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "project",
+          "prompt",
+          "title",
+          "reason"
         ]
       }
     },
@@ -59549,6 +59730,13 @@
                               "type": "string",
                               "minLength": 1
                             }
+                          },
+                          "level": {
+                            "type": "string",
+                            "enum": [
+                              "read",
+                              "read-write"
+                            ]
                           }
                         },
                         "required": [
@@ -59570,6 +59758,13 @@
                             "type": "string",
                             "minLength": 1
                           }
+                        },
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "read",
+                            "read-write"
+                          ]
                         }
                       },
                       "required": [
@@ -59710,6 +59905,13 @@
                             "type": "string",
                             "minLength": 1
                           }
+                        },
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "read",
+                            "read-write"
+                          ]
                         }
                       },
                       "required": [
@@ -59728,6 +59930,13 @@
                           "type": "string",
                           "minLength": 1
                         }
+                      },
+                      "level": {
+                        "type": "string",
+                        "enum": [
+                          "read",
+                          "read-write"
+                        ]
                       }
                     },
                     "required": [
@@ -59834,6 +60043,13 @@
                               "type": "string",
                               "minLength": 1
                             }
+                          },
+                          "level": {
+                            "type": "string",
+                            "enum": [
+                              "read",
+                              "read-write"
+                            ]
                           }
                         },
                         "required": [
@@ -59852,6 +60068,13 @@
                             "type": "string",
                             "minLength": 1
                           }
+                        },
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "read",
+                            "read-write"
+                          ]
                         }
                       },
                       "required": [
@@ -61164,7 +61387,7 @@
           "Extensions"
         ],
         "summary": "Turn on an extension waiting to run",
-        "description": "Records that a person allowed this extension to run code inside DorkOS, bound to the copy on disk (its folder and the plugin that carried it), and starts it. The body is optional: send the path, version and plugin of the copy the person was shown (the Activity inbox always does), and the approval is refused with `stale_approval` unless the copy on disk is still exactly that one, so an old row can never turn on a copy that took its place. Clears any \"Not now\" for this id. A caller naming itself an agent is refused in every posture, and a signed-in person is required when login is on. There is no MCP tool for this.",
+        "description": "Records that a person allowed this extension to run code inside DorkOS, bound to the copy on disk (its folder and the plugin that carried it), and starts it. The body is optional: send the path, version and plugin of the copy the person was shown (the Activity inbox always does), and the approval is refused with `stale_approval` unless the copy on disk is still exactly that one, so an old row can never turn on a copy that took its place. Clears any \"Not now\" for this id. A caller naming itself an agent is refused in every posture, and a signed-in person is required when login is on. There is no MCP tool for this. When the copy provably came from a source the person does not trust yet (DorkOS’s own installer recorded where it fetched it from), the response carries `trustOffer`: the app shows \"Next time, trust everything from <source>?\" once, right after the answer.",
         "parameters": [
           {
             "schema": {
@@ -61187,7 +61410,26 @@
         },
         "responses": {
           "200": {
-            "description": "Turned on; the updated extension record"
+            "description": "Turned on; the updated extension record, and a one-time trust offer if any",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "extension": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "trustOffer": {
+                      "$ref": "#/components/schemas/ExtensionTrustOffer"
+                    }
+                  },
+                  "required": [
+                    "extension"
+                  ]
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid extension id or body",
@@ -61314,6 +61556,163 @@
           },
           "409": {
             "description": "The extension ships with DorkOS, or the copy changed since the person saw it (`stale_approval`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/trusted-sources": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "List the code sources a person trusts",
+        "description": "Every source a person chose to trust outright, in the order they trusted it. An extension whose copy provably came from one of these (DorkOS’s own installer recorded fetching it from there) runs without asking first. A copy that only claims a source never counts.",
+        "responses": {
+          "200": {
+            "description": "The trusted sources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustedSourcesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Trust every extension from a source",
+        "description": "Answers \"Next time, trust everything from <source>?\" with yes. Only a source that some installed copy provably comes from can be trusted. Trusting a new code source is one of the asks only a person can answer: a caller naming itself an agent is refused in every posture, and a signed-in person is required when login is on. Only the app’s own screens call this; there is no MCP tool or extension API for it.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrustedSourceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Trusted (or already trusted); the full list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustedSourcesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body does not name a GitHub `owner/repo`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent or another site cannot change which sources are trusted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing installed provably comes from that source (`unproven_source`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Stop trusting a source",
+        "description": "Extensions from the source that are turned on stay on exactly as they are: each gets its own approval, pinned to that copy. A newer copy or a new extension from the source waits for a person again. The same person bar as trusting applies.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrustedSourceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "No longer trusted; the remaining list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustedSourcesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body does not name a GitHub `owner/repo`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent or another site cannot change which sources are trusted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That source is not trusted",
             "content": {
               "application/json": {
                 "schema": {
@@ -72024,6 +72423,98 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/start-work": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Start work in a new chat for an extension",
+        "description": "What an extension’s outcome button calls (`api.startWork`). Starts one NEW chat in the project’s root on the default runtime: the prompt is sent at once as its first message, the title is set, and the chat says \"Started by the <extension> extension: <reason>\" as its first line. The current chat is never touched and nothing navigates. The project must hold a copy of the extension, have been reported by it, or be one the person works in. At most 10 starts per rolling hour and 3 running chats per extension, counted with the chats its chats started; the hourly count survives a restart. Recorded as started by the extension, whether or not a person clicked. Behind the person bar: an agent that names itself is refused, and with Require login on so is anything without the person’s cookie. With login off a local caller that does not name itself an agent passes, and in any posture an approved extension’s own page code can call it; that is the trust a person grants when they turn an extension on.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The extension id."
+            },
+            "required": true,
+            "description": "The extension id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartWorkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartWorkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body breaks a length rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such extension (plain error), or `not_a_project`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartWorkErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The extension is turned off (plain error), or `account_not_allowed_here`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartWorkErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`start_limit`: too many starts this hour, or too many chats working",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartWorkErrorResponse"
                 }
               }
             }

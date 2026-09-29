@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `POST /api/sessions/:id/mcp-app/resource` — reads a ui:// MCP App resource
  * (SEP-1865) for client rendering (spec `mcp-apps-host` §2.1, §4).
@@ -47,7 +48,7 @@ import {
   disposeProjector,
 } from '../../services/session/session-state-projector.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

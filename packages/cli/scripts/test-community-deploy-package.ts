@@ -60,13 +60,20 @@ const initialState = {
   flyApp: null,
   neonProject: null,
   tigris: null,
-  secrets: {
-    AWS_ACCESS_KEY_ID: { digest: 'aws-access-digest', status: 'Deployed' },
-    AWS_SECRET_ACCESS_KEY: { digest: 'aws-secret-digest', status: 'Deployed' },
-  },
+  // Fly sets no secrets when it creates a bucket (DOR-2559): the launcher must stage them itself.
+  secrets: {},
+  stagedValues: {},
   deployed: false,
   imageDigest: null,
   config: null,
+};
+
+const TIGRIS_ENVIRONMENT = {
+  AWS_ACCESS_KEY_ID: 'tid_package_fixture',
+  AWS_SECRET_ACCESS_KEY: 'tsec_package_fixture_value',
+  AWS_ENDPOINT_URL_S3: 'https://fly.storage.tigris.dev',
+  AWS_REGION: 'auto',
+  BUCKET_NAME: appName,
 };
 
 const commonPrelude = `
@@ -90,7 +97,8 @@ else if(args[0]==='apps'&&args[1]==='list') value=state.flyApp?[state.flyApp]:[]
 else if(args[0]==='apps'&&args[1]==='create') { state.flyCreates++; state.flyApp={ID:args[2],Name:args[2],Status:'deployed',Organization:{ID:'fly-org-id',Slug:at('--org'),Name:'Dork Labs'}}; write(state); value=state.flyApp; }
 else if(args[0]==='auth'&&args[1]==='token') value={token:'fixture-fly-token'};
 else if(args[0]==='secrets'&&args[1]==='list') value=Object.entries(state.secrets).map(([name,item])=>({name,digest:item.digest,status:item.status}));
-else if(args[0]==='secrets'&&args[1]==='import') { const input=fs.readFileSync(0,'utf8'); for(const line of input.trim().split('\\n')) { const name=line.slice(0,line.indexOf('=')); state.secrets[name]={digest:'digest-'+name.toLowerCase().replaceAll('_','-')+'-'+Date.now(),status:'Staged'}; } write(state); value={}; }
+else if(args[0]==='secrets'&&args[1]==='import') { const input=fs.readFileSync(0,'utf8'); for(const line of input.trim().split('\\n')) { const name=line.slice(0,line.indexOf('=')); state.stagedValues[name]=line.slice(line.indexOf('=')+1); state.secrets[name]={digest:'digest-'+name.toLowerCase().replaceAll('_','-')+'-'+Date.now(),status:'Staged'}; } write(state); value={}; }
+else if(args[0]==='secrets'&&args[1]==='deploy'&&args.some((arg)=>!['secrets','deploy','--app',at('--app'),'--detach'].includes(arg))) { process.stderr.write('Error: unknown flag'); process.exit(1); }
 else if(args[0]==='secrets'&&args[1]==='deploy') { for(const item of Object.values(state.secrets)) item.status='Deployed'; write(state); value={}; }
 else if(args[0]==='deploy') { state.deployed=true; state.imageDigest=at('--image').split('@')[1]; state.config=fs.readFileSync(at('--config'),'utf8'); for(const item of Object.values(state.secrets)) item.status='Deployed'; write(state); value={}; }
 else if(args[0]==='machine') value=state.deployed?[{id:'machine-1',name:'machine-1',state:'started',region:'ord',image_ref:{digest:state.imageDigest,registry:'ghcr.io',repository:'dork-labs/dorkos-community'},checks:[{name:'http',status:'passing'}]}]:[];
@@ -130,6 +138,8 @@ const bootstrap = `
 import fs from 'node:fs';
 const statePath=${JSON.stringify(statePath)};
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json'}});
+// The keys Fly hands out only in the create answer, as flyctl reads them (synthetic values).
+const TIGRIS_ENVIRONMENT=${JSON.stringify(TIGRIS_ENVIRONMENT)};
 globalThis.fetch=async (input,init={})=>{
   const url=String(input);
   const state=JSON.parse(fs.readFileSync(statePath,'utf8'));
@@ -138,7 +148,8 @@ globalThis.fetch=async (input,init={})=>{
   const body=JSON.parse(String(init.body??'{}'));
   const query=String(body.query??'');
   if(query.includes('DorkosTigrisTerms')) return json({data:{viewer:{agreedToProviderTos:true}}});
-  if(query.includes('DorkosCreateTigris')) { state.tigrisCreates++; state.tigris={id:'tigris-1',name:${JSON.stringify(appName)},status:'ready',options:{public:false},organization:{slug:'dork-labs'},addOnProvider:{name:'tigris'},app:{id:${JSON.stringify(appName)},name:${JSON.stringify(appName)}}}; fs.writeFileSync(statePath,JSON.stringify(state)); return json({data:{createAddOn:{addOn:state.tigris}}}); }
+  if(query.includes('DorkosReadTigrisCredentials')) return json({data:{node:state.tigris?{id:state.tigris.id,environment:null}:null}});
+  if(query.includes('DorkosCreateTigris')) { state.tigrisCreates++; state.tigris={id:'tigris-1',name:${JSON.stringify(appName)},status:'ready',options:null,organization:{slug:'dork-labs'},addOnProvider:{name:'tigris'},app:{id:${JSON.stringify(appName)},name:${JSON.stringify(appName)}}}; fs.writeFileSync(statePath,JSON.stringify(state)); return json({data:{createAddOn:{addOn:{...state.tigris,environment:TIGRIS_ENVIRONMENT}}}}); }
   if(query.includes('DorkosReadTigris')) return json({data:{node:state.tigris}});
   return json({},500);
 };
@@ -289,6 +300,7 @@ try {
     tigrisCreates: number;
     config: string | null;
     imageDigest: string | null;
+    stagedValues: Record<string, string>;
   };
   if (state.flyCreates !== 1 || state.neonCreates !== 1 || state.tigrisCreates !== 1) {
     throw new Error('Packaged resume repeated a provider create');
@@ -301,6 +313,21 @@ try {
   }
   if (state.imageDigest !== imageDigest)
     throw new Error('Packaged deployment did not use the exact digest');
+  if (
+    state.stagedValues.AWS_ACCESS_KEY_ID !== TIGRIS_ENVIRONMENT.AWS_ACCESS_KEY_ID ||
+    state.stagedValues.AWS_SECRET_ACCESS_KEY !== TIGRIS_ENVIRONMENT.AWS_SECRET_ACCESS_KEY ||
+    'BUCKET_NAME' in state.stagedValues
+  ) {
+    throw new Error('Packaged launch did not put exactly the bucket keys on the app');
+  }
+  const journalText = await readFile(join(journalDirectory, journalName), 'utf8');
+  if (
+    [first.output, second.output, journalText].some((text) =>
+      text.includes(TIGRIS_ENVIRONMENT.AWS_SECRET_ACCESS_KEY)
+    )
+  ) {
+    throw new Error('Packaged launch exposed the bucket secret key');
+  }
   const journal = JSON.parse(await readFile(join(journalDirectory, journalName), 'utf8')) as {
     state: string;
     resources: { neonDatabaseId?: unknown };

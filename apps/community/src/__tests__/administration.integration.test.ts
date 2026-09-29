@@ -90,6 +90,7 @@ const TENANT_TABLES = [
   'community_imports',
   'community_limits',
   'community_short_names',
+  'community_takedowns',
   'connection_grants',
   'connection_pairings',
   'entries',
@@ -105,9 +106,13 @@ const TENANT_TABLES = [
   'managed_blobs',
   'member_limit_overrides',
   'members',
+  'notice_outbox',
   'owner_quota_windows',
+  'owner_replacement_object_tokens',
+  'owner_replacements',
   'pending_admissions',
   'read_cursors',
+  'removed_file_blobs',
   'tenant_reconciliation',
 ];
 
@@ -1135,6 +1140,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'GET /invites': 'lists the URL community',
     'GET /agents': "lists the caller's own agents",
     'POST /pairings/start': 'creates a new pairing; references nothing',
+    'GET /takedowns': "lists the URL community's takedowns the caller may see",
   };
 
   const scoped = '/api/v1/communities/:communityId';

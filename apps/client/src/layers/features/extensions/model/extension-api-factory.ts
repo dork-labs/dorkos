@@ -14,13 +14,17 @@ import type {
   ProjectRef,
   StatusBarItemOptions,
   StatusBarSlotContext,
+  StartWorkInput,
 } from '@dorkos/extension-api';
-import { isExtensionEventDeclared } from '@dorkos/extension-api';
+import { isExtensionEventDeclared, StartWorkError } from '@dorkos/extension-api';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import {
   DecisionActionResponseSchema,
   ListExtensionDecisionsResponseSchema,
   ProjectSettingsResponseSchema,
+  START_WORK_ERROR_CODES,
+  StartWorkResponseSchema,
+  type StartWorkErrorCode,
 } from '@dorkos/shared/extension-decision-schemas';
 import type {
   CommandPaletteContribution,
@@ -406,6 +410,21 @@ export function createExtensionAPI(
       );
     },
 
+    // Starts a NEW chat and never navigates: the extension shows "· Watch",
+    // and the current chat (and anything typed in it) is left alone.
+    async startWork(input: StartWorkInput): Promise<{ sessionId: string }> {
+      const res = await fetch(extensionApiUrl(`/extensions/${extId}/start-work`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        const err = await requestError(res, 'startWork');
+        throw isStartWorkCode(err.code) ? new StartWorkError(err.code, err.message) : err;
+      }
+      return { sessionId: StartWorkResponseSchema.parse(await res.json()).sessionId };
+    },
+
     projectSettings: {
       async get<T = unknown>(projectRoot: string): Promise<T | null> {
         const query = new URLSearchParams({ project: projectRoot });
@@ -431,6 +450,11 @@ export function createExtensionAPI(
 }
 
 // --- Internal helpers ---
+
+/** Whether a refusal's code is one `api.startWork` throws as a {@link StartWorkError}. */
+function isStartWorkCode(code: string | undefined): code is StartWorkErrorCode {
+  return (START_WORK_ERROR_CODES as readonly string[]).includes(code ?? '');
+}
 
 /**
  * An Error carrying the server's own sentence and code, so an extension can

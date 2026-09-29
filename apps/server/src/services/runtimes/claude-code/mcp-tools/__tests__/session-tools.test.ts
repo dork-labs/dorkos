@@ -50,7 +50,10 @@ vi.mock('../../../../workspace/room-session-place.js', () => ({
   })),
 }));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
-vi.mock('../../../../session/session-state-projector.js', () => ({
+vi.mock('../../../../session/session-state-projector.js', async (importOriginal) => ({
+  // The real module for everything the in-session tool set loads; only the
+  // projector the launch creates is a stand-in.
+  ...(await importOriginal<object>()),
   getOrCreateProjector: vi.fn(() => ({ cwd: undefined })),
 }));
 vi.mock('../../../../session/projector-persistence.js', () => ({
@@ -98,6 +101,13 @@ import type { McpToolDeps } from '../types.js';
 import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
 import type { AgentIdentity } from '../../../../core/agent-identity/index.js';
 import { registerSessionTools } from '../../../../core/external-mcp/session-tools.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  SessionStartedByStore,
+  setSessionStartedByStore,
+} from '../../../../session/origin/session-started-by-store.js';
+import { StartWorkService, setStartWorkService } from '../../../../extensions/start-work.js';
+import { handRegisteredInSessionTools } from '../index.js';
 import {
   NOT_THE_CALLER_MESSAGE,
   OTHER_AGENTS_HOME_MESSAGE,
@@ -665,5 +675,152 @@ describe('session_start', () => {
       approvalDisplayFields: ['cwd', 'account', 'permissionMode', 'agentPath', 'prompt'],
     });
     expect(getSessionTools(makeDeps()).map((t) => t.name)).toEqual(['session_start']);
+  });
+});
+
+describe('session_start records who started the new session (spec flow-multiproject §7.7)', () => {
+  let store: SessionStartedByStore;
+
+  /** The handler, called by Scout from inside the chat `parentId`. */
+  const fromChat = (parentId: string) =>
+    createSessionStartHandler(makeDeps(), () => ({ agentPath: AGENT_HOME, sessionId: parentId }));
+
+  beforeEach(() => {
+    store = new SessionStartedByStore(createTestDb());
+    setSessionStartedByStore(store);
+    setStartWorkService(
+      new StartWorkService({
+        store,
+        projects: { rootWithin: vi.fn(), listForExtension: vi.fn(), list: vi.fn() },
+        extensionName: (id) => (id === 'flow' ? 'Flow' : id),
+        runningSessionIds: () => [],
+      })
+    );
+  });
+
+  afterEach(() => {
+    setStartWorkService(undefined);
+    setSessionStartedByStore(undefined);
+  });
+
+  it('records the calling session and the reason, under the id the runtime settled on', async () => {
+    const result = await fromChat('parent-chat')({ ...BASE, reason: 'Split off the tests' });
+    const { sessionId } = payloadOf(result) as { sessionId: string };
+
+    expect(store.get(sessionId)).toMatchObject({
+      kind: 'chat',
+      extensionId: null,
+      startedBySessionId: 'parent-chat',
+      originExtensionId: null,
+      reason: 'Split off the tests',
+    });
+    expect(store.get(sessionId.replace(/^canon-/, ''))).toBeNull();
+  });
+
+  it('takes an optional reason of at most 200 characters', () => {
+    const schema = z.object(SessionStartInputShape);
+    expect(schema.safeParse(BASE).success).toBe(true);
+    expect(schema.safeParse({ ...BASE, reason: 'x'.repeat(200) }).success).toBe(true);
+    expect(schema.safeParse({ ...BASE, reason: 'x'.repeat(201) }).success).toBe(false);
+  });
+
+  it('inherits the calling chat’s extension, and counts against its limits', async () => {
+    store.insert({
+      sessionId: 'flow-chat',
+      kind: 'extension',
+      extensionId: 'flow',
+      startedBySessionId: null,
+      originExtensionId: 'flow',
+      reason: '12 new ideas were waiting to be sorted',
+      createdAt: new Date().toISOString(),
+    });
+    const first = await fromChat('flow-chat')(BASE);
+    const { sessionId } = payloadOf(first) as { sessionId: string };
+    expect(store.get(sessionId)).toMatchObject({
+      startedBySessionId: 'flow-chat',
+      originExtensionId: 'flow',
+    });
+    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(2);
+  });
+
+  it('refuses a start past the extension’s limits, and starts and writes nothing', async () => {
+    const now = new Date().toISOString();
+    for (let i = 0; i < 10; i++) {
+      store.insert({
+        sessionId: `flow-chat-${i}`,
+        kind: 'extension',
+        extensionId: 'flow',
+        startedBySessionId: null,
+        originExtensionId: 'flow',
+        reason: 'r',
+        createdAt: now,
+      });
+    }
+    const result = await fromChat('flow-chat-0')(BASE);
+
+    expect(result.isError).toBe(true);
+    expect(payloadOf(result)).toEqual({
+      error: 'Flow has started a lot of chats in the last hour. Try again later.',
+      code: 'START_LIMIT',
+    });
+    expect(dispatchMessage).not.toHaveBeenCalled();
+    expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();
+    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(10);
+  });
+
+  it('forgets the start when the launch does not go through', async () => {
+    vi.mocked(dispatchMessage).mockResolvedValueOnce({
+      accepted: false,
+      outcome: { kind: 'refused', messageId: 'm-1' },
+      queued: false,
+      queuePosition: 0,
+    } as never);
+    const result = await fromChat('parent-chat')(BASE);
+    expect(result.isError).toBe(true);
+    const minted = vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId;
+    expect(store.get(minted)).toBeNull();
+  });
+
+  it('records the calling chat and inherits its extension through the REAL in-session tool set', async () => {
+    // Every other case here hands the handler its caller. This drives what a
+    // live session drives (`createDorkOsToolServer` → `handRegisteredInSessionTools`)
+    // with only a session, so the resolver in `mcp-tools/index.ts` is what
+    // names the calling chat.
+    store.insert({
+      sessionId: 'flow-chat',
+      kind: 'extension',
+      extensionId: 'flow',
+      startedBySessionId: null,
+      originExtensionId: 'flow',
+      reason: '12 new ideas were waiting to be sorted',
+      createdAt: new Date().toISOString(),
+    });
+    const deps = makeDeps();
+    // What the tool set asks Mesh while it builds; nothing here depends on it.
+    (deps.meshCore as unknown as { getSubjectByPath: () => undefined }).getSubjectByPath = () =>
+      undefined;
+    const tools = handRegisteredInSessionTools(deps, {
+      session: { eventQueue: [], cwd: AGENT_HOME, sdkSessionId: 'flow-chat' },
+    } as never) as unknown as Array<{
+      name: string;
+      handler: (args: unknown, extra: unknown) => Promise<{ content: { text: string }[] }>;
+    }>;
+    const sessionStart = tools.find((t) => t.name === 'session_start')!;
+
+    const result = await sessionStart.handler({ ...BASE, reason: 'Split off the tests' }, {});
+    const { sessionId } = payloadOf(result) as { sessionId: string };
+
+    expect(store.get(sessionId)).toMatchObject({
+      kind: 'chat',
+      startedBySessionId: 'flow-chat',
+      originExtensionId: 'flow',
+      reason: 'Split off the tests',
+    });
+  });
+
+  it('records nothing when there is no calling chat (the external /mcp server)', async () => {
+    const result = await asScout()(BASE);
+    const { sessionId } = payloadOf(result) as { sessionId: string };
+    expect(store.get(sessionId)).toBeNull();
   });
 });

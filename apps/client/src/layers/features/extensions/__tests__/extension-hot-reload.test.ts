@@ -58,6 +58,7 @@ function makeRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRe
     hasServerEntry: false,
     hasDataProxy: false,
     approvedToRun: true,
+    shadowedBy: null,
     ...overrides,
   };
 }

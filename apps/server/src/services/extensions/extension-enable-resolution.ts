@@ -16,6 +16,7 @@
 import type {
   ExtensionApprovedSource,
   ExtensionDismissedApproval,
+  ExtensionTrustedSource,
 } from '@dorkos/shared/config-schema';
 
 /** Tier metadata for a bundled core extension (the canonical definition). */
@@ -54,6 +55,12 @@ export interface ExtensionsConfig {
    * untouched; see `extension-load-policy.ts` for how it is read.
    */
   dismissedApprovals?: Record<string, ExtensionDismissedApproval>;
+  /**
+   * The code sources a person trusts outright (spec `flow-multiproject` §9.3).
+   * Absent reads as empty. Carried through {@link setEnabled} untouched; see
+   * `extension-load-policy.ts` for how it is read.
+   */
+  trustedSources?: ExtensionTrustedSource[];
 }
 
 /**

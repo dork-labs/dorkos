@@ -46,6 +46,8 @@ import { registerShortNameRoutes } from './routes/short-names.js';
 import { callerAddress } from './caller-address.js';
 import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
+import { registerHostTakedownRoutes } from './routes/host-takedowns.js';
+import { registerTakedownNoticeRoutes } from './routes/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
 import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
 import { IMPORT_PART_UPLOAD_PATH } from './imports/part-routes.js';
@@ -85,6 +87,10 @@ export function createCommunityApp({
     freeTempBytes?: () => Promise<number>;
     /** Runs before `complete` hashes an import's parts; tests pause there. */
     beforeCompleteHash?: (importId: string) => Promise<void>;
+    /** Runs inside a takedown after the community row is locked, before the actor recheck. */
+    afterTakedownCommunityLock?: () => Promise<void>;
+    /** Runs inside a takedown after its target is read for evidence, before it is removed. */
+    afterTakedownSnapshot?: () => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
@@ -378,6 +384,17 @@ export function createCommunityApp({
     freeTempBytes: hooks?.freeTempBytes,
     partHooks: { beforeCompleteHash: hooks?.beforeCompleteHash },
   });
+  registerHostTakedownRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword,
+    hooks: {
+      afterCommunityLock: hooks?.afterTakedownCommunityLock,
+      afterSnapshot: hooks?.afterTakedownSnapshot,
+    },
+  });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
   app.route('/api/v1', hostApi);
@@ -467,6 +484,7 @@ export function createCommunityApp({
   registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   registerOwnerErasureRoutes(communityApi, { pool, auth });
   registerHistoryOriginRoute(communityApi, { pool, auth });
+  registerTakedownNoticeRoutes(communityApi, { pool, auth });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;

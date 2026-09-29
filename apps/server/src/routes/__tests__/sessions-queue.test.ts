@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The queue's HTTP surface (spec `persistent-session-runtime` §3.3, task 2.4):
  * read what is waiting on a session, edit it, remove it.
@@ -85,7 +86,7 @@ import {
   resetMessageDispatcher,
 } from '../../services/session/message-dispatcher.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const server = listeningServer(app);
 

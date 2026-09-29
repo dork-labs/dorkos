@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The `id:` frame's GENERATION, and the rekey collision it exists to catch
  * (DOR-1704, the DOR-782 F3 residual).
@@ -89,7 +90,7 @@ import {
   type SessionStateProjector,
 } from '../../services/session/session-state-projector.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 /** The canonical id both projectors end up fighting over. */
