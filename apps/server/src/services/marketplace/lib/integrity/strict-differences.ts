@@ -35,8 +35,11 @@ function fsPath(root: string, posixPath: string): string {
  * The locations the install's own plugin.json declares something runnable at
  * (`declaredEffectPaths`), read only when it is a regular file reached through
  * real directories. None when it is absent or unreadable.
+ *
+ * @param root - The install folder.
+ * @returns The declared locations, package-relative POSIX paths.
  */
-async function declaredLocationsOf(root: string): Promise<string[]> {
+export async function declaredLocationsOf(root: string): Promise<string[]> {
   if ((await lstatChain(root, CLAUDE_PLUGIN_MANIFEST_PATH)).kind !== 'file') return [];
   try {
     return declaredEffectPaths(

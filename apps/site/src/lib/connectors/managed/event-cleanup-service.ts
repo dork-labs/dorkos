@@ -1,4 +1,9 @@
-/** Private captured-trigger reconciliation invoked by the existing authenticated cleanup job. */
+/**
+ * Private captured-trigger reconciliation invoked by the existing authenticated
+ * cleanup job, and by the cleanup a revoked linked instance is owed.
+ *
+ * @module lib/connectors/managed/event-cleanup-service
+ */
 import { and, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import {
   ComposioEventClient,
@@ -13,21 +18,40 @@ import { readManagedConnectorConfig, managedCapabilityAvailability } from './con
 import { cleanupManagedEventBinding } from './event-authority-service';
 import {
   managedRequestHash,
+  type ManagedCleanupPrincipal,
   type ManagedConnectorDatabase,
   type ManagedAuthorityProviderContext,
 } from './authority-service';
 
-/** In-process composition seam; it cannot create authority or replace the persisted provider generation. */
-export type ManagedEventCleanupProvider = (
+/**
+ * In-process composition seam for background cleanup; it cannot create
+ * authority or replace the persisted provider generation. `events` is absent
+ * when this deployment does not run managed events.
+ */
+export type ManagedCleanupProvider = (
   providerUserId: string,
   signal: AbortSignal
 ) =>
   | Pick<ManagedAuthorityProviderContext, 'events' | 'accounts' | 'executionConfigDigest'>
   | undefined;
 
-function productionProvider(providerUserId: string) {
-  const config = readManagedConnectorConfig();
-  if (managedCapabilityAvailability(config, 'events').status !== 'available') return undefined;
+/**
+ * The deployment's own provider clients for one tenant's background cleanup,
+ * or undefined when managed connections are not configured here (the cleanup
+ * then stays owed and a later pass retries it).
+ *
+ * @param providerUserId - The tenant's server-derived provider user id.
+ */
+export function productionManagedCleanupProvider(
+  providerUserId: string
+): ReturnType<ManagedCleanupProvider> {
+  let config: ReturnType<typeof readManagedConnectorConfig>;
+  try {
+    config = readManagedConnectorConfig();
+  } catch {
+    return undefined;
+  }
+  if (managedCapabilityAvailability(config, 'catalog').status !== 'available') return undefined;
   const clients = createComposioHostedClients({
     apiKey: config.projectApiKey!,
     serverUserId: providerUserId,
@@ -37,22 +61,75 @@ function productionProvider(providerUserId: string) {
   return {
     accounts: clients.accounts,
     executionConfigDigest: clients.executionConfigDigest,
-    events: new ComposioEventClient({
-      apiKey: config.projectApiKey!,
-      serverUserId: providerUserId,
-      webhookSecret: config.webhookSecret,
-      ...(config.apiOrigin && { baseUrl: config.apiOrigin }),
+    ...(managedCapabilityAvailability(config, 'events').status === 'available' && {
+      events: new ComposioEventClient({
+        apiKey: config.projectApiKey!,
+        serverUserId: providerUserId,
+        webhookSecret: config.webhookSecret,
+        ...(config.apiOrigin && { baseUrl: config.apiOrigin }),
+      }),
     }),
   };
 }
 
-/** Reconcile a bounded page of captured trigger cleanup receipts, even while the local instance is offline. */
+/**
+ * The authority one receipt's cleanup runs under: its instance's revocation
+ * when the instance is revoked, otherwise that instance's own exact live key.
+ * Returns null when neither holds (a disabled key on a live instance waits).
+ */
+async function cleanupPrincipal(
+  db: ManagedConnectorDatabase,
+  receipt: typeof schema.managedConnectorAuthorityCommand.$inferSelect,
+  ownerId: string
+): Promise<ManagedCleanupPrincipal | null> {
+  const identity = { ownerId, tenantId: receipt.tenantId, instanceId: receipt.instanceId };
+  const [instance] = await db
+    .select({ revokedAt: schema.instance.revokedAt })
+    .from(schema.instance)
+    .where(and(eq(schema.instance.id, receipt.instanceId), eq(schema.instance.userId, ownerId)))
+    .limit(1);
+  if (!instance) return null;
+  if (instance.revokedAt) return { revokedInstance: true, ...identity };
+  // A same-owner sibling key is not this receipt's instance authority. No secret
+  // is loaded and no key is created or enabled by maintenance.
+  const [key] = await db
+    .select({ id: schema.apikey.id })
+    .from(schema.apikey)
+    .where(
+      and(
+        eq(schema.apikey.referenceId, ownerId),
+        eq(schema.apikey.enabled, true),
+        or(isNull(schema.apikey.expiresAt), gt(schema.apikey.expiresAt, new Date())),
+        sql`${schema.apikey.metadata}::jsonb @> ${JSON.stringify({ instanceId: receipt.instanceId, scope: 'instance' })}::jsonb`,
+        sql`${schema.apikey.permissions}::jsonb @> ${JSON.stringify(MANAGED_CONNECTOR_AUTHORITY_PERMISSIONS)}::jsonb`
+      )
+    )
+    .limit(1);
+  return key ? { ...identity, keyId: key.id } : null;
+}
+
+/**
+ * Reconcile a bounded page of captured trigger cleanup receipts, even while the
+ * local instance is offline.
+ *
+ * A receipt runs under its instance's exact live key, or, once that instance is
+ * revoked, under the revocation itself: a revoked machine's triggers are still
+ * owed their deletion, and no key will ever come back for it.
+ *
+ * @param db - The site database.
+ * @param signal - Stops the pass between receipts.
+ * @param resolveProvider - Provider clients for one tenant.
+ * @param limit - Receipts per pass (1-100).
+ * @param clock - The pass's notion of now.
+ * @param scope - Limit the pass to one linked instance's receipts.
+ */
 export async function recoverManagedEventCleanup(
   db: ManagedConnectorDatabase,
   signal: AbortSignal,
-  resolveProvider: ManagedEventCleanupProvider = productionProvider,
+  resolveProvider: ManagedCleanupProvider = productionManagedCleanupProvider,
   limit = 25,
-  clock: () => Date = () => new Date()
+  clock: () => Date = () => new Date(),
+  scope: { instanceId?: string } = {}
 ): Promise<{ examined: number; completed: number }> {
   if (signal.aborted) return { examined: 0, completed: 0 };
   const now = clock();
@@ -80,7 +157,8 @@ export async function recoverManagedEventCleanup(
         eq(c.kind, 'set_event_subscription'),
         inArray(c.state, ['applied', 'superseded']),
         eq(c.externalCleanup, 'pending'),
-        or(isNull(c.eventCleanupAfter), lte(c.eventCleanupAfter, now))
+        or(isNull(c.eventCleanupAfter), lte(c.eventCleanupAfter, now)),
+        ...(scope.instanceId ? [eq(c.instanceId, scope.instanceId)] : [])
       )
     )
     .orderBy(
@@ -128,50 +206,17 @@ export async function recoverManagedEventCleanup(
         managedRequestHash(parsed.data) !== row.receipt.requestHash
       )
         continue;
-      // A same-owner sibling key is not this receipt's instance authority. No secret
-      // is loaded and no key is created or enabled by maintenance.
-      const [key] = await db
-        .select({ id: schema.apikey.id })
-        .from(schema.apikey)
-        .innerJoin(
-          schema.instance,
-          and(
-            eq(schema.instance.id, row.receipt.instanceId),
-            eq(schema.instance.userId, row.ownerId),
-            isNull(schema.instance.revokedAt)
-          )
-        )
-        .where(
-          and(
-            eq(schema.apikey.referenceId, row.ownerId),
-            eq(schema.apikey.enabled, true),
-            or(isNull(schema.apikey.expiresAt), gt(schema.apikey.expiresAt, new Date())),
-            sql`${schema.apikey.metadata}::jsonb @> ${JSON.stringify({ instanceId: row.receipt.instanceId, scope: 'instance' })}::jsonb`,
-            sql`${schema.apikey.permissions}::jsonb @> ${JSON.stringify(MANAGED_CONNECTOR_AUTHORITY_PERMISSIONS)}::jsonb`
-          )
-        )
-        .limit(1);
-      if (!key) continue;
+      const principal = await cleanupPrincipal(db, row.receipt, row.ownerId);
+      if (!principal) continue;
       const provider = resolveProvider(row.providerUserId, signal);
       if (!provider?.events || provider.executionConfigDigest !== row.provider.configurationDigest)
         continue;
-      await cleanupManagedEventBinding(
-        db,
-        {
-          ownerId: row.ownerId,
-          tenantId: row.receipt.tenantId,
-          instanceId: row.receipt.instanceId,
-          keyId: key.id,
-        },
-        parsed.data,
-        row.receipt,
-        {
-          ...provider,
-          providerUserId: row.providerUserId,
-          materialGeneration: row.provider.materialGeneration,
-          signal,
-        }
-      );
+      await cleanupManagedEventBinding(db, principal, parsed.data, row.receipt, {
+        ...provider,
+        providerUserId: row.providerUserId,
+        materialGeneration: row.provider.materialGeneration,
+        signal,
+      });
       const [settled] = await db
         .select({ externalCleanup: c.externalCleanup })
         .from(c)

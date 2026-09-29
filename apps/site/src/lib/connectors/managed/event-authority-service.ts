@@ -16,8 +16,10 @@ import {
   type ManagedEventCapacityPolicy,
 } from './event-capacity-service';
 import {
+  lockCleanupAuthority,
   lockLiveAuthorityPrincipal,
   managedRequestHash,
+  type ManagedCleanupPrincipal,
   type ManagedConnectorDatabase,
   type ManagedConnectorPrincipal,
   type ManagedAuthorityProviderContext,
@@ -55,7 +57,7 @@ function status(row: typeof commands.$inferSelect): ManagedConnectorAuthorityCom
     };
   return { ...base, state: row.state };
 }
-function commandWhere(principal: ManagedConnectorPrincipal, command: EventCommand) {
+function commandWhere(principal: ManagedCleanupPrincipal, command: EventCommand) {
   return and(
     eq(commands.tenantId, principal.tenantId),
     eq(commands.instanceId, principal.instanceId),
@@ -658,10 +660,14 @@ export async function applyManagedEventAuthorityCommand(
   }
 }
 
-/** Last-reference cleanup uses the captured physical identity, never a later subscription binding. */
+/**
+ * Last-reference cleanup uses the captured physical identity, never a later
+ * subscription binding. It runs under a live instance's key or, once the
+ * instance is revoked, under that revocation (see {@link lockCleanupAuthority}).
+ */
 export async function cleanupManagedEventBinding(
   db: ManagedConnectorDatabase,
-  principal: ManagedConnectorPrincipal,
+  principal: ManagedCleanupPrincipal,
   command: EventCommand,
   receipt: typeof commands.$inferSelect,
   provider: ManagedAuthorityProviderContext,
@@ -712,7 +718,7 @@ export async function cleanupManagedEventBinding(
   };
   const liveClaim = async (tx: Transaction) => {
     await lockManagedEventCapacity(tx, principal.tenantId, policy);
-    await lockLiveAuthorityPrincipal(tx, principal);
+    await lockCleanupAuthority(tx, principal);
     const [live] = await tx
       .select({ id: bindings.id })
       .from(bindings)
@@ -786,7 +792,7 @@ export async function cleanupManagedEventBinding(
     if (
       await db.transaction(async (tx) => {
         await lockManagedEventCapacity(tx, principal.tenantId, policy);
-        await lockLiveAuthorityPrincipal(tx, principal);
+        await lockCleanupAuthority(tx, principal);
         return hasSubscribers(tx);
       })
     )

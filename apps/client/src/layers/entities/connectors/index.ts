@@ -30,6 +30,7 @@ export {
   useAgentConnectorConnections,
   useEveryAgentConnectorGrants,
   useSessionConnectorConnections,
+  useSetSessionConnectorAccess,
   useConnectorUsage,
   useStartConnectorAuthentication,
   useConnectorAuthentication,

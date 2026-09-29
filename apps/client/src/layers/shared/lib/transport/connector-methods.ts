@@ -60,6 +60,7 @@ import type {
   ConnectorLifecycleResult,
   ConnectorProvidersResource,
   ConnectorReconnectRequest,
+  ConnectorSessionAccessUpdate,
   ConnectorSessionConnections,
 } from '@dorkos/shared/connector-resource-schemas';
 
@@ -276,6 +277,18 @@ export function createConnectorMethods(baseUrl: string) {
       return fetchJSON<ConnectorSessionConnections>(
         baseUrl,
         `/connectors/sessions/${encodeURIComponent(sessionId)}/connections`
+      );
+    },
+
+    setSessionConnectorAccess(
+      sessionId: string,
+      connectionId: string,
+      update: ConnectorSessionAccessUpdate
+    ): Promise<ConnectorSessionConnections> {
+      return fetchJSON<ConnectorSessionConnections>(
+        baseUrl,
+        `/connectors/sessions/${encodeURIComponent(sessionId)}/connections/${encodeURIComponent(connectionId)}`,
+        { method: 'PUT', body: JSON.stringify(update) }
       );
     },
 

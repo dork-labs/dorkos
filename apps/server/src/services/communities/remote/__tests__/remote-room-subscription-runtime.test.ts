@@ -1163,8 +1163,17 @@ describe('RemoteRoomSubscriptionRuntime', () => {
   });
 
   it('revokes every derived local authority before a rejected owner grant returns', async () => {
+    // Rooms read mirror access from the same store the bridge writes, as production wires it,
+    // so the revoked mirror is as unreadable here as it is there (DOR-2339).
+    const state: { mirrors?: RemoteMirrorStore } = {};
     const harness = createRoomHarness({
       agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+      mirrorAccess: {
+        canRead: (roomId, authorId) => state.mirrors?.canRead(roomId, authorId) ?? null,
+        hasMirrors: () => state.mirrors?.hasMirrors() ?? false,
+        isRevokedMirrorOf: (roomId, ownerAuthorId) =>
+          state.mirrors?.isRevokedMirrorOf(roomId, ownerAuthorId) ?? false,
+      },
     });
     const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
     const enrollments = new CommunityAgentEnrollmentStore(harness.db);
@@ -1175,6 +1184,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       ownerAuthorId: harness.human,
     });
     const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+    state.mirrors = mirrors;
     const bridge = new RemoteRoomSubscriptionBridge(
       mirrors,
       harness.service,

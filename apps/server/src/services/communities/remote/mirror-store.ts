@@ -107,6 +107,8 @@ export interface MirrorRoomAccess {
   canRead(roomId: string, authorId: string): boolean | null;
   /** Whether owner-wide search/listing needs the mirror-aware path. */
   hasMirrors(): boolean;
+  /** Whether this room is a revoked mirror of this owner's connection. */
+  isRevokedMirrorOf(roomId: string, ownerAuthorId: string): boolean;
 }
 
 /**
@@ -776,6 +778,23 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       )
       .get();
     return grant !== undefined;
+  }
+
+  /**
+   * Whether a room is a mirror of this owner's connection that has been revoked.
+   * `canRead` answers `false` for every caller once a mirror is revoked, so it
+   * cannot tell the revocation's own cleanup apart from anybody else; this can.
+   */
+  isRevokedMirrorOf(roomId: string, ownerAuthorId: string): boolean {
+    const mirror = this.db
+      .select({
+        state: communityRoomMirrors.state,
+        ownerAuthorId: communityRoomMirrors.ownerAuthorId,
+      })
+      .from(communityRoomMirrors)
+      .where(eq(communityRoomMirrors.localRoomId, roomId))
+      .get();
+    return mirror?.state === 'revoked' && mirror.ownerAuthorId === ownerAuthorId;
   }
 
   /** Whether a mirror is actively authorized for fresh inbound work. */

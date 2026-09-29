@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONNECT_ANOTHER_WAY_COPY,
   CONNECTION_READINESS_COPY,
+  TURN_ON_FOR_THIS_CHAT_COPY,
   WAY_RECHECK_COPY,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
@@ -172,7 +173,15 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '9 off for this chat',
+      '9 off for this chat, the owner can turn it on',
+      { offForThisChat: true, canTurnOnForThisChat: true, way: down('own_key_unavailable') },
+      'unavailable',
+      'off_for_this_chat',
+      'turn_on_for_this_chat',
+      'person',
+    ],
+    [
+      '9b off for this chat, nothing to put back',
       { offForThisChat: true, way: down('own_key_unavailable') },
       'unavailable',
       'off_for_this_chat',
@@ -378,6 +387,21 @@ describe('deriveConnectionReadiness truth table', () => {
     expect(without.copy.agent).toBe(
       `${CONNECTION_READINESS_COPY.way_unreachable.agent} Tell the person.`
     );
+  });
+
+  it('tells the owner, never the agent, that an app turned off for a chat can be turned on', () => {
+    const offered = deriveConnectionReadiness(
+      facts({ offForThisChat: true, canTurnOnForThisChat: true })
+    );
+    expect(offered.copy.owner).toBe(
+      `${CONNECTION_READINESS_COPY.off_for_this_chat.owner} ${TURN_ON_FOR_THIS_CHAT_COPY.owner}`
+    );
+    expect(offered.copy.agent).toBe(CONNECTION_READINESS_COPY.off_for_this_chat.agent);
+    const agentView = deriveConnectionReadiness(facts({ offForThisChat: true }));
+    expect(agentView.fix).toBeUndefined();
+    expect(agentView.copy).toEqual(CONNECTION_READINESS_COPY.off_for_this_chat);
+    // The switch only undoes "off": it offers nothing on an account that isn't off here.
+    expect(deriveConnectionReadiness(facts({ canTurnOnForThisChat: true })).state).toBe('ready');
   });
 
   it('leaves a way that failed for a reason that may pass to DorkOS, with when it checks again', () => {

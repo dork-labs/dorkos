@@ -248,6 +248,7 @@ import {
   ConnectorDisconnectImpactSchema,
   ConnectorLifecycleResultSchema,
   ConnectorReconnectRequestSchema,
+  ConnectorSessionAccessUpdateSchema,
   ConnectorSessionConnectionsSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import { PackageTypeSchema } from '@dorkos/marketplace';
@@ -4053,6 +4054,42 @@ registry.registerPath({
     },
     404: {
       description: 'Session absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/connectors/sessions/{sessionId}/connections/{connectionId}',
+  tags: ['Connectors'],
+  summary: 'Turn one app on or off for one chat',
+  description:
+    'Owner-only. Off hides the app from the chat’s agent in this chat alone. On only undoes Off: the chat gets back the access it had (its own hand-picked access, or else the agent’s account-wide access), and never more. Only apps the agent was given account-wide can be switched; switching to the state the chat is already in changes nothing.',
+  request: {
+    params: z.object({ sessionId: z.string().min(1), connectionId: z.string().min(1) }),
+    body: { content: { 'application/json': { schema: ConnectorSessionAccessUpdateSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The chat’s connector access after the change',
+      content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
+    },
+    400: {
+      description: 'Invalid request body or connection id',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Refused: agents and programs cannot make account decisions',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Session absent, or the agent was not given that app account-wide',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'Refused: turning it on would drop a limit the owner set on this chat for another agent (`session_access_other_agent`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

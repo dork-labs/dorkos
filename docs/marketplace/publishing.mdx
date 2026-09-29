@@ -117,7 +117,7 @@ People fill in settings, and agents write notes, inside an installed package's f
 
   Files that decide what your package runs can't be marked this way: `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/`, `.dork/extensions/`, `.dork/tasks/`, `skills/`, `commands/`, `agents/`, `output-styles/`, a root `SKILL.md`, `package.json`, the folders coding agents read their settings from (`.claude/`, `.agents/`, `.codex/`, `.opencode/`, `.gemini/`, `opencode.json`, `opencode.jsonc`), and any other place your `plugin.json` points these at. When someone updates your package, they approve exactly what the new version runs, so an edited copy of one of these files must never be kept in its place.
 
-- **Don't ship these paths.** They belong to the person or to DorkOS, and validation refuses a package that includes them: `.dork/data/`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `.dork/uninstalled-agent.json`, and any file ending in `.dork-old` or `.dork-new`.
+- **Don't ship these paths.** They belong to the person or to DorkOS, and validation refuses a package that includes them: `.dork/data/`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `.dork/uninstalled-agent.json`, `.dork/saved/`, and any file ending in `.dork-old` or `.dork-new`.
 - **An agent package can't ship settings for its own sessions.** An agent's package folder is also the folder its sessions run in, so Claude Code, Codex and OpenCode would load any settings there without anyone seeing them. Validation refuses an agent package that includes:
   - `.claude/settings.json` or `.claude/settings.local.json`;
   - a top-level `.mcp.json`;

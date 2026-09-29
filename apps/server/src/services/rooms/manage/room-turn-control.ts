@@ -184,6 +184,50 @@ export class RoomTurnControl {
   }
 
   /**
+   * Stop one agent in a mirrored Community room whose access was just revoked,
+   * for the revocation's own cleanup (DOR-2339).
+   *
+   * {@link RoomService.haltAgent} cannot do this: a revoked mirror is unreadable
+   * to everyone, its owner included, so its visibility check answers
+   * `ROOM_NOT_FOUND` and the turns running there would keep going. This skips
+   * that check, and only that check, and replaces it with a narrower one: **the
+   * room must be a revoked mirror of `ownerAuthorId`'s own connection.** Any
+   * other room — an ordinary local room, a mirror that is still readable, or
+   * somebody else's revoked mirror — gets the same `ROOM_NOT_FOUND`, so it
+   * widens nothing: a caller who cannot see a room still cannot stop a turn in
+   * it by coming through here.
+   *
+   * An agent that is not on the room's roster answers `0` instead of
+   * `MEMBER_NOT_FOUND`: the revocation stops every enrolled agent in every
+   * revoked room, and an agent that never joined one has nothing running there.
+   *
+   * @param roomId - The revoked mirror.
+   * @param authorId - The agent to stop.
+   * @param ownerAuthorId - The person whose connection the mirror belonged to.
+   * @returns `1` when a turn was interrupted, `0` otherwise.
+   */
+  async haltAgentInRevokedMirror(
+    roomId: string,
+    authorId: string,
+    ownerAuthorId: string
+  ): Promise<number> {
+    if (!this.visibility.isRevokedMirrorOf(roomId, ownerAuthorId)) {
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    }
+    const room = this.visibility.requireRoom(roomId);
+    this.visibility.requirePersonAuthor(ownerAuthorId, 'stop an agent');
+    if (
+      this.store.getMember(roomId, authorId) === null ||
+      this.authors.getById(authorId)?.kind === 'human'
+    ) {
+      return 0;
+    }
+    // This writes the usual "stopped" notice into the room; harmless, since the revocation
+    // purges the room right after (`RemoteMirrorStore.purgeRevoked`).
+    return this.triggers.haltAgent(room, authorId, ownerAuthorId);
+  }
+
+  /**
    * Ask for this room's waiting message to be answered before the other rooms
    * waiting on the same agent.
    *

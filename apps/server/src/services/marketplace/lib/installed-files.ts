@@ -52,6 +52,7 @@ import {
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import type { Logger } from '@dorkos/shared/logger';
 import type { PackageFileNotice } from '@dorkos/shared/marketplace-schemas';
+import { savedFileCandidates, savedFolderCandidates } from './saved-copies/saved-copies.js';
 
 /** The record format this module reads and writes. */
 export const INSTALLED_FILES_RECORD_VERSION = 1;
@@ -158,6 +159,15 @@ export const InstalledFilesSchema = z.object({
   inferred: z.literal(true).optional(),
   /** Files kept as the person's because nothing proved otherwise (DOR-2322). */
   unproven: UnprovenFilesSchema.optional(),
+  /**
+   * `1` when every copy an update saved aside in this root is inert (DOR-2340):
+   * set on a record made from a tree this version wrote, carried over by an
+   * update only from a record that had it, and set by the boot migration once
+   * it has fixed what an earlier version left. A record without it is one the
+   * migration still has to visit. Kept in the record rather than as a file, so
+   * an uninstall that removes the record leaves nothing of it behind.
+   */
+  savedCopies: z.literal(1).optional(),
 });
 
 /** The installed-files record; see {@link InstalledFilesSchema}. */
@@ -412,6 +422,8 @@ export async function computeInstalledFiles(
     files,
     pendingDefaults: {},
     userEditable: [...opts.userEditable],
+    // A tree this version wrote holds no runnable or loadable saved copy.
+    savedCopies: 1,
   };
 }
 
@@ -552,12 +564,6 @@ export interface CarryOverInput {
   staged: StagedFacts;
   /** The live root's path, for error messages only. */
   liveRoot: string;
-}
-
-/** Candidate saved names for `p`: `p<suffix>`, then `p<suffix>.2`, `.3`, … */
-function* savedNameCandidates(p: string, suffix: string): Generator<string> {
-  yield `${p}${suffix}`;
-  for (let n = 2; ; n++) yield `${p}${suffix}.${n}`;
 }
 
 /**
@@ -701,11 +707,14 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
     const lower = p.toLowerCase();
     return (
       staged.kindOf(p) !== 'missing' ||
+      // A folder saved by an earlier update sits in the live root and is carried.
+      live.entries.has(p) ||
+      live.dirs.has(p) ||
       [...fixed, ...allocated].some((q) => q === p || q.toLowerCase() === lower)
     );
   };
-  const allocate = (p: string, suffix: '.dork-old' | '.dork-new'): string => {
-    for (const candidate of savedNameCandidates(p, suffix)) {
+  const firstUntaken = (candidates: Iterable<string>): string => {
+    for (const candidate of candidates) {
       if (!taken(candidate)) {
         allocated.add(candidate);
         return candidate;
@@ -714,6 +723,11 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
     /* c8 ignore next */
     throw new Error('unreachable');
   };
+  /** A file saved beside itself. */
+  const allocate = (p: string, suffix: '.dork-old' | '.dork-new'): string =>
+    firstUntaken(savedFileCandidates(p, suffix));
+  /** A folder saved under `.dork/saved`, where no loader looks (DOR-2340). */
+  const allocateFolder = (dir: string): string => firstUntaken(savedFolderCandidates(dir));
   /** The nearest ancestor of `p` the staged tree holds as something other than a directory. */
   const blockingAncestor = (p: string): string | undefined => {
     const segments = p.split('/');
@@ -726,16 +740,19 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
   };
   const renamedAncestors = new Map<string, string>();
   /**
-   * Where to save `p` aside: `p<suffix>` (first free name), or, when an
-   * ancestor is a file in the new version, the same relative path inside that
-   * ancestor's free `.dork-old` directory, shared by everything beneath it.
+   * Where to save `p` aside: a file beside itself (`p.dork-old`, first free
+   * name), a folder under `.dork/saved`; or, when an ancestor is a file in the
+   * new version, the same relative path inside that ancestor's saved folder,
+   * shared by everything beneath it.
    */
-  const saveTarget = (p: string, suffix: '.dork-old' | '.dork-new'): string => {
+  const saveTarget = (p: string, kind: 'file' | 'dir'): string => {
     const ancestor = blockingAncestor(p);
-    if (ancestor === undefined) return allocate(p, suffix);
+    if (ancestor === undefined) {
+      return kind === 'dir' ? allocateFolder(p) : allocate(p, '.dork-old');
+    }
     let renamed = renamedAncestors.get(ancestor);
     if (renamed === undefined) {
-      renamed = allocate(ancestor, '.dork-old');
+      renamed = allocateFolder(ancestor);
       renamedAncestors.set(ancestor, renamed);
     }
     return `${renamed}${p.slice(ancestor.length)}`;
@@ -753,7 +770,7 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
   for (const u of unitDirs) {
     if (collides(u, 'dir')) {
       fixed.delete(u);
-      const savedAs = saveTarget(u, '.dork-old');
+      const savedAs = saveTarget(u, 'dir');
       plan.actions.push({ kind: 'carry-dir-as', path: u, savedAs });
       plan.notices.push({ path: u, outcome: 'replaced-edit', savedAs });
     } else {
@@ -779,7 +796,7 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
           break;
         }
         fixed.delete(d.path);
-        const savedAs = saveTarget(d.path, '.dork-old');
+        const savedAs = saveTarget(d.path, 'file');
         plan.actions.push({ kind: 'carry-as', path: d.path, savedAs });
         plan.notices.push({ path: d.path, outcome: 'replaced-edit', savedAs });
         break;
@@ -789,7 +806,7 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
         if (!(d.path in newFiles) && collides(d.path, 'file')) {
           // Something the new version put here under another spelling or kind.
           fixed.delete(d.path);
-          const savedAs = saveTarget(d.path, '.dork-old');
+          const savedAs = saveTarget(d.path, 'file');
           plan.actions.push({ kind: 'carry-as', path: d.path, savedAs });
           plan.notices.push({ path: d.path, outcome: 'replaced-edit', savedAs });
           break;
@@ -801,7 +818,7 @@ export function planCarryOver(input: CarryOverInput): CarryOverPlan {
         break;
       }
       case 'carry-saved': {
-        const savedAs = saveTarget(d.path, '.dork-old');
+        const savedAs = saveTarget(d.path, 'file');
         plan.actions.push({ kind: 'carry-as', path: d.path, savedAs });
         plan.notices.push({ path: d.path, outcome: d.notice ?? 'replaced-edit', savedAs });
         break;

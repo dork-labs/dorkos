@@ -237,7 +237,10 @@ function ReadinessFix({
           onAction: () => recheck.mutate(),
           pending: recheck.isPending,
         };
+      // `turn_on_for_this_chat` is offered only in a chat's own view, beside
+      // that chat's switch; an account's panel covers every chat.
       case 'wait':
+      case 'turn_on_for_this_chat':
       case undefined:
         return null;
     }

@@ -227,6 +227,17 @@ export class RoomService {
   haltAgent(roomId: string, authorId: string, viewerAuthorId: string): Promise<number> {
     return this.parts.turnControl.haltAgent(roomId, authorId, viewerAuthorId);
   }
+  /**
+   * Stop one agent in a revoked mirror, for the revocation's own cleanup. See
+   * {@link RoomTurnControl.haltAgentInRevokedMirror}.
+   */
+  haltAgentInRevokedMirror(
+    roomId: string,
+    authorId: string,
+    ownerAuthorId: string
+  ): Promise<number> {
+    return this.parts.turnControl.haltAgentInRevokedMirror(roomId, authorId, ownerAuthorId);
+  }
   /** Ask to be answered first. See {@link RoomTurnControl.promoteHold}. */
   promoteHold(roomId: string, authorId: string, viewerAuthorId: string): boolean {
     return this.parts.turnControl.promoteHold(roomId, authorId, viewerAuthorId);

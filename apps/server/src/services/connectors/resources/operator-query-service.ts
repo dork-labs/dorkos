@@ -924,7 +924,12 @@ export class ConnectorOperatorQueryService {
         connectionId: string;
       }
     >();
+    // Accounts the agent holds account-wide, while still connected: the only
+    // ones the owner can switch on or off for this chat, since the switch only
+    // hides the app here or undoes that, and never adds access.
+    const switchable = new Set<string>();
     for (const row of this.agentGrantedConnections(owner, agentId)) {
+      if (row.lifecycleState === 'connected') switchable.add(row.connectionId);
       byConnection.set(row.connectionId, {
         connectionId: row.connectionId,
         toolkit: row.toolkit,
@@ -932,6 +937,7 @@ export class ConnectorOperatorQueryService {
         source: 'agent',
         operationRevisionIds: [...row.operationRevisionIds].sort(),
         readiness: this.agentReadiness(row, agentId, row),
+        ...(switchable.has(row.connectionId) && { thisChat: 'on' as const }),
       });
     }
     const overrides = this.db
@@ -991,10 +997,33 @@ export class ConnectorOperatorQueryService {
               .sort()
           : [];
       // Turned on with nothing of its own, or waiting on reconciliation: its
-      // agent can't use the account here, and no screen changes one chat's
-      // access yet (DOR-2448), so it reads as turned off here, with no button.
+      // agent can't use the account here, so it reads as turned off here. When
+      // the agent holds the account account-wide, the owner's switch turns it
+      // back on (DOR-2448) and readiness names that as the fix; otherwise
+      // there is nothing to put back, and no fix.
       const nothingHere =
         turnedOff || override.needsReconciliation || sessionRevisions.length === 0;
+      // The owner limited this chat by hand for the agent it belonged to
+      // before: turning it on here would drop that limit, so there is no
+      // switch (the write refuses it too, session-access-service.ts).
+      const limitedForAnotherAgent =
+        !ownOverride &&
+        override.agentId !== null &&
+        override.state === 'attached' &&
+        this.db
+          .select({ id: connectionOperationGrants.id })
+          .from(connectionOperationGrants)
+          .where(
+            and(
+              eq(connectionOperationGrants.subjectType, 'session'),
+              eq(connectionOperationGrants.subjectId, sessionId),
+              eq(connectionOperationGrants.connectionId, override.connectionId),
+              eq(connectionOperationGrants.agentId, override.agentId),
+              isNull(connectionOperationGrants.revokedAt)
+            )
+          )
+          .get() !== undefined;
+      const canSwitch = switchable.has(override.connectionId) && !limitedForAnotherAgent;
       byConnection.set(override.connectionId, {
         connectionId: override.connectionId,
         toolkit: override.toolkit,
@@ -1005,8 +1034,14 @@ export class ConnectorOperatorQueryService {
           override,
           agentId,
           { named: true, everyAgent: false },
-          { offForThisChat: nothingHere }
+          {
+            offForThisChat: nothingHere,
+            canTurnOnForThisChat: canSwitch,
+          }
         ),
+        ...(canSwitch && {
+          thisChat: nothingHere ? ('off' as const) : ('on' as const),
+        }),
       });
     }
     return ConnectorSessionConnectionsSchema.parse({
