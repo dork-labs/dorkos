@@ -1278,8 +1278,9 @@ describe('an item takedown with an evidence store', () => {
       reference: 'REF-11',
       createdAt: told.createdAt,
     };
-    expect(await notices(c.s.owner.cookie)).toEqual([expected]);
-    expect(await notices(c.s.p.cookie)).toEqual([expected]);
+    // The owner is told as the owner, the author as the author: only the author's is `yours`.
+    expect(await notices(c.s.owner.cookie)).toEqual([{ ...expected, yours: false }]);
+    expect(await notices(c.s.p.cookie)).toEqual([{ ...expected, yours: true }]);
     expect(await notices(c.s.q.cookie)).toEqual([]);
     // Withheld: nobody is told, but the tombstone still shows.
     expect(

@@ -124,7 +124,7 @@ If other people sign up on your Community, you can link your own terms, privacy 
 | `COMMUNITY_PRIVACY_URL`      | An `https://` page                        | Under the sign-in form, and in Settings, Account |
 | `COMMUNITY_REPORT_ABUSE_URL` | An `https://` page or a `mailto:` address | On each message, and in Settings, Account        |
 
-A report from a message opens your page with `?community=<id>&entry=<id>` added, so you can find what was reported. A report from Settings adds only the community. For a `mailto:` address the same IDs go in the email body. The message text, the author's name, and the reporter's name are never added. The service checks each link before it starts and refuses a plain `http://` one. It never contacts your pages itself.
+A report from a message opens your page with `?community=<id>&entry=<id>` added, so you can find what was reported. A report from one file adds `&attachment=<id>` too, so you can take down just that file. A report from Settings adds only the community. For a `mailto:` address the same IDs go in the email body. The message text, the author's name, and the reporter's name are never added. The service checks each link before it starts and refuses a plain `http://` one. It never contacts your pages itself.
 
 ## Optional Render deployment
 

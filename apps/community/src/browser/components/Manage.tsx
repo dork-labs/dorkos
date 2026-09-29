@@ -8,6 +8,7 @@ import { HostLinksPanel } from './HostLinks.js';
 import { CommunityAddress } from './CommunityAddress.js';
 import { SignInMethodsPanel } from './SignInMethods.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
+import { RemovedByHost } from '../takedowns/TakedownNotices.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import { ExportPanel } from './ExportPanel.js';
 import type { Agent, Channel, Member } from '../types.js';
@@ -328,6 +329,9 @@ export function Manage({
             onChanged={onChanged}
             onOpenPeople={() => setTab('members')}
           />
+        )}
+        {tab === 'settings' && moderator && (
+          <RemovedByHost communityId={communityId} channels={channels} />
         )}
         {!readOnly && tab === 'community' && (
           <div className="settings-grid">

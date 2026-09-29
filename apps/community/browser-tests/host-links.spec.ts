@@ -33,6 +33,9 @@ let pool: Pool;
 let blobDir: string;
 let communityId: string;
 let entryId: string;
+let fileEntryId: string;
+let attachmentId: string;
+const FILE_NAME = 'leak-report-name.txt';
 const servers: ReturnType<typeof serve>[] = [];
 let linkedUrl: string;
 let plainUrl: string;
@@ -111,6 +114,30 @@ test.beforeAll(async () => {
   );
   expect(posted.status).toBe(201);
   entryId = ((await posted.json()) as { entry: { id: string } }).entry.id;
+  const uploaded = await fetch(
+    `${linkedUrl}/api/v1/communities/${communityId}/channels/${setup.channelId}/attachments`,
+    {
+      method: 'POST',
+      headers: {
+        origin: linkedUrl,
+        cookie: setup.cookie,
+        'content-type': 'text/plain',
+        'x-file-name': FILE_NAME,
+        'x-file-size': '5',
+        'idempotency-key': randomUUID(),
+      },
+      body: 'bytes',
+    }
+  );
+  expect(uploaded.status).toBe(201);
+  attachmentId = ((await uploaded.json()) as { attachment: { id: string } }).attachment.id;
+  const withFile = await post(
+    `/api/v1/communities/${communityId}/channels/${setup.channelId}/entries`,
+    { text: 'A message with a file', idempotencyKey: randomUUID(), attachmentIds: [attachmentId] },
+    setup.cookie
+  );
+  expect(withFile.status).toBe(201);
+  fileEntryId = ((await withFile.json()) as { entry: { id: string } }).entry.id;
 });
 
 test.afterAll(async () => {
@@ -194,6 +221,32 @@ test('a host with links shows Terms and Privacy at sign-in, all three in setting
     'href',
     `${REPORT}?community=${communityId}`
   );
+  await page.context().close();
+});
+
+test('Report on a file carries exactly the community, entry and attachment IDs', async ({
+  browser,
+}) => {
+  // Fails if a file's Report is missing, is not a 44px target on a phone, names the file, or
+  // carries anything beyond the three IDs a host needs to take down just that file.
+  const page = await signedInPage(browser, linkedUrl);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${linkedUrl}/c/${communityId}`);
+  const report = page.getByRole('link', {
+    name: `Report ${FILE_NAME} (opens in a new tab)`,
+    exact: true,
+  });
+  await expect(report).toHaveAttribute('target', '_blank');
+  const box = (await report.boundingBox())!;
+  expect([box.width, box.height]).toEqual([44, 44]);
+  const href = new URL((await report.getAttribute('href')) ?? '');
+  expect(`${href.origin}${href.pathname}`).toBe(REPORT);
+  expect([...href.searchParams.entries()]).toEqual([
+    ['community', communityId],
+    ['entry', fileEntryId],
+    ['attachment', attachmentId],
+  ]);
+  expect(href.href).not.toContain('leak');
   await page.context().close();
 });
 

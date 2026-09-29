@@ -4,7 +4,7 @@ import { Download, MessageCircle } from 'lucide-react';
 import { download } from '../api.js';
 import { isRemovedEntry, REMOVAL_COPY, type RemovalAction } from '../entry-removal.js';
 import type { Entry } from '../types.js';
-import { ReportEntryLink } from './HostLinks.js';
+import { ReportEntryLink, ReportFileLink } from './HostLinks.js';
 import {
   RemovalConfirmation,
   RemovalMenu,
@@ -86,6 +86,12 @@ export function EntryCard({
               <Download size={14} aria-hidden="true" />
               {attachment.name}
             </Button>
+            <ReportFileLink
+              communityId={communityId}
+              entryId={entry.id}
+              attachmentId={attachment.id}
+              fileName={attachment.name}
+            />
             {action && (
               <RemovalMenu
                 label={`Actions for ${attachment.name}`}

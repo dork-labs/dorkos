@@ -7,6 +7,7 @@ import { HostApiKeys } from './HostApiKeys.js';
 import { HostCommunityLimits } from './HostCommunityLimits.js';
 import { HostHoldControls } from './HostHoldControls.js';
 import { HostShortNames } from './HostShortNames.js';
+import { HostTakedowns } from '../takedowns/HostTakedowns.js';
 import { HostImportForm, HostImportStatus } from './HostImports.js';
 
 type Lifecycle =
@@ -389,6 +390,9 @@ export function HostAdministration() {
                     )}
                     {community.lifecycle !== 'deletion_pending' && (
                       <HostCommunityLimits communityId={community.id} name={community.name} />
+                    )}
+                    {community.lifecycle !== 'pending_owner' && (
+                      <HostTakedowns community={community} />
                     )}
                     {pending && (
                       <div className="field mt-3 mb-0">

@@ -10,7 +10,8 @@ import { json } from '../http.js';
  *
  * The owner and admins see every takedown the host chose to tell them about; any other member
  * sees those of their own content or their agents'. A takedown with `notify: false` is never
- * listed. Each item is ids, the reason, and when, never what was removed.
+ * listed. Each item is ids, the reason, when, and whether it was the caller's own (`yours`),
+ * never what was removed.
  */
 export function registerTakedownNoticeRoutes(
   app: Hono,
@@ -29,8 +30,10 @@ export function registerTakedownNoticeRoutes(
       category: 'child_safety' | 'illegal_content' | 'legal_order' | 'terms_violation';
       reference: string | null;
       created_at: Date;
+      yours: boolean;
     }>(
-      `SELECT id,target_kind,entry_id,attachment_id,channel_id,category,reference,created_at
+      `SELECT id,target_kind,entry_id,attachment_id,channel_id,category,reference,created_at,
+         COALESCE(subject_member_id=$3,false) AS yours
        FROM community_takedowns
        WHERE community_id=$1 AND notify AND target_kind IN ('entry','attachment','icon')
          AND ($2 OR subject_member_id=$3)
@@ -47,6 +50,7 @@ export function registerTakedownNoticeRoutes(
         category: row.category,
         reference: row.reference,
         createdAt: row.created_at.toISOString(),
+        yours: row.yours,
       })),
     });
   });

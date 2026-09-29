@@ -1252,6 +1252,11 @@ export const CommunityWireTakedownNoticeSchema = z.strictObject({
   category: CommunityWireTakedownCategorySchema,
   reference: z.string().nullable(),
   createdAt: timestamp,
+  /**
+   * Whether the removed content was the caller's own or their agents'. The owner and admins see
+   * every takedown; only these are the author's, which the browser tells them about once.
+   */
+  yours: z.boolean(),
 });
 /** The host's takedowns in this community the caller may see, newest first. */
 export const CommunityWireTakedownNoticeListResponseSchema = z.strictObject({
