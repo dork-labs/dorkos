@@ -83,10 +83,11 @@ ${commonPrelude}
 const state=read();
 let value;
 if(args[0]==='version') value={Name:'fly',Version:'0.4.104'};
+else if(args[0]==='orgs'&&args[1]==='show') value={ID:'fly-org-id',InternalNumericID:'1',Name:'Dork Labs',Slug:args[2],Type:'SHARED'};
 else if(args[0]==='orgs') value={'dork-labs':'Dork Labs'};
 else if(args[0]==='platform') value=[{code:'ord',name:'Chicago',latitude:41.8,longitude:-87.6,gateway_available:true,requires_paid_plan:false,deprecated:false}];
 else if(args[0]==='apps'&&args[1]==='list') value=state.flyApp?[state.flyApp]:[];
-else if(args[0]==='apps'&&args[1]==='create') { state.flyCreates++; state.flyApp={ID:'app-id-1',Name:args[2],Status:'deployed',Organization:{ID:'fly-org-id',Slug:at('--org'),Name:'Dork Labs'}}; write(state); value=state.flyApp; }
+else if(args[0]==='apps'&&args[1]==='create') { state.flyCreates++; state.flyApp={ID:args[2],Name:args[2],Status:'deployed',Organization:{ID:'fly-org-id',Slug:at('--org'),Name:'Dork Labs'}}; write(state); value=state.flyApp; }
 else if(args[0]==='auth'&&args[1]==='token') value={token:'fixture-fly-token'};
 else if(args[0]==='secrets'&&args[1]==='list') value=Object.entries(state.secrets).map(([name,item])=>({name,digest:item.digest,status:item.status}));
 else if(args[0]==='secrets'&&args[1]==='import') { const input=fs.readFileSync(0,'utf8'); for(const line of input.trim().split('\\n')) { const name=line.slice(0,line.indexOf('=')); state.secrets[name]={digest:'digest-'+name.toLowerCase().replaceAll('_','-')+'-'+Date.now(),status:'Staged'}; } write(state); value={}; }
@@ -94,7 +95,7 @@ else if(args[0]==='secrets'&&args[1]==='deploy') { for(const item of Object.valu
 else if(args[0]==='deploy') { state.deployed=true; state.imageDigest=at('--image').split('@')[1]; state.config=fs.readFileSync(at('--config'),'utf8'); for(const item of Object.values(state.secrets)) item.status='Deployed'; write(state); value={}; }
 else if(args[0]==='machine') value=state.deployed?[{id:'machine-1',name:'machine-1',state:'started',region:'ord',image_ref:{digest:state.imageDigest,registry:'ghcr.io',repository:'dork-labs/dorkos-community'},checks:[{name:'http',status:'passing'}]}]:[];
 else if(args[0]==='releases') value=state.deployed?[{ID:'release-1',ImageRef:'ghcr.io/dork-labs/dorkos-community@'+state.imageDigest,Status:'complete',Stable:false,Version:1}]:[];
-else if(args[0]==='ips') value=state.deployed?[{ID:'ip-1',Address:'1.2.3.4',Type:'shared_v4',Region:''}]:[];
+else if(args[0]==='ips') value=state.deployed?[{ID:'',Address:'1.2.3.4',Type:'shared_v4',Region:'',CreatedAt:'2026-09-21T00:00:00Z',ServiceName:'',Network:null}]:[];
 else process.exit(3);
 process.stdout.write(JSON.stringify(value));
 `;
@@ -105,11 +106,11 @@ const state=read();
 let value;
 if(args[0]==='--version') { process.stdout.write('5.0.0'); process.exit(0); }
 else if(args[0]==='orgs') value=[{id:'org-dorian',name:'Dorian'}];
-else if(args[0]==='api'&&args[1]==='/regions') value={regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:40.4,geo_long:-82.9}]};
+else if(args[0]==='api'&&args[1]==='/regions') value={regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:'40.4',geo_long:'-82.9'}]};
 else if(args[0]==='projects'&&args[1]==='list') value=state.neonProject?[state.neonProject]:[];
 else if(args[0]==='projects'&&args[1]==='create') { state.neonCreates++; state.neonProject={id:'neon-project-1',org_id:at('--org-id'),name:at('--name'),region_id:at('--region-id'),pg_version:Number(at('--pg-version'))}; write(state); value={project:state.neonProject}; }
 else if(args[0]==='branches') value=[{id:'branch-1',project_id:'neon-project-1',name:'main',default:true}];
-else if(args[0]==='databases') value=[{id:'database-1',branch_id:'branch-1',name:'community',owner_name:'community_owner'}];
+else if(args[0]==='databases') value=[{id:4821907,branch_id:'branch-1',name:'community',owner_name:'community_owner',created_at:'2026-09-21T00:00:00Z',updated_at:'2026-09-21T00:00:00Z'}];
 else if(args[0]==='roles') value=[{branch_id:'branch-1',name:'community_owner'}];
 else if(args[0]==='api'&&args[1].endsWith('/endpoints')) value={endpoints:[{id:'ep-fixture',project_id:'neon-project-1',branch_id:'branch-1',region_id:'aws-us-east-2',host:'ep-fixture.aws-us-east-2.aws.neon.tech',type:'read_write'}]};
 else if(args[0]==='connection-string') { process.stdout.write('postgresql://community_owner:fixture-password@ep-fixture.aws-us-east-2.aws.neon.tech/community?sslmode=require&channel_binding=require'); process.exit(0); }
@@ -137,7 +138,7 @@ globalThis.fetch=async (input,init={})=>{
   const body=JSON.parse(String(init.body??'{}'));
   const query=String(body.query??'');
   if(query.includes('DorkosTigrisTerms')) return json({data:{viewer:{agreedToProviderTos:true}}});
-  if(query.includes('DorkosCreateTigris')) { state.tigrisCreates++; state.tigris={id:'tigris-1',name:${JSON.stringify(appName)},status:'ready',options:{public:false},organization:{slug:'dork-labs'},addOnProvider:{name:'tigris'},app:{id:'app-id-1',name:${JSON.stringify(appName)}}}; fs.writeFileSync(statePath,JSON.stringify(state)); return json({data:{createAddOn:{addOn:state.tigris}}}); }
+  if(query.includes('DorkosCreateTigris')) { state.tigrisCreates++; state.tigris={id:'tigris-1',name:${JSON.stringify(appName)},status:'ready',options:{public:false},organization:{slug:'dork-labs'},addOnProvider:{name:'tigris'},app:{id:${JSON.stringify(appName)},name:${JSON.stringify(appName)}}}; fs.writeFileSync(statePath,JSON.stringify(state)); return json({data:{createAddOn:{addOn:state.tigris}}}); }
   if(query.includes('DorkosReadTigris')) return json({data:{node:state.tigris}});
   return json({},500);
 };
@@ -302,9 +303,13 @@ try {
     throw new Error('Packaged deployment did not use the exact digest');
   const journal = JSON.parse(await readFile(join(journalDirectory, journalName), 'utf8')) as {
     state: string;
+    resources: { neonDatabaseId?: unknown };
   };
   if (journal.state !== 'owner_pending')
     throw new Error('Packaged resume did not retain owner-pending state');
+  // Neon reports database ids as integers; the journal must keep the id the launcher normalized.
+  if (journal.resources.neonDatabaseId !== '4821907')
+    throw new Error('Packaged journal did not keep the Neon database id as a string');
   process.stdout.write(
     'Packaged Community launcher proof passed: dry-run, exact release, provisioning, resume, pinned config, owner-pending.\n'
   );

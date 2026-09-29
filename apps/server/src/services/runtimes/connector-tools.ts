@@ -12,6 +12,9 @@ import type {
   ConnectorRuntimePrincipalPort,
 } from '../connectors/runtime-principal-port.js';
 import type { ConnectorTurnLeaseSupervisorFactory } from './connectors/connector-turn-lease-supervisor.js';
+import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../connectors/runtime-capability-scope.js';
+import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../core/capabilities/capability-approval-hold.js';
+import { CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../session/session-state-projector.js';
 
 /** Header carrying the short-lived internal runtime bearer. */
 export const CONNECTOR_RUNTIME_AUTHORIZATION_HEADER = 'Authorization';
@@ -21,6 +24,23 @@ export const CONNECTOR_RUNTIME_KIND_HEADER = 'X-DorkOS-Connector-Runtime';
 export const CONNECTOR_RUNTIME_CWD_HEADER = 'X-DorkOS-Connector-Cwd';
 /** Dedicated MCP server name used by Codex and OpenCode. */
 export const CONNECTOR_RUNTIME_MCP_SERVER_NAME = 'dorkos_connections';
+
+/**
+ * The longest one call on the connection tools may run before the runtime
+ * gives up on it, set on the `dorkos_connections` server for Codex and
+ * OpenCode (DOR-2503). Two calls there legitimately wait on a person: an
+ * access request held for their answer, and an action that holds for its
+ * approval. Both runtimes default far below either (Codex five minutes, the
+ * MCP client OpenCode uses one minute), so without this a held request died
+ * as a tool error on the agent's side while the person could still answer.
+ *
+ * Derived from both holds by name, plus the grace the session projector keeps
+ * past a hold, so raising either raises this. Claude Code's in-session server
+ * sizes its own ceiling the same way (`claude-code/mcp-tools/tool-timeout.ts`).
+ */
+export const CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS =
+  Math.max(CONNECTOR_REQUEST_LIVE_HOLD_MS, CAPABILITY_APPROVAL_HOLD_CAP_MS) +
+  CAPABILITY_HOLD_PAUSE_GRACE_MS;
 
 /** Environment variables holding connector listener header values for Codex. */
 export const CONNECTOR_RUNTIME_HEADER_ENV = {

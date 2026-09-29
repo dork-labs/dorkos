@@ -77,6 +77,13 @@ export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['update', 'all', 'confirm', 'dialog', 'installed', 'outdated', 'version'],
   },
   {
+    id: 'keepfilesdialog',
+    title: 'KeepFilesDialog',
+    page: 'marketplace',
+    category: 'Marketplace',
+    keywords: ['kept', 'files', 'keep', 'mine', 'unproven', 'local', 'held back', 'installed'],
+  },
+  {
     id: 'marketplacesourcesview',
     title: 'MarketplaceSourcesView',
     page: 'marketplace',

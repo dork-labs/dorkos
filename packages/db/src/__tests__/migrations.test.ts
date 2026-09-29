@@ -197,10 +197,10 @@ describe('Database Migrations', () => {
       'connector_usage_attempts',
       'connector_usage_terminal_receipts',
       // Decisions an extension raised in the inbox (spec flow-multiproject
-      // §7.2, migration 0127).
+      // §7.2, migration 0130).
       'extension_decisions',
       'handle_tombstones',
-      // The project registry (spec flow-multiproject §6.1, migration 0126).
+      // The project registry (spec flow-multiproject §6.1, migration 0129).
       'known_project_reporters',
       'known_projects',
       'mesh_namespace_rules',

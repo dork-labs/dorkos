@@ -32,9 +32,21 @@ const NeonBranchSchema = z
     default: z.boolean(),
   })
   .passthrough();
+/**
+ * Neon issues database ids as integers (`Database.id: number` in the Neon API), unlike its string
+ * project, branch and endpoint ids; a live launch stopped on this (DOR-2536). A string is still
+ * accepted in case the API ever changes. Either way the id leaves this module as a digit string,
+ * so journals and comparisons downstream only ever see one type. zod's `.int()` already refuses an
+ * integer beyond `Number.MAX_SAFE_INTEGER` (so an id can never print as `1e+21`); the explicit
+ * `.max` only states that bound where the next reader will look for it.
+ */
+const NeonDatabaseIdSchema = z.union([
+  ExternalIdentifierSchema,
+  z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).transform(String),
+]);
 const NeonDatabaseSchema = z
   .object({
-    id: ExternalIdentifierSchema,
+    id: NeonDatabaseIdSchema,
     branch_id: ExternalIdentifierSchema,
     name: ExternalLabelSchema,
     owner_name: ExternalLabelSchema,
@@ -43,8 +55,14 @@ const NeonDatabaseSchema = z
 const NeonRoleSchema = z
   .object({ branch_id: ExternalIdentifierSchema, name: ExternalLabelSchema })
   .passthrough();
+/**
+ * The Neon API declares `geo_lat`/`geo_long` as strings, "Empty if unknown". An empty value is a
+ * region without a known location, not a malformed answer, so it is accepted and read as null
+ * rather than failing the whole region list. A number is still accepted for safety.
+ */
 const NeonCoordinateSchema = z.union([
   z.number().finite(),
+  z.literal(''),
   z.string().regex(/^-?(?:\d+(?:\.\d+)?|\.\d+)$/u),
 ]);
 const NeonRegionSchema = z
@@ -266,6 +284,8 @@ export async function readNeonRegions(options: NeonReadOptions): Promise<NeonReg
     })
   ).value;
   const coordinate = (value: string | number): number | null => {
+    // `Number('')` is 0, a real place off the coast of Africa, so unknown is checked first.
+    if (value === '') return null;
     const parsed = typeof value === 'number' ? value : Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   };

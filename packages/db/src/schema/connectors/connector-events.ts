@@ -212,7 +212,13 @@ export const connectorEventReceipts = sqliteTable(
   ]
 );
 
-/** Immutable owner-review selections; retries cannot recreate or resurrect consent. */
+/**
+ * Immutable owner-review selections; retries cannot recreate or resurrect consent.
+ * The one deletion: an agent-request answer taken back (its updates couldn't be
+ * set up) puts every subscription it selected back as it was, then drops its
+ * row, so the person can pick a different set under the same review
+ * (`ConnectorEventGrantService.withdraw`).
+ */
 export const connectorEventConsentCommands = sqliteTable(
   'connector_event_consent_commands',
   {

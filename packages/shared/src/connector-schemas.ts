@@ -437,6 +437,8 @@ export const ConnectionReadinessReasonSchema = z.enum([
   'cannot_run_actions',
   /** The person paused it. */
   'paused',
+  /** Paused while the person signs in to it again; finishing that sign-in brings it back. */
+  'signing_in',
   /** The sign-in ended at the service (expired or revoked). */
   'signed_out',
   /** A sign-in started and never finished. */
@@ -451,10 +453,10 @@ export const ConnectionReadinessReasonSchema = z.enum([
   'disconnected',
   /** Disconnected, and DorkOS is still removing its access at the service. */
   'disconnect_finishing',
-  /** Disconnected, removing its access at the service failed, and trying again can work. */
-  'disconnect_failed',
   /** Disconnected, and DorkOS can't finish removing its access at the service right now. */
   'disconnect_stuck',
+  /** Closed because the service said the account no longer exists there. */
+  'gone_at_service',
 ]);
 /** Why one connected account is in its readiness state. */
 export type ConnectionReadinessReason = z.infer<typeof ConnectionReadinessReasonSchema>;
@@ -471,6 +473,8 @@ export type ConnectionReadinessReason = z.infer<typeof ConnectionReadinessReason
  * - `review_access` — check who can use it.
  * - `fix_key` — fix the person's own key (Settings › Connections).
  * - `retry` — try the unfinished step again now.
+ * - `remove` — remove the disconnected account from the person's apps. What
+ *   DorkOS still owes at the service stays DorkOS's job in the background.
  * - `wait` — nothing to press: DorkOS tries again on its own.
  * - `turn_on_for_this_chat` — turn the app back on for this one chat. Offered
  *   only in the owner's view of a chat, and only when turning it on puts back
@@ -484,6 +488,7 @@ export const ConnectionFixActionSchema = z.enum([
   'review_access',
   'fix_key',
   'retry',
+  'remove',
   'wait',
   'turn_on_for_this_chat',
 ]);
@@ -517,6 +522,18 @@ export const ConnectionReadinessSchema = z
     reason: ConnectionReadinessReasonSchema,
     /** Absent when there is nothing to fix, or nothing anyone can do from here. */
     fix: ConnectionFixSchema.optional(),
+    /**
+     * Where the person can end DorkOS's access at the service themselves, when
+     * DorkOS can't finish that on its own and the page is known.
+     */
+    serviceAccessPage: z
+      .object({
+        /** Whose account settings the page is, e.g. "Google". */
+        service: z.string().min(1).max(100),
+        url: z.string().url(),
+      })
+      .strict()
+      .optional(),
     copy: z
       .object({
         /** One plain line for the account's owner. */
@@ -607,6 +624,10 @@ export const CONNECTION_READINESS_COPY: Readonly<
     owner: 'Paused. Agents can’t use it until you resume it.',
     agent: `The person paused this account. Ask them to resume it ${READINESS_ASK_ON_CONNECTIONS}.`,
   },
+  signing_in: {
+    owner: 'Finish signing in again. Agents can’t use it until you do.',
+    agent: `The person is signing in to this account again. Ask them to finish signing in ${READINESS_ASK_ON_CONNECTIONS}.`,
+  },
   signed_out: {
     owner: 'Signed out. Agents can’t use it until you sign in again.',
     agent: `The sign-in for this account ended. Ask the person to sign in again ${READINESS_ASK_ON_CONNECTIONS}.`,
@@ -616,8 +637,9 @@ export const CONNECTION_READINESS_COPY: Readonly<
     agent: `The sign-in for this account didn’t finish. Ask the person to sign in again ${READINESS_ASK_ON_CONNECTIONS}.`,
   },
   needs_review: {
-    owner: 'Check who can use it. Agents can’t use it until you do.',
-    agent: `The person needs to check who can use this account before agents can use it again. Ask them to check it ${READINESS_ASK_ON_CONNECTIONS}.`,
+    owner:
+      'How DorkOS reaches it changed, so check who can use it. Agents can’t use it until you do.',
+    agent: `How DorkOS reaches this account changed, so the person needs to confirm who can use it before agents can use it again. Ask them to check it ${READINESS_ASK_ON_CONNECTIONS}.`,
   },
   access_update_failed: {
     owner: 'A change to who can use it didn’t go through. Check who can use it.',
@@ -636,10 +658,11 @@ export const CONNECTION_READINESS_COPY: Readonly<
     owner: 'Disconnected. Agents can’t use it. DorkOS is still removing its access at the service.',
     agent: CONNECTION_GONE_AGENT_COPY,
   },
-  disconnect_failed: {
+  gone_at_service: {
     owner:
-      'Disconnected. Agents can’t use it. Removing its access at the service didn’t finish. Try again.',
-    agent: CONNECTION_GONE_AGENT_COPY,
+      'Your DorkOS account no longer has this connection, so agents can’t use it. Connect it again to use it. To be sure its old access ended, remove it in that app’s own account settings.',
+    agent:
+      'The person’s DorkOS account no longer has this connection. Ask the person to connect it again if you need it.',
   },
 };
 
@@ -663,9 +686,9 @@ export function disconnectStuckOwnerLine(cause: ConnectionDisconnectStuckCause):
   const ownSettings = 'To be sure its access ended, remove it in that app’s own account settings.';
   switch (cause) {
     case 'own_key_unavailable':
-      return `${lead} DorkOS can’t finish removing its access at the service until your key works again. Fix the key, then try again.`;
+      return `${lead} DorkOS can’t finish removing its access at the service until the key it was connected through works again. Add that same key again and DorkOS finishes it on its own.`;
     case 'dorkos_account_unlinked':
-      return `${lead} DorkOS can’t finish removing its access at the service, because your DorkOS account isn’t linked anymore. ${ownSettings}`;
+      return `${lead} DorkOS can’t finish removing its access at the service, because your DorkOS account isn’t linked anymore. Link this computer to the same DorkOS account again and DorkOS finishes it on its own. ${ownSettings}`;
     case 'unconfirmed':
       return `${lead} DorkOS couldn’t confirm its access ended at the service. ${ownSettings}`;
     case 'dorkos_account_unavailable':
@@ -683,6 +706,51 @@ export const WAY_RECHECK_COPY: ConnectionReadinessCopy = {
   agent:
     'The way this account was connected through didn’t answer. DorkOS checks it again on its own, so try again in a few minutes. The person doesn’t need to do anything.',
 };
+
+/**
+ * The words for an account whose way DorkOS is checking right now, or will
+ * check again on its own before long: nothing for anyone to press yet.
+ */
+export const WAY_CHECKING_COPY: ConnectionReadinessCopy = {
+  owner: 'DorkOS is checking how it reaches it. This takes a moment.',
+  agent:
+    'DorkOS is checking how it reaches this account. Try again in a few minutes. The person doesn’t need to do anything.',
+};
+
+/**
+ * Pages where a person can end an app's access to their account themselves,
+ * by the account's service. Only pages known to hold that setting are listed;
+ * an app missing here gets the plain line with no link.
+ */
+const SERVICE_ACCESS_PAGES: Readonly<Record<string, { service: string; url: string }>> = {
+  google: { service: 'Google', url: 'https://myaccount.google.com/connections' },
+  github: { service: 'GitHub', url: 'https://github.com/settings/applications' },
+  dropbox: { service: 'Dropbox', url: 'https://www.dropbox.com/account/connected_apps' },
+};
+
+/** Which account service each app signs in through, for the apps whose page is known. */
+const SERVICE_OF_APP: Readonly<Record<string, keyof typeof SERVICE_ACCESS_PAGES>> = {
+  gmail: 'google',
+  googlecalendar: 'google',
+  googledocs: 'google',
+  googlesheets: 'google',
+  googledrive: 'google',
+  github: 'github',
+  dropbox: 'dropbox',
+};
+
+/**
+ * Where the person can end DorkOS's access to one app's account themselves,
+ * when that page is known.
+ *
+ * @param toolkit - The app's slug, e.g. `'gmail'`.
+ */
+export function serviceAccessPageFor(
+  toolkit: string
+): { readonly service: string; readonly url: string } | undefined {
+  const service = SERVICE_OF_APP[toolkit];
+  return service === undefined ? undefined : SERVICE_ACCESS_PAGES[service];
+}
 
 /**
  * What an agent is told to do about an account nothing fixes from here: tell
@@ -954,6 +1022,18 @@ const ConnectionTargetSchema = ReviewActionBaseSchema.extend({
 }).strict();
 
 /**
+ * The access an agent asks for, by level rather than by action name: `read`
+ * is everything the app lets agents read, and `read-write` adds everything
+ * that changes something there. These are the same two levels the person
+ * answers with ("Read", "Read and write"), so a request and its answer are
+ * compared by class, never by guessed action names. No level covers an
+ * action that can't be undone; that is only ever allowed one action at a time.
+ */
+export const ConnectorRequestAccessSchema = z.enum(['read', 'read-write']);
+/** The access an agent asks for, by level. */
+export type ConnectorRequestAccess = z.infer<typeof ConnectorRequestAccessSchema>;
+
+/**
  * Versioned operator actions accepted by durable connector review requests.
  * Every branch is strict so newly supplied fields cannot silently acquire
  * authority under an older action version.
@@ -1001,7 +1081,7 @@ export const ConnectorReviewActionSchema = z.discriminatedUnion('kind', [
     kind: z.literal('agent_connection_request'),
     serviceSlug: z.string().min(1),
     reason: z.string().min(1),
-    requestedOperations: z.array(z.string().min(1)).min(1),
+    access: ConnectorRequestAccessSchema,
     requestedEvents: z.array(z.string().min(1)).default([]),
   }).strict(),
   ReviewActionBaseSchema.extend({
@@ -1019,7 +1099,7 @@ export const ConnectorAgentConnectionRequestInputSchema = z
     version: z.literal(1),
     serviceSlug: z.string().min(1).max(200),
     reason: z.string().min(1).max(2_000),
-    requestedOperations: z.array(z.string().min(1).max(500)).min(1).max(200),
+    access: ConnectorRequestAccessSchema,
     requestedEvents: z
       .array(z.string().min(1).max(500))
       .max(CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT)
@@ -1027,17 +1107,12 @@ export const ConnectorAgentConnectionRequestInputSchema = z
   })
   .strict()
   .superRefine((request, context) => {
-    for (const [field, values] of [
-      ['requestedOperations', request.requestedOperations],
-      ['requestedEvents', request.requestedEvents],
-    ] as const) {
-      if (new Set(values).size !== values.length) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [field],
-          message: 'Requested service actions must be unique.',
-        });
-      }
+    if (new Set(request.requestedEvents).size !== request.requestedEvents.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['requestedEvents'],
+        message: 'Requested events must be unique.',
+      });
     }
   });
 /** Strict runtime request for owner-reviewed access to one service. */
@@ -1048,15 +1123,27 @@ export type ConnectorAgentConnectionRequestInput = z.infer<
 const ConnectorAgentRequestBaseSchema = z
   .object({
     requestId: z.string().min(1),
-    reviewUrl: z.string().startsWith('/connections?request='),
     serviceSlug: z.string().min(1),
     reason: z.string().min(1),
-    requestedOperations: z.array(z.string().min(1)),
+    access: ConnectorRequestAccessSchema,
     requestedEvents: z.array(z.string().min(1)),
     createdAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
+    /**
+     * What happens next, or what the person must do, in plain words the agent
+     * can pass on. Every status carries one, so an agent never has to guess
+     * from a status name alone.
+     */
+    note: z.string().min(1),
   })
   .strict();
+
+/**
+ * The part of what an agent asked for that its access does not cover, by
+ * class: `write` when it asked to change things and can only read, `read`
+ * when what it holds reads nothing.
+ */
+export const ConnectorRequestNotGrantedSchema = z.array(z.enum(['read', 'write']));
 
 /** Account-private-safe result returned to the originating runtime. */
 export const ConnectorAgentRequestStatusSchema = z.discriminatedUnion('status', [
@@ -1068,11 +1155,12 @@ export const ConnectorAgentRequestStatusSchema = z.discriminatedUnion('status', 
     grantedOperationRevisionIds: z.array(z.string().min(1)),
     grantedEvents: z.array(z.string().min(1)),
     /**
-     * Operations the agent asked for that the owner did not allow. Empty when
-     * everything asked for was allowed; the agent works within the rest and
-     * says what it could not do.
+     * What the agent asked for that its access on this account does not
+     * cover, compared by class (read, write), never by action name. Empty
+     * when everything asked for was allowed; otherwise the agent works within
+     * what it has and says what it could not do.
      */
-    notGrantedOperations: z.array(z.string().min(1)).optional(),
+    notGranted: ConnectorRequestNotGrantedSchema,
   }).strict(),
   ConnectorAgentRequestBaseSchema.extend({ status: z.literal('denied') }).strict(),
   ConnectorAgentRequestBaseSchema.extend({ status: z.literal('expired') }).strict(),

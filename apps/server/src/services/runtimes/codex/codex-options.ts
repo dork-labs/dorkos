@@ -20,6 +20,7 @@ import { type DorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import { dorkosHeaderEnv, dorkosHeaderEnvNames } from './dorkos-header-env.js';
 import {
   CONNECTOR_RUNTIME_MCP_SERVER_NAME,
+  CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
   type ConnectorRuntimeMcpInjection,
 } from '../connector-tools.js';
 import { connectorHeaderEnv, connectorHeaderEnvNames } from './connector-header-env.js';
@@ -147,6 +148,9 @@ function buildMcpServersConfig(
     servers[CONNECTOR_RUNTIME_MCP_SERVER_NAME] = {
       url: connectorTools.url,
       env_http_headers: connectorHeaderEnvNames(connectorTools),
+      // Codex gives one MCP call five minutes by default, shorter than an
+      // access request or an approval holds for the person's answer.
+      tool_timeout_sec: CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS / 1000,
     };
   }
   return Object.keys(servers).length > 0 ? servers : undefined;

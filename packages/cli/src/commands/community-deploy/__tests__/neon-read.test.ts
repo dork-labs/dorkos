@@ -57,6 +57,15 @@ cat "$FIXTURE_PATH"
         latitude: 39.96,
         longitude: -83,
       },
+      // Neon reports an unknown location as "" ("Empty if unknown"). It is unknown, not 0, 0,
+      // and one such region must not fail the whole list.
+      {
+        id: 'aws-fixture-unknown-1',
+        name: 'Fixture region without a known location',
+        isDefault: false,
+        latitude: null,
+        longitude: null,
+      },
     ]);
   });
   it('rejects every mutation of trusted active-region fields', async () => {
@@ -176,7 +185,7 @@ printf '%s' '[{"id":"br-example","project_id":"project-example","name":"main","d
 
     const topology = await fakeNeon(`
 case "$1 $2" in
-  "databases list") printf '%s' '[{"id":"db-example","branch_id":"br-example","name":"community","owner_name":"community_owner","created_at":"2026-09-21T00:00:00Z"}]' ;;
+  "databases list") printf '%s' '[{"id":731542,"branch_id":"br-example","name":"community","owner_name":"community_owner","created_at":"2026-09-21T00:00:00Z","updated_at":"2026-09-21T00:00:00Z"}]' ;;
   "roles list") printf '%s' '[{"branch_id":"br-example","name":"community_owner","created_at":"2026-09-21T00:00:00Z"}]' ;;
   *) exit 9 ;;
 esac
@@ -187,13 +196,79 @@ test "$3 $4 $5 $6 $7 $8" = "--project-id project-example --branch br-example --o
     ).resolves.toEqual({
       databases: [
         {
-          id: 'db-example',
+          // Neon reports the id as an integer; the reader hands every id on as a string.
+          id: '731542',
           branchId: 'br-example',
           name: 'community',
           ownerName: 'community_owner',
         },
       ],
       roles: [{ branchId: 'br-example', name: 'community_owner' }],
+    });
+  });
+
+  it('still accepts a string database id and rejects a non-integer one', async () => {
+    const topology = (id: string) =>
+      fakeNeon(`
+case "$1 $2" in
+  "databases list") printf '%s' '[{"id":${id},"branch_id":"br-example","name":"community","owner_name":"community_owner"}]' ;;
+  "roles list") printf '%s' '[{"branch_id":"br-example","name":"community_owner"}]' ;;
+  *) exit 9 ;;
+esac
+`);
+    const accepted = await readNeonBranchTopology(
+      options(await topology('"db-example"')),
+      'project-example',
+      'br-example'
+    );
+    expect(accepted.databases[0]?.id).toBe('db-example');
+    for (const id of ['-1', '1.5', '9007199254740993']) {
+      await expect(
+        readNeonBranchTopology(options(await topology(id)), 'project-example', 'br-example'),
+        id
+      ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    }
+  });
+
+  it('reads every checked-in Neon fixture through the reader that parses it', async () => {
+    const fixturePath = (name: string) =>
+      fileURLToPath(new URL(`./fixtures/neon/${name}`, import.meta.url));
+    const executable = await fakeNeon(`
+case "$1 $2" in
+  "orgs list") cat "$ORGANIZATIONS" ;;
+  "projects list") cat "$PROJECTS" ;;
+  "branches list") cat "$BRANCHES" ;;
+  "databases list") cat "$DATABASES" ;;
+  "roles list") cat "$ROLES" ;;
+  *) exit 9 ;;
+esac
+`);
+    const readOptions = options(executable, {
+      ORGANIZATIONS: fixturePath('organizations.json'),
+      PROJECTS: fixturePath('projects.json'),
+      BRANCHES: fixturePath('branches.json'),
+      DATABASES: fixturePath('databases.json'),
+      ROLES: fixturePath('roles.json'),
+    });
+    await expect(readNeonOrganizations(readOptions)).resolves.toEqual([
+      { id: 'org_fixture_01', name: 'Fixture Organization' },
+    ]);
+    await expect(readNeonProjects(readOptions, 'org_fixture_01')).resolves.toHaveLength(1);
+    await expect(readNeonBranches(readOptions, 'project_fixture_01')).resolves.toEqual([
+      { id: 'br-fixture-01', projectId: 'project_fixture_01', name: 'main', isDefault: true },
+    ]);
+    await expect(
+      readNeonBranchTopology(readOptions, 'project_fixture_01', 'br-fixture-01')
+    ).resolves.toEqual({
+      databases: [
+        {
+          id: '4821907',
+          branchId: 'br-fixture-01',
+          name: 'community',
+          ownerName: 'community_owner',
+        },
+      ],
+      roles: [{ branchId: 'br-fixture-01', name: 'community_owner' }],
     });
   });
 

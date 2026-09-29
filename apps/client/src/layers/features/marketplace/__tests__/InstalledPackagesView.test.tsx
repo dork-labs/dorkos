@@ -36,6 +36,8 @@ import { InstalledPackagesView } from '../ui/InstalledPackagesView';
 // feature's view hook, so mock those rather than the raw entity hooks.
 
 const reviewMutate = vi.fn();
+/** What the held-back listing answers, for the keep-files confirm step (DOR-2341). */
+let heldBackQuery: { data?: unknown[]; isPending: boolean } = { data: [], isPending: false };
 vi.mock('@/layers/entities/marketplace', () => ({
   useInstalledPackages: vi.fn(),
   useApplyingInstallPaths: vi.fn(),
@@ -45,10 +47,16 @@ vi.mock('@/layers/entities/marketplace', () => ({
     variables: undefined,
   }),
   useInstalledIntegrity: vi.fn(),
+  useHeldBackPackages: () => heldBackQuery,
 }));
 
 vi.mock('../model/use-check-files-with-toast', () => ({
   useCheckFilesWithToast: vi.fn(),
+}));
+
+const keepMutate = vi.fn();
+vi.mock('../model/use-keep-files-with-toast', () => ({
+  useKeepFilesWithToast: () => ({ mutate: keepMutate, isPending: false }),
 }));
 
 vi.mock('@/layers/entities/shapes', () => ({
@@ -1218,7 +1226,12 @@ describe('InstalledPackagesView', () => {
         [FLOW.installPath]: {
           status: 'clean',
           customized: [],
-          unproven: { files: ['notes.txt', 'old.md'], running: [], check: { source: 'fetchable' } },
+          unproven: {
+            files: ['notes.txt', 'old.md'],
+            running: [],
+            check: { source: 'fetchable' },
+            keepKey: 'sha256:kept',
+          },
         },
       });
       render(<InstalledPackagesView />);
@@ -1248,6 +1261,7 @@ describe('InstalledPackagesView', () => {
             files: ['commands/old.md', 'notes.txt', 'skills/old/SKILL.md'],
             running: ['commands/old.md', 'skills/old/SKILL.md'],
             check: { source: 'fetchable' },
+            keepKey: 'sha256:kept',
           },
         },
       });
@@ -1275,7 +1289,12 @@ describe('InstalledPackagesView', () => {
         [FLOW.installPath]: {
           status: 'clean',
           customized: [],
-          unproven: { files: ['notes.txt'], running: [], check: { source: 'fetchable' } },
+          unproven: {
+            files: ['notes.txt'],
+            running: [],
+            check: { source: 'fetchable' },
+            keepKey: 'sha256:kept',
+          },
         },
       });
       render(<InstalledPackagesView />);
@@ -1283,6 +1302,163 @@ describe('InstalledPackagesView', () => {
         'data-runs',
         'false'
       );
+    });
+
+    // Purpose (DOR-2341): kept files nothing can sort become the person's only
+    // after they see them and confirm; the confirm sends back exactly the key
+    // the row carried, for exactly this installation. Fails if the button
+    // keeps without asking, or sends another installation's key.
+    it('keeps the kept files as the person’s only after a confirm, bound to what the row showed', async () => {
+      const user = userEvent.setup();
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: {
+          status: 'clean',
+          customized: [],
+          unproven: {
+            files: ['notes.txt', 'skills/old/SKILL.md'],
+            running: ['skills/old/SKILL.md'],
+            check: { source: 'local' },
+            keepKey: 'sha256:kept',
+          },
+        },
+      });
+      render(<InstalledPackagesView />);
+
+      const note = screen.getByTestId('installation-integrity-unproven');
+      await user.click(note.querySelector('summary')!);
+      await user.click(within(note).getByRole('button', { name: /Keep the files Flow kept/ }));
+      expect(keepMutate).not.toHaveBeenCalled();
+
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog).toHaveTextContent('Keep the files Flow kept as yours?');
+      expect(dialog).toHaveTextContent('Nothing is moved or deleted.');
+      expect(dialog).toHaveTextContent('there’s no earlier version to sort them with');
+      expect(dialog).toHaveTextContent('They run as your own files from now on.');
+      expect(within(dialog).getByRole('list', { name: 'Still runs' })).toHaveTextContent(
+        'skills/old/SKILL.md'
+      );
+      await user.click(within(dialog).getByRole('button', { name: 'Keep them as mine' }));
+
+      expect(keepMutate).toHaveBeenCalledWith({
+        name: FLOW.name,
+        options: { installRoot: FLOW.installPath, keepKey: 'sha256:kept' },
+      });
+    });
+
+    // Purpose (DOR-2341 review): Check files comes first. Keeping is offered
+    // only where Check files cannot help (no earlier version, or it could not
+    // be downloaded), so a person is never steered past the sort that would
+    // set leftovers aside.
+    it('offers Keep these as mine only where Check files cannot sort the files', async () => {
+      const user = userEvent.setup();
+      const withCheck = (check: object) => ({
+        [FLOW.installPath]: {
+          status: 'clean' as const,
+          customized: [],
+          unproven: {
+            files: ['notes.txt'],
+            running: [],
+            check,
+            keepKey: 'sha256:kept',
+          },
+        },
+      });
+      showRows([FLOW], [makeCheck(FLOW)]);
+
+      setIntegrity(withCheck({ source: 'fetchable' }) as never);
+      render(<InstalledPackagesView />);
+      await user.click(
+        screen.getByTestId('installation-integrity-unproven').querySelector('summary')!
+      );
+      expect(screen.queryByRole('button', { name: /Keep the files Flow kept/ })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
+      cleanup();
+
+      setIntegrity(
+        withCheck({
+          source: 'fetchable',
+          last: {
+            outcome: 'fetch-failed',
+            message: 'Couldn’t fetch the version of flow you had before.',
+          },
+        }) as never
+      );
+      render(<InstalledPackagesView />);
+      await user.click(
+        screen.getByTestId('installation-integrity-unproven').querySelector('summary')!
+      );
+      expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
+      await user.click(screen.getByRole('button', { name: /Keep the files Flow kept/ }));
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog).toHaveTextContent(
+        'DorkOS couldn’t download the version you had to sort them with'
+      );
+      expect(dialog).not.toHaveTextContent('there’s no earlier version');
+    });
+
+    // Purpose (DOR-2341): for a global package held back from sessions, the
+    // confirm shows everything it runs and sends that back, so keeping also
+    // approves it as it is now, the same as a Review; nothing is sent until
+    // what it runs has been shown.
+    it('shows what a held-back package runs, and sends it back with the keep', async () => {
+      const user = userEvent.setup();
+      const held = {
+        ...FLOW,
+        heldBack: { reason: 'unasked' as const, reviewable: true, note: 'Held back.' },
+      };
+      const effects = {
+        hooks: [{ event: 'Stop', matcher: null, command: 'echo hi', source: null }],
+        schedules: [],
+        mcpServers: [],
+        lspServers: [],
+        monitors: [],
+        executables: [],
+        skillTools: [],
+        skillCommands: [],
+      };
+      heldBackQuery = { isPending: true };
+      showRows([held], [makeCheck(held)]);
+      setIntegrity({
+        [held.installPath]: {
+          status: 'clean',
+          customized: [],
+          unproven: {
+            files: ['skills/old/SKILL.md'],
+            running: ['skills/old/SKILL.md'],
+            check: { source: 'local' },
+            keepKey: 'sha256:kept',
+          },
+        },
+      });
+      const { rerender } = render(<InstalledPackagesView />);
+      const note = screen.getByTestId('installation-integrity-unproven');
+      await user.click(note.querySelector('summary')!);
+      await user.click(within(note).getByRole('button', { name: /Keep the files Flow kept/ }));
+      const waiting = await screen.findByRole('dialog');
+      expect(within(waiting).getByRole('button', { name: 'Keep them as mine' })).toBeDisabled();
+
+      heldBackQuery = {
+        isPending: false,
+        data: [{ name: held.name, effects, bindsTo: 'sha256:pkg', changedSinceApproval: false }],
+      };
+      rerender(<InstalledPackagesView />);
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveTextContent('Keeping also lets it run, in every session');
+      expect(within(dialog).getByRole('list', { name: 'What Flow runs' })).toHaveTextContent(
+        'echo hi'
+      );
+      await user.click(within(dialog).getByRole('button', { name: 'Keep them and let it run' }));
+
+      expect(keepMutate).toHaveBeenCalledWith({
+        name: held.name,
+        options: {
+          installRoot: held.installPath,
+          keepKey: 'sha256:kept',
+          review: { effects, bindsTo: 'sha256:pkg' },
+        },
+      });
+      heldBackQuery = { data: [], isPending: false };
     });
 
     // Purpose (DOR-2322): kept files from a package installed from a folder
@@ -1293,7 +1469,12 @@ describe('InstalledPackagesView', () => {
         [FLOW.installPath]: {
           status: 'clean',
           customized: [],
-          unproven: { files: ['notes.txt'], running: [], check: { source: 'local' } },
+          unproven: {
+            files: ['notes.txt'],
+            running: [],
+            check: { source: 'local' },
+            keepKey: 'sha256:kept',
+          },
         },
       });
       render(<InstalledPackagesView />);

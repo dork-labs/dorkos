@@ -253,4 +253,12 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'flyout',
     ],
   },
+  // CloudUsageShowcases
+  {
+    id: 'credits-and-other-charges',
+    title: 'Credits and other charges',
+    page: 'settings',
+    category: 'Account',
+    keywords: ['credits', 'usage', 'cloud', 'account', 'other charges', 'storage', 'billing'],
+  },
 ];

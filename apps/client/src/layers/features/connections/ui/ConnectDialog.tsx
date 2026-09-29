@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowUpRight, CheckCircle2, ExternalLink, RefreshCw, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, ExternalLink, RefreshCw, ShieldCheck } from 'lucide-react';
 import type {
   ConnectorAuthenticationFlowState,
   ConnectorCatalogProviderRoute,
@@ -7,10 +7,8 @@ import type {
 } from '@dorkos/shared/connector-resource-schemas';
 import {
   useConnectorAuthentication,
-  useConnectorAgentRequestAuthentication,
   useConnectorCatalog,
   useStartConnectorAuthentication,
-  useStartConnectorAgentRequestAuthentication,
   serviceName as toolkitServiceName,
   serviceLogo,
 } from '@/layers/entities/connectors';
@@ -47,16 +45,11 @@ interface ConnectDialogProps {
   service: ConnectorCatalogService | null;
   /** Opaque durable flow id stored in the current URL. */
   flowId: string | null;
-  /** Exact agent request this authentication flow must remain associated with. */
-  agentRequestId?: string | null;
   /** Writes or clears the URL-backed flow identity. */
   onFlowIdChange: (flowId: string | null) => void;
   /** Clears the transient service selection after the dialog closes. */
   onClose: () => void;
-  /**
-   * Opens the exact per-action access editor for the newly connected account,
-   * or hands a request-bound connection back to its request.
-   */
+  /** Opens the exact per-action access editor for the newly connected account. */
   onChooseAccess: (connectionId: string) => void;
   /**
    * The person finished a standalone connection (the access step done or
@@ -107,7 +100,6 @@ function authenticationAction(
 export function ConnectDialog({
   service,
   flowId,
-  agentRequestId = null,
   onFlowIdChange,
   onClose,
   onChooseAccess,
@@ -117,12 +109,8 @@ export function ConnectDialog({
   const [label, setLabel] = useState('');
   const [routeOverride, setRouteOverride] = useState<string | null>(null);
   const [showProviders, setShowProviders] = useState(false);
-  const standaloneStart = useStartConnectorAuthentication();
-  const requestStart = useStartConnectorAgentRequestAuthentication(agentRequestId);
-  const standaloneFlow = useConnectorAuthentication(agentRequestId ? null : flowId);
-  const requestFlow = useConnectorAgentRequestAuthentication(agentRequestId, flowId);
-  const start = agentRequestId ? requestStart : standaloneStart;
-  const flow = agentRequestId ? requestFlow : standaloneFlow;
+  const start = useStartConnectorAuthentication();
+  const flow = useConnectorAuthentication(flowId);
   const serviceSlug = flow.data?.toolkit ?? service?.serviceSlug ?? '';
   const lookup = useConnectorCatalog(serviceSlug);
   // The fresh read wins over the row the list handed in, so a way set up in
@@ -167,18 +155,14 @@ export function ConnectDialog({
       providerInstanceId: route.providerInstanceId,
       ...(label.trim() && { label: label.trim() }),
     };
-    if (agentRequestId) {
-      requestStart.mutate(common, { onSuccess: (result) => onFlowIdChange(result.flowId) });
-    } else {
-      standaloneStart.mutate(
-        {
-          ...common,
-          toolkit: resolvedService.serviceSlug,
-          idempotencyKey: crypto.randomUUID(),
-        },
-        { onSuccess: (result) => onFlowIdChange(result.flowId) }
-      );
-    }
+    start.mutate(
+      {
+        ...common,
+        toolkit: resolvedService.serviceSlug,
+        idempotencyKey: crypto.randomUUID(),
+      },
+      { onSuccess: (result) => onFlowIdChange(result.flowId) }
+    );
   };
 
   return (
@@ -388,7 +372,7 @@ export function ConnectDialog({
                   />
                 )}
               </div>
-            ) : activeFlow.state === 'connected' && !agentRequestId ? (
+            ) : activeFlow.state === 'connected' ? (
               <div className="space-y-4">
                 <p className="flex items-center gap-2 text-sm font-medium">
                   <CheckCircle2 className="text-status-success size-4" aria-hidden />
@@ -413,28 +397,6 @@ export function ConnectDialog({
                   }}
                 />
               </div>
-            ) : activeFlow.state === 'connected' ? (
-              <div className="space-y-4">
-                <div className="bg-status-success/5 flex items-start gap-3 rounded-lg p-4">
-                  <CheckCircle2 className="text-status-success mt-0.5 size-5" aria-hidden />
-                  <div>
-                    <p className="text-sm font-medium">{serviceName} is connected</p>
-                    <p className="text-muted-foreground mt-1 text-xs">
-                      Return to the request to choose its exact actions.
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  className="w-full"
-                  onClick={() => {
-                    onChooseAccess(activeFlow.connectionId);
-                    finish();
-                  }}
-                >
-                  Review requested access
-                  <ArrowUpRight className="size-4" aria-hidden />
-                </Button>
-              </div>
             ) : (
               <div className="space-y-3">
                 <p role="alert" className="text-destructive text-sm font-medium">
@@ -450,10 +412,9 @@ export function ConnectDialog({
                   onClick={() => {
                     onFlowIdChange(null);
                     start.reset();
-                    if (agentRequestId) close();
                   }}
                 >
-                  {agentRequestId ? 'Return to request' : 'Start again'}
+                  Start again
                 </Button>
               </div>
             )}

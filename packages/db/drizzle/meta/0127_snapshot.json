@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b1f9fa3c-193c-452f-b130-b57ce5ba4d7b",
-  "prevId": "bed482f3-2b57-48c9-b8e6-0b1ab9fbc58c",
+  "id": "d827ebd8-b0c3-44ab-9e22-232a1cba9de7",
+  "prevId": "cf5c90e8-bc16-4680-b111-dcea813c7b8f",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -3594,6 +3594,49 @@
           "autoincrement": false,
           "default": true
         },
+        "paused_by": {
+          "name": "paused_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "closed_because": {
+          "name": "closed_because",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "external_cleanup_attempts": {
+          "name": "external_cleanup_attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "external_cleanup_retry_at": {
+          "name": "external_cleanup_retry_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "external_cleanup_key": {
+          "name": "external_cleanup_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "account_key": {
+          "name": "account_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "auth_config_ref": {
           "name": "auth_config_ref",
           "type": "text",
@@ -5023,6 +5066,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "requested_access": {
+          "name": "requested_access",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'read'"
+        },
         "requested_events_json": {
           "name": "requested_events_json",
           "type": "text",
@@ -6270,14 +6321,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "reconnect_was_paused": {
-          "name": "reconnect_was_paused",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
         "cleanup_snapshot_json": {
           "name": "cleanup_snapshot_json",
           "type": "text",
@@ -6528,6 +6571,13 @@
         },
         "safe_reason": {
           "name": "safe_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rejection_code": {
+          "name": "rejection_code",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -9430,393 +9480,6 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
-    },
-    "known_project_reporters": {
-      "name": "known_project_reporters",
-      "columns": {
-        "root": {
-          "name": "root",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "extension_id": {
-          "name": "extension_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "reported_at": {
-          "name": "reported_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "known_project_reporters_extension_idx": {
-          "name": "known_project_reporters_extension_idx",
-          "columns": [
-            "extension_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "known_project_reporters_root_known_projects_root_fk": {
-          "name": "known_project_reporters_root_known_projects_root_fk",
-          "tableFrom": "known_project_reporters",
-          "tableTo": "known_projects",
-          "columnsFrom": [
-            "root"
-          ],
-          "columnsTo": [
-            "root"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "known_project_reporters_root_extension_id_pk": {
-          "columns": [
-            "root",
-            "extension_id"
-          ],
-          "name": "known_project_reporters_root_extension_id_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "known_project_reporters_kind": {
-          "name": "known_project_reporters_kind",
-          "value": "\"known_project_reporters\".\"kind\" IN ('report', 'resolve')"
-        }
-      }
-    },
-    "known_projects": {
-      "name": "known_projects",
-      "columns": {
-        "root": {
-          "name": "root",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "origin_repo": {
-          "name": "origin_repo",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "first_seen_at": {
-          "name": "first_seen_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "known_projects_name_unique": {
-          "name": "known_projects_name_unique",
-          "columns": [
-            "name"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "known_projects_source": {
-          "name": "known_projects_source",
-          "value": "\"known_projects\".\"source\" IN ('seen', 'reported')"
-        }
-      }
-    },
-    "extension_decisions": {
-      "name": "extension_decisions",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "extension_id": {
-          "name": "extension_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "extension_name": {
-          "name": "extension_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "project_root": {
-          "name": "project_root",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "project_label": {
-          "name": "project_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "why": {
-          "name": "why",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "detail": {
-          "name": "detail",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "actions_json": {
-          "name": "actions_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "link": {
-          "name": "link",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "since": {
-          "name": "since",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "decide_by": {
-          "name": "decide_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "default_choice": {
-          "name": "default_choice",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "deadline_state": {
-          "name": "deadline_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "deadline_attempts": {
-          "name": "deadline_attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "raised_at": {
-          "name": "raised_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "resolved_at": {
-          "name": "resolved_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "choice_id": {
-          "name": "choice_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "choice_label": {
-          "name": "choice_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "resolved_by": {
-          "name": "resolved_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "resolved_by_label": {
-          "name": "resolved_by_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "offer_json": {
-          "name": "offer_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "offer_used_at": {
-          "name": "offer_used_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "watch_json": {
-          "name": "watch_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "pending_action_json": {
-          "name": "pending_action_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "recorded": {
-          "name": "recorded",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        }
-      },
-      "indexes": {
-        "extension_decisions_open_key_unique": {
-          "name": "extension_decisions_open_key_unique",
-          "columns": [
-            "extension_id",
-            "key"
-          ],
-          "isUnique": true,
-          "where": "\"resolved_at\" is null"
-        },
-        "extension_decisions_resolved_raised_idx": {
-          "name": "extension_decisions_resolved_raised_idx",
-          "columns": [
-            "resolved_at",
-            "raised_at"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "extension_decisions_resolved_by": {
-          "name": "extension_decisions_resolved_by",
-          "value": "\"extension_decisions\".\"resolved_by\" IS NULL OR \"extension_decisions\".\"resolved_by\" IN ('person', 'deadline', 'agent', 'rule', 'extension')"
-        },
-        "extension_decisions_deadline_state": {
-          "name": "extension_decisions_deadline_state",
-          "value": "\"extension_decisions\".\"deadline_state\" IS NULL OR \"extension_decisions\".\"deadline_state\" IN ('kept_open', 'settled', 'failed')"
-        }
-      }
     }
   },
   "views": {},

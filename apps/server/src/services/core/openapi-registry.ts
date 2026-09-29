@@ -3108,6 +3108,73 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
+  path: '/api/marketplace/packages/{name}/keep-files',
+  tags: ['Marketplace'],
+  summary: "Keep the files an update couldn't sort as the person's",
+  description:
+    "Make the files an update kept, because it could not tell whether they were the person's " +
+    "or left over from the earlier version, the person's: the record stops listing them, and " +
+    'nothing is moved or deleted (DOR-2341). Only a person may do this: an agent is refused ' +
+    '(`operator_only`), and under login so is anything but a signed-in session ' +
+    '(`operator_cookie_required`). Bound to `keepKey` as the installed list showed it: when a ' +
+    'kept file or the installed version changed since, the answer is 409 `kept_files_changed` ' +
+    'and nothing is written. For a global package held back from sessions, `review` (exactly as ' +
+    '`GET /held-back` listed it) also approves what the package discloses now, like a Review.',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            projectPath: z.string().optional(),
+            installRoot: z.string().optional(),
+            keepKey: z
+              .string()
+              .describe('`integrity.unproven.keepKey` from `GET /installed?verify=true`.'),
+            review: z
+              .object({ effects: DisclosedEffectsSchema, bindsTo: z.string() })
+              .optional()
+              .describe('For a held-back global package: what it runs and what a decision binds.'),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'What was kept, and one sentence saying so',
+      content: {
+        'application/json': {
+          schema: z.object({
+            outcome: z.enum(['kept', 'not-needed']),
+            message: z.string(),
+            files: z.array(z.string()).optional(),
+            approved: z.boolean().optional(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or an invalid package name',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Not a person (`operator_only`, `operator_cookie_required`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The kept files changed since they were shown (`kept_files_changed`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
   path: '/api/marketplace/packages/{name}/uninstall',
   tags: ['Marketplace'],
   summary: 'Uninstall a marketplace package',
@@ -6684,7 +6751,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Durable room event stream (SSE, or WebSocket at the same path)',
   description:
-    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
+    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, a `reaction`, a `canvas` change, or a `revision`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached. A `canvas` frame carries one canvas document's whole current state (or its id and `closed: true`), also without an `id:` line; a resume re-sends every live document, and a client replaces its table from that set. A `revision` frame is sent only for a room mirrored from a Community: it carries an entry the reader may already hold, as the log holds it after the Community server deleted, removed or erased it, and never the text it replaced. It has no `id:` line either; a reader replaces the entry it holds with the same `id` and ignores one it does not hold. A resume of a mirrored room re-sends the trailing window (the last 100 entries) as `revision` frames; an entry older than that is corrected only when it is read again.",
   request: {
     params: RoomIdParams,
     query: z.object({

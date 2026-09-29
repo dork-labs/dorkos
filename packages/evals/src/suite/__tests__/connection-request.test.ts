@@ -34,7 +34,7 @@ const GMAIL_CALL = call('mcp__dorkos__connectors.request_connection', {
   version: 1,
   serviceSlug: 'gmail',
   reason: 'Read today’s mail to summarise it',
-  requestedOperations: ['GMAIL_FETCH_EMAILS'],
+  access: 'read',
 });
 
 describe('connection-request eval', () => {

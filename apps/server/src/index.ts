@@ -350,6 +350,7 @@ import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-m
 import {
   TokenConfirmationProvider,
   describeTemplateCreationCapability,
+  describeWorkspaceCreationCapability,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
@@ -443,6 +444,7 @@ import {
   WorkspaceReconcilerLifecycle,
   resolveWorkspaceRoot,
   setWorkspaceManager,
+  setWorkspaceApprovals,
   setWorkspaceRoot,
   type WorkspaceStore,
 } from './services/workspace/index.js';
@@ -629,7 +631,8 @@ let schedulerService: TaskSchedulerService | null = null;
 let relayCore: RelayCore | undefined;
 /**
  * The marketplace's confirmation provider, once composed: the agents router
- * reads it for an agent's template creation card (DOR-2325).
+ * reads it for an agent's template creation card (DOR-2325), and the workspace
+ * service for a new workspace's card (DOR-2335).
  */
 let templateConfirmationProvider: ConfirmationProvider | undefined;
 /**
@@ -1748,6 +1751,14 @@ async function start() {
     });
     managedWorkspaces = workspaceStore;
     setWorkspaceManager(workspaceService);
+    // A new workspace's card is raised through the marketplace's confirmation
+    // provider, composed later in boot (DOR-2335).
+    setWorkspaceApprovals(() => templateConfirmationProvider);
+    // A clone staged by a server that stopped before deciding about it is
+    // never adopted: it goes before anything else can stage (DOR-2335).
+    const staleClones = await workspaceService.sweepStaging();
+    if (staleClones > 0)
+      logger.info(`[Workspace] cleared ${staleClones} unfinished staged clone(s)`);
     workspaceReconcilerLifecycle.start(workspaceReconciler);
     logger.info('[Workspace] WorkspaceManager registered');
   }
@@ -1839,6 +1850,7 @@ async function start() {
     readers: (communityRef, ownerAuthorId) =>
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
     attachmentBytes: roomAttachmentBytes,
+    publishRevisions: (localRoomId, seqs) => roomService.publishEntryRevisions(localRoomId, seqs),
   });
   remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
     bridge: remoteCommunityBridge.current,
@@ -3054,7 +3066,8 @@ async function start() {
       return (
         describeHookProjectionCapability(capabilityId) ??
         describeGlobalActivationCapability(capabilityId) ??
-        describeTemplateCreationCapability(capabilityId)
+        describeTemplateCreationCapability(capabilityId) ??
+        describeWorkspaceCreationCapability(capabilityId)
       );
     },
   });
@@ -3150,6 +3163,12 @@ async function start() {
     const { testControlRouter } = await import('./routes/test-control.js');
     testControlRouter.use('/composio', testComposioFixture.router);
   }
+  // Built before the ways register: linking the DorkOS account again (seen as
+  // early as boot) sends what the old link refused or never applied again.
+  const managedConnectorAuthority = new ManagedAuthoritySyncService({
+    db,
+    cloud: getCloudLinkManager(),
+  });
   const connectorBootstrapper = new ConnectorProviderBootstrapper({
     ...(testComposioFixture && { composioBaseUrl: testComposioFixture.baseUrl }),
     registry: connectorRegistry,
@@ -3171,6 +3190,16 @@ async function start() {
         displayName: server.displayName,
         connection: { transport: server.transport, url: server.url },
       })),
+    onRelinked: (providerInstanceId) => {
+      void managedConnectorAuthority
+        .restageAfterRelink(providerInstanceId, AbortSignal.timeout(60_000))
+        .catch((error: unknown) => {
+          logger.warn(
+            '[Connectors] Could not send changes again after linking again',
+            logError(error)
+          );
+        });
+    },
     onClosedByNewLink: (closed) => {
       void recordConnectionsClosedByNewLink(activityService, closed).catch((err: unknown) =>
         logger.warn('[Connectors] Could not record connections closed by a new link', { err })
@@ -3236,10 +3265,6 @@ async function start() {
       count: interruptedConnectorStarts,
     });
   }
-  const managedConnectorAuthority = new ManagedAuthoritySyncService({
-    db,
-    cloud: getCloudLinkManager(),
-  });
   const connectorLifecycle = new ConnectorLifecycleService({
     db,
     registry: connectorRegistry,
@@ -3355,6 +3380,8 @@ async function start() {
       managedConnectorAuthority.reconcileEventSubscription(id, version, signal),
     ready: (id: string, version: number) =>
       managedConnectorAuthority.eventSubscriptionReady(id, version),
+    stage: (id: string, version: number) =>
+      managedConnectorAuthority.stageEventSubscriptionChange(id, version),
   };
   const connectorEventGrants = new ConnectorEventGrantService(
     connectorEventSubscriptions,
@@ -3409,7 +3436,8 @@ async function start() {
     keptLogos: () => catalogLogos.keptServiceIds(),
     recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
     appConnections: () => connectorBootstrapper.appConnections(),
-    wayHealth: (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId),
+    wayHealth: (providerInstanceId, toolkit) =>
+      connectorBootstrapper.wayHealth(providerInstanceId, toolkit),
     ...(adapterManager && { relay: adapterManager }),
     agentOwnership: { ownsAgent: connectorOwnsAgent },
     managedUsage: getCloudLinkManager(),
@@ -3432,7 +3460,7 @@ async function start() {
     db,
     connectorRegistry,
     { ownsAgent: connectorOwnsAgent },
-    (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId)
+    (providerInstanceId, toolkit) => connectorBootstrapper.wayHealth(providerInstanceId, toolkit)
   );
   const connectorProgramPrincipals = new ConnectorProgramPrincipalService(db);
   const connectorRuntimePrincipals = meshCore
@@ -3539,7 +3567,6 @@ async function start() {
       runtimePrincipals: connectorRuntimePrincipals,
       authority: requestAuthority,
       bootEpoch: connectorBootEpoch,
-      managedAuthority: managedConnectorAuthority,
       eventGrants: connectorEventGrants,
       authentication: connectorAuthenticationFlows,
       resume: {
@@ -3567,7 +3594,7 @@ async function start() {
       revalidatePrincipal: async (principal) =>
         connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false,
     },
-    (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId)
+    (providerInstanceId, toolkit) => connectorBootstrapper.wayHealth(providerInstanceId, toolkit)
   );
   const connectorBroker = new ConnectorExecutionBroker(
     connectorAuthorization,
@@ -5684,6 +5711,14 @@ async function start() {
       .catch((error: unknown) => {
         logger.warn('[Connectors] Managed authority recovery failed', logError(error));
       });
+    // Removing an own-key account's access at the service is DorkOS's job
+    // after a disconnect; a sign-in again nobody finished gives its account back.
+    void connectorLifecycle
+      .finishOwedCleanups(AbortSignal.timeout(25_000))
+      .catch((error: unknown) => {
+        logger.warn('[Connectors] Account cleanup at the service deferred', logError(error));
+      });
+    connectorAuthenticationFlows.expireAbandoned();
   };
   recoverManagedAuthority();
   managedAuthorityRecoveryInterval = setInterval(recoverManagedAuthority, 30_000);

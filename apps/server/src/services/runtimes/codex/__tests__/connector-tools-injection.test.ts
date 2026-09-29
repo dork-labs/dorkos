@@ -3,6 +3,7 @@ import {
   CONNECTOR_RUNTIME_AUTHORIZATION_HEADER,
   CONNECTOR_RUNTIME_CWD_HEADER,
   CONNECTOR_RUNTIME_HEADER_ENV,
+  CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
   CONNECTOR_RUNTIME_KIND_HEADER,
   CONNECTOR_RUNTIME_MCP_SERVER_NAME,
   connectorRuntimeHeaders,
@@ -37,6 +38,7 @@ describe('Codex connector runtime MCP injection', () => {
         [CONNECTOR_RUNTIME_KIND_HEADER]: CONNECTOR_RUNTIME_HEADER_ENV.runtime,
         [CONNECTOR_RUNTIME_CWD_HEADER]: CONNECTOR_RUNTIME_HEADER_ENV.cwd,
       },
+      tool_timeout_sec: CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS / 1000,
     });
     expect(options.env).toMatchObject({
       [CONNECTOR_RUNTIME_HEADER_ENV.authorization]: `Bearer ${secret}`,
