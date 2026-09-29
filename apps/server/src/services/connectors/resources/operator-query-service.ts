@@ -391,7 +391,7 @@ export class ConnectorOperatorQueryService {
           if (result.status === 'unsupported') {
             warnings.push({
               code: 'catalog_unavailable',
-              message: `${this.providerDisplayName(provider)} cannot list services right now.`,
+              message: `${this.providerDisplayName(provider)} can’t list its apps, so they aren’t shown here.`,
             });
             return;
           }
@@ -443,14 +443,14 @@ export class ConnectorOperatorQueryService {
           if (result.truncated) {
             warnings.push({
               code: 'catalog_truncated',
-              message: `${this.providerDisplayName(provider)} returned more services than DorkOS can list safely.`,
+              message: `${this.providerDisplayName(provider)} has more apps than DorkOS can list, so some aren’t shown.`,
             });
           }
         } catch (error) {
           if (input.signal.aborted) throw error;
           warnings.push({
             code: 'catalog_provider_unavailable',
-            message: `${this.providerDisplayName(provider)} is temporarily unavailable.`,
+            message: `${this.providerDisplayName(provider)} didn’t answer, so its apps aren’t shown. Try again in a moment.`,
           });
         }
       })
@@ -1179,7 +1179,10 @@ export class ConnectorOperatorQueryService {
   ): Promise<ConnectorUsageCounts> {
     if (row.mode === 'managed') {
       if (!this.managedUsage) {
-        return { status: 'unavailable', reason: 'Managed usage is temporarily unavailable.' };
+        return {
+          status: 'unavailable',
+          reason: 'DorkOS couldn’t read this account’s usage from your DorkOS account.',
+        };
       }
       try {
         const result = await this.managedUsage.listManagedConnectorUsage(
@@ -1198,7 +1201,10 @@ export class ConnectorOperatorQueryService {
             }
           : { status: 'unavailable', reason: result.reason };
       } catch {
-        return { status: 'unavailable', reason: 'Managed usage is temporarily unavailable.' };
+        return {
+          status: 'unavailable',
+          reason: 'DorkOS couldn’t read this account’s usage from your DorkOS account.',
+        };
       }
     }
     try {
@@ -1213,7 +1219,7 @@ export class ConnectorOperatorQueryService {
         attemptCount: attempts.length,
       };
     } catch {
-      return { status: 'unavailable', reason: 'Usage is temporarily unavailable.' };
+      return { status: 'unavailable', reason: 'DorkOS couldn’t read this account’s usage.' };
     }
   }
 
@@ -1275,7 +1281,10 @@ export class ConnectorOperatorQueryService {
     }
     const rejected = rows.find((row) => row.state === 'rejected');
     return rejected
-      ? { status: 'failed', reason: rejected.safeReason ?? 'Managed access could not synchronize.' }
+      ? {
+          status: 'failed',
+          reason: rejected.safeReason ?? 'A change to who can use this account didn’t go through.',
+        }
       : { status: 'ready' };
   }
 
@@ -1296,9 +1305,7 @@ export class ConnectorOperatorQueryService {
       custody: capabilities.custody,
       payer: row?.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       capabilities: capabilities.capabilities,
-      disclosure: custodyDisclosure(capabilities.custody, {
-        service: row?.displayName ?? provider.type,
-      }),
+      disclosure: custodyDisclosure(capabilities.custody),
     };
   }
 
@@ -1312,7 +1319,7 @@ export class ConnectorOperatorQueryService {
       custody: row.custody,
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       capabilities: ConnectorProviderCapabilitySetSchema.parse(JSON.parse(row.capabilityJson)),
-      disclosure: custodyDisclosure(row.custody, { service: row.displayName }),
+      disclosure: custodyDisclosure(row.custody),
     };
   }
 

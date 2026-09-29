@@ -54,7 +54,9 @@ export function ConnectionKeyForm({
     >
       <div className="min-w-0 flex-1 space-y-1">
         <Label htmlFor={inputId} className="text-xs">
-          {name} API key
+          {/* Composio has two kinds of key and only its project key runs app
+              actions, so the label names that one. */}
+          {type === 'composio' ? 'Composio project key' : `${name} API key`}
         </Label>
         <PasswordInput
           id={inputId}

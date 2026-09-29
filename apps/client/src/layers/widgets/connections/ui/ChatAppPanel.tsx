@@ -54,11 +54,9 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
         />
       ) : broken ? (
         <PanelFix
-          message={
-            instance.status.lastError
-              ? `Stopped working: ${instance.status.lastError}`
-              : `Stopped working. Messages aren’t getting through ${manifest.displayName}.`
-          }
+          // The bot's own error text (`status.lastError`) is written for
+          // developers, so the person sees one plain line and the one fix.
+          message={`Stopped working. Messages aren’t getting through ${manifest.displayName}.`}
           action="Check its settings"
           onAction={() => setWizard('edit')}
         />

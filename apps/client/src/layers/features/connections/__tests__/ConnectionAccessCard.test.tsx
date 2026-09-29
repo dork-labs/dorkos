@@ -200,8 +200,8 @@ describe('ConnectionAccessCard — page mode', () => {
     expect(await screen.findByTestId('connector-access-outcome')).toHaveTextContent(
       'Access update pending'
     );
-    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
-    expect(await screen.findByText(/The access change was not repeated/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Check if it’s done' }));
+    expect(await screen.findByText(/DorkOS didn’t send it again/)).toBeInTheDocument();
     expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
     expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1);
   });

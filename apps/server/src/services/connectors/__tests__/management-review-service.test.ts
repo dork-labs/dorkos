@@ -328,7 +328,7 @@ describe('ConnectorManagementReviewService', () => {
         toolkit: 'gmail',
         status: 'active',
         custody: 'managed',
-        providerDisplayName: 'fake-connector',
+        providerDisplayName: 'Fake-connector',
         providerStatus: 'available',
         reconciliationStatus: 'ready',
       },

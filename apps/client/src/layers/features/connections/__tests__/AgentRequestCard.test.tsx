@@ -784,7 +784,7 @@ describe('AgentRequestCard — an account that needs attention first', () => {
       providerInstanceId: 'composio-1',
       toolkit: 'gmail',
       state: 'failed',
-      reason: 'The service could not complete sign-in.',
+      reason: 'Sign-in didn’t finish. Try again.',
     } as never);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
@@ -883,7 +883,7 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
     expect(screen.queryByTestId('account-attention')).not.toBeInTheDocument();
     expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
+    await user.click(screen.getByRole('button', { name: 'Check if it’s done' }));
     await waitFor(() =>
       expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
         decision: 'current_access',

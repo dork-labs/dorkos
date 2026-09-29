@@ -81,7 +81,7 @@ function detail(connection: ConnectorConnectionSummary): ConnectorConnectionDeta
     connection,
     provider: {
       providerInstanceId: 'provider-1' as never,
-      displayName: 'Composio',
+      displayName: 'Your DorkOS account',
       mode: 'managed',
       custody: 'managed',
       payer: 'dorkos_managed',
@@ -428,7 +428,10 @@ describe('AccountPanel', () => {
       summary({
         lifecycle: 'disconnected',
         externalCleanup: 'pending',
-        authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
+        authoritySync: {
+          status: 'failed',
+          reason: 'This computer isn’t linked to your DorkOS account anymore.',
+        },
         readiness: createMockConnectionReadiness({
           state: 'gone',
           reason: 'disconnect_stuck',
@@ -478,7 +481,7 @@ describe('AccountPanel', () => {
 
     await user.click(await screen.findByRole('button', { name: 'More' }));
     const more = screen.getByTestId('app-panel-more');
-    expect(more).toHaveTextContent('Through Composio.');
+    expect(more).toHaveTextContent('Your DorkOS account.');
     await user.click(within(more).getByRole('button', { name: /Disconnect…/ }));
     const confirm = await screen.findByRole('alertdialog', { name: 'Disconnect Gmail?' });
     expect(await within(confirm).findByText('mailroom will lose access.')).toBeInTheDocument();
@@ -556,7 +559,7 @@ describe('AccountPanel', () => {
 
     await user.click(await screen.findByRole('button', { name: 'More' }));
     const more = screen.getByTestId('app-panel-more');
-    expect(more).toHaveTextContent('DorkOS covers service usage.');
+    expect(more).toHaveTextContent('Your DorkOS account covers its use.');
     await user.click(within(more).getByRole('button', { name: /^Sign in again/ }));
     await waitFor(() => expect(handlers.onSignInStarted).toHaveBeenCalledWith('flow-2'));
   });

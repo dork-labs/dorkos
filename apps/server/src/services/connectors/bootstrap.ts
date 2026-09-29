@@ -58,6 +58,7 @@ import type {
   ConnectorAppConnections,
   ConnectorAppWay,
 } from '@dorkos/shared/connector-resource-schemas';
+import { KEY_CHECK_COPY } from '@dorkos/shared/connector-schemas';
 import { logger } from '../../lib/logger.js';
 import { ManagedConnectorCloudError } from '../core/auth/cloud-link-client.js';
 import {
@@ -213,6 +214,20 @@ export const WAY_RECHECK_DELAYS_MS = [30_000, 60_000, 120_000, 300_000, 900_000]
 function isCredentialRefusal(err: unknown): boolean {
   const status = (err as { status?: unknown } | null)?.status;
   return status === 401 || status === 403;
+}
+
+/**
+ * The one line a person reads under their key after a failed check. A spec's
+ * own refusal is copy DorkOS wrote for the person (Nango's missing encryption
+ * key); anything else is the service's or a library's text, which goes to the
+ * log and is replaced by a plain line.
+ *
+ * @param spec - The way whose key was checked.
+ * @param err - What the check threw.
+ */
+function keyCheckLine(spec: ManagedProviderSpec, err: unknown): string {
+  if (spec.isRefusal(err) && err instanceof Error) return err.message;
+  return isCredentialRefusal(err) ? KEY_CHECK_COPY.refused : KEY_CHECK_COPY.unchecked;
 }
 
 /**
@@ -615,7 +630,7 @@ export class ConnectorProviderBootstrapper {
       const message = err instanceof Error ? err.message : String(err);
       this._registry.unregisterProviderInstance(instanceId);
       this._instanceBySpecType.delete(spec.type);
-      this._lastError.set(spec.type, message);
+      this._lastError.set(spec.type, keyCheckLine(spec, err));
       logger.error(`[Connectors] ${spec.logLabel} stopped answering: ${message}`);
       this._ownKeyWayFailed(spec, err);
     }
@@ -963,7 +978,7 @@ export class ConnectorProviderBootstrapper {
       this._clearRecheck(spec.type);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this._lastError.set(spec.type, message);
+      this._lastError.set(spec.type, keyCheckLine(spec, err));
       if (spec.isRefusal(err)) {
         logger.error(`[Connectors] ${spec.logLabel} refused: ${message}`);
         this._clearRecheck(spec.type);
@@ -1027,7 +1042,7 @@ export class ConnectorProviderBootstrapper {
       disclosure:
         spec.custody === 'managed'
           ? MANAGED_CUSTODY_CANONICAL_SENTENCE
-          : custodyDisclosure(spec.custody, { service: spec.logLabel }),
+          : custodyDisclosure(spec.custody),
       ...(error !== undefined && { error }),
     };
   }

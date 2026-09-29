@@ -351,7 +351,7 @@ function AccessStep(
         ) : access.saveOutcome && !access.saved ? (
           <Button variant="secondary" onClick={access.checkSync} disabled={access.isCheckingSync}>
             <RefreshCw className="size-4" aria-hidden />
-            {access.isCheckingSync ? 'Checking…' : 'Check sync status'}
+            {access.isCheckingSync ? 'Checking…' : 'Check if it’s done'}
           </Button>
         ) : null}
         {outcome ? (

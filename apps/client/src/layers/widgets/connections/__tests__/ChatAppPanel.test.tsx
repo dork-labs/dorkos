@@ -111,7 +111,7 @@ describe('ChatAppPanel', () => {
     );
   });
 
-  it('shows a failed bot’s own error on top, with its settings one click away', async () => {
+  it('shows a failed bot in plain words, never its raw error, with its settings one click away', async () => {
     const user = userEvent.setup();
     renderPanel(
       instance({
@@ -120,7 +120,8 @@ describe('ChatAppPanel', () => {
     );
 
     const fix = screen.getByTestId('app-panel-fix');
-    expect(fix).toHaveTextContent('Stopped working: Bot token was revoked');
+    expect(fix).toHaveTextContent('Stopped working. Messages aren’t getting through Telegram.');
+    expect(fix).not.toHaveTextContent('Bot token was revoked');
     await user.click(within(fix).getByRole('button', { name: 'Check its settings' }));
     expect(await screen.findByRole('dialog', { name: /Edit Telegram/ })).toBeInTheDocument();
   });

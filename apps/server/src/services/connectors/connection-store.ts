@@ -32,7 +32,7 @@ import type {
   ConnectorProviderInstanceId,
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
-import type { ConnectionId } from '@dorkos/shared/connector-schemas';
+import { connectionWayName, type ConnectionId } from '@dorkos/shared/connector-schemas';
 import {
   runLegacyConnectionMigration,
   type ConnectorMigrationResult,
@@ -212,7 +212,7 @@ export class ConnectionStore {
           id: provider.instanceId,
           type: provider.type,
           mode,
-          displayName: provider.type,
+          displayName: connectionWayName(provider.type),
           custody: capabilities.custody,
           capabilityJson: JSON.stringify(capabilities.capabilities),
           status: 'available',
@@ -228,7 +228,7 @@ export class ConnectionStore {
           set: {
             type: provider.type,
             mode,
-            displayName: provider.type,
+            displayName: connectionWayName(provider.type),
             custody: capabilities.custody,
             capabilityJson: JSON.stringify(capabilities.capabilities),
             status: 'available',

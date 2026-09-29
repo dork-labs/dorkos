@@ -10,6 +10,7 @@ import {
   runMigrations,
   type Db,
 } from '@dorkos/db';
+import { KEY_CHECK_COPY } from '@dorkos/shared/connector-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
   ConnectorExternalAccountRef,
@@ -660,7 +661,7 @@ describe('ConnectorProviderBootstrapper', () => {
     it('a key that fails the connection check never registers — the founder-401 case', async () => {
       // The exact first-contact failure (DOR-703): a stored key the credential
       // gate accepts, that Composio 401s on every call. "Registered" must mean
-      // "actually answers", and the API's own message must reach the status.
+      // "actually answers", and the person reads one plain line about the key.
       secrets.set(COMPOSIO_API_KEY_REF, 'uak-wrong-kind-of-key');
       const bootstrapper = makeBootstrapper({
         composioProbeError: new ComposioApiError(
@@ -671,8 +672,9 @@ describe('ConnectorProviderBootstrapper', () => {
 
       const status = await bootstrapper.reload('composio');
       expect(status).toMatchObject({ type: 'composio', configured: true, registered: false });
-      expect(status.error).toMatch(/401/);
-      expect(status.error).toMatch(/valid API key/);
+      // The service's own text goes to the log; the person reads one plain line.
+      expect(status.error).toBe(KEY_CHECK_COPY.refused);
+      expect(status.error).not.toMatch(/401|uak/);
       // Unregistered: the toolkit aggregation never even asks it.
       expect(registry.resolveProvider('composio')).toBeUndefined();
     });
@@ -1520,7 +1522,7 @@ describe('ConnectorProviderBootstrapper', () => {
 
       await bootstrapper.registerBootProviders();
       expect(client.listings).toBe(1);
-      expect((await bootstrapper.reload('composio')).error).toMatch(/unavailable/);
+      expect((await bootstrapper.reload('composio')).error).toBe(KEY_CHECK_COPY.unchecked);
       expect(client.listings).toBe(2);
 
       // First wait: 30 seconds. Still down, so the next wait doubles.
@@ -1613,7 +1615,7 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(instanceStatus(composioInstance)).toBe('unavailable');
       expect((await bootstrapper.listStatuses()).find((s) => s.type === 'composio')).toMatchObject({
         registered: false,
-        error: 'Composio request timed out',
+        error: KEY_CHECK_COPY.unchecked,
       });
       // An outage is not a sign-in that ended.
       expect(signIn(gmail)).toBe('active');

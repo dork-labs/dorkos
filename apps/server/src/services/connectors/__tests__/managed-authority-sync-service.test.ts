@@ -528,7 +528,8 @@ describe('ManagedAuthoritySyncService', () => {
     await expect(replace()).resolves.toEqual({
       authoritySync: {
         status: 'failed',
-        reason: 'Relink this instance to enable managed connections.',
+        reason:
+          'Your DorkOS account link needs updating. Link this computer again in Settings › Access.',
       },
       applied: false,
       externalCleanup: 'not_required',
@@ -536,7 +537,8 @@ describe('ManagedAuthoritySyncService', () => {
     const row = db.select().from(connectorManagedAuthorityOutbox).get()!;
     expect(row).toMatchObject({
       state: 'rejected',
-      safeReason: 'Relink this instance to enable managed connections.',
+      safeReason:
+        'Your DorkOS account link needs updating. Link this computer again in Settings › Access.',
       nextAttemptAt: null,
     });
     expect(JSON.stringify(row)).not.toContain('secret hosted');

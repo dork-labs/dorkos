@@ -4,11 +4,12 @@ import {
   CONNECTOR_SIGN_IN_ENDED_CODES,
   type ConnectorSignInEndedCode,
 } from '@dorkos/shared/connector-provider';
-import type {
-  ConnectionId,
-  ConnectorExecutionResponse,
-  ConnectorExecutionTarget,
-  ConnectorProviderExecuteResult,
+import {
+  CONNECTION_READINESS_COPY,
+  type ConnectionId,
+  type ConnectorExecutionResponse,
+  type ConnectorExecutionTarget,
+  type ConnectorProviderExecuteResult,
 } from '@dorkos/shared/connector-schemas';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import type { GrantedApproval } from '../../core/capabilities/tier-enforcement.js';
@@ -111,7 +112,8 @@ export class ConnectorExecutionBroker {
   async execute(input: ConnectorBrokerExecutionInput): Promise<ConnectorExecutionResponse> {
     if (!isCapabilityAuthorityBinding(input.authorityBinding)) {
       throw new CapabilityToolError({
-        error: 'Connector execution requires authenticated preflight authority.',
+        error:
+          'DorkOS couldn’t confirm this action was checked before it ran, so it didn’t run. Try again.',
         code: 'CONNECTOR_PREFLIGHT_REQUIRED',
       });
     }
@@ -127,7 +129,8 @@ export class ConnectorExecutionBroker {
           return { logicalOperationId, attemptCount, result: safePublicResult(lastResult) };
         }
         throw new CapabilityToolError({
-          error: 'Connector caller authority changed before dispatch.',
+          error:
+            'Who is running this action changed before it was sent, so it didn’t run. Try again.',
           code: 'CONNECTOR_PRINCIPAL_CHANGED',
         });
       }
@@ -233,7 +236,8 @@ export class ConnectorExecutionBroker {
     if (capabilityId !== 'connectors.execute_destructive') return;
     if (!approval || approval.via !== 'approval' || approval.authorityBindingDigest !== digest) {
       throw new CapabilityToolError({
-        error: 'Destructive connector execution requires approval for this exact authority.',
+        error:
+          'This action can’t be undone, so the person must approve this exact action before it runs.',
         code: 'CONNECTOR_APPROVAL_BINDING_MISMATCH',
       });
     }
@@ -278,7 +282,7 @@ export class ConnectorExecutionBroker {
           return {
             status: 'error',
             code: 'MANAGED_EXECUTION_CONTEXT_UNAVAILABLE',
-            message: 'Managed account access is not ready.',
+            message: CONNECTION_READINESS_COPY.access_updating.agent,
             retryable: false,
           };
         }

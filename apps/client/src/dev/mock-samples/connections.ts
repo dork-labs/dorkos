@@ -296,7 +296,7 @@ export function mockConnectionDetail(
     connection,
     provider: {
       providerInstanceId: connection.providerInstanceId,
-      displayName: 'Composio',
+      displayName: 'Your DorkOS account',
       mode: 'managed',
       custody: 'managed',
       payer: 'dorkos_managed',
@@ -308,7 +308,8 @@ export function mockConnectionDetail(
         execution: { status: 'available' },
         triggers: { status: 'unsupported', reason: 'Not available yet.' },
       },
-      disclosure: 'Composio keeps your login access in its own secure vault.',
+      disclosure:
+        "Composio stores your connected accounts' login access in its own secure vault, not on your computer. Choose which agents can use this account. You can disconnect anytime.",
     },
     agents: [
       {

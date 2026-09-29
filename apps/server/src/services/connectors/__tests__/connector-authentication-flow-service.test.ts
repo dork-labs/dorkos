@@ -12,6 +12,7 @@ import {
 import {
   ConnectionIdSchema,
   ConnectorProviderInstanceIdSchema,
+  SIGN_IN_COPY,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectPoll, ConnectStart } from '@dorkos/shared/connector-provider';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
@@ -187,7 +188,7 @@ describe('ConnectorAuthenticationFlowService', () => {
 
     expect(service.status(OWNER, started.flowId)).toMatchObject({
       state: 'failed',
-      reason: 'This service setup changed while you were signing in. Start again.',
+      reason: SIGN_IN_COPY.wayChanged,
     });
   });
 
@@ -955,7 +956,7 @@ describe('ConnectorAuthenticationFlowService', () => {
     const failed = await service.poll(OWNER, started.flowId);
     expect(failed).toMatchObject({
       state: 'failed',
-      reason: 'The service could not complete sign-in. Try again.',
+      reason: SIGN_IN_COPY.failed,
     });
     expect(JSON.stringify(failed)).not.toContain('SECRET_MARKER_FROM_PROVIDER');
     expect(JSON.stringify(db.select().from(connectorAuthenticationFlows).all())).not.toContain(

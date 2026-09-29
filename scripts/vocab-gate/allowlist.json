@@ -151,11 +151,6 @@
       "reason": "`operator.config_get` and `operator.config_update` describe the config.json fields by their literal names to the agent reading them — the `providers` map, `providersConfigured`, \"the provider ids that have a credential\", and OpenCode's own `provider` setting. Renaming the words would name keys that are not in the file. Scoped to `provider` only: an `adapter` or `integration` in this file would be prose, not a field name, and should red."
     },
     {
-      "path": "apps/server/src/services/connectors/connector-capabilities.ts",
-      "terms": ["connector", "connectors", "adapter", "adapters"],
-      "reason": "MCP tool descriptions for the connector domain, addressed to an agent choosing a route: \"a purpose-built relay adapter outranks a gateway connector, which outranks a raw MCP server\" names the three architecture seams by their own names, which is what makes the ranking readable. Deliberately NOT scoped to `provider`: the one sentence that told an agent to point the user at \"a provider key\" named a UI that no longer exists and was rewritten to \"Composio & Nango\" (DOR-1814), so `provider` coming back here should red."
-    },
-    {
       "path": "apps/server/src/services/marketplace-mcp/marketplace-capabilities.ts",
       "terms": ["adapter", "adapters"],
       "reason": "The marketplace search and list tools enumerate the package TYPES an author writes in a manifest (agent/plugin/skill-pack/adapter). ADR 260804-021140's scoped-word registry keeps `adapter` in the marketplace-author domain; a filter value that stopped matching the manifest key would simply not work."

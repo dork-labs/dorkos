@@ -221,7 +221,7 @@ describe('connector-providers router', () => {
       .send({ secret: SECRET });
     expect(unknown.status).toBe(400);
     expect(unknown.body).toEqual({
-      error: 'This service setup option is not available. Choose another option and try again.',
+      error: 'DorkOS doesn’t use a key of this kind. Nothing was saved.',
     });
 
     const emptyBody = await request(fixtureServer)
@@ -239,7 +239,7 @@ describe('connector-providers router', () => {
     );
     expect(unknownDelete.status).toBe(400);
     expect(unknownDelete.body).toEqual({
-      error: 'This service setup option is not available. Choose another option and try again.',
+      error: 'DorkOS doesn’t use a key of this kind. Nothing was removed.',
     });
   });
 

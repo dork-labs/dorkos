@@ -181,19 +181,19 @@ export class ManagedConnectorLinkRequiredError extends ManagedConnectorCloudErro
 function managedConnectorCloudErrorMessage(code: ManagedConnectorCloudErrorCode): string {
   switch (code) {
     case 'unauthorized':
-      return 'This instance is no longer linked.';
+      return 'This computer isn’t linked to your DorkOS account anymore.';
     case 'permission_upgrade_required':
-      return 'Relink this instance to enable managed connections.';
+      return 'Your DorkOS account link needs updating. Link this computer again in Settings › Access.';
     case 'not_found':
-      return 'The managed connector request was not found.';
+      return 'DorkOS’s servers couldn’t find this request.';
     case 'conflict':
-      return 'The managed connector request conflicts with an existing request.';
+      return 'DorkOS’s servers turned this down because it clashed with another change.';
     case 'network_error':
-      return 'The managed connector service could not be reached.';
+      return 'Couldn’t reach DorkOS’s servers.';
     case 'invalid_response':
-      return 'The managed connector service returned an invalid response.';
+      return 'DorkOS’s servers sent back an answer that didn’t make sense.';
     case 'request_failed':
-      return 'The managed connector service refused the request.';
+      return 'DorkOS’s servers turned the request down.';
   }
 }
 

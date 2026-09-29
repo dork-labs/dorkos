@@ -8,9 +8,10 @@ import {
   inArray,
   type Db,
 } from '@dorkos/db';
-import type {
-  ConnectionId,
-  ConnectorManagementReviewAction,
+import {
+  LINK_NEEDED_TO_CHANGE_ACCESS_COPY,
+  type ConnectionId,
+  type ConnectorManagementReviewAction,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorAuthorityCleanupPort } from './authority-cleanup-port.js';
 import type { ConnectorManagementActionApplier } from './management-review-service.js';
@@ -141,7 +142,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
           if (!this.managedAuthority) {
             throw new ConnectorManagementActionError(
               'managed_sync_unavailable',
-              'DorkOS cannot update this connection right now. Relink it and try again.'
+              LINK_NEEDED_TO_CHANGE_ACCESS_COPY
             );
           }
           const staged = this.managedAuthority.stageAgentAccessRemoval({
@@ -245,7 +246,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
       if (!this.managedAuthority) {
         throw new ConnectorManagementActionError(
           'managed_sync_unavailable',
-          'DorkOS cannot update this connection right now. Relink it and try again.'
+          LINK_NEEDED_TO_CHANGE_ACCESS_COPY
         );
       }
       const byId = new Map(valid.map((revision) => [revision.id, revision]));

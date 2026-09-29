@@ -304,7 +304,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
 
     await user.click(await screen.findByRole('radio', { name: /Every agent/ }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    await user.click(await screen.findByRole('button', { name: 'Check sync status' }));
+    await user.click(await screen.findByRole('button', { name: 'Check if it’s done' }));
     expect(await screen.findByText(/couldn’t confirm that access was saved/i)).toBeInTheDocument();
     expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
   });

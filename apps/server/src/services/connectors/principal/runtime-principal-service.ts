@@ -158,14 +158,14 @@ export class ConnectorRuntimePrincipalService
       input.signal.throwIfAborted();
       throw new ConnectorRuntimeAuthorityError(
         'authority_refused',
-        'Canonical runtime authority could not be verified.'
+        'DorkOS couldn’t confirm this chat can use connected apps. Start a new turn and try again.'
       );
     }
     input.signal.throwIfAborted();
     if (!ownership.isCurrent()) {
       throw new ConnectorRuntimeAuthorityError(
         'authority_refused',
-        'Canonical runtime authority could not be verified.'
+        'DorkOS couldn’t confirm this chat can use connected apps. Start a new turn and try again.'
       );
     }
 
@@ -465,7 +465,7 @@ export class ConnectorRuntimePrincipalService
     if (!this.bootEpoch) {
       throw new ConnectorRuntimeAuthorityError(
         'boot_not_initialized',
-        'Runtime connector authority is unavailable before boot initialization.'
+        'DorkOS is still starting, so connected apps aren’t ready yet. Try again in a moment.'
       );
     }
     return this.bootEpoch;

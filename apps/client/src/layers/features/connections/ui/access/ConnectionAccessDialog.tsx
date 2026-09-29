@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import {
   actionNameFromSlug,
+  OPERATION_CLASSIFICATION_LABELS,
   type ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
 import { useConnectorConnections } from '@/layers/entities/connectors';
@@ -126,7 +127,7 @@ export function ConnectionAccessDialog({
           ) : saveOutcome && !saved ? (
             <Button variant="secondary" onClick={access.checkSync} disabled={access.isCheckingSync}>
               <RefreshCw className="size-4" aria-hidden />
-              {access.isCheckingSync ? 'Checking…' : 'Check sync status'}
+              {access.isCheckingSync ? 'Checking…' : 'Check if it’s done'}
             </Button>
           ) : !needsRefresh && preview && !saved ? (
             <Button
@@ -276,8 +277,19 @@ function ReconciliationEditor({
                                   preview.connection.toolkit
                                 )}
                               </span>
-                              <Badge size="xs" variant="secondary">
-                                {candidate.capabilityClassification}
+                              <Badge
+                                size="xs"
+                                variant={
+                                  candidate.capabilityClassification === 'destructive'
+                                    ? 'destructive'
+                                    : 'secondary'
+                                }
+                              >
+                                {
+                                  OPERATION_CLASSIFICATION_LABELS[
+                                    candidate.capabilityClassification
+                                  ]
+                                }
                               </Badge>
                               {!candidate.supported && (
                                 <Badge size="xs" variant="outline">
@@ -285,9 +297,6 @@ function ReconciliationEditor({
                                 </Badge>
                               )}
                             </div>
-                            <p className="text-muted-foreground mt-0.5 text-xs">
-                              Version {candidate.toolkitVersion}
-                            </p>
                           </div>
                         </li>
                       );

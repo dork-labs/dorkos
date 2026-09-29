@@ -4,6 +4,7 @@ import type { ConnectorReceiveScope } from '@dorkos/shared/connector-event-schem
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 import {
   actionNameFromSlug,
+  OPERATION_CLASSIFICATION_LABELS,
   type ConnectionId,
   type ConnectorAgentRequestItem,
 } from '@dorkos/shared/connector-schemas';
@@ -345,7 +346,11 @@ export function AgentRequestDialog({
                                         : 'secondary'
                                     }
                                   >
-                                    {candidate.capabilityClassification}
+                                    {
+                                      OPERATION_CLASSIFICATION_LABELS[
+                                        candidate.capabilityClassification
+                                      ]
+                                    }
                                   </Badge>
                                 </span>
                                 {!candidate.supported && (
@@ -415,7 +420,7 @@ function RequestOutcome({ request }: { request: ConnectorAgentRequestItem }) {
         <p className="text-sm font-medium">{requestStateLabel(request.status)}</p>
         <p className="text-muted-foreground mt-1 text-sm">
           {pending
-            ? 'New access remains unavailable until synchronization finishes.'
+            ? 'New access is saved. Agents can use it once DorkOS finishes updating it.'
             : granted
               ? 'Access is ready for this agent.'
               : 'No new access was granted.'}

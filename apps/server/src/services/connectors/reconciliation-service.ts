@@ -29,6 +29,8 @@ import {
   ConnectorProviderInstanceIdSchema,
   ConnectorReconciliationPreviewRequestSchema,
   ConnectorReconciliationPreviewSchema,
+  LINK_NEEDED_TO_CHANGE_ACCESS_COPY,
+  WAY_CAPABILITY_COPY,
   type ConnectorOperationPage,
   type ConnectorReconciliationAgent,
   type ConnectorReconciliationApplyRequest,
@@ -332,7 +334,7 @@ export class ConnectorReconciliationService {
     if (!provider || provider.getCapabilities().capabilities.operations.status !== 'available') {
       throw new ConnectorReconciliationError(
         'operations_unsupported',
-        'This connection does not provide reviewable operation schemas.'
+        WAY_CAPABILITY_COPY.cannotListActions
       );
     }
 
@@ -343,7 +345,7 @@ export class ConnectorReconciliationService {
     if (version.toolkit !== context.toolkit) {
       throw new ConnectorReconciliationError(
         'catalog_incomplete',
-        'The provider returned operation metadata for a different service.'
+        'DorkOS got another app’s actions back. Try again.'
       );
     }
 
@@ -568,7 +570,7 @@ export class ConnectorReconciliationService {
         ) {
           throw new ConnectorReconciliationError(
             'catalog_incomplete',
-            'The provider returned operation metadata outside the requested version.'
+            'DorkOS got actions back from a different version of this app. Try again.'
           );
         }
         discovered.push(operation);
@@ -585,7 +587,7 @@ export class ConnectorReconciliationService {
     if (!complete) {
       throw new ConnectorReconciliationError(
         'catalog_incomplete',
-        'The provider did not return a complete bounded operation catalog.'
+        'DorkOS couldn’t get this app’s full list of actions. Try again.'
       );
     }
     return discovered;
@@ -704,7 +706,7 @@ export class ConnectorReconciliationService {
         if (provider.mode === 'managed' && !this.managedAuthority) {
           throw new ConnectorReconciliationError(
             'every_agent_unavailable',
-            'Every agent isn’t available for this app right now. Pick the agents one by one, or relink this computer and try again.'
+            'Every agent isn’t available for this app right now. Pick the agents one by one, or link this computer to your DorkOS account again and try again.'
           );
         }
         if (request.everyAgent.operationRevisionIds.some((id) => !supported.has(id))) {
@@ -738,7 +740,7 @@ export class ConnectorReconciliationService {
           if (!this.managedAuthority) {
             throw new ConnectorReconciliationError(
               'preview_stale',
-              'Managed connection synchronization is unavailable. Relink and try again.'
+              LINK_NEEDED_TO_CHANGE_ACCESS_COPY
             );
           }
           const selectors = managedSelectors(tx, selection.operationRevisionIds);

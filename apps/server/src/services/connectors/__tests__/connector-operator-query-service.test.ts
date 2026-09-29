@@ -1371,7 +1371,10 @@ describe('ConnectorOperatorQueryService', () => {
     listManagedConnectorUsage.mockRejectedValueOnce(new Error('cloud unavailable'));
     await expect(managedService.listConnections(OWNER)).resolves.toEqual([
       expect.objectContaining({
-        usage: { status: 'unavailable', reason: 'Managed usage is temporarily unavailable.' },
+        usage: {
+          status: 'unavailable',
+          reason: 'DorkOS couldn’t read this account’s usage from your DorkOS account.',
+        },
       }),
     ]);
   });
