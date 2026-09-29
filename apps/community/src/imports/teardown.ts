@@ -1,9 +1,35 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { transaction } from '../data.js';
 import { releaseCommunityShortNames } from '../host/short-names.js';
 import type { BlobStore } from '../storage/index.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 import { MANAGED_BLOB_RESERVATION_TTL_MS } from '../storage/managed-blobs.js';
+
+/** How long a teardown under a host legal hold waits before it looks again. */
+const LEGAL_HOLD_RECHECK = "interval '5 minutes'";
+
+/**
+ * Lock the import's community and report whether a host legal hold stands on it. A held
+ * community is never removed (ADR 260924-215422): the pass queues no file and deletes no row,
+ * and the import is looked at again later, so it finishes once the host releases the hold.
+ */
+async function legallyHeld(
+  client: PoolClient,
+  importId: string,
+  communityId: string
+): Promise<boolean> {
+  const community = await client.query<{ legal_hold_at: Date | null }>(
+    'SELECT legal_hold_at FROM communities WHERE id=$1 FOR UPDATE',
+    [communityId]
+  );
+  if (!community.rows[0]?.legal_hold_at) return false;
+  await client.query(
+    `UPDATE community_imports SET next_attempt_at=now()+${LEGAL_HOLD_RECHECK},updated_at=now()
+     WHERE id=$1`,
+    [importId]
+  );
+  return true;
+}
 
 /** What one teardown pass did. */
 export type TeardownOutcome = 'settled' | 'waiting' | 'skipped';
@@ -15,7 +41,8 @@ export type TeardownOutcome = 'settled' | 'waiting' | 'skipped';
  * it, keeping failures as cleanup work the pending-deletion sweep retries. A reservation whose
  * writer may still be running is left alone until its lease runs out. Once the community owns
  * no file at all, it is removed in one transaction and the import is settled; the import row
- * stays, with its state and failure code, for whoever started it.
+ * stays, with its state and failure code, for whoever started it. Under a host legal hold
+ * a pass does nothing but wait.
  */
 export async function teardownImport(
   pool: Pool,
@@ -31,7 +58,7 @@ export async function teardownImport(
     );
     const communityId = job.rows[0]?.community_id;
     if (!communityId) return null;
-    await client.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
+    if (await legallyHeld(client, importId, communityId)) return 'held';
     // Progress rows and the staging reference are what keep these files from the cleanup
     // sweeps; they go first so every file below is unreferenced.
     await client.query('DELETE FROM community_import_files WHERE import_id=$1', [importId]);
@@ -55,6 +82,7 @@ export async function teardownImport(
     return { communityId, keys: settled.rows.map((row) => row.blob_key) };
   });
   if (!queued) return 'skipped';
+  if (queued === 'held') return 'waiting';
 
   for (const key of queued.keys) {
     try {
@@ -89,7 +117,7 @@ export async function teardownImport(
     );
     const communityId = job.rows[0]?.community_id;
     if (!communityId) return 'skipped';
-    await client.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
+    if (await legallyHeld(client, importId, communityId)) return 'waiting';
     // A stale reservation (its writer's lease is over) is moved to cleanup here, as the pending
     // deletion sweep would; a fresh one still has a writer, so this pass waits for it.
     await client.query(

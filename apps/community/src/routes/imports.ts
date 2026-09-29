@@ -12,7 +12,7 @@ import {
 } from '@dorkos/shared/community-admin-wire';
 import { transaction } from '../data.js';
 import type { CommunityConfig } from '../config.js';
-import { createCommunityGated } from '../host/communities.js';
+import { createCommunityGated, legalHoldActive } from '../host/communities.js';
 import { assignShortName, shortNameHoldKey, type ShortNameHolds } from '../host/short-names.js';
 import {
   assertHostActor,
@@ -244,6 +244,13 @@ export function registerImportRoutes(
       if (current.state === 'cancelled') return current;
       if (current.state === 'ready' || current.state === 'failed')
         throw new ApiError(409, 'STATE_CONFLICT', 'This import has already finished.');
+      // Cancelling removes the unclaimed community, so a legal hold refuses it as it refuses
+      // the host's other deletions. FOR SHARE: placing a hold takes the row FOR UPDATE.
+      const held = await client.query<{ legal_hold_at: Date | null }>(
+        'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE',
+        [current.community_id]
+      );
+      if (held.rows[0]?.legal_hold_at) throw legalHoldActive();
       // Clearing the lease fences a worker that holds this job: its next write finds no lease.
       const cancelled = await client.query<ImportRow>(
         `UPDATE community_imports SET state='cancelled',lease_token=NULL,next_attempt_at=now(),

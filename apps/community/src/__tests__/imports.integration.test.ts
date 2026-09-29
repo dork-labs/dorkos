@@ -9,6 +9,7 @@ import { connect } from 'node:net';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { CommunityExportManifestV1Schema } from '@dorkos/shared/community-wire';
 import { sweepImports } from '../imports/worker.js';
+import { teardownImport } from '../imports/teardown.js';
 import { acquireUploadLease, renewUploadLease } from '../imports/upload.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import { post, upload } from './member-erasure-fixture.js';
@@ -468,6 +469,73 @@ it('cancels an import whose upload window closed', async () => {
         [communityId]
       )
     ).toBe(1);
+  } finally {
+    clock = new Date();
+  }
+});
+
+// Purpose: a host legal hold stops every permanent deletion of a community, an unclaimed
+// import's included (ADR 260924-215422). The host's cancel is refused like its other
+// deletions; an import the system ends (its upload window closed) keeps its community and
+// every file while the hold stands, and is removed once the host releases it.
+it('keeps an import’s community under a legal hold until the hold is released', async () => {
+  const legalHold = (method: 'PUT' | 'DELETE', communityId: string) =>
+    h.call(`/api/v1/host/communities/${communityId}/legal-hold`, {
+      method,
+      cookie: operatorCookie,
+      ...(method === 'PUT' ? { body: { reference: null } } : {}),
+    });
+  const held = await createImport(h, { bearer: keyImport });
+  await expectStatus(
+    await uploadArchive(h, held.importId, buildArchive(minimalManifest()), {
+      bearer: held.uploadToken,
+    }),
+    200,
+    'upload'
+  );
+  await expectStatus(await legalHold('PUT', held.communityId), 200, 'hold');
+  const cancel = () =>
+    h.call(`/api/v1/host/imports/${held.importId}/cancel`, { bearer: keyImport, body: {} });
+  const refused = await cancel();
+  expect(refused.status).toBe(409);
+  expect((await refused.json()).code).toBe('LEGAL_HOLD_ACTIVE');
+  expect((await readImport(h, held.importId, keyRead)).state).toBe('validating');
+
+  // The system ends an import whose window closed; a hold keeps everything it would remove.
+  const expired = await createImport(h, { bearer: keyImport });
+  await expectStatus(await legalHold('PUT', expired.communityId), 200, 'hold the second');
+  const files = (communityId: string) =>
+    count("SELECT 1 FROM managed_blobs WHERE community_id=$1 AND state<>'pending_delete'", [
+      communityId,
+    ]);
+  clock = new Date(Date.now() + 25 * 60 * 60_000);
+  try {
+    await settleImports();
+    expect((await readImport(h, expired.importId, keyRead)).state).toBe('cancelled');
+    expect(await count('SELECT 1 FROM communities WHERE id=$1', [expired.communityId])).toBe(1);
+    // Force a teardown pass past the sweep's own filter: it still removes nothing.
+    await h.pool.query("UPDATE community_imports SET state='cancelled' WHERE id=$1", [
+      held.importId,
+    ]);
+    const stagedBefore = await files(held.communityId);
+    expect(stagedBefore).toBe(1);
+    expect(await teardownImport(h.pool, h.blobStore, held.importId)).toBe('waiting');
+    expect(await files(held.communityId)).toBe(stagedBefore);
+    expect(await count('SELECT 1 FROM communities WHERE id=$1', [held.communityId])).toBe(1);
+
+    await expectStatus(await legalHold('DELETE', expired.communityId), 200, 'release');
+    await expectStatus(await legalHold('DELETE', held.communityId), 200, 'release the first');
+    await settleImports();
+    for (const target of [held, expired]) {
+      expect(await count('SELECT 1 FROM communities WHERE id=$1', [target.communityId])).toBe(0);
+      expect(
+        await count('SELECT 1 FROM managed_blobs WHERE community_id=$1', [target.communityId])
+      ).toBe(0);
+      expect(await readImport(h, target.importId, keyRead)).toMatchObject({
+        state: 'cancelled',
+        communityId: null,
+      });
+    }
   } finally {
     clock = new Date();
   }

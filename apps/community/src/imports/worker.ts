@@ -38,10 +38,13 @@ export async function sweepImports(
   now = new Date()
 ): Promise<{ claimed: number; settled: number }> {
   await expireImports(pool, now);
+  // A community under a host legal hold is never torn down, so its import is never claimed
+  // and cannot stand at the head of the queue.
   const due = await pool.query<{ id: string }>(
-    `SELECT id FROM community_imports
-     WHERE settled_at IS NULL AND state IN ('cancelled','failed') AND next_attempt_at<=$1
-     ORDER BY next_attempt_at,id LIMIT 1`,
+    `SELECT i.id FROM community_imports i JOIN communities c ON c.id=i.community_id
+     WHERE i.settled_at IS NULL AND i.state IN ('cancelled','failed') AND i.next_attempt_at<=$1
+       AND c.legal_hold_at IS NULL
+     ORDER BY i.next_attempt_at,i.id LIMIT 1`,
     [now]
   );
   const job = due.rows[0];
