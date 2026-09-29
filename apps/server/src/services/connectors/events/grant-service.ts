@@ -148,12 +148,13 @@ export class ConnectorEventGrantService implements ConnectorEventGrantPort {
    * used as it was is left alone. Then the review's consent is forgotten, so a
    * different pick can be approved under the same review.
    *
-   * A generation only ever moves forward. The review's own generation may
-   * already be on its way to the hosted side for a managed account, so the
-   * earlier state is written at a new, higher generation, and for a managed
-   * account that generation's command is staged in this same transaction for
-   * the outbox to deliver: hosted events always carry the version the local
-   * row has. A managed row put back on waits, off, for that command's receipt,
+   * On a managed account a generation only ever moves forward: the review's
+   * own generation may already be on its way to the hosted side, so the
+   * earlier state is written at a new, higher generation and that
+   * generation's command is staged in this same transaction for the outbox to
+   * deliver, so hosted events always carry the version the local row has.
+   * Any other account gets its exact earlier generation back, so the person's
+   * own review names it again and its recovery can resume it. A managed row put back on waits, off, for that command's receipt,
    * as any managed change does. A generation that has moved on since (the
    * owner changed it) is never touched. Any trigger at the service no live
    * subscription uses is retired by the existing cleanup maintenance
@@ -178,7 +179,7 @@ export class ConnectorEventGrantService implements ConnectorEventGrantPort {
          WHERE id = ? AND scope_version = ? AND revoked_at IS NULL`
       );
       const restore = this.store.db.$client.prepare(
-        `UPDATE connector_event_subscriptions SET scope_version = scope_version + 1, enabled = ?,
+        `UPDATE connector_event_subscriptions SET scope_version = ?, enabled = ?,
          revoked_at = ?, removed_at = ?, definition_id = ?, binding_id = ?, updated_at = ?
          WHERE id = ? AND scope_version = ?`
       );
@@ -187,8 +188,16 @@ export class ConnectorEventGrantService implements ConnectorEventGrantPort {
         if (item.adopted) continue;
         const managed =
           (mode.get(subscriptionId) as { mode: string } | undefined)?.mode === 'managed';
+        // A managed row moves forward, because the pick's generation may already
+        // be on its way to the hosted side and hosted events carry it. Any
+        // other row goes back to its exact earlier generation: that is the one
+        // the person's own review names, so its recovery can resume it. Only
+        // the withdrawn pick's generation is given up, and its consent goes
+        // below.
+        const restoredVersion = managed ? scopeVersion + 1 : item.prior?.scopeVersion;
         const changed = item.prior
           ? restore.run(
+              restoredVersion,
               // A managed row is on only once the hosted side confirms it.
               item.prior.enabled && !managed ? 1 : 0,
               item.prior.revokedAt,

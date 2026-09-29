@@ -2900,10 +2900,49 @@ describe('ConnectorAgentRequestService', () => {
       expect(subscriptionRow(own.id).revoked_at).toBeNull();
       fixture.grants.withdraw(OWNER, 'review-1', NOW.toISOString());
 
-      // Stopped again, as before, at a newer generation: never backwards.
-      const after = subscriptionRow(own.id);
-      expect({ ...after, scope_version: 0 }).toEqual({ ...before, scope_version: 0 });
-      expect(after.scope_version).toBeGreaterThan(before.scope_version + 1);
+      // Stopped again, exactly as before: this account is not managed, so its
+      // own generation comes back.
+      expect(subscriptionRow(own.id)).toEqual(before);
+    });
+
+    it('gives a pending update back its own generation, so its recovery resumes it', async () => {
+      let failFirst = true;
+      const fixture = realEventGrants(1, {
+        reconcileTrigger: () => {
+          if (failFirst) throw new Error('the service did not answer');
+        },
+      });
+      const signal = new AbortController().signal;
+      // The person's update is still pending: its first switch-on failed.
+      await expect(
+        fixture.grants.approve(
+          OWNER,
+          { reviewId: 'person-page-review', scopes: fixture.scopes },
+          signal
+        )
+      ).rejects.toThrow('the service did not answer');
+      const own = db.$client.prepare('SELECT id FROM connector_event_subscriptions').get() as {
+        id: string;
+      };
+      const before = subscriptionRow(own.id);
+      expect(before).toMatchObject({ scope_version: 1, enabled: 0, revoked_at: null });
+      failFirst = false;
+
+      // An agent's pick takes it over (it is not live) and is then taken back.
+      await expect(
+        fixture.grants.approve(OWNER, { reviewId: 'review-1', scopes: fixture.scopes }, signal)
+      ).resolves.toMatchObject({ state: 'ready' });
+      expect(subscriptionRow(own.id).scope_version).toBe(2);
+      fixture.grants.withdraw(OWNER, 'review-1', NOW.toISOString());
+      expect(subscriptionRow(own.id)).toEqual(before);
+
+      // The person's own review names that generation again, so recovery resumes it.
+      await expect(fixture.grants.recoverPending(signal)).resolves.toEqual({
+        examined: 1,
+        ready: 1,
+      });
+      expect(subscriptionRow(own.id)).toMatchObject({ scope_version: 1, enabled: 1 });
+      expect(fixture.store.active(own.id, 1)).toBeDefined();
     });
 
     it('never touches a generation the owner changed after the pick', async () => {
@@ -2944,6 +2983,57 @@ describe('ConnectorAgentRequestService', () => {
 
       expect(subscriptionRow(own.id)).toEqual(edited);
       expect(fixture.store.active(own.id, edited.scope_version)).toBeDefined();
+    });
+  });
+
+  describe('the stored approval a set of updates is read from', () => {
+    async function pageThenAgent() {
+      const fixture = realEventGrants(2);
+      const signal = new AbortController().signal;
+      // Review ids chosen so the page's single-update review is read first.
+      const page = await fixture.grants.approve(
+        OWNER,
+        { reviewId: 'a-page-review', scopes: [fixture.scopes[0]!] },
+        signal
+      );
+      const agent = await fixture.grants.approve(
+        OWNER,
+        { reviewId: 'z-agent-review', scopes: fixture.scopes },
+        signal
+      );
+      if (page.state !== 'ready' || agent.state !== 'ready') throw new Error('not ready');
+      return { fixture, page, agent };
+    }
+
+    it('answers a set only from a review of exactly that set', async () => {
+      const { fixture, page, agent } = await pageThenAgent();
+      // The agent's pick used the page's live update as it is.
+      expect(agent.selections).toContainEqual(page.selections[0]);
+
+      const forAgent = fixture.store.approvedSelections(OWNER, agent.selections);
+      expect(forAgent?.map((item) => item.selection)).toHaveLength(2);
+      expect(fixture.grants.ready(OWNER, agent.selections, agent.appliedEventScopeHash)).toBe(true);
+      // The page's review of one update never answers for the agent's two, and
+      // the agent's review of two never answers for the page's one.
+      expect(
+        fixture.store.approvedSelections(OWNER, page.selections)?.map((item) => item.selection)
+      ).toEqual(page.selections);
+      expect(fixture.grants.ready(OWNER, page.selections, page.appliedEventScopeHash)).toBe(true);
+    });
+
+    it('never reads another owner’s stored approval', async () => {
+      const { fixture, agent } = await pageThenAgent();
+      // The agent's review, moved under another owner: nothing of this owner's
+      // names that set any more.
+      db.$client
+        .prepare(
+          "UPDATE connector_event_consent_commands SET owner_id = 'someone-else' WHERE review_id = 'z-agent-review'"
+        )
+        .run();
+      expect(fixture.store.approvedSelections(OWNER, agent.selections)).toBeUndefined();
+      expect(fixture.grants.ready(OWNER, agent.selections, agent.appliedEventScopeHash)).toBe(
+        false
+      );
     });
   });
 

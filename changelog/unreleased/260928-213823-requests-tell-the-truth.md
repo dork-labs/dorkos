@@ -5,6 +5,7 @@ covers:
   - 'fix(connections): taking an answer back stops its updates, and a new pick works (DOR-2503)'
   - 'fix(connections): a failed pick leaves your own updates exactly as they were (DOR-2503)'
   - 'fix(connections): a taken-back pick never moves an update backwards, and agents use your live updates as they are (DOR-2503)'
+  - "fix(connections): a taken-back pick gives your own key's updates their own generation back (DOR-2503)"
 ---
 
 ### Changed
