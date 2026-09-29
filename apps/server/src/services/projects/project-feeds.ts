@@ -17,7 +17,7 @@
 import path from 'node:path';
 
 import { logger } from '../../lib/logger.js';
-import { readProjectInstalls } from '../marketplace/lib/project-install-index.js';
+import { readProjectInstalls } from '../marketplace/lib/provenance/project-install-index.js';
 import { onProjectorStatusChange } from '../session/session-state-projector.js';
 import type { ProjectRegistry } from './project-registry.js';
 

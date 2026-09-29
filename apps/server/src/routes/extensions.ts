@@ -36,6 +36,7 @@ import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
+import { registerTrustedSourceRoutes } from './extensions-trusted-sources.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
   OPERATOR_ONLY_CONFIG_CODE,
@@ -154,10 +155,15 @@ export function createExtensionsRouter(
     });
   });
 
-  // GET /api/extensions -- List all discovered extensions with status
+  // GET /api/extensions -- List all discovered extensions with status: every
+  // copy that runs, then each older copy a newer one of the same trusted
+  // source shadows, with `shadowedBy` set (spec `flow-multiproject` §9.2).
   router.get('/', async (_req, res) => {
     try {
-      const extensions = extensionManager.listPublic();
+      const extensions = [
+        ...extensionManager.listPublic(),
+        ...extensionManager.listShadowedPublic(),
+      ];
       res.json(extensions);
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions', err);
@@ -638,6 +644,7 @@ export function createExtensionsRouter(
   });
 
   registerExtensionApprovalRoutes(router, extensionManager, SAFE_EXT_ID);
+  registerTrustedSourceRoutes(router, extensionManager);
 
   return router;
 }

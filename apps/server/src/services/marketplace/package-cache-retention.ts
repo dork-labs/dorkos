@@ -25,7 +25,7 @@
  *
  * What installs record is read strictly ({@link listRecordedTrees}): the
  * global install roots, every registered agent's project, and every project
- * install the installer recorded (`lib/project-install-index.ts`). A sweep
+ * install the installer recorded (`lib/provenance/project-install-index.ts`). A sweep
  * deletes whatever that read does not return, so anything it cannot read
  * stops the sweep instead of shrinking the answer.
  *
@@ -51,7 +51,7 @@ import {
   forgetProjectInstalls,
   readProjectInstalls,
   type ProjectInstallRecord,
-} from './lib/project-install-index.js';
+} from './lib/provenance/project-install-index.js';
 import {
   subpathDigest,
   type CachedPackage,
@@ -111,7 +111,7 @@ export interface RecordedInstalls {
 /**
  * Everything installations record, read strictly: the global install roots,
  * every registered agent's project, and every project install the installer
- * recorded (`lib/project-install-index.ts`, which also covers folders that are
+ * recorded (`lib/provenance/project-install-index.ts`, which also covers folders that are
  * not, or are no longer, registered agents).
  *
  * The sweep deletes whatever this does not return, so doubt must throw, never

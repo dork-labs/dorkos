@@ -17,7 +17,7 @@ import {
   type PluginSource,
   type SourceKey,
 } from '@dorkos/marketplace';
-import type { ResolvedPackageSource } from '../package-resolver.js';
+import type { ResolvedPackageSource } from '../../package-resolver.js';
 
 /**
  * The ref a source with no ref of its own was recorded at before DOR-2248,

@@ -56,7 +56,7 @@ vi.mock('../flows/install-skill-pack.js', async (importOriginal) => ({
 
 // Mock the project-install record so its calls can be asserted without a real
 // data directory.
-vi.mock('../lib/project-install-index.js', () => ({
+vi.mock('../lib/provenance/project-install-index.js', () => ({
   recordProjectInstall: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -72,7 +72,7 @@ import { disclosedEffectsOf } from '../disclosed-effects.js';
 import { UnsupportedSourceUrlError } from '../source-url-policy.js';
 import { reportInstallEvent } from '../telemetry-hook.js';
 import { writeInstallMetadata } from '../installed-metadata.js';
-import { recordProjectInstall } from '../lib/project-install-index.js';
+import { recordProjectInstall } from '../lib/provenance/project-install-index.js';
 
 const mockedValidatePackage = vi.mocked(validatePackage);
 const mockedReportInstallEvent = vi.mocked(reportInstallEvent);

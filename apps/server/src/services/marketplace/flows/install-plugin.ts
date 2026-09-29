@@ -59,6 +59,12 @@ export interface ExtensionManagerLike {
    * recorded for a copy inside that package.
    */
   forgetRunApproval(id: string, installRoot?: string): Promise<void>;
+  /**
+   * Re-scan, and move any id whose running copy changed onto its new copy
+   * (spec `flow-multiproject` §9.2). Optional: a manager without it is only
+   * ever told about ids through {@link enable}.
+   */
+  refreshCopies?(): Promise<unknown>;
 }
 
 /** Constructor dependencies for {@link PluginInstallFlow}. */
@@ -223,6 +229,18 @@ export class PluginInstallFlow {
    * `EXDEV` (cross-filesystem rename) so installs work when `os.tmpdir()`
    * lives on a different volume than `dorkHome`.
    */
+  /**
+   * Tell the extension system an install finished recording where it came
+   * from. The installer writes the install's sidecar and its project record
+   * only after the plugin is in place, and those two are what prove a copy's
+   * trusted origin (spec `flow-multiproject` §9.1), so a copy that should now
+   * take over from an older one of the same origin is picked up here, not at
+   * the next unrelated re-scan.
+   */
+  async refreshExtensionCopies(): Promise<void> {
+    await this.deps.extensionManager.refreshCopies?.();
+  }
+
   private async activate(
     stagingDir: string,
     installRoot: string,

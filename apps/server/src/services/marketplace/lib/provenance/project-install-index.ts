@@ -46,6 +46,14 @@ export interface ProjectInstallRecord {
   commitSha?: string;
   /** The subfolder it was fetched from (`sourceKey.subpath`); absent when unknown. */
   subpath?: string;
+  /**
+   * The GitHub `owner/repo` the installer fetched it from, normalized by
+   * `normalizeTrustedSource` (spec `flow-multiproject` §9.1); absent when there
+   * is none. The only proof of where a project copy came from: the install's
+   * own sidecar lives inside the project, where anyone can commit one. Records
+   * written before this field existed are not backfilled, for that reason.
+   */
+  source?: string;
 }
 
 /** On-disk shape of the index. */
@@ -224,17 +232,22 @@ function parseIndex(raw: string): ProjectInstallRecord[] | null {
   const records: ProjectInstallRecord[] = [];
   for (const item of installs) {
     if (typeof item !== 'object' || item === null) return null;
-    const { projectPath, installRoot, name, commitSha, subpath } = item as Record<string, unknown>;
+    const { projectPath, installRoot, name, commitSha, subpath, source } = item as Record<
+      string,
+      unknown
+    >;
     if (typeof projectPath !== 'string' || typeof installRoot !== 'string') return null;
     if (typeof name !== 'string') return null;
     if (commitSha !== undefined && typeof commitSha !== 'string') return null;
     if (subpath !== undefined && typeof subpath !== 'string') return null;
+    if (source !== undefined && typeof source !== 'string') return null;
     records.push({
       projectPath,
       installRoot,
       name,
       ...(commitSha !== undefined && { commitSha }),
       ...(subpath !== undefined && { subpath }),
+      ...(source !== undefined && { source }),
     });
   }
   return records;

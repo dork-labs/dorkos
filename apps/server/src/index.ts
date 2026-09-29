@@ -268,7 +268,8 @@ import { startExtensionApprovalQueue } from './services/extensions/extension-app
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
 import { warnRedundantEnabledEntries } from './services/core-extensions/warn-redundant-enabled.js';
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
-import { createExtensionsRouter } from './routes/extensions.js';
+import { createExtensionsRouter, broadcastExtensionReloaded } from './routes/extensions.js';
+import { knownProjectRootsForExtensions } from './services/projects/extension-scan-roots.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
 import { gitTreeSource } from './services/marketplace/lib/git/git-tree.js';
 import { MarketplaceSourceManager } from './services/marketplace/marketplace-source-manager.js';
@@ -1521,6 +1522,17 @@ async function start() {
   // Initialize Extension System
   try {
     extensionManager = new ExtensionManager(dorkHome, coreExtensions);
+    // Scan every known project's extensions, not only this folder's, and
+    // re-scan when a project is added, so which copy runs no longer depends on
+    // where the server started (spec `flow-multiproject` §9.2). Only roots core
+    // saw itself: never one only an extension reported (§6.1).
+    extensionManager.followProjects(
+      {
+        roots: (cwd) => knownProjectRootsForExtensions(projectRegistry, dorkHome, cwd),
+        onChange: (listener) => projectRegistry.onChange(listener),
+      },
+      { announce: (ids) => broadcastExtensionReloaded(ids) }
+    );
     const initialCwd = env.DORKOS_DEFAULT_CWD ?? null;
     await extensionManager.initialize(initialCwd);
     // Every extension waiting for a person to let it run asks in the Activity

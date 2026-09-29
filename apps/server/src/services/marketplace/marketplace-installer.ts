@@ -58,10 +58,11 @@ import {
   resolvedFromSourceKey,
   matchesRecordedKey,
   sourceKeyOfFetchable,
-} from './lib/source-provenance.js';
+} from './lib/provenance/source-provenance.js';
 import { materializePackageSchedules } from './lib/materialize-schedules.js';
 import { withInstallTargetLock } from './transaction.js';
-import { recordProjectInstall } from './lib/project-install-index.js';
+import { recordProjectInstall } from './lib/provenance/project-install-index.js';
+import { normalizeTrustedSource } from './lib/provenance/trusted-source.js';
 import { validatePackageSchedules } from './lib/validate-package-schedules.js';
 import { discoverExtensionIds } from './lib/staged-extensions.js';
 import {
@@ -497,6 +498,10 @@ export class MarketplaceInstaller implements InstallerLike {
       // but it only finds project installs through the agent registry, which
       // misses unregistered folders. This record is how it finds the rest.
       if (req.projectPath && isInsideDir(req.projectPath, result.installPath)) {
+        // Where it came from, recorded HERE rather than trusted from the
+        // sidecar inside the project later: this record is the only proof of
+        // a project copy's origin (spec `flow-multiproject` §9.1).
+        const source = normalizeTrustedSource(deriveSourceProvenance(resolved).sourceRepo);
         try {
           await recordProjectInstall(this.deps.dorkHome, {
             projectPath: req.projectPath,
@@ -504,6 +509,7 @@ export class MarketplaceInstaller implements InstallerLike {
             name: result.packageName,
             ...(staged.commitSha !== undefined && { commitSha: staged.commitSha }),
             ...(staged.sourceKey !== undefined && { subpath: staged.sourceKey.subpath }),
+            ...(source !== null && { source }),
           });
         } catch (err) {
           // Best-effort like the sidecar: the package is installed; at worst
@@ -511,6 +517,21 @@ export class MarketplaceInstaller implements InstallerLike {
           this.deps.logger.warn('[marketplace-installer] failed to record the project install', {
             packageName: result.packageName,
             installPath: result.installPath,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      // The sidecar and the project record above are what prove where a
+      // plugin's extensions came from (spec `flow-multiproject` §9.1), and both
+      // land after the plugin flow enabled them. Re-scan now, so a newer copy
+      // of an extension installed from an approved source takes over at once.
+      if (result.type === 'plugin') {
+        try {
+          await this.deps.pluginFlow.refreshExtensionCopies();
+        } catch (err) {
+          this.deps.logger.warn('[marketplace-installer] could not re-scan extensions', {
+            packageName: result.packageName,
             error: err instanceof Error ? err.message : String(err),
           });
         }

@@ -3,7 +3,10 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { access, chmod, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
-import { readProjectInstalls, recordProjectInstall } from '../lib/project-install-index.js';
+import {
+  readProjectInstalls,
+  recordProjectInstall,
+} from '../lib/provenance/project-install-index.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';

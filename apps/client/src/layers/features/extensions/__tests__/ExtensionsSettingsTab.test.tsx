@@ -69,6 +69,7 @@ function makeExtension(overrides: Partial<ExtensionRecordPublic> = {}): Extensio
     hasServerEntry: false,
     hasDataProxy: false,
     approvedToRun: true,
+    shadowedBy: null,
     ...overrides,
   };
 }

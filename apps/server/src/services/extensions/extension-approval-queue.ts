@@ -58,7 +58,7 @@ import { configManager } from '../core/config-manager.js';
 import { expandTilde } from '../../lib/boundary.js';
 import { logger } from '../../lib/logger.js';
 import { readInstallMetadata } from '../marketplace/installed-metadata.js';
-import { readProjectInstalls } from '../marketplace/lib/project-install-index.js';
+import { readProjectInstalls } from '../marketplace/lib/provenance/project-install-index.js';
 import { cancelEscalationByKey } from '../notifications/escalation-service.js';
 import {
   notificationEntry,

@@ -12,6 +12,7 @@ import {
 import { listWaitingKinds, toSession } from '@/layers/shared/lib';
 import { useEventStream } from '@/layers/shared/model';
 import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
+import { useTrustOfferStore } from '@/layers/entities/extension';
 import {
   useInboxRequest,
   useMarkAllRead,
@@ -243,6 +244,7 @@ export function InboxBell() {
   const inboxRequest = useInboxRequest();
   const { connectionState } = useEventStream();
   const [open, setOpen] = useState(false);
+  const withdrawTrustOffers = useTrustOfferStore((state) => state.withdrawAll);
   // The slice the Activity list is showing. Set when another surface asked for
   // a filtered Inbox (a session's menu), and dropped when the panel closes —
   // a filter nobody can see is a filter that makes the next open look broken.
@@ -334,7 +336,12 @@ export function InboxBell() {
           open={open}
           onOpenChange={(next) => {
             setOpen(next);
-            if (!next) setLens(undefined);
+            if (!next) {
+              setLens(undefined);
+              // A one-time "Next time, trust …?" offer ends with the bell
+              // (spec `flow-multiproject` §9.3): it never waits for later.
+              withdrawTrustOffers();
+            }
           }}
         >
           <ResponsivePopoverTrigger asChild>

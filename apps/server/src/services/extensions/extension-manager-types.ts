@@ -137,5 +137,6 @@ export function toPublic(
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,
     approvedToRun: mayRunExtensionCode(record, approvals),
+    shadowedBy: record.shadowedBy ?? null,
   };
 }
