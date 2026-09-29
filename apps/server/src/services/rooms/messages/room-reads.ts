@@ -355,6 +355,11 @@ export class RoomReads {
    * Empty for every room that is not a remote mirror, because nothing else can
    * change an entry after it was written.
    *
+   * **Not a full catch-up.** It covers the trailing `historyLimit` entries only
+   * (`SNAPSHOT_HISTORY_LIMIT`, 100, from the stream). A rewrite of an older
+   * entry the reader already held, missed while disconnected, stays stale on
+   * that reader until the page is read again.
+   *
    * @param roomId - The room.
    * @param historyLimit - How many trailing entries to cover; the same window a
    *   cold connect hydrates.

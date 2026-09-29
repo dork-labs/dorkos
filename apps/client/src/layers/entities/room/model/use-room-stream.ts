@@ -62,7 +62,10 @@ export function mergeRoomEntry(
  *
  * **It never adds a row.** An entry this reader does not hold — paged out of
  * view, or never loaded — is ignored: whatever pages it in later reads the log,
- * which is already rewritten. The same goes for a frame whose `seq` or room does
+ * which is normally rewritten already. Not always: an older page whose read was
+ * answered just before the rewrite and lands just after this frame keeps the
+ * old text until the room is read again, and a reconnect only re-sends the
+ * trailing window (the server's 100-entry `SNAPSHOT_HISTORY_LIMIT`). The same goes for a frame whose `seq` or room does
  * not match the held row, which can only be a stale or foreign frame. And a
  * frame that changes nothing keeps the cached array's identity, because a
  * resume re-sends the whole trailing window and nearly all of it is unchanged.

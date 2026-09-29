@@ -126,6 +126,10 @@ export async function deliverRoomStream(
       // cursor, so the replay cannot carry it: the trailing window goes out as
       // `revision` frames, the same correction the reaction resync makes. Every
       // other room answers nothing here, because nothing else edits an entry.
+      //
+      // LIMIT: only the trailing window (`SNAPSHOT_HISTORY_LIMIT`, 100 entries).
+      // A reader holding older pages keeps any older rewrite it missed until it
+      // reads that page again; nothing on the wire corrects it.
       for (const event of service.revisionResync(roomId, ROOMS.SNAPSHOT_HISTORY_LIMIT)) {
         if (sink.closed) return;
         await send(event);

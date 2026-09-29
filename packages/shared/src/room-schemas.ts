@@ -2536,10 +2536,15 @@ export const RoomCanvasEventSchema = z
  *    the cursor. `entry.seq` only identifies the row a reader already holds.
  * 3. **A resume of a mirrored room re-sends the trailing window**, one frame per
  *    entry, after the replay — the correction for a change made while the
- *    reader was away, exactly as the reaction resync is.
+ *    reader was away, as the reaction resync is. Only that window (the server's
+ *    `SNAPSHOT_HISTORY_LIMIT`, 100 entries): an older entry a reader already
+ *    held and whose change it missed stays stale until it is read again.
  *
- * A reader replaces an entry it holds and ignores one it does not: history it
- * pages in later is read from the rewritten log already.
+ * A reader replaces an entry it holds and ignores one it does not. History it
+ * pages in later is read from the log, so it is normally rewritten already;
+ * the exception is an older page whose read was answered just BEFORE the
+ * rewrite and lands just after this frame, which then shows the old text until
+ * the room is read again.
  */
 export const RoomRevisionEventSchema = z
   .object({
