@@ -15,7 +15,15 @@ import {
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
 import { bootstrapGrant, transaction } from './data.js';
-import { ApiError, JSON_BODY_MS, UPLOAD_IDLE_MS, handleError, json, RateLimited, readJson } from './http.js';
+import {
+  ApiError,
+  JSON_BODY_MS,
+  UPLOAD_IDLE_MS,
+  handleError,
+  json,
+  RateLimited,
+  readJson,
+} from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/channels.js';
