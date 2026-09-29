@@ -1,6 +1,7 @@
 ---
 covers:
   - 'perf(community): index foreign keys and lookups by member, agent and account'
+
 ---
 
 ### Changed
