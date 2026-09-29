@@ -6,7 +6,7 @@ import type {
   ConnectorReceiveScope,
 } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
-import { recoverEventReview } from './subscription-review.js';
+import { recoverEventReview, storedEventReview } from './subscription-review.js';
 import { ConnectorSubscriptionStore } from './subscription-store.js';
 import {
   ConnectorSubscriptionService,
@@ -17,6 +17,7 @@ import type {
   ConnectorEventGrantReview,
   ConnectorEventGrantResult,
   ManagedEventConsentAuthority,
+  ManagedEventConsentStaging,
 } from './grant-port.js';
 
 /** Idempotent owner approval; replay of superseded/revoked consent can never revive it. */
@@ -25,7 +26,7 @@ export class ConnectorEventGrantService implements ConnectorEventGrantPort {
     private readonly store: ConnectorSubscriptionStore,
     private readonly subscriptions: ConnectorSubscriptionService,
     private readonly destinations: ConnectorEventDestinationPolicy,
-    private readonly managed: ManagedEventConsentAuthority,
+    private readonly managed: ManagedEventConsentAuthority & ManagedEventConsentStaging,
     private readonly now = () => new Date().toISOString()
   ) {}
 
@@ -137,6 +138,85 @@ export class ConnectorEventGrantService implements ConnectorEventGrantPort {
       }
     }
     return { examined, ready };
+  }
+
+  /**
+   * Take a review back so everything is as it was before it, in one
+   * transaction (DOR-2503): a subscription the review created is stopped and
+   * leaves the owner's list; one it took over gets its earlier state back (on
+   * or off, stopped or not, on the list or not, definition, binding); one it
+   * used as it was is left alone. Then the review's consent is forgotten, so a
+   * different pick can be approved under the same review.
+   *
+   * On a managed account a generation only ever moves forward: the review's
+   * own generation may already be on its way to the hosted side, so the
+   * earlier state is written at a new, higher generation and that
+   * generation's command is staged in this same transaction for the outbox to
+   * deliver, so hosted events always carry the version the local row has.
+   * Any other account gets its exact earlier generation back, so the person's
+   * own review names it again and its recovery can resume it. A managed row put back on waits, off, for that command's receipt,
+   * as any managed change does. A generation that has moved on since (the
+   * owner changed it) is never touched. Any trigger at the service no live
+   * subscription uses is retired by the existing cleanup maintenance
+   * (`ConnectorSubscriptionService.recoverCleanup`).
+   */
+  withdraw(owner: ConnectorOwnerAuthority, reviewId: string, now: string): void {
+    const ownerId = owner.kind === 'user' ? owner.userId : owner.installationId;
+    this.store.db.transaction(() => {
+      const command = this.store.db.$client
+        .prepare(
+          'SELECT selections_json FROM connector_event_consent_commands WHERE owner_kind = ? AND owner_id = ? AND review_id = ?'
+        )
+        .get(owner.kind, ownerId, reviewId) as { selections_json: string } | undefined;
+      if (!command) return;
+      const mode = this.store.db.$client.prepare(
+        `SELECT p.mode FROM connector_event_subscriptions s JOIN connections c ON c.id = s.connection_id
+         JOIN connector_provider_instances p ON p.id = c.provider_instance_id WHERE s.id = ?`
+      );
+      const stop = this.store.db.$client.prepare(
+        `UPDATE connector_event_subscriptions SET enabled = 0, revoked_at = ?, removed_at = ?,
+         updated_at = ?, scope_version = scope_version + 1
+         WHERE id = ? AND scope_version = ? AND revoked_at IS NULL`
+      );
+      const restore = this.store.db.$client.prepare(
+        `UPDATE connector_event_subscriptions SET scope_version = ?, enabled = ?,
+         revoked_at = ?, removed_at = ?, definition_id = ?, binding_id = ?, updated_at = ?
+         WHERE id = ? AND scope_version = ?`
+      );
+      for (const item of storedEventReview(command.selections_json)) {
+        const { subscriptionId, scopeVersion } = item.selection;
+        if (item.adopted) continue;
+        const managed =
+          (mode.get(subscriptionId) as { mode: string } | undefined)?.mode === 'managed';
+        // A managed row moves forward, because the pick's generation may already
+        // be on its way to the hosted side and hosted events carry it. Any
+        // other row goes back to its exact earlier generation: that is the one
+        // the person's own review names, so its recovery can resume it. Only
+        // the withdrawn pick's generation is given up, and its consent goes
+        // below.
+        const restoredVersion = managed ? scopeVersion + 1 : item.prior?.scopeVersion;
+        const changed = item.prior
+          ? restore.run(
+              restoredVersion,
+              // A managed row is on only once the hosted side confirms it.
+              item.prior.enabled && !managed ? 1 : 0,
+              item.prior.revokedAt,
+              item.prior.removedAt,
+              item.prior.definitionId,
+              item.prior.bindingId,
+              now,
+              subscriptionId,
+              scopeVersion
+            ).changes
+          : stop.run(now, now, now, subscriptionId, scopeVersion).changes;
+        if (changed === 1 && managed) this.managed.stage(subscriptionId, scopeVersion + 1);
+      }
+      this.store.db.$client
+        .prepare(
+          'DELETE FROM connector_event_consent_commands WHERE owner_kind = ? AND owner_id = ? AND review_id = ?'
+        )
+        .run(owner.kind, ownerId, reviewId);
+    });
   }
 
   /** Persist exact reviewed selections once, then reconcile only those generations. */

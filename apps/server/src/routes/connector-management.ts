@@ -33,6 +33,7 @@ import {
   ConnectorAgentRequestError,
   type ConnectorAgentRequestService,
 } from '../services/connectors/agent-request-service.js';
+import { ConnectorSubscriptionError } from '../services/connectors/events/subscription-store.js';
 
 const ReviewListQuerySchema = z
   .object({ state: z.enum(['pending', 'resolved']).optional() })
@@ -215,6 +216,31 @@ function sendManagementError(res: Response, error: unknown): void {
             ? 422
             : 409;
     res.status(status).json({ error: error.message, code: error.code });
+    return;
+  }
+  // An update choice refused at the consent boundary. The agent-request
+  // service turns these into `event_selection_unavailable` itself; this keeps
+  // any that reach a route honest instead of a generic failure.
+  if (error instanceof ConnectorSubscriptionError) {
+    const status =
+      error.code === 'not_found'
+        ? 404
+        : error.code === 'invalid_filter'
+          ? 400
+          : error.code === 'events_unavailable'
+            ? 503
+            : error.code === 'destination_unavailable'
+              ? 422
+              : 409;
+    res.status(status).json({
+      code: error.code,
+      error:
+        error.code === 'review_conflict'
+          ? 'Those updates changed while you were choosing them. Pick them again.'
+          : error.code === 'events_unavailable'
+            ? 'Updates can’t be set up right now. Try again later, or answer without updates.'
+            : 'Those updates can’t be set up. Pick them again, or answer without updates.',
+    });
     return;
   }
   if (error instanceof ConnectorManagementReviewError) {

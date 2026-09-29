@@ -22,6 +22,7 @@ import {
   type ConnectionReadiness,
 } from '@dorkos/shared/connector-schemas';
 import type { LimitPlan, SessionLimit } from '@dorkos/shared/session-stream';
+import type { TrackerItemRef } from '@dorkos/shared/types';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type {
   CanvasDocument,
@@ -171,6 +172,24 @@ export function createMockSessionLimit(
     plan: plans[mode],
     scope: 'account',
     state: STATE_BY_MODE[mode],
+    ...overrides,
+  };
+}
+
+/**
+ * Create a mock {@link TrackerItemRef}: flow item `DOR-2353` running in this
+ * chat, in `execute` (spec `flow-multiproject` §6.8).
+ *
+ * @param overrides - Fields to replace, e.g. `{ via: 'own-chat', ownChatSessionId }`.
+ */
+export function createMockTrackerItem(overrides: Partial<TrackerItemRef> = {}): TrackerItemRef {
+  return {
+    id: 'DOR-2353',
+    stage: 'execute',
+    runStatus: 'running',
+    startedAt: '2026-09-27T16:00:00.000Z',
+    via: 'this-chat',
+    ownChatSessionId: null,
     ...overrides,
   };
 }
@@ -609,6 +628,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       warnings: [],
     } satisfies WorktreeScanResult),
     resolveWorkspace: vi.fn().mockResolvedValue(null),
+    // Projects (spec `flow-multiproject` §6.1) — no known projects, and every
+    // folder in none, unless the test overrides it.
+    listProjects: vi.fn().mockResolvedValue([]),
+    resolveProject: vi.fn().mockResolvedValue(null),
     // Rooms (spec `rooms`) — every read answers empty so a component under test
     // renders its empty state unless the test overrides it.
     listRooms: vi.fn().mockResolvedValue([]),

@@ -240,19 +240,7 @@ export class ConnectorSubscriptionStore {
             now,
             now
           );
-      const existing = this.db.$client
-        .prepare(
-          `SELECT id, scope_version FROM connector_event_subscriptions WHERE connection_id = ? AND event_type = ?
-         AND agent_id = ? AND destination_kind = ? AND destination_id = ? AND filter_hash = ?`
-        )
-        .get(
-          connection.id,
-          parsed.eventType,
-          request.agentId,
-          request.destination.kind,
-          request.destination.id,
-          filterHash
-        ) as { id: string; scope_version: number } | undefined;
+      const existing = this.matching(connection.id, parsed.eventType, request, filterHash);
       const subscriptionId = existing?.id ?? randomUUID();
       const scopeVersion = (existing?.scope_version ?? 0) + 1;
       if (existing)
@@ -290,8 +278,94 @@ export class ConnectorSubscriptionStore {
         connection,
         definition: parsed,
         filter: JSON.parse(filterJson) as Record<string, unknown>,
+        /**
+         * The row as it was before this proposal took it over, when one
+         * existed, so a review that is taken back can put it back exactly.
+         */
+        ...(existing && {
+          prior: {
+            scopeVersion: existing.scope_version,
+            enabled: existing.enabled === 1,
+            revokedAt: existing.revoked_at,
+            removedAt: existing.removed_at,
+            definitionId: existing.definition_id,
+            bindingId: existing.binding_id,
+          },
+        }),
       };
     });
+  }
+
+  /**
+   * The subscription that already delivers exactly this scope, live right now:
+   * an agent's request for the same update uses it as it is instead of taking
+   * it over (DOR-2503). It grants nothing new, whatever review first chose it.
+   */
+  liveMatch(
+    owner: ConnectorOwnerAuthority,
+    value: ConnectorReceiveScope
+  ):
+    { subscriptionId: string; scopeVersion: number; connection: EventConnectionScope } | undefined {
+    const request = ConnectorReceiveScopeSchema.parse(value);
+    const connection = this.connection(owner, request.connectionId);
+    const definition = this.db
+      .select()
+      .from(connectorEventDefinitions)
+      .where(
+        and(
+          eq(connectorEventDefinitions.id, request.definitionId),
+          eq(connectorEventDefinitions.providerInstanceId, connection.providerInstanceId),
+          eq(connectorEventDefinitions.toolkit, connection.toolkit),
+          eq(connectorEventDefinitions.current, true)
+        )
+      )
+      .get();
+    if (!definition) return undefined;
+    const parsed = ConnectorEventDefinitionSchema.parse(JSON.parse(definition.definitionJson));
+    let filterJson: string;
+    try {
+      filterJson = this.filter(parsed, request.filter);
+    } catch {
+      return undefined;
+    }
+    const filterHash = createHash('sha256').update(filterJson).digest('hex');
+    const existing = this.matching(connection.id, parsed.eventType, request, filterHash);
+    if (!existing || existing.definition_id !== definition.id) return undefined;
+    if (!this.active(existing.id, existing.scope_version)) return undefined;
+    return { subscriptionId: existing.id, scopeVersion: existing.scope_version, connection };
+  }
+
+  /** The one subscription row a scope maps onto: same account, update, agent, destination and filter. */
+  private matching(
+    connectionId: string,
+    eventType: string,
+    request: ConnectorReceiveScope,
+    filterHash: string
+  ) {
+    return this.db.$client
+      .prepare(
+        `SELECT id, scope_version, enabled, revoked_at, removed_at, definition_id, binding_id
+        FROM connector_event_subscriptions WHERE connection_id = ? AND event_type = ?
+        AND agent_id = ? AND destination_kind = ? AND destination_id = ? AND filter_hash = ?`
+      )
+      .get(
+        connectionId,
+        eventType,
+        request.agentId,
+        request.destination.kind,
+        request.destination.id,
+        filterHash
+      ) as
+      | {
+          id: string;
+          scope_version: number;
+          enabled: number;
+          revoked_at: string | null;
+          removed_at: string | null;
+          definition_id: string | null;
+          binding_id: string | null;
+        }
+      | undefined;
   }
 
   /** Atomically select generations once for a server-owned review identity. */

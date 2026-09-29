@@ -6,7 +6,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { createAppRouter } from '../router';
-import { APP_ROUTE_PATHS } from '@/layers/shared/lib';
+import { APP_ROUTE_PATHS, EXTENSION_PAGE_ROUTE_PATHS, classifyLink } from '@/layers/shared/lib';
 
 /** The paths the real router serves, sorted. */
 function routerPaths(): string[] {
@@ -15,13 +15,38 @@ function routerPaths(): string[] {
   ).sort();
 }
 
+/**
+ * The router's paths without the extension-page family, which the link seam
+ * matches by shape (`parseExtensionPagePath`) rather than by listing.
+ */
+function staticRouterPaths(): string[] {
+  const extensionRoutes: readonly string[] = EXTENSION_PAGE_ROUTE_PATHS;
+  return routerPaths().filter((path) => !extensionRoutes.includes(path));
+}
+
 describe('APP_ROUTE_PATHS', () => {
   it('matches the paths the real router serves', () => {
     // The link seam classifies a same-origin href as internal only when it
     // lands on a route the cockpit actually serves. That list is declared in
     // the shared layer so classification stays a pure function — this test is
     // what keeps it honest when a route is added or renamed.
-    expect(routerPaths()).toEqual([...APP_ROUTE_PATHS].sort());
+    expect(staticRouterPaths()).toEqual([...APP_ROUTE_PATHS].sort());
+  });
+
+  it('serves the extension-page family the link seam matches by shape', () => {
+    // Spec `flow-multiproject` §6.5: `/x/<extensionId>[/<path>]` is the one
+    // parameterised family, and it is matched by shape, not listed.
+    const served = routerPaths();
+    for (const path of EXTENSION_PAGE_ROUTE_PATHS) expect(served).toContain(path);
+    const from = 'http://localhost/';
+    expect(classifyLink('/x/hello', from)).toMatchObject({ kind: 'internal', path: '/x/hello' });
+    expect(classifyLink('/x/hello/p/one?x=1', from)).toMatchObject({
+      kind: 'internal',
+      path: '/x/hello/p/one?x=1',
+    });
+    // An id no extension could have is not an extension page.
+    expect(classifyLink('/x/Not_An_Id', from).kind).toBe('external');
+    expect(classifyLink('/x', from).kind).toBe('external');
   });
 
   it('rejects a router route with a dynamic segment', () => {
@@ -30,7 +55,7 @@ describe('APP_ROUTE_PATHS', () => {
     // APP_ROUTE_PATHS: the literal would satisfy the equality check above while
     // `/session/abc` classified as EXTERNAL and got handed to the system
     // browser — the exact bug this seam exists to fix, reintroduced silently.
-    const dynamic = routerPaths().filter((path) => /[$*]/.test(path));
+    const dynamic = staticRouterPaths().filter((path) => /[$*]/.test(path));
     expect(
       dynamic,
       'the router grew a parameterised route — teach classifyLink to match paths instead of adding the literal to APP_ROUTE_PATHS'

@@ -2,8 +2,8 @@
  * How long one call to a DorkOS in-session MCP tool may run before the CLI
  * gives up on it (DOR-987, moved off the environment at SDK 0.3.248).
  *
- * TWO calls here legitimately run for minutes, and the ceiling has to clear both
- * or it truncates one of them:
+ * THREE calls here legitimately run for minutes, and the ceiling has to clear
+ * each or it truncates one of them:
  *
  * - A destructive capability that HOLDS, rendering an inline approval card and
  *   waiting for a person to answer it. A ceiling shorter than the hold kills the
@@ -16,6 +16,9 @@
  *   own it inherited the CLI's ~27.8h default and was effectively unbounded, so
  *   a ceiling derived from the hold alone would have been the first thing ever
  *   to cut a long relay wait short.
+ * - An agent's access request (`connectors.request_connection`, which rides
+ *   this server in Claude Code), held open for the person's answer for
+ *   `CONNECTOR_REQUEST_LIVE_HOLD_MS`.
  *
  * So the value is DERIVED from both budgets by name, never chosen: the larger of
  * the two, plus the grace the projector already keeps past the hold — which
@@ -39,6 +42,7 @@
  */
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../../../core/capabilities/capability-approval-hold.js';
 import { CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../../../session/session-state-projector.js';
+import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../../../connectors/runtime-capability-scope.js';
 
 /**
  * The longest wait `relay_send_and_wait` will accept, in milliseconds — ten
@@ -55,12 +59,15 @@ export const RELAY_SEND_AND_WAIT_MAX_MS = 600_000;
 
 /**
  * The per-call ceiling declared on the in-session `dorkos` MCP server: the
- * longest a legitimate DorkOS tool call can take, which is the larger of the two
+ * longest a legitimate DorkOS tool call can take, which is the largest of the
  * minutes-long budgets above plus the projector's grace.
  *
  * Comfortably above the SDK's 1000ms floor, below which a per-server timeout is
  * ignored and the server would silently fall back to `MCP_TOOL_TIMEOUT`.
  */
 export const DORKOS_MCP_TOOL_TIMEOUT_MS =
-  Math.max(CAPABILITY_APPROVAL_HOLD_CAP_MS, RELAY_SEND_AND_WAIT_MAX_MS) +
-  CAPABILITY_HOLD_PAUSE_GRACE_MS;
+  Math.max(
+    CAPABILITY_APPROVAL_HOLD_CAP_MS,
+    RELAY_SEND_AND_WAIT_MAX_MS,
+    CONNECTOR_REQUEST_LIVE_HOLD_MS
+  ) + CAPABILITY_HOLD_PAUSE_GRACE_MS;

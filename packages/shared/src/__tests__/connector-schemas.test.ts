@@ -411,7 +411,7 @@ describe('ConnectorReviewActionSchema', () => {
       kind: 'agent_connection_request',
       serviceSlug: 'gmail',
       reason: 'Read messages for the current task.',
-      requestedOperations: ['gmail.messages.list'],
+      access: 'read',
     });
 
     expect(action).toEqual({
@@ -419,7 +419,7 @@ describe('ConnectorReviewActionSchema', () => {
       kind: 'agent_connection_request',
       serviceSlug: 'gmail',
       reason: 'Read messages for the current task.',
-      requestedOperations: ['gmail.messages.list'],
+      access: 'read',
       requestedEvents: [],
     });
     expect(
@@ -449,6 +449,52 @@ describe('ConnectorReviewActionSchema', () => {
   });
 });
 
+describe('agent access requests', () => {
+  const request = { version: 1, serviceSlug: 'gmail', reason: 'Summarise my mail.' };
+
+  it('asks by level, read or read and write, and never by action name', () => {
+    expect(
+      ConnectorAgentConnectionRequestInputSchema.safeParse({ ...request, access: 'read' }).success
+    ).toBe(true);
+    expect(
+      ConnectorAgentConnectionRequestInputSchema.safeParse({ ...request, access: 'read-write' })
+        .success
+    ).toBe(true);
+    // No level covers an action that can't be undone, and names are not accepted.
+    expect(
+      ConnectorAgentConnectionRequestInputSchema.safeParse({ ...request, access: 'destructive' })
+        .success
+    ).toBe(false);
+    expect(ConnectorAgentConnectionRequestInputSchema.safeParse(request).success).toBe(false);
+    expect(
+      ConnectorAgentConnectionRequestInputSchema.safeParse({
+        ...request,
+        access: 'read',
+        requestedOperations: ['GMAIL_FETCH_EMAILS'],
+      }).success
+    ).toBe(false);
+  });
+
+  it('answers one way: no, or the access the agent now holds', () => {
+    expect(ConnectorAgentRequestDecisionSchema.parse({ decision: 'denied' })).toEqual({
+      decision: 'denied',
+    });
+    expect(
+      ConnectorAgentRequestDecisionSchema.parse({
+        decision: 'current_access',
+        connectionId: 'connection-1',
+      })
+    ).toEqual({ decision: 'current_access', connectionId: 'connection-1', eventScopes: [] });
+    expect(
+      ConnectorAgentRequestDecisionSchema.safeParse({
+        decision: 'approved',
+        connectionId: 'connection-1',
+        operationRevisionIds: ['revision-read'],
+      }).success
+    ).toBe(false);
+  });
+});
+
 describe('agent event review bounds', () => {
   const eventNames = Array.from(
     { length: CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT },
@@ -467,13 +513,12 @@ describe('agent event review bounds', () => {
       version: 1,
       serviceSlug: 'gmail',
       reason: 'Watch the selected events.',
-      requestedOperations: ['gmail.read'],
+      access: 'read',
       requestedEvents: eventNames,
     };
     const decision = {
-      decision: 'approved' as const,
+      decision: 'current_access' as const,
       connectionId: 'connection-1',
-      operationRevisionIds: ['revision-read'],
       eventScopes,
     };
 

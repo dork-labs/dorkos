@@ -247,7 +247,7 @@ const BaseScheduleDeclSchema = z.object({
    * Cron expression; null = manual-only (created but never auto-fires).
    *
    * Checked for being a non-empty string here and for *meaning something* at
-   * install time, where croner lives (`services/marketplace/lib/validate-package-schedules.ts`).
+   * install time, where croner lives (`services/marketplace/lib/schedules/validate-package-schedules.ts`).
    * This module is browser-safe and stays that way.
    */
   cron: z.string().min(1).nullable().default(null),

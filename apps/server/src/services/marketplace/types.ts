@@ -13,9 +13,9 @@ import type {
   SourceKey,
 } from '@dorkos/marketplace';
 import type { NpmDependency } from './lib/npm-dependencies.js';
-import type { DisclosedEffects } from './disclosed-effects.js';
+import type { DisclosedEffects } from './preview/disclosed-effects.js';
 import type { PackageFileNotice } from '@dorkos/shared/marketplace-schemas';
-import type { InstalledFiles, RecordSource } from './lib/installed-files.js';
+import type { InstalledFiles, RecordSource } from './lib/records/installed-files.js';
 
 /**
  * Describes a package install, uninstall or applied update that just succeeded,

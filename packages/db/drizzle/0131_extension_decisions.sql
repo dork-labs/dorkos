@@ -1,0 +1,38 @@
+CREATE TABLE `extension_decisions` (
+	`id` text PRIMARY KEY NOT NULL,
+	`extension_id` text NOT NULL,
+	`extension_name` text NOT NULL,
+	`key` text NOT NULL,
+	`project_root` text,
+	`project_label` text,
+	`title` text NOT NULL,
+	`why` text NOT NULL,
+	`detail` text,
+	`actions_json` text NOT NULL,
+	`link` text,
+	`since` text,
+	`decide_by` text,
+	`default_choice` text,
+	`deadline_state` text,
+	`deadline_attempts` integer DEFAULT 0 NOT NULL,
+	`raised_at` text NOT NULL,
+	`updated_at` text NOT NULL,
+	`resolved_at` text,
+	`outcome` text,
+	`note` text,
+	`choice_id` text,
+	`choice_label` text,
+	`resolved_by` text,
+	`resolved_by_label` text,
+	`offer_json` text,
+	`offer_used_at` text,
+	`watch_json` text,
+	`pending_action_json` text,
+	`revision` integer DEFAULT 0 NOT NULL,
+	`recorded` integer DEFAULT 0 NOT NULL,
+	CONSTRAINT "extension_decisions_resolved_by" CHECK("extension_decisions"."resolved_by" IS NULL OR "extension_decisions"."resolved_by" IN ('person', 'deadline', 'agent', 'rule', 'extension')),
+	CONSTRAINT "extension_decisions_deadline_state" CHECK("extension_decisions"."deadline_state" IS NULL OR "extension_decisions"."deadline_state" IN ('kept_open', 'settled', 'failed', 'answered'))
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `extension_decisions_open_key_unique` ON `extension_decisions` (`extension_id`,`key`) WHERE "resolved_at" is null;--> statement-breakpoint
+CREATE INDEX `extension_decisions_resolved_raised_idx` ON `extension_decisions` (`resolved_at`,`raised_at`);

@@ -151,7 +151,7 @@ export function registerLiveTurnVisibilityTests(deps: LiveTurnVisibilityDeps): v
       // the UI streaming would fail here, and that is the dishonest settle this
       // row exists to catch.
       await expect(stop).toBeHidden({ timeout: SERVER_ROUND_TRIP_MS });
-      await expect(chatPage.inferenceStreaming).toBeHidden({ timeout: SERVER_ROUND_TRIP_MS });
+      await chatPage.waitForTurnToEnd(SERVER_ROUND_TRIP_MS);
       await expect(chatPage.input).toBeEnabled();
 
       // And HONESTLY: the turn really stopped where it was. The scenario's text

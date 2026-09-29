@@ -429,12 +429,11 @@ const extensionDeps: ExtensionAPIDeps = {
           }),
       }),
   },
-  // navigate is provided as a no-op here. Extensions calling navigate() after
-  // mount should use the router instance directly. The no-op prevents crashes
-  // if an extension calls navigate() during module initialization.
-  navigate: (opts) => {
-    console.warn('[extensions] navigate called before router ready:', opts);
-  },
+  // The real router (spec `flow-multiproject` D4). It used to be a stub that
+  // only warned, so every extension's `api.navigate` did nothing in the app.
+  // The factory has already checked the path against the routes the app
+  // serves, and it may carry a query, so it is handed over as an href.
+  navigate: (opts) => void router.navigate({ href: opts.to }),
   // Zustand's subscribe overload differs from ExtensionAPIDeps' selector-based
   // subscribe shape — cast to satisfy the interface contract.
   appStore: useAppStore as unknown as ExtensionAPIDeps['appStore'],
@@ -445,6 +444,7 @@ const extensionDeps: ExtensionAPIDeps = {
     'dialog',
     'settings.tabs',
     'right-panel',
+    'status-bar',
   ] as const) as ExtensionAPIDeps['availableSlots'],
   // What an extension's `registerCommand()` contributes, other than the row:
   // the code the row runs, kept where the palette can reach it. This used to be

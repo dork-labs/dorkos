@@ -119,6 +119,12 @@ api.registerDialog(id, Component): { open: () => void; close: () => void }
 
 // Add a tab to the settings dialog
 api.registerSettingsTab(id, label, Component, { group? }): () => void
+
+// Mount a full page at /x/<your-id>/<path>
+api.registerPage(path, Page, { title, icon?, menu? }): () => void
+
+// Add an item to the chat status bar
+api.registerStatusBarItem(id, Item, { label, priority?, when?, urgent? }): () => void
 ```
 
 `registerComponent` options:
@@ -129,6 +135,8 @@ api.registerSettingsTab(id, label, Component, { group? }): () => void
 - **`visibleWhen?`** — `dashboard.sections` only: a predicate the host re-evaluates on every render. Return false to hide your section without unregistering it (useful when it has nothing to say). Omit it and the section is always visible.
 - **`group?`** — `settings.tabs` only: names the sidebar section the tab sits under in the Settings dialog (e.g. `'Agents & sessions'`, `'Access & privacy'`). Omit it and the tab lands under "Add-ons", the section reserved for contributed tabs, so a tab written before this field existed still files itself somewhere honest. Same option on `registerSettingsTab`.
 
+`registerPage` and `registerStatusBarItem` have sections of their own under [UI Slots](#ui-slots): [Pages](#pages-x) and [The status bar](#the-status-bar).
+
 ### UI Control
 
 ```typescript
@@ -138,19 +146,80 @@ api.executeCommand(command: UiCommand): void
 // Open the canvas with content
 api.openCanvas(content: UiCanvasContent): void
 
-// Navigate to a client-side route
+// Navigate in-app: a core route, or one of your own pages
 api.navigate(path: string): void
+
+// Put a dot on one of your right-panel tabs, or clear it
+api.setTabMarker(tabId: string, marker: 'attention' | null): void
+```
+
+**`navigate`** takes a core route (`/team`, `/session?dir=…`) or one of **your own** pages (`/x/<your-id>/p/dorkos?view=list`). Anything else is refused with a console warning: another extension's page, another origin (`https://…`, `//host`), or a scheme like `javascript:`.
+
+**`setTabMarker`** marks a tab you registered with `registerComponent('right-panel', tabId, …)`. Core draws a small amber dot after the tab's label and adds "something needs you" to its accessible name ("Flow, something needs you"). You choose only whether the tab is marked; you cannot change how the dot looks. Marking a tab you did not register does nothing and logs a warning. Marks clear when your extension deactivates. Use it for "something here needs the person", not for "something changed": no counts, and clear it once the person has seen what needed them.
+
+```typescript
+api.registerComponent('right-panel', 'flow-tab', FlowTab, { label: 'Flow' });
+api.subscribe(
+  (state) => state.currentProject?.name ?? null,
+  () => api.setTabMarker('flow-tab', decisionsWaiting() > 0 ? 'attention' : null)
+);
 ```
 
 ### State
 
 ```typescript
-// Read-only snapshot: { currentCwd, activeSessionId, agentId }
+// Read-only snapshot: { currentCwd, activeSessionId, agentId, currentProject, requireLogin }
 api.getState(): ExtensionReadableState
 
 // Subscribe to state changes (returns unsubscribe function)
 api.subscribe(selector, callback): () => void
 ```
+
+**`currentProject`** is the project the selected folder belongs to: `{ root, name }`, where `root` is the git main checkout (a worktree or a subfolder belongs to its main checkout) and `name` is a short name that is safe in a URL and never changes once given. It is `null` when the folder is in no repository, and **also `null` while core is still asking**, so treat `null` as "not known yet or none" rather than "definitely none". Subscribe to it the same way as `currentCwd`:
+
+```typescript
+api.subscribe(
+  (state) => state.currentProject,
+  (project) => console.log('Now in', project?.name ?? 'no project')
+);
+```
+
+The server half has the same registry as `ctx.projects` (see [`ctx.projects`](#ctxprojects)).
+
+`requireLogin` is whether Require login is on. When it is false, anyone on this computer can pass the person bar, so a setting only a person should change says so under it: "Anyone on this computer can change this. Turn on Require login so only you can."
+
+### Inbox decisions and per-project settings
+
+```typescript
+// This extension's open decisions (the ones its server half raised with ctx.inbox)
+api.listDecisions(): Promise<ExtensionDecisionView[]>
+
+// Answer one from your own page. Recorded as "answered in <your name>", never as the person.
+api.answerDecision(decisionId, { action: 'approve' }): Promise<DecisionAnswerResult>
+
+// Settings only a person writes, per project (an autonomy dial lives here)
+api.projectSettings.get(projectRoot): Promise<T | null>
+api.projectSettings.set(projectRoot, value): Promise<void> // JSON, at most 16 KiB
+```
+
+- **Scoped to you.** Every call goes to `/api/extensions/<your id>/…`, and the server answers only your own rows: another extension's decision is a 404.
+- **Attributed to the extension.** An answer given on your page is history's "… · answered in Flow at 2:14pm". Only an answer in DorkOS's own inbox is credited to the person, and only that one can carry a one-time "next time, on its own?" offer.
+- **`projectSettings.set` is the only writer.** Your server half reads them (`ctx.projectSettings`) and has no way to write them, so neither it nor any agent it runs can turn a dial up. It sits behind the person bar, with the residual the bar documents: your own page code can call it too, so it is recorded as written from the extension's page.
+- **A refusal throws** an `Error` carrying the server's sentence and `code` (`not_running`, `already_resolved`, `extension_timeout`).
+
+### Feature detection
+
+Hosts gain seams over time, and one build of your extension should run on hosts from before and after each one. **Probe for a seam; never compare host versions:**
+
+```typescript
+if (typeof api.registerPage === 'function') api.registerPage('', Home, { title: 'Flow' });
+if (api.isSlotAvailable('status-bar'))
+  api.registerStatusBarItem('run', RunChip, { label: 'Flow run' });
+if (typeof api.setTabMarker === 'function') api.setTabMarker('flow-tab', 'attention');
+const project = 'currentProject' in api.getState() ? api.getState().currentProject : null;
+```
+
+On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`.
 
 ### Events
 
@@ -239,6 +308,9 @@ api.id: string
 | `dialog`                | Modal dialog layer                                     |
 | `settings.tabs`         | Settings dialog tabs                                   |
 | `right-panel`           | Shell-level right panel (contextual inspector) tabs    |
+| `status-bar`            | The chat status bar, beside the runtime and account    |
+
+Pages are not a slot: `registerPage` mounts a route (see [Pages](#pages-x)).
 
 > The `sidebar.tabs` and `header.actions` slots were removed when the web cockpit
 > retired the sidebar tab strip. Contribute a contextual inspector tab via
@@ -293,6 +365,74 @@ export function activate(api: ExtensionAPI): void {
 ```
 
 **When the tab appears.** Your tab is added to the right panel's tab strip and stays available wherever the panel shows: the public `registerComponent` API accepts `visibleWhen` only for `dashboard.sections`, not for the route/transport/agent predicate built-in right-panel tabs use to scope themselves, so an **extension tab is always visible**. It registers as a _contextual_ tab (never the global fallback). That has a real consequence — the panel auto-selects the first contextual tab when the active one isn't showing, so on routes where no built-in contextual tab is visible (home, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Because it can auto-open in any context, always render a useful empty state when there is nothing relevant to show.
+
+### Pages (`/x/…`)
+
+`api.registerPage(path, Page, options)` mounts a full page at **`/x/<your-id>/<path>`**. The `x/` prefix means no core route can ever take your address, now or later.
+
+- **`path`** is `''` for your home (`/x/flow`), or `/`-separated segments that are lowercase words or `:param` placeholders (`'settings'`, `'p/:name'`). Anything else throws. Registering the same path twice replaces the first, with a console warning. When two paths could answer an address, the one with more fixed words before its first `:param` wins (`p/new` beats `p/:name`).
+- **`options.title`** (required, non-empty text; a page without one is refused with a console warning) names the page in its bar, its tab, the command palette and the phone menu. **`options.icon`** is a component the host sizes with `className` (an inline SVG; you cannot import `lucide-react`). **`options.menu: false`** keeps a page out of the palette and the phone menu. Pages with a `:param` are never listed there: a menu cannot fill in the value.
+- **Your page gets** `params` (the `:param` values, decoded), `search` (the URL's query, every value exactly the text the address holds: `?v=1.10` is `'1.10'`) and `setSearch(next)`, which writes keys into the URL (`null` removes one). `setSearch` replaces the history entry rather than adding one, so writing a filter box on every keystroke leaves one Back press, not one per letter; two calls in a row both land. Keep state a person would bookmark there: `/x/flow?project=dorkos` opens the same view for whoever it is sent to.
+- **Core gives the page the whole content area and scrolls it.** Layout and padding are yours. If the page throws while drawing, core shows a "ran into a problem" message in its place, not a broken app.
+- **A reload on your page's address works.** It arrives before your extension has loaded, so core shows a skeleton until you register the page. If your extension is not installed, not allowed to run, turned off, or has no page at that address, core says which, in plain words, with a way to fix it where there is one.
+- **Where people find it:** the command palette lists your pages under "Add-ons" (type part of the title), and on a phone they are listed under "Add-ons" in the You tab. There is no sidebar entry: extensions add no app chrome of their own.
+
+```typescript
+function FlowHome({ search, setSearch }: ExtensionPageProps) {
+  return (
+    <div style={{ padding: '24px 16px' }}>
+      <h1>Flow</h1>
+      <button onClick={() => setSearch({ project: 'dorkos' })}>Show dorkos</button>
+      <p>Showing {search.project ?? 'every project'}</p>
+    </div>
+  );
+}
+
+function ProjectLens({ params }: ExtensionPageProps) {
+  return <h1>Project {params.name}</h1>;
+}
+
+export function activate(api: ExtensionAPI): void {
+  api.registerPage('', FlowHome, { title: 'Flow' });
+  api.registerPage('p/:name', ProjectLens, { title: 'Project' });
+  // Elsewhere: api.navigate('/x/flow/p/dorkos');
+}
+```
+
+### The status bar
+
+`api.registerStatusBarItem(id, Item, options)` adds an item to the status bar under a chat's composer, beside the runtime and account chips. Your component receives the chat's `StatusBarSlotContext` as props:
+
+| Field          | What it is                                                                   |
+| -------------- | ---------------------------------------------------------------------------- |
+| `sessionId`    | The chat's session id                                                        |
+| `cwd`          | The chat's folder, or `null`                                                 |
+| `project`      | The project of `cwd` (`{ root, name }`), or `null`                           |
+| `trackerItems` | Every tracker item the chat works on, newest first                           |
+| `compact`      | `true` at phone width: draw your short form (an id and a state, not a title) |
+
+Options:
+
+- **`label`** is the accessible name of your item's region.
+- **`priority?`** orders your item among other extensions' items (lower first, default 100).
+- **`when?(ctx)`** says whether to show the item for this chat (default: always). **`urgent?(ctx)`** says whether it needs attention.
+- **`when` and `urgent` must be pure and read only `ctx`.** They run while the status bar works out what fits, many times, before your component is drawn: no fetching, no reading your extension's own state, no subscribing. Anything you need to decide belongs in `ctx`, which is why `trackerItems` is on it. Core cannot enforce this beyond calling them synchronously, but anything other than `true` or `false` (a Promise, an object) reads as `false` and logs a warning once. A rule that throws hides the item (logged once), and an item that throws while drawing disappears on its own; neither takes the status bar down.
+
+All extension items share **one slot** in the bar's width budget, called "Add-ons". It shows when any item's `when` says so. It ranks with live work (like running subagents) when slots are contested, and with an account that needs you when any shown item is `urgent`. It cannot be pinned. When the bar has no room for it, it counts in the `+N` beside the `⋯`, and the Session panel behind the `⋯` lists every shown item under "Add-ons".
+
+```typescript
+api.registerStatusBarItem('run', RunChip, {
+  label: 'Flow run',
+  when: (ctx) => ctx.trackerItems.length > 0,
+  urgent: (ctx) => ctx.trackerItems.some((item) => item.runStatus === 'needs-you'),
+});
+
+function RunChip({ trackerItems, compact }: StatusBarSlotContext) {
+  const first = trackerItems[0]!;
+  if (trackerItems.length > 1) return <span>{trackerItems.length} items</span>;
+  return <span>{compact ? first.id : `${first.id} · ${first.stage ?? 'Working'}`}</span>;
+}
+```
 
 ## TypeScript vs JavaScript
 
@@ -399,6 +539,7 @@ The generalized `ensureCoreExtensions()` scanner picks the new directory up auto
 ## Limitations (v1)
 
 - No sandboxing: client-side extensions run in the browser with full DOM access; server-side extensions run in the Node.js host process.
+- The `hello-world` core extension (`apps/server/src/core-extensions/hello-world/`) is the worked example of a page, a status-bar item and a tab marker. It ships turned off.
 - No extension marketplace or auto-update mechanism.
 - Storage is local-only (no sync across machines).
 
@@ -581,6 +722,125 @@ The rules an advisor lives by:
 - **Every call is bounded at 2 seconds, and every answer is checked.** A ranking keeps only ids DorkOS knows (and never the excluded account); an id you leave out is hidden; a `reason` over 200 characters is cut to fit; `recommendedId` counts only when it names an eligible account of the context's runtime. An `auto` plan's `delaySeconds` is clamped to 0..3600, and its target must be a registered account other than the one that ran out. A `carryOver` seed longer than the seed-context limit is refused. A throw, a timeout or an invalid answer means core's default for that call.
 - **A person's own pick is never refused by the advisor.** Its ranking is advice for anything a person does.
 - **Agents and relay messages need it.** When an agent (`session_start`) or a relay message names an account, core allows it only when the advisor's `launch` ranking marks that account eligible. With no advisor registered, such a pick is refused ("Agents can pick an account only after Flow is set up to say which accounts they may use."), and an advisor that fails refuses it too ("The account policy could not be checked."). Without an advisor everything else uses core's defaults: accounts ranked by weekly headroom, and a person asked what to do when an account runs out.
+
+#### `ctx.projects`
+
+The projects core knows. A project is a git main checkout: a worktree or a subfolder belongs to its main checkout, and a folder in no repository belongs to none. Each project has a short `name` that is safe in a URL and never changes once given (the folder's name, or `name~parent` when another project already had it), so `/x/<your-id>/p/<name>` stays a good bookmark.
+
+```typescript
+if (ctx.projects !== undefined) {
+  const here = await ctx.projects.resolve(someFolder); // { root, name } | null
+  const mine = await ctx.projects.list(); // ProjectInfo[]: { root, name, originRepo, lastSeenAt }
+  await ctx.projects.report('/Users/kai/dev/client-app'); // tell core about one it has not seen
+  const stop = ctx.projects.onChange(() => ctx.emit('projects-changed', null));
+}
+```
+
+- **`list()` is scoped to you.** It answers the projects that hold a copy of your extension (`.dork/extensions/<id>` or a plugin's `.dork/plugins/*/.dork/extensions/<id>`) and the ones you reported. You do not learn every folder the person works in.
+- **`resolve` and `report` pass the directory boundary and need a git repository**, else they answer `null` and record nothing. The boundary is checked twice: on the folder you name and on the repository it belongs to, so a worktree or a `.git` file inside the boundary that points at a repository outside it answers `null`. Only `report` adds a project to your own `list()`.
+- **A project only extensions named is second-class.** Core never looks for extension code there, and it stays out of the person's own project list until a session, agent, workspace or install is seen in it.
+- **At most 200 new projects per extension.** Each project core had not seen that you `report` or `resolve` counts once; past 200, naming another new one answers `null` and records nothing. Projects core already knows, and ones you named before, do not count.
+- **Probe before use.** `ctx.projects` is absent on hosts from before it; check `ctx.projects !== undefined` rather than a host version. Change listeners are removed on shutdown and reload.
+
+#### `ctx.inbox`
+
+Ask a person something in the Activity inbox. You decide **when** to ask (your own conditions and time limits); core owns the rest: one live row per key, the bell count, the push to a phone when nobody answers (`extension.decision` is `blocking`), the question's deadline, who decided, and the one history row.
+
+```typescript
+if (ctx.inbox !== undefined) {
+  ctx.inbox.onAction(async (event) => {
+    // event: { key, action, choiceId, decidedBy: 'person' | 'deadline', note, text, pendingActionId, offerId, project }
+    if (event.action === 'offer')
+      return { resolve: 'approved', message: 'Done. Change it any time in Flow settings.' };
+    await ship(event.key);
+    return {
+      resolve: 'approved',
+      offer: {
+        text: 'Shipped. Next time, ship on its own when the reviewer agent approves?',
+        offerId: 'auto-ship',
+        settingsPatch: { project: event.project!.root, patch: { ship: 'tell-me-after' } },
+      },
+    };
+  });
+
+  await ctx.inbox.raise({
+    key: `ship:${item.id}`, // yours; core keeps it apart from every other extension's
+    title: 'Ship the new out-of-usage banner?', // a question or an outcome, never a command or an id
+    why: "It's built, tests pass, and the reviewer agent found nothing. Shipping merges it into the app.",
+    project: checkoutPath, // any folder inside the project; the row groups under its name
+    projectLabel: 'Linear DOR',
+    actions: {
+      kind: 'yes-no',
+      approveLabel: 'Ship it',
+      rejectLabel: 'Send it back',
+      rejectAsksForNote: true,
+    },
+    link: '/x/flow/p/dorkos',
+  });
+
+  // A question with the agent's pick and a deadline core runs
+  await ctx.inbox.raise({
+    key: 'old-api',
+    title: 'Should the old API keep working?',
+    why: 'Removing it breaks two scripts. If nobody answers, it stays: the safer choice.',
+    actions: {
+      kind: 'choice',
+      choices: [
+        { id: 'keep', label: 'Keep it' },
+        { id: 'remove', label: 'Remove it' },
+      ],
+      defaultChoice: 'keep',
+      decideBy: fivePmToday,
+      allowReply: true,
+    },
+  });
+
+  await ctx.inbox.resolve('linear-down:dorkos', { outcome: 'cleared' }); // "Resolved on its own"
+  await ctx.inbox.record({
+    // decided without asking: history only ("While you were away")
+    key: 'ship:DOR-2400',
+    title: 'Shipped the calmer red',
+    why: 'The reviewer agent approved it.',
+    outcome: 'approved',
+    by: { kind: 'rule', label: "your 'Tell me after' setting" },
+    choiceLabel: 'Shipped',
+    tell: true,
+  });
+}
+```
+
+- **Every ask says why.** `why` is required: plain text, 1 to 300 characters. Write it by three rules: say what will happen and why, in plain words, never a command, a stage name or an id as the headline; say why now and what a "no" means; and let every kind of ask be something the person can hand off. Buttons read as outcomes ("Ship it", "Send it back"), not yes and no.
+- **A budget per extension.** At most 60 new decisions an hour, raised or recorded, counted over a sliding hour; past it `raise` and `record` throw `InboxLimitError` with `limit: 'rate'`. Updating an open key does not count. Activity keeps at most your newest 100 history rows, so a busy extension never pushes other things out of the person's history.
+- **Re-raising never moves a deadline.** A re-raise with the same actions keeps the deadline first set, its timer, and what a person already answered, even when its `decideBy` differs (a deadline asked as "an hour from now" moves every time you raise). Only different choices, labels or options start the question over. To set a new deadline, resolve the old question and raise a new one.
+- **A person's answer ends the deadline.** Once somebody answers (whatever your handler does with it, `keepOpen` included), the agent's pick no longer applies. While your handler has a person's answer, the deadline waits; if the handler fails, the deadline stands as before.
+- **Crediting must agree.** `resolve(key, { answering })` throws when the outcome contradicts what the person chose (👍 is `approved`, 👎 is `rejected`, a word or a choice is `answered`).
+- **One live row per key.** Raising an open key updates it in place and never pushes twice. At most 50 open decisions per extension; title ≤ 120, detail ≤ 500, a note or typed answer ≤ 2000. Breaking a limit throws `InboxLimitError` (match on `err.code === 'inbox_limit'` and `err.limit`, not `instanceof`: your bundle carries its own copy of the class) and writes nothing.
+- **Links stay in the app.** `link`, a word action's `href` and a handler's `navigate` must be a DorkOS route or `/x/<your id>/…`; anything else throws `InboxLinkError` (`inbox_link`), or, from a handler, counts as a handler error. A push opens `link`, or home.
+- **The handler has 5 seconds.** Answer `{ resolve }`, `{ keepOpen: true }` (the row stays; call `resolve(key, { outcome, answering: event.pendingActionId })` later and history credits the person), or `{ settled: true }`. A throw or a timeout keeps the row and the person sees "Flow couldn't take that. Try again."
+- **Deadlines run in core.** At `decideBy` core calls your handler with `choiceId: defaultChoice` and `decidedBy: 'deadline'`. `{ resolve }` settles it ("decided by the agent"); `{ keepOpen: true }` stops the clock with no retry; a failure retries after 1 and 5 minutes and then leaves the row with the person, saying "The agent couldn't go ahead. It needs you." A `decideBy` sooner than 5 minutes is moved to 5 minutes; more than 7 days ahead throws. A deadline fires only while you are running and have registered `onAction`, including one that passed while the server was down.
+- **Who decided.** `resolve(key, { outcome, by })` takes `{ kind: 'agent' | 'rule', label }` (history shows the label) or `{ kind: 'deadline' }`. With no `by`, it is yours: "Resolved on its own" for `cleared`, "No longer needed" for `cancelled`.
+- **"Next time, on its own?"** An `offer` on your answer is shown once, only to the person who answered in DorkOS, as a green line with Yes. Its `settingsPatch` is merged into your per-project settings as the person before your handler hears `action: 'offer'`. A patch for a project you cannot see is refused.
+- **Hidden while you are not running.** While your extension is off, or a decision's project folder is missing, its rows are hidden and kept and their clocks stop; they come back when you run again.
+- **The push says little.** A phone, a desktop banner and a chat message see "Flow needs you in 2 projects", never your title, key or project name, and at most once an hour per extension however many decisions stand; one still waiting when the hour is up gets its own push then.
+
+#### `ctx.requirePerson`
+
+Express middleware that admits only a person: the same bar as approving an extension. Put it in front of every route that changes state on a person's behalf (settings, pause and resume):
+
+```typescript
+router.put('/settings', ctx.requirePerson, saveSettings);
+router.use('/admin', ctx.requirePerson); // a whole sub-router
+```
+
+An agent that names itself is refused with "Only a person can change Flow's settings." (`extension_person_required`), and so is a request from another site. With Require login on it needs the person's cookie. Say the residual honestly: with Require login off, a local caller that does not name itself an agent passes, and in any posture your own page code does. Routes without it stay open. Decisions are not answered through your own routes: use `ctx.inbox`.
+
+#### `ctx.projectSettings`
+
+The read side of `api.projectSettings`: `get(projectRoot)` and `onChange(listener)`, called with the project root when a person changes it. There is no setter here on purpose.
+
+#### Feature detection
+
+Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`.
 
 ### Route Conventions
 

@@ -10,11 +10,10 @@ import { createInstallHandler, InstallInputSchema } from '../tool-install.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../marketplace/flows/install-shape.js';
 import {
-  ConflictError,
-  InvalidPackageError,
   type InstallerLike,
   type PreviewResult,
-} from '../../marketplace/marketplace-installer.js';
+} from '../../marketplace/installer/marketplace-installer.js';
+import { ConflictError, InvalidPackageError } from '../../marketplace/installer/errors.js';
 import type {
   ConflictReport,
   InstallRequest,

@@ -56,6 +56,7 @@ import {
 } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
   APPROVAL_DETAIL_MAX_LENGTH,
   APPROVAL_REQUEST_REASON_MAX_LENGTH,
@@ -332,6 +333,15 @@ export interface ApprovalServiceOptions {
     agentPath: string;
     capabilityId: string;
   }) => { allowedThisWeek: number } | null;
+  /**
+   * The project of the folder the asking session ran in, when it is already
+   * known (spec `flow-multiproject` §6.2): `null` for no project, `undefined`
+   * when not resolved yet (the card then leaves the field out). Synchronous,
+   * because a card is built while an agent waits; `GET /api/approvals/pending`
+   * resolves {@link ApprovalService.pendingFolders} first so its read is
+   * complete. Omitted in tests and in boots without the project registry.
+   */
+  projectForFolder?: (cwd: string) => ProjectRef | null | undefined;
 }
 
 /** What a requester gets back: an id to watch, and a token to retry with. */
@@ -598,10 +608,16 @@ function recordedArea(area: string | null): PermissionAreaId | null {
 function toPendingApproval(
   row: ApprovalRow,
   roomId?: string,
-  suggestAlways?: (row: ApprovalRow) => { allowedThisWeek: number } | null
+  suggestAlways?: (row: ApprovalRow) => { allowedThisWeek: number } | null,
+  projectForFolder?: (cwd: string) => ProjectRef | null | undefined
 ): PendingApproval {
   const alwaysOffered = isAlwaysOffered(row);
   const suggestion = alwaysOffered ? (suggestAlways?.(row) ?? null) : null;
+  const project = projectForFolder
+    ? row.requestingCwd
+      ? projectForFolder(row.requestingCwd)
+      : null
+    : undefined;
   return {
     approvalId: row.id,
     capabilityId: row.capabilityId,
@@ -632,6 +648,7 @@ function toPendingApproval(
     ...(row.blockedRequest ? { blockedRequest: true as const } : {}),
     ...(row.blockedRequest && row.requestReason ? { requestReason: row.requestReason } : {}),
     ...(roomId ? { roomId } : {}),
+    ...(project !== undefined ? { project } : {}),
     requestedAt: row.createdAt,
     expiresAt: row.expiresAt,
   };
@@ -825,6 +842,54 @@ export class ApprovalService {
    */
   deny(approvalId: string, reason?: string): ApprovalDecisionFailure | undefined {
     return this.decide(approvalId, 'denied', reason);
+  }
+
+  /**
+   * Hand a requester a fresh token for the open approval of exactly this action,
+   * when there is one, instead of raising a second card for it.
+   *
+   * For a requester that lost its token without having spent it: the server
+   * restarted between a card being raised and the next turn that retries it
+   * (DOR-2335). The approval matched is the newest one with this capability,
+   * input hash and authority binding that is unspent and unexpired, whatever it
+   * says (still waiting, allowed or turned down), so the retry hears the
+   * person's answer. Rotating the token is what keeps it single-holder: the
+   * token it replaces stops working.
+   *
+   * Server-internal. It is never reachable by a caller that could name an
+   * arbitrary binding: a match has to be the very action a card was raised
+   * for, so it can only ever reveal or spend that one decision.
+   *
+   * @param binding - The action the requester is about to run.
+   * @returns The approval and its new token, or `undefined` when none is open.
+   */
+  reissue(binding: ApprovalBinding): { approvalId: string; token: string } | undefined {
+    const rows = this.db
+      .select()
+      .from(approvals)
+      .where(
+        and(
+          eq(approvals.capabilityId, binding.capabilityId),
+          eq(approvals.inputHash, binding.inputHash),
+          isNull(approvals.consumedAt)
+        )
+      )
+      .all()
+      .filter(
+        (row) =>
+          (row.authorityBindingDigest ?? undefined) === binding.authorityBindingDigest &&
+          !this.isExpired(row)
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const row = rows[0];
+    if (!row) return undefined;
+    const token = randomBytes(TOKEN_BYTES).toString('hex');
+    const result = this.db
+      .update(approvals)
+      .set({ tokenHash: hashToken(token) })
+      .where(and(eq(approvals.id, row.id), isNull(approvals.consumedAt)))
+      .run();
+    return result.changes === 1 ? { approvalId: row.id, token } : undefined;
   }
 
   /**
@@ -1187,6 +1252,19 @@ export class ApprovalService {
   }
 
   /**
+   * The folders the pending approvals' sessions ran in, so a reader can
+   * resolve their projects before {@link listPending} builds the cards.
+   */
+  pendingFolders(): string[] {
+    return this.db
+      .select({ cwd: approvals.requestingCwd })
+      .from(approvals)
+      .where(and(eq(approvals.state, 'pending'), isNull(approvals.consumedAt)))
+      .all()
+      .flatMap((row) => (row.cwd ? [row.cwd] : []));
+  }
+
+  /**
    * The cockpit-facing card for one approval, or `undefined` when no such row
    * exists. Never includes token material.
    *
@@ -1205,8 +1283,11 @@ export class ApprovalService {
 
   /** One stored row as the card a surface draws. */
   private toCard(row: ApprovalRow): PendingApproval {
-    return toPendingApproval(row, this.roomFor(row.requestingSessionId), (r) =>
-      this.suggestsAlways(r)
+    return toPendingApproval(
+      row,
+      this.roomFor(row.requestingSessionId),
+      (r) => this.suggestsAlways(r),
+      this.options.projectForFolder
     );
   }
 

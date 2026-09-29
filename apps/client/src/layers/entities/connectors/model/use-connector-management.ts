@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ConnectorAgentRequestAuthenticationInput,
-  ConnectorAgentRequestDecision,
+  ConnectorAgentRequestDecisionInput,
 } from '@dorkos/shared/connector-agent-request-schemas';
 import type {
   ConnectorEveryAgentRevokeResponse,
@@ -83,7 +83,7 @@ export function useResolveConnectorAgentRequest() {
   return useMutation<
     ConnectorAgentRequestItem,
     Error,
-    { requestId: string; decision: ConnectorAgentRequestDecision }
+    { requestId: string; decision: ConnectorAgentRequestDecisionInput }
   >({
     mutationFn: ({ requestId, decision }) =>
       transport.resolveConnectorAgentRequest(requestId, decision),

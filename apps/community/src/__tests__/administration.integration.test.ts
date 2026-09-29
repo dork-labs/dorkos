@@ -87,6 +87,7 @@ const TENANT_TABLES = [
   'community_deletion_jobs',
   'community_deletion_tombstones',
   'community_handles',
+  'community_imports',
   'community_limits',
   'community_short_names',
   'connection_grants',

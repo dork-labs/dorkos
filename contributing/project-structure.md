@@ -412,11 +412,12 @@ apps/server/src/
 │   │   │                          #   registered LOCAL_COMMUNITY) + remote-community aggregation
 │   ├── connectors/                # Connections: connector accounts, agent-access requests/cleanup
 │   ├── marketplace/               # Package install/uninstall/update pipeline
-│   │   ├── marketplace-installer.ts  # Orchestrator, dispatches per-kind flows
-│   │   ├── marketplace-cache.ts      # Content-addressable cache (TTL, prune, listPackages)
+│   │   ├── installer/                # Orchestrator: staging, dispatch per kind, update, metadata
+│   │   ├── cache/                    # Content-addressable cache (TTL, prune) and its retention
 │   │   ├── package-fetcher.ts        # marketplace.json fetch + package clone
 │   │   ├── transaction.ts            # Atomic transaction engine (backup/rollback)
-│   │   └── flows/                    # Per-kind install flows (plugin, agent, skill-pack, adapter)
+│   │   ├── sources/, preview/, consent/, telemetry/, recovery/, lib/ # Per-concern subfolders
+│   │   └── flows/                    # Per-kind install flows, update, and uninstall/
 │   ├── marketplace-mcp/           # The 9 marketplace MCP tools + personal-marketplace recommend engine
 │   ├── tasks/                    # Task scheduler services
 │   │   ├── task-scheduler-service.ts # Cron engine (croner) with overrun protection

@@ -135,11 +135,11 @@ describe('createConnectorRuntimeMcpServer', () => {
     });
     const status = {
       requestId: 'request-a',
-      reviewUrl: '/connections?request=request-a',
       serviceSlug: 'gmail',
       reason: 'Read a message needed for this task.',
-      requestedOperations: ['gmail.read'],
+      access: 'read' as const,
       requestedEvents: [],
+      note: "The person hasn't answered yet.",
       createdAt: '2026-09-07T12:00:00.000Z',
       expiresAt: '2026-09-07T14:00:00.000Z',
       status: 'awaiting_owner' as const,
@@ -164,9 +164,15 @@ describe('createConnectorRuntimeMcpServer', () => {
     const requestTool = (await client.listTools()).tools.find(
       (tool) => tool.name === 'connectors.request_connection'
     );
+    // Agents ask by level; there is no action-name field to guess at.
     expect(requestTool?.inputSchema).toMatchObject({
-      properties: { requestedEvents: { maxItems: 32 } },
+      properties: {
+        access: { enum: ['read', 'read-write'] },
+        requestedEvents: { maxItems: 32 },
+      },
+      required: expect.arrayContaining(['access']),
     });
+    expect(requestTool?.inputSchema.properties).not.toHaveProperty('requestedOperations');
 
     const result = payload(
       await client.callTool({
@@ -175,7 +181,7 @@ describe('createConnectorRuntimeMcpServer', () => {
           version: 1,
           serviceSlug: 'gmail',
           reason: status.reason,
-          requestedOperations: ['gmail.read'],
+          access: 'read',
           requestedEvents: [],
         },
       })
@@ -265,7 +271,7 @@ describe('createConnectorRuntimeMcpServer', () => {
         version: 1,
         serviceSlug: 'composio_gmail',
         reason: 'List the emails I can read.',
-        requestedOperations: ['get_emails'],
+        access: 'read',
       },
     });
     expect(refused.isError).toBe(true);

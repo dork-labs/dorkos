@@ -127,6 +127,9 @@ export class CommunityAdapterOutboxDelivery implements CommunityOutboxDelivery {
           signal
         );
         uploaded.push(remote.id);
+        // What a later removal on the Community is matched on (DOR-2549): the Community cleans
+        // file names on upload, so the name here is not a reliable link to its copy.
+        this.attachmentRows.recordCommunityAttachmentId(localRoomId, attachment.id, remote.id);
       } catch (error) {
         return deliveryFailure(error, signal);
       }

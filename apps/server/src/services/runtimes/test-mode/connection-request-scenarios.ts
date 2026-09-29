@@ -37,7 +37,7 @@ export const CONNECTION_REQUEST_SCENARIO_INPUT = {
   version: 1,
   serviceSlug: 'slack',
   reason: 'Summarise today’s messages',
-  requestedOperations: ['slack.messages.list'],
+  access: 'read',
   requestedEvents: [],
 } as const;
 

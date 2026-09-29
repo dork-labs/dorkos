@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
 import { atomicMove } from '../lib/atomic-move.js';
-import { UninstallFlow } from '../flows/uninstall.js';
+import { UninstallFlow } from '../flows/uninstall/uninstall.js';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { runTransaction } from '../transaction.js';
 import type { InstallResult } from '../types.js';

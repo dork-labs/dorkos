@@ -18,7 +18,7 @@ import type { PluginSource } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { PackageFetcher } from '../package-fetcher.js';
 import { NpmSourceNotSupportedError } from '../source-resolvers/npm.js';
-import type { MarketplaceCache } from '../marketplace-cache.js';
+import type { MarketplaceCache } from '../cache/marketplace-cache.js';
 import type { GitTreeSource, TreeRequest } from '../lib/git/git-tree.js';
 
 const SHA = 'a'.repeat(40);

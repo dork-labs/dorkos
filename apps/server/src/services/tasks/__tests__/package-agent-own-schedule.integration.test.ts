@@ -42,7 +42,7 @@ import {
   computeInstalledFiles,
   readInstalledFiles,
   writeInstalledFiles,
-} from '../../marketplace/lib/installed-files.js';
+} from '../../marketplace/lib/records/installed-files.js';
 
 /** The id the package's agent is registered under. */
 const AGENT_ID = 'agent-helper';

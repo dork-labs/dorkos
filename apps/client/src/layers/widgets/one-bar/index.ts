@@ -8,6 +8,7 @@
  */
 export { OneBar, BarTitle, BarFixedCluster } from './ui/OneBar';
 export { TitleBar } from './ui/TitleBar';
+export { ExtensionPageBar } from './ui/ExtensionPageBar';
 // One bar for all four home surfaces — `/`, `/activity`, `/tasks` and
 // `/workspaces` all declare THIS component, which is what keeps its tab strip
 // mounted across a tab press (see `resolveRouteHeader`).

@@ -17,7 +17,7 @@
  * @module services/marketplace/lib/integrity/file-hash-cache
  */
 import { lstat } from 'node:fs/promises';
-import { hashFile } from '../installed-files.js';
+import { hashFile } from '../records/tree-scan.js';
 
 /** Most file hashes kept at once. */
 export const HASH_CACHE_LIMIT = 20_000;

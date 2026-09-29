@@ -11,6 +11,7 @@ import { initAuth } from '../../services/core/auth/index.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import { createConnectorManagementRouter } from '../connector-management.js';
+import { ConnectorSubscriptionError } from '../../services/connectors/events/subscription-store.js';
 import { ApiError } from '../../../../../packages/cli/src/lib/api-client.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
@@ -157,7 +158,7 @@ describe('connector management routes', () => {
     expect(agentRequests.resolve).toHaveBeenCalledWith(
       OWNER,
       'request-a',
-      { decision: 'current_access', connectionId: 'connection-a' },
+      { decision: 'current_access', connectionId: 'connection-a', eventScopes: [] },
       expect.any(AbortSignal)
     );
 
@@ -169,6 +170,28 @@ describe('connector management routes', () => {
         operationRevisionIds: ['x'],
       })
       .expect(400);
+  });
+
+  it('answers a refused update choice honestly instead of as a server failure', async () => {
+    const app = fixtureTarget.mount(buildApp());
+    agentRequests.resolve.mockRejectedValueOnce(new ConnectorSubscriptionError('review_conflict'));
+    const conflict = await request(app)
+      .post('/api/connectors/agent-requests/request-a/decision')
+      .send({ decision: 'current_access', connectionId: 'connection-a' })
+      .expect(409);
+    expect(conflict.body).toEqual({
+      code: 'review_conflict',
+      error: 'Those updates changed while you were choosing them. Pick them again.',
+    });
+
+    agentRequests.resolve.mockRejectedValueOnce(
+      new ConnectorSubscriptionError('destination_unavailable')
+    );
+    const refused = await request(app)
+      .post('/api/connectors/agent-requests/request-a/decision')
+      .send({ decision: 'current_access', connectionId: 'connection-a' })
+      .expect(422);
+    expect(refused.body.code).toBe('destination_unavailable');
   });
 
   it('keeps request authentication behind the owner and exact request boundary', async () => {

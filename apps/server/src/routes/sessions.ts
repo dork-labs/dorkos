@@ -37,6 +37,8 @@ import {
   type OperatorCookieRefusal,
 } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
+import { trustedCaller } from '../services/core/capabilities/index.js';
+import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
 import { getUserById, readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
 import { resolveAnswererName } from '../services/identity/operator-profile.js';
@@ -59,6 +61,7 @@ import {
   peekProjector,
 } from '../services/session/index.js';
 import { accountUsageForSession } from '../services/session/fleet/session-account.js';
+import { projectsOfFolders } from '../services/projects/project-registry.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import {
@@ -93,6 +96,25 @@ import {
 import { ControlRequestTimeoutError } from '../services/runtimes/claude-code/sessions/bounded-control.js';
 
 const vaultRoot = DEFAULT_CWD;
+
+/**
+ * Who is posting a message, for a new workspace its `workspaceKey` names
+ * (DOR-2335): a person at this machine, or anyone else, with the name an
+ * approval card shows.
+ *
+ * @param req - The request.
+ * @param res - The response, whose locals carry the agent identity.
+ */
+function workspaceCallerOf(
+  req: Request,
+  res: Response
+): { trusted: boolean; requestedBy?: string } {
+  const identity = getRequestAgentIdentity(res);
+  return {
+    trusted: trustedCaller(readCallerAuthority(req, res)) !== undefined,
+    ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+  };
+}
 
 const router = Router();
 
@@ -331,10 +353,14 @@ router.get('/daily-counts', async (req, res) => {
 // An unentitled caller gets `200` with an empty array, never `403`. That is the
 // rooms domain's own rule — "not a member answers exactly as no such room" — so
 // the response never tells a machine that Asks exist.
-router.get('/pending-interactions', (req, res) => {
+router.get('/pending-interactions', async (req, res) => {
   const bindings = req.app.locals.roomSessionBindings as RoomBindingsPort | undefined;
   const principal = readCallerPrincipal(req, res);
-  const interactions = listPendingInteractionsAcrossSessions().flatMap((row) => {
+  const rows = listPendingInteractionsAcrossSessions();
+  // Each row's project (spec `flow-multiproject` §6.2), resolved once per
+  // distinct folder; cached by the registry, so a warm server runs no git.
+  const projects = await projectsOfFolders(rows.map((row) => row.cwd));
+  const interactions = rows.flatMap((row) => {
     const binding = bindings?.bindingForSession(row.sessionId);
     // No `approvers`: nothing on a chat platform reaches this route, so a
     // `bridged` principal is unreachable here. See `AskSubject.approvers`.
@@ -349,6 +375,7 @@ router.get('/pending-interactions', (req, res) => {
         cwd: row.cwd,
         interaction: row.interaction,
         ...(binding ? { roomId: binding.roomId, roomAuthorId: binding.authorId } : {}),
+        project: projects.get(row.cwd) ?? null,
       },
     ];
   });
@@ -994,6 +1021,8 @@ router.post('/:id/messages', async (req, res) => {
     clientId,
     meshCore: req.app.locals.meshCore as MeshCore | undefined,
     roomSessionPlace: req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
+    // Who is asking, for a new workspace a workspaceKey names (DOR-2335).
+    workspaceCaller: workspaceCallerOf(req, res),
   });
   if (isSessionLaunchRefusal(result)) {
     // A request naming something that does not exist is the caller's mistake;

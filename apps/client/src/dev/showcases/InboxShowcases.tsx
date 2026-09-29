@@ -11,9 +11,10 @@
  */
 import { useCallback, useState } from 'react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
-import { Puzzle } from 'lucide-react';
+import { MessageCircleQuestion, Puzzle } from 'lucide-react';
 import {
   InboxDecisionRow,
+  InboxProjectHeading,
   InboxRow,
   InboxGroupRow,
   groupActivityRows,
@@ -317,14 +318,14 @@ function InboxRowsShowcase() {
                 onToggleExpanded={() => toggleGroup(item.stateKey)}
                 onOpenNotification={() => {}}
               />
-            ) : (
+            ) : item.type === 'row' ? (
               <InboxRow
                 key={item.notification.id}
                 notification={item.notification}
                 agent={resolveShowcaseAgent(item.notification.agentId)}
                 onOpen={() => {}}
               />
-            )
+            ) : null
           )}
         </div>
       </ShowcaseDemo>
@@ -343,14 +344,14 @@ function InboxRowsShowcase() {
                 onToggleExpanded={() => toggleGroup(item.stateKey)}
                 onOpenNotification={() => {}}
               />
-            ) : (
+            ) : item.type === 'row' ? (
               <InboxRow
                 key={item.notification.id}
                 notification={item.notification}
                 agent={resolveShowcaseAgent(item.notification.agentId)}
                 onOpen={() => {}}
               />
-            )
+            ) : null
           )}
         </div>
       </ShowcaseDemo>
@@ -413,6 +414,82 @@ function DecisionRowShowcase() {
             icon={Puzzle}
             title="Flow is off for now"
             trail={['2:14pm', 'Turn it on']}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>An extension asks: yes or no, with a note on “Needs changes”</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          <InboxProjectHeading name="dorkos" label="Linear DOR" />
+          <InboxDecisionRow
+            icon={MessageCircleQuestion}
+            title="Ship the new out-of-usage banner?"
+            why="It's built, tests pass, and the reviewer agent found nothing. Shipping merges it into the app."
+            sourceLine="Flow"
+            more={<p>PR #2303 changes four files.</p>}
+            actions={{
+              kind: 'yes-no',
+              approveLabel: 'Ship it',
+              rejectLabel: 'Send it back',
+              onApprove: () => {},
+              onReject: () => {},
+              rejectNote: { onSubmit: () => {} },
+            }}
+          />
+          <InboxDecisionRow
+            icon={MessageCircleQuestion}
+            title="Sign in to Linear again"
+            why="Flow can't read your tracker, so nothing new starts in blintz until you do."
+            sourceLine="Flow"
+            meta="since 09:14 · asked after 1h"
+            actions={{ kind: 'word', label: 'Sign in', onClick: () => {} }}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>A question with the agent’s pick and a deadline</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          <InboxDecisionRow
+            icon={MessageCircleQuestion}
+            title="Should the old API keep working?"
+            why="Removing it breaks two scripts that still call it. Keeping it costs nothing today."
+            sourceLine="Flow"
+            actions={{
+              kind: 'choice',
+              choices: [
+                { id: 'keep', label: 'Keep it' },
+                { id: 'remove', label: 'Remove it' },
+              ],
+              defaultChoiceId: 'keep',
+              deadlineLine: 'If you don’t answer by 5pm, the agent picks “Keep it”.',
+              allowReply: true,
+              onChoose: () => {},
+              onReply: () => {},
+            }}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Answered, with the one-time “next time, on its own?” offer</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          <InboxDecisionRow
+            icon={MessageCircleQuestion}
+            title="Ship the new out-of-usage banner?"
+            trail={['Ship it · you at 2:14pm']}
+            followUp={{
+              text: 'Shipped. Next time, ship on its own when the reviewer agent approves?',
+              onAccept: () => {},
+              onDismiss: () => {},
+            }}
+          />
+          <InboxDecisionRow
+            icon={MessageCircleQuestion}
+            title="Sort the 12 new ideas?"
+            trail={['Sort them · you at 2:20pm']}
+            watch={{ label: 'Sorting 12 ideas…', onWatch: () => {} }}
           />
         </div>
       </ShowcaseDemo>

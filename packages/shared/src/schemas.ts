@@ -35,6 +35,7 @@ import type { WidgetDocument } from './ui-widget.js';
 import type { PermissionStop } from './agent-runtime.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
 import { AccountUsageSchema } from './account-usage.js';
+import { ProjectRefSchema } from './project-schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -501,6 +502,34 @@ export const LimitPlanResponseSchema = z
 /** Inferred type for {@link LimitPlanResponseSchema}. */
 export type LimitPlanResponse = z.infer<typeof LimitPlanResponseSchema>;
 
+/**
+ * One tracker item a chat is working on (spec `flow-multiproject` §6.8, N9).
+ *
+ * `via` says how: `this-chat` when flow runs the item in this chat, `own-chat`
+ * when this chat started the work and it runs in a chat of its own. That chat
+ * is `ownChatSessionId` when it is a DorkOS chat, else null (and it is always
+ * null for `this-chat`).
+ */
+export const TrackerItemRefSchema = z
+  .object({
+    /** The tracker identifier, e.g. `DOR-2387`. */
+    id: z.string(),
+    /** The flow stage the run is in, or null when it reports none. */
+    stage: z.string().nullable(),
+    /** The run's own status, or null when it reports none. */
+    runStatus: z.string().nullable(),
+    /** ISO-8601 time the run started. */
+    startedAt: z.string(),
+    /** `this-chat`: this chat works on it. `own-chat`: this chat started it and it runs in its own chat. */
+    via: z.enum(['this-chat', 'own-chat']),
+    /** The chat the work runs in: the "Open its chat" target. Null for `this-chat`, or when it is not a DorkOS chat. */
+    ownChatSessionId: z.string().nullable(),
+  })
+  .openapi('TrackerItemRef');
+
+/** One tracker item a chat is working on. See {@link TrackerItemRefSchema}. */
+export type TrackerItemRef = z.infer<typeof TrackerItemRefSchema>;
+
 export const SessionSchema = z
   .object({
     id: z.string().uuid(),
@@ -615,9 +644,17 @@ export const SessionSchema = z
       .optional(),
     /**
      * The work item a flow run serves, read from flow's `flow-state.json`
-     * (shared contract §1.3): the run whose `sessionId` is this session's id.
+     * (shared contract §1.3): the newest run in THIS chat (a `this-chat` item of
+     * {@link SessionSchema.shape.trackerItems}); work the chat started in chats of
+     * their own never appears here.
      * `id` is the item identifier; `stage` and `runStatus` are the run's own.
      * ABSENT when no run names this session.
+     *
+     * @deprecated Read `trackerItems`, which lists every item, including work
+     *   this chat started in chats of their own. Kept for older flow installs;
+     *   removed in the first DorkOS minor release at least 60 days after a flow
+     *   release that reads only `trackerItems`, and only once the extension
+     *   seam contract records the removal (spec `flow-multiproject` §6.8).
      */
     trackerItem: z
       .object({
@@ -625,7 +662,19 @@ export const SessionSchema = z
         stage: z.string().optional(),
         runStatus: z.string().optional(),
       })
-      .optional(),
+      .optional()
+      .openapi({
+        deprecated: true,
+        description:
+          'Deprecated: the newest run in this chat (the newest `this-chat` item of `trackerItems`), kept for older flow installs. Read `trackerItems`.',
+      }),
+    /**
+     * Every tracker item this chat is working on, newest first (spec
+     * `flow-multiproject` §6.8): runs flow records for this chat
+     * (`via: 'this-chat'`), and runs this chat started that work in chats of
+     * their own (`via: 'own-chat'`). ABSENT when no run names this session.
+     */
+    trackerItems: z.array(TrackerItemRefSchema).optional(),
     /**
      * ISO-8601 timestamp of the last message a PERSON sent in this session —
      * the server half of the sidebar's interaction-recency order key
@@ -4999,6 +5048,13 @@ export const TaskSchema = z
      * construction per task per request, and no surface asks for it there.
      */
     nextRuns: z.array(z.string()).default([]),
+    /**
+     * The project the schedule runs in: the project of its agent's folder, the
+     * folder a run starts in (spec `flow-multiproject` §6.2). Response-only,
+     * stamped by the server, which can run git; null when that folder is in no
+     * repository or the schedule has no agent. ABSENT from an older server.
+     */
+    project: ProjectRefSchema.nullable().optional(),
   })
   .openapi('Task');
 

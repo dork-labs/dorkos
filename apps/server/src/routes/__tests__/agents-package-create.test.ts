@@ -30,7 +30,7 @@ import { initBoundary } from '../../lib/boundary.js';
 import { createAgentsRouter } from '../agents.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import { buildInstallerForTests } from '../../services/marketplace/__tests__/installer-harness.js';
-import { disclosedEffectsOf } from '../../services/marketplace/disclosed-effects.js';
+import { disclosedEffectsOf } from '../../services/marketplace/preview/disclosed-effects.js';
 import { packageContentHash } from '../../services/marketplace/lib/content-hash.js';
 
 const FIXTURE = path.join(

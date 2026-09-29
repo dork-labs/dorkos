@@ -103,6 +103,7 @@ const rowProps = {
   onRoomSelect: () => {},
   onSessionSelect: () => {},
   onCommandSelect: () => {},
+  onPageSelect: () => {},
 };
 
 /**

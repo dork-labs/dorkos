@@ -17,7 +17,7 @@
  * @module services/marketplace-mcp/tool-list-marketplaces
  */
 import type { SourceLastFetch } from '@dorkos/shared/marketplace-schemas';
-import { describeLastFetch } from '../marketplace/source-listing.js';
+import { describeLastFetch } from '../marketplace/sources/source-listing.js';
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 
 /**

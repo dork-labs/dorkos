@@ -443,6 +443,99 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     });
   });
 
+  it('carries trackerItems and the deprecated trackerItem on a live upsert, like GET /api/sessions (D10)', async () => {
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    const items = [
+      {
+        id: 'DOR-2',
+        stage: 'execute',
+        runStatus: 'running',
+        startedAt: '2026-09-28T10:00:00.000Z',
+        via: 'own-chat' as const,
+        ownChatSessionId: SESSION_B,
+      },
+      {
+        id: 'DOR-1',
+        stage: 'verify',
+        runStatus: 'running',
+        startedAt: '2026-09-28T09:00:00.000Z',
+        via: 'this-chat' as const,
+        ownChatSessionId: null,
+      },
+    ];
+    broadcaster.setTrackerItemsOverlay(async (page) => {
+      for (const session of page) {
+        if (session.id !== SESSION_A) continue;
+        session.trackerItems = items;
+        session.trackerItem = { id: 'DOR-2', stage: 'execute', runStatus: 'running' };
+      }
+    });
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+    a.push({ type: 'session_removed', sessionId: SESSION_A });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith('session_removed', expect.anything());
+    });
+    const names = broadcastSpy.mock.calls.map((call: unknown[]) => call[0]);
+    // The overlay is asynchronous, and one runtime's events still keep their order.
+    expect(names.indexOf('session_upserted')).toBeLessThan(names.indexOf('session_removed'));
+    const [, upsert] = broadcastSpy.mock.calls.find(
+      (call: unknown[]) => call[0] === 'session_upserted'
+    )!;
+    const { session } = upsert as { session: Session };
+    expect(session.trackerItems).toEqual(items);
+    expect(session.trackerItem).toEqual({ id: 'DOR-2', stage: 'execute', runStatus: 'running' });
+  });
+
+  it('drops an upsert whose id the runtime retired while the tracker overlay was reading', async () => {
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    let retired = false;
+    runtimeA.getInternalSessionId.mockImplementation((id: string) =>
+      retired && id === SESSION_A ? SESSION_B : undefined
+    );
+    let finishRead!: () => void;
+    broadcaster.setTrackerItemsOverlay(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRead = resolve;
+        })
+    );
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+    await vi.waitFor(() => expect(finishRead).toBeTypeOf('function'));
+    // The runtime retires the id while the overlay is still reading.
+    retired = true;
+    finishRead();
+    a.push({ type: 'session_removed', sessionId: SESSION_B });
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith('session_removed', expect.anything());
+    });
+    expect(broadcastSpy).not.toHaveBeenCalledWith('session_upserted', expect.anything());
+  });
+
+  it('broadcasts an upsert as-is when the tracker overlay fails', async () => {
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    broadcaster.setTrackerItemsOverlay(async () => {
+      throw new Error('flow-state.json unreadable');
+    });
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({ session: expect.objectContaining({ id: SESSION_A }) })
+      );
+    });
+  });
+
   it('merges session-list events from every runtime onto the single fan-out', async () => {
     const a = controllableSessionList();
     const b = controllableSessionList();

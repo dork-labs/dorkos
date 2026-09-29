@@ -914,6 +914,16 @@ export const roomAttachments = sqliteTable(
      */
     url: text('url').notNull().default(''),
 
+    /**
+     * The id a Community gave this file when a local agent's post carrying it was delivered
+     * there, or NULL for a file never delivered (and for one delivered before this was
+     * recorded). What a Community removal is matched on: the Community's redaction feed lists
+     * the files a message still has by that id, so a file whose id is no longer listed is one
+     * the Community removed (DOR-2549). Matching on the name instead is wrong both ways — the
+     * Community cleans names on upload, and two files may share a name and a size.
+     */
+    communityAttachmentId: text('community_attachment_id'),
+
     createdAt: text('created_at').notNull(),
   },
   (table) => [

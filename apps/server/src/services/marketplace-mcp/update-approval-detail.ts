@@ -15,7 +15,7 @@
  */
 import { APPROVAL_DETAIL_MAX_LENGTH } from '@dorkos/shared/approval-schemas';
 import { revealHiddenCharacters } from '@dorkos/shared/marketplace-schemas';
-import { describeEffectsInFull } from '../marketplace/disclosed-effects.js';
+import { describeEffectsInFull } from '../marketplace/preview/disclosed-effects.js';
 import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
 
 /** The longest detail a card stores; a longer list is refused, never cut. */

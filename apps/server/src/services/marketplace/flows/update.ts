@@ -49,9 +49,9 @@
  */
 import { isRealCommitSha } from '@dorkos/marketplace';
 import type { InstallRequest, InstallResult } from '../types.js';
-import { disclosedEffectsOf, type DisclosedEffects } from '../disclosed-effects.js';
+import { disclosedEffectsOf, type DisclosedEffects } from '../preview/disclosed-effects.js';
 import { packageContentHash } from '../lib/content-hash.js';
-import { readRunnableDeclarations } from '../permission-preview.js';
+import { readRunnableDeclarations } from '../preview/permission-preview.js';
 import type { InstallationRecord } from '../installed-scanner.js';
 import { Slots } from '../lib/slots.js';
 import {

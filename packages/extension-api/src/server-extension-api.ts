@@ -8,6 +8,9 @@
  * @module @dorkos/extension-api/server
  */
 import type { AccountUsage as CoreAccountUsage } from '@dorkos/shared/account-usage';
+import type { DecisionActions, ProjectRef } from './extension-api.js';
+
+export type { DecisionActions, ProjectRef } from './extension-api.js';
 
 /**
  * One account's usage as an extension sees it: identity, resolved color, the
@@ -113,8 +116,14 @@ export interface SessionInfo {
   runtime: string;
   /** The account it runs on, or `null` for an unregistered one. */
   accountId: string | null;
-  /** The tracker item it serves, when one is known. */
+  /**
+   * The tracker item it serves, when one is known.
+   *
+   * @deprecated The newest `this-chat` item of `trackerItems`; removed per spec `flow-multiproject` §6.8's condition.
+   */
   trackerItem?: { id: string };
+  /** Every tracker item it works on, newest first; `own-chat` items run in chats it started. */
+  trackerItems: { id: string; via: 'this-chat' | 'own-chat' }[];
 }
 
 /** A session that stopped because its account or model ran out of usage. */
@@ -133,8 +142,14 @@ export interface LimitedSessionInfo {
   scope: 'account' | 'model';
   /** The session's model, or `null` when unknown. */
   model: string | null;
-  /** The tracker item it serves, when one is known. */
+  /**
+   * The tracker item it serves, when one is known.
+   *
+   * @deprecated The newest `this-chat` item of `trackerItems`; removed per spec `flow-multiproject` §6.8's condition.
+   */
   trackerItem?: { id: string };
+  /** Every tracker item it works on, newest first; `own-chat` items run in chats it started. */
+  trackerItems: { id: string; via: 'this-chat' | 'own-chat' }[];
 }
 
 /**
@@ -260,6 +275,291 @@ export interface DataProviderContext {
   readonly dorkHome: string;
   /** The agent accounts DorkOS knows, their usage, and the account advisor seam. */
   readonly accounts: AccountsApi;
+  /**
+   * The projects (git main checkouts) core knows, scoped to this extension.
+   * Probe with `ctx.projects !== undefined` to run on hosts from before it.
+   */
+  readonly projects: ProjectsApi;
+  /**
+   * Ask a person something in the Activity inbox, and hear their answer
+   * (spec `flow-multiproject` §7). Probe with `ctx.inbox !== undefined`.
+   */
+  readonly inbox: InboxApi;
+  /**
+   * Express middleware that admits only a person (the same bar as approving an
+   * extension, including its login-off residual: with Require login off, a
+   * local caller that does not name itself an agent passes, and in any posture
+   * this extension's own page code passes). Put it in front of every route
+   * that changes state on a person's behalf:
+   * `router.put('/settings', ctx.requirePerson, handler)`.
+   */
+  readonly requirePerson: import('express').RequestHandler;
+  /**
+   * Read-only view of the per-project settings a person writes through
+   * `api.projectSettings.set` (§7.10). No setter exists here, so neither this
+   * server half nor any agent it runs can change them.
+   */
+  readonly projectSettings: ProjectSettingsReader;
+}
+
+/** The server half's read-only view of its per-project settings. */
+export interface ProjectSettingsReader {
+  /** The stored value for a project (any folder inside it), or null. */
+  get<T = unknown>(projectRoot: string): Promise<T | null>;
+  /** Called with the project root whenever a person changes that project's value. */
+  onChange(listener: (projectRoot: string) => void): () => void;
+}
+
+/** What `ctx.inbox.raise` takes. */
+export interface DecisionInput {
+  /** Extension-local; core namespaces it. /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/ */
+  key: string;
+  /** A question or an outcome, never a command or id (V8). ≤ 120 chars, plain text. */
+  title: string;
+  /**
+   * REQUIRED. What happens, why now, what a "no" means (V8). Plain text,
+   * 1-300 chars. raise() throws InboxLimitError('why') without it.
+   */
+  why: string;
+  /** ≤ 500 chars, plain text; shown behind ⓘ. */
+  detail?: string;
+  /** Any path inside the project; core resolves it. */
+  project?: string;
+  /** Muted right-hand label of the project heading, e.g. "Linear DOR". */
+  projectLabel?: string;
+  /** ISO time the condition began ("since 09:14 · asked after 1h"). */
+  since?: string;
+  /** How a person answers it. */
+  actions: DecisionActions;
+  /** In-app path the row's title opens, e.g. "/x/flow/p/dorkos". Core route or '/x/<this extension id>/…' only. */
+  link?: string;
+}
+
+/** One decision as core stored it. */
+export interface RaisedDecision {
+  /** Core's id for the row (what `answerDecision` takes). */
+  readonly id: string;
+  /** The extension's own key. */
+  readonly key: string;
+  /** A question or an outcome. */
+  readonly title: string;
+  /** The second line. */
+  readonly why: string;
+  /** Shown behind ⓘ, or null. */
+  readonly detail: string | null;
+  /** The project core resolved, or null. */
+  readonly project: ProjectRef | null;
+  /** The project heading's muted label, or null. */
+  readonly projectLabel: string | null;
+  /** When the condition began, or null. */
+  readonly since: string | null;
+  /** How a person answers it (a `decideBy` already clamped). */
+  readonly actions: DecisionActions;
+  /** In-app path the title opens, or null. */
+  readonly link: string | null;
+  /** When it was first raised. */
+  readonly raisedAt: string;
+  /** When it was last raised or changed. */
+  readonly updatedAt: string;
+}
+
+/** `cleared` = resolved on its own; `cancelled` = no longer needed. */
+export type DecisionOutcome = 'approved' | 'rejected' | 'answered' | 'cleared' | 'cancelled';
+
+/** Who settled a decision, when it was not a person. */
+export type DecisionActor =
+  | {
+      kind: 'agent' | 'rule';
+      /** In words, ≤ 60: "the reviewer agent", "your 'Tell me after' setting". */
+      label: string;
+    }
+  /** The agent's default applied at a deadline; core words it "decided by the agent at <time>". */
+  | { kind: 'deadline' };
+
+/** What the `onAction` handler is told. */
+export interface DecisionActionEvent {
+  /** The decision's key. */
+  readonly key: string;
+  /** 'offer' is the second call when a person said Yes to a follow-up offer. */
+  readonly action: 'approve' | 'reject' | 'word' | 'choice' | 'offer';
+  /** The chosen chip, for 'choice'. */
+  readonly choiceId: string | null;
+  /** 'person', or 'deadline' when core applied defaultChoice at decideBy. */
+  readonly decidedBy: 'person' | 'deadline';
+  /** The offer being accepted, for 'offer'. */
+  readonly offerId: string | null;
+  /**
+   * Set when a person answered in core's UI: pass it back as
+   * resolve(key, { answering }) after a keepOpen, so history credits the person.
+   */
+  readonly pendingActionId: string | null;
+  /** The "Needs changes" note (≤ 2000), when the reject asked for one. */
+  readonly note: string | null;
+  /** The typed answer (word `input`, or a choice's "Reply…"). */
+  readonly text: string | null;
+  /** The decision's project, or null. */
+  readonly project: ProjectRef | null;
+}
+
+/** "Sorting 12 ideas… · Watch": a chat this extension started, drawn on the row. label ≤ 40. */
+export interface DecisionWatch {
+  /** The chat's session id. */
+  sessionId: string;
+  /** What it is doing, ≤ 40: "Sorting 12 ideas…". */
+  label: string;
+}
+
+/**
+ * What the `onAction` handler answers.
+ *
+ * `navigate` must pass the same rule as `link`, else the answer is treated as
+ * a handler error. `offer` is honoured only for an answer attributed to a
+ * person; for 'offer' calls only `message` is read. At a deadline, `keepOpen`
+ * is honoured: the timer stops, nothing retries, the row stays open.
+ */
+export type DecisionActionResult =
+  | {
+      resolve: 'approved' | 'rejected' | 'answered';
+      navigate?: string;
+      offer?: DecisionOffer;
+      message?: string;
+      watch?: DecisionWatch;
+    }
+  | { keepOpen: true; message?: string; navigate?: string; watch?: DecisionWatch }
+  /** "Already settled" (by this extension, or moot). Valid at a deadline; core cancels the timer and does nothing else. */
+  | { settled: true };
+
+/** V9: a one-time "do this on its own next time" line under the answered row. */
+export interface DecisionOffer {
+  /** Plain text, ≤ 160: "Shipped. Next time, ship on its own when the reviewer agent approves?" */
+  text: string;
+  /** ≤ 64; comes back as DecisionActionEvent.offerId when the person says Yes. */
+  offerId: string;
+  /**
+   * Applied by core on the person's Yes, before the 'offer' handler call: a
+   * shallow merge into this extension's per-project settings (§7.10), attributed
+   * to the person, validated like api.projectSettings.set.
+   */
+  settingsPatch?: { project: string; patch: Record<string, unknown> };
+}
+
+/** Which limit an {@link InboxLimitError} names. */
+export type InboxLimit =
+  'why' | 'title' | 'detail' | 'open' | 'key' | 'choices' | 'decideBy' | 'rate';
+
+/**
+ * Thrown by `raise`/`record` when a limit is broken: missing or long why,
+ * title > 120, detail > 500, > 50 open, a bad key, a bad choice set or
+ * decideBy, or more than 60 new decisions (raised or recorded) in an hour
+ * (`rate`). Nothing is written. Match on `err.code === 'inbox_limit'` rather
+ * than `instanceof`: an extension bundle carries its own copy of this class.
+ */
+export class InboxLimitError extends Error {
+  /** Always `inbox_limit`. */
+  readonly code = 'inbox_limit' as const;
+  /** Which limit was broken. */
+  readonly limit: InboxLimit;
+
+  /**
+   * Refuse a decision that broke a limit.
+   *
+   * @param limit - Which limit was broken.
+   * @param message - What was wrong, in plain words.
+   */
+  constructor(limit: InboxLimit, message: string) {
+    super(message);
+    this.name = 'InboxLimitError';
+    this.limit = limit;
+  }
+}
+
+/**
+ * Thrown by `raise` when `link` or a word action's `href` is not an allowed
+ * in-app path. Nothing is written. Match on `err.code === 'inbox_link'`.
+ */
+export class InboxLinkError extends Error {
+  /** Always `inbox_link`. */
+  readonly code = 'inbox_link' as const;
+
+  /**
+   * Refuse a link.
+   *
+   * @param message - Which link was refused, and why.
+   */
+  constructor(message: string) {
+    super(message);
+    this.name = 'InboxLinkError';
+  }
+}
+
+/** What `ctx.inbox.record` takes: a decision made without asking. */
+export type RecordedDecisionInput = Omit<DecisionInput, 'actions' | 'since'> & {
+  outcome: 'approved' | 'rejected' | 'answered';
+  by: DecisionActor;
+  /** true ("Tell me after"): unread in Activity until seen. false/absent ("Just do it"): quiet, already read. */
+  tell?: boolean;
+  /** What was chosen, in words (≤ 40), e.g. "Shipped". */
+  choiceLabel?: string;
+};
+
+/** Core's inbox, as one extension sees it (`ctx.inbox`). */
+export interface InboxApi {
+  /** Raise, or update in place, the one open decision for `key`. Max 50 open per extension. */
+  raise(input: DecisionInput): Promise<RaisedDecision>;
+  /**
+   * Settle it; `cleared` = "resolved on its own". `by` says an agent or rule of
+   * the person's decided (history shows its label). False when nothing was open.
+   */
+  resolve(
+    key: string,
+    opts: {
+      outcome: DecisionOutcome;
+      by?: DecisionActor;
+      /** A pendingActionId from a person's answer that got keepOpen: credits that person. */
+      answering?: string;
+      /** Only with a valid `answering`: the one-time V9 follow-up for that person. */
+      offer?: DecisionOffer;
+      watch?: DecisionWatch;
+    }
+  ): Promise<boolean>;
+  /**
+   * Write a history-only row for something decided without asking ("While you
+   * were away"): never in "Needs you", never a push. `why` and `by` are required.
+   */
+  record(input: RecordedDecisionInput): Promise<void>;
+  /** This extension's open decisions. */
+  list(): Promise<RaisedDecision[]>;
+  /** The one handler for a person's answer; bounded at 5s. A second call replaces the first. */
+  onAction(
+    handler: (event: DecisionActionEvent) => DecisionActionResult | Promise<DecisionActionResult>
+  ): () => void;
+}
+
+/** A known project, with what core learned about it. */
+export interface ProjectInfo extends ProjectRef {
+  /** "owner/name" from the origin remote, or null. */
+  readonly originRepo: string | null;
+  /** ISO-8601 time core last saw a session, agent, workspace or install in it. */
+  readonly lastSeenAt: string;
+}
+
+/** Core's project registry, as one extension sees it (`ctx.projects`). */
+export interface ProjectsApi {
+  /** The project a folder belongs to (worktrees and subfolders map to their main checkout). */
+  resolve(cwd: string): Promise<ProjectRef | null>;
+  /**
+   * Known projects whose folder exists and that either hold a copy of this
+   * extension or were reported by it, by name.
+   */
+  list(): Promise<ProjectInfo[]>;
+  /**
+   * Tell core about a project it may not have seen. Boundary-checked; must be
+   * inside a git repo, else null. Reported-only roots are never scanned for
+   * extensions. Carries no label.
+   */
+  report(path: string): Promise<ProjectRef | null>;
+  /** Called when the list changes. */
+  onChange(listener: () => void): () => void;
 }
 
 /** Server-side extension entry point signature. */
