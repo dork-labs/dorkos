@@ -14,12 +14,15 @@
  *   and ``getByTestId(`x-${id}`)``. A full id must appear QUOTED in the client
  *   (`'x'`, `"x"` or `` `x` ``); a prefix (a `^=` selector, or the static head
  *   of a template) must appear after an opening quote or backtick.
- * - **data attributes** in attribute selectors — `[data-turn-status="…"]`. The
- *   attribute's name must appear in the client at all.
+ * - **data attributes** in attribute selectors — `[data-turn-status="streaming"]`.
+ *   The name must appear as an attribute is written (`data-x=`, `data-x={`,
+ *   `'data-x':`), never merely inside a comment or a sentence. A literal value
+ *   must appear quoted: exactly for `=`, as a quoted prefix for `^=`.
  *
- * The client side is `apps/client/src` minus tests and the Dev Playground
- * (`src/dev/`): a hook that only a unit test or a showcase renders is not one
- * the app renders.
+ * The client side is `apps/client/src` plus `packages/ui/src` (the component
+ * library it renders — `data-slot="select-trigger"` lives there), minus tests
+ * and the Dev Playground (`src/dev/`): a hook that only a unit test or a
+ * showcase renders is not one the app renders.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -28,6 +31,7 @@ import { describe, expect, it } from 'vitest';
 
 const PAGES = fileURLToPath(new URL('../pages', import.meta.url));
 const CLIENT_SRC = fileURLToPath(new URL('../../client/src', import.meta.url));
+const UI_SRC = fileURLToPath(new URL('../../../packages/ui/src', import.meta.url));
 
 /**
  * Hooks a page object may name although no client source renders them, each
@@ -59,7 +63,7 @@ function sources(dir: string): string[] {
 
 /** One hook a page object names, and where. */
 interface Hook {
-  kind: 'testid' | 'testid-prefix' | 'attribute';
+  kind: 'testid' | 'testid-prefix' | 'attribute' | 'attribute-value' | 'attribute-value-prefix';
   value: string;
   file: string;
 }
@@ -84,9 +88,17 @@ function hooksIn(source: string, file: string): Hook[] {
     if (templated > 0) hooks.push({ kind: 'testid-prefix', value: raw!.slice(0, templated), file });
     else hooks.push({ kind: 'testid', value: raw!, file });
   }
-  // [data-foo="…"] / [data-foo] — any data attribute other than the testid.
-  for (const m of source.matchAll(/\[(data-[a-z0-9-]+)\s*(?:[\^*$~|]?=|\])/g)) {
-    if (m[1] !== 'data-testid') hooks.push({ kind: 'attribute', value: m[1]!, file });
+  // [data-foo] / [data-foo="bar"] / [data-foo^="bar"] — any data attribute
+  // other than the testid, and its literal value when it has one.
+  for (const m of source.matchAll(
+    /\[(data-[a-z0-9-]+)\s*(?:([\^*$~|]?=)\s*\\?(["'])(.*?)\\?\3\s*)?\]/g
+  )) {
+    const [, name, op, , raw] = m;
+    if (name === 'data-testid') continue;
+    hooks.push({ kind: 'attribute', value: name!, file });
+    if (raw === undefined || raw === '' || raw.includes('${')) continue;
+    if (op === '=') hooks.push({ kind: 'attribute-value', value: raw, file });
+    else if (op === '^=') hooks.push({ kind: 'attribute-value-prefix', value: raw, file });
   }
   return hooks;
 }
@@ -98,16 +110,21 @@ function rendered(hook: Hook, client: string): boolean {
   const value = escape(hook.value);
   switch (hook.kind) {
     case 'testid':
+    case 'attribute-value':
       return new RegExp(`['"\`]${value}['"\`]`).test(client);
     case 'testid-prefix':
+    case 'attribute-value-prefix':
       return new RegExp(`['"\`]${value}`).test(client);
     case 'attribute':
-      return client.includes(hook.value);
+      // Written as an attribute: JSX or HTML (`data-x=`), or as a whole string
+      // literal (`'data-x'`) — an object key, or a constant spread onto an
+      // element (`SIDEBAR_ROW_ATTRIBUTE`). Never a word inside a comment.
+      return new RegExp(`(?:^|[\\s{(,])${value}\\s*=|['"\`]${value}['"\`]`, 'm').test(client);
   }
 }
 
 describe('page-object test hooks', () => {
-  const client = sources(CLIENT_SRC)
+  const client = [...sources(CLIENT_SRC), ...sources(UI_SRC)]
     .map((path) => readFileSync(path, 'utf8'))
     .join('\n');
   const hooks = sources(PAGES).flatMap((path) =>
@@ -138,6 +155,19 @@ describe('page-object test hooks', () => {
         `${value} is allowlisted but the client renders it`
       ).toBe(false);
     }
+  });
+
+  it('checks literal attribute values, and attribute names only as attributes', () => {
+    const [name, value] = hooksIn(
+      `page.locator('[data-testid="chat-panel"][data-turn-lifecycle="blocked"]')`,
+      'ChatPage.ts'
+    ).filter((hook) => hook.kind !== 'testid');
+    expect(name).toEqual({ kind: 'attribute', value: 'data-turn-lifecycle', file: 'ChatPage.ts' });
+    expect(value).toEqual({ kind: 'attribute-value', value: 'blocked', file: 'ChatPage.ts' });
+    // A value the client never writes, and a name that only a comment mentions.
+    expect(rendered({ ...value!, value: 'no-such-lifecycle-value' }, client)).toBe(false);
+    expect(rendered(name!, '// see data-turn-lifecycle in ChatPanel')).toBe(false);
+    expect(rendered(name!, '<div data-turn-lifecycle={lifecycle} />')).toBe(true);
   });
 
   it('would have caught the hook DOR-2546 was about', () => {

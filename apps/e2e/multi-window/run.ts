@@ -112,7 +112,9 @@ async function probe(page: Page): Promise<Probe> {
           .join('\n'),
         working:
           stopping ||
-          !!document.querySelector('[data-testid="chat-panel"][data-turn-status="streaming"]'),
+          !!document.querySelector(
+            '[data-testid="chat-panel"]:is([data-turn-status="streaming"], [data-turn-lifecycle="blocked"])'
+          ),
       };
     });
   } catch {

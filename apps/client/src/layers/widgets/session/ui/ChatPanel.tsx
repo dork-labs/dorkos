@@ -707,13 +707,16 @@ export function ChatPanel({
       <div
         ref={chatPanelRef}
         data-testid="chat-panel"
-        // The turn's own status, mirrored for the browser suite: the one signal
-        // that says "a turn is running here" and nothing else. Every visible
-        // reading of it is a priority stack (the lane lets an Ask or a progress
-        // bar outrank the working line; the composer's label changes while a
-        // queued draft is edited), so a spec waiting on any of them waits on the
-        // wrong thing some of the time (DOR-2546).
+        // The turn's state, mirrored for the browser suite (ChatPage.turnRunning).
+        // Every visible reading of it is a priority stack (the lane lets an Ask
+        // or a progress bar outrank the working line; the composer's label
+        // changes while a queued draft is edited), so a spec waiting on any of
+        // them waits on the wrong thing some of the time (DOR-2546). Two
+        // attributes because `status` collapses a turn parked on a person
+        // (`blocked`) into `idle`: a turn is running while status is
+        // `streaming` OR the lifecycle is `blocked`.
         data-turn-status={status}
+        data-turn-lifecycle={lifecycle ?? undefined}
         className="flex h-full w-full flex-col"
       >
         <BirthCertificate sessionId={sessionId} />
