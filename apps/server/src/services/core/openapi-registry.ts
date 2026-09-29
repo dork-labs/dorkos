@@ -205,6 +205,11 @@ import {
   ApprovalDecisionResponseSchema,
 } from '@dorkos/shared/approval-schemas';
 import {
+  ApproveExtensionRequestSchema,
+  DismissExtensionApprovalRequestSchema,
+  PendingExtensionApprovalsResponseSchema,
+} from '@dorkos/shared/extension-approval-schemas';
+import {
   DeletePushSubscriptionResponseSchema,
   ListNotificationsQuerySchema,
   ListNotificationsResponseSchema,
@@ -4519,6 +4524,118 @@ registry.registerPath({
     200: {
       description: 'Pending approvals',
       content: { 'application/json': { schema: PendingApprovalsResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/extensions/pending-approvals',
+  tags: ['Extensions'],
+  summary: 'List extensions waiting to be turned on',
+  description:
+    'Every installed extension that is waiting for a person to let it run, oldest first ' +
+    '(DOR-2517). An extension is listed when it was installed by a person or the marketplace ' +
+    '(DorkOS’s own never ask), is not turned off, may not run yet, and has not been declined ' +
+    'with "Not now" at its current path, plugin and version. The Activity inbox draws one row ' +
+    'per item. `sourceLabel` and `why` are display text and are never used to decide trust. A ' +
+    'caller that may not read the person’s inbox (an agent) gets the list without `path` and ' +
+    'without any folder in `sourceLabel`.',
+  responses: {
+    200: {
+      description: 'Extensions waiting to be turned on',
+      content: { 'application/json': { schema: PendingExtensionApprovalsResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/extensions/{id}/approve',
+  tags: ['Extensions'],
+  summary: 'Turn on an extension waiting to run',
+  description:
+    'Records that a person allowed this extension to run code inside DorkOS, bound to the copy on ' +
+    'disk (its folder and the plugin that carried it), and starts it. The body is optional: send ' +
+    'the path, version and plugin of the copy the person was shown (the Activity inbox always ' +
+    'does), and the approval is refused with `stale_approval` unless the copy on disk is still ' +
+    'exactly that one, so an old row can never turn on a copy that took its place. Clears any ' +
+    '"Not now" for this id. A caller naming itself an agent is refused in every posture, and a ' +
+    'signed-in person is required when login is on. There is no MCP tool for this.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      required: false,
+      content: { 'application/json': { schema: ApproveExtensionRequestSchema } },
+    },
+  },
+  responses: {
+    200: { description: 'Turned on; the updated extension record' },
+    400: {
+      description: 'Invalid extension id or body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Login is enabled and the caller is not signed in',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Refused: an agent or another site cannot turn an extension on',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such extension',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The extension ships with DorkOS, or the copy changed since the person saw it ' +
+        '(`stale_approval`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/extensions/{id}/dismiss-approval',
+  tags: ['Extensions'],
+  summary: 'Say "Not now" to an extension waiting to be turned on',
+  description:
+    'Records that a person declined this copy of the extension at this version, so the Activity ' +
+    'inbox stops asking until its path, plugin or version changes. Never destructive: nothing is ' +
+    'uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body ' +
+    'names the copy the person was shown; if the copy on disk is no longer that one the answer is ' +
+    'refused with `stale_approval`. The same person bar as approving applies: a caller naming ' +
+    'itself an agent is refused in every posture, and a signed-in person is required when login ' +
+    'is on. There is no MCP tool for this.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: DismissExtensionApprovalRequestSchema } } },
+  },
+  responses: {
+    204: { description: 'Declined for now' },
+    400: {
+      description: 'Invalid extension id or body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Login is enabled and the caller is not signed in',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Refused: an agent or another site cannot answer this',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such extension',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The extension ships with DorkOS, or the copy changed since the person saw it ' +
+        '(`stale_approval`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });

@@ -542,6 +542,12 @@ DorkOS records only your **deviations** from each extension's default state, acr
       type: 'object',
       default: '{}',
     },
+    'extensions.dismissedApprovals': {
+      description:
+        'Extensions you said "Not now" to in the Activity inbox, with the folder and version you declined. The inbox asks again when either changes. Only you can change it.',
+      type: 'object',
+      default: '{}',
+    },
   }}
 />
 
@@ -551,7 +557,7 @@ An extension absent from both lists uses its default: ships-on extensions stay o
 
 An extension is code, in two places: some of it runs on your computer with the same reach DorkOS has, and the rest runs on the DorkOS page in your browser, signed in as you. Neither is a small thing to hand out, so DorkOS asks you about each extension once, and runs none of it until you answer.
 
-You will see it the first time: the extension shows up in Settings → Extensions with a note that it is waiting for you, and an **Allow it to run** button. Click it once and you are done. Editing that extension, testing it, and reloading it all work from then on with nothing further to click, and turning the extension off and on again does not ask you again. If you change your mind, **Stop it** on the same card takes the permission back and stops the extension straight away.
+You will see it the first time: the extension shows up in your Activity inbox, and in Settings → Extensions with a note that it is waiting for you, with a **Turn it on** button. Click it once and you are done. **Not now** in the inbox turns nothing off; it just stops asking until the extension changes version. Editing that extension, testing it, and reloading it all work from then on with nothing further to click, and turning the extension off and on again does not ask you again. If you change your mind, **Stop it** on the same card takes the permission back and stops the extension straight away. Your inbox then treats it like **Not now**: it asks again only when that extension changes version or comes from somewhere else.
 
 Some extensions come inside a plugin you install from the marketplace. Those show up in Settings → Extensions too, and ask the same way.
 
