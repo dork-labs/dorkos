@@ -876,20 +876,6 @@
       "when": 1790628087139,
       "tag": "0124_event_subscription_chat",
       "breakpoints": true
-    },
-    {
-      "idx": 125,
-      "version": "6",
-      "when": 1790634974737,
-      "tag": "0125_agent_request_access",
-      "breakpoints": true
-    },
-    {
-      "idx": 126,
-      "version": "6",
-      "when": 1790634985539,
-      "tag": "0126_drop_agent_request_operations",
-      "breakpoints": true
     }
   ]
 }
