@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import type { ExportScope } from './authority.js';
+import type { ExportJobScope } from './authority.js';
 import { fileNumber } from './data-segments.js';
 
 /** Most rows in one collection file. */
@@ -35,8 +35,9 @@ export function emptyTallies(): CollectionTallies {
 /** Whose collections an export writes. */
 export interface CollectionScope {
   communityId: string;
-  scope: ExportScope;
-  memberId: string;
+  scope: ExportJobScope;
+  /** Personal scope: the requester. Null for evidence, which has none. */
+  memberId: string | null;
   /** Personal scope: the exported channels. */
   channelIds: readonly string[];
 }
@@ -59,8 +60,9 @@ interface CollectionSpec {
 const iso = (value: unknown) => (value instanceof Date ? value.toISOString() : null);
 const uuidKey = (column: string, field: string): KeyColumn => ({ column, type: 'uuid', field });
 
-function specs(scope: ExportScope): CollectionSpec[] {
-  const owner = scope === 'owner';
+function specs(scope: ExportJobScope): CollectionSpec[] {
+  // An evidence export holds the whole community, as an owner export does.
+  const owner = scope !== 'personal';
   const list: CollectionSpec[] = [
     {
       key: 'channels',
@@ -150,6 +152,9 @@ function specs(scope: ExportScope): CollectionSpec[] {
         }),
     },
   ];
+  // An owner export leaves out audit rows the host withheld (a takedown it chose not to tell
+  // the owner about), so the export does not undo that. Evidence is for the authorities, not
+  // the owner, and keeps them.
   if (owner)
     list.push({
       key: 'auditEvents',
@@ -157,7 +162,8 @@ function specs(scope: ExportScope): CollectionSpec[] {
       select: `SELECT ae.id,ae.community_id,ae.actor_member_id,ae.actor_kind,ae.action,ae.subject_id,
           ae.prior_state,ae.next_state,ae.changed_fields,ae.created_at,
           ae.created_at::text AS created_at_key
-        FROM audit_events ae WHERE ae.community_id=$1 AND NOT ae.withheld`,
+        FROM audit_events ae WHERE ae.community_id=$1
+        ${scope === 'evidence' ? '' : 'AND NOT ae.withheld'}`,
       // The key is read as text: a JavaScript Date keeps milliseconds, the column microseconds.
       keys: [
         { column: 'ae.created_at', type: 'timestamptz', field: 'created_at_key' },

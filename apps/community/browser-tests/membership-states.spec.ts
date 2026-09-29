@@ -586,3 +586,64 @@ test('an invitation survives reload, says when membership was not added, and sho
     await returning.close();
   }
 });
+
+test('a community its host took down reads as removed to members, and says why to its owner', async ({
+  browser,
+}) => {
+  // Purpose (task 2.1, chooser lines): fails if a taken-down community reads as an ordinary
+  // deletion or a pause, if a member can enter it, or if its owner is not told what the host
+  // said. Uses the host API with the operator's password, as the host page would.
+  await admitNewAccount(secondId, 'Tove', 'tove@membership.test');
+  const version = (
+    await pool.query<{ lifecycle_version: number }>(
+      'SELECT lifecycle_version FROM communities WHERE id=$1',
+      [secondId]
+    )
+  ).rows[0].lifecycle_version;
+  const takedown = await post(
+    `/api/v1/host/communities/${secondId}/takedowns`,
+    {
+      idempotencyKey: 'browser-takedown',
+      target: { kind: 'community', lifecycleVersion: version, confirmIdSuffix: secondId.slice(-8) },
+      category: 'legal_order',
+      reference: 'ORDER-42',
+      password,
+    },
+    operatorCookie
+  );
+  expect(takedown.status).toBe(201);
+
+  const member = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    await signIn(member, 'tove@membership.test');
+    const page = await member.newPage();
+    await page.goto(`${baseUrl}/c/${secondId}`);
+    await expect(page).toHaveURL(`${baseUrl}/`);
+    const choice = page
+      .getByRole('list', { name: 'Choose a community' })
+      .getByRole('button')
+      .filter({ hasText: 'Second Place' });
+    await expect(choice).toBeDisabled();
+    await expect(choice).toContainText('Removed by its host');
+    await expect(choice).toHaveAccessibleDescription('This community was removed by its host.');
+    await shot(page, 'chooser-taken-down');
+  } finally {
+    await member.close();
+  }
+
+  const owner = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  try {
+    await signIn(owner, operatorEmail);
+    const page = await owner.newPage();
+    await page.goto(`${baseUrl}/c/${secondId}/deletion`);
+    await expect(page.getByRole('heading', { name: 'Removed by the host' })).toBeVisible();
+    await expect(
+      page.getByText(/^The host removed this community on .+\. The host received a legal order/)
+    ).toContainText('Reference: ORDER-42.');
+    await expect(page.getByText('Only the host can reverse this.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel deletion' })).toHaveCount(0);
+    await shot(page, 'owner-taken-down');
+  } finally {
+    await owner.close();
+  }
+});

@@ -15,6 +15,7 @@ import {
   removeEntry,
 } from '../content-removal.js';
 import { deleteReadyExports, restartExportJobs } from '../exports/store.js';
+import { dropEvidenceExport, queueEvidenceExport } from './evidence-export.js';
 import { buildEvidenceRecord, type EvidenceRecord } from './evidence/record.js';
 import { snapshotTarget, type ItemTarget } from './evidence/snapshot.js';
 import {
@@ -47,7 +48,10 @@ export const UNSETTLED_EVIDENCE_SQL = `EXISTS (SELECT 1 FROM community_takedowns
  * Categories whose material many laws require a host to preserve. With no evidence store, their
  * bytes are held on primary storage until a person releases them, never purged at once.
  */
-const HELD_WITHOUT_STORE: ReadonlySet<TakedownCategory> = new Set(['child_safety', 'legal_order']);
+export const HELD_WITHOUT_STORE: ReadonlySet<TakedownCategory> = new Set([
+  'child_safety',
+  'legal_order',
+]);
 
 /** One takedown row, as every read selects it. */
 export interface TakedownRow {
@@ -70,12 +74,14 @@ export interface TakedownRow {
   evidence_attempts: number;
   created_at: Date;
   reversed_at: Date | null;
+  /** A community takedown: when its reversal window ends and the deletion is due. */
+  delete_after: Date | null;
 }
 
 /** Every column {@link TakedownRow} names. */
 export const TAKEDOWN_COLUMNS = `id,community_id,target_kind,entry_id,attachment_id,category,
   reference,notify,actor_kind,actor_user_id,actor_api_key_id,payload_hash,state,evidence_state,
-  evidence_location,evidence_record_sha256,evidence_attempts,created_at,reversed_at`;
+  evidence_location,evidence_record_sha256,evidence_attempts,created_at,reversed_at,delete_after`;
 
 /**
  * A takedown as host authority sees it: ids and states only.
@@ -110,7 +116,7 @@ export function projectTakedown(row: TakedownRow, overdueBefore: Date): Takedown
         UNSETTLED_EVIDENCE.includes(row.evidence_state) &&
         row.created_at.getTime() <= overdueBefore.getTime(),
     },
-    deleteAfter: null,
+    deleteAfter: row.delete_after?.toISOString() ?? null,
     createdAt: row.created_at.toISOString(),
     reversedAt: row.reversed_at?.toISOString() ?? null,
   };
@@ -146,7 +152,13 @@ export function resolveNotify(category: TakedownCategory, notify: boolean | unde
 }
 
 /** A replay must name the same community and ask for exactly the same takedown. */
-function takedownPayloadHash(input: ItemTakedownInput): string {
+export function takedownPayloadHash(input: {
+  communityId: string;
+  target: unknown;
+  category: TakedownCategory;
+  reference: string | null;
+  notify: boolean;
+}): string {
   return createHash('sha256')
     .update(
       JSON.stringify({
@@ -160,7 +172,8 @@ function takedownPayloadHash(input: ItemTakedownInput): string {
     .digest('hex');
 }
 
-function actorColumns(actor: HostActor): { kind: string; id: string } {
+/** The actor columns a takedown row stores, and its idempotency key is scoped by. */
+export function actorColumns(actor: HostActor): { kind: 'person' | 'api_key'; id: string } {
   return actor.kind === 'person'
     ? { kind: 'person', id: actor.userId }
     : { kind: 'api_key', id: actor.keyId };
@@ -369,6 +382,18 @@ export async function retryTakedownEvidence(
     );
   if (!input.evidenceStore)
     throw new ApiError(409, 'STATE_CONFLICT', 'Set an evidence store first, then try again.');
+  if (row.target_kind === 'community') {
+    // A whole community's copy is an evidence export: a failed one is replaced, and one held
+    // for want of a store starts now. The community still exists, since its deletion waits for
+    // this evidence.
+    const community = await client.query('SELECT 1 FROM communities WHERE id=$1', [
+      row.community_id,
+    ]);
+    if (!community.rowCount)
+      throw new ApiError(409, 'STATE_CONFLICT', 'This community is already deleted.');
+    await dropEvidenceExport(client, { id: row.id, communityId: row.community_id }, input.now);
+    await queueEvidenceExport(client, { id: row.id, communityId: row.community_id });
+  }
   const updated = await client.query<TakedownRow>(
     `UPDATE community_takedowns SET evidence_state='pending',evidence_failures=0,
        next_attempt_at=$2,lease_until=NULL
@@ -420,6 +445,9 @@ export async function releaseHeldEvidence(
     [row.id]
   );
   await releaseHeldBlobs(client, row.community_id, staged.rows[0]?.blob_keys ?? []);
+  // A whole community's copy in progress goes too: nothing will copy it now.
+  if (row.target_kind === 'community')
+    await dropEvidenceExport(client, { id: row.id, communityId: row.community_id }, input.now);
   const updated = await client.query<TakedownRow>(
     `UPDATE community_takedowns SET evidence_state='not_configured',next_attempt_at=NULL,
        lease_until=NULL,released_by_kind=$2,released_by_user_id=$3,released_at=$4

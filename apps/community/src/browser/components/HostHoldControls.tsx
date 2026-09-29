@@ -11,9 +11,11 @@ export type HoldableCommunity = {
   lifecycleVersion: number;
   deletionNoticeAt: string | null;
   deletionRequestedBy: 'owner' | 'host' | null;
+  /** The host's takedown of the whole community, while it can still be reversed. */
+  takedownId?: string | null;
 };
 
-type Dialog = 'hold' | 'notice' | 'delete' | null;
+type Dialog = 'hold' | 'notice' | 'delete' | 'reverse' | null;
 
 /** The earliest day the picker offers: the host's minimum notice, counted in whole UTC days. */
 function earliestNotice(now: number, days: number): string {
@@ -53,6 +55,8 @@ export function HostHoldControls({
   const [dialog, setDialog] = useState<Dialog>(null);
   const [day, setDay] = useState('');
   const [suffix, setSuffix] = useState('');
+  const [password, setPassword] = useState('');
+  const takenDown = community.lifecycle === 'deletion_pending' && Boolean(community.takedownId);
   // Read once per mount: the page reloads the record after every change it makes.
   const [now] = useState(() => Date.now());
   const held = community.lifecycle === 'held';
@@ -73,6 +77,7 @@ export function HostHoldControls({
     setDialog(null);
     setDay('');
     setSuffix('');
+    setPassword('');
   };
   const minimum = earliestNotice(now, noticeDays);
 
@@ -86,10 +91,18 @@ export function HostHoldControls({
             : 'No deletion notice published.'}
         </p>
       )}
-      {community.lifecycle === 'deletion_pending' && community.deletionRequestedBy && (
+      {takenDown ? (
         <p className="small muted mb-2">
-          Deletion requested by the {community.deletionRequestedBy}.
+          Taken down. It will be deleted when the reversal window ends, once its copy for the
+          authorities is saved.
         </p>
+      ) : (
+        community.lifecycle === 'deletion_pending' &&
+        community.deletionRequestedBy && (
+          <p className="small muted mb-2">
+            Deletion requested by the {community.deletionRequestedBy}.
+          </p>
+        )
       )}
       <div className="row flex-wrap gap-2">
         {holdable && (
@@ -118,19 +131,26 @@ export function HostHoldControls({
             )}
           </>
         )}
-        {community.lifecycle === 'deletion_pending' && community.deletionRequestedBy === 'host' && (
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() =>
-              void perform(async () => {
-                await request(`/api/v1/host/communities/${community.id}/deletion`, 'DELETE');
-              }, `Deletion cancelled. ${community.name} is on hold again.`)
-            }
-          >
-            Cancel deletion
+        {takenDown && (
+          <Button variant="outline" disabled={busy} onClick={() => setDialog('reverse')}>
+            Reverse takedown
           </Button>
         )}
+        {!takenDown &&
+          community.lifecycle === 'deletion_pending' &&
+          community.deletionRequestedBy === 'host' && (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() =>
+                void perform(async () => {
+                  await request(`/api/v1/host/communities/${community.id}/deletion`, 'DELETE');
+                }, `Deletion cancelled. ${community.name} is on hold again.`)
+              }
+            >
+              Cancel deletion
+            </Button>
+          )}
       </div>
       {(dialog === 'hold' || dialog === 'notice') && (
         <FocusDialog
@@ -175,6 +195,43 @@ export function HostHoldControls({
               }
             >
               {dialog === 'hold' ? 'Hold community' : day ? 'Save notice' : 'Clear notice'}
+            </Button>
+          </div>
+        </FocusDialog>
+      )}
+      {dialog === 'reverse' && community.takedownId && (
+        <FocusDialog title={`Reverse the takedown of ${community.name}?`} onClose={close}>
+          <p>
+            The deletion stops and the community is suspended, not reopened. Every connection stays
+            revoked until you resume it and people reconnect. The copy kept for the authorities is
+            not deleted.
+          </p>
+          <div className="field">
+            <Label htmlFor={`reverse-password-${community.id}`}>Your password</Label>
+            <Input
+              id={`reverse-password-${community.id}`}
+              type="password"
+              value={password}
+              autoComplete="current-password"
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </div>
+          <div className="row justify-end gap-2">
+            <Button variant="outline" onClick={close}>
+              Cancel
+            </Button>
+            <Button
+              disabled={busy || password === ''}
+              onClick={() =>
+                void perform(async () => {
+                  await request(`/api/v1/host/takedowns/${community.takedownId}/reverse`, 'POST', {
+                    lifecycleVersion: community.lifecycleVersion,
+                    password,
+                  });
+                }, `${community.name} is suspended. Resume it when it is ready.`).finally(close)
+              }
+            >
+              Reverse takedown
             </Button>
           </div>
         </FocusDialog>

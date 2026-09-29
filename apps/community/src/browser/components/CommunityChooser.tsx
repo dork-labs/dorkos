@@ -56,6 +56,14 @@ function enterCommunity(communityId: string, replace = false, deletion = false):
 function describeChoice(membership: CommunityWireMembershipSummary, remembered: boolean) {
   const deletionRecovery =
     membership.lifecycle === 'deletion_pending' && membership.role === 'owner';
+  // A takedown reads the same to everyone; only the owner can open it, to see why.
+  if (membership.removedByHost)
+    return {
+      available: deletionRecovery,
+      deletionRecovery,
+      status: 'Removed by its host',
+      reason: 'This community was removed by its host.',
+    };
   if (deletionRecovery) return { available: true, deletionRecovery, status: 'Review deletion' };
   if (membership.lifecycle === 'archived')
     return { available: true, deletionRecovery, status: 'Read history' };

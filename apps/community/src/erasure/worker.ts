@@ -31,10 +31,23 @@ export async function sweepErasures(
 ): Promise<{ claimed: number; completed: number; failed: number }> {
   const now = options.now ?? new Date();
   const request = await transaction(pool, async (client) => {
+    // A whole community's takedown preserves it as it was: while that evidence has not settled,
+    // no erasure runs in it, and no account erasure runs for anyone who belongs to it, since
+    // erasing an account also husks its members' rows in every community.
     const due = await client.query<ClaimedRequest>(
-      `SELECT id,kind,user_id,community_id,member_id FROM erasure_requests
-       WHERE state IN ('scheduled','running') AND execute_after<=$1 AND next_attempt_at<=$1
-       ORDER BY next_attempt_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`,
+      `SELECT r.id,r.kind,r.user_id,r.community_id,r.member_id FROM erasure_requests r
+       WHERE r.state IN ('scheduled','running') AND r.execute_after<=$1 AND r.next_attempt_at<=$1
+         AND NOT EXISTS (
+           SELECT 1 FROM community_takedowns t
+           WHERE t.target_kind='community'
+             AND t.evidence_state IN ('pending','retrying','failed','held_on_primary')
+             AND (
+               (r.kind='membership' AND t.community_id=r.community_id)
+               OR (r.kind='account' AND EXISTS (
+                 SELECT 1 FROM members m WHERE m.community_id=t.community_id AND m.user_id=r.user_id))
+             )
+         )
+       ORDER BY r.next_attempt_at,r.id LIMIT 1 FOR UPDATE OF r SKIP LOCKED`,
       [now]
     );
     const row = due.rows[0];

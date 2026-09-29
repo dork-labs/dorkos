@@ -32,6 +32,8 @@ export class EvidenceSinkError extends Error {
       | 'EVIDENCE_CHECKSUM_MISMATCH'
       | 'EVIDENCE_INVALID_PATH'
       | 'EVIDENCE_WRITE_FAILED'
+      /** A whole community's evidence export failed or is gone; a new one is built. */
+      | 'EVIDENCE_EXPORT_FAILED'
   ) {
     super(code);
     this.name = 'EvidenceSinkError';
@@ -39,7 +41,7 @@ export class EvidenceSinkError extends Error {
 }
 
 const EVIDENCE_PATH =
-  /^takedowns\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/attempt-[1-9][0-9]{0,5}\/(?:files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|icon|record\.json)$/;
+  /^takedowns\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/attempt-[1-9][0-9]{0,5}\/(?:files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|icon|archive\.zip\.[0-9]{6}|record\.json)$/;
 
 /** Only a path the server built itself can reach the store. */
 function assertEvidencePath(path: string): void {
