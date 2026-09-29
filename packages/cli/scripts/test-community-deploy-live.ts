@@ -23,6 +23,7 @@ import {
   whileLauncherRuns,
   writePrivateClipboardShim,
 } from './community-deploy-live-capture.js';
+import { inspectCommunityLiveTarball } from './community-deploy-live-tarball.js';
 import {
   describeCommunityLiveGateFailure,
   describeLauncherStop,
@@ -123,6 +124,14 @@ function runLauncherPty(input: {
 /** Execute only when every arm is explicit. No ordinary test task imports this entrypoint. */
 async function main(): Promise<void> {
   const config = parseCommunityLiveGateConfig(process.env);
+  // An unreleased tarball is checked before anything else runs: two local reads and a listing of
+  // one file inside it, never npm, a profile or a service.
+  const tarball =
+    config.source.kind === 'tarball' ? await inspectCommunityLiveTarball(config.source.path) : null;
+  const version = config.source.kind === 'release' ? config.source.version : tarball!.version;
+  const source = tarball
+    ? tarball.receipt
+    : { kind: 'release' as const, released: true as const, version };
   // node-pty 1.1.0 ships its spawn-helper non-executable, so on a fresh install every PTY spawn
   // fails. Heal it before the first one; a helper it cannot fix still fails at spawn, pre-write.
   ensureNodePtySpawnHelperExecutable({ resolveFrom: import.meta.url });
@@ -145,7 +154,7 @@ async function main(): Promise<void> {
     'community',
     'deploy',
     '--version',
-    config.version,
+    version,
     '--fly-org',
     config.flyOrganization,
     '--fly-region',
@@ -163,22 +172,39 @@ async function main(): Promise<void> {
     return journals.length === 1 ? journals[0]!.slice(0, -'.json'.length) : null;
   };
   const recoveryFor = (runId: string) =>
-    communityLiveGateRecoveryCommand(config.version, launchArgs.slice(2), runId, durableHome);
+    communityLiveGateRecoveryCommand(
+      version,
+      launchArgs.slice(2),
+      runId,
+      durableHome,
+      tarball?.path
+    );
   try {
     // Every profile and network operation occurs after all arms have been checked above.
-    const published = parsePublishedVersion(
-      await command(
-        'npm',
-        ['view', `dorkos@${config.version}`, 'version', '--json'],
-        process.env,
-        'published-version'
-      )
-    );
-    if (published !== config.version) throw new CommunityLiveGateError('exact-published-version');
+    // A published run proves the exact version is on npm first; an unreleased run installs the
+    // tarball it already checked against its sidecar.
+    if (!tarball) {
+      const published = parsePublishedVersion(
+        await command(
+          'npm',
+          ['view', `dorkos@${version}`, 'version', '--json'],
+          process.env,
+          'published-version'
+        )
+      );
+      if (published !== version) throw new CommunityLiveGateError('exact-published-version');
+    }
     const install = join(runDirectory, 'install');
     await command(
       'npm',
-      ['install', '--prefix', install, '--no-audit', '--no-fund', `dorkos@${config.version}`],
+      [
+        'install',
+        '--prefix',
+        install,
+        '--no-audit',
+        '--no-fund',
+        tarball ? tarball.path : `dorkos@${version}`,
+      ],
       process.env,
       'package-install'
     );
@@ -346,7 +372,8 @@ async function main(): Promise<void> {
     await writeFile(
       receiptPath,
       JSON.stringify({
-        version: config.version,
+        version,
+        source,
         appName,
         budgetUsd: config.budgetUsd,
         before,
@@ -359,7 +386,7 @@ async function main(): Promise<void> {
       { mode: 0o600, flag: 'wx' }
     );
     process.stdout.write(
-      `Community live gate passed for ${config.version} at ${appName}; receipt ${receiptPath}\n`
+      `Community live gate passed for ${version}${tarball ? ` (unreleased tarball from ${tarball.receipt.commit.slice(0, 12)})` : ''} at ${appName}; receipt ${receiptPath}\n`
     );
     await rm(durableHome, { recursive: true, force: true });
   } catch (error) {

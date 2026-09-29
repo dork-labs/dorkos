@@ -118,4 +118,24 @@ describe('credentialed live gate entrypoint', () => {
       /bootstrap = await whileLauncherRuns\(resumed, capture\.next\(TIMEOUT_MS\), \{\s*ms: DELIVERED_CAPTURE_MS,\s*step: 'bootstrap-capture-after-launcher-exit',\s*\}\)/u
     );
   });
+
+  // An unreleased run must check its tarball against the sidecar before any process, and must skip
+  // the npm "is it published" check while still installing that exact file. A real run costs money,
+  // so this pins the order in main; the check itself is unit-tested beside it.
+  it('checks an unreleased tarball first, installs that file, and records it as not a release', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const inspect = main.indexOf('await inspectCommunityLiveTarball(config.source.path)');
+    expect(inspect).toBeGreaterThan(0);
+    expect(inspect).toBeLessThan(main.indexOf('ensureNodePtySpawnHelperExecutable'));
+    expect(inspect).toBeLessThan(main.indexOf('await command('));
+    expect(main).toMatch(/if \(!tarball\) \{\s*const published = parsePublishedVersion\(/u);
+    expect(main).toContain('tarball ? tarball.path : `dorkos@${version}`');
+    expect(main).toMatch(/JSON\.stringify\(\{\s*version,\s*source,/u);
+    const recovery = main.slice(main.indexOf('communityLiveGateRecoveryCommand('));
+    expect(recovery.slice(0, recovery.indexOf(';'))).toContain('tarball?.path');
+  });
 });
