@@ -6799,6 +6799,23 @@
         "apps/server/src/routes/workspaces.ts",
         "apps/server/src/services/workspace/resolve-session-cwd.ts"
       ]
+    },
+    {
+      "id": "260929-140932",
+      "slug": "authorize-terminal-effects-from-resource-specific-cleanup-evidence",
+      "title": "Authorize terminal effects from resource-specific cleanup evidence",
+      "status": "proposed",
+      "created": "2026-09-29",
+      "extractedFrom": "shutdown-handoff-outcomes",
+      "specSlug": "shutdown-handoff-outcomes",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/index.ts",
+        "apps/server/src/routes/admin.ts",
+        "apps/server/src/lib/instance-lock.ts",
+        "apps/server/src/lib/logger.ts",
+        "apps/server/src/services/core/lifecycle/"
+      ]
     }
   ]
 }

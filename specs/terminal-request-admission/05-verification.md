@@ -79,6 +79,10 @@ Recreated the exact candidate tree locally and supplied the same explicit fresh 
 
 The earlier full-suite counts above describe the original verified branch. The additional caller is covered by this focused integration run; final remote checks must validate the combined revision. The failed queue entry was held and removed after remaining unmergeable, without an unchanged re-arm.
 
-## Pending delivery evidence
+## Delivery evidence
 
-Final pushed-branch review, remote required checks and merge evidence are still pending. The local verification above does not claim those delivery gates have completed.
+[PR #2338](https://github.com/dork-labs/dorkos/pull/2338) merged at **2026-09-29T14:04:54Z** as `a874ad85f0d87c09ad4b4e38cf3110af198ffb87`. Its final reviewed source head was `9404dab3166e3f7615f2b5d9c2986a3cfb0b19d4`, based on the actual account-eligibility merge `89c24d15a082427da8e805461513d47602f7cece`. That head's tree is identical to the focused compatibility proof `78f93e8271e6c28bf27d367626ff5040e8753238`; final review found zero important findings and zero nits. Automated review likewise found zero important findings and zero nits, and there were no unresolved review threads before queue admission.
+
+All required PR checks passed. All **12 merge-group workflows** on the exact merged candidate passed, including [test run 36575489914](https://github.com/dork-labs/dorkos/actions/runs/36575489914) (all four test shards and both Community jobs), [browser run 36575490298](https://github.com/dork-labs/dorkos/actions/runs/36575490298) (all six browser shards and copy drift), typecheck, lint, credential-free build, scripts, site build, OpenAPI, DB, Windows harness, changelog and operating-skills version gates. The optional Vercel preview was queued when merge was armed; it was not a required gate or treated as passing. Separate post-merge smoke runs are not included in the twelve-workflow claim.
+
+DOR-2551 was moved to Done through the Flow adapter and read back as completed with `agent/completed`. Tasks 1.1–1.4 are complete. The original terminal specification remains **specified**, because exclusive terminal actions, full writer drain and destructive DB/lock/reset/successor handoff were not part of this implementation. The follow-on DOR-2482 design does not expand these runtime guarantees.

@@ -2,6 +2,8 @@
 
 Full decomposition of the selected admission-only phase (A1–A5) in [02-specification.md](02-specification.md). The original design-only status describes the earlier design delivery; the operator has now selected this bounded phase. Implementation owner: [DOR-2551 — Refuse new main server requests once shutdown begins](https://linear.app/dorkspace/issue/DOR-2551/refuse-new-main-server-requests-once-shutdown-begins). DOR-2481 stays completed as design; this delivery does not mark the full specification implemented.
 
+**Delivery:** All four admission-only tasks completed in [PR #2338](https://github.com/dork-labs/dorkos/pull/2338), merged 2026-09-29T14:04:54Z. See the [verification receipt](05-verification.md) for final review and queue evidence. The broader terminal-action phase remains deferred.
+
 Canonical source: [03-tasks.json](03-tasks.json). Four checklist tasks; no subissues or terminal-action-owner implementation. T1–T6 and D1 remain deferred, with DOR-2482 owning the destructive-handoff dependency.
 
 ## Phase 1: Main-listener admission only (A1–A5)

@@ -45,4 +45,4 @@ The harness has no Task API, so 03-tasks.json is the canonical task record. Reta
 
 The phase record deliberately uses `04-admission-implementation.md`. The manifest tool treats the generic `04-implementation.md` as whole-spec completion; this scoped filename keeps the full terminal-action specification at `specified`.
 
-Task 1.4 local verification passed: all required script, root lint, affected type/lint and affected test phases. The server run covered all 85 changed test files. Pushed-branch review and actual merge remain pending; this is a pre-merge record. See `05-verification.md` for counts and limits.
+Task 1.4 is complete: local required script, root lint, affected type/lint and affected test phases passed, followed by independent pushed-branch review and all twelve merge-group workflows. [PR #2338](https://github.com/dork-labs/dorkos/pull/2338) merged at 2026-09-29T14:04:54Z as `a874ad85f0d87c09ad4b4e38cf3110af198ffb87`. The original server run covered all 85 changed test files; an additional app-caller integration repair received focused and final remote verification. See [05-verification.md](05-verification.md) for counts and limits.
