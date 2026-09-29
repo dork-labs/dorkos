@@ -774,7 +774,7 @@ export function AppShell() {
                       // to the viewport would answer the wrong question — and
                       // answer it wrongly in the playground too, where a 390px
                       // bar sits inside a 1440px page.
-                      className="app-drag-region @container/bar relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
+                      className="app-drag-region @container/bar relative flex h-9 shrink-0 items-center gap-1 border-b px-2 transition-[border-color] duration-300 lg:gap-2"
                     >
                       {/* A phone has no panel to toggle, so it gets no toggle.
                           A hamburger that opens nothing is worse than no
@@ -809,7 +809,12 @@ export function AppShell() {
                             // that is its bottom hairline. Children still centre
                             // themselves (`items-center`); only the box they
                             // measure against changed.
-                            className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
+                            //
+                            // The row's gaps are 4px below `lg`, 8px from it: a
+                            // phone or tablet header has no width to spend on
+                            // air, and the bell showing a number was enough to
+                            // push the bar past its own box (DOR-2524).
+                            className="flex min-w-0 flex-1 items-center gap-1 self-stretch lg:gap-2"
                           >
                             <OneBarProvider value={oneBarState}>
                               <routeHeader.Header />
