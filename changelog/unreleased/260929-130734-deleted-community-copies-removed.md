@@ -2,6 +2,7 @@
 covers:
   - 'fix(communities): remove the copies of a community that is being deleted, or that you disconnect (DOR-2334)'
   - 'fix(communities): record a deletion before purging, purge once, and sweep copies of removed connections (DOR-2334 review)'
+  - 'fix(communities): make the startup sweep of disconnected copies fail closed (DOR-2334 review)'
 ---
 
 ### Fixed
