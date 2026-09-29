@@ -248,6 +248,67 @@
     },
     {
       "kind": "OBJECT",
+      "name": "AddOnConnection",
+      "fields": [
+        {
+          "name": "edges",
+          "args": [],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AddOnEdge",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "nodes",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AddOn",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "pageInfo",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "PageInfo",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "totalCount",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          "args": []
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
       "name": "AddOnProvider",
       "fields": [
         {
@@ -524,7 +585,6 @@
       "fields": [
         {
           "name": "addOns",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -533,7 +593,49 @@
               "name": "AddOnConnection",
               "ofType": null
             }
-          }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "type",
+              "type": {
+                "kind": "ENUM",
+                "name": "AddOnType",
+                "ofType": null
+              }
+            }
+          ]
         },
         {
           "name": "allocation",
@@ -1558,6 +1660,14 @@
     },
     {
       "kind": "SCALAR",
+      "name": "Int",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "SCALAR",
       "name": "JSON",
       "fields": null,
       "inputFields": null,
@@ -2460,7 +2570,6 @@
         },
         {
           "name": "addOns",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -2469,7 +2578,49 @@
               "name": "AddOnConnection",
               "ofType": null
             }
-          }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "type",
+              "type": {
+                "kind": "ENUM",
+                "name": "AddOnType",
+                "ofType": null
+              }
+            }
+          ]
         },
         {
           "name": "agreedToProviderTos",
@@ -2851,7 +3002,6 @@
         },
         {
           "name": "type",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -2860,7 +3010,8 @@
               "name": "OrganizationType",
               "ofType": null
             }
-          }
+          },
+          "args": []
         },
         {
           "name": "viewerRole",
@@ -2905,6 +3056,21 @@
       "inputFields": null,
       "possibleTypes": null,
       "enumValues": null
+    },
+    {
+      "kind": "ENUM",
+      "name": "OrganizationType",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": [
+        {
+          "name": "PERSONAL"
+        },
+        {
+          "name": "SHARED"
+        }
+      ]
     },
     {
       "kind": "INTERFACE",
@@ -3151,7 +3317,6 @@
         },
         {
           "name": "addOns",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -3160,7 +3325,49 @@
               "name": "AddOnConnection",
               "ofType": null
             }
-          }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "type",
+              "type": {
+                "kind": "ENUM",
+                "name": "AddOnType",
+                "ofType": null
+              }
+            }
+          ]
         },
         {
           "name": "app",

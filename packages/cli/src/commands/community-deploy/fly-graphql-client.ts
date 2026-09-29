@@ -4,12 +4,14 @@
  * @module commands/community-deploy/fly-graphql-client
  */
 import {
+  FLY_APP_TIGRIS_QUERY,
   FLY_TIGRIS_CREATE_MUTATION,
   FLY_TIGRIS_CREDENTIALS_QUERY,
   FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   createTigrisVariables,
+  parseAppTigrisResponse,
   parseTigrisCreateResponse,
   parseTigrisCredentialsResponse,
   parseTigrisDeleteResponse,
@@ -217,6 +219,24 @@ export class FlyTigrisGraphqlClient {
       FLY_TIGRIS_CREDENTIALS_QUERY,
       { id: addOnId },
       (response) => parseTigrisCredentialsResponse(response, addOnId),
+      false
+    );
+  }
+
+  /**
+   * List every Tigris bucket attached to one app, by id and name.
+   *
+   * @param appName - The exact app name.
+   * @returns The attached buckets; an empty list means the app has none.
+   */
+  async listTigrisOnApp(appName: string): Promise<Array<{ id: string; name: string }>> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_APP_TIGRIS_QUERY,
+      { appName },
+      (response) => parseAppTigrisResponse(response, appName),
       false
     );
   }

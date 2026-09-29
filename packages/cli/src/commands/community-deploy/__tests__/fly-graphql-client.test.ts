@@ -141,6 +141,27 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     });
   });
 
+  it('lists the storage buckets attached to one app', async () => {
+    const request = vi.fn().mockResolvedValueOnce(
+      json({
+        data: {
+          app: {
+            name: 'community-fixture-app',
+            addOns: { totalCount: 1, nodes: [{ id: identity.id, name: identity.name }] },
+          },
+        },
+      })
+    );
+    const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
+    await expect(client.listTigrisOnApp('community-fixture-app')).resolves.toEqual([
+      { id: identity.id, name: identity.name },
+    ]);
+    expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({
+      query: expect.stringContaining('DorkosListAppTigris'),
+      variables: { appName: 'community-fixture-app' },
+    });
+  });
+
   it('classifies malformed create output as uncertain without disclosing provider text', async () => {
     const canary = 'CANARY_PROVIDER_RESPONSE_SECRET';
     const client = new FlyTigrisGraphqlClient({
@@ -220,8 +241,9 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     await expect(client.hasAcceptedTerms()).rejects.toMatchObject({
       code: 'TERMS_VIEWER_MISSING',
     });
+    // A bare null without Fly's NOT_FOUND error is not proof the bucket is gone (DOR-2584 review).
     await expect(client.readTigris(identity.id)).rejects.toMatchObject({
-      code: 'ADD_ON_MISSING',
+      code: 'INVALID_RESPONSE',
     });
   });
 

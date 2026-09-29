@@ -75,10 +75,7 @@ const CredentialsEnvelopeSchema = z
   .object({
     data: z
       .object({
-        addOn: z
-          .object({ id: SafeIdentifierSchema, environment: z.unknown().optional() })
-          .strict()
-          .nullable(),
+        addOn: z.object({ id: SafeIdentifierSchema, environment: z.unknown().optional() }).strict(),
       })
       .strict(),
   })
@@ -88,7 +85,10 @@ const ReadEnvelopeSchema = z
   .object({
     // Fly's GraphQL has no Relay `node` root field; `addOn(id:)` is the exact-ID read (live gate,
     // DOR-2169, 2026-09-29: `node(id:)` answered only "Field 'node' doesn't exist on type 'Queries'").
-    data: z.object({ addOn: AddOnSchema.nullable() }).strict(),
+    // Not nullable: a bare `addOn: null` without Fly's NOT_FOUND error is not proof the bucket is
+    // gone, and treating it as gone once let cleanup skip a bucket that was still billing (DOR-2584
+    // review). Only `AddOnNotFoundEnvelopeSchema` means missing.
+    data: z.object({ addOn: AddOnSchema }).strict(),
   })
   .strict();
 /**
@@ -109,6 +109,28 @@ const AddOnNotFoundEnvelopeSchema = z
           .passthrough()
       )
       .min(1),
+  })
+  .strict();
+
+const AppTigrisEnvelopeSchema = z
+  .object({
+    data: z
+      .object({
+        app: z
+          .object({
+            name: SafeIdentifierSchema,
+            addOns: z
+              .object({
+                totalCount: z.number().int().nonnegative(),
+                nodes: z.array(
+                  z.object({ id: SafeIdentifierSchema, name: SafeIdentifierSchema }).strict()
+                ),
+              })
+              .strict(),
+          })
+          .strict(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -185,6 +207,22 @@ export const FLY_TIGRIS_CREDENTIALS_QUERY = `
     addOn(id: $id) {
       id
       environment
+    }
+  }
+`;
+
+/**
+ * Every Tigris bucket attached to one app, by id and name. The live gate's cleanup uses it to
+ * confirm a bucket Fly reported as not found is really absent before it skips deleting it.
+ */
+export const FLY_APP_TIGRIS_QUERY = `
+  query DorkosListAppTigris($appName: String!) {
+    app(name: $appName) {
+      name
+      addOns(type: tigris, first: 50) {
+        totalCount
+        nodes { id name }
+      }
     }
   }
 `;
@@ -417,7 +455,6 @@ export function parseTigrisCredentialsResponse(
   } catch {
     throw invalidResponse();
   }
-  if (parsed.data.addOn === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
   if (parsed.data.addOn.id !== expectedId) throw new FlyGraphqlContractError('BINDING_MISMATCH');
   return tigrisCredentialsFromEnvironment(parsed.data.addOn.environment);
 }
@@ -438,8 +475,30 @@ export function parseTigrisReadResponse(response: unknown): TigrisAddOnIdentity 
   } catch {
     throw invalidResponse();
   }
-  if (parsed.data.addOn === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
   return sanitizeAddOn(parsed.data.addOn);
+}
+
+/**
+ * Parse the Tigris buckets attached to one app.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ * @param appName - The app that was asked about.
+ * @returns Every attached bucket's id and name; refuses a partial page or another app's answer.
+ */
+export function parseAppTigrisResponse(
+  response: unknown,
+  appName: string
+): Array<{ id: string; name: string }> {
+  let parsed: z.infer<typeof AppTigrisEnvelopeSchema>;
+  try {
+    parsed = AppTigrisEnvelopeSchema.parse(response);
+  } catch {
+    throw invalidResponse();
+  }
+  const { app } = parsed.data;
+  if (app.name !== appName) throw new FlyGraphqlContractError('BINDING_MISMATCH');
+  if (app.addOns.totalCount !== app.addOns.nodes.length) throw invalidResponse();
+  return app.addOns.nodes.map(({ id, name }) => ({ id, name }));
 }
 
 /** Parse Tigris deletion acknowledgement and bind it to the exact expected name. */

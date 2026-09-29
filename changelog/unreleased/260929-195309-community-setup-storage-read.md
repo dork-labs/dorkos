@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(cli): read storage buckets through the Fly API field that exists, and replay launcher calls against the real services (DOR-2584)'
+  - "fix(cli): only treat Fly's exact not-found answer as a missing bucket, and harden the contract checker and replay (DOR-2584 review)"
 ---
 
 ### Fixed

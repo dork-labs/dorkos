@@ -12,6 +12,7 @@ import {
   FLY_TIGRIS_TERMS_QUERY,
   FlyGraphqlContractError,
   createTigrisVariables,
+  parseAppTigrisResponse,
   parseTigrisCreateResponse,
   parseTigrisCredentialsResponse,
   parseTigrisDeleteResponse,
@@ -170,9 +171,10 @@ describe('Fly Tigris GraphQL contract', () => {
         'addon_fixture_01'
       )
     ).toBeNull();
+    // Only Fly's exact NOT_FOUND answer means missing; a bare null proves nothing.
     expect(() =>
       parseTigrisCredentialsResponse({ data: { addOn: null } }, 'addon_fixture_01')
-    ).toThrowError(expect.objectContaining({ code: 'ADD_ON_MISSING' }));
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_RESPONSE' }));
     expect(() =>
       parseTigrisCredentialsResponse(
         { data: { addOn: { id: 'addon_other', environment: null } } },
@@ -270,8 +272,29 @@ describe('Fly Tigris GraphQL contract', () => {
     expect(() => parseTigrisTermsResponse({ data: { viewer: null } })).toThrowError(
       expect.objectContaining({ code: 'TERMS_VIEWER_MISSING' })
     );
+    // A bare `addOn: null` without Fly's NOT_FOUND error once let the gate's cleanup skip a bucket
+    // that was still billing (DOR-2584 review); it is an invalid answer, not a missing add-on.
     expect(() => parseTigrisReadResponse({ data: { addOn: null } })).toThrowError(
-      expect.objectContaining({ code: 'ADD_ON_MISSING' })
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
+    );
+  });
+
+  it("lists an app's buckets only from a complete answer about that app", () => {
+    const answer = (name: string, totalCount: number, nodes: unknown[]) => ({
+      data: { app: { name, addOns: { totalCount, nodes } } },
+    });
+    const bucket = { id: 'addon_fixture_01', name: 'community-fixture-bucket' };
+    expect(parseAppTigrisResponse(answer('app-a', 1, [bucket]), 'app-a')).toEqual([bucket]);
+    expect(parseAppTigrisResponse(answer('app-a', 0, []), 'app-a')).toEqual([]);
+    expect(() => parseAppTigrisResponse(answer('app-b', 0, []), 'app-a')).toThrowError(
+      expect.objectContaining({ code: 'BINDING_MISMATCH' })
+    );
+    // A partial page could hide the very bucket cleanup is looking for.
+    expect(() => parseAppTigrisResponse(answer('app-a', 2, [bucket]), 'app-a')).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
+    );
+    expect(() => parseAppTigrisResponse({ data: { app: null } }, 'app-a')).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
     );
   });
 

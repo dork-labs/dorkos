@@ -21,6 +21,10 @@
  *   releases, addresses, and destroy. The app is always destroyed and its absence verified. An
  *   empty Fly app has nothing that bills, which is why this is not a money path.
  *
+ * Organizations: `dork-labs` is always refused. The empty app may be created only in an
+ * organization on {@link EMPTY_APP_FLY_ORGS} (today just `personal`, the operator's own); adding one
+ * is a reviewed change to that list, never a flag.
+ *
  * Never run: anything that creates a Machine, a Neon project or a storage bucket, and any command
  * that prints a credential (`neonctl connection-string`). The Fly session token is read into the
  * launcher's redacting wrapper and never printed.
@@ -74,6 +78,12 @@ import {
   type IntrospectedSchema,
 } from './community-deploy-contract-graphql.js';
 
+/** Fly organizations the replay refuses outright, read-only calls included. */
+const REFUSED_FLY_ORGS: readonly string[] = ['dork-labs'];
+
+/** The only Fly organizations the empty app may be created in. */
+export const EMPTY_APP_FLY_ORGS: readonly string[] = ['personal'];
+
 /** Reduce a JSON answer to its shape: every value becomes its type name, keys are kept. */
 function jsonShape(value: unknown): unknown {
   if (value === null) return 'null';
@@ -115,6 +125,17 @@ async function main(): Promise<void> {
     throw new Error('Set DORKOS_CONTRACT_REPLAY=1 to run the read-only contract replay.');
   }
   const flyOrg = required('DORKOS_CONTRACT_REPLAY_FLY_ORG');
+  if (REFUSED_FLY_ORGS.includes(flyOrg)) {
+    throw new Error(`The contract replay never runs against the ${flyOrg} organization.`);
+  }
+  if (
+    process.env.DORKOS_CONTRACT_REPLAY_EMPTY_APP === '1' &&
+    !EMPTY_APP_FLY_ORGS.includes(flyOrg)
+  ) {
+    throw new Error(
+      `The empty app may only be created in: ${EMPTY_APP_FLY_ORGS.join(', ')}. Read-only runs may use any other.`
+    );
+  }
   const neonOrg = required('DORKOS_CONTRACT_REPLAY_NEON_ORG');
   const emptyApp = process.env.DORKOS_CONTRACT_REPLAY_EMPTY_APP === '1';
   const outDirectory = process.env.DORKOS_CONTRACT_REPLAY_OUT;
@@ -266,6 +287,7 @@ async function main(): Promise<void> {
     const schema = await held.use(async (token) => {
       const response = await fetch('https://api.fly.io/graphql', {
         method: 'POST',
+        signal: AbortSignal.timeout(60_000),
         headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ query: FLY_INTROSPECTION_QUERY }),
       });
@@ -367,8 +389,46 @@ async function main(): Promise<void> {
   // --- One empty Fly app, always destroyed ----------------------------------------------------
   if (emptyApp) {
     const appName = `dorkos-contract-${randomBytes(4).toString('hex')}`;
+    const listed = async () => (await readFlyApps(fly, flyOrg)).some((app) => app.name === appName);
+    // The name must be free first, so whatever carries it afterwards is this run's own app.
+    if (await listed()) throw new Error(`${appName} already exists; nothing was created.`);
+    let attempted = false;
     let created = false;
+    // Runs once, from the finally below or from Ctrl-C / SIGTERM, whichever comes first. It
+    // destroys only an app the org listing shows under this run's exact name, so a create whose
+    // answer failed to parse is still cleaned up and nothing else can be.
+    let removal: Promise<boolean> | undefined;
+    const removeOwnApp = () =>
+      (removal ??= (async () => {
+        if (!attempted) return true;
+        if (await listed()) {
+          await replay('fly apps destroy --yes', 'fly-mutate.ts destroyFlyApp; live gate', () =>
+            destroyFlyApp(fly, appName).then(() => undefined)
+          );
+        }
+        const remaining = await listed();
+        rows.push({
+          call: 'empty app gone after destroy',
+          where: 'replay cleanup',
+          outcome: remaining ? 'rejected' : 'accepted',
+          detail: remaining ? `${appName} still exists: destroy it by hand` : '',
+        });
+        return !remaining;
+      })());
+    const onSignal = (signal: NodeJS.Signals) => {
+      void removeOwnApp()
+        .catch(() => false)
+        .then((gone) => {
+          process.stderr.write(
+            `Contract replay stopped by ${signal}; ${appName} ${gone ? 'was removed' : 'may still exist: destroy it by hand'}.\n`
+          );
+          process.exit(130);
+        });
+    };
+    process.once('SIGINT', onSignal);
+    process.once('SIGTERM', onSignal);
     try {
+      attempted = true;
       await replay('fly apps create --json --yes', 'fly-mutate.ts createFlyApp', async () => {
         await createFlyApp(fly, appName, flyOrg);
         created = true;
@@ -432,22 +492,9 @@ async function main(): Promise<void> {
         }
       }
     } finally {
-      if (created) {
-        await replay(
-          'fly apps destroy --yes',
-          'fly-mutate.ts destroyFlyApp; live gate',
-          async () => {
-            await destroyFlyApp(fly, appName);
-          }
-        );
-        const remaining = (await readFlyApps(fly, flyOrg)).filter((app) => app.name === appName);
-        rows.push({
-          call: 'empty app gone after destroy',
-          where: 'replay cleanup',
-          outcome: remaining.length === 0 ? 'accepted' : 'rejected',
-          detail: remaining.length === 0 ? '' : `${appName} still exists: destroy it by hand`,
-        });
-      }
+      await removeOwnApp();
+      process.removeListener('SIGINT', onSignal);
+      process.removeListener('SIGTERM', onSignal);
     }
   } else {
     rows.push({

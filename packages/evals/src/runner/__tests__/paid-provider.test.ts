@@ -383,6 +383,12 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
     // because choosing to run unreleased code against paid accounts is a decision too, and a task
     // that passed it through would hand that choice to whatever the environment held.
     'DORKOS_COMMUNITY_LIVE_PACKAGE_TARBALL',
+    // Not a money path: the launcher's contract replay (`packages/cli/scripts/
+    // community-deploy-contract-replay.ts`) only reads, and its second arm creates one EMPTY Fly
+    // app, which has nothing that bills. Listed anyway because both still act on the operator's
+    // signed-in accounts, and a turbo task that passed them through would let any test do that.
+    'DORKOS_CONTRACT_REPLAY',
+    'DORKOS_CONTRACT_REPLAY_EMPTY_APP',
   ];
 
   /**

@@ -108,6 +108,14 @@ describe('credentialed live gate entrypoint', () => {
     expect(cleanup).toBeGreaterThan(0);
     expect(cleanedUp).toBeGreaterThan(cleanup);
     expect(cleanedUp).toBeLessThan(afterRead);
+    // A storage bucket bills too (DOR-2584 review): it is re-read after cleanup, while the Fly
+    // session is still held, and before cleanup is called finished, so a bucket that survived
+    // fails the gate with the recovery command still printed; the receipt records the answer.
+    const tigrisRecheck = main.indexOf('tigrisBucketFound = await tigris(');
+    expect(tigrisRecheck).toBeGreaterThan(cleanup);
+    expect(tigrisRecheck).toBeLessThan(main.indexOf('credential.dispose();', cleanup));
+    expect(tigrisRecheck).toBeLessThan(cleanedUp);
+    expect(main.slice(afterRead, afterRead + 400)).toContain('tigrisBucketFound,');
     expect(main).toMatch(
       /catch \(error\) \{\s*throw await explainCommunityLiveGateFailure\(\s*error,\s*\{ cleanedUp, recoveryCommand \}/u
     );

@@ -5,6 +5,7 @@ import {
   checkGraphqlDocument,
   FLY_SCHEMA_SNAPSHOT,
   LAUNCHER_GRAPHQL_DOCUMENTS,
+  trimSchemaForDocuments,
   type IntrospectedSchema,
 } from '../../../../scripts/community-deploy-contract-graphql.js';
 
@@ -70,6 +71,53 @@ describe('launcher GraphQL documents against Fly’s live schema snapshot', () =
     ],
   ])('reports %s', async (_label, document, expected) => {
     expect(checkGraphqlDocument(document, await snapshot()).join('\n')).toContain(expected);
+  });
+
+  // DOR-2584 review: with a type missing from the snapshot, every field selected on it used to
+  // pass unchecked (`organization { bogusField }` with Organization dropped).
+  it('reports a selection that reaches a type the snapshot lacks, at any depth', async () => {
+    const schema = await snapshot();
+    const withoutOrganization = {
+      ...schema,
+      types: schema.types.filter((type) => type.name !== 'Organization'),
+    };
+    const problems = checkGraphqlDocument(
+      LAUNCHER_GRAPHQL_DOCUMENTS.DorkosReadTigris,
+      withoutOrganization
+    ).join('\n');
+    expect(problems).toContain('type Organization missing from snapshot');
+    expect(
+      checkGraphqlDocument(
+        `query Q($id: ID!) { addOn(id: $id) { organization { bogusField } } }`,
+        withoutOrganization
+      )
+    ).not.toEqual([]);
+    const withoutJson = { ...schema, types: schema.types.filter((type) => type.name !== 'JSON') };
+    expect(
+      checkGraphqlDocument(LAUNCHER_GRAPHQL_DOCUMENTS.DorkosReadTigris, withoutJson).join('\n')
+    ).toContain('type JSON missing from snapshot');
+  });
+
+  it('keeps every type a document reaches when trimming, however deep', async () => {
+    const document = `query Q($appName: String!) { app(name: $appName) { addOns(type: tigris, first: 5) { nodes { organization { slug } } } } }`;
+    const trimmed = trimSchemaForDocuments(await snapshot(), [document]);
+    expect(checkGraphqlDocument(document, trimmed)).toEqual([]);
+    expect(trimmed.types.map((type) => type.name)).toEqual(
+      expect.arrayContaining(['App', 'AddOnConnection', 'AddOn', 'Organization', 'AddOnType'])
+    );
+  });
+
+  it('checks enum and integer literals against the argument type', async () => {
+    const schema = await snapshot();
+    expect(
+      checkGraphqlDocument(
+        `query Q($n: String!) { app(name: $n) { addOns(type: bucket) { totalCount } } }`,
+        schema
+      ).join('\n')
+    ).toContain('bucket is not a AddOnType');
+    expect(checkGraphqlDocument(`query Q { app(name: 5) { name } }`, schema).join('\n')).toContain(
+      'an integer is not a String'
+    );
   });
 
   it('refuses GraphQL it does not understand instead of passing it', async () => {

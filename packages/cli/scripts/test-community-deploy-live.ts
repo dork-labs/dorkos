@@ -343,6 +343,7 @@ async function main(): Promise<void> {
     const tigris = <T>(operation: (client: FlyTigrisGraphqlClient) => Promise<T>) =>
       credential.use((token) => operation(new FlyTigrisGraphqlClient({ accessToken: token })));
     let cleanup;
+    let tigrisBucketFound: boolean;
     try {
       cleanup = await cleanupCommunityLiveGate(journal, {
         readFlyApps: async (organization) =>
@@ -367,10 +368,33 @@ async function main(): Promise<void> {
             appName: item.appName,
           };
         },
+        listTigrisOnApp: (name) => tigris((client) => client.listTigrisOnApp(name)),
         deleteTigris: async (name) => void (await tigris((client) => client.deleteTigris(name))),
         deleteNeonProject: async (id) => void (await deleteNeonProject(neon, id)),
         destroyFlyApp: async (name) => void (await destroyFlyApp(fly, name)),
       });
+      // The Fly and Neon inventories are re-read below; a storage bucket bills too, so it is
+      // re-read here, while the session is still held. Only Fly's exact not-found answer counts as
+      // gone; a bucket still there fails the gate before cleanup is called finished, so the
+      // recovery command is still printed.
+      tigrisBucketFound = await tigris((client) =>
+        client.readTigris(journal.resources.tigrisBucketId ?? '')
+      ).then(
+        () => true,
+        (error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === 'ADD_ON_MISSING') {
+            return false;
+          }
+          throw error;
+        }
+      );
+      if (tigrisBucketFound) {
+        throw new CommunityLiveGateError(
+          'tigris-after-cleanup',
+          recoveryCommand,
+          'the storage bucket still exists after cleanup'
+        );
+      }
     } finally {
       credential.dispose();
     }
@@ -382,6 +406,7 @@ async function main(): Promise<void> {
       neonProjectIds: (await readNeonProjects(neon, config.neonOrganization)).map(
         (item) => item.id
       ),
+      tigrisBucketFound,
     };
     // This receipt is intentionally non-secret and remains only long enough for the gate's caller.
     await mkdir(receiptDirectory, { recursive: true, mode: 0o700 });
