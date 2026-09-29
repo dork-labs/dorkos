@@ -30,7 +30,8 @@
  * | 5  | disconnected, cleanup owed, way down but checked again soon              | `gone`        | `disconnect_finishing`       | `wait` (dorkos, retryAt)                      |
  * | 6  | disconnected, cleanup owed, way down: own key refused                    | `gone`        | `disconnect_stuck`           | `fix_key` (person)                            |
  * | 7  | disconnected, cleanup owed, anything else (link ended, refused, unknown) | `gone`        | `disconnect_stuck`           | `remove` (person), with the service's page    |
- * | 8  | turned off for this chat (agent and chat views only)                     | `unavailable` | `off_for_this_chat`          | none                                          |
+ * | 8  | turned off for this chat, the owner's chat view can turn it on           | `unavailable` | `off_for_this_chat`          | `turn_on_for_this_chat` (person)              |
+ * | 8b | turned off for this chat, anything else (agent views, nothing to put back) | `unavailable` | `off_for_this_chat`        | none                                          |
  * | 9  | way down: DorkOS account not linked                                      | `needs_you`   | `dorkos_account_unlinked`    | `connect_new` (person)                        |
  * | 10 | way down, DorkOS is checking it right now                                | `unavailable` | the way's reason             | `wait` (dorkos)                               |
  * | 11 | way down: DorkOS account can't reach apps, re-check scheduled            | `unavailable` | `dorkos_account_unavailable` | `retry` (dorkos, retryAt)                     |
@@ -76,6 +77,7 @@ import {
   serviceAccessPageFor,
   TELL_THE_PERSON_AGENT_COPY,
   WAY_CHECKING_COPY,
+  TURN_ON_FOR_THIS_CHAT_COPY,
   WAY_RECHECK_COPY,
   type ConnectionDisconnectStuckCause,
   type ConnectionFix,
@@ -236,6 +238,12 @@ export interface ConnectionReadinessFacts {
   readonly way: ConnectionWayHealth;
   /** True when this chat turned the account off for its agent. */
   readonly offForThisChat?: boolean;
+  /**
+   * True when the owner's per-chat switch can turn it back on here: set only
+   * by the owner's view of a chat, for an account the agent holds
+   * account-wide. Agent views never set it, so an agent is never offered it.
+   */
+  readonly canTurnOnForThisChat?: boolean;
 }
 
 /** Build and check one readiness value, its words from the one copy table. */
@@ -440,7 +448,16 @@ function wayDownReadiness(
  */
 export function deriveConnectionReadiness(facts: ConnectionReadinessFacts): ConnectionReadiness {
   if (facts.lifecycle === 'disconnected') return disconnectedReadiness(facts);
-  if (facts.offForThisChat) return readiness('unavailable', 'off_for_this_chat');
+  if (facts.offForThisChat) {
+    return facts.canTurnOnForThisChat
+      ? readiness(
+          'unavailable',
+          'off_for_this_chat',
+          { action: 'turn_on_for_this_chat', fixableBy: 'person' },
+          TURN_ON_FOR_THIS_CHAT_COPY
+        )
+      : readiness('unavailable', 'off_for_this_chat');
+  }
   const { way } = facts;
   if (way.status === 'down') return wayDownReadiness(way);
   if (!way.canRunActions) {

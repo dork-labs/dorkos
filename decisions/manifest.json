@@ -6739,6 +6739,33 @@
         "apps/client/src/layers/features/connections/ui/panel/**",
         "apps/client/src/layers/features/connections/lib/app-list.ts"
       ]
+    },
+    {
+      "id": "260929-012844",
+      "slug": "host-owner-replacement-is-noticed-objectable-and-time-delayed",
+      "title": "A host may replace a community owner only through a noticed, objectable, time-delayed claim",
+      "status": "proposed",
+      "created": "2026-09-28",
+      "extractedFrom": "community-owner-replacement",
+      "specSlug": "community-owner-replacement",
+      "supersedes": null,
+      "amends": "260920-192429",
+      "affects": [
+        "apps/community/src/routes/host-owner-replacements.ts",
+        "apps/community/src/routes/owner-replacement.ts",
+        "apps/community/src/owner-replacement/**"
+      ]
+    },
+    {
+      "id": "260929-012845",
+      "slug": "community-mail-is-host-configured-smtp-through-an-outbox",
+      "title": "The Community server sends mail only when a host configures SMTP, through a durable outbox that stores no address",
+      "status": "proposed",
+      "created": "2026-09-28",
+      "extractedFrom": "community-owner-replacement",
+      "specSlug": "community-owner-replacement",
+      "supersedes": null,
+      "affects": ["apps/community/src/mail/**", "apps/community/src/config.ts"]
     }
   ]
 }

@@ -131,6 +131,7 @@ export {
   INSTALL_METADATA_POSIX_PATH,
   UNINSTALLED_AGENT_PATH,
   PACKAGE_DATA_DIR,
+  SAVED_COPIES_DIR,
   PACKAGE_SECRETS_PATH,
   KEPT_COPY_SUFFIXES,
   AGENT_IDENTITY_FILES,
@@ -145,4 +146,5 @@ export {
   UserEditablePathSchema,
   validUserEditable,
   declaredEffectPaths,
+  KEPT_COPY_BASENAME,
 } from './user-editable.js';

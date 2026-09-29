@@ -98,6 +98,12 @@ export type RoomSearchScope = 'all' | ReadonlyMap<string, number>;
 export interface RoomMirrorAccess {
   canRead(roomId: string, authorId: string): boolean | null;
   hasMirrors(): boolean;
+  /**
+   * Whether this room is a mirror of `ownerAuthorId`'s connection whose access
+   * has been revoked. It is what lets the revocation itself stop the turns
+   * running there, and nothing else: see `RoomService.haltAgentInRevokedMirror`.
+   */
+  isRevokedMirrorOf(roomId: string, ownerAuthorId: string): boolean;
 }
 
 /** A trusted mirror agent write prepared before one local room entry is inserted. */

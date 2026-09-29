@@ -142,7 +142,7 @@ On [/account/instances](https://dorkos.ai/account/instances), click **Revoke** n
 
 On its next heartbeat the instance gets a `401`, clears its stored key, and shows **"This instance was unlinked."** Re-link anytime with `dorkos cloud login` or the Settings panel.
 
-Revoking only removes the cloud link. Running sessions, agents, and everything stored on that machine keep working, untouched.
+Revoking only removes the cloud link. Running sessions, agents, and everything stored on that machine keep working, untouched. The one thing it does end is any app that machine connected through your DorkOS account: those apps are signed out at the service too, so none stays signed in with no way left to reach it.
 
 </Step>
 </Steps>

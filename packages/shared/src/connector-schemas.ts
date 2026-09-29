@@ -476,6 +476,9 @@ export type ConnectionReadinessReason = z.infer<typeof ConnectionReadinessReason
  * - `remove` — remove the disconnected account from the person's apps. What
  *   DorkOS still owes at the service stays DorkOS's job in the background.
  * - `wait` — nothing to press: DorkOS tries again on its own.
+ * - `turn_on_for_this_chat` — turn the app back on for this one chat. Offered
+ *   only in the owner's view of a chat, and only when turning it on puts back
+ *   access the chat had (it never adds any).
  */
 export const ConnectionFixActionSchema = z.enum([
   'sign_in_again',
@@ -487,6 +490,7 @@ export const ConnectionFixActionSchema = z.enum([
   'retry',
   'remove',
   'wait',
+  'turn_on_for_this_chat',
 ]);
 /** The one fix for an account that is not ready. */
 export type ConnectionFixAction = z.infer<typeof ConnectionFixActionSchema>;
@@ -762,6 +766,15 @@ export const CONNECT_ANOTHER_WAY_COPY: ConnectionReadinessCopy = {
   owner: 'Connect it again another way to use it.',
   agent:
     'Ask the person to connect it again another way on the Connections page in the DorkOS app.',
+};
+
+/**
+ * The words added when the owner can turn an app back on for one chat. The
+ * agent line is unchanged: an agent never reads the owner's chat view, and it
+ * should not ask for an app the person turned off.
+ */
+export const TURN_ON_FOR_THIS_CHAT_COPY: Partial<ConnectionReadinessCopy> = {
+  owner: 'Turn it on to let this agent use it here again.',
 };
 
 /** Connection metadata visible to an agent that already holds access. */

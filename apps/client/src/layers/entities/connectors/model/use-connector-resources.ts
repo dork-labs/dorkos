@@ -273,3 +273,28 @@ export function useRemoveConnectorConnection() {
     transport.removeConnectorConnection(connectionId)
   );
 }
+
+/**
+ * Turn one app on or off for one chat's agent. The server answers with the
+ * chat's access as it now stands, so the chat's list shows the server's
+ * readiness straight away and is never guessed here.
+ *
+ * @param sessionId - The chat whose access changes.
+ */
+export function useSetSessionConnectorAccess(sessionId: string) {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ connectionId, on }: { connectionId: string; on: boolean }) =>
+      transport.setSessionConnectorAccess(sessionId, connectionId, { on }),
+    meta: { suppressErrorToast: true },
+    onSuccess: (data) => {
+      queryClient.setQueryData(connectorKeys.sessionConnections(sessionId), data);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: connectorKeys.sessionConnections(sessionId),
+      });
+    },
+  });
+}

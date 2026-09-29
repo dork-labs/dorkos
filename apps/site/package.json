@@ -19,6 +19,7 @@
     "db:migrate": "tsx scripts/baseline-migrations.ts public && drizzle-kit migrate --config drizzle.public.config.ts",
     "db:migrate:control-plane": "tsx scripts/baseline-migrations.ts control-plane && drizzle-kit migrate --config drizzle.control-plane.config.ts",
     "db:verify-event-capacity": "tsx scripts/verify-managed-event-capacity-cutover.ts",
+    "db:revoked-instances": "tsx scripts/revoked-instance-orphans.ts",
     "db:studio": "drizzle-kit studio",
     "clean": "rm -rf .next node_modules/.cache"
   },

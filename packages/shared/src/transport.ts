@@ -258,6 +258,7 @@ import type {
   ConnectorLifecycleResult,
   ConnectorProvidersResource,
   ConnectorReconnectRequest,
+  ConnectorSessionAccessUpdate,
   ConnectorSessionConnections,
 } from './connector-resource-schemas.js';
 import type {
@@ -3147,6 +3148,17 @@ export interface Transport
 
   /** Read effective connector access for one canonical session. */
   getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections>;
+
+  /**
+   * Turn one app on or off for one chat's agent (owner only). On only undoes
+   * off, putting back the access this chat had and never more; off hides the app
+   * in this chat alone. Resolves to the chat's access after the change.
+   */
+  setSessionConnectorAccess(
+    sessionId: string,
+    connectionId: string,
+    update: ConnectorSessionAccessUpdate
+  ): Promise<ConnectorSessionConnections>;
 
   /** List the exact connections currently usable by one owned agent. */
   getAccessibleConnectorConnections(
