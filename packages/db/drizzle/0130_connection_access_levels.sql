@@ -6,12 +6,20 @@ CREATE TABLE `connection_access_levels` (
 	`level` text NOT NULL,
 	`created_by` text NOT NULL,
 	`updated_at` text NOT NULL,
+	`follower_command_id` text,
 	PRIMARY KEY(`subject_type`, `subject_id`, `connection_id`),
 	FOREIGN KEY (`connection_id`) REFERENCES `connections`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
 CREATE INDEX `connection_access_levels_agent_idx` ON `connection_access_levels` (`agent_id`);--> statement-breakpoint
 CREATE INDEX `connection_access_levels_connection_idx` ON `connection_access_levels` (`connection_id`);--> statement-breakpoint
+CREATE TABLE `connection_level_follows` (
+	`connection_id` text PRIMARY KEY NOT NULL,
+	`followed_at` text NOT NULL,
+	`app_version` text NOT NULL,
+	FOREIGN KEY (`connection_id`) REFERENCES `connections`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 -- A level is stored as the owner's intent from now on (ADR 260929-071355).
 -- Before, "Read" was saved as the exact actions it covered that day, and the
 -- access card read a grant back as "Read" only while it still matched. Each

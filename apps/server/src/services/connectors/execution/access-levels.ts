@@ -125,9 +125,65 @@ export function recordAccessLevel(tx: DbTransaction, input: RecordAccessLevelInp
         connectionAccessLevels.subjectId,
         connectionAccessLevels.connectionId,
       ],
-      set: { level: input.level, createdBy: input.createdBy, updatedAt: input.now },
+      set: {
+        level: input.level,
+        createdBy: input.createdBy,
+        updatedAt: input.now,
+      },
     })
     .run();
+}
+
+/**
+ * Note that DorkOS staged this hosted command on its own to keep one level
+ * current, so a refusal of it keeps the level (the next pass sends it again)
+ * rather than ending a choice the owner made.
+ *
+ * @param tx - The open connector transaction.
+ * @param input - Connection, subject and the staged command.
+ */
+export function markFollowerCommand(
+  tx: DbTransaction,
+  input: { connectionId: string; subject: AccessLevelSubject; commandId: string }
+): void {
+  const columns = subjectColumns(input.subject);
+  tx.update(connectionAccessLevels)
+    .set({ followerCommandId: input.commandId })
+    .where(
+      and(
+        eq(connectionAccessLevels.connectionId, input.connectionId),
+        eq(connectionAccessLevels.subjectType, columns.subjectType),
+        eq(connectionAccessLevels.subjectId, columns.subjectId)
+      )
+    )
+    .run();
+}
+
+/**
+ * Whether this hosted command is the one DorkOS staged on its own for the
+ * subject's level (see {@link markFollowerCommand}).
+ *
+ * @param tx - The open connector transaction.
+ * @param input - Connection, subject and the command.
+ */
+export function isFollowerCommand(
+  tx: DbTransaction,
+  input: { connectionId: string; subject: AccessLevelSubject; commandId: string }
+): boolean {
+  const columns = subjectColumns(input.subject);
+  return (
+    tx
+      .select({ commandId: connectionAccessLevels.followerCommandId })
+      .from(connectionAccessLevels)
+      .where(
+        and(
+          eq(connectionAccessLevels.connectionId, input.connectionId),
+          eq(connectionAccessLevels.subjectType, columns.subjectType),
+          eq(connectionAccessLevels.subjectId, columns.subjectId)
+        )
+      )
+      .get()?.commandId === input.commandId
+  );
 }
 
 /**

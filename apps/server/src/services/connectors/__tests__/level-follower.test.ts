@@ -3,15 +3,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LEVEL_FOLLOW_INTERVAL_MS, LevelFollower } from '../resources/level-follower.js';
 
 describe('LevelFollower', () => {
-  let followCatalog: ReturnType<typeof vi.fn<(id: string, signal: AbortSignal) => Promise<void>>>;
+  let followCatalog: ReturnType<
+    typeof vi.fn<(id: string, signal: AbortSignal, version: string) => Promise<void>>
+  >;
   let levelConnectionIds: ReturnType<typeof vi.fn<() => string[]>>;
+  let followedSince: ReturnType<
+    typeof vi.fn<(id: string, since: string, version: string) => boolean>
+  >;
   let follower: LevelFollower;
 
   beforeEach(() => {
     vi.useFakeTimers();
     followCatalog = vi.fn(async () => undefined);
     levelConnectionIds = vi.fn(() => ['connection-a', 'connection-b', 'connection-c']);
-    follower = new LevelFollower({ reconciliation: { followCatalog, levelConnectionIds } });
+    followedSince = vi.fn(() => false);
+    follower = new LevelFollower({
+      reconciliation: { followCatalog, levelConnectionIds, followedSince },
+      appVersion: '1.0.0',
+    });
   });
 
   afterEach(() => {
@@ -27,6 +36,30 @@ describe('LevelFollower', () => {
       'connection-b',
       'connection-c',
     ]);
+  });
+
+  it('skips at boot what it followed within the interval under this version', async () => {
+    followedSince.mockImplementation((id) => id === 'connection-b');
+    follower.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(followCatalog.mock.calls.map(([id]) => id)).toEqual(['connection-a', 'connection-c']);
+    const [, since, version] = followedSince.mock.calls[0]!;
+    expect(version).toBe('1.0.0');
+    expect(Date.parse(since)).toBe(Date.now() - LEVEL_FOLLOW_INTERVAL_MS);
+    // The stamp is written with the version it followed under.
+    expect(followCatalog.mock.calls[0]![2]).toBe('1.0.0');
+  });
+
+  it('follows everything at boot after an update, and on every interval pass', async () => {
+    // A stamp from another version never counts as recent.
+    followedSince.mockImplementation((_id, _since, version) => version !== '1.0.0');
+    follower.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(followCatalog).toHaveBeenCalledTimes(3);
+    followedSince.mockImplementation(() => true);
+    followCatalog.mockClear();
+    await vi.advanceTimersByTimeAsync(LEVEL_FOLLOW_INTERVAL_MS);
+    expect(followCatalog).toHaveBeenCalledTimes(3);
   });
 
   it('follows again every interval, and not before', async () => {
@@ -65,7 +98,8 @@ describe('LevelFollower', () => {
 
   it('reads at most the bound in one pass', async () => {
     follower = new LevelFollower({
-      reconciliation: { followCatalog, levelConnectionIds },
+      reconciliation: { followCatalog, levelConnectionIds, followedSince },
+      appVersion: '1.0.0',
       maxConnections: 2,
     });
     await follower.follow();

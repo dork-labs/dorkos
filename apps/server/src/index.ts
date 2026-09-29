@@ -3293,9 +3293,13 @@ async function start() {
         : { actorType: 'user', actorLabel: 'Someone on this computer' },
   });
   // A level ("Read") follows its app's actions (ADR 260929-071355): read each
-  // leveled app's catalog now, which also carries a classification change this
-  // release shipped, and every 12 hours after.
-  const connectorLevels = new LevelFollower({ reconciliation: connectorReconciliation });
+  // leveled app's catalog now (skipping one followed within 12 hours under this
+  // same version; an update always re-reads, carrying a classification change
+  // it shipped), and every 12 hours after.
+  const connectorLevels = new LevelFollower({
+    reconciliation: connectorReconciliation,
+    appVersion: SERVER_VERSION,
+  });
   connectorLevels.start();
   const stopSignInFreshness = stopConnectorFreshness;
   stopConnectorFreshness = () => {

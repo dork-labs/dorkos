@@ -49,6 +49,7 @@ import {
   endAgentAccessLevels,
   endConnectionAccessLevels,
   endEveryAgentAccessLevels,
+  isFollowerCommand,
 } from '../execution/access-levels.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type {
@@ -1732,8 +1733,16 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
           )
         )
         .run();
-      if (terminal && result.changes === 1 && this.isCurrent(tx, row))
+      // A local `unauthorized` is this computer's link to the DorkOS account
+      // lapsing, not the service refusing the change: the level stays.
+      if (
+        terminal &&
+        failure.code !== 'unauthorized' &&
+        result.changes === 1 &&
+        this.isCurrent(tx, row)
+      ) {
         this.endRefusedLevel(tx, row);
+      }
       return result;
     });
     if (updated.changes === 1) this.logUnsettled(row, failure, nextAttemptAt, 'warn');
@@ -1795,20 +1804,29 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   }
 
   /**
-   * End the access level a grant command the service refused for good was
-   * carrying (ADR 260929-071355). The refused widening never opened, so the
-   * level would promise access the agent does not have; ending it shows what
-   * the agent really holds, and choosing the level again sends it again.
+   * End the access level an owner's grant command the service refused for
+   * good was carrying (ADR 260929-071355). The refused widening never opened,
+   * so the level would promise access the agent does not have; ending it
+   * shows what the agent really holds, and choosing the level again sends it
+   * again. A command DorkOS staged on its own to follow the app is not the
+   * owner's choice: its level stays, and the next pass sends it again.
    */
   private endRefusedLevel(
     tx: ConnectorDbTransaction,
     row: typeof connectorManagedAuthorityOutbox.$inferSelect
   ): void {
-    if (row.scopeKind === 'agent_grants') {
-      endAgentAccessLevels(tx, row.subjectId, row.connectionId);
-    } else if (row.scopeKind === 'every_agent_grants') {
-      endEveryAgentAccessLevels(tx, [row.connectionId]);
+    if (row.scopeKind !== 'agent_grants' && row.scopeKind !== 'every_agent_grants') return;
+    const subject =
+      row.scopeKind === 'agent_grants'
+        ? { kind: 'agent' as const, agentId: row.subjectId }
+        : { kind: 'every_agent' as const };
+    if (
+      isFollowerCommand(tx, { connectionId: row.connectionId, subject, commandId: row.commandId })
+    ) {
+      return;
     }
+    if (subject.kind === 'agent') endAgentAccessLevels(tx, subject.agentId, row.connectionId);
+    else endEveryAgentAccessLevels(tx, [row.connectionId]);
   }
 
   private isCurrent(

@@ -7,7 +7,12 @@
  * was taken away some other way.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { connectorReconciliationPreviews, eq } from '@dorkos/db';
+import {
+  connectionOperationGrants,
+  connectorReconciliationCandidates,
+  connectorReconciliationPreviews,
+  eq,
+} from '@dorkos/db';
 import { TEST_CONNECTOR_PROVIDER_TYPE } from '../connection-store.js';
 import { ConnectorManagementActionService } from '../management-action-service.js';
 import { ConnectorReconciliationError } from '../reconciliation-service.js';
@@ -316,7 +321,7 @@ describe('levels follow the app on this computer', () => {
       h.catalog[1] = { slug: 'gmail.send', classification: 'destructive' };
       expect(h.service.levelConnectionIds()).toEqual([CONNECTION_ID]);
 
-      await h.service.followCatalog(CONNECTION_ID, new AbortController().signal);
+      await h.service.followCatalog(CONNECTION_ID, new AbortController().signal, '1.0.0');
 
       expect(liveActions(h.db, { agentId: 'reader' })).toEqual([
         'gmail.list:read',
@@ -331,7 +336,8 @@ describe('levels follow the app on this computer', () => {
 
     it('records the catalog it read as a review nobody can apply', async () => {
       await grantLevels(h);
-      await h.service.followCatalog(CONNECTION_ID, new AbortController().signal);
+      h.catalog.push({ slug: 'gmail.search', classification: 'read' });
+      await h.service.followCatalog(CONNECTION_ID, new AbortController().signal, '1.0.0');
       const recorded = h.db
         .select()
         .from(connectorReconciliationPreviews)
@@ -342,6 +348,59 @@ describe('levels follow the app on this computer', () => {
       await expect(
         h.service.apply(OWNER, { previewId: recorded.id, grants: [] })
       ).rejects.toMatchObject({ code: 'preview_stale' });
+    });
+
+    const follow = (version = '1.0.0') =>
+      h.service.followCatalog(CONNECTION_ID, new AbortController().signal, version);
+    const reviews = () =>
+      h.db
+        .select()
+        .from(connectorReconciliationPreviews)
+        .where(eq(connectorReconciliationPreviews.connectionId, CONNECTION_ID))
+        .all();
+
+    it('keeps at most one review of its own per account, and never removes an owner’s', async () => {
+      await grantLevels(h);
+      const owners = reviews().map((review) => review.id);
+      for (let pass = 0; pass < 4; pass += 1) {
+        h.catalog.push({ slug: `gmail.read_${pass}`, classification: 'read' });
+        await follow();
+      }
+      const kept = reviews();
+      expect(kept.filter((review) => !owners.includes(review.id))).toHaveLength(1);
+      expect(kept.map((review) => review.id)).toEqual(expect.arrayContaining(owners));
+      expect(liveActions(h.db, { agentId: 'reader' })).toHaveLength(5);
+    });
+
+    it('writes no review when the catalog and every level are unchanged', async () => {
+      await grantLevels(h);
+      h.catalog.push({ slug: 'gmail.search', classification: 'read' });
+      await follow();
+      const before = {
+        reviews: reviews().map((review) => review.id),
+        candidates: h.db.select().from(connectorReconciliationCandidates).all().length,
+        grants: h.db.select().from(connectionOperationGrants).all(),
+      };
+      await follow();
+      await follow();
+      expect(reviews().map((review) => review.id)).toEqual(before.reviews);
+      expect(h.db.select().from(connectorReconciliationCandidates).all()).toHaveLength(
+        before.candidates
+      );
+      expect(h.db.select().from(connectionOperationGrants).all()).toEqual(before.grants);
+    });
+
+    it('says when it last followed an account, and under which version', async () => {
+      await grantLevels(h);
+      const earlier = new Date(Date.parse('2026-09-29T00:00:00.000Z')).toISOString();
+      expect(h.service.followedSince(CONNECTION_ID, earlier, '1.0.0')).toBe(false);
+      await follow('1.0.0');
+      expect(h.service.followedSince(CONNECTION_ID, earlier, '1.0.0')).toBe(true);
+      // An update always follows again: it can classify actions differently.
+      expect(h.service.followedSince(CONNECTION_ID, earlier, '1.1.0')).toBe(false);
+      expect(h.service.followedSince(CONNECTION_ID, '2026-09-30T00:00:00.000Z', '1.0.0')).toBe(
+        false
+      );
     });
 
     it('lists only connected accounts with a level on them', async () => {

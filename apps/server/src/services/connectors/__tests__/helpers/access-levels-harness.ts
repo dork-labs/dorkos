@@ -53,7 +53,7 @@ export function hostedRef(slug: string, classification: ConnectorOperationClassi
 }
 
 /** How hosted authority answers the next command. */
-export type HostedAnswer = 'applied' | 'pending' | 'rejected' | 'conflict';
+export type HostedAnswer = 'applied' | 'pending' | 'rejected' | 'conflict' | 'unauthorized';
 
 /** Everything one access-level test works with. */
 export interface LevelHarness {
@@ -164,8 +164,10 @@ export function levelHarness(options: { managed?: boolean; type?: string } = {})
       createId: () => `managed-${++nextManaged}`,
       cloud: {
         submitConnectorAuthorityCommand: async (command) => {
-          if (hosted === 'conflict') {
-            throw Object.assign(new Error('conflict'), { code: 'conflict' });
+          // A conflict fails for good at the service; `unauthorized` is this
+          // computer's link to the DorkOS account lapsing.
+          if (hosted === 'conflict' || hosted === 'unauthorized') {
+            throw Object.assign(new Error(hosted), { code: hosted });
           }
           submitted.push(command);
           const status = statusFor(command, hosted);

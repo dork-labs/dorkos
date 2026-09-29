@@ -177,6 +177,31 @@ describe('levels follow the app through a DorkOS account', () => {
       expect(liveActions(h.db, 'every_agent')).toEqual(['gmail.list:read', 'gmail.send:write']);
     });
 
+    it('keeps a level DorkOS was following on its own, and sends it again next time', async () => {
+      await giveReaderRead();
+      h.answer('rejected');
+      h.catalog.push({ slug: 'gmail.search', classification: 'read' });
+      await h.preview();
+      // The refused change was DorkOS following the app, not the owner's choice.
+      expect(storedLevels(h.db)).toEqual(['reader:read']);
+      expect(liveActions(h.db, { agentId: 'reader' })).toEqual(['gmail.list:read']);
+
+      h.answer('applied');
+      const sent = h.submitted.length;
+      await h.service.followCatalog(CONNECTION_ID, new AbortController().signal, '1.0.0');
+      expect(h.submitted.length).toBe(sent + 1);
+      expect(liveActions(h.db, { agentId: 'reader' })).toEqual([
+        'gmail.list:read',
+        'gmail.search:read',
+      ]);
+    });
+
+    it('keeps the level when this computer’s link to the DorkOS account lapses', async () => {
+      h.answer('unauthorized');
+      await giveReaderRead();
+      expect(storedLevels(h.db)).toEqual(['reader:read']);
+    });
+
     it('ends when the command fails for good on the way there', async () => {
       h.answer('conflict');
       await giveReaderRead();

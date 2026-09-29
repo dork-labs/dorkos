@@ -221,6 +221,13 @@ export const connectionAccessLevels = sqliteTable(
     level: text('level', { enum: ['read', 'read-write'] }).notNull(),
     createdBy: text('created_by').notNull(),
     updatedAt: text('updated_at').notNull(),
+    /**
+     * The hosted command DorkOS staged on its own to follow the app, while it
+     * is the latest one for this level. Hosted authority refusing THAT command
+     * keeps the level (the next pass sends it again); refusing a change the
+     * owner made ends it. Null once the owner chooses again.
+     */
+    followerCommandId: text('follower_command_id'),
   },
   (table) => [
     primaryKey({ columns: [table.subjectType, table.subjectId, table.connectionId] }),
@@ -228,6 +235,20 @@ export const connectionAccessLevels = sqliteTable(
     index('connection_access_levels_connection_idx').on(table.connectionId),
   ]
 );
+
+/**
+ * When DorkOS last followed one connection's levels on its own, and under
+ * which DorkOS version (ADR 260929-071355). A boot inside the follow interval
+ * skips a connection it followed recently, unless DorkOS was updated since:
+ * a new version can classify actions differently.
+ */
+export const connectionLevelFollows = sqliteTable('connection_level_follows', {
+  connectionId: text('connection_id')
+    .primaryKey()
+    .references(() => connections.id, { onDelete: 'cascade' }),
+  followedAt: text('followed_at').notNull(),
+  appVersion: text('app_version').notNull(),
+});
 
 /** Canonical stable replacement for legacy agent account attachments. */
 export const agentConnectionAttachments = sqliteTable(
