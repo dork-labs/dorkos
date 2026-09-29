@@ -25,7 +25,8 @@ export const agentLimitReached = () =>
 /**
  * Bytes that count against a storage limit: stored or committed attachments and icons.
  * Exports are exempt, so an owner can always take their data out, and bytes already queued
- * for deletion are free the moment they are queued.
+ * for deletion are free the moment they are queued. Bytes a takedown holds for its evidence copy
+ * count toward no limit; usage shows them with the pending-delete bytes.
  */
 const COUNTED_BLOBS = `purpose IN ('attachment','icon') AND state IN ('stored','committed')`;
 
@@ -212,7 +213,7 @@ export async function readUsage(
          COALESCE(sum(byte_size) FILTER (WHERE purpose='icon' AND state IN ('stored','committed')),0)::text AS icon,
          COALESCE(sum(byte_size) FILTER (WHERE purpose='export' AND state IN ('stored','committed')),0)::text AS export,
          COALESCE(sum(byte_size) FILTER (WHERE purpose='import_staging' AND state IN ('stored','committed')),0)::text AS import_staging,
-         COALESCE(sum(byte_size) FILTER (WHERE state='pending_delete'),0)::text AS pending_delete,
+         COALESCE(sum(byte_size) FILTER (WHERE state IN ('pending_delete','evidence_hold')),0)::text AS pending_delete,
          COALESCE(sum(byte_size) FILTER (WHERE ${COUNTED_BLOBS}),0)::text AS counted
        FROM managed_blobs WHERE community_id=c.id
      ) b

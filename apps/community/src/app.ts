@@ -46,6 +46,8 @@ import { registerShortNameRoutes } from './routes/short-names.js';
 import { callerAddress } from './caller-address.js';
 import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
+import { registerHostTakedownRoutes } from './routes/host-takedowns.js';
+import { registerTakedownNoticeRoutes } from './routes/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
 import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
 import { UploadSlots } from './imports/upload.js';
@@ -82,6 +84,10 @@ export function createCommunityApp({
     uploadIdleMs?: number;
     /** Free bytes in the temporary folder, as an upload's space check sees them. */
     freeTempBytes?: () => Promise<number>;
+    /** Runs inside a takedown after the community row is locked, before the actor recheck. */
+    afterTakedownCommunityLock?: () => Promise<void>;
+    /** Runs inside a takedown after its target is read for evidence, before it is removed. */
+    afterTakedownSnapshot?: () => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
@@ -370,6 +376,17 @@ export function createCommunityApp({
     uploadIdleMs: hooks?.uploadIdleMs ?? UPLOAD_IDLE_MS,
     freeTempBytes: hooks?.freeTempBytes,
   });
+  registerHostTakedownRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword,
+    hooks: {
+      afterCommunityLock: hooks?.afterTakedownCommunityLock,
+      afterSnapshot: hooks?.afterTakedownSnapshot,
+    },
+  });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
   app.route('/api/v1', hostApi);
@@ -459,6 +476,7 @@ export function createCommunityApp({
   registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   registerOwnerErasureRoutes(communityApi, { pool, auth });
   registerHistoryOriginRoute(communityApi, { pool, auth });
+  registerTakedownNoticeRoutes(communityApi, { pool, auth });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;

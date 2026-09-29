@@ -227,7 +227,9 @@ describe('ConnectionAccessDialog', () => {
       connectionId: PREVIEW.connection.connectionId,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1', 'write-v2'] }],
+      grants: [
+        { agentId: 'agent-b', operationRevisionIds: ['read-v1', 'write-v2'], level: 'read-write' },
+      ],
     });
     renderWith(
       transport,
@@ -242,7 +244,13 @@ describe('ConnectionAccessDialog', () => {
     await waitFor(() =>
       expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
         previewId: 'preview-1',
-        grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1', 'write-v2'] }],
+        grants: [
+          {
+            agentId: 'agent-b',
+            operationRevisionIds: ['read-v1', 'write-v2'],
+            level: 'read-write',
+          },
+        ],
       })
     );
     expect(screen.getByTestId('connector-access-outcome')).toHaveTextContent('Access updated');
@@ -256,7 +264,7 @@ describe('ConnectionAccessDialog', () => {
       connectionId: PREVIEW.connection.connectionId,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'pending' },
-      grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     vi.mocked(transport.getConnectorConnection).mockResolvedValue({
       connection: {
@@ -303,7 +311,7 @@ describe('ConnectionAccessDialog', () => {
       connectionId: PREVIEW.connection.connectionId,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'pending' },
-      grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     vi.mocked(transport.getConnectorConnection).mockResolvedValue({
       connection: {
@@ -368,7 +376,7 @@ describe('ConnectionAccessDialog', () => {
       connectionId: PREVIEW.connection.connectionId,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'failed', reason: 'Provider confirmation timed out.' },
-      grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     vi.mocked(transport.getConnectorConnection).mockRejectedValue(new Error('read unavailable'));
     renderWith(
@@ -407,7 +415,7 @@ describe('ConnectionAccessDialog', () => {
         connectionId: PREVIEW.connection.connectionId,
         reconciliationStatus: 'migration_needs_reconcile',
         authoritySync: { status: 'ready' },
-        grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'] }],
+        grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'], level: 'read' }],
       });
     renderWith(
       transport,

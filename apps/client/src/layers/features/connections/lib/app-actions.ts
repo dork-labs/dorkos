@@ -14,11 +14,11 @@
 import type { ConnectorAppAction } from '@dorkos/shared/connector-resource-schemas';
 import {
   actionNameFromSlug,
+  levelIncludes,
   type ConnectorOperationClassification,
   type ConnectorReconciliationCandidate,
 } from '@dorkos/shared/connector-schemas';
 import type { CardAccessLevel } from './access-card-selection';
-import { levelIncludes } from './reconciliation-selection';
 
 /** The two buckets an action falls into. */
 export type ActionKind = 'look' | 'change';

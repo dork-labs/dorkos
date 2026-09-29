@@ -24,7 +24,7 @@ import {
 import { ApiError, json, readJson } from '../http.js';
 import { entryProjection, originKeyForPrincipal } from './entries.js';
 import { attachmentsForEntries } from './attachments.js';
-import { isReadOnlyLifecycle } from '../tenant-context.js';
+import { isDeletedCommunity, isReadOnlyLifecycle } from '../tenant-context.js';
 
 interface LiveChannel {
   id: string;
@@ -85,14 +85,16 @@ interface StreamAccess {
  * Why a live stream must close now, or null to keep it open.
  *
  * A read-only community (archived by its owner or held by its host) closes the stream as
- * `archived`: the person can still read, just not live. A missing credential, a removal, or
- * any other lifecycle closes it as `removed`.
+ * `archived`: the person can still read, just not live. A community whose deletion finished
+ * closes it as `deleted`. A missing credential, a removal, or any other lifecycle (a pending
+ * deletion included) closes it as `removed`.
  */
 function streamCloseReason(
   state: StreamAccess | null | undefined,
-  epoch: number
-): 'archived' | 'removed' | null {
-  if (!state) return 'removed';
+  epoch: number,
+  deleted: boolean
+): 'archived' | 'removed' | 'deleted' | null {
+  if (!state) return deleted ? 'deleted' : 'removed';
   if (state.lifecycle === 'active') {
     if (state.active && state.joined && !state.archived && state.epoch === epoch) return null;
     return state.archived ? 'archived' : 'removed';
@@ -350,6 +352,15 @@ export function registerEventRoutes(
       );
       return active.rows[0];
     };
+    // Nothing is visible to the stream's credential any more: tell a finished deletion apart
+    // from every other way access ends. The record is read after the access query, and the
+    // worker writes it in the transaction that removes the community, so it is already there.
+    const closeReason = async (state: StreamAccess | null | undefined) =>
+      streamCloseReason(
+        state,
+        channel.epoch,
+        !state && (await isDeletedCommunity(pool, principal.community_id))
+      );
     const stream = new ReadableStream<Uint8Array>(
       {
         start(controller) {
@@ -379,8 +390,8 @@ export function registerEventRoutes(
           }
           revocationTimer = setInterval(() => {
             void checkAccess()
-              .then((state) => {
-                const reason = streamCloseReason(state, channel.epoch);
+              .then(closeReason)
+              .then((reason) => {
                 if (closed || !reason) return;
                 stop();
                 if (controller.desiredSize !== null && controller.desiredSize > 0) {
@@ -425,9 +436,8 @@ export function registerEventRoutes(
                 });
                 return;
               }
-              const state = await checkAccess();
+              const reason = await closeReason(await checkAccess());
               if (closed) return;
-              const reason = streamCloseReason(state, channel.epoch);
               if (reason) {
                 stop();
                 writeEvent(controller, {
@@ -449,14 +459,13 @@ export function registerEventRoutes(
                 position = Number(row.seq);
                 const attachmentMap = await attachmentsForEntries(pool, [row.id]);
                 await hooks?.afterEntryAttachmentLookup?.();
-                const afterEnrichment = await checkAccess();
+                const afterEnrichment = await closeReason(await checkAccess());
                 if (closed) return;
-                const closeReason = streamCloseReason(afterEnrichment, channel.epoch);
-                if (closeReason) {
+                if (afterEnrichment) {
                   stop();
                   writeEvent(controller, {
                     type: 'closed',
-                    reason: closeReason,
+                    reason: afterEnrichment,
                     cursor: currentCursor(),
                   });
                   controller.close();

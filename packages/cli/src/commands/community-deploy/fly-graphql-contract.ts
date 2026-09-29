@@ -23,7 +23,11 @@ const AddOnSchema = z
     id: SafeIdentifierSchema,
     name: SafeIdentifierSchema,
     status: SafeStatusSchema,
-    options: z.object({ public: z.boolean() }).passthrough(),
+    // Fly stores no options for a bucket created without them (as this launcher creates it) and
+    // answers `options: null` (DOR-2559; `AddOn.options: JSON` is nullable in Fly's schema). That
+    // is Fly's private default. The key must still be present, and a present `public` must be a
+    // boolean, so only an explicit `public: true` reads as public.
+    options: z.object({ public: z.boolean() }).passthrough().nullable(),
     organization: z.object({ slug: SafeIdentifierSchema }).strict(),
     addOnProvider: z.object({ name: SafeIdentifierSchema }).strict(),
     app: z.object({ id: SafeIdentifierSchema, name: SafeIdentifierSchema }).strict(),
@@ -40,9 +44,43 @@ const TermsEnvelopeSchema = z
   })
   .strict();
 
+/**
+ * The create answer also carries the bucket's `environment`, which holds its access keys. It is
+ * accepted here as opaque data and handed only to `tigrisCredentialsFromEnvironment`; the identity
+ * never includes it.
+ */
 const CreateEnvelopeSchema = z
   .object({
-    data: z.object({ createAddOn: z.object({ addOn: AddOnSchema }).strict() }).strict(),
+    data: z
+      .object({
+        createAddOn: z
+          .object({ addOn: AddOnSchema.extend({ environment: z.unknown().optional() }) })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict();
+
+/** Printable, single-line key text; anything else is treated as no key at all. */
+const TigrisKeyValueSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .regex(/^[\x21-\x7e]+$/u);
+const TigrisEnvironmentSchema = z
+  .object({ AWS_ACCESS_KEY_ID: TigrisKeyValueSchema, AWS_SECRET_ACCESS_KEY: TigrisKeyValueSchema })
+  .passthrough();
+
+const CredentialsEnvelopeSchema = z
+  .object({
+    data: z
+      .object({
+        node: z
+          .object({ id: SafeIdentifierSchema, environment: z.unknown().optional() })
+          .strict()
+          .nullable(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -104,9 +142,27 @@ export const FLY_TIGRIS_CREATE_MUTATION = `
         name
         status
         options
+        environment
         organization { slug }
         addOnProvider { name }
         app { id name }
+      }
+    }
+  }
+`;
+
+/**
+ * Exact-ID read of the bucket's access keys, used only when resuming a launch that stopped after
+ * Fly created the bucket but before its keys reached the app. flyctl itself reads `environment`
+ * only from the create answer, so Fly may return nothing here; the caller then stops instead of
+ * guessing.
+ */
+export const FLY_TIGRIS_CREDENTIALS_QUERY = `
+  query DorkosReadTigrisCredentials($id: ID!) {
+    node(id: $id) {
+      ... on AddOn {
+        id
+        environment
       }
     }
   }
@@ -184,6 +240,78 @@ export interface TigrisAddOnIdentity {
   public: boolean;
 }
 
+/**
+ * A bucket's two access keys, held only in memory. flyctl sets these on the app itself from the
+ * add-on's `environment` (`setSecretsFromExtension`); Fly's servers do not, so the launcher does.
+ */
+export class TigrisBucketCredentials {
+  #values: { AWS_ACCESS_KEY_ID: string; AWS_SECRET_ACCESS_KEY: string } | undefined;
+
+  /**
+   * Wrap validated keys without exposing them as object data.
+   *
+   * @param accessKeyId - The bucket's access key id.
+   * @param secretAccessKey - The bucket's secret access key.
+   */
+  constructor(accessKeyId: string, secretAccessKey: string) {
+    this.#values = { AWS_ACCESS_KEY_ID: accessKeyId, AWS_SECRET_ACCESS_KEY: secretAccessKey };
+  }
+
+  /**
+   * Use the keys, by their app secret names, inside one bounded callback.
+   *
+   * @param consumer - The secret-staging call.
+   * @returns The consumer result.
+   */
+  async use<T>(consumer: (values: Readonly<Record<string, string>>) => Promise<T>): Promise<T> {
+    if (!this.#values) throw new FlyGraphqlContractError('INVALID_RESPONSE');
+    return consumer(this.#values);
+  }
+
+  /** Drop this wrapper's reference to the keys. */
+  dispose(): void {
+    this.#values = undefined;
+  }
+
+  /** Return a safe marker for string interpolation. */
+  toString(): string {
+    return '[REDACTED Tigris bucket credentials]';
+  }
+
+  /** Return a safe marker for JSON serialization. */
+  toJSON(): string {
+    return '[REDACTED Tigris bucket credentials]';
+  }
+}
+
+/** A created bucket's identity, plus its keys when Fly sent them. */
+export interface TigrisCreateResult {
+  /** Sanitized, non-secret identity. */
+  identity: TigrisAddOnIdentity;
+  /** The bucket's access keys, or null when the answer carried none usable. */
+  credentials: TigrisBucketCredentials | null;
+}
+
+/**
+ * Pick the two access keys out of an add-on `environment`, ignoring every other entry.
+ *
+ * Never throws: a missing or malformed environment is reported as no keys, so it cannot turn a
+ * created bucket into an uncertain creation, and no key text can reach an error.
+ *
+ * @param environment - The add-on's `environment` JSON as Fly returned it.
+ * @returns Redacting credentials, or null.
+ */
+export function tigrisCredentialsFromEnvironment(
+  environment: unknown
+): TigrisBucketCredentials | null {
+  const parsed = TigrisEnvironmentSchema.safeParse(environment);
+  if (!parsed.success) return null;
+  return new TigrisBucketCredentials(
+    parsed.data.AWS_ACCESS_KEY_ID,
+    parsed.data.AWS_SECRET_ACCESS_KEY
+  );
+}
+
 /** Expected Tigris identity and binding selected in the immutable plan. */
 export type ExpectedTigrisBinding = z.infer<typeof ExpectedBindingSchema>;
 
@@ -209,7 +337,7 @@ function sanitizeAddOn(value: unknown): TigrisAddOnIdentity {
     providerName: addOn.addOnProvider.name,
     appId: addOn.app.id,
     appName: addOn.app.name,
-    public: addOn.options.public,
+    public: addOn.options?.public ?? false,
   };
 }
 
@@ -231,19 +359,45 @@ export function parseTigrisTermsResponse(response: unknown): boolean {
 }
 
 /**
- * Parse a Tigris creation response into its non-secret identity.
+ * Parse a Tigris creation response into its non-secret identity and its access keys.
  *
  * @param response - Decoded response held in the bounded sensitive sink.
- * @returns Sanitized add-on identity and binding.
+ * @returns Sanitized add-on identity and binding, plus redacting credentials when present.
  */
-export function parseTigrisCreateResponse(response: unknown): TigrisAddOnIdentity {
+export function parseTigrisCreateResponse(response: unknown): TigrisCreateResult {
   let parsed: z.infer<typeof CreateEnvelopeSchema>;
   try {
     parsed = CreateEnvelopeSchema.parse(response);
   } catch {
     throw invalidResponse();
   }
-  return sanitizeAddOn(parsed.data.createAddOn.addOn);
+  const { environment, ...addOn } = parsed.data.createAddOn.addOn;
+  return {
+    identity: sanitizeAddOn(addOn),
+    credentials: tigrisCredentialsFromEnvironment(environment),
+  };
+}
+
+/**
+ * Parse an exact-ID read of a bucket's access keys.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ * @param expectedId - The add-on ID that was asked for.
+ * @returns Redacting credentials, or null when Fly returned none usable.
+ */
+export function parseTigrisCredentialsResponse(
+  response: unknown,
+  expectedId: string
+): TigrisBucketCredentials | null {
+  let parsed: z.infer<typeof CredentialsEnvelopeSchema>;
+  try {
+    parsed = CredentialsEnvelopeSchema.parse(response);
+  } catch {
+    throw invalidResponse();
+  }
+  if (parsed.data.node === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
+  if (parsed.data.node.id !== expectedId) throw new FlyGraphqlContractError('BINDING_MISMATCH');
+  return tigrisCredentialsFromEnvironment(parsed.data.node.environment);
 }
 
 /**

@@ -925,6 +925,13 @@
       "when": 1790673861395,
       "tag": "0131_extension_decisions",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "6",
+      "when": 1790686427875,
+      "tag": "0132_connection_access_levels",
+      "breakpoints": true
     }
   ]
 }

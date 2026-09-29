@@ -166,6 +166,10 @@ describe('Database Migrations', () => {
       // Derived cache binding a ConnectionId → owning connector provider
       // (connector-gateway spec §Detailed Design 2, migration 0029).
       'connected_accounts',
+      // The access level the owner chose, kept as intent, and when DorkOS
+      // last followed it on its own (migration 0132).
+      'connection_access_levels',
+      'connection_level_follows',
       // Provider instances, stable DorkOS connections, immutable operation
       // revisions, exact grants, event delivery, review/resume state, usage,
       // and the application-backfill ledger (Connections P1, migration 0086).

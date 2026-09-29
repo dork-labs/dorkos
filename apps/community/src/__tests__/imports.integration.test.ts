@@ -26,6 +26,7 @@ import {
   readImport,
   sha256,
   uploadArchive,
+  waitForUploadLease,
 } from './import-fixture.js';
 import {
   TENANCY_PASSWORD,
@@ -688,13 +689,14 @@ it('receives one upload of an import at a time', async () => {
     delayMs: 0,
     holdOpen: true,
   });
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await waitForUploadLease(h, importId, true);
   const second = await uploadArchive(h, importId, archive, { bearer: uploadToken });
   expect(second.status).toBe(409);
   expect((await second.json()).code).toBe('STATE_CONFLICT');
   first.close();
   await first.response;
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  // The server frees the lease once it notices the drop, which a busy machine takes longer to do.
+  await waitForUploadLease(h, importId, false);
   expect((await uploadArchive(h, importId, archive, { bearer: uploadToken })).status).toBe(200);
 });
 
@@ -712,7 +714,8 @@ it('caps concurrent uploads on a replica', async () => {
       })
     )
   );
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  // An upload takes its slot before its lease, so a held lease means a taken slot.
+  for (const target of imports.slice(0, 2)) await waitForUploadLease(h, target.importId, true);
   const third = await uploadArchive(h, imports[2].importId, archive, {
     bearer: imports[2].uploadToken,
   });
@@ -721,7 +724,8 @@ it('caps concurrent uploads on a replica', async () => {
     upload.close();
     await upload.response;
   }
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  // And frees its slot before its lease, so a freed lease means a freed slot.
+  for (const target of imports.slice(0, 2)) await waitForUploadLease(h, target.importId, false);
   expect(
     (await uploadArchive(h, imports[2].importId, archive, { bearer: imports[2].uploadToken }))
       .status

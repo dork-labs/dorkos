@@ -31,6 +31,7 @@ const ALL_SCOPES = [
   'communities:write',
   'communities:lifecycle',
   'communities:import',
+  'communities:takedown',
 ];
 
 let h: TenancyHarness;

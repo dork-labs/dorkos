@@ -4,9 +4,7 @@
       "id": "addon_fixture_01",
       "name": "community-fixture-bucket",
       "status": "ready",
-      "options": {
-        "public": false
-      },
+      "options": null,
       "organization": {
         "slug": "fixture-org"
       },

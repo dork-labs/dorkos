@@ -1,6 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
-import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
+import {
+  accessLevelRevisionIds,
+  type ConnectorReconciliationPreview,
+} from '@dorkos/shared/connector-schemas';
 import type { ServiceLogo } from '@/layers/entities/connectors';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import {
@@ -23,10 +26,7 @@ import {
   type EveryAgentDecision,
   type WhoCanUse,
 } from '../../lib/access-card-selection';
-import {
-  revisionIdsForAccessLevel,
-  selectionsFromPreview,
-} from '../../lib/reconciliation-selection';
+import { selectionsFromPreview } from '../../lib/reconciliation-selection';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
 import { AppActions } from '../AppActions';
 import { AccessCardFrame, type AccessCardVariant } from './AccessCardFrame';
@@ -164,7 +164,7 @@ function AccessStep(
           ? [props.agentId]
           : preview.agents
               .map((agent) => agent.agentId)
-              .filter((agentId) => (current[agentId] ?? []).length > 0);
+              .filter((agentId) => heldAccess(current[agentId]) !== 'none');
       setPicked(new Set(props.mode === 'agent' ? [props.agentId] : subjects));
       // The chat's one-agent card never offers "every agent" (DOR-2420).
       const startWho = props.mode === 'page' ? initialWhoCanUse(preview) : 'picked';
@@ -175,9 +175,7 @@ function AccessStep(
           : props.mode === 'agent'
             ? // Counts an "Every agent" grant: the question is what THIS agent can do.
               initialCardLevel([agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed))])
-            : initialCardLevel(
-                subjects.map((agentId) => heldAccess(preview.candidates, current[agentId] ?? []))
-              );
+            : initialCardLevel(subjects.map((agentId) => heldAccess(current[agentId])));
       // A request starts on the level the agent asked for, and never below
       // what it already holds.
       const asked = props.mode === 'agent' && props.request ? props.request.access : null;
@@ -425,8 +423,8 @@ function AccessEditor({
 }) {
   const baseId = useId();
   const current = selectionsFromPreview(preview);
-  const readIds = revisionIdsForAccessLevel(preview.candidates, 'read');
-  const readWriteIds = revisionIdsForAccessLevel(preview.candidates, 'read-write');
+  const readIds = accessLevelRevisionIds(preview.candidates, 'read');
+  const readWriteIds = accessLevelRevisionIds(preview.candidates, 'read-write');
   const offered: CardAccessLevel[] =
     readWriteIds.length > readIds.length ? ['read', 'read-write'] : ['read'];
   // The chat's one-agent answer only offers levels at or above what it holds.
@@ -444,7 +442,7 @@ function AccessEditor({
   let whoView: ReactNode;
   if (props.mode === 'agent') {
     const agent = preview.agents.find((candidate) => candidate.agentId === props.agentId);
-    const held = heldAccess(preview.candidates, current[props.agentId] ?? []);
+    const held = heldAccess(current[props.agentId]);
     const effective = agentHeldAccess(preview, props.agentId, Boolean(props.onAllowed));
     const covered = effective === level || (effective === 'read-write' && level === 'read');
     whoView = !agent ? (
@@ -491,9 +489,7 @@ function AccessEditor({
 
   const agentMissing =
     props.mode === 'agent' && !preview.agents.some((agent) => agent.agentId === props.agentId);
-  const agentCustom =
-    props.mode === 'agent' &&
-    heldAccess(preview.candidates, current[props.agentId] ?? []) === 'custom';
+  const agentCustom = props.mode === 'agent' && heldAccess(current[props.agentId]) === 'custom';
 
   return (
     <div className="space-y-4">
