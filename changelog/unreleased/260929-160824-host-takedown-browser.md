@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): add the takedown section, owner and author notices, and file reports to the browser (DOR-2292)'
+  - 'fix(community): keep the takedown form and banner honest after review (DOR-2292)'
 ---
 
 ### Added
