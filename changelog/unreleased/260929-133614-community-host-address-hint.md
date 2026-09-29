@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): say when a community address is a host with several communities (DOR-2561)'
+  - "fix(client): build the host hint's example on the host the person typed (DOR-2561)"
 ---
 
 ### Fixed
