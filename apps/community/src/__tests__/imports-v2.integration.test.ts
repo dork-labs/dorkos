@@ -1134,7 +1134,9 @@ it('imports an agent log that compresses far over, and tears a failed one down f
   expect(
     await planOf(
       'SELECT 1 FROM ONLY entries x WHERE $1::uuid=community_id AND $2::uuid=parent_entry_id FOR KEY SHARE OF x',
-      [doomed.communityId, reply]
+      // A community that still holds its 20,000 messages: the torn-down one is empty, and a
+      // planner rightly scans an empty community by its own index.
+      [ok.communityId, reply]
     )
   ).toContain('entries_parent_ref_idx');
   expect(
