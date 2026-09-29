@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(communities): stop agent turns when a mirrored Community room is revoked (DOR-2339)'
+  - 'fix(communities): skip mirrors an agent never joined when revoking its enrollment (DOR-2339 review)'
 ---
 
 ### Fixed
