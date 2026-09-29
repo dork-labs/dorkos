@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): let a host take down a whole community, keep a copy for the authorities, and undo it for a few days (DOR-2293)'
+  - "fix(community): count a host's daily takedowns under a lock, copy only whole evidence archives, and keep only the accounts the evidence needs (DOR-2293)"
 ---
 
 ### Added
