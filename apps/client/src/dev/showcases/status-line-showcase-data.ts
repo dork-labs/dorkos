@@ -29,6 +29,12 @@ import { MOCK_ACCOUNT_USAGE } from './account-mock-data';
  * chip stays out of the line: these showcases are about the line's budget, and
  * the chip has its own section on the Conversation page.
  */
+
+/** No extension adds a status item in these showcases (spec `flow-multiproject` §6.6). */
+const NO_EXTENSION_ITEMS: StatusItemNodesInput['extensions'] = {
+  ctx: { sessionId: 'showcase', cwd: null, project: null, trackerItems: [], compact: false },
+  items: [],
+};
 const NO_ACCOUNT_CHIP: SessionAccount = {
   visible: false,
   runtime: 'claude-code',
@@ -295,6 +301,7 @@ export const HEALTHY: StatusScenario = {
     account: null,
     usage: USAGE_OK,
     subagentsInFlight: 0,
+    extensionItems: [],
   },
   input: {
     sessionId: 'showcase-healthy',
@@ -324,6 +331,7 @@ export const HEALTHY: StatusScenario = {
     liveSubagentCount: 0,
     waitingOnSubagents: false,
     connectionState: 'connected',
+    extensions: NO_EXTENSION_ITEMS,
   },
   diagnostics: HEALTHY_DIAGNOSTICS,
 };
@@ -384,6 +392,7 @@ export const DEGRADED: StatusScenario = {
     account: null,
     usage: USAGE_WARNING,
     subagentsInFlight: RUNNING_SUBAGENTS.length,
+    extensionItems: [],
   },
   input: {
     sessionId: 'showcase-degraded',
@@ -413,6 +422,7 @@ export const DEGRADED: StatusScenario = {
     liveSubagentCount: RUNNING_SUBAGENTS.length,
     waitingOnSubagents: false,
     connectionState: 'disconnected',
+    extensions: NO_EXTENSION_ITEMS,
   },
   diagnostics: DEGRADED_DIAGNOSTICS,
 };
@@ -580,6 +590,7 @@ export const PLANNING: StatusScenario = {
     account: null,
     usage: USAGE_OK,
     subagentsInFlight: 0,
+    extensionItems: [],
   },
   input: {
     sessionId: 'showcase-planning',
@@ -607,6 +618,7 @@ export const PLANNING: StatusScenario = {
     liveSubagentCount: 0,
     waitingOnSubagents: false,
     connectionState: 'reconnecting',
+    extensions: NO_EXTENSION_ITEMS,
   },
   diagnostics: {
     ...HEALTHY_DIAGNOSTICS,

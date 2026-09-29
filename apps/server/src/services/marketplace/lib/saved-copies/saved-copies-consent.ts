@@ -26,7 +26,7 @@ import {
   globalActivationEntry,
   readActivationState,
   recordGlobalActivationApproval,
-} from '../../global-plugin-consent.js';
+} from '../../consent/global-plugin-consent.js';
 import type { MigrationHooks } from './migrate-saved-copies.js';
 
 /** Every non-folder name directly in `bin/`: how `bin/` was listed before DOR-2340. */

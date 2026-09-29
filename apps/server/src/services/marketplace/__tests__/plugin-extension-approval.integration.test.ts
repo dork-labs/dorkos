@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { initBoundary } from '../../../lib/boundary.js';
 import { noopLogger } from '@dorkos/shared/logger';
-import { UninstallFlow } from '../flows/uninstall.js';
+import { UninstallFlow } from '../flows/uninstall/uninstall.js';
 import { buildInstallerForTests } from './installer-harness.js';
 
 /** The `extensions` config the manager reads and writes, held in memory. */

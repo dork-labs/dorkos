@@ -46,7 +46,7 @@ import {
   describeEffectsInFull,
   disclosedEffectsOf,
   type DisclosedEffects,
-} from '../marketplace/disclosed-effects.js';
+} from '../marketplace/preview/disclosed-effects.js';
 import { disclosesAnything } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../../lib/logger.js';
 import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';

@@ -107,6 +107,7 @@ function setup(agents = agentLookupFor({})) {
       delete: async (roomId, attachmentId, extension) => {
         deletedFiles.push(`${roomId}/${attachmentId}.${extension}`);
       },
+      get: async () => null,
     },
   });
   late.sync = sync;

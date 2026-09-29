@@ -73,6 +73,13 @@ interface SessionPopoverProps {
    * silent — the items are all still in here, one tap away.
    */
   overflowCount?: number;
+  /**
+   * What extensions show for this chat, drawn as rows under "Add-ons" (spec
+   * `flow-multiproject` §6.6). The bar gives every extension item one shared
+   * slot; when the budget drops that slot it is counted in `+N`, and this is
+   * where it still is. Absent when no extension item is shown.
+   */
+  addOns?: ReactNode;
 }
 
 /**
@@ -94,6 +101,7 @@ export function SessionPopover({
   promotionContext,
   urgentAction,
   overflowCount = 0,
+  addOns,
 }: SessionPopoverProps) {
   const isMobile = useIsMobile();
   const { pins, toggle, reset } = useStatusBarPins();
@@ -150,6 +158,14 @@ export function SessionPopover({
         )}
 
         <div className="flex flex-col gap-4">
+          {addOns && (
+            <section className="space-y-1" data-testid="session-add-ons">
+              <h3 className="text-muted-foreground px-1 text-xs font-medium tracking-wide uppercase">
+                Add-ons
+              </h3>
+              {addOns}
+            </section>
+          )}
           {groups.map((group) => (
             <section key={group.group} className="space-y-1">
               <h3 className="text-muted-foreground px-1 text-xs font-medium tracking-wide uppercase">

@@ -271,11 +271,11 @@ import type { CoreExtensionInfo } from './services/extensions/extension-enable-r
 import { createExtensionsRouter } from './routes/extensions.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
 import { gitTreeSource } from './services/marketplace/lib/git/git-tree.js';
-import { MarketplaceSourceManager } from './services/marketplace/marketplace-source-manager.js';
-import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
-import { PackageCacheRetention } from './services/marketplace/package-cache-retention.js';
+import { MarketplaceSourceManager } from './services/marketplace/sources/marketplace-source-manager.js';
+import { MarketplaceCache } from './services/marketplace/cache/marketplace-cache.js';
+import { PackageCacheRetention } from './services/marketplace/cache/package-cache-retention.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
-import { rebuildInstalledFiles } from './services/marketplace/lib/legacy-record.js';
+import { rebuildInstalledFiles } from './services/marketplace/lib/records/legacy-record.js';
 import {
   legacySweepDirs,
   rebuildLegacyRecords,
@@ -288,8 +288,8 @@ import { migrateSavedCopies } from './services/marketplace/lib/saved-copies/migr
 import { withInstallTargetLock } from './services/marketplace/transaction.js';
 import { globalApprovalCarryOver } from './services/marketplace/lib/saved-copies/saved-copies-consent.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
-import { ConflictDetector } from './services/marketplace/conflict-detector.js';
-import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
+import { ConflictDetector } from './services/marketplace/preview/conflict-detector.js';
+import { PermissionPreviewBuilder } from './services/marketplace/preview/permission-preview.js';
 import { PluginInstallFlow } from './services/marketplace/flows/install-plugin.js';
 import { AgentInstallFlow } from './services/marketplace/flows/install-agent.js';
 import { SkillPackInstallFlow } from './services/marketplace/flows/install-skill-pack.js';
@@ -317,10 +317,10 @@ import {
   getEnabledExtensionIds,
   listInstalledShapeManifests,
 } from './services/shapes/shape-services.js';
-import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
+import { UninstallFlow } from './services/marketplace/flows/uninstall/uninstall.js';
 import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
-import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
+import { MarketplaceInstaller } from './services/marketplace/installer/marketplace-installer.js';
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
@@ -341,11 +341,11 @@ import { onProjectorTurnBoundary } from './services/session/session-state-projec
 import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-turn.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
-import { globalConsentRecorder } from './services/marketplace/global-plugin-consent.js';
+import { globalConsentRecorder } from './services/marketplace/consent/global-plugin-consent.js';
 import {
   askAboutWithheldGlobalPlugins,
   describeGlobalActivationCapability,
-} from './services/marketplace/ask-withheld-global-plugins.js';
+} from './services/marketplace/consent/ask-withheld-global-plugins.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
   TokenConfirmationProvider,
@@ -363,8 +363,8 @@ import {
   recoverInterruptedInstalls,
   retryInFlightTargetsLater,
   type InstallSweepSummary,
-} from './services/marketplace/backup-janitor.js';
-import { currentRecordOwner } from './services/marketplace/lib/record-owner.js';
+} from './services/marketplace/recovery/backup-janitor.js';
+import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
@@ -507,7 +507,7 @@ import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
 import { createTerminalRouter } from './routes/terminal.js';
-import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
+import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry/telemetry-reporter.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import {
   registerUsageReporter,
@@ -1362,7 +1362,7 @@ async function start() {
   // half-written fresh install, and delete leftovers of finished ones. Runs
   // before the app serves anything, so nothing lists a half-written package.
   // Project installs are swept once Mesh knows the projects (below); see
-  // services/marketplace/install-recovery.ts for the rules.
+  // services/marketplace/recovery/install-recovery.ts for the rules.
   try {
     // Read this process's own start time now, as close to its real start as
     // possible: records it writes carry it, and a wall-clock step between

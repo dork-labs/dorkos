@@ -20,6 +20,7 @@ import { createMarketplaceMethods } from './marketplace-methods';
 import { createHarnessMethods } from './harness-methods';
 import { createShapeMethods } from './shape-methods';
 import { createWorkspaceMethods } from './workspace-methods';
+import { createProjectMethods } from './project-methods';
 import { createRoomMethods } from './room-methods';
 import { createSessionCanvasMethods } from './session-canvas-methods';
 import { createReadCursorMethods } from './read-cursor-methods';
@@ -61,6 +62,7 @@ export interface HttpTransport
     ReturnType<typeof createHarnessMethods>,
     ReturnType<typeof createShapeMethods>,
     ReturnType<typeof createWorkspaceMethods>,
+    ReturnType<typeof createProjectMethods>,
     ReturnType<typeof createRoomMethods>,
     ReturnType<typeof createSessionCanvasMethods>,
     ReturnType<typeof createReadCursorMethods>,
@@ -105,6 +107,7 @@ export class HttpTransport implements Transport {
       createHarnessMethods(baseUrl),
       createShapeMethods(baseUrl),
       createWorkspaceMethods(baseUrl),
+      createProjectMethods(baseUrl),
       createRoomMethods(baseUrl),
       createSessionCanvasMethods(baseUrl),
       createReadCursorMethods(baseUrl),

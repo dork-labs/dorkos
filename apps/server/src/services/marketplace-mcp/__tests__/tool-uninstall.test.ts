@@ -6,11 +6,11 @@ import { join } from 'node:path';
 import { initBoundary } from '../../../lib/boundary.js';
 import { createUninstallHandler, UninstallInputSchema } from '../tool-uninstall.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
+import { PackageNotInstalledError } from '../../marketplace/flows/uninstall/support.js';
 import {
-  PackageNotInstalledError,
   type UninstallRequest,
   type UninstallResult,
-} from '../../marketplace/flows/uninstall.js';
+} from '../../marketplace/flows/uninstall/support.js';
 import {
   TokenConfirmationProvider,
   type ConfirmationProvider,

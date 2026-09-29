@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { registerLinkNavigator } from '@/layers/shared/lib/link-navigation';
 import { createExtensionAPI } from '../model/extension-api-factory';
 import type { ExtensionAPIDeps } from '../model/types';
 import type { UiCanvasContent } from '@dorkos/shared/types';
@@ -27,6 +26,9 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
   return {
     registry: {
       register: vi.fn().mockReturnValue(vi.fn()),
+      getContributions: vi.fn().mockReturnValue([]),
+      setTabMarker: vi.fn(),
+      clearTabMarkers: vi.fn(),
     },
     dispatcherContext: {
       getStore: () => ({}) as ReturnType<ExtensionAPIDeps['dispatcherContext']['getStore']>,
@@ -436,6 +438,7 @@ describe('createExtensionAPI', () => {
         currentCwd: '/home/kai/project',
         activeSessionId: 'sess-xyz',
         agentId: null,
+        currentProject: null,
         requireLogin: false,
       });
     });
@@ -444,6 +447,14 @@ describe('createExtensionAPI', () => {
       vi.mocked(deps.appStore.getState).mockReturnValue({ requireLogin: true });
       const { api } = createExtensionAPI('my-ext', deps);
       expect(api.getState().requireLogin).toBe(true);
+    });
+
+    it('projects currentProject from the app store', () => {
+      const project = { root: '/home/kai/project', name: 'project' };
+      vi.mocked(deps.appStore.getState).mockReturnValue({ currentProject: project });
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      expect(api.getState().currentProject).toBe(project);
     });
 
     it('returns null for missing fields', () => {
@@ -455,6 +466,7 @@ describe('createExtensionAPI', () => {
       expect(state.currentCwd).toBeNull();
       expect(state.activeSessionId).toBeNull();
       expect(state.agentId).toBeNull();
+      expect(state.currentProject).toBeNull();
     });
 
     it('resolves agentId from the store currentAgentId (cwd matched an agent)', () => {
@@ -628,25 +640,22 @@ describe('createExtensionAPI', () => {
       vi.unstubAllGlobals();
     });
 
-    it('answers through this extension’s own scoped route and follows a checked navigate through the link seam', async () => {
+    it('answers through this extension’s own scoped route and follows its own /x/ page', async () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         json: vi.fn().mockResolvedValue({
           resolved: true,
           message: 'Shipping.',
-          navigate: '/tasks',
+          navigate: '/x/my-ext/p/dorkos',
           offer: null,
           watch: null,
         }),
       });
       vi.stubGlobal('fetch', fetchMock);
-      const linkNavigator = vi.fn();
-      const unregister = registerLinkNavigator(linkNavigator);
       const { api } = createExtensionAPI('my-ext', deps);
 
       const result = await api.answerDecision(decision.id, { action: 'approve' });
-      unregister();
 
       expect(fetchMock.mock.calls[0][0]).toBe(
         `/api/extensions/my-ext/decisions/${decision.id}/action`
@@ -655,14 +664,13 @@ describe('createExtensionAPI', () => {
       expect(result).toEqual({
         resolved: true,
         message: 'Shipping.',
-        navigate: '/tasks',
+        navigate: '/x/my-ext/p/dorkos',
         watch: null,
       });
-      expect(linkNavigator).toHaveBeenCalledWith(expect.objectContaining({ href: '/tasks' }));
-      expect(deps.navigate).not.toHaveBeenCalled();
+      expect(deps.navigate).toHaveBeenCalledWith({ to: '/x/my-ext/p/dorkos' });
     });
 
-    it('hands back, but does not open, a page this app does not serve yet', async () => {
+    it('never follows a navigate to another extension’s page', async () => {
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue({
@@ -671,19 +679,17 @@ describe('createExtensionAPI', () => {
           json: vi.fn().mockResolvedValue({
             resolved: true,
             message: null,
-            navigate: '/x/my-ext/p/dorkos',
+            navigate: '/x/other-ext/p/dorkos',
             offer: null,
             watch: null,
           }),
         })
       );
-      const linkNavigator = vi.fn();
-      const unregister = registerLinkNavigator(linkNavigator);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const { api } = createExtensionAPI('my-ext', deps);
-      const result = await api.answerDecision(decision.id, { action: 'approve' });
-      unregister();
-      expect(result.navigate).toBe('/x/my-ext/p/dorkos');
-      expect(linkNavigator).not.toHaveBeenCalled();
+      await api.answerDecision(decision.id, { action: 'approve' });
+      expect(deps.navigate).not.toHaveBeenCalled();
+      warn.mockRestore();
     });
 
     it('checks what project settings come back against their schema', async () => {

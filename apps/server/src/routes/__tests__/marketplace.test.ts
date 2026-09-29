@@ -19,7 +19,7 @@ import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { MarketplaceJson, PluginPackageManifest, PluginSource } from '@dorkos/marketplace';
-import { resolvePackageSource } from '../marketplace.js';
+import { resolvePackageSource } from '../marketplace/packages.js';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -58,29 +58,27 @@ import {
   InvalidPackageNameError,
   PathEscapeError,
 } from '../../services/marketplace/lib/package-paths.js';
-import { MarketplaceSourceManager } from '../../services/marketplace/marketplace-source-manager.js';
-import { MarketplaceCache } from '../../services/marketplace/marketplace-cache.js';
-import { PackageCacheRetention } from '../../services/marketplace/package-cache-retention.js';
+import { MarketplaceSourceManager } from '../../services/marketplace/sources/marketplace-source-manager.js';
+import { MarketplaceCache } from '../../services/marketplace/cache/marketplace-cache.js';
+import { PackageCacheRetention } from '../../services/marketplace/cache/package-cache-retention.js';
 import {
   MARKETPLACE_JSON_TIMEOUT_MS,
   PackageFetcher,
 } from '../../services/marketplace/package-fetcher.js';
 import type { GitTreeSource } from '../../services/marketplace/lib/git/git-tree.js';
+import { type InstallerLike } from '../../services/marketplace/installer/marketplace-installer.js';
 import {
   ConflictError,
   DisclosureChangedError,
   InvalidPackageError,
-  type InstallerLike,
-} from '../../services/marketplace/marketplace-installer.js';
+} from '../../services/marketplace/installer/errors.js';
 import {
   UNSUPPORTED_GIT_REMOTE_MESSAGE,
   UnsupportedSourceUrlError,
-} from '../../services/marketplace/source-url-policy.js';
+} from '../../services/marketplace/sources/source-url-policy.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../services/marketplace/flows/install-shape.js';
-import {
-  PackageNotInstalledError,
-  type UninstallFlow,
-} from '../../services/marketplace/flows/uninstall.js';
+import { type UninstallFlow } from '../../services/marketplace/flows/uninstall/uninstall.js';
+import { PackageNotInstalledError } from '../../services/marketplace/flows/uninstall/support.js';
 import type { UpdateFlow } from '../../services/marketplace/flows/update.js';
 import {
   GitCommitNotFoundError,
@@ -106,7 +104,7 @@ import {
 } from '../../services/marketplace/lib/content-hash.js';
 import type { MarketplaceMcpDeps } from '../../services/marketplace-mcp/marketplace-mcp-tools.js';
 import { TokenConfirmationProvider } from '../../services/marketplace-mcp/confirmation-provider.js';
-import type { DisclosedEffects } from '../../services/marketplace/disclosed-effects.js';
+import type { DisclosedEffects } from '../../services/marketplace/preview/disclosed-effects.js';
 import type { CapabilityRegistry } from '../../services/core/capabilities/index.js';
 
 const fixtureTarget = swappableServer();
@@ -933,7 +931,7 @@ describe('Marketplace Routes', () => {
         version: '1.0.0',
       });
       const { computeInstalledFiles, writeInstalledFiles } =
-        await import('../../services/marketplace/lib/installed-files.js');
+        await import('../../services/marketplace/lib/records/installed-files.js');
       await writeInstalledFiles(
         pluginDir,
         await computeInstalledFiles(pluginDir, {
@@ -2517,7 +2515,7 @@ describe('Marketplace Routes', () => {
       writeTree(root, SHIPPED);
       writeTree(root, { 'old.md': 'old v1', 'notes.txt': 'mine' });
       const { computeInstalledFiles, writeInstalledFiles } =
-        await import('../../services/marketplace/lib/installed-files.js');
+        await import('../../services/marketplace/lib/records/installed-files.js');
       const record = await computeInstalledFiles(root, {
         identity: { name: 'old-plugin', type: 'plugin' },
         userEditable: [],
@@ -3519,7 +3517,7 @@ describe('Marketplace Routes', () => {
         })
       );
       const { computeInstalledFiles, writeInstalledFiles } =
-        await import('../../services/marketplace/lib/installed-files.js');
+        await import('../../services/marketplace/lib/records/installed-files.js');
       const record = await computeInstalledFiles(root, {
         identity: { name, type: 'plugin' },
         userEditable: [],
@@ -3555,7 +3553,7 @@ describe('Marketplace Routes', () => {
 
     async function unprovenOnDisk(root: string) {
       const { readInstalledFiles } =
-        await import('../../services/marketplace/lib/installed-files.js');
+        await import('../../services/marketplace/lib/records/installed-files.js');
       return (await readInstalledFiles(root))?.unproven;
     }
 

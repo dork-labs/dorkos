@@ -1,5 +1,5 @@
 import type { MeshCore } from '@dorkos/mesh';
-import type { UninstallAgentRegistry } from './uninstall.js';
+import type { UninstallAgentRegistry } from './uninstall/support.js';
 
 /**
  * The agent-registry surface the marketplace flows use to take an agent off the

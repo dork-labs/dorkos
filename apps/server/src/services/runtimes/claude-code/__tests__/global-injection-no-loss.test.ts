@@ -41,7 +41,7 @@ import {
   globalActivationEntry,
   partitionGlobalPlugins,
   readActivationState,
-} from '../../../marketplace/global-plugin-consent.js';
+} from '../../../marketplace/consent/global-plugin-consent.js';
 
 /** A no-op logger, so a warning never becomes console noise. */
 const logger = {

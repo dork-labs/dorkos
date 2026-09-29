@@ -4,6 +4,7 @@
  *
  * @module services/communities/remote/remote-redaction-sync
  */
+import { createHash } from 'node:crypto';
 import { sql, type Db } from '@dorkos/db';
 import {
   CommunityRoomNotFoundError,
@@ -17,6 +18,7 @@ import { eventFanOut } from '../../core/event-fan-out.js';
 import { dropRoomFromIndex, optimizeSearchIndex, reindexRoomEntries } from '../../search/index.js';
 import type {
   AppliedRedactions,
+  MirrorAttachmentFile,
   MirrorPurge,
   NativeMirrorEntry,
   RemoteMirrorStore,
@@ -54,8 +56,8 @@ export interface RemoteRedactionSyncDeps {
   db: Db;
   mirrors: RemoteMirrorStore;
   readers: (communityRef: CommunityRef, ownerAuthorId: string) => RedactionFeedReader | null;
-  /** Where the files of a purged mirror's entries live. */
-  attachmentBytes?: Pick<RoomAttachmentStore, 'delete'>;
+  /** Where the files of mirrored rooms live: a purged mirror's, and a redacted entry's. */
+  attachmentBytes?: Pick<RoomAttachmentStore, 'delete' | 'get'>;
   /**
    * Tell the mirrored room's open readers which of its entries were rewritten, once the rewrite
    * has committed. `RoomService.publishEntryRevisions` in production: it reads the rows back from
@@ -169,6 +171,8 @@ export class RemoteRedactionSync {
     if (!reader) return;
     let restarted = false;
     let changed = false;
+    // Rooms whose lists and Threads should re-read, once per sync however many pages changed.
+    const touched = new Set<string>();
     try {
       for (let pageNumber = 0; pageNumber < MAX_PAGES_PER_SYNC; pageNumber++) {
         const state = this.deps.mirrors.redactionCursor(
@@ -205,14 +209,40 @@ export class RemoteRedactionSync {
           throw error;
         }
         this.unsupportedAt.delete(connection);
-        const applied = this.apply(room, page.items, page.nextCursor);
-        if (applied) {
+        // Files first (DOR-2549): the bytes of every file this page will drop are deleted
+        // BEFORE the page is applied. Should the process stop in between, the page and its
+        // cursor were never recorded, so the next sync applies it again and no file is left on
+        // disk with nothing pointing at it; the row meanwhile has nothing to serve but a 404.
+        const checksums = await this.checksumsFor(room, page.items);
+        const planned = this.deps.mirrors.plannedAttachmentDrops(
+          room.communityRef,
+          room.remoteRoomId,
+          room.ownerAuthorId,
+          page.items,
+          checksums
+        );
+        await this.deleteFiles(planned);
+        const applied = this.apply(room, page.items, page.nextCursor, checksums);
+        if (!applied) {
+          // The mirror was revoked or changed owner while the bytes were being deleted, so the
+          // page was not applied: drop the rows those bytes belonged to rather than leave them
+          // drawing a file that answers 404.
+          if (planned.length) this.deps.mirrors.forgetAttachmentRows(planned);
+        } else {
           changed = true;
+          touched.add(applied.localRoomId);
           this.announce(applied);
+          // A row the page dropped that the plan did not foresee (a file whose Community id was
+          // recorded by a delivery during the await above) still has its bytes: delete those.
+          const foreseen = new Set(planned.map((file) => file.attachmentId));
+          await this.deleteFiles(
+            applied.droppedAttachments.filter((file) => !foreseen.has(file.attachmentId))
+          );
         }
         if (!page.hasMore) return;
       }
     } finally {
+      for (const roomId of touched) eventFanOut.broadcast('room_updated', { roomId });
       if (changed) await this.scrub();
     }
   }
@@ -226,7 +256,8 @@ export class RemoteRedactionSync {
   private apply(
     room: RedactionSyncRoom,
     items: NativeMirrorEntry[],
-    nextCursor: string
+    nextCursor: string,
+    checksums: ReadonlyMap<string, string>
   ): AppliedRedactions | null {
     const { db } = this.deps;
     return db.transaction(
@@ -236,7 +267,8 @@ export class RemoteRedactionSync {
           room.remoteRoomId,
           room.ownerAuthorId,
           items,
-          nextCursor
+          nextCursor,
+          checksums
         );
         if (!applied?.changedSeqs.length) return null;
         reindexRoomEntries(db, applied.localRoomId, applied.changedSeqs);
@@ -248,10 +280,12 @@ export class RemoteRedactionSync {
 
   /**
    * Put a committed rewrite in front of anyone looking at the room: its open windows replace the
-   * changed messages in place, and the room list and Threads re-read, since a thread's preview
-   * quotes its first message and an erased author's name changes on the roster. Only ever called
-   * with a page {@link RemoteMirrorStore.applyRedactions} rewrote, so the room is always a mirror.
-   * A failure is logged and never undoes the rewrite: the next open of the room reads the log.
+   * changed messages in place, with the files they no longer have gone from them (the frames are
+   * read back from the log after the commit). The room list and Threads re-read once the whole
+   * sync is done, not once per page, since a thread's preview quotes its first message and an
+   * erased author's name changes on the roster. Only ever called with a page
+   * {@link RemoteMirrorStore.applyRedactions} rewrote, so the room is always a mirror. A failure
+   * is logged and never undoes the rewrite: the next open of the room reads the log.
    */
   private announce(applied: AppliedRedactions): void {
     try {
@@ -261,7 +295,62 @@ export class RemoteRedactionSync {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    eventFanOut.broadcast('room_updated', { roomId: applied.localRoomId });
+  }
+
+  /**
+   * The SHA-256 of each local file these changes can only be matched on by its bytes (delivered
+   * before its Community id was recorded, on a message that still has files there). A file that
+   * cannot be read is left out, and a file left out is kept.
+   */
+  private async checksumsFor(
+    room: RedactionSyncRoom,
+    items: NativeMirrorEntry[]
+  ): Promise<Map<string, string>> {
+    const checksums = new Map<string, string>();
+    const store = this.deps.attachmentBytes;
+    if (!store) return checksums;
+    for (const file of this.deps.mirrors.attachmentsNeedingChecksum(
+      room.communityRef,
+      room.remoteRoomId,
+      room.ownerAuthorId,
+      items
+    )) {
+      try {
+        const stored = await store.get(
+          file.roomId,
+          file.attachmentId,
+          file.extension,
+          file.mimeType
+        );
+        if (!stored) continue;
+        const hash = createHash('sha256');
+        for await (const chunk of stored.stream) hash.update(chunk as Buffer);
+        checksums.set(file.attachmentId, hash.digest('hex'));
+      } catch {
+        // Unreadable: no checksum, so the file is kept.
+      }
+    }
+    return checksums;
+  }
+
+  /**
+   * Delete the stored bytes of the files a redaction drops. Idempotent: a file already gone is a
+   * success. Every file here was chosen by `attachmentsToDrop`, which drops a file only when the
+   * Community's copy of the message no longer has it. A failure is logged and not retried by
+   * this page; the row goes with the page either way, so the room stops offering the file.
+   */
+  private async deleteFiles(files: readonly MirrorAttachmentFile[]): Promise<void> {
+    const store = this.deps.attachmentBytes;
+    if (!store) return;
+    for (const file of files) {
+      try {
+        await store.delete(file.roomId, file.attachmentId, file.extension);
+      } catch (error) {
+        logger.warn('[communities] could not delete a file a Community removed; retrying later', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   /**

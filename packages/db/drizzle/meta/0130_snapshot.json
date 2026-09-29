@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4c6f913d-6c33-4aec-82ae-a5b662d50459",
+  "id": "404646d5-6a06-414c-8383-b307300d0c7d",
   "prevId": "3f14bc8b-ce6f-407b-9b79-75d0e938067e",
   "tables": {
     "a2a_tasks": {
@@ -7343,6 +7343,13 @@
           "autoincrement": false,
           "default": "''"
         },
+        "community_attachment_id": {
+          "name": "community_attachment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -9609,263 +9616,6 @@
         "known_projects_source": {
           "name": "known_projects_source",
           "value": "\"known_projects\".\"source\" IN ('seen', 'reported')"
-        }
-      }
-    },
-    "extension_decisions": {
-      "name": "extension_decisions",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "extension_id": {
-          "name": "extension_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "extension_name": {
-          "name": "extension_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "project_root": {
-          "name": "project_root",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "project_label": {
-          "name": "project_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "why": {
-          "name": "why",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "detail": {
-          "name": "detail",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "actions_json": {
-          "name": "actions_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "link": {
-          "name": "link",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "since": {
-          "name": "since",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "decide_by": {
-          "name": "decide_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "default_choice": {
-          "name": "default_choice",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "deadline_state": {
-          "name": "deadline_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "deadline_attempts": {
-          "name": "deadline_attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "raised_at": {
-          "name": "raised_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "resolved_at": {
-          "name": "resolved_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "choice_id": {
-          "name": "choice_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "choice_label": {
-          "name": "choice_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "resolved_by": {
-          "name": "resolved_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "resolved_by_label": {
-          "name": "resolved_by_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "offer_json": {
-          "name": "offer_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "offer_used_at": {
-          "name": "offer_used_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "watch_json": {
-          "name": "watch_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "pending_action_json": {
-          "name": "pending_action_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "recorded": {
-          "name": "recorded",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        }
-      },
-      "indexes": {
-        "extension_decisions_open_key_unique": {
-          "name": "extension_decisions_open_key_unique",
-          "columns": [
-            "extension_id",
-            "key"
-          ],
-          "isUnique": true,
-          "where": "\"resolved_at\" is null"
-        },
-        "extension_decisions_resolved_raised_idx": {
-          "name": "extension_decisions_resolved_raised_idx",
-          "columns": [
-            "resolved_at",
-            "raised_at"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "extension_decisions_resolved_by": {
-          "name": "extension_decisions_resolved_by",
-          "value": "\"extension_decisions\".\"resolved_by\" IS NULL OR \"extension_decisions\".\"resolved_by\" IN ('person', 'deadline', 'agent', 'rule', 'extension')"
-        },
-        "extension_decisions_deadline_state": {
-          "name": "extension_decisions_deadline_state",
-          "value": "\"extension_decisions\".\"deadline_state\" IS NULL OR \"extension_decisions\".\"deadline_state\" IN ('kept_open', 'settled', 'failed', 'answered')"
         }
       }
     }

@@ -18,7 +18,10 @@
  */
 import path from 'node:path';
 import type { DisclosedEffects, KeepFilesResult } from '@dorkos/shared/marketplace-schemas';
-import { partitionGlobalPlugins, recordHeldBackDecision } from '../../global-plugin-consent.js';
+import {
+  partitionGlobalPlugins,
+  recordHeldBackDecision,
+} from '../../consent/global-plugin-consent.js';
 import { keepUnprovenFiles } from './keep-unproven.js';
 
 /** The key the person was shown no longer matches: nothing was written. */

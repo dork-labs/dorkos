@@ -12,8 +12,13 @@ import type {
   DecisionAnswerResult,
   ExtensionAPI,
   ExtensionDecisionView,
+  ExtensionPageOptions,
+  ExtensionPageProps,
+  ExtensionPointId,
   ExtensionReadableState,
   ProjectRef,
+  StatusBarItemOptions,
+  StatusBarSlotContext,
   TrackerItemRef,
 } from '../extension-api.js';
 import type {
@@ -57,12 +62,6 @@ describe('extension seam contract', () => {
       Pick<DataProviderContext, 'projects' | 'inbox' | 'requirePerson' | 'projectSettings'>
     >().toEqualTypeOf<Contract.DataProviderContextSeams>();
     expectTypeOf<
-      Pick<ExtensionAPI, 'answerDecision' | 'listDecisions' | 'projectSettings'>
-    >().toEqualTypeOf<Contract.ExtensionApiSeams>();
-    expectTypeOf<
-      Pick<ExtensionReadableState, 'requireLogin'>
-    >().toEqualTypeOf<Contract.ExtensionReadableStateSeams>();
-    expectTypeOf<
       Pick<SessionInfo, 'trackerItems' | 'trackerItem'>
     >().toEqualTypeOf<Contract.SessionInfoSeams>();
     expectTypeOf<
@@ -91,5 +90,29 @@ describe('extension seam contract', () => {
   it('gives the server half no way to write per-project settings (§7.10)', () => {
     expectTypeOf<ProjectSettingsReader>().not.toHaveProperty('set');
     expectTypeOf<DataProviderContext['projectSettings']>().not.toHaveProperty('set');
+  });
+
+  it('matches the client seams (pages, status bar, tab marker, navigate) both ways', () => {
+    expectTypeOf<ExtensionPointId>().toEqualTypeOf<Contract.ExtensionPointId>();
+    expectTypeOf<ExtensionPageProps>().toEqualTypeOf<Contract.ExtensionPageProps>();
+    expectTypeOf<ExtensionPageOptions>().toEqualTypeOf<Contract.ExtensionPageOptions>();
+    expectTypeOf<StatusBarSlotContext>().toEqualTypeOf<Contract.StatusBarSlotContext>();
+    expectTypeOf<StatusBarItemOptions>().toEqualTypeOf<Contract.StatusBarItemOptions>();
+    expectTypeOf<
+      Pick<ExtensionReadableState, 'currentProject' | 'requireLogin'>
+    >().toEqualTypeOf<Contract.ExtensionReadableStateSeams>();
+    expectTypeOf<
+      Pick<
+        ExtensionAPI,
+        | 'registerPage'
+        | 'registerStatusBarItem'
+        | 'setTabMarker'
+        | 'navigate'
+        | 'isSlotAvailable'
+        | 'answerDecision'
+        | 'listDecisions'
+        | 'projectSettings'
+      >
+    >().toEqualTypeOf<Contract.ExtensionAPISeams>();
   });
 });

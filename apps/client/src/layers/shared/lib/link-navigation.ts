@@ -40,6 +40,7 @@
 import { toast } from 'sonner';
 import { APP_ROUTE_PATHS } from '@dorkos/shared/app-route-paths';
 import { isDesktopShell } from './platform';
+import { parseExtensionPagePath } from './extension-page-path';
 
 /**
  * One toast slot for every refusal anywhere in the app. A second refused click
@@ -57,6 +58,17 @@ const REFUSAL_TOAST_ID = 'dorkos-link-refused';
 export { APP_ROUTE_PATHS };
 
 const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
+
+/**
+ * Whether the router serves this pathname: one of {@link APP_ROUTE_PATHS}, or
+ * an extension page under `/x/<extensionId>/…` (spec `flow-multiproject`
+ * §6.5). Extension pages are the one parameterised family, so they are matched
+ * by shape rather than listed; whether the extension or the page exists is the
+ * page route's question, and it answers with an empty state rather than a 404.
+ */
+function isAppRoutePath(pathname: string): boolean {
+  return APP_ROUTE_SET.has(pathname) || parseExtensionPagePath(pathname) !== null;
+}
 
 /**
  * Schemes the seam will dispatch from any surface. Everything else is refused
@@ -212,7 +224,7 @@ export function classifyLink(href: string, from: string = currentHref()): Classi
   }
 
   const pathname = normalizePathname(url.pathname);
-  if (!APP_ROUTE_SET.has(pathname)) return { kind: 'external', url: url.href };
+  if (!isAppRoutePath(pathname)) return { kind: 'external', url: url.href };
 
   return { kind: 'internal', url: url.href, path: `${pathname}${url.search}${url.hash}` };
 }

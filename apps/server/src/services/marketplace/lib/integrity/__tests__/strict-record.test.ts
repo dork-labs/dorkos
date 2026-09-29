@@ -25,8 +25,8 @@ import {
   computeInstalledFiles,
   readInstalledFiles,
   writeInstalledFiles,
-} from '../../installed-files.js';
-import { materializePackageSchedules } from '../../materialize-schedules.js';
+} from '../../records/installed-files.js';
+import { materializePackageSchedules } from '../../schedules/materialize-schedules.js';
 import { withInstallTargetLock } from '../../../transaction.js';
 import { describeStrictRebuild, rebuildRecordStrict } from '../strict-record.js';
 

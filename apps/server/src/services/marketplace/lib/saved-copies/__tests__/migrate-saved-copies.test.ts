@@ -15,7 +15,7 @@ import {
   readInstalledFiles,
   writeInstalledFiles,
   type InstalledFiles,
-} from '../../installed-files.js';
+} from '../../records/installed-files.js';
 import { migrateSavedCopies } from '../migrate-saved-copies.js';
 
 let root: string;

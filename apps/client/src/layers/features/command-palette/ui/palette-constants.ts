@@ -33,6 +33,7 @@ export const RESULT_GROUP_LABEL: Record<SearchableItem['type'], string> = {
   command: 'Commands',
   feature: 'Actions',
   'quick-action': 'Actions',
+  page: 'Add-ons',
 };
 
 /** The heading over the one row that stands clear of the rest (design-decisions §15). */

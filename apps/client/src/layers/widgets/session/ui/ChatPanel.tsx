@@ -704,7 +704,21 @@ export function ChatPanel({
 
   return (
     <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES} target={sessionTarget}>
-      <div ref={chatPanelRef} data-testid="chat-panel" className="flex h-full w-full flex-col">
+      <div
+        ref={chatPanelRef}
+        data-testid="chat-panel"
+        // The turn's state, mirrored for the browser suite (ChatPage.turnRunning).
+        // Every visible reading of it is a priority stack (the lane lets an Ask
+        // or a progress bar outrank the working line; the composer's label
+        // changes while a queued draft is edited), so a spec waiting on any of
+        // them waits on the wrong thing some of the time (DOR-2546). Two
+        // attributes because `status` collapses a turn parked on a person
+        // (`blocked`) into `idle`: a turn is running while status is
+        // `streaming` OR the lifecycle is `blocked`.
+        data-turn-status={status}
+        data-turn-lifecycle={lifecycle ?? undefined}
+        className="flex h-full w-full flex-col"
+      >
         <BirthCertificate sessionId={sessionId} />
 
         <SessionTranscript

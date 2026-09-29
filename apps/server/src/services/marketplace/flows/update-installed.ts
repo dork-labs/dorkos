@@ -22,7 +22,7 @@
  * check resolved, so an installation's `installPath` and `agentPath` are the
  * same however the caller spelled the directory, and `GET /installed` rows join
  * to these checks. The gate and the notification carry the CALLER's spelling
- * for the requested project (see `confineProjectPath` in `routes/marketplace.ts`):
+ * for the requested project (see `confineProjectPath` in `routes/marketplace/context.ts`):
  * an approval token binds to the arguments the caller sent, and listeners match
  * the project the way the person picked it. {@link callerSpelling} maps one to
  * the other; an agent's project is spelled as the registry has it.
@@ -35,7 +35,7 @@ import {
   type AgentScopeRef,
   type InstallationRecord,
 } from '../installed-scanner.js';
-import { sameDisclosedEffects, type DisclosedEffects } from '../disclosed-effects.js';
+import { sameDisclosedEffects, type DisclosedEffects } from '../preview/disclosed-effects.js';
 import type { PackageScope } from '../installed-scanner.js';
 import type { PackageType } from '@dorkos/marketplace';
 import type { UpdateFlow } from './update.js';

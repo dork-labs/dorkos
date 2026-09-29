@@ -201,7 +201,7 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
       // the transcript is still reflowing and Playwright refuses to click an
       // element it cannot see hold still ("element is not stable"), which it
       // then reports as a click timeout rather than as an animation.
-      await expect(chatPage.inferenceStreaming).toBeHidden({ timeout: SERVER_ROUND_TRIP_MS });
+      await chatPage.waitForTurnToEnd(SERVER_ROUND_TRIP_MS);
       const toolCard = chatPage.toolCallCards.first();
       await expect(toolCard).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
       await toolCard.click();

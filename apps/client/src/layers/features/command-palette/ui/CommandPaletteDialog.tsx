@@ -181,6 +181,7 @@ export function CommandPaletteDialog() {
     handleRoomSelect,
     handleSessionSelect,
     handleCommandSelect,
+    handlePageSelect,
     recordAgentOpened,
     selectedCwd,
   } = usePaletteActions(closePalette);
@@ -628,6 +629,7 @@ export function CommandPaletteDialog() {
                         // one reads another project's transcript (DOR-928).
                         onSessionSelect={(session) => handleSessionSelect(session.id, session.cwd)}
                         onCommandSelect={handleCommandSelect}
+                        onPageSelect={handlePageSelect}
                       />
                     )}
 

@@ -45,9 +45,9 @@ import {
   revealHiddenCharacters,
   type DisclosedEffects,
 } from '@dorkos/shared/marketplace-schemas';
-import { disclosedEffectsOf } from '../../marketplace/disclosed-effects.js';
+import { disclosedEffectsOf } from '../../marketplace/preview/disclosed-effects.js';
 import { packageContentHash } from '../../marketplace/lib/content-hash.js';
-import { readRunnableDeclarations } from '../../marketplace/permission-preview.js';
+import { readRunnableDeclarations } from '../../marketplace/preview/permission-preview.js';
 import type {
   ConfirmationProvider,
   ConfirmationRequest,

@@ -141,6 +141,7 @@ function RankedList({ corpus }: { corpus: RankCandidate<SearchResult>[] }) {
     onRoomSelect: () => {},
     onSessionSelect: () => {},
     onCommandSelect: () => {},
+    onPageSelect: () => {},
   };
   return (
     <Command className="rounded-lg border" shouldFilter={false}>

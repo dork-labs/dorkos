@@ -199,6 +199,7 @@ vi.mock('@/layers/shared/model', () => ({
   },
   useIsMobile: () => false,
   useNow: () => Date.now(),
+  useMenuExtensionPages: () => [],
   useSlotContributions: () => [],
   useSettingsDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useTasksDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),

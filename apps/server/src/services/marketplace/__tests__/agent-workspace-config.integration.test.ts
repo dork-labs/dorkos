@@ -18,8 +18,8 @@ vi.mock('../../../lib/logger.js', () => ({
 }));
 
 import { initBoundary } from '../../../lib/boundary.js';
-import { disclosedEffectsOf } from '../disclosed-effects.js';
-import { DisclosureChangedError, InvalidPackageError } from '../marketplace-installer.js';
+import { disclosedEffectsOf } from '../preview/disclosed-effects.js';
+import { DisclosureChangedError, InvalidPackageError } from '../installer/errors.js';
 import { buildInstallerForTests } from './installer-harness.js';
 
 const FIXTURE = path.join(

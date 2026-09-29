@@ -19,7 +19,7 @@ import path from 'node:path';
 import { INSTALLED_FILES_PATH } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { installRootsUnder, projectScopeRoot } from '../install-roots.js';
-import { readInstalledFiles } from '../installed-files.js';
+import { readInstalledFiles } from '../records/installed-files.js';
 import { hasPackageIdentity } from '../locate-install.js';
 import {
   rebuildRecordStrict,

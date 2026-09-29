@@ -432,4 +432,18 @@ describe('what extensions ask, in the bell', () => {
     await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
     await waitFor(() => expect(posts[0]?.body).toEqual({ action: 'approve', revision: 3 }));
   });
+
+  it('follows an extension page link the answer returned', async () => {
+    actionResponse = {
+      resolved: true,
+      message: null,
+      navigate: '/x/flow/p/dorkos',
+      offer: null,
+      watch: null,
+    };
+    renderBell();
+    const { user } = await openBell();
+    await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ href: '/x/flow/p/dorkos' }));
+  });
 });

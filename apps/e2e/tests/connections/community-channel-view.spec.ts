@@ -353,4 +353,39 @@ test.describe('Community channel view', () => {
       await expect(page).toHaveURL(new RegExp(`thread=${root.id}`));
     });
   }
+
+  test('a message erased on the Community turns into its note in place, keeping the reply line (DOR-2544)', async ({
+    page,
+  }) => {
+    const root = entry(2, 'Here is my home address, come by later.', {
+      thread: { replyCount: 3, lastReplyAt: new Date(AT + 5 * 60_000).toISOString() },
+      threadLastReplySeq: 5,
+    });
+    const history = [entry(1, 'Morning, all.'), root, entry(6, 'Unrelated news.')];
+    const stream = await mockChannel(page, history);
+    await page.goto(`/channels?community=${REF}&id=${ROOM}`);
+    await stream.snapshot(history);
+    await expect(page.getByText(root.text, { exact: true })).toBeVisible();
+
+    // The feed's entry as it stands now: the note, the erased author's new name, no thread
+    // summary of its own.
+    const bare = entry(2, root.text);
+    await push(
+      page,
+      frame('revision', {
+        type: 'revision',
+        entry: {
+          ...bare,
+          text: 'This message was erased.',
+          authorDisplayName: 'Erased member',
+        },
+      })
+    );
+
+    await expect(page.getByText('This message was erased.', { exact: true })).toBeVisible();
+    await expect(page.getByText(root.text, { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^3 replies · last / })).toBeVisible();
+    await expect(page.getByText('Unrelated news.', { exact: true })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('erased-in-place.png') });
+  });
 });

@@ -182,6 +182,8 @@ export type RemoteCommunityEjectionResponse = z.infer<typeof RemoteCommunityEjec
 
 /** A bounded upload returns only authorized attachment metadata. */
 export const RemoteCommunityAttachmentResponseSchema = z.strictObject({ attachment });
+/** An opaque redaction-feed position, as the Community server signed it. */
+const redactionCursor = z.string().min(1).max(1024);
 /** The local API emits one validated payload per SSE event. */
 export const RemoteCommunityEventSchema = z
   .discriminatedUnion('type', [
@@ -192,8 +194,28 @@ export const RemoteCommunityEventSchema = z
       cursor: CommunityCursorSchema.nullable(),
       lastRemoteSeq: sequence,
       stale: z.boolean(),
+      /**
+       * Where this stream reads the channel's changed messages from: opaque, server-signed. A
+       * view sends it back as `redactions` when it resumes, so a message deleted or erased while
+       * it was disconnected still reaches it (DOR-2544). Absent when the Community server has no
+       * redaction feed, or its position could not be read in time.
+       */
+      redactionCursor: redactionCursor.optional(),
     }),
     z.strictObject({ type: z.literal('entry'), entry: RemoteCommunityEntrySchema }),
+    /**
+     * A confirmed entry changed in place after it was posted: deleted, removed, or erased on the
+     * Community server (DOR-2544). Carries the entry as it stands now — the tombstone, never the
+     * text it replaced. A view replaces an entry it holds with the same id and ignores one it does
+     * not; it never adds a row. Named after the local room stream's `revision` frame, which means
+     * the same thing for a mirrored room.
+     */
+    z.strictObject({
+      type: z.literal('revision'),
+      entry: RemoteCommunityEntrySchema,
+      /** The feed position after this change; see the snapshot's `redactionCursor`. */
+      redactionCursor: redactionCursor.optional(),
+    }),
     CommunityDeliverySnapshotSchema.safeExtend({ type: z.literal('deliveries') }),
     RoomAddressSchema.extend({
       type: z.literal('closed'),
@@ -207,7 +229,7 @@ export const RemoteCommunityEventSchema = z
         validEntries(event.entries, event.room.community, event.room.roomId, event.lastRemoteSeq)),
     { message: 'Snapshot must contain ordered entries for its room and freshness state' }
   );
-/** Snapshot, committed entry or explicit end of authorized live access. */
+/** Snapshot, committed entry, an entry changed in place, or explicit end of authorized live access. */
 export type RemoteCommunityEvent = z.infer<typeof RemoteCommunityEventSchema>;
 
 /** Local-server-only operations; each room address always includes its connection ref. */
@@ -233,7 +255,12 @@ export interface RemoteCommunityTransport {
     ref: string,
     roomId: string,
     onEvent: (event: RemoteCommunityEvent) => void,
-    options?: { since?: string; signal?: AbortSignal }
+    options?: {
+      since?: string;
+      /** The last `redactionCursor` this view received, sent back when it resumes. */
+      redactions?: string;
+      signal?: AbortSignal;
+    }
   ): Promise<void>;
   /** Read the roster with explicit freshness, including agent ownership. */
   listRemoteCommunityMembers(ref: string, roomId: string): Promise<RemoteCommunityMembersResponse>;

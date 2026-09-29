@@ -4,33 +4,30 @@ test.describe('Chat — Send Message @integration', () => {
   test.describe.configure({ timeout: 90_000 });
 
   test('sends a message and receives a streaming response', async ({ chatPage }) => {
-    await chatPage.sendMessage('Respond with exactly: hello world');
-    await chatPage.waitForResponse();
+    await chatPage.sendAndLand('Respond with exactly: hello world');
+    await chatPage.waitForTurnToEnd();
 
     const lastMessage = await chatPage.lastAssistantMessage();
     await expect(lastMessage).toContainText('hello world');
   });
 
-  test('inference indicator shows streaming then complete lifecycle', async ({ chatPage }) => {
+  test('the live lane shows a running turn, then its summary', async ({ chatPage }) => {
     await chatPage.sendMessage('Count from 1 to 5 slowly');
 
-    // Streaming indicator appears while response is generating
-    await expect(chatPage.inferenceStreaming).toBeVisible({ timeout: 10_000 });
+    // The turn is running while the response is generating
+    await expect(chatPage.turnRunning).toBeVisible({ timeout: 10_000 });
 
-    // Wait for streaming to finish
-    await chatPage.waitForResponse();
-
-    // Streaming indicator gone; complete indicator appears
-    await expect(chatPage.inferenceStreaming).toBeHidden();
-    await expect(chatPage.inferenceComplete).toBeVisible({ timeout: 5_000 });
+    // Wait for it to finish; the lane then shows the finished turn's summary
+    await chatPage.waitForTurnToEnd();
+    await expect(chatPage.turnComplete).toBeVisible({ timeout: 5_000 });
   });
 
   test('assistant message renders markdown after stream ends', async ({ chatPage }) => {
     // Ask for content with common markdown elements
-    await chatPage.sendMessage(
+    await chatPage.sendAndLand(
       'Respond with a short markdown example: one heading (##), one bold word, and one bullet list item.'
     );
-    await chatPage.waitForResponse();
+    await chatPage.waitForTurnToEnd();
 
     const lastMessage = await chatPage.lastAssistantMessage();
 
@@ -62,8 +59,8 @@ test.describe('Chat — Send Message @integration', () => {
 
   test('message history loads when switching sessions', async ({ chatPage, dashboardSidebar }) => {
     // Send a message in the current session to create history
-    await chatPage.sendMessage('Say: session history test marker');
-    await chatPage.waitForResponse();
+    await chatPage.sendAndLand('Say: session history test marker');
+    await chatPage.waitForTurnToEnd();
 
     const sessionId = await chatPage.getSessionId();
     expect(sessionId).toBeTruthy();

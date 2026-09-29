@@ -452,9 +452,9 @@ export function InboxBell() {
                       void navigate(toSession({ session: sessionId }));
                     }}
                     onNavigate={(path) => {
-                      // Only a page this app serves: the server checked the
-                      // link, and this keeps a page the app cannot draw yet
-                      // (another build's `/x/…`) from opening elsewhere.
+                      // Only a page this app serves (a core route or an
+                      // extension's `/x/<id>/…` page): the server checked the
+                      // link, and this checks it again at the router's door.
                       const target = internalRoutePath(path);
                       if (!target) return;
                       setOpen(false);

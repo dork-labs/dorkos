@@ -13,7 +13,7 @@ import type {
 import type { SearchableItem } from '../use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
-import type { CommandPaletteContribution } from '@/layers/shared/model';
+import type { CommandPaletteContribution, ExtensionPageContribution } from '@/layers/shared/model';
 
 /**
  * The instant this hook reasons about time from — noon, local.
@@ -132,6 +132,7 @@ const DEFAULT_PALETTE_CONTRIBUTIONS: CommandPaletteContribution[] = [
 ];
 
 const mockUseSlotContributions = vi.fn(() => DEFAULT_PALETTE_CONTRIBUTIONS);
+const mockUseMenuExtensionPages = vi.fn((): ExtensionPageContribution[] => []);
 
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentPaths: () => mockUseMeshAgentPaths(),
@@ -167,6 +168,7 @@ vi.mock('@/layers/shared/model', () => ({
   },
   useNow: () => Date.now(),
   useSlotContributions: () => mockUseSlotContributions(),
+  useMenuExtensionPages: () => mockUseMenuExtensionPages(),
 }));
 
 vi.mock('@/layers/shared/lib', async (importOriginal) => {
@@ -247,6 +249,7 @@ describe('usePaletteItems', () => {
     mockSessionListState.mockReturnValue({ statuses: {}, sessions: {} });
     mockUseRooms.mockReturnValue({ data: [], isLoading: false, isError: false });
     mockUseSlotContributions.mockReturnValue(DEFAULT_PALETTE_CONTRIBUTIONS);
+    mockUseMenuExtensionPages.mockReturnValue([]);
   });
 
   // --- Static content groups ---
@@ -262,6 +265,36 @@ describe('usePaletteItems', () => {
   function corpusOf(items: PaletteItems, type: SearchableItem['type']) {
     return items.searchableItems.filter((item) => item.type === type);
   }
+
+  it('offers each listed extension page as an Add-ons row that goes to its address', () => {
+    const Icon = () => null;
+    mockUseMenuExtensionPages.mockReturnValue([
+      {
+        id: 'flow:',
+        extensionId: 'flow',
+        path: '',
+        component: () => null,
+        title: 'Flow',
+        icon: Icon,
+        menu: true,
+      },
+      {
+        id: 'flow:settings',
+        extensionId: 'flow',
+        path: 'settings',
+        component: () => null,
+        title: 'Flow settings',
+        menu: true,
+      },
+    ]);
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+    const pages = corpusOf(result.current, 'page');
+    expect(pages.map((row) => [row.name, row.type === 'page' && row.data.href])).toEqual([
+      ['Flow', '/x/flow'],
+      ['Flow settings', '/x/flow/settings'],
+    ]);
+    expect(pages[0]!.type === 'page' && pages[0]!.data.icon).toBe(Icon);
+  });
 
   it('offers every registered feature as a searchable row', () => {
     const { result } = renderHook(() => usePaletteItems(null, NOW));
