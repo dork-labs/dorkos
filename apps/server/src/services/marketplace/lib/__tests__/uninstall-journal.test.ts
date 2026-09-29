@@ -75,6 +75,47 @@ describe('rollBackUninstall', () => {
   });
 });
 
+// A rollback that finds its path taken saves the entry aside, and a saved copy
+// is kept to read, never to run (DOR-2340).
+describe.skipIf(process.platform === 'win32')('a rollback that saves an entry aside', () => {
+  it('puts a folder under .dork/saved, where no loader looks, with nothing runnable', async () => {
+    const { root, sibling } = await setup();
+    await put(sibling, 'skills/mine/SKILL.md', 'mine');
+    await put(sibling, 'skills/mine/run.sh', 'x');
+    await chmod(path.join(sibling, 'skills', 'mine', 'run.sh'), 0o755);
+    await put(root, 'skills/mine/SKILL.md', 'written meanwhile');
+    await rollBackUninstall(sibling, journal(root, ['skills/mine']));
+    const saved = path.join(root, '.dork', 'saved', 'skills__mine.dork-old');
+    expect(await readFile(path.join(saved, 'SKILL.md'), 'utf8')).toBe('mine');
+    expect((await lstat(path.join(saved, 'run.sh'))).mode & 0o111).toBe(0);
+    expect(
+      await lstat(path.join(root, 'skills', 'mine.dork-old')).catch(() => undefined)
+    ).toBeUndefined();
+  });
+
+  it('saves a file beside itself with its execute bits cleared', async () => {
+    const { root, sibling } = await setup();
+    await put(sibling, 'hooks/run.sh', '#!/bin/sh\n');
+    await chmod(path.join(sibling, 'hooks', 'run.sh'), 0o755);
+    await put(root, 'hooks/run.sh', 'meanwhile');
+    await rollBackUninstall(sibling, journal(root, ['hooks/run.sh']));
+    expect((await lstat(path.join(root, 'hooks', 'run.sh.dork-old'))).mode & 0o111).toBe(0);
+  });
+
+  it('saves a program from bin/ under .dork/saved, off the PATH', async () => {
+    const { root, sibling } = await setup();
+    await put(sibling, 'bin/tool', '#!/bin/sh\n');
+    await put(root, 'bin/tool', 'meanwhile');
+    await rollBackUninstall(sibling, journal(root, ['bin/tool']));
+    expect(
+      await lstat(path.join(root, 'bin', 'tool.dork-old')).catch(() => undefined)
+    ).toBeUndefined();
+    expect(await readFile(path.join(root, '.dork', 'saved', 'bin__tool.dork-old'), 'utf8')).toBe(
+      '#!/bin/sh\n'
+    );
+  });
+});
+
 describe('finishUninstall', () => {
   // Purpose (code review 4): the record is pruned BEFORE the sibling (and its
   // journal) is deleted. A crash between the two used to leave a full record

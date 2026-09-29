@@ -13,6 +13,7 @@ import type {
   CanvasDocument,
   RoomEntry,
   RoomEntryListResponse,
+  RoomRevisionEvent,
   RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
 import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
@@ -325,6 +326,49 @@ export class RoomReads {
    */
   entriesAfter(roomId: string, afterSeq: number): RoomEntry[] {
     return this.projection.withRollups(roomId, this.store.listEntriesAfter(roomId, afterSeq));
+  }
+
+  /**
+   * Entries of a mirrored Community room that were changed in place, as the log
+   * holds them now — what a `revision` frame carries (DOR-2336).
+   *
+   * **Mirrored rooms only, by construction.** An entry in a room on this machine
+   * is never edited, so a room that is not a registered remote mirror answers
+   * nothing, whatever seqs are asked for. That is what keeps this path from ever
+   * rewriting a local room's message on a reader's screen.
+   *
+   * @param roomId - The local room backing the mirror.
+   * @param seqs - The local positions the change rewrote.
+   */
+  revisedEntries(roomId: string, seqs: readonly number[]): RoomEntry[] {
+    if (!this.store.isRemoteTimelineRoom(roomId)) return [];
+    return this.projection.withRollups(roomId, this.store.listEntriesBySeq(roomId, seqs));
+  }
+
+  /**
+   * The trailing window of a mirrored room as `revision` frames, for a stream
+   * resume — the parallel of the reaction resync. A message deleted or erased on
+   * the Community server while this reader was away is below their cursor, so
+   * the replay cannot carry it; this does. A reader bails on every frame whose
+   * entry it already holds unchanged, so the cost is bytes, not re-renders.
+   *
+   * Empty for every room that is not a remote mirror, because nothing else can
+   * change an entry after it was written.
+   *
+   * **Not a full catch-up.** It covers the trailing `historyLimit` entries only
+   * (`SNAPSHOT_HISTORY_LIMIT`, 100, from the stream). A rewrite of an older
+   * entry the reader already held, missed while disconnected, stays stale on
+   * that reader until the page is read again.
+   *
+   * @param roomId - The room.
+   * @param historyLimit - How many trailing entries to cover; the same window a
+   *   cold connect hydrates.
+   */
+  revisionResync(roomId: string, historyLimit: number): RoomRevisionEvent[] {
+    if (!this.store.isRemoteTimelineRoom(roomId)) return [];
+    return this.projection
+      .withRollups(roomId, this.store.listEntries(roomId, { limit: historyLimit }))
+      .map((entry) => ({ type: 'revision', entry }));
   }
 
   /**

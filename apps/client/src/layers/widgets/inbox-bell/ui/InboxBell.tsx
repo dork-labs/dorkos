@@ -27,6 +27,7 @@ import { InboxList } from '@/layers/features/inbox';
 import { ApprovalList, ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
 import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
 import { InboxBellPill, type InboxBellGlyph } from './InboxBellPill';
+import { ExtensionApprovalList } from './ExtensionApprovalList';
 
 /**
  * The entrance for the "All clear ✓" line — the same fade-and-rise idiom every
@@ -55,8 +56,22 @@ const allClearVariants = {
  * @param approvals - Capability approvals waiting.
  * @param schedules - Parked schedules waiting.
  * @param asks - Prompts agents are parked on.
+ * @param extensions - Installed extensions waiting to be turned on.
  */
-function waitingLabel(approvals: number, schedules: number, asks: number): string {
+function waitingLabel(
+  approvals: number,
+  schedules: number,
+  asks: number,
+  extensions: number
+): string {
+  if (approvals === 0 && schedules === 0 && asks === 0 && extensions > 0) {
+    return extensions === 1
+      ? '1 extension is waiting to be turned on. Open to answer it.'
+      : `${extensions} extensions are waiting to be turned on. Open to answer them.`;
+  }
+  if (extensions > 0) {
+    return `${listWaitingKinds(asks, approvals, schedules, extensions)} are waiting on you. Open to answer them.`;
+  }
   if (schedules === 0 && asks === 0 && approvals > 0) {
     return approvals === 1
       ? '1 request needs your approval. Open to answer it.'
@@ -85,8 +100,21 @@ function waitingLabel(approvals: number, schedules: number, asks: number): strin
  * @param approvals - Capability approvals waiting.
  * @param schedules - Parked schedules waiting.
  * @param asks - Prompts agents are parked on.
+ * @param extensions - Installed extensions waiting to be turned on.
  */
-function waitingSummary(approvals: number, schedules: number, asks: number): string {
+function waitingSummary(
+  approvals: number,
+  schedules: number,
+  asks: number,
+  extensions: number
+): string {
+  if (approvals === 0 && schedules === 0 && asks === 0 && extensions > 0) {
+    const subject = extensions === 1 ? '1 extension is' : `${extensions} extensions are`;
+    return `${subject} waiting to be turned on. None of it runs until you decide.`;
+  }
+  if (extensions > 0) {
+    return `${listWaitingKinds(asks, approvals, schedules, extensions)} are waiting on you. Nothing runs until you decide.`;
+  }
   if (schedules === 0 && asks === 0 && approvals > 0) {
     const subject = approvals === 1 ? '1 request is' : `${approvals} requests are`;
     return `${subject} waiting for your approval. Nothing runs until you decide.`;
@@ -175,7 +203,15 @@ export function InboxBell() {
   // hold three queues. `items` carries the same id/kind vocabulary
   // `useAttentionSignals` builds its own signals from, so a change to what
   // counts as a blockage has one derivation to update on this read side.
-  const { approvals, asks, schedules, items: waitingItems, isError, retry } = useWaitingQueue();
+  const {
+    approvals,
+    asks,
+    schedules,
+    extensionApprovals,
+    items: waitingItems,
+    isError,
+    retry,
+  } = useWaitingQueue();
   // Answered prompts, still on screen saying how they ended. They are NOT
   // counted — nothing is waiting on them — but the pill has to stay mounted
   // while one is being said, or the receipt is torn away in the frame it
@@ -275,6 +311,7 @@ export function InboxBell() {
     approvalCount: approvals.length,
     scheduleCount: schedules.length,
     askCount: asks.length,
+    extensionCount: extensionApprovals.length,
     settlingCount: settling.length,
     unreadable,
     unreadCount,
@@ -339,13 +376,28 @@ export function InboxBell() {
                       <p className="text-muted-foreground text-xs md:mt-1">Answered.</p>
                     ) : (
                       <p className="text-muted-foreground text-xs md:mt-1">
-                        {waitingSummary(approvals.length, schedules.length, asks.length)}
+                        {waitingSummary(
+                          approvals.length,
+                          schedules.length,
+                          asks.length,
+                          extensionApprovals.length
+                        )}
                       </p>
                     ))}
                   {/* Shown alongside the cards when a refresh failed but earlier
                       results are still on screen — the list may be out of date,
                       and saying so beats a stale count nobody thinks to question. */}
                   {isError && <ApprovalsUnavailable onRetry={retry} />}
+                  {/* Extensions waiting to be turned on (DOR-2517). First, and
+                      the one group here with nothing stopped behind it: a
+                      short row each, answered in place, with no clock. */}
+                  <ExtensionApprovalList
+                    approvals={extensionApprovals}
+                    onOpenSettings={() => {
+                      setOpen(false);
+                      void navigate({ to: '/', search: { settings: 'extensions' } });
+                    }}
+                  />
                   {/* The prompts first: their window is ten minutes and a
                       capability approval's is two hours, so this IS time-left
                       order — and the two lists stay separate objects. */}
@@ -487,6 +539,7 @@ function resolvePill(counts: {
   approvalCount: number;
   scheduleCount: number;
   askCount: number;
+  extensionCount: number;
   settlingCount: number;
   unreadable: boolean;
   unreadCount: number;
@@ -497,7 +550,12 @@ function resolvePill(counts: {
       glyph: 'waiting',
       count: counts.waitingCount,
       text: 'waiting on you',
-      label: waitingLabel(counts.approvalCount, counts.scheduleCount, counts.askCount),
+      label: waitingLabel(
+        counts.approvalCount,
+        counts.scheduleCount,
+        counts.askCount,
+        counts.extensionCount
+      ),
     };
   }
   if (counts.settlingCount > 0) {

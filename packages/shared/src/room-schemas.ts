@@ -2514,6 +2514,47 @@ export const RoomCanvasEventSchema = z
   })
   .openapi('RoomCanvasEvent');
 
+/**
+ * An entry the reader may already hold, as it stands now after it was changed
+ * in place.
+ *
+ * Only a mirrored Community room ever sends one: a message there can be deleted,
+ * removed or erased on the Community server after it was copied here, and the
+ * redaction sync rewrites the copy (DOR-2336). A room on this machine never
+ * edits an entry, so no other room produces this frame. `entry.body` is the
+ * rewritten text — the tombstone — and never what it replaced.
+ *
+ * **Modelled on {@link RoomReactionEventSchema}, not on an `entry` frame**, for
+ * the reason that event gives: re-sending an `entry` would need either a new
+ * `seq` (a second copy of the message) or its old one (below every reader's
+ * cursor, so the stream would drop it, and a frame id that walked the
+ * reader's `Last-Event-ID` backwards). So:
+ *
+ * 1. **It is state, never a delta.** It carries the entry whole as the log now
+ *    holds it; a reader that missed one and caught the next is correct again.
+ * 2. **It carries no `seq` of its own and no `id:` line**, so it never moves
+ *    the cursor. `entry.seq` only identifies the row a reader already holds.
+ * 3. **A resume of a mirrored room re-sends the trailing window**, one frame per
+ *    entry, after the replay — the correction for a change made while the
+ *    reader was away, as the reaction resync is. Only that window (the server's
+ *    `SNAPSHOT_HISTORY_LIMIT`, 100 entries): an older entry a reader already
+ *    held and whose change it missed stays stale until it is read again.
+ *
+ * A reader replaces an entry it holds and ignores one it does not. History it
+ * pages in later is read from the log, so it is normally rewritten already;
+ * the exception is an older page whose read was answered just BEFORE the
+ * rewrite and lands just after this frame, which then shows the old text until
+ * the room is read again.
+ */
+export const RoomRevisionEventSchema = z
+  .object({
+    type: z.literal('revision'),
+    entry: RoomEntrySchema.describe(
+      'The entry as it stands now. Matches a held entry by `id`; replaces it in place.'
+    ),
+  })
+  .openapi('RoomRevisionEvent');
+
 /** Everything that travels on a room's SSE stream. */
 export const RoomEventSchema = z
   .discriminatedUnion('type', [
@@ -2521,6 +2562,7 @@ export const RoomEventSchema = z
     RoomSignalEventSchema,
     RoomReactionEventSchema,
     RoomCanvasEventSchema,
+    RoomRevisionEventSchema,
   ])
   .openapi('RoomEvent');
 
@@ -2530,6 +2572,8 @@ export type RoomSignalEvent = z.infer<typeof RoomSignalEventSchema>;
 export type RoomReactionEvent = z.infer<typeof RoomReactionEventSchema>;
 /** One change to a room's canvas, live. See {@link RoomCanvasEventSchema}. */
 export type RoomCanvasEvent = z.infer<typeof RoomCanvasEventSchema>;
+/** An entry changed in place, as it stands now. See {@link RoomRevisionEventSchema}. */
+export type RoomRevisionEvent = z.infer<typeof RoomRevisionEventSchema>;
 
 /**
  * The three required fields a `'progress'` signal carries on the rooms path,

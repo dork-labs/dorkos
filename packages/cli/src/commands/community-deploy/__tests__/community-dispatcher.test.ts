@@ -57,7 +57,7 @@ else if (name === 'fly' && args[0] === 'orgs') value = {'dork-labs':'Dork Labs'}
 else if (name === 'fly' && args[0] === 'platform') value = [{code:'ord',name:'Chicago',latitude:41.8,longitude:-87.6,gateway_available:true,requires_paid_plan:false,deprecated:false}];
 else if (name === 'fly' && args[0] === 'apps') value = [];
 else if (name === 'neonctl' && args[0] === 'orgs') value = [{id:'org-dorian',name:'Dorian'}];
-else if (name === 'neonctl' && args[0] === 'api' && args[1] === '/regions') value = {regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:40.4,geo_long:-82.9}]};
+else if (name === 'neonctl' && args[0] === 'api' && args[1] === '/regions') value = {regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:'40.4',geo_long:'-82.9'}]};
 else if (name === 'neonctl' && args[0] === 'projects') value = [];
 else if (name === 'neonctl' && args[0] === '--version') { process.stdout.write('5.0.0'); process.exit(0); }
 else if (['open','pbcopy','pbpaste','xdg-open','wl-copy','clip.exe','powershell.exe'].includes(name)) process.exit(0);

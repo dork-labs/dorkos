@@ -16,9 +16,10 @@
  *   `name → { command, args?, extensionToLanguage, … }`.
  * - Monitors: `monitors/monitors.json`, or plugin.json `experimental.monitors`
  *   (also accepted at the top level), an array of `{ name, command, when? }`.
- * - Executables: every file directly in `bin/`, which Claude Code adds to the
- *   Bash tool's `PATH`. A name there can shadow a command the agent runs, so the
- *   names are what is disclosed.
+ * - Executables: every program directly in `bin/` (by permission, not name:
+ *   {@link isPathProgram}), which Claude Code adds to the Bash tool's `PATH`.
+ *   A name there can shadow a command the agent runs, so the names are what is
+ *   disclosed.
  *
  * Every file is read through {@link readDeclarationJson}, so nothing outside the
  * package is opened, and a declaration that cannot be read is reported rather
@@ -27,8 +28,8 @@
  *
  * @module services/marketplace/lib/package-programs
  */
-import { lstat, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { lstat, open, readdir } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 import type {
   PreviewLspServer,
   PreviewMcpServer,
@@ -52,7 +53,7 @@ export interface PackagePrograms {
   lspServers: PreviewLspServer[];
   /** Every readable monitor, sorted by name. */
   monitors: PreviewMonitor[];
-  /** The file names in `bin/`, sorted. */
+  /** The names of the programs in `bin/`, sorted. */
   executables: string[];
   /** Every declaration, or entry, that could not be read. */
   unreadable: UnreadableDeclaration[];
@@ -185,20 +186,74 @@ async function readMonitors(
   return monitors.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Every file (or link) directly in `bin/`; directories are not on `PATH`. */
-async function readExecutables(packagePath: string): Promise<string[]> {
+/**
+ * Extensions Windows runs as programs without being told how (`PATHEXT`'s
+ * defaults that a shell resolves bare names to).
+ */
+const WINDOWS_PROGRAM_EXTENSIONS = new Set(['.exe', '.com', '.bat', '.cmd']);
+
+/**
+ * Whether the entry at `abs` would run as a command from `PATH` (DOR-2340).
+ *
+ * Decided by what the system itself checks, never by name, so a saved copy
+ * whose execute bits were cleared (`tool.dork-old`) stops being disclosed as a
+ * program for the same reason it stops being one.
+ *
+ * - **POSIX:** any execute bit. A link counts: its own mode says nothing, and
+ *   following it could leave the package, so it is disclosed rather than read.
+ * - **Windows:** there are no execute bits (Node reports none on any file), so
+ *   this mirrors how the Git Bash that Claude Code's Bash tool runs in decides:
+ *   a file ending `.exe`, `.com`, `.bat` or `.cmd`, or one starting with `#!`
+ *   (a script) or `MZ` (a program). A link counts, as on POSIX.
+ *
+ * @param abs - The entry, directly in `bin/`.
+ * @param platform - The system deciding.
+ */
+export async function isPathProgram(
+  abs: string,
+  platform: NodeJS.Platform = process.platform
+): Promise<boolean> {
+  const stats = await lstat(abs);
+  if (stats.isSymbolicLink()) return true;
+  if (!stats.isFile()) return false;
+  if (platform !== 'win32') return (stats.mode & 0o111) !== 0;
+  if (WINDOWS_PROGRAM_EXTENSIONS.has(extname(abs).toLowerCase())) return true;
+  const handle = await open(abs, 'r');
+  try {
+    const head = Buffer.alloc(2);
+    const { bytesRead } = await handle.read(head, 0, 2, 0);
+    const magic = head.subarray(0, bytesRead).toString('latin1');
+    return magic === '#!' || magic === 'MZ';
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Every entry directly in `bin/` that runs as a command from `PATH`
+ * ({@link isPathProgram}); directories are not on `PATH`, and a file that
+ * cannot be read is disclosed rather than hidden.
+ */
+async function readExecutables(
+  packagePath: string,
+  platform: NodeJS.Platform = process.platform
+): Promise<string[]> {
   const binDir = join(packagePath, EFFECT_BEARING_PATHS.executables);
+  let names: string[];
   try {
     const stats = await lstat(binDir);
     if (!stats.isDirectory()) return [];
     const entries = await readdir(binDir, { withFileTypes: true });
-    return entries
-      .filter((e) => !e.isDirectory())
-      .map((e) => e.name)
-      .sort();
+    names = entries.filter((e) => !e.isDirectory()).map((e) => e.name);
   } catch {
     return [];
   }
+  const programs: string[] = [];
+  for (const name of names) {
+    const counts = await isPathProgram(join(binDir, name), platform).catch(() => true);
+    if (counts) programs.push(name);
+  }
+  return programs.sort();
 }
 
 /**

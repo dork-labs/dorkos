@@ -9,6 +9,7 @@ import {
 } from '@/layers/entities/connectors';
 import { useRelayEventStream, useToggleAdapter } from '@/layers/entities/relay';
 import {
+  accountChangeError,
   AccountPanel,
   AgentRequestDialog,
   AppList,
@@ -105,6 +106,9 @@ export function ConnectionsPage() {
   const resume = useResumeConnectorConnection();
   const toggle = useToggleAdapter();
   const settings = useSettingsDeepLink();
+  // A row's own button failing says so right there, never silently: the row
+  // keeps its one fix, so pressing it again is the way on.
+  const rowActionError = reconnect.error ?? resume.error;
   const pendingRowId =
     (reconnect.isPending && reconnect.variables?.connectionId) ||
     (resume.isPending && resume.variables?.connectionId) ||
@@ -216,6 +220,16 @@ export function ConnectionsPage() {
             setSearch({ review: reviewRequestId });
           }}
         />
+
+        {rowActionError && (
+          <p
+            role="alert"
+            data-testid="row-action-error"
+            className="text-destructive bg-destructive/5 rounded-lg p-3 text-sm"
+          >
+            {accountChangeError(rowActionError)}
+          </p>
+        )}
 
         <AppList
           query={query}

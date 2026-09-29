@@ -98,6 +98,8 @@ async function install(s: Scene, origin = h.baseUrl): Promise<Install> {
     mirrorAccess: {
       canRead: (roomId, authorId) => state.mirrors?.canRead(roomId, authorId) ?? null,
       hasMirrors: () => state.mirrors?.hasMirrors() ?? false,
+      isRevokedMirrorOf: (roomId, ownerAuthorId) =>
+        state.mirrors?.isRevokedMirrorOf(roomId, ownerAuthorId) ?? false,
     },
   });
   const late: { sync?: RemoteRedactionSync } = {};
@@ -371,10 +373,11 @@ describe('a DorkOS installation replaces cached copies (AC-14)', { timeout: 120_
     await i.rooms.indexMessages();
     expect(found(await rawBytes(i), ['zqxrevokedtoken'])).toEqual(['zqxrevokedtoken']);
     // The agent left the channel: the next directory read no longer lists it.
-    // Stopping the agent's turns in a revoked mirror is refused today (the mirror is already
-    // unreadable, so the halt reads the room as missing; reported separately). The purge must run
-    // regardless, which is what this checks.
-    await i.bridge.revokeAbsentRooms(i.ref, i.rooms.human, new Set()).catch(() => undefined);
+    // Revoking stops the agent's turns there and then deletes the copy, without an error: the
+    // mirror is unreadable by then, so the stop must not need to see it (DOR-2339).
+    await expect(
+      i.bridge.revokeAbsentRooms(i.ref, i.rooms.human, new Set())
+    ).resolves.toBeUndefined();
     await i.sync.whenScrubbed();
     expect(roomSearch(i, 'zqxrevokedtoken')).toEqual([]);
     expect(

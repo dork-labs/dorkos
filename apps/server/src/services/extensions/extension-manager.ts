@@ -40,7 +40,49 @@ import {
   isApprovedCopy,
   mayRunExtensionCode,
 } from './extension-load-policy.js';
+
 import { logger } from '../../lib/logger.js';
+
+/**
+ * Why {@link ExtensionManager.dismissApproval} refused, when it did.
+ *
+ * - `not_found` — no extension has that id.
+ * - `core` — it ships with DorkOS, so there is nothing to decline.
+ * - `stale` — the copy on disk is no longer the one the person was shown.
+ */
+export type DismissApprovalRefusal = 'not_found' | 'core' | 'stale';
+
+/**
+ * The copy a person was shown when they answered: its path and version, and
+ * the plugin that carried it when the caller knows it (`null` for a direct
+ * install; absent means "not compared").
+ */
+export interface ExpectedCopy {
+  /** Absent when the caller does not know it (the Settings card); then not compared. */
+  path?: string;
+  version: string;
+  plugin?: string | null;
+}
+
+/**
+ * Whether the record on disk is still exactly the copy a person was shown
+ * (DOR-2517). An answer to an out-of-date row must never land on a copy that
+ * took that one's place — another plugin, a project folder reusing the id, or
+ * a newer version.
+ *
+ * @param record - The extension record now.
+ * @param expected - The copy the person's row showed.
+ */
+export function isExpectedCopy(record: ExtensionRecord, expected: ExpectedCopy): boolean {
+  if (expected.path !== undefined && path.resolve(expected.path) !== path.resolve(record.path)) {
+    return false;
+  }
+  if (expected.version !== record.manifest.version) return false;
+  if (expected.plugin !== undefined && expected.plugin !== (record.sourcePlugin ?? null)) {
+    return false;
+  }
+  return true;
+}
 
 export type { CreateExtensionResult, ReloadExtensionResult, TestExtensionResult };
 
@@ -82,7 +124,8 @@ function applyCompileResult(
  * Facade for the extension system.
  */
 export class ExtensionManager {
-  private dorkHome: string;
+  /** DorkOS's data directory, which every extension root is read relative to. */
+  readonly dorkHome: string;
   private discovery: ExtensionDiscovery;
   private compiler: ExtensionCompiler;
   private serverLifecycle: ExtensionServerLifecycle;
@@ -94,6 +137,12 @@ export class ExtensionManager {
    * tier-aware enable resolution during {@link reload} (phase 3).
    */
   private coreExtensions: Map<string, CoreExtensionInfo>;
+  /**
+   * Who hears that the set of extensions waiting for a person may have changed
+   * (DOR-2517). The Activity inbox's live source subscribes; see
+   * `extension-approval-queue.ts`.
+   */
+  private changeListeners = new Set<() => void>();
 
   constructor(dorkHome: string, coreExtensions: CoreExtensionInfo[] = []) {
     this.dorkHome = dorkHome;
@@ -159,7 +208,43 @@ export class ExtensionManager {
     this.bindUnsourcedApprovals(records);
 
     await this.compileEnabled();
+    this.emitChanged();
     return this.listPublic();
+  }
+
+  /**
+   * Hear about every change that can move an extension into or out of the set
+   * waiting for a person: a re-scan, a working-directory change, enabling or
+   * disabling, approving, withdrawing an approval, or a "Not now" (DOR-2517).
+   *
+   * Says only that something MAY have changed. The listener reads the records
+   * and diffs them itself, so a missed or doubled call cannot leave it wrong.
+   *
+   * @param listener - Called after each such change. Must not throw; a throw is
+   *   logged and swallowed so it cannot fail the change that produced it.
+   * @returns A function that removes the listener.
+   */
+  onChange(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => {
+      this.changeListeners.delete(listener);
+    };
+  }
+
+  /** Every discovered extension record, in discovery order. */
+  listRecords(): ExtensionRecord[] {
+    return Array.from(this.extensions.values());
+  }
+
+  /** Tell every {@link onChange} listener, isolating each one's failure. */
+  private emitChanged(): void {
+    for (const listener of this.changeListeners) {
+      try {
+        listener();
+      } catch (err) {
+        logger.warn('[Extensions] A change listener threw', err);
+      }
+    }
   }
 
   /**
@@ -340,6 +425,7 @@ export class ExtensionManager {
       }
     }
 
+    this.emitChanged();
     return {
       extension: toPublic(record, configManager.get('extensions')),
       reloadRequired: true,
@@ -371,6 +457,7 @@ export class ExtensionManager {
     record.bundleReady = false;
     record.error = undefined;
 
+    this.emitChanged();
     return {
       extension: toPublic(record, configManager.get('extensions')),
       reloadRequired: true,
@@ -401,14 +488,24 @@ export class ExtensionManager {
     // plugin beside the id, replacing whatever copy an earlier approval named.
     const extensions = configManager.get('extensions');
     const source = approvedSourceOf(record);
-    if (!isApprovedCopy(record, extensions)) {
-      configManager.set('extensions', {
+    const dismissed = extensions.dismissedApprovals ?? {};
+    if (!isApprovedCopy(record, extensions) || dismissed[id]) {
+      // A "Not now" for this id is answered by the approval, so it goes too
+      // (DOR-2517): a later withdrawal plus reinstall asks again rather than
+      // staying silenced by a decline the person has since reversed.
+      const next = {
         ...extensions,
         approvedToRun: extensions.approvedToRun.includes(id)
           ? extensions.approvedToRun
           : [...extensions.approvedToRun, id],
         approvedSources: { ...(extensions.approvedSources ?? {}), [id]: source },
-      });
+      };
+      if (dismissed[id]) {
+        const remainingDismissals = { ...dismissed };
+        delete remainingDismissals[id];
+        next.dismissedApprovals = remainingDismissals;
+      }
+      configManager.set('extensions', next);
       logConfigWrite(
         'approving an extension to run',
         'extensions',
@@ -424,15 +521,79 @@ export class ExtensionManager {
       }
     }
 
+    this.emitChanged();
     return toPublic(record, configManager.get('extensions'));
+  }
+
+  /**
+   * Record that a person said "Not now" to this extension in the Activity
+   * inbox (DOR-2517).
+   *
+   * **Never destructive.** It uninstalls, disables and revokes nothing — the
+   * extension stays exactly as it was, and Settings → Extensions can still turn
+   * it on. It only stops the inbox asking about this copy at this version.
+   *
+   * Refuses when the copy on disk is not the one the person was shown: an
+   * answer to an out-of-date row must not silence something they never saw.
+   * Only the caller-facing route may call this, after the same person bar that
+   * guards approving (`routes/extensions-approval.ts`).
+   *
+   * @param id - Extension id.
+   * @param expected - The path and version the person's row showed.
+   * @returns `{ ok: true }`, or why it refused.
+   */
+  dismissApproval(
+    id: string,
+    expected: ExpectedCopy
+  ): { ok: true } | { ok: false; reason: DismissApprovalRefusal } {
+    const record = this.extensions.get(id);
+    if (!record) return { ok: false, reason: 'not_found' };
+    if (record.origin === 'core') return { ok: false, reason: 'core' };
+    if (!isExpectedCopy(record, expected)) return { ok: false, reason: 'stale' };
+
+    this.recordDismissal(record, 'declining an extension for now');
+    this.emitChanged();
+    return { ok: true };
+  }
+
+  /**
+   * Record that the person put this exact copy off, so the Activity inbox does
+   * not ask about it again until its path, plugin or version changes. Shared
+   * by "Not now" and by "Stop it", which is the same answer given later.
+   *
+   * @param record - The copy.
+   * @param subsystem - What the config log names as the writer.
+   */
+  private recordDismissal(record: ExtensionRecord, subsystem: string): void {
+    const id = record.id;
+    const before = configManager.get('extensions');
+    configManager.set('extensions', {
+      ...before,
+      dismissedApprovals: {
+        ...(before.dismissedApprovals ?? {}),
+        [id]: {
+          path: path.resolve(record.path),
+          ...(record.sourcePlugin ? { plugin: record.sourcePlugin } : {}),
+          version: record.manifest.version,
+          dismissedAt: new Date().toISOString(),
+        },
+      },
+    });
+    logConfigWrite(subsystem, 'extensions', before, configManager.get('extensions'));
   }
 
   /**
    * Withdraw a person's approval for this extension to run code in the server, and
    * stop it immediately.
    *
-   * Withdrawing is not the same as disabling: the extension stays on and its client
-   * bundle still loads in the browser, but DorkOS stops executing its code in-process.
+   * Withdrawing is not the same as disabling: the extension stays on, but none of
+   * its code runs until a person turns it on again.
+   *
+   * "Stop it" is also an answer to the Activity inbox's question (DOR-2517), so it
+   * records a "Not now" for this exact copy first: the ask does not come straight
+   * back to the bell, and returns only when the copy's source or version changes.
+   * Written before the approval is dropped, so no change listener ever sees the
+   * copy unapproved and not yet put off.
    *
    * @param id - Extension id to revoke.
    * @returns The updated public record, or `null` when no such extension exists.
@@ -441,6 +602,7 @@ export class ExtensionManager {
     const record = this.extensions.get(id);
     if (!record) return null;
 
+    if (record.origin === 'user') this.recordDismissal(record, 'stopping an extension');
     await this.forgetRunApproval(id);
 
     return toPublic(record, configManager.get('extensions'));
@@ -466,6 +628,25 @@ export class ExtensionManager {
    *   carries the same id (DOR-2383), so it is kept, and that copy keeps running.
    */
   async forgetRunApproval(id: string, installRoot?: string): Promise<void> {
+    // A "Not now" (or "Stop it") recorded for a copy inside the package being
+    // removed goes with it (DOR-2517): a reinstall is a new decision, even at
+    // the same version and path. One recorded for a copy elsewhere is about
+    // another package and stays. `revokeRunApproval` passes no install root,
+    // so the dismissal it just recorded is never undone here.
+    const dismissal = configManager.get('extensions').dismissedApprovals?.[id];
+    if (installRoot && dismissal && isPathWithin(dismissal.path, installRoot)) {
+      const before = configManager.get('extensions');
+      const remaining = { ...(before.dismissedApprovals ?? {}) };
+      delete remaining[id];
+      configManager.set('extensions', { ...before, dismissedApprovals: remaining });
+      logConfigWrite(
+        'forgetting a "Not now" for an extension being removed',
+        'extensions',
+        before,
+        configManager.get('extensions')
+      );
+    }
+
     const extensions = configManager.get('extensions');
     const sources = extensions.approvedSources ?? {};
     const recorded = sources[id];
@@ -494,6 +675,7 @@ export class ExtensionManager {
     }
 
     await this.serverLifecycle.shutdown(id);
+    this.emitChanged();
   }
 
   /** Initialize server-side extension code (delegated to server lifecycle). */

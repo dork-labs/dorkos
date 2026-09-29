@@ -58,6 +58,8 @@ const NOT_READING_INSTALLS: Record<string, string> = {
     'reads a room worktree, and names the skills dir only to recognise projection symlinks',
   'apps/server/src/services/shapes/shape-schedule-service.ts':
     'lists a directory only to ask whether it is empty before removing it',
+  'apps/server/src/services/marketplace/lib/saved-copies/saved-copies-consent.ts':
+    "lists one installed package's own bin/ folder, never an install or skills root",
   'apps/server/src/services/harness/skills-watcher.ts':
     'lists a skills root only to notice change; a sibling appearing triggers a projection, whose scanner skips it',
 };

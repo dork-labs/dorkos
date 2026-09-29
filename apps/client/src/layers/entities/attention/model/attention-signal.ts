@@ -30,11 +30,22 @@
  * run. That is a blockage by every definition the other three meet, and it used
  * to be composed on beside this list by every surface that needed both.
  *
- * This union must stay assignable to the sidebar model's `NowKind`. Nothing
- * asserts it in a test; the assignment in `useSidebarState` is the assertion,
- * and it stops compiling the day the two disagree.
+ * `extension-approval` (DOR-2517) is an installed extension waiting for a
+ * person to turn it on. It is a member of the vocabulary so the Inbox
+ * popover's waiting queue can count it in the same words, but it is NOT a
+ * Heads up blockage: nothing is stopped while it waits, and its notification
+ * tier is `notable`, never `blocking`. {@link deriveAttentionSignals} never
+ * emits it — see {@link HeadsUpSignalKind}, the four the zone may carry.
+ *
+ * {@link HeadsUpSignalKind} must stay assignable to the sidebar model's
+ * `NowKind`. Nothing asserts it in a test; the assignment in `useSidebarState`
+ * is the assertion, and it stops compiling the day the two disagree.
  */
-export type AttentionSignalKind = 'permission-prompt' | 'question' | 'error' | 'schedule-approval';
+export type AttentionSignalKind =
+  'permission-prompt' | 'question' | 'error' | 'schedule-approval' | 'extension-approval';
+
+/** The four blockages the Heads up zone may carry: every kind but `extension-approval`. */
+export type HeadsUpSignalKind = Exclude<AttentionSignalKind, 'extension-approval'>;
 
 /**
  * One blockage, normalized.
@@ -57,7 +68,7 @@ export interface AttentionSignal {
    */
   id: string;
   /** Which of the four blockages this is. Drives Heads up's priority order (BC-6). */
-  kind: AttentionSignalKind;
+  kind: HeadsUpSignalKind;
   /** Who needs you — the agent's name where there is one, else what asked. */
   primary: string;
   /** What it needs, printed after `›`. Absent when there is nothing to add. */

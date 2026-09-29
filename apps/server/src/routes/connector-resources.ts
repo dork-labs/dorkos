@@ -127,11 +127,7 @@ function sendResourceError(res: Response, error: unknown): void {
   }
   if (error instanceof ConnectorLifecycleError || error instanceof ConnectorOperatorQueryError) {
     res
-      .status(
-        error.code === 'connection_not_disconnected' || error.code === 'connection_cleanup_pending'
-          ? 409
-          : 404
-      )
+      .status(error.code === 'connection_not_disconnected' ? 409 : 404)
       .json({ error: error.message, code: error.code });
     return;
   }

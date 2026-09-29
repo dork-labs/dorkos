@@ -6,7 +6,9 @@ import {
   AFTER_CLEANUP_STEP,
   CLEANED_UP_DETAIL,
   describeCommunityLiveGateFailure,
+  describeLauncherStop,
   explainCommunityLiveGateFailure,
+  PUBLISHED_LAUNCHER_STEP,
 } from '../../scripts/community-deploy-live-failure.js';
 
 const RECOVERY = 'npx -y dorkos@1.2.3 community deploy --resume run-1';
@@ -94,6 +96,111 @@ describe('explainCommunityLiveGateFailure', () => {
         Promise.reject(new Error('ENOENT'))
       )
     ).resolves.toBe(error);
+  });
+});
+
+// The shape a real stopped launch saved (DOR-2169 live gate, dorkos@0.89.0), with synthetic ids.
+const STOPPED_JOURNAL = {
+  schemaVersion: 1,
+  state: 'uncertain',
+  pendingIntent: { provider: 'neon', organizationId: 'org-fixture', resourceName: 'dorkos-gate-x' },
+  resources: { flyAppId: 'dorkos-gate-x', neonProjectId: 'fixture-project-1' },
+  secretDigests: { COMMUNITY_BOOTSTRAP_SECRET: 'digest-should-never-print' },
+  lastSafeError: { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' },
+};
+
+describe('describeLauncherStop', () => {
+  it("names the launcher's saved error code and the provider it was creating", () => {
+    expect(describeLauncherStop(STOPPED_JOURNAL)).toBe(
+      'launcher stopped with CREATION_OUTCOME_UNCERTAIN (neon)'
+    );
+  });
+
+  it('names the code alone when no creation was pending', () => {
+    expect(describeLauncherStop({ ...STOPPED_JOURNAL, pendingIntent: null })).toBe(
+      'launcher stopped with CREATION_OUTCOME_UNCERTAIN'
+    );
+  });
+
+  it.each([
+    ['no saved error', { ...STOPPED_JOURNAL, lastSafeError: null }],
+    ['a code outside the fixed vocabulary', { lastSafeError: { code: 'sk_live_SECRETVALUE' } }],
+    ['a journal that is not an object', 'not a journal'],
+  ])('says nothing for %s', (_label, journal) => {
+    expect(describeLauncherStop(journal)).toBeNull();
+  });
+
+  // The code is checked against this checkout's list, so a code only a newer published launcher
+  // knows is dropped: the failure stays the bare step rather than printing something unchecked.
+  it('says nothing for a code only a newer launcher knows', () => {
+    expect(
+      describeLauncherStop({
+        ...STOPPED_JOURNAL,
+        lastSafeError: { category: 'uncertain', code: 'SOME_FUTURE_CODE' },
+      })
+    ).toBeNull();
+  });
+
+  it('never repeats a provider it does not recognise', () => {
+    expect(
+      describeLauncherStop({ ...STOPPED_JOURNAL, pendingIntent: { provider: 'token=abc' } })
+    ).toBe('launcher stopped with CREATION_OUTCOME_UNCERTAIN');
+  });
+});
+
+describe('explainCommunityLiveGateFailure with a stopped launcher', () => {
+  // The live gate on dorkos@0.89.0 reported only `published-launcher`; why it stopped was in the
+  // journal on disk. The report now carries the saved code, beside the recovery command.
+  it('adds why the launcher stopped to its failure, beside the recovery command', async () => {
+    const explained = await explainCommunityLiveGateFailure(
+      new CommunityLiveGateError(PUBLISHED_LAUNCHER_STEP),
+      { cleanedUp: false, recoveryCommand: null },
+      async () => RECOVERY,
+      async () => describeLauncherStop(STOPPED_JOURNAL)
+    );
+    const printed = describeCommunityLiveGateFailure(explained);
+    expect(printed).toBe(
+      'Community live gate failed (published-launcher): launcher stopped with ' +
+        `CREATION_OUTCOME_UNCERTAIN (neon)\nRetained resources can be reconciled with:\n  ${RECOVERY}\n`
+    );
+    expect(printed).not.toContain('digest-should-never-print');
+  });
+
+  it('adds the reason even when no recovery command was found', async () => {
+    const explained = await explainCommunityLiveGateFailure(
+      new CommunityLiveGateError(PUBLISHED_LAUNCHER_STEP),
+      { cleanedUp: false, recoveryCommand: null },
+      async () => null,
+      async () => 'launcher stopped with AUTH_REQUIRED (fly)'
+    );
+    expect(explained).toMatchObject({ step: PUBLISHED_LAUNCHER_STEP, recoveryCommand: null });
+    expect((explained as Error).message).toBe(
+      'Community live gate failed (published-launcher): launcher stopped with AUTH_REQUIRED (fly)'
+    );
+  });
+
+  it('keeps the bare step when the journal cannot be read', async () => {
+    const error = new CommunityLiveGateError(PUBLISHED_LAUNCHER_STEP);
+    await expect(
+      explainCommunityLiveGateFailure(
+        error,
+        { cleanedUp: false, recoveryCommand: null },
+        async () => null,
+        () => Promise.reject(new Error('ENOENT'))
+      )
+    ).resolves.toBe(error);
+  });
+
+  it('reads the journal only for a failed launcher, not for other steps', async () => {
+    const findLauncherStop = vi.fn(async () => 'launcher stopped with AUTH_REQUIRED');
+    const explained = await explainCommunityLiveGateFailure(
+      new CommunityLiveGateError('bootstrap-rotation'),
+      { cleanedUp: false, recoveryCommand: RECOVERY },
+      async () => null,
+      findLauncherStop
+    );
+    expect((explained as Error).message).toBe('Community live gate failed (bootstrap-rotation)');
+    expect(findLauncherStop).not.toHaveBeenCalled();
   });
 });
 

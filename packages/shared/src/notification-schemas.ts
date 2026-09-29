@@ -90,6 +90,11 @@ export const NOTIFICATION_KINDS = [
    * waited on it; one per account and reset.
    */
   'account.reset',
+  /**
+   * An installed extension is waiting for a person to let it run (DOR-2517).
+   * Standing, per copy and version; `notable`, so it never reaches a phone.
+   */
+  'extension.approval',
 ] as const;
 
 /** Every kind of notification DorkOS can raise. */
@@ -155,6 +160,11 @@ export const NOTIFICATION_OUTCOMES = [
   'rejected',
   /** The error state ended without anybody acting on it. */
   'cleared',
+  /**
+   * The operator said "Not now". Nothing was removed or turned off; it is
+   * only not asked about again until what it is about changes (DOR-2517).
+   */
+  'dismissed',
 ] as const;
 
 /** How a standing condition ended. */

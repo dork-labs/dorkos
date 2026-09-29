@@ -11,6 +11,7 @@ import {
   eq,
   inArray,
   isNull,
+  notInArray,
   sql,
   or,
   sessionConnectionOverrides,
@@ -99,6 +100,16 @@ export interface ConnectionStoreOptions {
 /** Server-owned deployment and payer mode for a configured provider instance. */
 export type ConnectorProviderDeploymentMode = 'managed' | 'byo';
 
+/** How registering a provider instance treats the accounts it already keeps. */
+export interface RegisterProviderOptions {
+  /**
+   * Accounts (by their private reference) that keep the access they were
+   * given through a change of the instance's setup, because the caller knows
+   * the same account is reached again through the same service.
+   */
+  readonly keepAccessFor?: ReadonlySet<string>;
+}
+
 /** One account {@link ConnectionStore.closeUnlistedConnections} closed. */
 export interface ClosedConnection {
   /** Stable connection id. */
@@ -160,7 +171,8 @@ export class ConnectionStore {
   registerProvider(
     provider: ConnectorProvider,
     executionConfigDigest: string,
-    mode: ConnectorProviderDeploymentMode
+    mode: ConnectorProviderDeploymentMode,
+    options: RegisterProviderOptions = {}
   ): number {
     this.assertAvailable();
     const capabilities = provider.getCapabilities();
@@ -232,7 +244,11 @@ export class ConnectionStore {
       if (materialChanged) {
         // Only access someone was given can have gone stale. A connection
         // nobody holds a live grant on (named, session or every-agent) has
-        // nothing to re-check, so it stays ready and usable to grant.
+        // nothing to re-check, so it stays ready and usable to grant. Nor has
+        // an account the caller vouches for: the same account, reached again
+        // through the same service (a DorkOS account linked again that still
+        // lists it), keeps the access it was given.
+        const kept = [...(options.keepAccessFor ?? [])];
         tx.update(connections)
           .set({ grantReconciliationStatus: 'migration_needs_reconcile', updatedAt: now })
           .where(
@@ -240,7 +256,8 @@ export class ConnectionStore {
               eq(connections.providerInstanceId, provider.instanceId),
               sql`EXISTS (SELECT 1 FROM ${connectionOperationGrants}
                 WHERE ${connectionOperationGrants.connectionId} = ${connections.id}
-                AND ${connectionOperationGrants.revokedAt} IS NULL)`
+                AND ${connectionOperationGrants.revokedAt} IS NULL)`,
+              ...(kept.length > 0 ? [notInArray(connections.externalAccountRef, kept)] : [])
             )
           )
           .run();
@@ -439,6 +456,7 @@ export class ConnectionStore {
     }
     const now = new Date().toISOString();
     const id = existing?.id ?? ulid();
+    const accountKey = this.storedExecutionConfigDigest(provider.instanceId) ?? null;
     // Closing an account clears `enabled` as well as the lifecycle state
     // (`ConnectorLifecycleService.disconnect`), so bringing one back has to
     // restore BOTH. Restoring only the lifecycle state lands a row that reads
@@ -467,6 +485,7 @@ export class ConnectionStore {
         createdAt: existing?.created_at ?? now,
         updatedAt: now,
         lastVerifiedAt: now,
+        accountKey,
       })
       .onConflictDoUpdate({
         target: [connections.providerInstanceId, connections.externalAccountRef],
@@ -476,9 +495,10 @@ export class ConnectionStore {
           label: account.label,
           status,
           ...(options.restoreDisconnected && { lifecycleState: 'connected' as const }),
-          ...(restoringDisconnected && { enabled: true }),
+          ...(restoringDisconnected && { enabled: true, pausedBy: null }),
           updatedAt: now,
           lastVerifiedAt: now,
+          accountKey,
         },
       })
       .run();
@@ -582,14 +602,64 @@ export class ConnectionStore {
     return rows.length === 1 ? (rows[0]!.id as ConnectedAccount['id']) : undefined;
   }
 
-  /** Pause or resume local use without overwriting provider authentication status. */
+  /**
+   * Pause or resume local use without overwriting provider authentication
+   * status. A pause records who chose it: the owner's always wins, and a
+   * sign-in's pause is never recorded over the owner's (see {@link holdForSignIn}).
+   */
   setPaused(connectionId: ConnectionId, paused: boolean): void {
     this.assertAvailable();
     this.db
       .update(connections)
-      .set({ enabled: !paused, updatedAt: new Date().toISOString() })
+      .set({
+        enabled: !paused,
+        pausedBy: paused ? 'owner' : null,
+        updatedAt: new Date().toISOString(),
+      })
       .where(eq(connections.id, connectionId))
       .run();
+  }
+
+  /**
+   * Pause a connected account while a "Sign in again" runs, unless it is
+   * already paused (the owner's pause, or another sign-in's, stays as it is).
+   */
+  holdForSignIn(connectionId: ConnectionId): void {
+    this.assertAvailable();
+    this.db
+      .update(connections)
+      .set({ enabled: false, pausedBy: 'sign_in', updatedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(connections.id, connectionId),
+          eq(connections.lifecycleState, 'connected'),
+          eq(connections.enabled, true)
+        )
+      )
+      .run();
+  }
+
+  /**
+   * Lift a sign-in's pause: the account is usable again exactly as it was
+   * before the sign-in started. A pause the owner chose is never lifted here.
+   *
+   * @returns Whether the account was released.
+   */
+  releaseSignInHold(connectionId: ConnectionId): boolean {
+    this.assertAvailable();
+    return (
+      this.db
+        .update(connections)
+        .set({ enabled: true, pausedBy: null, updatedAt: new Date().toISOString() })
+        .where(
+          and(
+            eq(connections.id, connectionId),
+            eq(connections.lifecycleState, 'connected'),
+            eq(connections.pausedBy, 'sign_in')
+          )
+        )
+        .run().changes > 0
+    );
   }
 
   /**
@@ -725,8 +795,26 @@ export class ConnectionStore {
     for (const account of listed) {
       if (isSignInStatus(account.status)) reported.set(account.externalAccountRef, account.status);
     }
-    if (reported.size === 0) return [];
     const now = new Date().toISOString();
+    // Every account this listing includes is reachable through the instance's
+    // current key: that key is the one that can end its access at the service.
+    const accountKey = this.storedExecutionConfigDigest(instanceId);
+    const listedRefs = [...new Set(listed.map((account) => account.externalAccountRef))];
+    if (accountKey !== undefined && listedRefs.length > 0) {
+      this.db
+        .update(connections)
+        .set({ accountKey })
+        .where(
+          and(
+            eq(connections.providerInstanceId, instanceId),
+            eq(connections.lifecycleState, 'connected'),
+            isNull(connections.removedAt),
+            inArray(connections.externalAccountRef, listedRefs)
+          )
+        )
+        .run();
+    }
+    if (reported.size === 0) return [];
     return this.db.transaction((tx) => {
       const kept = tx
         .select({

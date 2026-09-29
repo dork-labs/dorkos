@@ -77,6 +77,22 @@ export class RoomPublisher {
   }
 
   /**
+   * Fan out entries that were changed in place, each as it stands now
+   * (`RoomRevisionEventSchema`). Room-stream only: a change to an old message
+   * is not activity, is not new work for a bridge, and was already re-indexed
+   * for search by whoever rewrote it.
+   *
+   * @param entries - The rewritten entries, read back from the log after the
+   *   change committed — so what goes out is the replacement, never the text it
+   *   replaced.
+   */
+  publishRevisions(entries: readonly RoomEntry[]): void {
+    for (const entry of entries) {
+      this.broadcaster.publish(entry.roomId, { type: 'revision', entry });
+    }
+  }
+
+  /**
    * Register the chat bridge's inline-delivery hook (chats-as-channels §6.1),
    * called for every committed entry. At most one is set; the binding subsystem
    * wires it once the delivery engine exists.

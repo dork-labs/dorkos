@@ -5,7 +5,7 @@
  *
  * @module services/marketplace/lib/integrity/unproven-sort
  */
-import { chmod, lstat, mkdtemp, rename, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { isReservedPackagePath } from '@dorkos/marketplace';
@@ -21,25 +21,16 @@ import {
 import { stageInstalledCommit } from '../legacy-record.js';
 import { STRICT_RECORD_TEMP_PREFIX } from './strict-differences.js';
 import type { StrictRebuildResult } from './strict-record.js';
+import { freeSavedFileName, makeInert, savedCopyMustMove } from '../saved-copies/saved-copies.js';
 
 /** Join a root and a POSIX path. */
 function fsPath(root: string, posixPath: string): string {
   return path.join(root, ...posixPath.split('/'));
 }
 
-/** The first free `<p>.dork-old[.n]` in `root`, by `lstat`. */
-async function freeSetAsideName(root: string, p: string): Promise<string> {
-  for (let n = 1; ; n++) {
-    const candidate = n === 1 ? `${p}.dork-old` : `${p}.dork-old.${n}`;
-    if ((await lstat(fsPath(root, candidate)).catch(() => undefined)) === undefined) {
-      return candidate;
-    }
-  }
-}
-
 /**
- * Set a leftover aside: move it to a free `.dork-old` name (a reserved name,
- * so nothing loads or projects it) and clear its execute bits, so a program
+ * Set a leftover aside: move it to a free `.dork-old` name (no loader reads a
+ * file under a kept-copy name) and clear its execute bits, so a program
  * left in `bin/` stops being one. A file already under a set-aside name only
  * loses its execute bits. Nothing is deleted, so an edit that lands between
  * the comparison and the move is kept in the moved file.
@@ -48,10 +39,13 @@ async function freeSetAsideName(root: string, p: string): Promise<string> {
  */
 async function setAside(root: string, p: string): Promise<string> {
   const basename = p.slice(p.lastIndexOf('/') + 1);
-  const savedAs = isReservedPackagePath(basename) ? p : await freeSetAsideName(root, p);
+  // A file already under a kept-copy name stays put, unless it is in `bin/`,
+  // where anything is on the PATH (DOR-2340).
+  const stays = isReservedPackagePath(basename) && !savedCopyMustMove(p, false);
+  const savedAs = stays ? p : await freeSavedFileName(root, p);
+  if (savedAs !== p) await mkdir(path.dirname(fsPath(root, savedAs)), { recursive: true });
   if (savedAs !== p) await rename(fsPath(root, p), fsPath(root, savedAs));
-  const { mode } = await lstat(fsPath(root, savedAs));
-  if ((mode & 0o111) !== 0) await chmod(fsPath(root, savedAs), mode & 0o7666);
+  await makeInert(fsPath(root, savedAs));
   return savedAs;
 }
 
