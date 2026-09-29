@@ -139,7 +139,9 @@ const ConnectorGrantedOperationsInputSchema = z
 const EXECUTION_TITLES = {
   read: 'Read from a connected app',
   write: 'Change something in a connected app',
-  destructive: "Make a change that can't be undone in a connected app",
+  // The service marks sending, sharing and unsorted actions destructive too, so
+  // the title promises only that it needs more care.
+  destructive: 'Take a high-risk action in a connected app',
 } as const;
 
 function executionCapability(
@@ -203,7 +205,7 @@ const listGrantedConnections = defineCapability({
   id: 'connectors.list_granted_connections',
   title: 'List granted connections',
   description:
-    'List only the currently executable connections granted to this authenticated runtime turn. ' +
+    'List only the connected accounts you can use right now in this chat turn. ' +
     'Accounts granted to you that cannot be used right now (paused, signed out, waiting on a ' +
     'review, turned off for this chat, or reached through a way that is down or cannot run ' +
     'actions) are listed under unavailable, each with a reason and a note on what the person ' +

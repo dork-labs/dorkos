@@ -465,7 +465,7 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
   const connectorApproval = (serviceAction: PendingApproval['serviceAction']) =>
     buildApproval({
       capabilityId: 'connectors.execute_destructive',
-      capabilityTitle: "Make a change that can't be undone in a connected app",
+      capabilityTitle: 'Take a high-risk action in a connected app',
       summary:
         '"DorkBot" wants to run "Delete message" in Gmail on "Work (work@acme.com)" with Message ID: "18c2f0a9d1"',
       serviceAction,
@@ -489,7 +489,13 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
 
   it('says plainly that it cannot be undone', () => {
     renderCard(connectorApproval(GMAIL_DELETE));
-    expect(screen.getByText("Once this runs, it can't be undone in Gmail.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'This is a high-risk action in Gmail. Check what it does before you allow it.'
+      )
+    ).toBeInTheDocument();
+    // Never the old promise: "destructive" covers sending and sharing too.
+    expect(screen.queryByText(/can't be undone/u)).not.toBeInTheDocument();
   });
 
   it('never shows the jargon title, the ids, or the summary sentence on top of it', () => {
@@ -517,14 +523,15 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
 
   it('does not claim a change is permanent when the tier says otherwise', () => {
     renderCard({ ...connectorApproval(GMAIL_DELETE), tier: 'act' });
-    expect(screen.queryByText(/can't be undone in Gmail/u)).not.toBeInTheDocument();
+    expect(screen.queryByText(/high-risk action/u)).not.toBeInTheDocument();
     expect(screen.getByText('Changes things')).toBeInTheDocument();
   });
 
-  it('says it cannot be undone exactly once, and has no dangling separator', () => {
+  it('says it is high risk exactly once, never that it cannot be undone, and has no dangling separator', () => {
     const { container } = renderCard(connectorApproval(GMAIL_DELETE));
     const text = container.textContent ?? '';
-    expect(text.match(/undone/giu)).toHaveLength(1);
+    expect(text.match(/high-risk action/giu)).toHaveLength(1);
+    expect(text).not.toMatch(/undone/iu);
     expect(screen.queryByText('Cannot be undone')).not.toBeInTheDocument();
     expect(text).not.toContain('·');
   });

@@ -981,7 +981,7 @@ describe('ConnectorAuthenticationFlowService', () => {
     await expect(service.poll(OWNER, mismatched.flowId)).resolves.toMatchObject({
       state: 'failed',
       reason:
-        'This sign-in request belongs to a different service setup. Start again from Connections.',
+        'This sign-in belongs to a different way of reaching the app. Start again from Connections.',
     });
     expect(db.select().from(connections).all()).toHaveLength(0);
   });

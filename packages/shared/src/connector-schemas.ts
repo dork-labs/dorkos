@@ -945,6 +945,24 @@ export const OPERATION_CLASSIFICATION_LABELS: Readonly<
   destructive: 'High risk',
 };
 
+/**
+ * What a set of action kinds lets an agent do, in words: `read`,
+ * `read and write`, `read, write and high-risk actions`. Never "delete": the
+ * service marks sending and sharing destructive too. The app and the server's
+ * Activity entries both read it here.
+ *
+ * @param classifications - The kinds of the granted actions.
+ */
+export function connectionAccessWords(
+  classifications: readonly ConnectorOperationClassification[]
+): string {
+  const words = (['read', 'write', 'destructive'] as const)
+    .filter((kind) => classifications.includes(kind))
+    .map((kind) => (kind === 'destructive' ? 'high-risk actions' : kind));
+  if (words.length <= 1) return words[0] ?? '';
+  return `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
+}
+
 /** Plain words for a connected account's sign-in state, shown in place of its stored value. */
 export const CONNECTION_STATUS_LABELS: Readonly<
   Record<'active' | 'expired' | 'revoked' | 'pending' | 'paused', string>

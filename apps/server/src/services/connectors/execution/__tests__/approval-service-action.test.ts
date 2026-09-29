@@ -558,7 +558,7 @@ describe('a destructive connected-app call raises a card that says what it does'
       actionName: 'Delete message',
       details: [{ label: 'Message ID', value: '18c2f0a9d1' }],
     });
-    expect(card.capabilityTitle).toBe("Make a change that can't be undone in a connected app");
+    expect(card.capabilityTitle).toBe('Take a high-risk action in a connected app');
     expect(card.summary).toBe(
       'An unidentified caller wants to run "Delete message" in Gmail on "Work (work@acme.com)" ' +
         'with Message ID: "18c2f0a9d1"'

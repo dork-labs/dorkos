@@ -54,7 +54,7 @@ describe('EveryAgentAccessNotice', () => {
     renderNotice(transport);
 
     expect(await screen.findByTestId('every-agent-access-notice')).toHaveTextContent(
-      'Research Bot will get: Gmail · work (read and write), Gmail · home (read, paused), Notion (read, write and delete). You can change this in Connections.'
+      'Research Bot will get: Gmail · work (read and write), Gmail · home (read, paused), Notion (read, write and high-risk actions). You can change this in Connections.'
     );
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });

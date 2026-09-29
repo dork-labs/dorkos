@@ -259,7 +259,7 @@ export class ConnectorAuthenticationFlowService {
         row.id,
         'failed',
         afterPoll,
-        'This sign-in request belongs to a different service setup. Start again from Connections.',
+        'This sign-in belongs to a different way of reaching the app. Start again from Connections.',
         polledProviderFlowId
       );
       return this.toPublic(this.ownedFlow(owner, flowId)!);

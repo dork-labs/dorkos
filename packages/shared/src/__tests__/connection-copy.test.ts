@@ -3,6 +3,7 @@ import {
   CONNECTION_STATUS_LABELS,
   KEY_CHECK_COPY,
   OPERATION_CLASSIFICATION_LABELS,
+  connectionAccessWords,
   connectionServiceName,
   connectionUsageLine,
   connectionWayName,
@@ -65,6 +66,16 @@ describe('KEY_CHECK_COPY.unreachable', () => {
     );
     expect(KEY_CHECK_COPY.unreachable('nango', false)).toBe(
       'DorkOS couldn’t reach your Nango server. Check that it’s running and its address is right, then save the key again.'
+    );
+  });
+});
+
+describe('connectionAccessWords', () => {
+  it('says what a set of kinds allows, never "delete" for a destructive one', () => {
+    expect(connectionAccessWords(['read'])).toBe('read');
+    expect(connectionAccessWords(['write', 'read'])).toBe('read and write');
+    expect(connectionAccessWords(['destructive', 'read', 'write'])).toBe(
+      'read, write and high-risk actions'
     );
   });
 });
