@@ -20,19 +20,19 @@ A community has exactly one owner, and only that owner can transfer it. When the
 
 ## Decision
 
-We will let a host request an owner replacement through a new scope, `communities:ownership` (or a host operator's session with their password). The owner is notified by email, in the community, and on their DorkOS connection, and has at least 7 days (default 14, and 30 when the email bounces) counted from when the notice resolves. During that time the owner can object in one step with no password, transfer ownership themselves, or ask to delete the community; each ends the request, and there is no host override. Only after the wait can the person the host named complete it, by redeeming a one-time claim while signed in, bound to a named OpenID Connect subject when the host sets one. Completion is the same role swap as a voluntary transfer, and every step is audited on the host and tenant planes.
+We will let a host request an owner replacement through a new scope, `communities:ownership` (or a host operator's session with their password). The owner is notified by email, in the community, and on their DorkOS connection. The wait counts from when the notice resolves: at least 7 days (default 14) only for mail accepted at a verified address in a community with no earlier objection, and 30 days otherwise. The owner can object from a one-time, object-only link in the email without signing in, or in the product with no password; an objection ends the request with no override and blocks a new one for that community for 90 days (never fewer than 30), after which every request gets the long wait. Where their state and account allow, the owner can also transfer or delete. Only after the wait can the account named in the request complete it by redeeming a one-time claim while signed in; on a host with single sign-on the request must name an identity, and reissuing the claim link tells the owner. Completion is the same role swap as a voluntary transfer, and every step is audited on the host and tenant planes.
 
 ## Consequences
 
 ### Positive
 
-- An organization can regain a community without a database edit, and the owner always hears about it first and can say no.
-- The host still never reads content or learns member identities; the new owner proves themselves by signing in.
+- An organization can regain a community without a database edit, and the owner always hears about it first and can say no, even when they can no longer sign in.
+- The host still never reads content or learns member identities; on a host with single sign-on the new owner proves themselves at the issuer.
 - The flow reuses the owner-transfer swap and the owner-claim ceremony, so there is no new kind of ownership change.
 
 ### Negative
 
 - It depends on outbound mail, a new capability for the Community server (ADR `260929-012845`); hosts without mail cannot use it.
-- An owner who is present but unreasonable can block a replacement forever by objecting; that dispute has to be settled outside the product.
-- "The mail server accepted it" is not "the owner read it"; a deactivated work address can accept mail, so the wait and the other notices carry the weight.
-- A stolen key with the new scope plus a leaked claim link could take a community whose owner ignores every notice for the whole wait.
+- An owner who is present but unreasonable can block a replacement indefinitely by objecting each time; that dispute has to be settled outside the product.
+- "The mail server accepted it" is not "the owner read it"; the wait, the other notices, and the one-click objection carry the weight.
+- The claim link is not a barrier, because the host can reissue it. On a host without single sign-on, a stolen key with the scope is stopped only by the notice, the wait, and the owner's objection.
