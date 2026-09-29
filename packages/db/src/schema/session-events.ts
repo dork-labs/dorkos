@@ -35,7 +35,7 @@ export const sessionEvents = sqliteTable(
   },
   // The primary key is the only index: it already orders one session's events by
   // seq. A second `(session_id, seq)` index sat here until the index audit
-  // (migration 0132) and cost every event written a second b-tree insert.
+  // (migration 0134) and cost every event written a second b-tree insert.
   (t) => ({
     pk: primaryKey({ columns: [t.sessionId, t.seq] }),
   })

@@ -761,12 +761,13 @@ export const roomEntries = sqliteTable(
     // where the alternative is a full scan of the largest table in the schema.
     //
     // **`thread_root_entry_id` is the third column for `listThreadsForMember`**
-    // (migration 0132). Its "did this author post in this thread" EXISTS runs
+    // (migration 0134). Its "did this author post in this thread" EXISTS runs
     // once per reply in every room, and with two columns the planner (no
     // statistics, as above) answered it from `(author_id, room_id)` and read
-    // every row the author ever wrote in that room, per reply: 10.4 seconds for
+    // every row the author ever wrote in that room, per reply: 10.9 seconds for
     // one thread list on a 500,000-entry install. With the third column the
-    // check is one covering lookup (137M to 3.7M VM steps). Widening this index
+    // check is one covering lookup, and the whole list went from 137M to 4.3M
+    // VM steps (10.9 s to 0.4 s). Widening this index
     // rather than adding one keeps the insert cost where it was.
     index('idx_room_entries_author_room').on(table.authorId, table.roomId, table.threadRootEntryId),
   ]

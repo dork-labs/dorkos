@@ -932,6 +932,13 @@
       "when": 1790686427875,
       "tag": "0132_connection_access_levels",
       "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "6",
+      "when": 1790704474151,
+      "tag": "0134_query_indexes",
+      "breakpoints": true
     }
   ]
 }
