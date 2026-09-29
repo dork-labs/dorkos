@@ -28,7 +28,7 @@ export function createRemoteCommunityStream(
       const path = `/communities/${encodeURIComponent(ref)}/rooms/${encodeURIComponent(roomId)}/events`;
       const response = await fetchResponse(
         baseUrl,
-        path + buildQueryString({ since: options?.since }),
+        path + buildQueryString({ since: options?.since, redactions: options?.redactions }),
         {
           headers: { Accept: 'text/event-stream' },
           signal,
@@ -53,7 +53,11 @@ export function createRemoteCommunityStream(
         if (frame.comment) continue;
         const event = RemoteCommunityEventSchema.parse(frame.data);
         const address =
-          event.type === 'snapshot' ? event.room : event.type === 'entry' ? event.entry : event;
+          event.type === 'snapshot'
+            ? event.room
+            : event.type === 'entry' || event.type === 'revision'
+              ? event.entry
+              : event;
         if (address.community !== ref || address.roomId !== roomId || frame.type !== event.type) {
           throw new Error('The community stream returned data for a different room.');
         }

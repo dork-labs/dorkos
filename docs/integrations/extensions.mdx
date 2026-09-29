@@ -26,6 +26,8 @@ export function activate(api: ExtensionAPI): () => void {
 
 The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. It also loads extensions that come inside an installed marketplace plugin, once you approve them. Drop your manifest and entry file there, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.
 
+A newly installed extension also shows up in the **Activity inbox** (the bell at the top right) with one short row: "Turn on My Extension?", a line saying what it adds, and three buttons. **Turn it on** starts it straight away, with no reload. **Not now** turns nothing off and removes nothing; the inbox just stops asking until the extension changes version or moves. The line under the question comes from your manifest: list what you add in `contributions` (for example `"right-panel": true`) and say what it is for in `purpose`, a short phrase that finishes the sentence "This adds a My Extension tab that …".
+
 ## Event subscription
 
 `api.events` is a small, typed push channel. It is deliberately **not** the raw session stream. Extensions run untrusted in the browser, so the host exposes only a curated set of lifecycle and activity _summaries_:

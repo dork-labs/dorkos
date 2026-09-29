@@ -884,6 +884,37 @@ export interface CheckFilesResult {
   message: string;
 }
 
+/**
+ * A person's "Keep these as mine" for the files an update kept but nothing
+ * could sort (DOR-2341), sent back exactly as they were shown.
+ */
+export interface KeepFilesOptions {
+  /** Project path, for an installation scoped to a project or an agent. */
+  projectPath?: string;
+  /** The one installation, as the installed list names it (`installPath`). */
+  installRoot?: string;
+  /** The {@link InstallUnprovenFiles.keepKey} the person was shown. */
+  keepKey: string;
+  /**
+   * For a global package held back from sessions: what it runs and what a
+   * decision binds, exactly as `GET /held-back` listed them. Sent only when
+   * the person was shown them; keeping then also approves the package as it
+   * is now, the same as a Review.
+   */
+  review?: { effects: DisclosedEffects; bindsTo: string };
+}
+
+/** What "Keep these as mine" did (DOR-2341). `message` says it in one sentence. */
+export interface KeepFilesResult {
+  /** `kept`: the files are the person's now; `not-needed`: nothing was kept any more. */
+  outcome: 'kept' | 'not-needed';
+  message: string;
+  /** The files that are the person's now. */
+  files?: string[];
+  /** For a global package held back from sessions: whether it was approved too. */
+  approved?: boolean;
+}
+
 /** Options for listing installed packages. */
 export interface ListInstalledOptions {
   /** Add each installation's {@link InstallIntegrity}; reads every shipped file (DOR-2197). */
@@ -1234,6 +1265,12 @@ export interface InstallUnprovenFiles {
   running: string[];
   /** Whether "Check files" can sort them, and what the last attempt said. */
   check: InstallCheckInfo;
+  /**
+   * What "Keep these as mine" must send back (DOR-2341): a digest of the
+   * package, its installed version and every kept file's bytes as they are
+   * now, so a person's yes covers exactly what they were shown.
+   */
+  keepKey: string;
 }
 
 /**

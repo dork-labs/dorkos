@@ -290,6 +290,7 @@ describe('verifyInstall', () => {
         files: ['notes.txt', 'skills/old/SKILL.md'],
         running: ['skills/old/SKILL.md'],
         check: { source: 'fetchable' },
+        keepKey: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       },
     });
   });

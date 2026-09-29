@@ -105,6 +105,7 @@ export interface ConnectorReconciliationServiceOptions {
     | 'stageAgentGrantReplacement'
     | 'stageEveryAgentGrantReplacement'
     | 'deliverAgentGrantReplacement'
+    | 'restageRefused'
   >;
   /** Activity trail for every-agent changes; absent in a process that has none. */
   readonly activity?: EveryAgentActivitySink;
@@ -289,6 +290,7 @@ export class ConnectorReconciliationService {
         | 'stageAgentGrantReplacement'
         | 'stageEveryAgentGrantReplacement'
         | 'deliverAgentGrantReplacement'
+        | 'restageRefused'
       >
     | undefined;
   private readonly activity: EveryAgentActivitySink | undefined;
@@ -831,6 +833,19 @@ export class ConnectorReconciliationService {
           });
           everyAgentChange = describeEveryAgentChange(tx, preview.connectionId, before);
         }
+      }
+      if (provider.mode === 'managed' && this.managedAuthority) {
+        // Confirming who can use the account settles every change to it the
+        // service refused, with exactly the access this review showed, so
+        // "Check who can use it" is always a way out of a refused change. The
+        // agents decided above already have a newer change pending, so they
+        // are no longer refused and are left alone.
+        managedCommandIds.push(
+          ...this.managedAuthority.restageRefused(tx, {
+            connectionId: ConnectionIdSchema.parse(preview.connectionId),
+            why: 'confirmed',
+          })
+        );
       }
       if (provider.mode !== 'managed' || managedCommandIds.length === 0) {
         tx.update(connections)

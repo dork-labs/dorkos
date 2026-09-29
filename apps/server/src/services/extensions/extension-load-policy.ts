@@ -226,6 +226,37 @@ export function isApprovedCopy(copy: ExtensionCopy, approvals: ExtensionApproval
   );
 }
 
+/** The fields of an extension record that say which copy AND which version it is. */
+export type ExtensionVersionedCopy = ExtensionCopy & Pick<ExtensionRecord, 'manifest'>;
+
+/**
+ * Whether a person said "Not now" to THIS copy at THIS version in the Activity
+ * inbox (DOR-2517).
+ *
+ * The same identity {@link isApprovedCopy} compares, plus the manifest version:
+ * a decline is about what the person was shown, and an update is something new
+ * to decide about, so it asks again. Being dismissed changes nothing about
+ * whether the code may run; it only stops the inbox asking. Pure.
+ *
+ * @param copy - The extension record in question.
+ * @param extensions - `config.extensions`, or the dismissal map of it. Absent
+ *   reads as empty, because opening the store does not merge nested defaults
+ *   into an existing `extensions` section.
+ * @returns `true` when the recorded dismissal is for this very copy and version.
+ */
+export function isDismissedCopy(
+  copy: ExtensionVersionedCopy,
+  extensions: Pick<ExtensionsConfig, 'dismissedApprovals'>
+): boolean {
+  const dismissed = extensions.dismissedApprovals?.[copy.id];
+  if (!dismissed) return false;
+  return (
+    path.resolve(dismissed.path) === path.resolve(copy.path) &&
+    (dismissed.plugin ?? null) === (copy.sourcePlugin ?? null) &&
+    dismissed.version === copy.manifest.version
+  );
+}
+
 /**
  * Whether this extension's code may execute at all — in the DorkOS server process
  * or in the cockpit page.

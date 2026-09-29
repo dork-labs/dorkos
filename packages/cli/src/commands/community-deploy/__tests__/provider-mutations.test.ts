@@ -255,7 +255,7 @@ cat > "$CAPTURE_STDIN"
           version: 4,
         },
       ],
-      addresses: [{ id: 'ip_01', address: '203.0.113.1', type: 'shared_v4', region: 'global' }],
+      addresses: [{ address: '203.0.113.1', type: 'shared_v4', region: 'global' }],
     };
     const previousReleases = [
       {

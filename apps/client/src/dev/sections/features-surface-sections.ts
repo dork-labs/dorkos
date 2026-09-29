@@ -83,6 +83,22 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Inbox',
     keywords: ['inbox', 'notification', 'row', 'unread', 'read', 'activity', 'history'],
   },
+  {
+    id: 'inbox-decision-row',
+    title: 'Inbox decision row',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: [
+      'inbox',
+      'decision',
+      'ask',
+      'approval',
+      'extension',
+      'turn it on',
+      'not now',
+      'thumbs',
+    ],
+  },
   // ScheduleApprovalShowcases
   {
     id: 'schedule-approval-card',

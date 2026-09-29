@@ -485,7 +485,6 @@ export const ConnectorLifecycleResultSchema = z
     authenticationStatus: z.enum(['active', 'expired', 'revoked', 'pending']),
     authoritySync: ConnectorAuthoritySyncStateSchema,
     externalCleanup: z.enum(['not_required', 'pending', 'complete', 'failed']),
-    warning: ConnectorPublicWarningSchema.optional(),
   })
   .strict();
 /** Result of a local lifecycle mutation, including honest external cleanup state. */

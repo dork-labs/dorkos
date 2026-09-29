@@ -9,6 +9,7 @@ import {
 } from '@/layers/entities/connectors';
 import { useRelayEventStream, useToggleAdapter } from '@/layers/entities/relay';
 import {
+  accountChangeError,
   AccountPanel,
   AgentRequestDialog,
   AppList,
@@ -70,7 +71,6 @@ export function ConnectionsPage() {
   const deferredQuery = useDeferredValue(query);
   const [connectService, setConnectService] = useState<ConnectorCatalogService | null>(null);
   const [connectOpen, setConnectOpen] = useState(Boolean(search.flow));
-  const [connectingForRequest, setConnectingForRequest] = useState(false);
   const [accessConnectionId, setAccessConnectionId] = useState<string | null>(null);
   const [useChoice, setUseChoice] = useState<ConnectorCatalogService | null>(null);
   const chatAppSetup = useChatAppSetup();
@@ -105,6 +105,9 @@ export function ConnectionsPage() {
   const resume = useResumeConnectorConnection();
   const toggle = useToggleAdapter();
   const settings = useSettingsDeepLink();
+  // A row's own button failing says so right there, never silently: the row
+  // keeps its one fix, so pressing it again is the way on.
+  const rowActionError = reconnect.error ?? resume.error;
   const pendingRowId =
     (reconnect.isPending && reconnect.variables?.connectionId) ||
     (resume.isPending && resume.variables?.connectionId) ||
@@ -217,6 +220,16 @@ export function ConnectionsPage() {
           }}
         />
 
+        {rowActionError && (
+          <p
+            role="alert"
+            data-testid="row-action-error"
+            className="text-destructive bg-destructive/5 rounded-lg p-3 text-sm"
+          >
+            {accountChangeError(rowActionError)}
+          </p>
+        )}
+
         <AppList
           query={query}
           onQueryChange={setQuery}
@@ -275,24 +288,12 @@ export function ConnectionsPage() {
           key={search.flow ?? connectService?.serviceSlug ?? 'idle'}
           service={connectService}
           flowId={search.flow ?? null}
-          agentRequestId={
-            search.request && (connectingForRequest || search.flow) ? search.request : null
-          }
           onFlowIdChange={(next) => setSearch({ flow: next ?? undefined })}
           onClose={() => {
             setConnectOpen(false);
             setConnectService(null);
-            if (!search.flow) setConnectingForRequest(false);
           }}
-          onChooseAccess={(connectionId) => {
-            if (connectingForRequest) {
-              setConnectingForRequest(false);
-              setConnectOpen(false);
-              setConnectService(null);
-              return;
-            }
-            setAccessConnectionId(connectionId);
-          }}
+          onChooseAccess={setAccessConnectionId}
           onConnected={(connectionId) => setSearch({ app: connectionId })}
         />
       )}
@@ -303,9 +304,10 @@ export function ConnectionsPage() {
         onOpenChange={(open) => {
           if (!open) setSearch({ request: undefined });
         }}
-        onConnectService={(service) => {
-          setConnectingForRequest(true);
-          startAccount(service);
+        onEditExactActions={(connectionId) => {
+          // One dialog at a time: the request stays open under Needs you.
+          setSearch({ request: undefined });
+          setAccessConnectionId(connectionId);
         }}
         onCloseAutoFocus={returnDecisionFocus}
       />

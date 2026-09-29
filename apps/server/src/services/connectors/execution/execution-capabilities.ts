@@ -257,9 +257,13 @@ const requestConnection = defineCapability({
     'Ask the owner for access to one service when the granted connections do not cover the work. ' +
     `serviceSlug is an exact service id; find it with ${SERVICE_CATALOG_TOOL_NAME} instead of ` +
     'guessing. An app listed with a setupNote can still be requested; the note says what the ' +
-    'owner fixes first. Name only the service actions and events needed and explain why. The owner chooses ' +
-    'the account and exact access; this call never lists accounts or grants access by itself. A ' +
-    'command-line login in a shell does not grant access; only the owner connects services.',
+    'owner fixes first. Ask by level, never by action name: access "read" to look at things ' +
+    'there, or "read-write" to also change things there; ask for the lowest level the work ' +
+    'needs, and say why in reason. Name events only to hear when something new happens there. ' +
+    'Asking again for the same service reuses your open request. The owner chooses the account; ' +
+    'this call never lists accounts or grants access by itself. It waits a while for their ' +
+    'answer, and every result carries a note saying what happens next. A command-line login in ' +
+    'a shell does not grant access; only the owner connects services.',
   tier: 'observe',
   area: null,
   areaNote: 'connected accounts have their own grant model',
@@ -286,8 +290,8 @@ const getConnectionRequest = defineCapability({
   id: 'connectors.get_connection_request',
   title: 'Check a service request',
   description:
-    'Check one service request created by this exact agent session. It returns the request outcome ' +
-    "without revealing the owner's account inventory.",
+    'Check one service request created by this exact agent session. It returns the request ' +
+    "outcome and a note saying what happens next, without revealing the owner's account inventory.",
   tier: 'observe',
   area: null,
   areaNote: 'connected accounts have their own grant model',

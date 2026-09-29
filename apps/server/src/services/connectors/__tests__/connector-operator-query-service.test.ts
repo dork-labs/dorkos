@@ -178,7 +178,7 @@ describe('ConnectorOperatorQueryService', () => {
       reason: 'dorkos_account_unlinked',
       fix: { action: 'connect_new', fixableBy: 'person' },
     });
-    expect(wayHealth).toHaveBeenCalledWith(PROVIDER_ID);
+    expect(wayHealth).toHaveBeenCalledWith(PROVIDER_ID, 'gmail');
     // The detail carries the same answer.
     expect((await withWays.getConnection(OWNER, 'connection-a')).connection.readiness).toEqual(
       kept?.readiness
@@ -1274,6 +1274,69 @@ describe('ConnectorOperatorQueryService', () => {
         },
       ],
     });
+  });
+
+  it('never lets a notification’s refused setup, or one agent’s refused change, fail the whole account', async () => {
+    db.update(connectorProviderInstances)
+      .set({ mode: 'managed' })
+      .where(eq(connectorProviderInstances.id, PROVIDER_ID))
+      .run();
+    const command = (
+      commandId: string,
+      scopeKind: 'event_subscription' | 'agent_grants',
+      subjectId: string
+    ) => {
+      db.insert(connectorManagedAuthorityOutbox)
+        .values({
+          connectionId: 'connection-a',
+          providerInstanceId: PROVIDER_ID,
+          executionConfigGeneration: 1,
+          ownerKind: OWNER.kind,
+          ownerId: OWNER.installationId,
+          commandId,
+          managedConnectionId: 'private-account-a',
+          scopeKind,
+          subjectId,
+          scopeVersion: 1,
+          requestHash: commandId,
+          requestJson: '{}',
+          state: 'rejected',
+          safeReason: 'Refused.',
+          attemptCount: 1,
+          createdAt: NOW,
+          updatedAt: NOW,
+        })
+        .run();
+      db.insert(connectorManagedAuthorityScopes)
+        .values({
+          managedConnectionId: 'private-account-a',
+          scopeKind,
+          subjectId,
+          scopeVersion: 1,
+          lastCommandId: commandId,
+          lastCommandHash: commandId,
+          updatedAt: NOW,
+        })
+        .run();
+    };
+    command('event-refused', 'event_subscription', 'subscription-a');
+    const [summary] = await service.listConnections(OWNER);
+    expect(summary?.authoritySync).toEqual({ status: 'ready' });
+    expect(summary?.readiness.state).toBe('ready');
+
+    // One agent's refused change is that agent's: the detail says so per agent.
+    command('other-agent-refused', 'agent_grants', 'agent-b');
+    const detail = await service.getConnection(OWNER, 'connection-a');
+    expect(detail.agents).toEqual([
+      expect.objectContaining({ agentId: 'agent-a', authoritySync: { status: 'ready' } }),
+    ]);
+    command('agent-a-refused', 'agent_grants', 'agent-a');
+    expect((await service.getConnection(OWNER, 'connection-a')).agents).toEqual([
+      expect.objectContaining({
+        agentId: 'agent-a',
+        authoritySync: { status: 'failed', reason: 'Refused.' },
+      }),
+    ]);
   });
 
   it('uses hosted authoritative counts for managed connections and reports unavailability honestly', async () => {

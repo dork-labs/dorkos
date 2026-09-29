@@ -19,6 +19,7 @@ import { IsolatedQueryProvider } from './marketplace-query-provider';
 import {
   InstalledPackagesViewShowcase,
   ConfirmUpdatesDialogShowcase,
+  KeepFilesDialogShowcase,
 } from './MarketplaceUpdateShowcases';
 
 // The barrel first, then the leaves it does not carry — see the import rule in
@@ -567,6 +568,7 @@ export function MarketplaceShowcases() {
       <PermissionPreviewSectionShowcase />
       <InstalledPackagesViewShowcase />
       <ConfirmUpdatesDialogShowcase />
+      <KeepFilesDialogShowcase />
       <MarketplaceSourcesViewShowcase />
       <MarketplaceToolbarShowcase />
       <MarketplaceSidebarShowcase />

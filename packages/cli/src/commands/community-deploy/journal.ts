@@ -133,6 +133,7 @@ export const LaunchJournalSchema = z
         flyAppId: SafeIdentifierSchema.optional(),
         flyReleaseId: SafeIdentifierSchema.optional(),
         flyMachineId: SafeIdentifierSchema.optional(),
+        // No longer written: Fly issues no address id. Kept so a journal saved before that resumes.
         flyAddressId: SafeIdentifierSchema.optional(),
         neonProjectId: SafeIdentifierSchema.optional(),
         neonBranchId: SafeIdentifierSchema.optional(),

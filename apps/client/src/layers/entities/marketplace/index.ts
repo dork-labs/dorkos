@@ -42,6 +42,10 @@ export {
 } from './model/use-apply-updates';
 
 export { useReviewHeldBackPackage } from './model/use-review-held-back';
+export { useHeldBackPackages } from './model/use-held-back-packages';
+
+export { useKeepPackageFiles } from './model/use-keep-package-files';
+export type { KeepPackageFilesArgs } from './model/use-keep-package-files';
 
 export { useAddMarketplaceSource } from './model/use-add-marketplace-source';
 

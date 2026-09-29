@@ -31,7 +31,7 @@ import {
 } from '../../core/agent-identity/index.js';
 import { reportUsageEvent } from '../../core/usage-reporter.js';
 import { recordDispatchEnd, recordDispatchStart } from '../../observability/dispatch-buffers.js';
-import { getWorkspaceManager } from '../../workspace/index.js';
+import { getWorkspaceManager, workspaceGateFor } from '../../workspace/index.js';
 import {
   resolveSessionCwdWithRoom,
   type RoomSessionPlacePort,
@@ -80,6 +80,14 @@ export interface DispatchSessionMessageOpts {
    * session: a person's next message there asks and holds as usual.
    */
   unattended?: boolean;
+  /**
+   * Who asked, for a new workspace a `workspaceKey` names (DOR-2335): a person
+   * at this machine is shown one that brings anything and makes it over HTTP;
+   * anyone else gets an approval card, remembered across turns. Absent means
+   * not a person, so every launcher that does not say (an agent's
+   * `session_start`, an automatic carry-over) gets the card.
+   */
+  workspaceCaller?: { trusted: boolean; requestedBy?: string };
 }
 
 /**
@@ -294,12 +302,22 @@ async function launchSessionMessage(
     try {
       const source = cwd ?? DEFAULT_CWD;
       const projectKey = sanitizeWorkspaceKey(path.basename(source));
-      const workspace = await getWorkspaceManager().ensure({
-        projectKey,
-        key: workspaceKey,
-        source,
-        provider: workspaceProvider,
-      });
+      // A new workspace is shown before anything runs there (DOR-2335). A turn
+      // cannot wait on a review, so one that needs it is skipped below and the
+      // turn runs where it would have: a person makes it through
+      // `POST /api/workspaces`, and an agent's card is remembered, so a later
+      // turn after the person approved gets the workspace.
+      const workspace = await getWorkspaceManager().ensure(
+        { projectKey, key: workspaceKey, source, provider: workspaceProvider },
+        workspaceGateFor({
+          trusted: opts.workspaceCaller?.trusted ?? false,
+          name: `${projectKey}/${sanitizeWorkspaceKey(workspaceKey)}`,
+          carriesToken: false,
+          ...(opts.workspaceCaller?.requestedBy && {
+            requestedBy: opts.workspaceCaller.requestedBy,
+          }),
+        })
+      );
       effectiveCwd = workspace.path;
       logger.info('[POST /messages] bound to workspace', {
         sessionId,

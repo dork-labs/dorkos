@@ -16,9 +16,17 @@ import { IsolatedQueryProvider } from './marketplace-query-provider';
 // `.claude/skills/maintaining-dev-playground/SKILL.md`.
 import { InstalledPackagesView } from '@/layers/features/marketplace';
 import { ConfirmUpdatesDialog } from '@/layers/features/marketplace/ui/ConfirmUpdatesDialog';
+import {
+  KeepFilesDialog,
+  type UnprovenFiles,
+} from '@/layers/features/marketplace/ui/KeepFilesDialog';
 import { indexChecks, summarizeUpdates } from '@/layers/features/marketplace/lib/installed-updates';
 import { marketplaceKeys } from '@/layers/entities/marketplace';
-import type { InstallationUpdateCheck } from '@dorkos/shared/marketplace-schemas';
+import type {
+  HeldBackPackage,
+  InstallationUpdateCheck,
+  InstalledPackage,
+} from '@dorkos/shared/marketplace-schemas';
 
 import {
   MOCK_INSTALLED_FOR_UPDATES,
@@ -164,6 +172,104 @@ export function ConfirmUpdatesDialogShowcase() {
           onCancel={() => setOpen(null)}
           onConfirm={() => setOpen(null)}
         />
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/** A global plugin installed from a folder, whose update kept files nothing can sort. */
+const KEPT_INSTALLATION: InstalledPackage = {
+  name: 'code-reviewer',
+  version: '2.1.0',
+  type: 'plugin',
+  installPath: '/Users/kai/.dork/plugins/code-reviewer',
+  installedFrom: '/Users/kai/dev/code-reviewer',
+  scope: 'global',
+};
+
+/** Its kept files, as the Installed row lists them. */
+const KEPT_FILES: UnprovenFiles = {
+  files: ['commands/old-review.md', 'notes/team-style.md', 'prompts/review.md.dork-old'],
+  running: ['commands/old-review.md'],
+  check: { source: 'local' },
+  keepKey: 'sha256:kept',
+};
+
+/** What the held-back listing says the package runs. */
+const KEPT_HELD_BACK: HeldBackPackage = {
+  name: 'code-reviewer',
+  reason: 'unasked',
+  reviewable: true,
+  note: 'Held back: 1 file an update kept still runs. Review it to decide.',
+  changedSinceApproval: true,
+  bindsTo: 'sha256:pkg',
+  effects: {
+    hooks: [
+      {
+        event: 'PostToolUse',
+        matcher: 'Edit|Write',
+        command: '${CLAUDE_PLUGIN_ROOT}/bin/lint-changed.sh',
+        source: null,
+      },
+    ],
+    schedules: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: ['bin/lint-changed.sh'],
+    skillTools: [],
+    skillCommands: [],
+  },
+};
+
+/** The confirm step for "Keep these as mine" (DOR-2341), plain and for a held-back global package. */
+export function KeepFilesDialogShowcase() {
+  const [open, setOpen] = useState<'plain' | 'held' | null>(null);
+  return (
+    <PlaygroundSection
+      title="KeepFilesDialog"
+      description="Confirm step for Keep these as mine: the files an update kept but nothing can sort, the ones that still run listed apart, and a plain promise that nothing moves or is deleted. For a global package held back from sessions it also shows everything the package runs, and confirming approves what it discloses now, like a Review. Offered only where Check files can't sort the files."
+    >
+      <ShowcaseDemo>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            className="bg-card hover:bg-accent rounded-md border px-4 py-2 text-sm font-medium"
+            onClick={() => setOpen('plain')}
+          >
+            Open for a package that loads →
+          </button>
+          <button
+            type="button"
+            className="bg-card hover:bg-accent rounded-md border px-4 py-2 text-sm font-medium"
+            onClick={() => setOpen('held')}
+          >
+            Open for a held-back package →
+          </button>
+        </div>
+        <IsolatedQueryProvider
+          seed={(qc) => qc.setQueryData(marketplaceKeys.heldBack(), [KEPT_HELD_BACK])}
+        >
+          <KeepFilesDialog
+            installation={
+              open === 'plain'
+                ? KEPT_INSTALLATION
+                : open === 'held'
+                  ? {
+                      ...KEPT_INSTALLATION,
+                      heldBack: {
+                        reason: 'unasked',
+                        reviewable: true,
+                        note: KEPT_HELD_BACK.note,
+                      },
+                    }
+                  : null
+            }
+            unproven={KEPT_FILES}
+            onCancel={() => setOpen(null)}
+            onConfirm={() => setOpen(null)}
+          />
+        </IsolatedQueryProvider>
       </ShowcaseDemo>
     </PlaygroundSection>
   );

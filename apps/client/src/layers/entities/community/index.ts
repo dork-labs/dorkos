@@ -54,5 +54,7 @@ export {
 } from './model/use-remote-community';
 export {
   useRemoteCommunityStream,
+  applyRemoteCommunityRevisions,
   mergeRemoteCommunityEntries,
+  reviseRemoteCommunityEntry,
 } from './model/use-remote-community-stream';

@@ -477,11 +477,20 @@ describe('the dev loop stays free after one approval', () => {
 
     await manager.revokeRunApproval('my-ext');
 
+    // The approval is gone, and "Stop it" also puts this copy off in the
+    // Activity inbox (DOR-2517), so the ask does not come straight back.
     expect(mockConfigSet).toHaveBeenLastCalledWith('extensions', {
       enabled: ['my-ext'],
       disabled: [],
       approvedToRun: [],
       approvedSources: {},
+      dismissedApprovals: {
+        'my-ext': {
+          path: '/fake/dork-home/extensions/my-ext',
+          version: '1.0.0',
+          dismissedAt: expect.any(String),
+        },
+      },
     });
     expect(manager.getServerRouter('my-ext')).toBeNull();
   });

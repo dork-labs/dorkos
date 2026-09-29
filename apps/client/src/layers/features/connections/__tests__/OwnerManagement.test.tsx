@@ -9,7 +9,9 @@ import type {
   ConnectorManagementReviewItem,
   ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
-import { createMockTransport } from '@dorkos/test-utils';
+import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
+import { createMockConnectionReadiness, createMockTransport } from '@dorkos/test-utils';
+import { mockConnection } from '@/dev/mock-samples';
 import { TransportProvider } from '@/layers/shared/model';
 import { ConnectionAccessDialog } from '../ui/access/ConnectionAccessDialog';
 import { ManagementReviewDialog } from '../ui/ManagementReviewDialog';
@@ -133,6 +135,64 @@ describe('ConnectionAccessDialog', () => {
     );
     await screen.findByRole('group', { name: 'Access for Bo' });
     expect(screen.queryByTestId('exact-editor-every-agent')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['needs_review', CONNECTION_READINESS_COPY.needs_review.owner],
+    ['access_update_failed', CONNECTION_READINESS_COPY.access_update_failed.owner],
+  ] as const)(
+    'confirms the access as it stands without an edit when the account is %s, naming why',
+    async (reason, words) => {
+      const user = userEvent.setup();
+      const transport = createMockTransport();
+      vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
+      vi.mocked(transport.getConnectorConnections).mockResolvedValue({
+        connections: [
+          mockConnection({
+            connectionId: 'connection-1' as never,
+            readiness: createMockConnectionReadiness({
+              state: 'needs_you',
+              reason,
+              fix: { action: 'review_access', fixableBy: 'person' },
+            }),
+          }),
+        ],
+      });
+      vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+        connectionId: PREVIEW.connection.connectionId,
+        reconciliationStatus: 'ready',
+        authoritySync: { status: 'ready' },
+        grants: [],
+      });
+      renderWith(
+        transport,
+        <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+      );
+
+      expect(await screen.findByTestId('access-dialog-cause')).toHaveTextContent(words);
+      await user.click(await screen.findByRole('button', { name: 'Confirm access' }));
+      await waitFor(() =>
+        expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
+          previewId: 'preview-1',
+          grants: [],
+        })
+      );
+      expect(await screen.findByTestId('connector-access-outcome')).toHaveTextContent(
+        'Access updated'
+      );
+    }
+  );
+
+  it('still asks for a change before saving an account that needs nothing', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+    await screen.findByRole('group', { name: 'Access for Bo' });
+    expect(screen.queryByTestId('access-dialog-cause')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save access' })).toBeDisabled();
   });
 
   it('submits only the changed named agent and keeps sensitive actions out of quick access', async () => {

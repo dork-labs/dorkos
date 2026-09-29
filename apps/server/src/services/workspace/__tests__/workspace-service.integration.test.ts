@@ -15,6 +15,10 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { derivePorts, type AttachedSession } from '@dorkos/shared/workspace';
 import { createWorkspaceSubsystem, type WorkspaceSubsystem } from '../index.js';
+import { personWorkspaceGate } from '../workspace-gate.js';
+
+/** A person's gate: these source repos bring nothing, so it asks nothing. */
+const open = personWorkspaceGate();
 
 function git(args: string[], cwd: string): void {
   execFileSync('git', args, { cwd, stdio: 'pipe' });
@@ -68,8 +72,8 @@ describe('WorkspaceService — DOR-84 acceptance', () => {
   });
 
   it('VC#1: distinct keys get isolated paths and disjoint port blocks', async () => {
-    const a = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
-    const b = await sub.service.ensure({ projectKey: 'core', key: 'DOR-2', source });
+    const a = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
+    const b = await sub.service.ensure({ projectKey: 'core', key: 'DOR-2', source }, open);
 
     expect(a.status).toBe('ready');
     expect(b.status).toBe('ready');
@@ -83,8 +87,8 @@ describe('WorkspaceService — DOR-84 acceptance', () => {
   });
 
   it('VC#2: ensuring the same key twice reuses the same workspace', async () => {
-    const first = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
-    const again = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    const first = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
+    const again = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
 
     expect(again.id).toBe(first.id);
     expect(again.path).toBe(first.path);
@@ -92,7 +96,7 @@ describe('WorkspaceService — DOR-84 acceptance', () => {
   });
 
   it('VC#3: remove refuses a dirty workspace unless forced', async () => {
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
 
     // A fresh, untouched workspace is clean and removable.
     // Now make it dirty with an untracked file.
@@ -109,13 +113,13 @@ describe('WorkspaceService — DOR-84 acceptance', () => {
   });
 
   it('resolveByPath maps a nested session cwd back to its workspace', async () => {
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
     const resolved = await sub.service.resolveByPath(path.join(ws.path, 'apps', 'server'));
     expect(resolved?.id).toBe(ws.id);
   });
 
   it('a clean workspace is removable without force', async () => {
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-3', source });
+    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-3', source }, open);
     const result = await sub.service.remove(ws.id, { force: false });
     expect(result.removed).toBe(true);
   });
@@ -171,8 +175,8 @@ describe('WorkspaceService.sweep — retention policy', () => {
 
   it('a null cap disables reclamation — sweep removes nothing', async () => {
     const sub = makeSub(null);
-    const a = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
-    const b = await sub.service.ensure({ projectKey: 'core', key: 'DOR-2', source });
+    const a = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
+    const b = await sub.service.ensure({ projectKey: 'core', key: 'DOR-2', source }, open);
 
     const result = await sub.service.sweep();
 
@@ -183,10 +187,10 @@ describe('WorkspaceService.sweep — retention policy', () => {
 
   it('keeps the newest workspaces up to the cap and reclaims older ones', async () => {
     const sub = makeSub(1);
-    const older = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
-    await sub.service.ensure({ projectKey: 'core', key: 'DOR-2', source });
+    const older = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
+    await sub.service.ensure({ projectKey: 'core', key: 'DOR-2', source }, open);
     // Re-ensure bumps lastUsedAt, making DOR-2 unambiguously the newest.
-    const newer = await sub.service.ensure({ projectKey: 'core', key: 'DOR-2', source });
+    const newer = await sub.service.ensure({ projectKey: 'core', key: 'DOR-2', source }, open);
 
     const result = await sub.service.sweep();
 
@@ -197,9 +201,9 @@ describe('WorkspaceService.sweep — retention policy', () => {
 
   it('a pinned workspace beyond the cap survives and is reported', async () => {
     const sub = makeSub(1);
-    const pinned = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    const pinned = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
     await sub.service.setPinned(pinned.id, true);
-    const newest = await sub.service.ensure({ projectKey: 'core', key: 'DOR-2', source });
+    const newest = await sub.service.ensure({ projectKey: 'core', key: 'DOR-2', source }, open);
 
     const result = await sub.service.sweep();
 
@@ -211,7 +215,7 @@ describe('WorkspaceService.sweep — retention policy', () => {
 
   it('a workspace with attached sessions survives as active', async () => {
     const sub = makeSub(0, (workspacePath) => [{ sessionId: 's1', cwd: workspacePath }]);
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
 
     const result = await sub.service.sweep();
 
@@ -222,7 +226,7 @@ describe('WorkspaceService.sweep — retention policy', () => {
 
   it('a dirty workspace beyond the cap survives the dirty gate', async () => {
     const sub = makeSub(0);
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
     await writeFile(path.join(ws.path, 'scratch.txt'), 'uncommitted work\n');
 
     const result = await sub.service.sweep();
@@ -238,12 +242,15 @@ describe('WorkspaceService.sweep — retention policy', () => {
   // the one that goes red.
   it('an agent-owned workspace beyond the cap is never swept', async () => {
     const sub = makeSub(0);
-    const owned = await sub.service.ensure({
-      projectKey: 'core',
-      key: 'agent-api-bot-deadbeef',
-      source,
-      owner: { kind: 'agent', ref: '/projects/api-bot' },
-    });
+    const owned = await sub.service.ensure(
+      {
+        projectKey: 'core',
+        key: 'agent-api-bot-deadbeef',
+        source,
+        owner: { kind: 'agent', ref: '/projects/api-bot' },
+      },
+      open
+    );
 
     const result = await sub.service.sweep();
 
@@ -254,13 +261,16 @@ describe('WorkspaceService.sweep — retention policy', () => {
 
   it('an unowned workspace beside an owned one is still swept', async () => {
     const sub = makeSub(0);
-    const owned = await sub.service.ensure({
-      projectKey: 'core',
-      key: 'agent-api-bot-deadbeef',
-      source,
-      owner: { kind: 'agent', ref: '/projects/api-bot' },
-    });
-    const unowned = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    const owned = await sub.service.ensure(
+      {
+        projectKey: 'core',
+        key: 'agent-api-bot-deadbeef',
+        source,
+        owner: { kind: 'agent', ref: '/projects/api-bot' },
+      },
+      open
+    );
+    const unowned = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
 
     const result = await sub.service.sweep();
 
@@ -314,19 +324,22 @@ describe('WorkspaceService — ownership', () => {
   });
 
   it('a workspace ensured with no owner is unowned — the pre-change semantics', async () => {
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
     expect(ws.owner).toBeNull();
     expect((await sub.service.get(ws.id))?.owner).toBeNull();
   });
 
   it('owner survives the sidecar manifest and the derived cache row alike', async () => {
     const owner = { kind: 'agent' as const, ref: '/projects/api-bot' };
-    const ws = await sub.service.ensure({
-      projectKey: 'core',
-      key: 'agent-api-bot-deadbeef',
-      source,
-      owner,
-    });
+    const ws = await sub.service.ensure(
+      {
+        projectKey: 'core',
+        key: 'agent-api-bot-deadbeef',
+        source,
+        owner,
+      },
+      open
+    );
 
     // The cache row (what `get`/`list` read).
     expect((await sub.service.get(ws.id))?.owner).toEqual(owner);
@@ -337,25 +350,31 @@ describe('WorkspaceService — ownership', () => {
   });
 
   it('ensure never re-owns an existing workspace', async () => {
-    const first = await sub.service.ensure({
-      projectKey: 'core',
-      key: 'agent-api-bot-deadbeef',
-      source,
-      owner: { kind: 'agent', ref: '/projects/api-bot' },
-    });
-    const again = await sub.service.ensure({
-      projectKey: 'core',
-      key: 'agent-api-bot-deadbeef',
-      source,
-      owner: { kind: 'agent', ref: '/projects/somebody-else' },
-    });
+    const first = await sub.service.ensure(
+      {
+        projectKey: 'core',
+        key: 'agent-api-bot-deadbeef',
+        source,
+        owner: { kind: 'agent', ref: '/projects/api-bot' },
+      },
+      open
+    );
+    const again = await sub.service.ensure(
+      {
+        projectKey: 'core',
+        key: 'agent-api-bot-deadbeef',
+        source,
+        owner: { kind: 'agent', ref: '/projects/somebody-else' },
+      },
+      open
+    );
 
     expect(again.id).toBe(first.id);
     expect(again.owner).toEqual({ kind: 'agent', ref: '/projects/api-bot' });
   });
 
   it('a sidecar written before ownership existed reads as unowned', async () => {
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source });
+    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
     // Rewrite the sidecar the way a pre-change release left it: no `owner` key.
     const { owner: _dropped, ...legacy } = ws;
     await writeFile(

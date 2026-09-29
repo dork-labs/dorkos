@@ -14,6 +14,7 @@
 import { ChevronRight, FileWarning, History } from 'lucide-react';
 import type { InstallIntegrity } from '@dorkos/shared/marketplace-schemas';
 import { cn } from '@/layers/shared/lib';
+import { Button } from '@/layers/shared/ui';
 
 /** A modified installation's integrity. */
 export type ModifiedIntegrity = Extract<InstallIntegrity, { status: 'modified' }>;
@@ -93,8 +94,28 @@ export function canCheckFiles(integrity: InstallIntegrity | undefined): boolean 
   return last !== 'mismatch' && last !== 'no-source';
 }
 
-/** One group of paths in the opened disclosure. */
-function PathGroup({ title, paths }: { title: string; paths: string[] }) {
+/** The kept files an installation's integrity lists (DOR-2322). */
+type Unproven = NonNullable<Extract<InstallIntegrity, { status: 'clean' }>['unproven']>;
+
+/**
+ * Whether "Keep these as mine" is offered for these kept files (DOR-2341):
+ * only where Check files cannot sort them, because there is no earlier
+ * version (installed from a folder) or its last try could not download it.
+ * Otherwise Check files comes first, since it sets the leftovers aside.
+ *
+ * @param unproven - The kept files, as the row lists them.
+ */
+export function canKeepFiles(unproven: Pick<Unproven, 'check'>): boolean {
+  return unproven.check.source === 'local' || unproven.check.last?.outcome === 'fetch-failed';
+}
+
+/**
+ * One group of paths in the opened disclosure, or nothing when it is empty.
+ *
+ * @param props.title - The group's heading, also the list's accessible name.
+ * @param props.paths - The paths, in order.
+ */
+export function PathGroup({ title, paths }: { title: string; paths: string[] }) {
   if (paths.length === 0) return null;
   return (
     <div>
@@ -112,13 +133,18 @@ function PathGroup({ title, paths }: { title: string; paths: string[] }) {
 
 /**
  * The note for files an update kept because nothing proved whose they were
- * (DOR-2322): a count that opens to the paths and says what happened, and
- * whether Check files can sort them.
+ * (DOR-2322): a count that opens to the paths and says what happened, whether
+ * Check files can sort them, and a way to keep them as the person's
+ * (DOR-2341).
  */
 function UnprovenNote({
   unproven,
+  label,
+  onKeepFiles,
 }: {
   unproven: NonNullable<Extract<InstallIntegrity, { status: 'clean' }>['unproven']>;
+  label?: string;
+  onKeepFiles?: () => void;
 }) {
   const count = unproven.files.length;
   const running = unproven.running;
@@ -160,12 +186,23 @@ function UnprovenNote({
           DorkOS couldn’t tell whether these were yours or left over from the earlier version, so it
           kept them.{' '}
           {local
-            ? 'Delete any you don’t need.'
+            ? 'Keep them as yours, or delete any you don’t need.'
             : 'Check files sets aside the leftovers and keeps yours.'}
         </p>
         {unproven.check.last && <p>{unproven.check.last.message}</p>}
         <PathGroup title="Still runs" paths={running} />
         <PathGroup title="Kept" paths={inert} />
+        {onKeepFiles && canKeepFiles(unproven) && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-xs"
+            onClick={onKeepFiles}
+            aria-label={`Keep the files ${label ?? 'this package'} kept as mine`}
+          >
+            Keep these as mine
+          </Button>
+        )}
       </div>
     </details>
   );
@@ -179,6 +216,7 @@ function UnprovenNote({
  * @param props.label - The row's name ("Flow on Alpha"), for the Try again link's accessible name.
  * @param props.onCheckFiles - Check this installation's files again (after a mismatch).
  * @param props.isCheckingFiles - A check of this installation is running.
+ * @param props.onKeepFiles - Keep the files an update kept as the person's (DOR-2341).
  */
 export function InstallationIntegrityNote(props: {
   integrity?: InstallIntegrity;
@@ -186,6 +224,7 @@ export function InstallationIntegrityNote(props: {
   label?: string;
   onCheckFiles?: () => void;
   isCheckingFiles?: boolean;
+  onKeepFiles?: () => void;
 }) {
   const { integrity } = props;
   const unproven =
@@ -196,7 +235,7 @@ export function InstallationIntegrityNote(props: {
   return (
     <>
       <IntegrityNote {...props} />
-      <UnprovenNote unproven={unproven} />
+      <UnprovenNote unproven={unproven} label={props.label} onKeepFiles={props.onKeepFiles} />
     </>
   );
 }

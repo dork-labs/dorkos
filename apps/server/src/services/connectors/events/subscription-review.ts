@@ -15,6 +15,24 @@ import {
   type ConnectorSubscriptionStore,
 } from './subscription-store.js';
 
+/**
+ * How a review got each selected subscription, so taking the review back can
+ * leave everything exactly as it was (DOR-2503): `adopted` is a live
+ * subscription used as it was, never changed; `prior` is the row as it was
+ * before the review took it over; neither means the review created it.
+ * Both are optional, so a review stored before they existed still reads.
+ */
+const PriorSubscriptionSchema = z
+  .object({
+    scopeVersion: z.number().int().positive(),
+    enabled: z.boolean(),
+    revokedAt: z.string().nullable(),
+    removedAt: z.string().nullable(),
+    definitionId: z.string().nullable(),
+    bindingId: z.string().nullable(),
+  })
+  .strict();
+
 const StoredReviewSchema = z
   .array(
     z
@@ -22,11 +40,18 @@ const StoredReviewSchema = z
         selection: ConnectorEventGrantSelectionSchema,
         scope: ConnectorReceiveScopeSchema,
         manageExistingTriggers: z.boolean(),
+        adopted: z.literal(true).optional(),
+        prior: PriorSubscriptionSchema.optional(),
       })
       .strict()
   )
   .min(1)
   .max(CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT);
+
+/** One stored review's items, validated, for a caller that must undo exactly what it did. */
+export function storedEventReview(selectionsJson: string) {
+  return StoredReviewSchema.parse(JSON.parse(selectionsJson));
+}
 
 /** Atomically select generations once for a server-owned review identity. */
 export function prepareEventReview(
@@ -60,7 +85,11 @@ export function prepareEventReview(
       return StoredReviewSchema.parse(JSON.parse(existing.selections_json));
     }
     const selected = normalized.map((scope) => {
-      const proposed = store.propose(owner, scope, now);
+      // A subscription already delivering exactly this is used as it is, never
+      // taken over; anything else is proposed at a new generation, keeping how
+      // it was before so the review can be taken back cleanly.
+      const live = store.liveMatch(owner, scope);
+      const proposed = live ?? store.propose(owner, scope, now);
       const selection = {
         subscriptionId: proposed.subscriptionId,
         scopeVersion: proposed.scopeVersion,
@@ -77,7 +106,16 @@ export function prepareEventReview(
           )
           .digest('hex'),
       };
-      return { selection, scope, manageExistingTriggers };
+      return {
+        selection,
+        scope,
+        manageExistingTriggers,
+        ...(live
+          ? { adopted: true as const }
+          : 'prior' in proposed && proposed.prior
+            ? { prior: proposed.prior }
+            : {}),
+      };
     });
     // Two indistinguishable destinations would invalidate the first generation
     // while preparing the second. Refuse the entire review atomically.
@@ -107,21 +145,27 @@ export function approvedEventSelections(
     return undefined;
   const first = requested[0]!;
   const ownerId = owner.kind === 'user' ? owner.userId : owner.installationId;
+  // One generation can sit in more than one review: an agent's request uses
+  // a subscription the person already has as it is (DOR-2503). Every review
+  // that selected exactly this set is equally valid consent, since each item
+  // below is still checked against the current generation, so the first by
+  // review id is read; a review of a different set never answers for this one.
   const candidates = store.db.$client
     .prepare(
       `SELECT selections_json FROM connector_event_consent_commands c
     WHERE c.owner_kind = ? AND c.owner_id = ? AND EXISTS (
       SELECT 1 FROM json_each(c.selections_json) item WHERE json_extract(item.value, '$.selection.subscriptionId') = ?
-      AND json_extract(item.value, '$.selection.scopeVersion') = ?) LIMIT 2`
+      AND json_extract(item.value, '$.selection.scopeVersion') = ?) ORDER BY c.review_id`
     )
     .all(owner.kind, ownerId, first.subscriptionId, first.scopeVersion) as Array<{
     selections_json: string;
   }>;
-  if (candidates.length !== 1) return undefined;
-  const stored = StoredReviewSchema.parse(JSON.parse(candidates[0]!.selections_json));
   const order = (items: ConnectorEventGrantSelection[]) =>
     stableStringify([...items].sort((a, b) => a.subscriptionId.localeCompare(b.subscriptionId)));
-  if (order(stored.map((item) => item.selection)) !== order(requested)) return undefined;
+  const stored = candidates
+    .map((candidate) => StoredReviewSchema.parse(JSON.parse(candidate.selections_json)))
+    .find((review) => order(review.map((item) => item.selection)) === order(requested));
+  if (!stored) return undefined;
   for (const { selection, scope } of stored) {
     const proposed = store.reviewedProposal(owner, selection, scope);
     if (!proposed) return undefined;

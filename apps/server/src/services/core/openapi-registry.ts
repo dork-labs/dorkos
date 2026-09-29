@@ -205,6 +205,11 @@ import {
   ApprovalDecisionResponseSchema,
 } from '@dorkos/shared/approval-schemas';
 import {
+  ApproveExtensionRequestSchema,
+  DismissExtensionApprovalRequestSchema,
+  PendingExtensionApprovalsResponseSchema,
+} from '@dorkos/shared/extension-approval-schemas';
+import {
   DeletePushSubscriptionResponseSchema,
   ListNotificationsQuerySchema,
   ListNotificationsResponseSchema,
@@ -3102,6 +3107,73 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
+  path: '/api/marketplace/packages/{name}/keep-files',
+  tags: ['Marketplace'],
+  summary: "Keep the files an update couldn't sort as the person's",
+  description:
+    "Make the files an update kept, because it could not tell whether they were the person's " +
+    "or left over from the earlier version, the person's: the record stops listing them, and " +
+    'nothing is moved or deleted (DOR-2341). Only a person may do this: an agent is refused ' +
+    '(`operator_only`), and under login so is anything but a signed-in session ' +
+    '(`operator_cookie_required`). Bound to `keepKey` as the installed list showed it: when a ' +
+    'kept file or the installed version changed since, the answer is 409 `kept_files_changed` ' +
+    'and nothing is written. For a global package held back from sessions, `review` (exactly as ' +
+    '`GET /held-back` listed it) also approves what the package discloses now, like a Review.',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            projectPath: z.string().optional(),
+            installRoot: z.string().optional(),
+            keepKey: z
+              .string()
+              .describe('`integrity.unproven.keepKey` from `GET /installed?verify=true`.'),
+            review: z
+              .object({ effects: DisclosedEffectsSchema, bindsTo: z.string() })
+              .optional()
+              .describe('For a held-back global package: what it runs and what a decision binds.'),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'What was kept, and one sentence saying so',
+      content: {
+        'application/json': {
+          schema: z.object({
+            outcome: z.enum(['kept', 'not-needed']),
+            message: z.string(),
+            files: z.array(z.string()).optional(),
+            approved: z.boolean().optional(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or an invalid package name',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Not a person (`operator_only`, `operator_cookie_required`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The kept files changed since they were shown (`kept_files_changed`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
   path: '/api/marketplace/packages/{name}/uninstall',
   tags: ['Marketplace'],
   summary: 'Uninstall a marketplace package',
@@ -4519,6 +4591,118 @@ registry.registerPath({
     200: {
       description: 'Pending approvals',
       content: { 'application/json': { schema: PendingApprovalsResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/extensions/pending-approvals',
+  tags: ['Extensions'],
+  summary: 'List extensions waiting to be turned on',
+  description:
+    'Every installed extension that is waiting for a person to let it run, oldest first ' +
+    '(DOR-2517). An extension is listed when it was installed by a person or the marketplace ' +
+    '(DorkOS’s own never ask), is not turned off, may not run yet, and has not been declined ' +
+    'with "Not now" at its current path, plugin and version. The Activity inbox draws one row ' +
+    'per item. `sourceLabel` and `why` are display text and are never used to decide trust. A ' +
+    'caller that may not read the person’s inbox (an agent) gets the list without `path` and ' +
+    'without any folder in `sourceLabel`.',
+  responses: {
+    200: {
+      description: 'Extensions waiting to be turned on',
+      content: { 'application/json': { schema: PendingExtensionApprovalsResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/extensions/{id}/approve',
+  tags: ['Extensions'],
+  summary: 'Turn on an extension waiting to run',
+  description:
+    'Records that a person allowed this extension to run code inside DorkOS, bound to the copy on ' +
+    'disk (its folder and the plugin that carried it), and starts it. The body is optional: send ' +
+    'the path, version and plugin of the copy the person was shown (the Activity inbox always ' +
+    'does), and the approval is refused with `stale_approval` unless the copy on disk is still ' +
+    'exactly that one, so an old row can never turn on a copy that took its place. Clears any ' +
+    '"Not now" for this id. A caller naming itself an agent is refused in every posture, and a ' +
+    'signed-in person is required when login is on. There is no MCP tool for this.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      required: false,
+      content: { 'application/json': { schema: ApproveExtensionRequestSchema } },
+    },
+  },
+  responses: {
+    200: { description: 'Turned on; the updated extension record' },
+    400: {
+      description: 'Invalid extension id or body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Login is enabled and the caller is not signed in',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Refused: an agent or another site cannot turn an extension on',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such extension',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The extension ships with DorkOS, or the copy changed since the person saw it ' +
+        '(`stale_approval`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/extensions/{id}/dismiss-approval',
+  tags: ['Extensions'],
+  summary: 'Say "Not now" to an extension waiting to be turned on',
+  description:
+    'Records that a person declined this copy of the extension at this version, so the Activity ' +
+    'inbox stops asking until its path, plugin or version changes. Never destructive: nothing is ' +
+    'uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body ' +
+    'names the copy the person was shown; if the copy on disk is no longer that one the answer is ' +
+    'refused with `stale_approval`. The same person bar as approving applies: a caller naming ' +
+    'itself an agent is refused in every posture, and a signed-in person is required when login ' +
+    'is on. There is no MCP tool for this.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: DismissExtensionApprovalRequestSchema } } },
+  },
+  responses: {
+    204: { description: 'Declined for now' },
+    400: {
+      description: 'Invalid extension id or body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Login is enabled and the caller is not signed in',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Refused: an agent or another site cannot answer this',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such extension',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The extension ships with DorkOS, or the copy changed since the person saw it ' +
+        '(`stale_approval`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
@@ -6566,7 +6750,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Durable room event stream (SSE, or WebSocket at the same path)',
   description:
-    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
+    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, a `reaction`, a `canvas` change, or a `revision`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached. A `canvas` frame carries one canvas document's whole current state (or its id and `closed: true`), also without an `id:` line; a resume re-sends every live document, and a client replaces its table from that set. A `revision` frame is sent only for a room mirrored from a Community: it carries an entry the reader may already hold, as the log holds it after the Community server deleted, removed or erased it, and never the text it replaced. It has no `id:` line either; a reader replaces the entry it holds with the same `id` and ignores one it does not hold. A resume of a mirrored room re-sends the trailing window (the last 100 entries) as `revision` frames; an entry older than that is corrected only when it is read again.",
   request: {
     params: RoomIdParams,
     query: z.object({

@@ -120,6 +120,20 @@ export async function deliverRoomStream(
         if (sink.closed) return;
         await send(event);
       }
+      // A mirrored Community room's messages can be deleted or erased on the
+      // Community server after they were copied here, and the copy is rewritten
+      // in place (DOR-2336). A rewrite while this reader was away is below the
+      // cursor, so the replay cannot carry it: the trailing window goes out as
+      // `revision` frames, the same correction the reaction resync makes. Every
+      // other room answers nothing here, because nothing else edits an entry.
+      //
+      // LIMIT: only the trailing window (`SNAPSHOT_HISTORY_LIMIT`, 100 entries).
+      // A reader holding older pages keeps any older rewrite it missed until it
+      // reads that page again; nothing on the wire corrects it.
+      for (const event of service.revisionResync(roomId, ROOMS.SNAPSHOT_HISTORY_LIMIT)) {
+        if (sink.closed) return;
+        await send(event);
+      }
       // And the room's shared canvas, whole, for the same reason and in the same
       // shape — the exact parallel of the resync above (spec `room-canvas` §2).
       // A document that was CLOSED while this reader was away leaves no trace on

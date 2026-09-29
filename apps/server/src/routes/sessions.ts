@@ -37,6 +37,8 @@ import {
   type OperatorCookieRefusal,
 } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
+import { trustedCaller } from '../services/core/capabilities/index.js';
+import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
 import { getUserById, readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
 import { resolveAnswererName } from '../services/identity/operator-profile.js';
@@ -94,6 +96,25 @@ import {
 import { ControlRequestTimeoutError } from '../services/runtimes/claude-code/sessions/bounded-control.js';
 
 const vaultRoot = DEFAULT_CWD;
+
+/**
+ * Who is posting a message, for a new workspace its `workspaceKey` names
+ * (DOR-2335): a person at this machine, or anyone else, with the name an
+ * approval card shows.
+ *
+ * @param req - The request.
+ * @param res - The response, whose locals carry the agent identity.
+ */
+function workspaceCallerOf(
+  req: Request,
+  res: Response
+): { trusted: boolean; requestedBy?: string } {
+  const identity = getRequestAgentIdentity(res);
+  return {
+    trusted: trustedCaller(readCallerAuthority(req, res)) !== undefined,
+    ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+  };
+}
 
 const router = Router();
 
@@ -1000,6 +1021,8 @@ router.post('/:id/messages', async (req, res) => {
     clientId,
     meshCore: req.app.locals.meshCore as MeshCore | undefined,
     roomSessionPlace: req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
+    // Who is asking, for a new workspace a workspaceKey names (DOR-2335).
+    workspaceCaller: workspaceCallerOf(req, res),
   });
   if (isSessionLaunchRefusal(result)) {
     // A request naming something that does not exist is the caller's mistake;

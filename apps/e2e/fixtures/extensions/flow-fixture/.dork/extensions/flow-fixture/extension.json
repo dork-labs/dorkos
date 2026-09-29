@@ -1,0 +1,8 @@
+{
+  "id": "flow-fixture",
+  "name": "Flow",
+  "version": "1.0.0",
+  "description": "Browser-test fixture: an extension that adds one right-panel tab.",
+  "purpose": "shows a fixture panel for the browser tests",
+  "contributions": { "right-panel": true }
+}

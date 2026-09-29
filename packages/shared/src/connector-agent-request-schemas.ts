@@ -17,27 +17,24 @@ export type ConnectorAgentRequestAuthenticationInput = z.infer<
 >;
 
 /**
- * Explicit owner decision for one agent request.
+ * Explicit owner decision for one agent request. There is one way to answer
+ * a request, the same card in a chat and on the Connections page:
  *
  * - `denied` answers no and grants nothing.
- * - `approved` writes exactly the chosen operation revisions (a subset of what
- *   the agent asked for) as the agent's access to one account, replacing what
- *   it held there. The Connections page's exact-action review sends it.
- * - `current_access` writes nothing. It answers the request with the access
- *   the agent ALREADY holds on one account, which the owner has just given it
- *   through the shared "who can use it" card (the chat card sends it). That
- *   card only ever raises one agent's access, so answering this way can never
- *   lower access or touch another agent. The server refuses it when the agent
- *   holds nothing live on that account.
+ * - `current_access` writes no action access. It answers the request with the
+ *   access the agent ALREADY holds on one account, which the owner has just
+ *   given it through the shared "who can use it" card. That card only ever
+ *   raises one agent's access, so answering this way can never lower access
+ *   or touch another agent. The server refuses it when the agent holds
+ *   nothing live on that account. `eventScopes` are the exact updates the
+ *   owner chose for a request that also asked to hear about new activity.
  */
 export const ConnectorAgentRequestDecisionSchema = z.discriminatedUnion('decision', [
   z.object({ decision: z.literal('denied') }).strict(),
-  z.object({ decision: z.literal('current_access'), connectionId: ConnectionIdSchema }).strict(),
   z
     .object({
-      decision: z.literal('approved'),
+      decision: z.literal('current_access'),
       connectionId: ConnectionIdSchema,
-      operationRevisionIds: z.array(z.string().min(1)).min(1).max(200),
       eventScopes: z
         .array(ConnectorReceiveScopeSchema)
         .max(CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT)
@@ -47,3 +44,7 @@ export const ConnectorAgentRequestDecisionSchema = z.discriminatedUnion('decisio
 ]);
 /** Explicit owner decision for one agent request. */
 export type ConnectorAgentRequestDecision = z.infer<typeof ConnectorAgentRequestDecisionSchema>;
+/** Owner decision as a caller sends it, before defaults such as `eventScopes: []` are applied. */
+export type ConnectorAgentRequestDecisionInput = z.input<
+  typeof ConnectorAgentRequestDecisionSchema
+>;
