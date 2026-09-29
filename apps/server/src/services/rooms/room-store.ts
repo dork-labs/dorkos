@@ -205,6 +205,16 @@ export class RoomStore {
     this.remoteTimelineRoomIds.add(roomId);
   }
 
+  /**
+   * Whether a room is a persisted remote mirror, as {@link RoomStore.registerRemoteTimelineRoom}
+   * recorded. The one kind of room whose entries can change after they were written.
+   *
+   * @param roomId - The local room id.
+   */
+  isRemoteTimelineRoom(roomId: string): boolean {
+    return this.remoteTimelineRoomIds.has(roomId);
+  }
+
   /** Select the authoritative order for one room's timeline. */
   private timelineOrder(roomId: string, direction: 'asc' | 'desc'): SQL[] {
     if (this.remoteTimelineRoomIds.has(roomId)) return remoteTimelineOrder(direction);

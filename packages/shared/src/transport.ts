@@ -226,7 +226,7 @@ import type { FeedbackListItem, FeedbackSubmission } from './telemetry-events.js
 import type { ConnectorProviderStatus } from './connector-provider.js';
 import type {
   ConnectorAgentRequestAuthenticationInput,
-  ConnectorAgentRequestDecision,
+  ConnectorAgentRequestDecisionInput,
 } from './connector-agent-request-schemas.js';
 import type {
   ConnectionId,
@@ -3261,7 +3261,7 @@ export interface Transport
   /** Deny or grant an exact account and access set for one agent request. */
   resolveConnectorAgentRequest(
     requestId: string,
-    input: ConnectorAgentRequestDecision
+    input: ConnectorAgentRequestDecisionInput
   ): Promise<ConnectorAgentRequestItem>;
 
   /** Start account authentication in the context of one exact agent request. */

@@ -786,6 +786,51 @@ describe('useRoomStream', () => {
     });
   });
 
+  // Purpose (DOR-2336): a `revision` frame swaps only the words. A live frame
+  // cannot know a page's true thread size (#2056) and does not carry the
+  // reactions the `reaction` frame owns, so taking the frame's entry wholesale
+  // would drop both. It fails if the held row is replaced by the frame's entry.
+  it('keeps a revised entry’s thread reply count and reactions, and swaps only its words', async () => {
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    const pill = { emoji: '👍', authorIds: ['ana'], firstAt: '2026-07-26T10:00Z' };
+    queryClient.setQueryData<RoomEntry[]>(roomKeys.entries('room-1'), [
+      { ...entry(4), threadReplyCount: 7, reactions: [pill] },
+      entry(5),
+    ]);
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) =>
+        (async function* (): AsyncIterable<RoomEvent> {
+          // As the server sends it: the row as the log holds it, with no page
+          // rollups on it.
+          yield {
+            type: 'revision',
+            entry: { ...entry(4), body: { text: 'This message was erased.' } },
+          };
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) return resolve();
+            signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+        })()
+      );
+
+    renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    await waitFor(() => {
+      const held = queryClient.getQueryData<RoomEntry[]>(roomKeys.entries('room-1'));
+      expect(held?.[0]!.body).toEqual({ text: 'This message was erased.' });
+    });
+    const held = queryClient.getQueryData<RoomEntry[]>(roomKeys.entries('room-1'))!;
+    expect(held[0]!.threadReplyCount).toBe(7);
+    expect(held[0]!.reactions).toEqual([pill]);
+    expect(held.map((row) => row.seq)).toEqual([4, 5]);
+    // Not a place in the log: the cursor stays where the history left it.
+    expect(cursors(transport)).toEqual([5]);
+  });
+
   it('does not move the resume cursor for a reaction', async () => {
     const transport = createMockTransport();
     const queryClient = makeQueryClient();

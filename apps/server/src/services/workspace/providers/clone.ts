@@ -15,6 +15,7 @@ import type {
   ProviderResult,
   DirtyState,
 } from '@dorkos/shared/workspace';
+import { internalGitConfig } from '@dorkos/shared/git-hardening';
 import {
   assertSafeWorkspaceSource,
   computeDirtyState,
@@ -38,10 +39,11 @@ export class CloneProvider implements WorkspaceProvider {
     assertSafeWorkspaceSource(req.source);
     // The person's own repository: their hooks run, as for their own git.
     // `--end-of-options`: the source and path are values, never flags.
-    await runGit(['clone', '--end-of-options', req.source, req.path], this.root, {
-      config: PERSON_REPO_GIT_CONFIG,
-    });
-    await runGit(['checkout', '-b', req.branch], req.path, { config: PERSON_REPO_GIT_CONFIG });
+    // For anyone but a person, no hook runs: not a template's, and not one a
+    // `core.hooksPath` names (DOR-2335).
+    const config = req.personGit ? PERSON_REPO_GIT_CONFIG : internalGitConfig();
+    await runGit(['clone', '--end-of-options', req.source, req.path], this.root, { config });
+    await runGit(['checkout', '-b', req.branch], req.path, { config });
     return { path: req.path, branch: req.branch };
   }
 

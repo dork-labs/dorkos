@@ -106,7 +106,7 @@ async function fixture() {
     authorize: (_owner: unknown, agentId: string) => agentId === 'agent-fixture',
   };
   const subscriptions = new ConnectorSubscriptionService(store, registry, destinations);
-  const managed = { reconcile: async () => false, ready: () => false };
+  const managed = { reconcile: async () => false, ready: () => false, stage: () => undefined };
   const grants = new ConnectorEventGrantService(store, subscriptions, destinations, managed);
   const inbox = new ConnectorEventInboxStore({ db });
   const ingress = new ConnectorEventIngressService(store, inbox, settings);

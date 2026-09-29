@@ -144,7 +144,7 @@ async function fixture() {
     })),
   } as unknown as ConnectorEventCapability;
   const policy = { authorize: () => true };
-  const managed = { reconcile: vi.fn(async () => true), ready: vi.fn(() => true) };
+  const managed = { reconcile: vi.fn(async () => true), ready: vi.fn(() => true), stage: vi.fn() };
   const service = new ConnectorSubscriptionService(
     store,
     { resolveProviderInstance: () => ({ events }) as ConnectorProvider },

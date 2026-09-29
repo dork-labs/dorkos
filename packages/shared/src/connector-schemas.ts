@@ -1022,6 +1022,18 @@ const ConnectionTargetSchema = ReviewActionBaseSchema.extend({
 }).strict();
 
 /**
+ * The access an agent asks for, by level rather than by action name: `read`
+ * is everything the app lets agents read, and `read-write` adds everything
+ * that changes something there. These are the same two levels the person
+ * answers with ("Read", "Read and write"), so a request and its answer are
+ * compared by class, never by guessed action names. No level covers an
+ * action that can't be undone; that is only ever allowed one action at a time.
+ */
+export const ConnectorRequestAccessSchema = z.enum(['read', 'read-write']);
+/** The access an agent asks for, by level. */
+export type ConnectorRequestAccess = z.infer<typeof ConnectorRequestAccessSchema>;
+
+/**
  * Versioned operator actions accepted by durable connector review requests.
  * Every branch is strict so newly supplied fields cannot silently acquire
  * authority under an older action version.
@@ -1069,7 +1081,7 @@ export const ConnectorReviewActionSchema = z.discriminatedUnion('kind', [
     kind: z.literal('agent_connection_request'),
     serviceSlug: z.string().min(1),
     reason: z.string().min(1),
-    requestedOperations: z.array(z.string().min(1)).min(1),
+    access: ConnectorRequestAccessSchema,
     requestedEvents: z.array(z.string().min(1)).default([]),
   }).strict(),
   ReviewActionBaseSchema.extend({
@@ -1087,7 +1099,7 @@ export const ConnectorAgentConnectionRequestInputSchema = z
     version: z.literal(1),
     serviceSlug: z.string().min(1).max(200),
     reason: z.string().min(1).max(2_000),
-    requestedOperations: z.array(z.string().min(1).max(500)).min(1).max(200),
+    access: ConnectorRequestAccessSchema,
     requestedEvents: z
       .array(z.string().min(1).max(500))
       .max(CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT)
@@ -1095,17 +1107,12 @@ export const ConnectorAgentConnectionRequestInputSchema = z
   })
   .strict()
   .superRefine((request, context) => {
-    for (const [field, values] of [
-      ['requestedOperations', request.requestedOperations],
-      ['requestedEvents', request.requestedEvents],
-    ] as const) {
-      if (new Set(values).size !== values.length) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [field],
-          message: 'Requested service actions must be unique.',
-        });
-      }
+    if (new Set(request.requestedEvents).size !== request.requestedEvents.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['requestedEvents'],
+        message: 'Requested events must be unique.',
+      });
     }
   });
 /** Strict runtime request for owner-reviewed access to one service. */
@@ -1116,15 +1123,27 @@ export type ConnectorAgentConnectionRequestInput = z.infer<
 const ConnectorAgentRequestBaseSchema = z
   .object({
     requestId: z.string().min(1),
-    reviewUrl: z.string().startsWith('/connections?request='),
     serviceSlug: z.string().min(1),
     reason: z.string().min(1),
-    requestedOperations: z.array(z.string().min(1)),
+    access: ConnectorRequestAccessSchema,
     requestedEvents: z.array(z.string().min(1)),
     createdAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
+    /**
+     * What happens next, or what the person must do, in plain words the agent
+     * can pass on. Every status carries one, so an agent never has to guess
+     * from a status name alone.
+     */
+    note: z.string().min(1),
   })
   .strict();
+
+/**
+ * The part of what an agent asked for that its access does not cover, by
+ * class: `write` when it asked to change things and can only read, `read`
+ * when what it holds reads nothing.
+ */
+export const ConnectorRequestNotGrantedSchema = z.array(z.enum(['read', 'write']));
 
 /** Account-private-safe result returned to the originating runtime. */
 export const ConnectorAgentRequestStatusSchema = z.discriminatedUnion('status', [
@@ -1136,11 +1155,12 @@ export const ConnectorAgentRequestStatusSchema = z.discriminatedUnion('status', 
     grantedOperationRevisionIds: z.array(z.string().min(1)),
     grantedEvents: z.array(z.string().min(1)),
     /**
-     * Operations the agent asked for that the owner did not allow. Empty when
-     * everything asked for was allowed; the agent works within the rest and
-     * says what it could not do.
+     * What the agent asked for that its access on this account does not
+     * cover, compared by class (read, write), never by action name. Empty
+     * when everything asked for was allowed; otherwise the agent works within
+     * what it has and says what it could not do.
      */
-    notGrantedOperations: z.array(z.string().min(1)).optional(),
+    notGranted: ConnectorRequestNotGrantedSchema,
   }).strict(),
   ConnectorAgentRequestBaseSchema.extend({ status: z.literal('denied') }).strict(),
   ConnectorAgentRequestBaseSchema.extend({ status: z.literal('expired') }).strict(),
