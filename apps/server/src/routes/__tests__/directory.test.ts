@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock boundary module
@@ -58,7 +59,7 @@ import { createApp } from '../../app.js';
 import { BoundaryError } from '../../lib/boundary.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 const BOUNDARY = '/Users/testuser';
 const AGENTS_ROOT = '/home/node/.dork/agents';

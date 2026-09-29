@@ -26,6 +26,7 @@ import type { Express } from 'express';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { MeshCore } from '@dorkos/mesh';
 import { createApp, finalizeApp } from './app.js';
+import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import { env } from './env.js';
 import { testControlRouter } from './routes/test-control.js';
 import { initBoundary } from './lib/boundary.js';
@@ -138,7 +139,8 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
     rows: rooms.attachments,
   });
 
-  const app = createApp();
+  const admission = new MainRequestAdmission();
+  const app = createApp({ admission });
   // `POST /api/test/seed-agent` reads it; harness cases seed on disk instead,
   // but a route that answers 500 for a missing local is worse than one wired.
   app.locals.meshCore = mesh;

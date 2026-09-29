@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The single most likely implementation error in the correlation spine, pinned.
  *
@@ -75,7 +76,7 @@ import {
   resetDispatchBuffers,
 } from '../../services/observability/dispatch-buffers.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The four out-of-usage routes, and the limit history beside them (spec
  * `claude-account-ui` §7.1), through the REAL app mount (spec
@@ -68,7 +69,7 @@ import {
   setSessionLimitStore,
 } from '../../services/session/fleet/session-limit-store.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

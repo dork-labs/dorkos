@@ -75,12 +75,13 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import request from '@dorkos/test-utils/supertest';
 import { createApp, finalizeApp } from '../../app.js';
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
 import { resolveLaunchAccountRoot } from '../../services/runtimes/claude-code/claude-config-dir.js';
 import { projectOfFolder } from '../../services/core/usage/account-eligibility.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const server = createServer(app);
 

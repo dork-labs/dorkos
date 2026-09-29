@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -33,7 +34,7 @@ import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const server = listeningServer(app);
 const localTarget = swappableServer();
 
@@ -63,7 +64,7 @@ describe('CORS with tunnel origin', () => {
 
   it('sends Access-Control-Allow-Credentials: true for an allowed origin (DORKOS_CORS_ORIGIN env path)', async () => {
     process.env.DORKOS_CORS_ORIGIN = 'http://localhost:5173';
-    const envApp = createApp();
+    const envApp = createApp({ admission: new MainRequestAdmission() });
 
     const res = await request(localTarget.mount(envApp))
       .get('/api/health')

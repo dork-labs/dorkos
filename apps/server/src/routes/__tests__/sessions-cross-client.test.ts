@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * Cross-client behaviors over the durable session contract (spec
  * chat-stream-reconnection, task #17). Pins what the acceptance run
@@ -110,7 +111,7 @@ import { resetMessageDispatcher } from '../../services/session/message-dispatche
 import type { LockActivity } from '../../services/session/session-lock.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 /**
