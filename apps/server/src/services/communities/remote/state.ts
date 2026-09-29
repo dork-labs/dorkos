@@ -243,7 +243,7 @@ export function getRemoteCommunityAdapter(
       // deletion and purges the copies (DOR-2334).
       (communityRef, ownerKey) => {
         void getRemotePairingService()
-          .status(communityRef, ownerKey)
+          .communityDeletedSeen(communityRef, ownerKey)
           .catch(() => undefined);
       }
     );

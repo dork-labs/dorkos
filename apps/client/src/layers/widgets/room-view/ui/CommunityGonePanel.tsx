@@ -47,6 +47,7 @@ export function CommunityGonePanel({ connection, onRemoved }: CommunityGonePanel
   const label = connection.label;
   const since = connection.seemsGoneSince
     ? new Date(connection.seemsGoneSince).toLocaleDateString(undefined, {
+        year: 'numeric',
         month: 'long',
         day: 'numeric',
       })
@@ -75,7 +76,7 @@ export function CommunityGonePanel({ connection, onRemoved }: CommunityGonePanel
       <p className="text-muted-foreground max-w-sm">
         {deleted
           ? `${label} no longer exists, so DorkOS removed the copy it kept on this computer.`
-          : `${label} hasn’t answered since ${since}. It may have been deleted. This computer still has a copy of its channels, messages and files.`}
+          : `Since ${since}, ${label} has said this community doesn’t exist. It may have been deleted. This computer still has a copy of its channels, messages and files.`}
       </p>
       <Button variant={deleted ? 'outline' : 'destructive'} onClick={() => setConfirming(true)}>
         {deleted ? 'Remove from DorkOS' : 'Remove local copy'}

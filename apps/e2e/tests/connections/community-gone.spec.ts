@@ -26,7 +26,9 @@ for (const viewport of [
     await page.goto(`/channels?community=${GONE.ref}&id=${ROOM}`);
 
     await expect(page.getByText('This community seems to be gone')).toBeVisible();
-    await expect(page.getByText(/Gamma hasn’t answered since/)).toBeVisible();
+    await expect(
+      page.getByText(/Since September 1, 2026, Gamma has said this community doesn’t exist/)
+    ).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`seems-gone-${viewport.name}.png`) });
 
     await page.getByRole('button', { name: 'Remove local copy' }).click();

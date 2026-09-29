@@ -1049,6 +1049,43 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await service.disconnect(ref, 'missing-owner');
     });
 
+    // Purpose (review 2): a rejected grant (401) is an answer from a community that exists, so it
+    // resets the count — the connection then only needs reconnecting, and its check never runs
+    // again, so a count left behind would offer "Remove local copy" for a live community. So do
+    // other definite answers (a hold's 423). It fails if a 401 leaves the date in place.
+    it.each([
+      ['a rejected grant', 401, undefined],
+      ['a hold', 423, 'COMMUNITY_HELD'],
+    ] as Array<[string, number, string | undefined]>)(
+      'starts the count over on %s',
+      async (_label, status, code) => {
+        const { store, service, ref } = await connectedAt('answered-owner');
+        refuse(`${qualified}/me/connection-access`, 404, 'NOT_FOUND');
+        await service.status(ref, 'answered-owner');
+        expect(await store.notFoundSince(ref, 'answered-owner')).not.toBeNull();
+        refuse(`${qualified}/me/connection-access`, status, code);
+        await service.status(ref, 'answered-owner');
+        expect(await store.notFoundSince(ref, 'answered-owner')).toBeNull();
+        await service.disconnect(ref, 'answered-owner');
+      }
+    );
+
+    // Purpose (review 3): once the deletion is recorded, another request answering
+    // `410 COMMUNITY_DELETED` does not ask the Community again. It fails if every such request
+    // re-runs the access check.
+    it('stops nudging the access check once the deletion is recorded', async () => {
+      const { service, revokeConnection, ref } = await connectedAt('nudged-owner');
+      refuse(`${qualified}/me/connection-access`, 410, 'COMMUNITY_DELETED');
+      const before = accessRequests;
+      await service.communityDeletedSeen(ref, 'nudged-owner');
+      expect(accessRequests).toBe(before + 1);
+      await service.communityDeletedSeen(ref, 'nudged-owner');
+      await service.communityDeletedSeen(ref, 'nudged-owner');
+      expect(accessRequests).toBe(before + 1);
+      expect(revokeConnection).toHaveBeenCalledOnce();
+      await service.disconnect(ref, 'nudged-owner');
+    });
+
     // Purpose: an outage between the 404s does not reset the count (it proves nothing), and the
     // explicit removal purges exactly that connection.
     it('keeps counting through an outage, and removes exactly that connection on request', async () => {

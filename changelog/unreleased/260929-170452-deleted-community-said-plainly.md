@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(communities): remove the copy of a deleted community, and offer to remove one that seems to be gone (DOR-2334)'
+  - 'fix(communities): reset the not-found count on any real answer, and say plainly what the Community said (DOR-2334 review)'
 ---
 
 ### Fixed

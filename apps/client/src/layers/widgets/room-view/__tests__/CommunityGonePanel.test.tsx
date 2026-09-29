@@ -84,7 +84,18 @@ describe('CommunityGonePanel', () => {
       seemsGoneSince: '2026-09-01T12:00:00.000Z',
     });
     expect(screen.getByText('This community seems to be gone')).toBeInTheDocument();
-    expect(screen.getByText(/Alpha hasn’t answered since/)).toBeInTheDocument();
+    // It did answer, with "not found": say that, with the year, since two weeks can cross one.
+    const expected = new Date('2026-09-01T12:00:00.000Z').toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    expect(
+      screen.getByText(`Since ${expected}, Alpha has said this community doesn’t exist.`, {
+        exact: false,
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/2026/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Remove local copy' }));
     expect(transport.disconnectCommunity).not.toHaveBeenCalled();
