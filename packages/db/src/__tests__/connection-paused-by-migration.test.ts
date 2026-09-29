@@ -33,7 +33,7 @@ describe('0125 connection paused_by migration', () => {
         `INSERT INTO connector_provider_instances
          (id, type, mode, display_name, custody, capability_json, status, execution_config_digest,
           created_at, updated_at)
-         VALUES ('instance', 'composio', 'byo', 'composio', 'external', '{}', 'available',
+         VALUES ('instance', 'composio', 'byo', 'composio', 'managed', '{}', 'available',
           'key-digest-a', ?, ?)`
       )
       .run(NOW, NOW);
@@ -159,6 +159,15 @@ describe('0125 connection paused_by migration', () => {
       )
       .run(NOW, NOW);
 
+    db.$client
+      .prepare(
+        `INSERT INTO connector_provider_instances
+         (id, type, mode, display_name, custody, capability_json, status, created_at, updated_at)
+         VALUES ('raw', 'mcp', 'byo', 'mcp', 'external', '{}', 'available', ?, ?)`
+      )
+      .run(NOW, NOW);
+    insert.run('raw-failed', 'raw', 'ref-raw', NOW, NOW);
+
     runMigrations(db);
 
     const state = (id: string) =>
@@ -167,6 +176,8 @@ describe('0125 connection paused_by migration', () => {
           'SELECT external_cleanup_state AS state, external_cleanup_key AS key FROM connections WHERE id = ?'
         )
         .get(id);
+    // Raw MCP keeps no sign-in: its disconnect was local and is done.
+    expect(state('raw-failed')).toEqual({ state: 'not_required', key: null });
     // Never failed: tried again through the key the instance last worked with.
     expect(state('own-key-pending')).toEqual({ state: 'pending', key: 'key-digest-a' });
     // A try already failed, or none was recorded: the key may have changed, so

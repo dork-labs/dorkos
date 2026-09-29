@@ -56,7 +56,14 @@ WHERE lifecycle_state = 'disconnected' AND external_cleanup_state = 'pending'
 AND provider_instance_id IN (SELECT id FROM connector_provider_instances WHERE mode = 'byo');--> statement-breakpoint
 UPDATE connections SET external_cleanup_state = 'unknown'
 WHERE lifecycle_state = 'disconnected' AND external_cleanup_state = 'failed'
-AND provider_instance_id IN (SELECT id FROM connector_provider_instances WHERE mode = 'byo');--> statement-breakpoint
+AND provider_instance_id IN (
+  SELECT id FROM connector_provider_instances WHERE mode = 'byo' AND custody <> 'external'
+);--> statement-breakpoint
+-- A way that keeps no sign-in at all (custody `external`, raw MCP) has nothing
+-- to end at a service: disconnecting it was local and is done.
+UPDATE connections SET external_cleanup_state = 'not_required'
+WHERE lifecycle_state = 'disconnected' AND external_cleanup_state IN ('failed', 'unknown')
+AND provider_instance_id IN (SELECT id FROM connector_provider_instances WHERE custody = 'external');--> statement-breakpoint
 -- HAND-ADDED backfill: name why each already-refused hosted command was
 -- refused, from the words stored with it, so a refused link is sent again once
 -- the DorkOS account is linked again.

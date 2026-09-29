@@ -15,10 +15,10 @@ import {
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import { ConnectorAuthenticationFlowService } from '../resources/authentication-flow-service.js';
 import {
-  CLEANUP_RETRY_DELAYS_MS,
   ConnectorLifecycleService,
   type ConnectorManagedLifecyclePort,
 } from '../resources/lifecycle-service.js';
+import { CLEANUP_RETRY_DELAYS_MS } from '../resources/owed-cleanup.js';
 import { ConnectorRegistry } from '../registry.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
@@ -289,6 +289,67 @@ describe('ConnectorLifecycleService', () => {
       connectionId: CONNECTION_ID,
       reason: 'connection_removed',
     });
+  });
+
+  it('never sends a delete for an account no key was ever seen holding', async () => {
+    // A Nango or Composio account from before keys were recorded, not yet
+    // included in a listing under today's key.
+    db.update(connections).set({ accountKey: null }).where(eq(connections.id, CONNECTION_ID)).run();
+    const disconnect = vi.spyOn(provider, 'disconnect');
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    await service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+    expect(disconnect).not.toHaveBeenCalled();
+    expect(db.select().from(connections).get()).toMatchObject({
+      externalCleanupState: 'unknown',
+    });
+  });
+
+  it('finishes a raw MCP disconnect locally, whatever key or listing it has', async () => {
+    // Raw MCP keeps no sign-in (custody external): nothing to end at a
+    // service, so no key binds it and its end is never "unconfirmed".
+    const raw = new FakeConnectorProvider({
+      instanceId: ConnectorProviderInstanceIdSchema.parse('raw-a'),
+      custody: 'external',
+    });
+    registry.register(raw, 'raw-material-1');
+    db.insert(connections)
+      .values({
+        id: 'connection-raw',
+        providerInstanceId: 'raw-a',
+        externalAccountRef: 'mcp:notes',
+        toolkit: 'notes',
+        label: 'Notes',
+        status: 'active',
+        lifecycleState: 'connected',
+        enabled: true,
+        grantReconciliationStatus: 'ready',
+        accountKey: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    // Adding another MCP server changes the raw fingerprint too.
+    registry.register(raw, 'raw-material-2');
+    const disconnect = vi.spyOn(raw, 'disconnect');
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    await expect(
+      service.disconnect(
+        OWNER,
+        ConnectionIdSchema.parse('connection-raw'),
+        new AbortController().signal
+      )
+    ).resolves.toMatchObject({ externalCleanup: 'complete' });
+    expect(disconnect).toHaveBeenCalledWith('mcp:notes');
   });
 
   it('records the key an account is signed in under when it connects', () => {

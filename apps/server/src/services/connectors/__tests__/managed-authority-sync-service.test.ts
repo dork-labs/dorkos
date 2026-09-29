@@ -1240,6 +1240,109 @@ describe('ManagedAuthoritySyncService', () => {
       });
     });
 
+    it('never closes a healthy account on its first refusal after an earlier resume applied', async () => {
+      db.update(connections)
+        .set({ enabled: false, pausedBy: 'owner' })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      let refuse = true;
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) =>
+        refuse ? rejected(command, 'connection_unavailable') : statusFor(command)
+      );
+      const lifecycle = (to: 'active' | 'paused') =>
+        service().transition({
+          connectionId: CONNECTION_ID,
+          managedConnectionId: MANAGED_CONNECTION_ID,
+          lifecycle: to,
+          providerInstanceId: PROVIDER_ID,
+          executionConfigGeneration: 1,
+          owner: OWNER,
+          signal: new AbortController().signal,
+        });
+      // Refused once; the person signs in again; the next resume applies.
+      await lifecycle('active');
+      db.update(connections)
+        .set({ status: 'active' })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      refuse = false;
+      clock += 60_000;
+      await lifecycle('active');
+      expect(db.select().from(connections).get()).toMatchObject({ enabled: true });
+      // Weeks later: paused, then one refused resume. Signing in may fix it.
+      clock += 21 * 24 * 60 * 60_000;
+      await lifecycle('paused');
+      refuse = true;
+      await lifecycle('active');
+      expect(db.select().from(connections).get()).toMatchObject({
+        lifecycleState: 'connected',
+        status: 'expired',
+        closedBecause: null,
+      });
+    });
+
+    it('never counts a refused pause (recorded before this change) as a refused resume', async () => {
+      db.update(connections)
+        .set({ enabled: false, pausedBy: 'owner' })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      // An earlier refused pause, as the 0125 backfill names it.
+      db.insert(connectorManagedAuthorityOutbox)
+        .values({
+          commandId: 'old-refused-pause',
+          connectionId: CONNECTION_ID,
+          providerInstanceId: PROVIDER_ID,
+          executionConfigGeneration: 1,
+          ownerKind: OWNER.kind,
+          ownerId: OWNER.installationId,
+          managedConnectionId: MANAGED_CONNECTION_ID,
+          scopeKind: 'connection_lifecycle',
+          subjectId: 'connection',
+          scopeVersion: 1,
+          requestHash: 'h',
+          requestJson: JSON.stringify({
+            version: 1,
+            commandId: 'old-refused-pause',
+            managedConnectionId: MANAGED_CONNECTION_ID,
+            scopeVersion: 1,
+            kind: 'set_connection_lifecycle',
+            lifecycle: 'paused',
+          }),
+          state: 'rejected',
+          rejectionCode: 'connection_unavailable',
+          createdAt: new Date(clock).toISOString(),
+          updatedAt: new Date(clock).toISOString(),
+        })
+        .run();
+      db.insert(connectorManagedAuthorityScopes)
+        .values({
+          managedConnectionId: MANAGED_CONNECTION_ID,
+          scopeKind: 'connection_lifecycle',
+          subjectId: 'connection',
+          scopeVersion: 1,
+          lastCommandId: 'old-refused-pause',
+          lastCommandHash: 'h',
+          updatedAt: new Date(clock).toISOString(),
+        })
+        .run();
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) =>
+        rejected(command, 'connection_unavailable')
+      );
+      await service().transition({
+        connectionId: CONNECTION_ID,
+        managedConnectionId: MANAGED_CONNECTION_ID,
+        lifecycle: 'active',
+        providerInstanceId: PROVIDER_ID,
+        executionConfigGeneration: 1,
+        owner: OWNER,
+        signal: new AbortController().signal,
+      });
+      expect(db.select().from(connections).get()).toMatchObject({
+        lifecycleState: 'connected',
+        status: 'expired',
+      });
+    });
+
     it('finishes a disconnect the ended link refused even after the account was removed', async () => {
       // The live incident: the link ended, Disconnect was refused, the person
       // removed the app, then linked the same DorkOS account again.

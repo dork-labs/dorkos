@@ -28,7 +28,7 @@ import { CONNECTOR_AUTHENTICATION_FLOW_TTL_MS } from '@dorkos/shared/connector-s
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import { connectorAuthenticationRequestHash } from './authentication-flow-request.js';
-import { cleanupInFlight } from './lifecycle-service.js';
+import { cleanupInFlight } from './owed-cleanup.js';
 
 /** Safe durable-flow refusal exposed by the owner resource boundary. */
 export class ConnectorAuthenticationFlowError extends Error {

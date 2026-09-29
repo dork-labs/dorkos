@@ -35,6 +35,12 @@ import type { ConnectorAuthorityCleanupPort } from '../authority-cleanup-port.js
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorAuthenticationFlowService } from './authentication-flow-service.js';
+import {
+  CLEANUP_RETRY_DELAYS_MS,
+  holdsSignInAtService,
+  inFlight,
+  publicCleanup,
+} from './owed-cleanup.js';
 
 /** Result of synchronizing one close-first managed lifecycle command. */
 export interface ConnectorManagedLifecycleSyncResult {
@@ -90,49 +96,9 @@ export interface ConnectorLifecycleServiceOptions {
   readonly now?: () => Date;
 }
 
-/**
- * How long DorkOS waits before trying again to remove an own-key account's
- * access at the service, one entry per failed try in a row. After the last,
- * it stops trying on its own: the person is shown how to end the access in
- * the service's own settings, and can remove the account from their apps.
- */
-export const CLEANUP_RETRY_DELAYS_MS = [
-  30_000,
-  2 * 60_000,
-  10 * 60_000,
-  30 * 60_000,
-  60 * 60_000,
-  3 * 60 * 60_000,
-  6 * 60 * 60_000,
-  12 * 60 * 60_000,
-] as const;
-
 // Share the pending operation across service instances using the same database.
 // A second delete must not outlive a newer cleanup acknowledgement and sign-in.
 const pendingDisconnects = new WeakMap<Db, Map<string, Promise<ConnectorLifecycleResult>>>();
-// Own-key cleanups being tried right now, so the background retry and a
-// "Try again now" never send the same delete twice at once.
-const cleanupsInFlight = new WeakMap<Db, Set<string>>();
-
-function inFlight(db: Db): Set<string> {
-  let running = cleanupsInFlight.get(db);
-  if (!running) {
-    running = new Set();
-    cleanupsInFlight.set(db, running);
-  }
-  return running;
-}
-
-/**
- * Whether DorkOS is trying to end one own-key account's access at the service
- * right now, so a new sign-in to that same account must not cancel it yet.
- *
- * @param db - The connector database the try runs against.
- * @param connectionId - The disconnected account.
- */
-export function cleanupInFlight(db: Db, connectionId: string): boolean {
-  return inFlight(db).has(connectionId);
-}
 
 function ownerColumns(owner: ConnectorOwnerAuthority): {
   ownerKind: 'user' | 'local_install';
@@ -307,7 +273,7 @@ export class ConnectorLifecycleService {
       // prove anything, so the end is unconfirmed from the start.
       const currentKey = this.options.registry.storedExecutionConfigDigest(row.providerInstanceId);
       unconfirmed =
-        row.mode !== 'managed' && (row.accountKey === null || row.accountKey !== currentKey);
+        holdsSignInAtService(row) && (row.accountKey === null || row.accountKey !== currentKey);
       this.options.db.transaction((tx) => {
         this.options.registry.recordDisconnect(row.connectionId);
         tx.update(connections)
@@ -415,8 +381,14 @@ export class ConnectorLifecycleService {
         state: connections.externalCleanupState,
         lifecycleState: connections.lifecycleState,
         key: connections.externalCleanupKey,
+        custody: connectorProviderInstances.custody,
+        mode: connectorProviderInstances.mode,
       })
       .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
       .where(eq(connections.id, connectionId))
       .get();
     if (!row || row.lifecycleState !== 'disconnected' || row.state !== 'pending') {
@@ -439,7 +411,7 @@ export class ConnectorLifecycleService {
       // done while the sign-in lives on. DorkOS can't confirm the end, and
       // says so.
       const key = this.options.registry.storedExecutionConfigDigest(provider.instanceId);
-      if (row.key !== null && key !== row.key) {
+      if (holdsSignInAtService(row) && row.key !== null && key !== row.key) {
         this.options.db
           .update(connections)
           .set({
@@ -581,6 +553,7 @@ export class ConnectorLifecycleService {
         reconciliationStatus: connections.grantReconciliationStatus,
         executionConfigGeneration: connectorProviderInstances.executionConfigGeneration,
         mode: connectorProviderInstances.mode,
+        custody: connectorProviderInstances.custody,
       })
       .from(connections)
       .innerJoin(
@@ -604,11 +577,4 @@ export class ConnectorLifecycleService {
         }
       : undefined;
   }
-}
-
-/** A stored cleanup state as a result reports it: `unknown` (unconfirmed) reads as failed. */
-function publicCleanup(
-  state: 'not_required' | 'pending' | 'complete' | 'failed' | 'unknown'
-): ConnectorLifecycleResult['externalCleanup'] {
-  return state === 'unknown' ? 'failed' : state;
 }

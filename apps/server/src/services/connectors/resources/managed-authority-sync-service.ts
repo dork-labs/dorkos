@@ -15,10 +15,11 @@ import {
   sql,
   connectorProviderInstances,
   connections,
+  desc,
   eq,
   isNull,
   inArray,
-  ne,
+  lt,
   lte,
   or,
   sessionConnectionOverrides,
@@ -1181,22 +1182,34 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         .from(connections)
         .where(eq(connections.id, row.connectionId))
         .get();
-      // A refused lifecycle change of this account before, while it stayed
-      // connected, can only have been a resume (a refused pause closes it).
-      const refusedBefore =
-        tx
-          .select({ commandId: connectorManagedAuthorityOutbox.commandId })
-          .from(connectorManagedAuthorityOutbox)
-          .where(
-            and(
-              eq(connectorManagedAuthorityOutbox.connectionId, row.connectionId),
-              eq(connectorManagedAuthorityOutbox.scopeKind, 'connection_lifecycle'),
-              eq(connectorManagedAuthorityOutbox.state, 'rejected'),
-              eq(connectorManagedAuthorityOutbox.rejectionCode, 'connection_unavailable'),
-              ne(connectorManagedAuthorityOutbox.commandId, row.commandId)
-            )
+      // Refused again only when the account's lifecycle change just before
+      // this one was itself a resume refused the same way. Anything between
+      // (a resume that applied, a pause, one still pending) means signing in
+      // did help once, so this refusal starts over rather than closing it.
+      const previous = tx
+        .select({
+          state: connectorManagedAuthorityOutbox.state,
+          rejectionCode: connectorManagedAuthorityOutbox.rejectionCode,
+          requestJson: connectorManagedAuthorityOutbox.requestJson,
+          compactedAt: connectorManagedAuthorityOutbox.compactedAt,
+        })
+        .from(connectorManagedAuthorityOutbox)
+        .where(
+          and(
+            eq(connectorManagedAuthorityOutbox.managedConnectionId, row.managedConnectionId),
+            eq(connectorManagedAuthorityOutbox.scopeKind, 'connection_lifecycle'),
+            eq(connectorManagedAuthorityOutbox.subjectId, row.subjectId),
+            lt(connectorManagedAuthorityOutbox.scopeVersion, row.scopeVersion)
           )
-          .get() !== undefined;
+        )
+        .orderBy(desc(connectorManagedAuthorityOutbox.scopeVersion))
+        .limit(1)
+        .get();
+      const refusedBefore =
+        previous?.state === 'rejected' &&
+        previous.rejectionCode === 'connection_unavailable' &&
+        previous.compactedAt === null &&
+        isResume(previous.requestJson);
       if (refusedBefore && account?.status === 'active') {
         this.closeAsGone(tx, row.connectionId as ConnectionId, now);
         return;
@@ -2039,5 +2052,15 @@ function sendAgain(
   return (
     scope.state === 'superseded' ||
     (scope.state === 'pending' && scope.generation !== currentGeneration)
+  );
+}
+
+/** Whether a stored lifecycle command asked to resume the account. */
+function isResume(requestJson: string): boolean {
+  const parsed = ManagedConnectorAuthorityCommandSchema.safeParse(JSON.parse(requestJson));
+  return (
+    parsed.success &&
+    parsed.data.kind === 'set_connection_lifecycle' &&
+    parsed.data.lifecycle === 'active'
   );
 }
