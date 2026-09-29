@@ -149,16 +149,25 @@ export function cwdOf(stored: StoredSessionLimit): string | undefined {
   return stored.cwd ?? peekProjector(stored.sessionId)?.cwd;
 }
 
-async function trackerItemOf(
+/**
+ * The tracker items a limited session works on, newest first, in the shape the
+ * account advisor sees them, plus the deprecated newest one in this chat.
+ */
+async function trackerItemsOf(
   sessionId: string,
   cwd: string | undefined
-): Promise<{ id: string } | undefined> {
-  if (!cwd) return undefined;
+): Promise<Pick<SessionInfo, 'trackerItem' | 'trackerItems'>> {
+  if (!cwd) return { trackerItems: [] };
   try {
-    const link = (await flowRunsFor(cwd)).get(sessionId);
-    return link ? { id: link.identifier } : undefined;
+    const links = (await flowRunsFor(cwd)).get(sessionId) ?? [];
+    // The deprecated field keeps its meaning: the newest run in this chat.
+    const own = links.find((link) => link.via === 'this-chat');
+    return {
+      trackerItems: links.map((link) => ({ id: link.identifier, via: link.via })),
+      ...(own ? { trackerItem: { id: own.identifier } } : {}),
+    };
   } catch {
-    return undefined;
+    return { trackerItems: [] };
   }
 }
 
@@ -169,13 +178,13 @@ async function trackerItemOf(
  */
 export async function sessionInfoOf(stored: StoredSessionLimit): Promise<SessionInfo> {
   const cwd = cwdOf(stored) ?? '';
-  const trackerItem = await trackerItemOf(stored.sessionId, cwd || undefined);
+  const items = await trackerItemsOf(stored.sessionId, cwd || undefined);
   return {
     sessionId: stored.sessionId,
     cwd,
     runtime: LIMIT_RUNTIME,
     accountId: stored.limit.accountId,
-    ...(trackerItem ? { trackerItem } : {}),
+    ...items,
   };
 }
 
@@ -186,7 +195,7 @@ export async function sessionInfoOf(stored: StoredSessionLimit): Promise<Session
  */
 export async function limitedInfoOf(stored: StoredSessionLimit): Promise<LimitedSessionInfo> {
   const cwd = cwdOf(stored) ?? '';
-  const trackerItem = await trackerItemOf(stored.sessionId, cwd || undefined);
+  const items = await trackerItemsOf(stored.sessionId, cwd || undefined);
   const model = await runtimeRegistry
     .getSessionSettings(stored.sessionId)
     .then((settings) => settings?.model ?? null)
@@ -199,7 +208,7 @@ export async function limitedInfoOf(stored: StoredSessionLimit): Promise<Limited
     resetsAt: stored.limit.resetsAt,
     scope: stored.scope,
     model,
-    ...(trackerItem ? { trackerItem } : {}),
+    ...items,
   };
 }
 

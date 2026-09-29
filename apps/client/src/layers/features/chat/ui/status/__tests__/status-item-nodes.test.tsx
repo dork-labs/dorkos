@@ -132,7 +132,7 @@ const HIDDEN_ACCOUNT: SessionAccount = {
   usage: null,
   limit: null,
   chipState: 'unknown',
-  trackerItem: null,
+  trackerItems: [],
   lifecycle: 'idle',
   pending: false,
 };

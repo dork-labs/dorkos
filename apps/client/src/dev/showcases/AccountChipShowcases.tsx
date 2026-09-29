@@ -70,7 +70,7 @@ function onAccount(n: number, overrides: Partial<SessionAccount> = {}): SessionA
     usage,
     limit: null,
     chipState: 'ok',
-    trackerItem: null,
+    trackerItems: [],
     lifecycle: 'idle',
     pending: false,
     ...overrides,
@@ -258,7 +258,18 @@ export function AccountPopoverShowcases() {
       <Chip label="Without a plan" account={onAccount(4, { chipState: 'unknown' })} />
       <Chip
         label="With a flow item"
-        account={onAccount(1, { trackerItem: { id: 'DOR-2353', stage: 'execute' } })}
+        account={onAccount(1, {
+          trackerItems: [
+            {
+              id: 'DOR-2353',
+              stage: 'execute',
+              runStatus: 'running',
+              startedAt: '2026-09-27T16:00:00.000Z',
+              via: 'this-chat',
+              ownChatSessionId: null,
+            },
+          ],
+        })}
       />
       <Chip label="With an extra window (Opus)" account={onAccount(5)} />
       <Chip

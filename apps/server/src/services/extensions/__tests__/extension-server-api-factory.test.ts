@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { DEFAULT_ACCOUNT_COLORS, type AccountUsage } from '@dorkos/shared/account-usage';
 import { createDataProviderContext } from '../extension-server-api-factory.js';
+import { projectRegistry } from '../../projects/project-registry.js';
 import {
   __resetAccountAdvisorForTests,
   accountAdvisorOwner,
@@ -364,7 +365,7 @@ describe('createDataProviderContext', () => {
     });
 
     it('delivers usage changes until the listener is removed, by hand or on release', () => {
-      const { ctx, releaseAccounts } = buildCtx();
+      const { ctx, releaseListeners } = buildCtx();
       const kept = vi.fn();
       const removed = vi.fn();
       ctx.accounts.onUsage(kept);
@@ -374,7 +375,7 @@ describe('createDataProviderContext', () => {
       expect(kept).toHaveBeenCalledWith(extensionUsageRow);
       expect(removed).not.toHaveBeenCalled();
 
-      releaseAccounts();
+      releaseListeners();
       expect(listeners.size).toBe(0);
     });
 
@@ -392,7 +393,7 @@ describe('createDataProviderContext', () => {
 
     it('closes after release: a late registerAdvisor or onUsage registers nothing', async () => {
       const old = buildCtx({ extensionId: 'reloaded-ext' });
-      old.releaseAccounts();
+      old.releaseListeners();
 
       expect(() =>
         old.ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) })
@@ -410,7 +411,7 @@ describe('createDataProviderContext', () => {
       expect(() =>
         old.ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) })
       ).toThrow();
-      old.releaseAccounts();
+      old.releaseListeners();
       expect(accountAdvisorOwner()).toBe('reloaded-ext');
       expect(hasAccountAdvisor()).toBe(true);
       // Reads still answer.
@@ -418,10 +419,10 @@ describe('createDataProviderContext', () => {
     });
 
     it('registers the advisor under the extension id and removes it on release', () => {
-      const { ctx, releaseAccounts } = buildCtx();
+      const { ctx, releaseListeners } = buildCtx();
       ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) });
       expect(accountAdvisorOwner()).toBe(extensionId);
-      releaseAccounts();
+      releaseListeners();
       expect(hasAccountAdvisor()).toBe(false);
     });
 
@@ -431,7 +432,7 @@ describe('createDataProviderContext', () => {
       const advisor = { rank: () => ({ accounts: [], recommendedId: null }) };
       first.ctx.accounts.registerAdvisor(advisor);
       second.ctx.accounts.registerAdvisor(advisor);
-      first.releaseAccounts();
+      first.releaseListeners();
       expect(accountAdvisorOwner()).toBe('second-ext');
     });
 
@@ -502,6 +503,59 @@ describe('createDataProviderContext', () => {
     it('lists it in its positional color when none is chosen', async () => {
       await loadStore({ defaultAccount: null, accounts: [], defaultAccountColor: null });
       expect((await claudeDefault())?.color).toBe(DEFAULT_ACCOUNT_COLORS[0]);
+    });
+  });
+
+  describe('projects', () => {
+    it('scopes list, resolve and report to the calling extension', async () => {
+      const list = vi.spyOn(projectRegistry, 'listForExtension').mockResolvedValue([]);
+      const report = vi.spyOn(projectRegistry, 'report').mockResolvedValue(null);
+      const resolve = vi.spyOn(projectRegistry, 'resolveWithin').mockResolvedValue('outside');
+      const { ctx } = buildCtx();
+      await ctx.projects.list();
+      await ctx.projects.report('/some/repo');
+      await ctx.projects.resolve('/some/repo/src');
+      expect(list).toHaveBeenCalledWith(extensionId);
+      expect(report).toHaveBeenCalledWith('/some/repo', extensionId);
+      // Resolving goes through the boundary-checked extension path, never the
+      // core `resolve` that would mark a folder as seen.
+      expect(resolve).toHaveBeenCalledWith('/some/repo/src', extensionId);
+      // Refused by the boundary reads as no project to the extension.
+      await expect(ctx.projects.resolve('/some/repo/src')).resolves.toBeNull();
+      await expect(ctx.projects.report('')).resolves.toBeNull();
+      list.mockRestore();
+      report.mockRestore();
+      resolve.mockRestore();
+    });
+
+    it('answers null, never a raw storage error, when recording a project fails', async () => {
+      const report = vi
+        .spyOn(projectRegistry, 'report')
+        .mockRejectedValue(new Error('SQLITE_CONSTRAINT: UNIQUE constraint failed'));
+      const resolve = vi
+        .spyOn(projectRegistry, 'resolveWithin')
+        .mockRejectedValue(new Error('SQLITE_FULL'));
+      const { ctx } = buildCtx();
+      await expect(ctx.projects.report('/some/repo')).resolves.toBeNull();
+      await expect(ctx.projects.resolve('/some/repo')).resolves.toBeNull();
+      report.mockRestore();
+      resolve.mockRestore();
+    });
+
+    it('removes its change listeners on release, and refuses new ones after', () => {
+      // The registry's own listener set: the thing a leak would grow.
+      const registered = (projectRegistry as unknown as { listeners: Set<() => void> }).listeners;
+      const before = registered.size;
+      const { ctx, releaseListeners } = buildCtx();
+      ctx.projects.onChange(vi.fn());
+      const stop = ctx.projects.onChange(vi.fn());
+      expect(registered.size).toBe(before + 2);
+      stop();
+      expect(registered.size).toBe(before + 1);
+      releaseListeners();
+      expect(registered.size).toBe(before);
+      expect(() => ctx.projects.onChange(vi.fn())).toThrow(/shut down or reloaded/);
+      expect(registered.size).toBe(before);
     });
   });
 });

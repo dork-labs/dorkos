@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "efb5da4b-b155-47d0-ac7c-533b9c2f46e3",
+  "id": "3f14bc8b-ce6f-407b-9b79-75d0e938067e",
   "prevId": "f56e6985-f777-46b4-a541-64cb0b1d9c47",
   "tables": {
     "a2a_tasks": {
@@ -7343,13 +7343,6 @@
           "autoincrement": false,
           "default": "''"
         },
-        "community_attachment_id": {
-          "name": "community_attachment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -9480,6 +9473,144 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
+    },
+    "known_project_reporters": {
+      "name": "known_project_reporters",
+      "columns": {
+        "root": {
+          "name": "root",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "extension_id": {
+          "name": "extension_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reported_at": {
+          "name": "reported_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "known_project_reporters_extension_idx": {
+          "name": "known_project_reporters_extension_idx",
+          "columns": [
+            "extension_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "known_project_reporters_root_known_projects_root_fk": {
+          "name": "known_project_reporters_root_known_projects_root_fk",
+          "tableFrom": "known_project_reporters",
+          "tableTo": "known_projects",
+          "columnsFrom": [
+            "root"
+          ],
+          "columnsTo": [
+            "root"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "known_project_reporters_root_extension_id_pk": {
+          "columns": [
+            "root",
+            "extension_id"
+          ],
+          "name": "known_project_reporters_root_extension_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "known_project_reporters_kind": {
+          "name": "known_project_reporters_kind",
+          "value": "\"known_project_reporters\".\"kind\" IN ('report', 'resolve')"
+        }
+      }
+    },
+    "known_projects": {
+      "name": "known_projects",
+      "columns": {
+        "root": {
+          "name": "root",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "origin_repo": {
+          "name": "origin_repo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "known_projects_name_unique": {
+          "name": "known_projects_name_unique",
+          "columns": [
+            "name"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "known_projects_source": {
+          "name": "known_projects_source",
+          "value": "\"known_projects\".\"source\" IN ('seen', 'reported')"
+        }
+      }
     }
   },
   "views": {},

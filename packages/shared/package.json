@@ -365,6 +365,10 @@
       "types": "./src/room-files.ts",
       "default": "./dist/room-files.js"
     },
+    "./project-schemas": {
+      "types": "./src/project-schemas.ts",
+      "default": "./dist/project-schemas.js"
+    },
     "./read-cursor-schemas": {
       "types": "./src/read-cursor-schemas.ts",
       "default": "./dist/read-cursor-schemas.js"

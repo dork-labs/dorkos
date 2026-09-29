@@ -54,7 +54,8 @@ function fromRow(row: WorkspaceRow): Workspace {
 export class WorkspaceStore {
   constructor(
     private readonly db: Db,
-    private readonly root: string
+    /** The workspace root every checkout, manifest and staged clone lives under. */
+    readonly root: string
   ) {}
 
   /** Absolute path of a workspace's sidecar manifest (never inside the checkout). */

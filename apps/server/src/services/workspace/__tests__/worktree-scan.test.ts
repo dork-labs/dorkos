@@ -22,7 +22,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { scanWorktrees, parseStatusSummary, repoPathFromCommonDir } from '../worktree-scan.js';
+import { scanWorktrees, parseStatusSummary } from '../worktree-scan.js';
 
 function git(args: string[], cwd: string): void {
   execFileSync('git', args, { cwd, stdio: 'pipe' });
@@ -531,19 +531,5 @@ describe('parseStatusSummary', () => {
       upstreamGone: false,
       changedFiles: 1,
     });
-  });
-});
-
-describe('repoPathFromCommonDir', () => {
-  it('names the repository a worktree shares history with', () => {
-    expect(repoPathFromCommonDir('/repos/dorkos/.git\n')).toBe('/repos/dorkos');
-  });
-
-  it('passes through a bare repository path unchanged', () => {
-    expect(repoPathFromCommonDir('/repos/dorkos.git\n')).toBe('/repos/dorkos.git');
-  });
-
-  it('reads empty output as unknown', () => {
-    expect(repoPathFromCommonDir('')).toBeNull();
   });
 });

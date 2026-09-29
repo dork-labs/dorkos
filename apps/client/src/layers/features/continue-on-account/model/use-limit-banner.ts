@@ -42,7 +42,7 @@ const MOVABLE: ReadonlySet<LimitState> = new Set(['limited', 'handing-off', 'mod
  */
 export type LimitBannerAccount = Pick<
   SessionAccount,
-  'visible' | 'runtime' | 'accountId' | 'name' | 'limit' | 'trackerItem'
+  'visible' | 'runtime' | 'accountId' | 'name' | 'limit' | 'trackerItems'
 >;
 
 /** What {@link useLimitBanner} reports. */

@@ -50,6 +50,7 @@ import {
 import { askEntitlement, type AskSubject } from './asks/ask-entitlement.js';
 import type { CallerPrincipal } from '../../lib/caller-principal.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
+import { projectRegistry } from '../projects/project-registry.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -248,6 +249,12 @@ export interface RoomBindingsPort {
 }
 
 /**
+ * Sets `trackerItems` and the deprecated `trackerItem` on a page of sessions,
+ * in place. Asynchronous: it reads flow's run file, cached by mtime.
+ */
+export type TrackerItemsOverlay = (page: Session[]) => Promise<void>;
+
+/**
  * Subscribes to every registered runtime's global session-list stream and fans
  * each validated {@link SessionListEvent} onto the unified `/api/events` SSE
  * stream. Lifecycle is `start()`/`stop()`; `stop()` closes every underlying
@@ -265,6 +272,26 @@ export class SessionListBroadcaster {
   private roomBindings: RoomBindingsPort | undefined;
   private settings: SessionSettingsOverlayPort | undefined;
   private originResolvers: SessionOriginResolvers = {};
+  private trackerItems: TrackerItemsOverlay | undefined;
+
+  /**
+   * Wire the flow overlay every broadcast `session_upserted` carries:
+   * `trackerItems` and the deprecated `trackerItem` (spec `flow-multiproject`
+   * §6.8, D10).
+   *
+   * Without it, `GET /api/sessions` named the items a chat works on and the
+   * live stream did not, so the first upsert after a list read wiped them from
+   * the client's cache. Its own call rather than a `start()` argument, for the
+   * reason {@link setOriginResolvers} gives: it must survive a restart of
+   * discovery after a live Claude account switch.
+   *
+   * @param overlay - Sets both fields in place on a page of sessions. The
+   *   composition root passes `applyTrackerItemsLive` (`fleet/flow-run-link.ts`),
+   *   which never runs git on this path.
+   */
+  setTrackerItemsOverlay(overlay: TrackerItemsOverlay): void {
+    this.trackerItems = overlay;
+  }
 
   /**
    * Wire the origin lookups every broadcast `session_upserted` is stamped from.
@@ -428,7 +455,9 @@ export class SessionListBroadcaster {
       for (;;) {
         const { value, done } = await iterator.next();
         if (done || !this.running) break;
-        this.broadcast(value, runtime);
+        // Awaited, so one runtime's events keep their order while an upsert
+        // waits on the flow overlay.
+        await this.broadcast(value, runtime);
       }
     } catch (err) {
       logger.error('[SessionListBroadcaster] session-list subscription failed', {
@@ -578,6 +607,12 @@ export class SessionListBroadcaster {
         sessionId: change.sessionId,
         ...(binding ? { roomId: binding.roomId } : {}),
       };
+      // The project, when the registry already knows the folder (spec
+      // `flow-multiproject` §6.2). A peek, never a git call: a person is waiting
+      // on this frame. A session's folder is resolved when its turn starts, so
+      // it is known by the time the session asks anything; when it is not,
+      // the field is left out and the pending list's read fills it in.
+      const project = projectRegistry.peek(change.cwd);
       eventFanOut.broadcast(
         'interaction_pending',
         InteractionPendingEventSchema.parse({
@@ -585,6 +620,7 @@ export class SessionListBroadcaster {
           cwd: change.cwd,
           interaction: change.interaction,
           ...(binding ? { roomId: binding.roomId, roomAuthorId: binding.authorId } : {}),
+          ...(project !== undefined ? { project } : {}),
         }),
         (principal) => askEntitlement(principal, subject) !== 'none'
       );
@@ -618,7 +654,7 @@ export class SessionListBroadcaster {
    *   subscription. Absent for internally-minted events (the projector status
    *   fan-out), which have no owning runtime and need no retirement check.
    */
-  private broadcast(event: SessionListEvent, runtime?: AgentRuntime): void {
+  private broadcast(event: SessionListEvent, runtime?: AgentRuntime): void | Promise<void> {
     const validated = validateListEvent(event);
     if (!validated) return;
     // Suppress an upsert for an id the runtime has RETIRED, matching
@@ -635,6 +671,44 @@ export class SessionListBroadcaster {
     // The SSE event name is the schema-constrained discriminator, so there is no
     // stringly-typed drift: clients filter on the same `type` values.
     const outgoing = this.withOverlays(validated);
+    if (outgoing.type === 'session_upserted' && this.trackerItems) {
+      return this.withTrackerItems(outgoing, this.trackerItems).then((withItems) => {
+        // The overlay awaited a file read; the runtime may have retired the id
+        // meanwhile, and the drop above has to hold after the wait too.
+        if (runtime && withItems.type === 'session_upserted') {
+          const canonical = runtime.getInternalSessionId(withItems.session.id);
+          if (canonical !== undefined && canonical !== withItems.session.id) return;
+        }
+        this.send(withItems);
+      });
+    }
+    this.send(outgoing);
+  }
+
+  /**
+   * The upsert with its flow items, or unchanged when the overlay failed: a
+   * row without them is stale until the next list read, which beats a dropped
+   * row. Works on a copy for the reason {@link overlaid} gives.
+   */
+  private async withTrackerItems(
+    event: Extract<SessionListEvent, { type: 'session_upserted' }>,
+    overlay: TrackerItemsOverlay
+  ): Promise<SessionListEvent> {
+    const copy = { ...event.session };
+    try {
+      await overlay([copy]);
+      return { ...event, session: copy };
+    } catch (err) {
+      logger.warn('[SessionListBroadcaster] tracker-items overlay failed; broadcasting as-is', {
+        sessionId: event.session.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return event;
+    }
+  }
+
+  /** Put one validated, overlaid event on the wire. */
+  private send(outgoing: SessionListEvent): void {
     if (outgoing.type === 'session_removed') notifySessionRemoved(outgoing.sessionId);
     if (carriesBlockedDetail(outgoing)) {
       const sessionId = outgoing.type === 'session_status' ? outgoing.sessionId : '';

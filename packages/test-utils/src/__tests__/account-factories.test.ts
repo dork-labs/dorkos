@@ -6,6 +6,7 @@ import {
   createMockAccountUsage,
   createMockSession,
   createMockSessionLimit,
+  createMockTrackerItem,
 } from '../mock-factories.js';
 
 describe('createMockAccountUsage', () => {
@@ -45,18 +46,20 @@ describe('createMockSessionLimit', () => {
 });
 
 describe('createMockSession account fields', () => {
-  it('passes runtime, accountId, status and trackerItem through and parses', () => {
+  it('passes runtime, accountId, status, trackerItems and trackerItem through and parses', () => {
     const session = createMockSession({
       id: '5c2f7d9e-0a4b-4c3d-9e8f-1a2b3c4d5e6f',
       runtime: 'codex',
       accountId: 'acct-4',
       status: { lifecycle: 'idle', limit: createMockSessionLimit('waiting') },
       trackerItem: { id: 'DOR-1', stage: 'execute', runStatus: 'running' },
+      trackerItems: [createMockTrackerItem({ id: 'DOR-1' })],
     });
     const parsed = SessionSchema.parse(session);
     expect(parsed.runtime).toBe('codex');
     expect(parsed.accountId).toBe('acct-4');
     expect(parsed.status).toEqual(session.status);
     expect(parsed.trackerItem).toEqual({ id: 'DOR-1', stage: 'execute', runStatus: 'running' });
+    expect(parsed.trackerItems).toEqual([createMockTrackerItem({ id: 'DOR-1' })]);
   });
 });

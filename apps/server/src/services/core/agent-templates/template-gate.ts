@@ -163,6 +163,38 @@ async function readSettings(
   return files;
 }
 
+/** What a tree brings into a folder sessions run in, apart from its hash. */
+export interface TreeDisclosures {
+  /** Harness configuration an agent package may not ship. */
+  findings: TemplateFinding[];
+  /** Every file under those findings, with its contents, for the review. */
+  settings: TemplateSettingsFile[];
+  /** What its skills run and may do without asking, in the disclosure shape. */
+  disclosed: DisclosedEffects;
+}
+
+/**
+ * Read what a tree brings into a folder sessions run in: its harness
+ * configuration (`findAgentWorkspaceConfig`), each of those files written out,
+ * and what its skills run (`readRunnableDeclarations`). Shared by the template
+ * gate and the workspace clone gate (DOR-2335), which hash their trees
+ * differently.
+ *
+ * @param dir - The tree, staged where no session runs.
+ * @returns What it brings.
+ */
+export async function readTreeDisclosures(dir: string): Promise<TreeDisclosures> {
+  const [findings, declared] = await Promise.all([
+    findAgentWorkspaceConfig(dir),
+    readRunnableDeclarations(dir, { agentWorkspace: true }),
+  ]);
+  // No schedules: a tree's scheduled skills arrive parked at
+  // `pending_approval`, behind their own gate.
+  const disclosed = disclosedEffectsOf({ ...declared, schedules: [] })!;
+  const settings = await readSettings(dir, findings);
+  return { findings, settings, disclosed };
+}
+
 /**
  * Read a staged template: its hash, its harness configuration and what its
  * skills run.
@@ -172,16 +204,11 @@ async function readSettings(
  * @returns The inspection.
  */
 export async function inspectTemplate(source: string, dir: string): Promise<TemplateInspection> {
-  const [contentHash, findings, declared] = await Promise.all([
+  const [contentHash, tree] = await Promise.all([
     packageContentHash(dir),
-    findAgentWorkspaceConfig(dir),
-    readRunnableDeclarations(dir, { agentWorkspace: true }),
+    readTreeDisclosures(dir),
   ]);
-  // No schedules: a template's scheduled skills arrive parked at
-  // `pending_approval`, behind their own gate.
-  const disclosed = disclosedEffectsOf({ ...declared, schedules: [] })!;
-  const settings = await readSettings(dir, findings);
-  return { source, contentHash, findings, settings, disclosed };
+  return { source, contentHash, ...tree };
 }
 
 /**

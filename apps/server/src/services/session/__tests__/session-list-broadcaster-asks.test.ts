@@ -30,6 +30,7 @@ import { eventFanOut, type FanOutClient } from '../../core/event-fan-out.js';
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
 import { SessionListBroadcaster, sendSessionStatusSnapshot } from '../session-list-broadcaster.js';
 import { disposeProjector, getOrCreateProjector, type RawSessionEvent } from '../index.js';
+import { projectRegistry } from '../../projects/project-registry.js';
 
 const TIMEOUT_MS = 10 * 60 * 1000;
 const ROOM_SESSION = 'broadcast-room-session';
@@ -116,6 +117,27 @@ describe('the Ask on the global stream', () => {
       },
     });
     expect(alone!.payload).not.toHaveProperty('roomId');
+  });
+
+  it('stamps the project the registry already knows, and leaves it off one it does not (§6.2)', () => {
+    vi.spyOn(projectRegistry, 'peek').mockImplementation((cwd) =>
+      cwd === '/work/alpha'
+        ? { root: '/work/alpha', name: 'alpha' }
+        : cwd === '/work/plain'
+          ? null
+          : undefined
+    );
+    park(ROOM_SESSION, '/work/alpha', 'tc-1');
+    park(LONE_SESSION, '/work/plain', 'tc-2');
+
+    const [known, noProject] = askEvents();
+    expect(known!.payload.project).toEqual({ root: '/work/alpha', name: 'alpha' });
+    expect(noProject!.payload.project).toBeNull();
+
+    disposeProjector(LONE_SESSION);
+    park(LONE_SESSION, '/work/unresolved', 'tc-3');
+    // Not resolved yet: no guess on the wire; the pending list's read fills it in.
+    expect(askEvents().at(-1)!.payload).not.toHaveProperty('project');
   });
 
   it('goes out before the per-session event is even logged', () => {

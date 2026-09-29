@@ -18,6 +18,7 @@ import {
   createMockAccountUsage,
   createMockSession,
   createMockSessionLimit,
+  createMockTrackerItem,
   createMockTransport,
 } from '@dorkos/test-utils';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
@@ -381,6 +382,46 @@ describe('useSessionAccount', () => {
     expect(result.current.accountId).toBe('acct-1');
   });
 
+  it('reads an older server that sends only the deprecated trackerItem as that one item', async () => {
+    mockSessions = [
+      createMockSession({
+        id: SID,
+        runtime: 'claude-code',
+        accountId: 'acct-2',
+        trackerItem: { id: 'DOR-2001', stage: 'execute' },
+      }),
+    ];
+    const { result } = renderAccount(transportWith(2));
+    await waitFor(() =>
+      expect(result.current.trackerItems).toEqual([
+        {
+          id: 'DOR-2001',
+          stage: 'execute',
+          runStatus: null,
+          startedAt: '',
+          via: 'this-chat',
+          ownChatSessionId: null,
+        },
+      ])
+    );
+  });
+
+  it('keeps the older-server fallback list stable across renders', async () => {
+    mockSessions = [
+      createMockSession({
+        id: SID,
+        runtime: 'claude-code',
+        accountId: 'acct-2',
+        trackerItem: { id: 'DOR-2002' },
+      }),
+    ];
+    const { result, rerender } = renderAccount(transportWith(2));
+    await waitFor(() => expect(result.current.trackerItems).toHaveLength(1));
+    const first = result.current.trackerItems;
+    rerender();
+    expect(result.current.trackerItems).toBe(first);
+  });
+
   it('carries the flow item the session serves', async () => {
     mockSessions = [
       createMockSession({
@@ -388,11 +429,15 @@ describe('useSessionAccount', () => {
         runtime: 'claude-code',
         accountId: 'acct-2',
         trackerItem: { id: 'DOR-2353', stage: 'execute' },
+        trackerItems: [
+          createMockTrackerItem(),
+          createMockTrackerItem({ id: 'DOR-2400', via: 'own-chat', ownChatSessionId: 'other' }),
+        ],
       }),
     ];
     const { result } = renderAccount(transportWith(2));
     await waitFor(() =>
-      expect(result.current.trackerItem).toEqual({ id: 'DOR-2353', stage: 'execute' })
+      expect(result.current.trackerItems.map((item) => item.id)).toEqual(['DOR-2353', 'DOR-2400'])
     );
   });
 });

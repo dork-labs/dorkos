@@ -133,6 +133,12 @@ export const WorkspaceSchema = z
     // `null` = unit-of-work, which is what every workspace was before ownership
     // existed — so pre-change rows and sidecar manifests need no backfill.
     owner: WorkspaceOwnerSchema.nullable().default(null),
+    /**
+     * The `before_remove` commands shown and approved when the workspace was
+     * made (DOR-2335): the only ones its removal runs. Absent on a workspace
+     * made before they were recorded, whose removal runs none.
+     */
+    removeHooks: z.array(z.string()).optional(),
     createdAt: z.string(),
     lastUsedAt: z.string(),
   })
@@ -165,6 +171,13 @@ export interface WorkspaceCreateRequest {
   path: string;
   source: string;
   branch: string;
+  /**
+   * Whether a person asked for it, so git runs their repository's own hooks
+   * (`post-checkout`, `core.hooksPath`) as their own `git` would. Absent or
+   * false for anyone else, whose git runs with hooks and fsmonitor off
+   * (DOR-2335). Server-internal: never read from a request body.
+   */
+  personGit?: boolean;
 }
 
 /** What a provider returns after provisioning a checkout. */
@@ -188,8 +201,31 @@ export interface DirtyState {
 /** The outcome of a `remove` call — a refusal carries the blocking dirty state. */
 export interface RemoveResult {
   removed: boolean;
-  blocked?: 'dirty';
+  /**
+   * Why nothing was removed: uncommitted work, or (DOR-2335) a workspace made
+   * before its removal commands were recorded, whose source now declares some a
+   * person has to see before they run.
+   */
+  blocked?: 'dirty' | 'hooks';
   dirty?: DirtyState;
+  /** With `blocked: 'hooks'`: the commands, and the hash that approves running them. */
+  hooks?: { commands: string[]; reviewHash: string };
+  /** Removal commands the source declares that did not run, because nobody reviewed them. */
+  skippedHooks?: string[];
+}
+
+/** How `remove` treats removal commands nobody reviewed when the workspace was made. */
+export interface RemoveOptions {
+  /** Remove even with uncommitted, untracked or unpushed work. */
+  force: boolean;
+  /**
+   * For a workspace made before its removal commands were recorded (DOR-2335):
+   * `ask` stops with `blocked: 'hooks'` so a person can see them; `skip` (the
+   * default) removes it without running them and lists them in `skippedHooks`.
+   */
+  unreviewedHooks?: 'ask' | 'skip';
+  /** The `reviewHash` a person was shown, to run exactly those commands. */
+  approvedRemoveHooks?: string;
 }
 
 /**
@@ -351,7 +387,7 @@ export interface WorkspaceManager {
   resolveByPath(absPath: string): Promise<Workspace | null>;
 
   /** Remove a workspace; refuses a dirty one unless `opts.force`. */
-  remove(id: string, opts: { force: boolean }): Promise<RemoveResult>;
+  remove(id: string, opts: RemoveOptions): Promise<RemoveResult>;
 
   /** Pin or unpin a workspace (pinned workspaces are exempt from `sweep`). */
   setPinned(id: string, pinned: boolean): Promise<Workspace>;

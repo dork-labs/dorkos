@@ -8,6 +8,9 @@
  * @module @dorkos/extension-api/server
  */
 import type { AccountUsage as CoreAccountUsage } from '@dorkos/shared/account-usage';
+import type { ProjectRef } from './extension-api.js';
+
+export type { ProjectRef } from './extension-api.js';
 
 /**
  * One account's usage as an extension sees it: identity, resolved color, the
@@ -113,8 +116,14 @@ export interface SessionInfo {
   runtime: string;
   /** The account it runs on, or `null` for an unregistered one. */
   accountId: string | null;
-  /** The tracker item it serves, when one is known. */
+  /**
+   * The tracker item it serves, when one is known.
+   *
+   * @deprecated The newest `this-chat` item of `trackerItems`; removed per spec `flow-multiproject` §6.8's condition.
+   */
   trackerItem?: { id: string };
+  /** Every tracker item it works on, newest first; `own-chat` items run in chats it started. */
+  trackerItems: { id: string; via: 'this-chat' | 'own-chat' }[];
 }
 
 /** A session that stopped because its account or model ran out of usage. */
@@ -133,8 +142,14 @@ export interface LimitedSessionInfo {
   scope: 'account' | 'model';
   /** The session's model, or `null` when unknown. */
   model: string | null;
-  /** The tracker item it serves, when one is known. */
+  /**
+   * The tracker item it serves, when one is known.
+   *
+   * @deprecated The newest `this-chat` item of `trackerItems`; removed per spec `flow-multiproject` §6.8's condition.
+   */
   trackerItem?: { id: string };
+  /** Every tracker item it works on, newest first; `own-chat` items run in chats it started. */
+  trackerItems: { id: string; via: 'this-chat' | 'own-chat' }[];
 }
 
 /**
@@ -260,6 +275,38 @@ export interface DataProviderContext {
   readonly dorkHome: string;
   /** The agent accounts DorkOS knows, their usage, and the account advisor seam. */
   readonly accounts: AccountsApi;
+  /**
+   * The projects (git main checkouts) core knows, scoped to this extension.
+   * Probe with `ctx.projects !== undefined` to run on hosts from before it.
+   */
+  readonly projects: ProjectsApi;
+}
+
+/** A known project, with what core learned about it. */
+export interface ProjectInfo extends ProjectRef {
+  /** "owner/name" from the origin remote, or null. */
+  readonly originRepo: string | null;
+  /** ISO-8601 time core last saw a session, agent, workspace or install in it. */
+  readonly lastSeenAt: string;
+}
+
+/** Core's project registry, as one extension sees it (`ctx.projects`). */
+export interface ProjectsApi {
+  /** The project a folder belongs to (worktrees and subfolders map to their main checkout). */
+  resolve(cwd: string): Promise<ProjectRef | null>;
+  /**
+   * Known projects whose folder exists and that either hold a copy of this
+   * extension or were reported by it, by name.
+   */
+  list(): Promise<ProjectInfo[]>;
+  /**
+   * Tell core about a project it may not have seen. Boundary-checked; must be
+   * inside a git repo, else null. Reported-only roots are never scanned for
+   * extensions. Carries no label.
+   */
+  report(path: string): Promise<ProjectRef | null>;
+  /** Called when the list changes. */
+  onChange(listener: () => void): () => void;
 }
 
 /** Server-side extension entry point signature. */
