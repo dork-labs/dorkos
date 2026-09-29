@@ -2,6 +2,7 @@
 covers:
   - 'feat(extensions): let extensions add a page, a status-bar item and a tab dot (DOR-2525)'
   - "fix(extensions): keep an extension page's address exactly as written, and harden its title, icon and status items (DOR-2525 review)"
+  - 'fix(extensions): wait out an extension reload before saying its page is missing (DOR-2525)'
 ---
 
 ### Added
