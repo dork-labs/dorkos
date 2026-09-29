@@ -92,7 +92,7 @@ import {
   clearTestHomes,
   registerTestHomes,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
-import { resolveLaunchAccountRoot } from '../../claude-config-dir.js';
+import { resolveLaunchAccountRoot as resolveLaunch } from '../../claude-config-dir.js';
 import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
 import type { McpToolDeps } from '../types.js';
 import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
@@ -107,6 +107,20 @@ import {
   createSessionStartHandler,
   getSessionTools,
 } from '../session-tools.js';
+
+/**
+ * The ladder's folder for a launch in no project (where no account rule
+ * applies), or the refusal thrown: what this file asserts on.
+ */
+function resolveLaunchAccountRoot(
+  opts: Omit<Parameters<typeof resolveLaunch>[0], 'project'> & {
+    project?: Parameters<typeof resolveLaunch>[0]['project'];
+  }
+): string {
+  const launch = resolveLaunch({ project: null, ...opts });
+  if (!launch.ok) throw launch.error;
+  return launch.root;
+}
 
 const AGENT_HOME = '/work/agents/scout';
 const OTHER_HOME = '/work/agents/dorkbot';

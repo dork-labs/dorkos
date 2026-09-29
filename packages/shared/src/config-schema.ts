@@ -1146,6 +1146,28 @@ export type RawMcpServerConfig = z.infer<typeof RawMcpServerConfigSchema>;
  * fields across itself (`planClaudeAccountWrite`), and every reader reads the
  * stored row, not a parse of it.
  */
+/**
+ * A list of project roots: absolute, canonical paths of git main checkouts
+ * (spec `flow-multiproject` §8.1). Roots contain dots (`/Users/x/client.app`),
+ * so a writer never addresses one through a dotted config key path; it reads
+ * the whole `runtimes.claudeCode` block, changes it and writes it back.
+ */
+const ProjectRootListSchema = z.array(z.string().min(1));
+
+/**
+ * One project's rule for which Claude accounts may work in it
+ * (`runtimes.claudeCode.projectAccounts[root]`, spec `flow-multiproject` §8.1).
+ * `allow` lists account ids, `default` (Main) included. A project with no entry
+ * allows every account its own rule allows.
+ */
+export const ProjectAccountsRuleSchema = z.object({
+  /** The account ids that may work in this project. */
+  allow: z.array(z.string().min(1)),
+});
+
+/** One project's account rule. See {@link ProjectAccountsRuleSchema}. */
+export type ProjectAccountsRule = z.infer<typeof ProjectAccountsRuleSchema>;
+
 export const ClaudeCodeAccountSchema = z.object({
   /**
    * Stable kebab-case slug for this account, unique within the registry. What
@@ -1165,6 +1187,20 @@ export const ClaudeCodeAccountSchema = z.object({
    * `#rrggbb` reads as `null` rather than failing the whole config.
    */
   color: z.string().regex(ACCOUNT_COLOR_PATTERN).nullable().default(null).catch(null),
+  /**
+   * The projects this account may work in, as canonical project roots (git
+   * main checkouts), or `null` for any project (spec `flow-multiproject` §8,
+   * N6). A list never includes "no project": an account kept to client-app
+   * does not run in a folder that is in no repository. Written only by a
+   * person, through `PUT /api/runtimes/claude-code/accounts/:id/only-projects`.
+   *
+   * Optional rather than defaulted, and absent reads exactly as `null`: a row
+   * is a shared contract with flow (readers ignore fields they do not know,
+   * writers keep them), so rows written by an older flow or by hand carry no
+   * such field, and every reader (`readProjectRootList`) treats that as "any
+   * project". The `'0.93.0'` migration still writes `null` onto stored rows.
+   */
+  onlyProjects: ProjectRootListSchema.nullable().optional(),
 });
 
 /** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
@@ -1522,6 +1558,19 @@ export type ReadClaudeAccount = ClaudeCodeAccount & {
 };
 
 /**
+ * A stored project-root list as a reader sees it: the non-empty strings of an
+ * array, or `null` (any project) for anything that is not an array. A reader
+ * never fails over a hand-edited rule; the launch path reads raw JSON.
+ *
+ * @param raw - A stored `onlyProjects` or `defaultAccountOnlyProjects` value.
+ * @returns The roots, or `null` for "any project".
+ */
+export function readProjectRootList(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw.filter((root): root is string => typeof root === 'string' && root.length > 0);
+}
+
+/**
  * The Claude account settings as every READER should see them, healed.
  *
  * The launch ladder, the `GET /api/config` block and the root-set scan all read
@@ -1622,6 +1671,9 @@ export function readClaudeAccountSettings(
       label: typeof row.label === 'string' ? row.label : null,
       color: resolveAccountColor(colorIsDefault ? null : (stored as string), accounts.length),
       colorIsDefault,
+      // Absent (a row written before the rule existed, or by an older flow)
+      // reads as `null`, any project: today's behaviour.
+      onlyProjects: readProjectRootList(row.onlyProjects),
     });
   }
   return { defaultAccount, accounts, warnings };
@@ -1838,6 +1890,22 @@ export const ClaudeCodeSettingsSchema = z.object({
    * folder: that row's own color wins. See {@link DefaultAccountColorSchema}.
    */
   defaultAccountColor: DefaultAccountColorSchema.default(null).catch(null),
+  /**
+   * The projects Main (this computer's own sign-in, id `default`) may work in,
+   * as canonical project roots, or `null` for any project. Main has no
+   * registry row to carry `onlyProjects`, so its rule lives here, the same
+   * pattern as `defaultAccountColor` (spec `flow-multiproject` §8.1).
+   */
+  defaultAccountOnlyProjects: ProjectRootListSchema.nullable().default(null),
+  /**
+   * Per-project account rules, keyed by canonical project root: which
+   * accounts may work in that project (spec `flow-multiproject` §8.1, N6). A
+   * project with no entry allows every account. An account works in a project
+   * only when both its own rule and the project's allow it. Written only by a
+   * person, through `PUT /api/runtimes/claude-code/project-accounts`, which
+   * rewrites the whole object: the keys are paths and contain dots.
+   */
+  projectAccounts: z.record(z.string().min(1), ProjectAccountsRuleSchema).default({}),
   /**
    * Account folders a person dismissed from Settings' "Found on this
    * computer" list, so they stay hidden across restarts (spec
@@ -3037,6 +3105,8 @@ export const UserConfigSchema = z.object({
         defaultAccount: null,
         accounts: [],
         defaultAccountColor: null,
+        defaultAccountOnlyProjects: null,
+        projectAccounts: {},
         dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
@@ -3125,6 +3195,8 @@ export const UserConfigSchema = z.object({
         defaultAccount: null,
         accounts: [],
         defaultAccountColor: null,
+        defaultAccountOnlyProjects: null,
+        projectAccounts: {},
         dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,

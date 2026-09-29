@@ -96,6 +96,8 @@ const RUNTIMES_DEFAULTS = {
     defaultAccount: null,
     accounts: [],
     defaultAccountColor: null,
+    defaultAccountOnlyProjects: null,
+    projectAccounts: {},
     dismissedFolders: [],
     defaultModel: null,
     defaultEffort: null,
@@ -2903,6 +2905,8 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
           { id: 'claude3', path: '/Users/me/.claude3', label: null },
         ],
         defaultAccountColor: null,
+        defaultAccountOnlyProjects: null,
+        projectAccounts: {},
         dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
@@ -3913,7 +3917,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(37);
+    expect(Object.keys(bodies)).toHaveLength(38);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

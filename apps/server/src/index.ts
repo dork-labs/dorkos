@@ -535,6 +535,7 @@ import { SessionContextStore } from './services/session/fleet/session-context-st
 import { onSessionAccountLaunched } from './services/runtimes/claude-code/accounts/account-usage-feed.js';
 import { probeForReset } from './services/runtimes/claude-code/accounts/account-probe.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
+import { renameAccountInProjectAccounts } from './services/core/usage/account-eligibility-writes.js';
 import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
 import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
 import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
@@ -2559,6 +2560,8 @@ async function start() {
                 },
               }
             : undefined,
+          renameInProjectAccounts: (from, to) =>
+            renameAccountInProjectAccounts(configManager, from, to),
           renameScheduleAccount: (from, to) =>
             renameScheduleAccount(db, from, to, (schedule) =>
               isPackageOwned(

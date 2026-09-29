@@ -241,6 +241,13 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // §7.4). Ships EMPTY, so every found folder is offered; a hidden one only
   // stops being suggested. Nothing is registered, sent or granted either way.
   'runtimes.claudeCode.dismissedFolders',
+  // Which projects one registered Claude account may work in (spec
+  // `flow-multiproject` §8). Absent reads as "any project", exactly how every
+  // account behaved before the rule existed. Its two siblings,
+  // `defaultAccountOnlyProjects` and `projectAccounts`, are argued in
+  // `PERMISSIVE_DEFAULTS` because a wipe carries them; this one rides on its
+  // registry row, which a wipe does not carry, so there is nothing to lose.
+  'runtimes.claudeCode.accounts[].onlyProjects',
   // The extension copies a person said "Not now" to in the Activity inbox
   // (DOR-2517). Ships EMPTY, so every extension waiting to run is asked about;
   // an entry only stops the inbox asking again. It approves, runs and grants
@@ -447,6 +454,16 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
  * text should be softened.
  */
 export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = {
+  'runtimes.claudeCode.defaultAccountOnlyProjects': {
+    value: null,
+    reason:
+      "Main (this computer's own Claude sign-in) may work in any project by default, which is exactly how it behaved before account rules existed (spec `flow-multiproject` §8); a rule nobody asked for would stop work on the one account every install has. A person who keeps Main to some projects narrows where a credential is used, so that rule is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS).",
+  },
+  'runtimes.claudeCode.projectAccounts': {
+    value: {},
+    reason:
+      'No project limits which accounts it may use by default, which is how every project behaved before account rules existed (spec `flow-multiproject` §8). A list a person sets for a project narrows which credentials work there, so it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
   'auth.enabled': {
     value: false,
     reason:

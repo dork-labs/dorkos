@@ -716,6 +716,14 @@ export const CONFIG_WRITE_POLICY = {
   // accounts a person is shown as addable, so it stays with the roster it
   // curates: only a person curates it, through the dismiss route.
   'runtimes.claudeCode.dismissedFolders': 'operator-only',
+  // Which projects each Claude account may work in, and which accounts each
+  // project may use (spec `flow-multiproject` §8). They bound where a credential
+  // may be used, so an agent that could write them could move spend onto an
+  // account the person kept out of that project. Written by a person through
+  // the two `PUT /api/runtimes/claude-code/...` routes behind the person bar.
+  'runtimes.claudeCode.accounts[].onlyProjects': 'operator-only',
+  'runtimes.claudeCode.defaultAccountOnlyProjects': 'operator-only',
+  'runtimes.claudeCode.projectAccounts': 'operator-only',
   // The execution defaults for new sessions on each runtime. Writable, and the
   // operator was asked directly: a model and an effort level are a preference
   // about how work runs, on the same footing as `runtimes.default` right above,
@@ -960,6 +968,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.defaultAccountColor',
       'runtimes.claudeCode.dismissedFolders',
+      'runtimes.claudeCode.accounts[].onlyProjects',
+      'runtimes.claudeCode.defaultAccountOnlyProjects',
+      'runtimes.claudeCode.projectAccounts',
     ],
   },
   {

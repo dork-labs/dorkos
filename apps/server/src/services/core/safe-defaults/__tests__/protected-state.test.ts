@@ -259,6 +259,60 @@ describe('salvageProtectedState', () => {
     expect(salvaged.leaves['uploads.allowedTypes']).toBeUndefined();
   });
 
+  // Purpose: a wipe that forgot "work account only for client-app" would let it
+  // into personal repos (spec flow-multiproject §8.1, the DOR-584 class), so
+  // the account rules a person set survive a config recovery.
+  it('carries the account rules a person set, and nothing when there are none', () => {
+    const stored = {
+      runtimes: {
+        claudeCode: {
+          defaultAccountOnlyProjects: ['/work/client.app'],
+          projectAccounts: { '/work/client.app': { allow: ['work', 'default'] } },
+        },
+      },
+    };
+    const salvaged = salvageProtectedState(stored, fresh);
+    expect(salvaged.leaves['runtimes.claudeCode.defaultAccountOnlyProjects']).toEqual([
+      '/work/client.app',
+    ]);
+    expect(salvaged.leaves['runtimes.claudeCode.projectAccounts']).toEqual({
+      '/work/client.app': { allow: ['work', 'default'] },
+    });
+
+    const none = salvageProtectedState(
+      { runtimes: { claudeCode: { defaultAccountOnlyProjects: null, projectAccounts: {} } } },
+      fresh
+    );
+    expect(none.leaves['runtimes.claudeCode.defaultAccountOnlyProjects']).toBeUndefined();
+    expect(none.leaves['runtimes.claudeCode.projectAccounts']).toBeUndefined();
+
+    // Carried onto a freshly-defaulted store, keys with dots in them intact.
+    const store = createStore(USER_CONFIG_DEFAULTS as unknown as Record<string, unknown>);
+    applyProtectedState(store, salvaged);
+    const claudeCode = (store.data.runtimes as { claudeCode: Record<string, unknown> }).claudeCode;
+    expect(claudeCode.defaultAccountOnlyProjects).toEqual(['/work/client.app']);
+    expect(claudeCode.projectAccounts).toEqual({
+      '/work/client.app': { allow: ['work', 'default'] },
+    });
+  });
+
+  it('carries no row-level account rule, because a wipe does not carry the row', () => {
+    // `accounts[].onlyProjects` rides on its registry row, and the registry is
+    // not carried, so the account it limited is gone with it.
+    expect(PROTECTIVE_CARRYOVERS.map((entry) => entry.path)).not.toContain(
+      'runtimes.claudeCode.accounts[].onlyProjects'
+    );
+    const salvaged = salvageProtectedState(
+      {
+        runtimes: {
+          claudeCode: { accounts: [{ id: 'work', path: '/a', onlyProjects: ['/w'] }] },
+        },
+      },
+      fresh
+    );
+    expect(Object.keys(salvaged.leaves).filter((p) => p.includes('accounts'))).toEqual([]);
+  });
+
   it('lets a carried decision own the telemetry block outright', () => {
     // When a decision IS carried, the per-leaf rules must not also fire on
     // telemetry, or the two could contradict each other on the same field.

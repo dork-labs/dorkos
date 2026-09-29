@@ -56,6 +56,11 @@ import {
 } from '../services/tasks/schedule-permission-clamp.js';
 import { changesApprovedWork } from '../services/tasks/task-file-update.js';
 import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
+import { emitIneligibleAccountActivity } from '../services/tasks/run-activity.js';
+import {
+  scheduleAccountRefusal,
+  scheduleRunFolder,
+} from '../services/tasks/lifecycle/schedule-account-eligibility.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
@@ -322,6 +327,11 @@ export function createTasksRouter(
       });
     }
     const schedule = outcome.task;
+    // Saved, but its account may not work where it runs: say so now rather
+    // than at its first run (spec `flow-multiproject` §8.4).
+    if (outcome.accountWarning) {
+      emitIneligibleAccountActivity(activityService, schedule, outcome.accountWarning);
+    }
 
     activityService?.emit({
       // An untrusted caller reaches here too — its schedule is parked and clamped,
@@ -373,6 +383,23 @@ export function createTasksRouter(
     // has started (DOR-2384). Refused before the file is touched.
     const accountLocked = refuseStickyAccountChange(store, existing, data);
     if (accountLocked) return res.status(400).json(accountLocked);
+
+    // The account rule (spec `flow-multiproject` §8.4): an agent may not point
+    // a schedule at an account that may not work where its runs start; a
+    // person's own edit lands and is warned about below.
+    const accountRefusal =
+      typeof data.account === 'string'
+        ? await scheduleAccountRefusal({
+            account: data.account,
+            runtime: data.runtime ?? existing.runtime,
+            folder: await scheduleRunFolder(
+              existing.agentId ? meshCore?.getProjectPath(existing.agentId) : null
+            ),
+          })
+        : null;
+    if (accountRefusal && !trusted) {
+      return res.status(409).json(accountRefusal.toBody());
+    }
 
     // The MERGED schedule is what gets registered, so the merged schedule is
     // what has to read: a new cron runs in the task's existing timezone unless
@@ -524,6 +551,10 @@ export function createTasksRouter(
     // Re-register or unregister the cron job to match the new state, through the
     // shared seam — see the note on the create path above.
     registrar.syncTask(updated.id);
+
+    // A person's edit that points the schedule at an account that may not work
+    // where it runs: saved, and said (spec `flow-multiproject` §8.4).
+    if (accountRefusal) emitIneligibleAccountActivity(activityService, updated, accountRefusal);
 
     if (data.enabled === false && activityService) {
       activityService.emit({

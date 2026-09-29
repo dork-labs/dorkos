@@ -403,6 +403,13 @@ export const CONFIG_DISCLOSURE = {
   // (spec claude-account-ui §7.4). Folder paths, the same class as
   // `accounts[].path` above: exposed on purpose, and naming no secret.
   'runtimes.claudeCode.dismissedFolders': 'expose',
+  // Which projects each account may work in, and which accounts each project
+  // may use (spec `flow-multiproject` §8): absolute folders on this machine, and
+  // nothing an agent needs. A launch it asks for that the rules refuse is
+  // answered with a sentence naming the project, which is all it can act on.
+  'runtimes.claudeCode.accounts[].onlyProjects': 'withhold',
+  'runtimes.claudeCode.defaultAccountOnlyProjects': 'withhold',
+  'runtimes.claudeCode.projectAccounts': 'withhold',
   // The execution defaults a new session on each runtime starts with. A model id
   // and an effort rung are the same class of thing as `runtimes.default`: they
   // describe HOW work runs here, name no credential and no person, and an agent

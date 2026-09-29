@@ -14,8 +14,22 @@ import {
   claudeConfigDirEnv,
   claudeDefaultAccountFolder,
   machineDefaultClaudeRoot,
-  resolveLaunchAccountRoot,
+  resolveLaunchAccountRoot as resolveLaunch,
 } from '../claude-config-dir.js';
+
+/**
+ * The ladder's folder for a launch in no project (where no account rule
+ * applies), or the refusal thrown: what this file asserts on.
+ */
+function resolveLaunchAccountRoot(
+  opts: Omit<Parameters<typeof resolveLaunch>[0], 'project'> & {
+    project?: Parameters<typeof resolveLaunch>[0]['project'];
+  }
+): string {
+  const launch = resolveLaunch({ project: null, ...opts });
+  if (!launch.ok) throw launch.error;
+  return launch.root;
+}
 
 const HOME_ROOT = path.join(os.homedir(), '.claude');
 const SERVER_ENV_ROOT = '/staged/server-inherited';
@@ -29,6 +43,8 @@ function fakeConfig(claudeCode: Partial<UserConfig['runtimes']['claudeCode']> = 
       defaultAccount: null,
       accounts: [],
       defaultAccountColor: null,
+      defaultAccountOnlyProjects: null,
+      projectAccounts: {},
       dismissedFolders: [],
       defaultModel: null,
       defaultEffort: null,

@@ -74,6 +74,8 @@ import {
   claudeConfigDirEnv,
   resolveActiveClaudeRoot,
   resolveLaunchAccountRoot,
+  accountIdForRoot,
+  type LaunchAccountResolution,
 } from './claude-config-dir.js';
 import { withClaudeConfigDir } from './claude-config-env-lock.js';
 import { logger } from '../../../lib/logger.js';
@@ -95,6 +97,8 @@ import {
   turnAgentOf,
 } from '../../core/agent-identity/index.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
+import { projectOfFolder } from '../../core/usage/account-eligibility.js';
+import { checkClaudeLaunchAccount } from './launch-account-check.js';
 import { predictLaunchBillsPerToken } from './messaging/per-token-billing.js';
 import {
   disposeProjector,
@@ -974,9 +978,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param projectDir - The session's working directory. Keys the transcript
    *   probe; the account pin is read from the home it resolves to, never from a
    *   `.dork/` the folder carries (spec `agent-home-desk` I1).
-   * @returns An absolute Claude config directory.
+   * @returns An absolute Claude config directory, or `null` when no account may
+   *   work in the folder's project.
    */
-  async accountRootForSession(sessionId: string, projectDir: string): Promise<string> {
+  async accountRootForSession(sessionId: string, projectDir: string): Promise<string | null> {
     const settled = await this.sessionStore.settledAccountRoot(
       sessionId,
       this.transcriptReader,
@@ -985,7 +990,41 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     if (settled) return settled;
     const home = homeOf(resolveAgentHome(projectDir));
     const manifest = home ? await readHomeManifest(home).catch(() => null) : null;
-    return resolveLaunchAccountRoot({ agentAccountId: manifest?.account });
+    // Keeps to the accounts that may work in this folder's project; a launch
+    // that would be refused predicts no account at all (spec
+    // `flow-multiproject` §8.4).
+    const launch = resolveLaunchAccountRoot({
+      agentAccountId: manifest?.account,
+      project: await projectOfFolder(projectDir),
+    });
+    return launch.ok ? launch.root : null;
+  }
+
+  /**
+   * Whether a send to this session may launch, as far as accounts go: the
+   * account disk has already bound it to (always allowed; the rule applies
+   * when an account is picked, never mid-conversation), else the launch
+   * ladder for `hintId` in `projectDir`'s project (spec `flow-multiproject`
+   * §8.4). Asked before a session starts, so a refused launch starts nothing.
+   *
+   * Not on the `AgentRuntime` port, for the reason `accountRootForSession`
+   * gives.
+   *
+   * @param sessionId - DorkOS or SDK session id.
+   * @param projectDir - The folder the session runs in.
+   * @param hintId - The account a person picked for this session, if any.
+   * @returns The account the launch would use, or the refusal.
+   */
+  async checkLaunchAccount(
+    sessionId: string,
+    projectDir: string,
+    hintId?: string
+  ): Promise<LaunchAccountResolution> {
+    const settled = await this.sessionStore
+      .settledAccountRoot(sessionId, this.transcriptReader, projectDir)
+      .catch(() => undefined);
+    if (settled) return { ok: true, root: settled, accountId: accountIdForRoot(settled) };
+    return checkClaudeLaunchAccount({ cwd: projectDir, hintId });
   }
 
   /** @inheritdoc */
