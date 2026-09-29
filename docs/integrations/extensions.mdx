@@ -20,7 +20,7 @@ export function activate(api: ExtensionAPI): () => void {
 }
 ```
 
-`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`), UI control (`executeCommand`, `openCanvas`, `navigate`), read-only host state (`getState`, `subscribe`), scoped storage (`loadData`/`saveData`), notifications (`notify`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`.
+`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`, full pages at `/x/<your-id>/…` with `registerPage`, and chat status-bar items with `registerStatusBarItem`), UI control (`executeCommand`, `openCanvas`, `navigate`, and a dot on your own right-panel tab with `setTabMarker`), read-only host state (`getState`, `subscribe`, including `currentProject`, the project the selected folder belongs to), scoped storage (`loadData`/`saveData`), notifications (`notify`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`.
 
 ## Testing locally
 

@@ -64,6 +64,8 @@ interface PaletteRootPageProps {
   onSessionSelect: (session: PaletteSessionItem) => void;
   /** Put a slash command in the active conversation's composer and go there. */
   onCommandSelect: (command: string) => void;
+  /** Open an extension page. */
+  onPageSelect: (href: string) => void;
 }
 
 /**
@@ -102,6 +104,7 @@ export function PaletteRootPage({
   onRoomSelect,
   onSessionSelect,
   onCommandSelect,
+  onPageSelect,
 }: PaletteRootPageProps) {
   // What to say instead of a channel list when there is none to show. Only `#`
   // mode asks: everywhere else rooms are one group among several, and a palette
@@ -156,6 +159,7 @@ export function PaletteRootPage({
     onRoomSelect,
     onSessionSelect,
     onCommandSelect,
+    onPageSelect,
   };
 
   return (

@@ -6,7 +6,17 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expectTypeOf, it, expect } from 'vitest';
-import type { ProjectRef, TrackerItemRef } from '../extension-api.js';
+import type {
+  ExtensionAPI,
+  ExtensionPageOptions,
+  ExtensionPageProps,
+  ExtensionPointId,
+  ExtensionReadableState,
+  ProjectRef,
+  StatusBarItemOptions,
+  StatusBarSlotContext,
+  TrackerItemRef,
+} from '../extension-api.js';
 import type {
   DataProviderContext,
   LimitedSessionInfo,
@@ -42,5 +52,22 @@ describe('extension seam contract', () => {
     expectTypeOf<
       Pick<LimitedSessionInfo, 'trackerItems' | 'trackerItem'>
     >().toEqualTypeOf<Contract.SessionInfoSeams>();
+  });
+
+  it('matches the client seams (pages, status bar, tab marker, navigate) both ways', () => {
+    expectTypeOf<ExtensionPointId>().toEqualTypeOf<Contract.ExtensionPointId>();
+    expectTypeOf<ExtensionPageProps>().toEqualTypeOf<Contract.ExtensionPageProps>();
+    expectTypeOf<ExtensionPageOptions>().toEqualTypeOf<Contract.ExtensionPageOptions>();
+    expectTypeOf<StatusBarSlotContext>().toEqualTypeOf<Contract.StatusBarSlotContext>();
+    expectTypeOf<StatusBarItemOptions>().toEqualTypeOf<Contract.StatusBarItemOptions>();
+    expectTypeOf<
+      Pick<ExtensionReadableState, 'currentProject'>
+    >().toEqualTypeOf<Contract.ExtensionReadableStateSeams>();
+    expectTypeOf<
+      Pick<
+        ExtensionAPI,
+        'registerPage' | 'registerStatusBarItem' | 'setTabMarker' | 'navigate' | 'isSlotAvailable'
+      >
+    >().toEqualTypeOf<Contract.ExtensionAPISeams>();
   });
 });

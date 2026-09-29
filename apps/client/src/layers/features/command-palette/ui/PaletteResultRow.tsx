@@ -9,6 +9,7 @@
  * @module features/command-palette/ui/PaletteResultRow
  */
 import { motion } from 'motion/react';
+import { Puzzle } from 'lucide-react';
 import { CommandItem } from '@/layers/shared/ui';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import type { RoomSummary } from '@/layers/entities/room';
@@ -41,6 +42,8 @@ export interface PaletteResultRowProps {
   onSessionSelect: (session: PaletteSessionItem) => void;
   /** Put a slash command in the active conversation's composer and go there. */
   onCommandSelect: (command: string) => void;
+  /** Open an extension page. */
+  onPageSelect: (href: string) => void;
 }
 
 /**
@@ -59,6 +62,7 @@ export function PaletteResultRow({
   onRoomSelect,
   onSessionSelect,
   onCommandSelect,
+  onPageSelect,
 }: PaletteResultRowProps) {
   const { item, matches } = row.item;
 
@@ -120,6 +124,22 @@ export function PaletteResultRow({
             {item.data.shortcut && (
               <span className="text-muted-foreground ml-auto text-xs">{item.data.shortcut}</span>
             )}
+          </motion.div>
+        </CommandItem>
+      );
+    }
+
+    case 'page': {
+      const Icon = item.data.icon ?? Puzzle;
+      return (
+        <CommandItem value={item.data.id} onSelect={() => onPageSelect(item.data.href)}>
+          <motion.div
+            whileHover={{ x: 2 }}
+            transition={{ duration: 0.1, ease: EASE_OUT }}
+            className="flex w-full items-center gap-2"
+          >
+            <Icon className="size-4" />
+            <span>{item.data.label}</span>
           </motion.div>
         </CommandItem>
       );

@@ -628,6 +628,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       warnings: [],
     } satisfies WorktreeScanResult),
     resolveWorkspace: vi.fn().mockResolvedValue(null),
+    // Projects (spec `flow-multiproject` §6.1) — no known projects, and every
+    // folder in none, unless the test overrides it.
+    listProjects: vi.fn().mockResolvedValue([]),
+    resolveProject: vi.fn().mockResolvedValue(null),
     // Rooms (spec `rooms`) — every read answers empty so a component under test
     // renders its empty state unless the test overrides it.
     listRooms: vi.fn().mockResolvedValue([]),

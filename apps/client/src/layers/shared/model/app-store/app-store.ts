@@ -130,6 +130,17 @@ export const useAppStore = create<AppState>()(
         setCurrentAgentId: (id) =>
           set((s) => (s.currentAgentId === id ? s : { currentAgentId: id })),
 
+        // Derived from selectedCwd by useCurrentProjectSync; transient. Compared
+        // by value, because every resolve answers a fresh object and the
+        // extension host's subscribe fires on identity.
+        currentProject: null,
+        setCurrentProject: (project) =>
+          set((s) =>
+            s.currentProject?.root === project?.root && s.currentProject?.name === project?.name
+              ? s
+              : { currentProject: project }
+          ),
+
         // Mirrored from the profile store's explicit selection (openProfileDocked);
         // transient. Guard no-op writes so subscribers only fire on real changes.
         explicitAgentPath: null,

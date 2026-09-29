@@ -45,6 +45,7 @@ function promotionContext(overrides: Partial<StatusPromotionContext> = {}): Stat
     usage: { kind: 'pay-as-you-go', costUsd: 0.35 },
     usageStale: false,
     subagentsInFlight: 0,
+    extensionItems: [],
     ...overrides,
   };
 }

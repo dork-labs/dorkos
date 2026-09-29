@@ -20,6 +20,7 @@ import { WorkspacesPage } from '@/layers/widgets/workspaces';
 import { ConnectionsPage } from '@/layers/widgets/connections';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
 import { FeedbackRequestsPage } from '@/layers/widgets/feedback-requests';
+import { ExtensionPageRoute } from '@/layers/widgets/extension-page';
 import { agentFilterSchema, ATTENTION_SORT_FIELD } from '@/layers/features/agents-list';
 import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
@@ -27,6 +28,7 @@ import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
 import {
   ChannelsBar,
+  ExtensionPageBar,
   HomeSurfaceBar,
   SessionHeader,
   TeamHeader,
@@ -568,6 +570,46 @@ const feedbackRequestsRoute = createRoute({
   component: FeedbackRequestsPage,
 });
 
+// ── Extension pages at /x/<extensionId>/<path> ──────────────
+/**
+ * The query an extension page receives: flat, every value a string (spec
+ * `flow-multiproject` §6.5). The router's own parser turns `?n=1` into a
+ * number and `?a=b&a=c` into an array; a page was promised
+ * `Record<string, string>`, so everything is written back as the text the URL
+ * holds, and anything that is not a single value is dropped.
+ *
+ * @internal Exported for testing only.
+ */
+export function extensionPageSearch(search: Record<string, unknown>): Record<string, string> {
+  const flat: Record<string, string> = {};
+  for (const [key, value] of Object.entries(search)) {
+    if (typeof value === 'string') flat[key] = value;
+    else if (typeof value === 'number' || typeof value === 'boolean') flat[key] = String(value);
+  }
+  return flat;
+}
+
+// Two routes, one page component: an extension's home (`/x/flow`) and every
+// page under it (`/x/flow/p/dorkos`). The `x/` prefix is what means no core
+// route can ever collide with a page an extension registers. Which page (if
+// any) answers is decided against the registry at render time, because a deep
+// link on reload arrives before the extension has registered anything.
+const extensionHomeRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/x/$extensionId',
+  staticData: { header: ExtensionPageBar },
+  validateSearch: extensionPageSearch,
+  component: ExtensionPageRoute,
+});
+
+const extensionPageRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/x/$extensionId/$',
+  staticData: { header: ExtensionPageBar },
+  validateSearch: extensionPageSearch,
+  component: ExtensionPageRoute,
+});
+
 // ── Route tree ──────────────────────────────────────────────
 const routeTree = rootRoute.addChildren([
   appShellRoute.addChildren([
@@ -580,6 +622,8 @@ const routeTree = rootRoute.addChildren([
     marketplaceRoute,
     marketplaceSourcesRoute,
     feedbackRequestsRoute,
+    extensionHomeRoute,
+    extensionPageRoute,
   ]),
 ]);
 

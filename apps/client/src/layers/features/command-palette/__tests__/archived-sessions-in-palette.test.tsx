@@ -131,6 +131,7 @@ vi.mock('@/layers/shared/model', () => ({
   // Pinned, not `Date.now()`: the boundary these fixtures straddle has to be
   // the same one at 04:30 in the morning as at noon.
   useNow: () => NOW,
+  useMenuExtensionPages: () => [],
   useSlotContributions: () => [],
   useSettingsDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useTasksDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),

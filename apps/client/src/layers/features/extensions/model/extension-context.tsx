@@ -12,6 +12,7 @@ import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { registerExtensionRemount } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
 import { useSyncCurrentAgentId, useReconcileExplicitAgentPath } from '@/layers/entities/agent';
+import { useCurrentProjectSync } from '@/layers/entities/project';
 import type { LoadedExtension, ExtensionAPIDeps } from './types.js';
 import { ExtensionLoader } from './extension-loader.js';
 import { useCwdExtensionSync } from './use-cwd-extension-sync.js';
@@ -99,6 +100,10 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
   // Mirror the selected cwd's agent id into the app store so the extension host
   // can tell extensions which agent they run beside (getState().agentId).
   useSyncCurrentAgentId();
+
+  // And the selected cwd's project, for getState().currentProject (spec
+  // `flow-multiproject` §6.4).
+  useCurrentProjectSync();
 
   // Heal the explicitly-opened agent path when that agent is deleted, so its
   // Profile tab disappears off /session instead of rendering AgentNotFound

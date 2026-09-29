@@ -59,6 +59,18 @@ export {
   type TeamViewMode,
 } from './team-view';
 export {
+  EXTENSION_PAGE_PREFIX,
+  EXTENSION_PAGE_ROUTE_PATHS,
+  EXTENSION_PAGE_PATH_PATTERN,
+  parseExtensionPagePath,
+  extensionPageHref,
+  hasPageParams,
+  matchExtensionPage,
+  type ExtensionPagePath,
+  type ExtensionPageMatch,
+  type MatchablePage,
+} from './extension-page-path';
+export {
   APP_ROUTE_PATHS,
   classifyLink,
   declaredScheme,

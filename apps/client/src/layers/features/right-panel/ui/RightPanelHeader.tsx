@@ -13,10 +13,11 @@ import { cn } from '@/layers/shared/lib/utils';
 import {
   revealInScroller,
   useAppStore,
+  useExtensionRegistry,
   useScrollOverflow,
   type RightPanelContribution,
 } from '@/layers/shared/model';
-import { TabUnreadDot } from './TabUnreadDot';
+import { TabUnreadDot, tabAccessibleName } from './TabUnreadDot';
 
 /** DOM id of the right-panel content region the active tab controls. */
 export const RIGHT_PANEL_PANEL_ID = 'right-panel-content';
@@ -165,6 +166,8 @@ function TabStrip({
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
+  // An extension's marker joins its tab's accessible name (spec §6.7).
+  const tabMarkers = useExtensionRegistry((s) => s.tabMarkers);
   // Which edge still has tabs behind it. The same hook the home tab bar and the
   // pinned triage header draw their cues from — "is anything hidden past this
   // edge" has one answer in this codebase, and its 1px slack rule and its
@@ -261,7 +264,10 @@ function TabStrip({
                   <TooltipTrigger asChild>
                     <TabsTrigger
                       value={contribution.id}
-                      aria-label={contribution.title}
+                      aria-label={tabAccessibleName(
+                        contribution.title,
+                        tabMarkers[contribution.id] ?? null
+                      )}
                       id={rightPanelTabDomId(contribution.id)}
                       aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
                       // Driven off `isActive`, not `data-[state=active]`: the

@@ -1,0 +1,59 @@
+import { Fragment } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
+import type { StatusBarSlotContext } from '@dorkos/extension-api';
+import type { StatusBarContribution } from '@/layers/shared/model';
+
+/** Props for {@link ExtensionStatusItems}. */
+export interface ExtensionStatusItemsProps {
+  /** The chat the status bar belongs to, handed to every item as its props. */
+  ctx: StatusBarSlotContext;
+  /** The items whose `when` said to show them, in order. */
+  items: readonly StatusBarContribution[];
+}
+
+/**
+ * Every visible extension item, drawn inside the status bar's one `extensions`
+ * slot (spec `flow-multiproject` §6.6).
+ *
+ * Each item is its own labelled group inside its own error boundary: an
+ * extension that throws while drawing disappears from the line and takes
+ * nothing else with it. Items are separated the way the line separates its own.
+ *
+ * @param props - The chat's slot context and the items to draw.
+ */
+export function ExtensionStatusItems({ ctx, items }: ExtensionStatusItemsProps) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      {items.map((item, index) => {
+        const Item = item.component;
+        return (
+          <Fragment key={item.id}>
+            {index > 0 && (
+              <span className="text-muted-foreground/30 shrink-0" aria-hidden="true">
+                &middot;
+              </span>
+            )}
+            <span
+              role="group"
+              aria-label={item.label}
+              data-testid={`extension-status-item-${item.id}`}
+              className="inline-flex min-w-0 items-center"
+            >
+              <ErrorBoundary fallback={null} onError={(error) => reportItemError(item, error)}>
+                <Item {...ctx} />
+              </ErrorBoundary>
+            </span>
+          </Fragment>
+        );
+      })}
+    </span>
+  );
+}
+
+/** Say which extension's item broke, once per failure. */
+function reportItemError(item: StatusBarContribution, error: unknown): void {
+  console.warn(
+    `[extensions] ${item.extensionId}'s status-bar item "${item.id}" failed to draw and is hidden.`,
+    error
+  );
+}
