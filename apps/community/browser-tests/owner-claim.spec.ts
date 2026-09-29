@@ -254,6 +254,12 @@ test('a host administrator creates a community and its intended owner signs up a
       .locator('[data-slot="notice"]')
       .filter({ hasText: 'Connect DorkOS to this community' });
     await expect(connect).toBeVisible();
+    // Named by place, not label: the switcher shows an icon on a phone and whichever name is
+    // selected on a computer.
+    await expect(
+      connect.getByText('In the DorkOS app, open the menu at the top left.', { exact: true })
+    ).toBeVisible();
+    await expect(connect.getByText(/sidebar|team’s name/u)).toHaveCount(0);
     await expect(connect.getByText('Add community', { exact: true })).toBeVisible();
     await expect(connect.getByText('Connect a community…', { exact: true })).toBeVisible();
     await expect(ownerPage.getByText(/Connections, then Messaging/u)).toHaveCount(0);

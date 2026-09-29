@@ -299,12 +299,13 @@ export function CommunityApp() {
             Open community
           </Button>
           <ConnectDorkOS
-            link={communityLink(
-              window.location.origin,
-              community.id,
-              // Not read yet for someone who just joined; the name they arrived by, if any.
-              communityShortName ?? shortNameBasePath()?.slice(1)
-            )}
+            link={
+              communityShortName
+                ? communityLink(window.location.origin, community.id, communityShortName)
+                : // Not read yet for someone who just joined: the name they arrived by, when it
+                  // leads to this community, otherwise its /c/ address.
+                  `${window.location.origin}${communityBasePath(community.id)}`
+            }
           />
         </section>
       </main>

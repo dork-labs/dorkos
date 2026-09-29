@@ -10,4 +10,4 @@ covers:
 
 ### Fixed
 
-- The Community pages that tell you how to connect DorkOS now give the steps the app really uses (the menu at the top of the sidebar, then Add community, then Connect a community…) and show the community's own link with a Copy button, so you paste the right address (DOR-2564)
+- The Community pages that tell you how to connect DorkOS now give the steps the app really uses (the menu at the top left, then Add community, then Connect a community…) and show the community's own link with a Copy button, so you paste the right address (DOR-2564)
