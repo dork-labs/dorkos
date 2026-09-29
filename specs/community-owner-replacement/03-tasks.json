@@ -1,0 +1,119 @@
+{
+  "spec": "specs/community-owner-replacement/02-specification.md",
+  "slug": "community-owner-replacement",
+  "generatedAt": "2026-09-28T23:30:00Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-09-28",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Optional outbound mail",
+      "subject": "[community-owner-replacement] [P1] Let a Community host send notices by email through its own SMTP server",
+      "description": "Build optional outbound mail for apps/community, off by default, as specified in specs/community-owner-replacement/02-specification.md (\"Mail delivery (new, optional)\", \"Technical Dependencies\"). This is the prerequisite for every other task: a replacement is refused without mail.\n\nScope:\n- Configuration in `src/config.ts`: `COMMUNITY_SMTP_URL` and `COMMUNITY_MAIL_FROM` (all or none; `smtps:` or STARTTLS required unless the host is loopback), plus `COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS` (default 14, 7–90) and `COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS` (default 30, 14–180, never below the notice days). The startup log says whether mail is on, never the URL or credentials.\n- `src/mail/transport.ts` (nodemailer, pinned exactly), `src/mail/outbox.ts` (queue a message inside the caller's transaction), `src/mail/worker.ts` (one message at a time per replica, SKIP LOCKED plus lease, the existing cleanup backoff; `2xx` = accepted, recipient `5xx` = failed at once, `4xx`/timeout/connection error retried until 72 hours after creation then failed; `last_error_class` only), `src/mail/messages.ts` (plain text builder; the owner-replacement messages themselves land in 2.3).\n- The `notice_outbox` table in its own migration (next free number), mirrored in `src/schema.ts`, listed in `src/migrate.ts`; rows deleted 30 days after resolving and with the tenant by `deletion-worker.ts`. The recipient's address is never stored; the worker reads `\"user\".email` at send time.\n- `GET /api/v1/host/capabilities` (scope `communities:read`) → `{ mail, oidc }` with `CommunityAdminHostCapabilitiesSchema` in `packages/shared/src/community-admin-wire.ts`.\n- Docs: `DEPLOYMENT.md`, `README.md`, `OPERATIONS.md` (setting up mail; mail stays off by default). Changelog fragment.\n\nAcceptance criteria (each a test that fails if the feature is removed or subtly wrong; real Postgres; `smtp-server` in process as a dev dependency):\n- AC-5 from the spec: `NOTICE_DAYS=6`, `UNREACHABLE_DAYS=13`, unreachable below notice, a plain non-loopback `smtp:` URL without STARTTLS, and only one of the two mail keys each fail `parseConfig`.\n- With mail unset, no test that leaves it unset causes the fake to receive a connection, and capabilities says `mail: false`.\n- Worker classification: fake answers 250 → accepted with `accepted_at`; 550 → failed at once; 421 repeatedly → retried with backoff and failed at 72 hours (clock injected); a hang → lease expiry and retry, never a held row lock (a concurrent `SELECT … FOR UPDATE NOWAIT` on the community row succeeds during the send).\n- The outbox row never contains the address; `last_error_class` never contains reply text (fake replies with a sentinel string; scan the row).\n- Two replicas (two workers on one database) deliver each message exactly once.\n- `pnpm verify` green.",
+      "activeForm": "Adding optional SMTP mail to the Community server",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "2.1"
+      ],
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — The replacement contract on the Community server",
+      "subject": "[community-owner-replacement] [P2] Add the owner-replacement schemas, scope, and migration",
+      "description": "Add the wire contract and storage for specs/community-owner-replacement/02-specification.md (\"Wire schemas\", \"Data model (one migration)\", \"Scope and authority\").\n\nScope:\n- `packages/shared/src/community-admin-wire.ts`: reason, state, request, replacement, create response, list, claim-token schemas; `communities:ownership` in `CommunityAdminHostApiKeyScopeSchema` (scope arrays `.max(6)`); `ownerReplacement` on `CommunityAdminHostProjectionSchema`.\n- `packages/shared/src/community-wire.ts`: notice, objection, preflight, claim schemas and route constants; `NOTICE_DELIVERY_UNAVAILABLE` and `OWNER_REPLACEMENT_OPEN` in `CommunityWireErrorCodeSchema`. TSDoc on every export.\n- One migration (next free number): `owner_replacements` with every check, the idempotency unique, the partial unique index on open states, composite tenant foreign keys to `members(community_id,id)`; `host_api_keys_scopes` to six scopes; `host_audit_events_actor_kind` gains `system`; `audit_events_actor_kind` gains `host` unless the takedown migration already added it (coordinate: whichever lands second drops its copy). Mirror in `src/schema.ts`; list in `src/migrate.ts`.\n- `host-keys.js issue --scope communities:ownership`, the host page's scope checkbox (`HostApiKeys.tsx`), and `recordHostAudit` accepting `{ kind: 'system' }`.\n- `deletion-worker.ts` deletes `owner_replacements` rows with the tenant.\n\nAcceptance criteria:\n- Schema unit tests: each strict schema refuses an extra field; the reference regex refuses `<`, newlines, and 121 characters; the create response parses with `claimToken: null` and with a token; scope arrays of seven are refused.\n- Migration tests against real Postgres: two open rows for one community violate the partial index; a closed row plus an open row are allowed; a `completed` row without `new_owner_member_id`, a closed row with a `claim_token_hash`, and a `prior_owner_member_id` from another community each violate a check or foreign key; a key with seven scopes or an unknown scope is refused; a `system` host audit row with a user id is refused.\n- The offline key command issues a working `communities:ownership` key.\n- Existing tenancy and administration isolation suites pass unchanged. `pnpm verify` green.",
+      "activeForm": "Adding the owner-replacement contract and migration",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1"
+      ],
+      "issue": null
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 — The replacement contract on the Community server",
+      "subject": "[community-owner-replacement] [P2] Let a host request, list, cancel, and reissue an owner replacement",
+      "description": "Build `src/routes/host-owner-replacements.ts` per specs/community-owner-replacement/02-specification.md (\"Host routes\", \"Shared rules\").\n\nScope: `POST /host/communities/:id/owner-replacements` (scope `communities:ownership`; a person must send `password`, a key must not; mail required; idempotency per actor with payload hash; lifecycle `active`/`archived`/`held` and current `lifecycleVersion`; one open per community; `claimant.oidcSubject` only when OIDC is configured; insert `notifying` row, token hash, and one `owner_replacement.notice` outbox message in the same transaction; host audit `owner_replacement.request`; tenant audit `owner.replacement.requested` with `actor_kind='host'`; `201`/`200`, `no-store`, `claimUrl` with the token in the fragment). `GET …/owner-replacements` (list, newest first, max 50, no member data, subject never echoed). `POST …/:replacementId/cancel` (any open state → `withdrawn`, token revoked, `owner_replacement.ended` queued, audits). `POST …/:replacementId/claim-token` (reissue in an open state; dates unchanged; audited). Host projection field `ownerReplacement`. `assertHostActor` inside every write, community locked first.\n\nAcceptance criteria (spec AC numbers):\n- AC-1 scope and person reauthentication; AC-2 no mail, no replacement (no row, no outbox message); AC-3 idempotency, one at a time, and a concurrent-request barrier producing exactly one row.\n- AC-10 (request half): refused in `pending_owner` (message names the claim reissue), `suspended`, `deletion_pending`; accepted in `active`, `archived`, `held`.\n- A key revoked while its request waits on the community lock (test hook) fails `401` and writes nothing.\n- AC-13 and AC-14 for these routes: exactly one host and one tenant audit row per mutation; no response or host audit row contains a member id, name, handle, email, the OIDC subject, or the reference in the audit.\n- The claim token appears only in the create and reissue responses; a reissue makes the old token's preflight fail (preflight lands in 2.4; until then assert on the stored hash).\n- `oidcSubject` with OIDC unset is `409`.\n- Docs: `API.md` host section. `pnpm verify` green.",
+      "activeForm": "Building the host owner-replacement routes",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "P2 — The replacement contract on the Community server",
+      "subject": "[community-owner-replacement] [P2] Run the owner-replacement timeline and end it when the owner or host acts",
+      "description": "Build the timeline and the end hooks per specs/community-owner-replacement/02-specification.md (\"Timeline worker\", \"Things that end an open replacement\", \"Mail delivery\" content, \"User Experience\" email copy).\n\nScope:\n- `src/owner-replacement/state.ts` (allowed transitions), `end.ts` (one helper that closes an open replacement inside the caller's transaction: state, `ended_at`, token revoked, audits on both planes with `system` or the member, and the `owner_replacement.ended` message unless the owner acted), `worker.ts` (notice resolution → `waiting` with `claimable_after` = accepted + N or failed + U; the 48-hour reminder once; `claimable` with `claim_expires_at` = +14 days; `expired`).\n- Hooks: `POST /owner/transfer` and `POST /owner/deletion` → `superseded`; host `suspend` and host-started deletion → `withdrawn` (beside the deletion-notice withdrawal in `host-lifecycle.ts`); the takedown's community deletion when it lands (leave a named call site for it, no TODO).\n- `src/mail/messages.ts`: the notice, reminder, ended (withdrawn, expired), and completed messages with the exact copy in the spec; UTC dates with the day spelled out; `/c/<uuid>` link; no token, no legal-hold wording, the reference only in the notice and reminder.\n\nAcceptance criteria:\n- AC-4 clock starts at notice (accepted after retries, `550`, 72 hours of `421`), with injected clocks.\n- AC-9 (host and owner-action half): transfer, deletion request, suspension, host deletion, and cancel each close an open replacement in every open state, write the audits, and leave no usable token.\n- The reminder is queued exactly once, 48 hours before `claimable_after`, and its outcome never moves the date.\n- AC-16 expiry after 14 days claimable, with the owner emailed.\n- A worker transition that races an objection or cancel (barrier) does nothing.\n- AC-11 (timeline half): a legal hold changes nothing and no message mentions it. AC-15 mail content scan over every message kind.\n- Hold, release, archive, restore, limits, and short-name changes leave an open replacement untouched.\n- `pnpm verify` green.",
+      "activeForm": "Running the owner-replacement timeline",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.2"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "P2 — The replacement contract on the Community server",
+      "subject": "[community-owner-replacement] [P2] Let the owner object and the named person take ownership",
+      "description": "Build `src/routes/owner-replacement.ts` per specs/community-owner-replacement/02-specification.md (\"Owner and member routes\", \"Claim and completion\").\n\nScope: `GET /api/v1/communities/:communityId/owner-replacement` (owner and admins see the open request, reference for the owner only; every member sees a completion for 7 days; bearer grants allowed for the DorkOS read); `POST …/owner-replacement/objection` (owner browser session only, bearer refused, no password; `active`/`archived`/`held`; idempotent); `POST /api/v1/owner-replacements/preflight` (public, rate limited, signed 30-minute `community_owner_replacement` cookie, one identical `403` for every unusable token); `POST /api/v1/owner-replacements/claim` (advisory lock constant distinct from owner claims; community then replacement then members in id order then user; state `claimable` and before `claim_expires_at`; OIDC subject match via `account.providerId='oidc'` and `accountId`; not the current owner; `memberIsLeaving` and `accountErasureOpen` refused; swap exactly as `/owner/transfer` with promotion, reactivation, or a new member with `mintHandle`; end the old owner's queued or building owner-scope exports; `completed`, audits `owner.replace` (tenant, `host`) and `owner_replacement.complete` (host, `system`); queue the completed message). Add `/owner-replacement` to `COMMUNITY_RESERVED_SHORT_NAMES` and serve it in `main.ts`.\n\nAcceptance criteria:\n- AC-6 no early claim; AC-7 binding (no link, wrong subject, right subject; cookie kept on a binding refusal); AC-8 completion equals transfer, including unchanged counts of every other row and the old owner's owner export refused after; AC-9 (objection half) including an OIDC-only owner with no password, bearer refusal, and admin refusal; AC-10 objection allowed in `held` while transfer stays refused; AC-12 erasure races (barrier); AC-17 tenant binding of the token; AC-18 members told for 7 days and not before; AC-11 and AC-14 for these routes.\n- Two concurrent claims with the same token produce exactly one completion (barrier).\n- The reserved-name test still pins every top-level path.\n- Docs: `API.md` tenant and claim sections; `RECOVERY.md` says offline repair comes after the online path. Changelog fragment. `pnpm verify` green.",
+      "activeForm": "Building the objection and claim routes",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.3"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — What people see",
+      "subject": "[community-owner-replacement] [P3] Show the owner replacement in the Community browser app",
+      "description": "Build the browser surfaces per specs/community-owner-replacement/02-specification.md (\"User Experience\": host page, owner, admins, every member, the new owner).\n\nScope: `HostOwnerReplacement.tsx` in the host community record (state in words, mail outcome sentence, Cancel, Replace the owner form with reason, reference, password, and the sign-in ID field only when OIDC is on, one-time claim link reveal with copy; disabled with the mail sentence when capabilities says `mail: false`); `OwnerReplacementBanner.tsx` (owner version with Keep ownership and What this means; admin version without the reference; member completion notice for 7 days, dismissible per browser with guarded storage access); `OwnerReplacementClaim.tsx` at `/owner-replacement` (reads the token from the fragment, preflights, before-date and at-date states, sign-in, Take ownership confirm, the four error sentences, opens Settings on success). All copy exactly as the spec, following `writing-for-humans`.\n\nAcceptance criteria:\n- Component tests per state, each asserting the visible sentence and that the action calls the right route (mock fetch).\n- The token never appears in `location.search`, a request URL, or console output (spy); the fragment is cleared after preflight.\n- Browser tests (`apps/community/browser-tests`) at phone and desktop widths for the host form, owner banner with Keep ownership, admin banner, claim page before and after the date (clock control route), and the member notice; axe passes on each. `bash apps/community/acceptance/run.sh` green.\n- Screenshots of each state eyeballed and attached to the PR.",
+      "activeForm": "Building the browser surfaces for owner replacement",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [
+        "2.4"
+      ],
+      "parallelWith": [
+        "3.2"
+      ],
+      "issue": null
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "P3 — What people see",
+      "subject": "[community-owner-replacement] [P3] Tell the owner on their DorkOS connection",
+      "description": "Surface the owner's notice in the DorkOS app per specs/community-owner-replacement/02-specification.md (\"User Experience\": DorkOS app; \"Performance Considerations\").\n\nScope: the remote client in `apps/server/src/services/communities/remote/` reads `GET /api/v1/communities/:communityId/owner-replacement` with the connection's grant inside the existing per-connection read budget and caches it like the attention counts (a refusal clears it; a slow Community shows no notice rather than a stale one); the shared connection shape gains an optional owner notice; the client community row shows a warning dot and the community header shows the banner text with Open community (opens the browser, where objection lives); one notification when a request is first seen and one when it completes, only for the owner. Non-owners see nothing.\n\nAcceptance criteria:\n- Server tests with a fixture Community: an owner's connection gets the notice; an admin's and a member's do not; a `403` clears a cached notice; the budget is respected (a slow fixture yields no notice within the budget).\n- Client tests with a mock Transport: warning dot and header text for an owner; nothing for a member; exactly one notification per request id across reloads.\n- Dev Playground showcase for the row and header states if the component qualifies (see `maintaining-dev-playground`).\n- Changelog fragment; the Communities guide in `docs/` gains \"If someone asks to take over your community\". `pnpm verify` green.",
+      "activeForm": "Telling the owner in the DorkOS app",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "2.4"
+      ],
+      "parallelWith": [
+        "3.1"
+      ],
+      "issue": null
+    }
+  ]
+}
