@@ -113,8 +113,18 @@ const shownInBell = new Set<string>();
 const offerListeners = new Set<() => void>();
 let offerSnapshot: readonly PendingDecisionOffer[] = [];
 
+/** Wakes the offers when the next one lapses, so a line left open disappears on time. */
+let lapseTimer: ReturnType<typeof setTimeout> | null = null;
+
 function publishOffers(): void {
   const now = Date.now();
+  for (const [id, offer] of localOffers) {
+    if (offer.expiresAt <= now) localOffers.delete(id);
+  }
+  if (lapseTimer) clearTimeout(lapseTimer);
+  lapseTimer = null;
+  const next = Math.min(...[...localOffers.values()].map((offer) => offer.expiresAt));
+  if (Number.isFinite(next)) lapseTimer = setTimeout(publishOffers, next - now);
   offerSnapshot = [...localOffers.values()]
     .filter((offer) => offer.expiresAt > now)
     .map((offer) => ({

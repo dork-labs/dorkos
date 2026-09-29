@@ -424,4 +424,12 @@ describe('what extensions ask, in the bell', () => {
     );
     expect(toast.error).not.toHaveBeenCalled();
   });
+
+  it('sends back the revision the person saw', async () => {
+    decisions = [shipDecision({ revision: 3 })];
+    renderBell();
+    const { user } = await openBell();
+    await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
+    await waitFor(() => expect(posts[0]?.body).toEqual({ action: 'approve', revision: 3 }));
+  });
 });

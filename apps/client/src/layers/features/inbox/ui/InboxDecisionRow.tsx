@@ -234,7 +234,17 @@ function InlineAnswer({
             {text.length}/{maxLength}
           </span>
         )}
-        <Button type="button" variant="ghost" size="xs" responsive={false} onClick={onCancel}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          responsive={false}
+          onClick={() => {
+            // Cancel means "never mind": the draft goes with the field.
+            if (draftKey) drafts.delete(draftKey);
+            onCancel();
+          }}
+        >
           Cancel
         </Button>
         <Button

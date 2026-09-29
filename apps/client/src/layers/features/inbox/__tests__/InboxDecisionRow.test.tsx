@@ -295,4 +295,20 @@ describe('InboxDecisionRow, answers that must go through (client review 3, 6)', 
     await user.click(screen.getByRole('button', { name: 'Answer' }));
     expect(screen.getByLabelText('Answer', { selector: 'textarea' })).toHaveValue('Half done');
   });
+
+  it('forgets a draft on Cancel', async () => {
+    const user = userEvent.setup();
+    const actions = {
+      kind: 'word' as const,
+      label: 'Answer',
+      onClick: vi.fn(),
+      input: { placeholder: 'Why?', maxLength: 200, onSubmit: vi.fn() },
+    };
+    render(<InboxDecisionRow icon={Puzzle} title="Why?" draftKey="d-cancel" actions={actions} />);
+    await user.click(screen.getByRole('button', { name: 'Answer' }));
+    await user.type(screen.getByLabelText('Answer', { selector: 'textarea' }), 'Never mind');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Answer' }));
+    expect(screen.getByLabelText('Answer', { selector: 'textarea' })).toHaveValue('');
+  });
 });

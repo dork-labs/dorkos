@@ -104,3 +104,27 @@ describe('WaitingGroups', () => {
     expect(after).toHaveFocus();
   });
 });
+
+describe('WaitingGroups keeps lists mounted when their order changes (client re-review)', () => {
+  const second: PendingApproval = {
+    ...approval,
+    approvalId: '01JZ0000000000000000000002',
+    project: null,
+  };
+  const first: PendingApproval = { ...approval, project: null };
+
+  it('keeps the approval list, and focus in it, when the top card moves to the end', async () => {
+    const view = render(<WaitingGroups {...base} decisions={[]} approvals={[first, second]} />, {
+      wrapper: wrapper(),
+    });
+    const list = document.querySelector('[data-approval-id]')!.parentElement!;
+    const allow = document.querySelector<HTMLElement>(
+      `[data-approval-id="${second.approvalId}"] button`
+    )!;
+    allow.focus();
+    // The answered card settles at the end: same cards, new order.
+    view.rerender(<WaitingGroups {...base} decisions={[]} approvals={[second, first]} />);
+    expect(document.querySelector('[data-approval-id]')!.parentElement).toBe(list);
+    expect(allow).toHaveFocus();
+  });
+});

@@ -32,6 +32,8 @@ export interface ExtensionDecisionListProps {
   onNavigate: (path: string) => void;
   /** Open a chat the extension started. */
   onWatch: (sessionId: string) => void;
+  /** Drawn as part of a longer list, which spaces it: no margin of its own. */
+  flush?: boolean;
 }
 
 /**
@@ -57,6 +59,7 @@ export function ExtensionDecisionList({
   decisions,
   onNavigate,
   onWatch,
+  flush = false,
 }: ExtensionDecisionListProps) {
   const { answer, pendingFor } = useExtensionDecisionActions();
   const listRef = useRef<HTMLDivElement>(null);
@@ -147,7 +150,11 @@ export function ExtensionDecisionList({
   };
 
   return (
-    <div ref={listRef} data-slot="extension-decision-list" className="mt-2 flex flex-col gap-1">
+    <div
+      ref={listRef}
+      data-slot="extension-decision-list"
+      className={flush ? 'flex flex-col gap-1' : 'mt-2 flex flex-col gap-1'}
+    >
       {decisions.map((decision) => (
         <div key={decision.id} data-decision-id={decision.id}>
           <InboxDecisionRow

@@ -140,7 +140,9 @@ export function WaitingGroups({
     if (groupAsks.length > 0 || (hasSettlingAsks && (last || !grouped))) {
       nodes.push(
         <AskList
-          key={`asks:${groupAsks[0]?.interaction.id ?? 'receipts'}`}
+          // Keyed by kind and group, never by an item: answering the top card
+          // reorders the list, and a remount would drop focus and drafts.
+          key={`asks:${root ?? 'loose'}`}
           asks={groupAsks}
           agentNames={agentNames}
           onOpenSession={onOpenSession}
@@ -152,31 +154,30 @@ export function WaitingGroups({
       );
     }
     if (groupApprovals.length > 0) {
-      nodes.push(
-        <ApprovalList
-          key={`approvals:${groupApprovals[0].approvalId}`}
-          approvals={groupApprovals}
-        />
-      );
+      nodes.push(<ApprovalList key={`approvals:${root ?? 'loose'}`} approvals={groupApprovals} />);
     }
-    for (const decision of groupDecisions) {
+    // Decisions are keyed one by one (a row keeps its open field when the
+    // headings come and go), and spaced as one list.
+    groupDecisions.forEach((decision, position) => {
       nodes.push(
         <div
           key={`decision:${decision.id}`}
           data-slot="inbox-waiting-decision"
           data-project={decision.project?.name ?? ''}
+          className={position === 0 ? 'mt-2' : 'mt-1'}
         >
           <ExtensionDecisionList
             decisions={[decision]}
             onNavigate={onNavigate}
             onWatch={onOpenSession}
+            flush
           />
         </div>
       );
-    }
+    });
     if (groupSchedules.length > 0) {
       nodes.push(
-        <div key={`schedules:${groupSchedules[0].id}`} className="mt-3">
+        <div key={`schedules:${root ?? 'loose'}`} className="mt-3">
           <h3 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
             Scheduled Runs
           </h3>
