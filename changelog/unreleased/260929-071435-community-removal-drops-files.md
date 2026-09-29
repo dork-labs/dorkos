@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(communities): drop the files of a Community message that was deleted or erased (DOR-2549)'
+  - 'fix(communities): match a removed Community file by its id, never by its name (DOR-2549 review)'
 ---
 
 ### Fixed

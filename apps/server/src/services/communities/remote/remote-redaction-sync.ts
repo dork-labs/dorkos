@@ -4,6 +4,7 @@
  *
  * @module services/communities/remote/remote-redaction-sync
  */
+import { createHash } from 'node:crypto';
 import { sql, type Db } from '@dorkos/db';
 import {
   CommunityRoomNotFoundError,
@@ -56,7 +57,7 @@ export interface RemoteRedactionSyncDeps {
   mirrors: RemoteMirrorStore;
   readers: (communityRef: CommunityRef, ownerAuthorId: string) => RedactionFeedReader | null;
   /** Where the files of mirrored rooms live: a purged mirror's, and a redacted entry's. */
-  attachmentBytes?: Pick<RoomAttachmentStore, 'delete'>;
+  attachmentBytes?: Pick<RoomAttachmentStore, 'delete' | 'get'>;
   /**
    * Tell the mirrored room's open readers which of its entries were rewritten, once the rewrite
    * has committed. `RoomService.publishEntryRevisions` in production: it reads the rows back from
@@ -211,23 +212,32 @@ export class RemoteRedactionSync {
         // Files first (DOR-2549): the bytes of every file this page will drop are deleted
         // BEFORE the page is applied. Should the process stop in between, the page and its
         // cursor were never recorded, so the next sync applies it again and no file is left on
-        // disk with nothing pointing at it; a row whose bytes are already gone just serves 404.
-        await this.deleteFiles(
-          this.deps.mirrors.plannedAttachmentDrops(
-            room.communityRef,
-            room.remoteRoomId,
-            room.ownerAuthorId,
-            page.items
-          )
+        // disk with nothing pointing at it; the row meanwhile has nothing to serve but a 404.
+        const checksums = await this.checksumsFor(room, page.items);
+        const planned = this.deps.mirrors.plannedAttachmentDrops(
+          room.communityRef,
+          room.remoteRoomId,
+          room.ownerAuthorId,
+          page.items,
+          checksums
         );
-        const applied = this.apply(room, page.items, page.nextCursor);
-        if (applied) {
+        await this.deleteFiles(planned);
+        const applied = this.apply(room, page.items, page.nextCursor, checksums);
+        if (!applied) {
+          // The mirror was revoked or changed owner while the bytes were being deleted, so the
+          // page was not applied: drop the rows those bytes belonged to rather than leave them
+          // drawing a file that answers 404.
+          if (planned.length) this.deps.mirrors.forgetAttachmentRows(planned);
+        } else {
           changed = true;
           touched.add(applied.localRoomId);
           this.announce(applied);
-          // And again for exactly the rows the page deleted: idempotent, and it covers a file
-          // the plan could not see yet.
-          await this.deleteFiles(applied.droppedAttachments);
+          // A row the page dropped that the plan did not foresee (a file whose Community id was
+          // recorded by a delivery during the await above) still has its bytes: delete those.
+          const foreseen = new Set(planned.map((file) => file.attachmentId));
+          await this.deleteFiles(
+            applied.droppedAttachments.filter((file) => !foreseen.has(file.attachmentId))
+          );
         }
         if (!page.hasMore) return;
       }
@@ -246,7 +256,8 @@ export class RemoteRedactionSync {
   private apply(
     room: RedactionSyncRoom,
     items: NativeMirrorEntry[],
-    nextCursor: string
+    nextCursor: string,
+    checksums: ReadonlyMap<string, string>
   ): AppliedRedactions | null {
     const { db } = this.deps;
     return db.transaction(
@@ -256,7 +267,8 @@ export class RemoteRedactionSync {
           room.remoteRoomId,
           room.ownerAuthorId,
           items,
-          nextCursor
+          nextCursor,
+          checksums
         );
         if (!applied?.changedSeqs.length) return null;
         reindexRoomEntries(db, applied.localRoomId, applied.changedSeqs);
@@ -286,10 +298,46 @@ export class RemoteRedactionSync {
   }
 
   /**
-   * Delete the stored bytes of files a redaction drops. Idempotent: a file already gone is a
-   * success. Only files the plan or the applied page chose reach here, and both use the same
-   * rule, so a file the entry still has on the Community is never deleted. A failure is logged;
-   * the row is gone either way, so the room no longer offers the file.
+   * The SHA-256 of each local file these changes can only be matched on by its bytes (delivered
+   * before its Community id was recorded, on a message that still has files there). A file that
+   * cannot be read is left out, and a file left out is kept.
+   */
+  private async checksumsFor(
+    room: RedactionSyncRoom,
+    items: NativeMirrorEntry[]
+  ): Promise<Map<string, string>> {
+    const checksums = new Map<string, string>();
+    const store = this.deps.attachmentBytes;
+    if (!store) return checksums;
+    for (const file of this.deps.mirrors.attachmentsNeedingChecksum(
+      room.communityRef,
+      room.remoteRoomId,
+      room.ownerAuthorId,
+      items
+    )) {
+      try {
+        const stored = await store.get(
+          file.roomId,
+          file.attachmentId,
+          file.extension,
+          file.mimeType
+        );
+        if (!stored) continue;
+        const hash = createHash('sha256');
+        for await (const chunk of stored.stream) hash.update(chunk as Buffer);
+        checksums.set(file.attachmentId, hash.digest('hex'));
+      } catch {
+        // Unreadable: no checksum, so the file is kept.
+      }
+    }
+    return checksums;
+  }
+
+  /**
+   * Delete the stored bytes of the files a redaction drops. Idempotent: a file already gone is a
+   * success. Every file here was chosen by `attachmentsToDrop`, which drops a file only when the
+   * Community's copy of the message no longer has it. A failure is logged and not retried by
+   * this page; the row goes with the page either way, so the room stops offering the file.
    */
   private async deleteFiles(files: readonly MirrorAttachmentFile[]): Promise<void> {
     const store = this.deps.attachmentBytes;

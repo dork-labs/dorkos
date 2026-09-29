@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, stat } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -137,8 +138,11 @@ describe('a Community removal drops the local files of a delivered post', () => 
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  /** Store a file and stage its row, the way the upload route does. */
-  async function stage(name: string, bytes: Buffer): Promise<string> {
+  /**
+   * Store a file and stage its row, the way the upload route does, and record the Community's id
+   * for it the way delivery does (omitted for a file delivered before ids were recorded).
+   */
+  async function stage(name: string, bytes: Buffer, communityId?: string): Promise<string> {
     const id = ulid();
     const extension = path.extname(name).slice(1);
     const { url } = await store.put(roomId, id, extension, bytes);
@@ -156,7 +160,19 @@ describe('a Community removal drops the local files of a delivered post', () => 
       },
       new Date().toISOString()
     );
+    if (communityId) rows.recordCommunityAttachmentId(roomId, id, communityId);
     return id;
+  }
+
+  /** The Community's record of a file it still has on the message. */
+  function onCommunity(id: string, name: string, bytes: Buffer) {
+    return {
+      id,
+      name,
+      contentType: 'text/plain',
+      byteSize: bytes.length,
+      checksum: createHash('sha256').update(bytes).digest('hex'),
+    };
   }
 
   /** Post with these files and record the post as delivered to the Community as `remote-7`. */
@@ -226,23 +242,28 @@ describe('a Community removal drops the local files of a delivered post', () => 
     expect(revision?.type === 'revision' && revision.entry.attachments).toEqual([]);
   });
 
-  // Purpose: a file the Community still has on the entry is never deleted: only the one that
-  // was removed goes. It fails if every file of a rewritten entry is dropped.
-  it('keeps a file the entry still has on the Community', async () => {
-    const keep = await stage('keep.txt', Buffer.from('still here'));
-    const gone = await stage('gone.txt', Buffer.from('zqxbytescanary removed'));
-    postDelivered([keep, gone]);
+  const get = (id: string) => request(fixtureServer).get(`/api/rooms/${roomId}/attachments/${id}`);
+  const fileRemoved = async (id: string, extension = 'txt') => {
+    expect((await get(id)).status).toBe(404);
+    expect(await exists(fileOnDisk(id, extension))).toBe(false);
+  };
+  const fileKept = async (id: string, extension = 'txt') => {
+    expect((await get(id)).status).toBe(200);
+    expect(await exists(fileOnDisk(id, extension))).toBe(true);
+  };
+
+  // Purpose (review probe 1): a message rewritten only because it mentioned an erased person
+  // keeps its files on the Community, under the name the Community cleaned (`.env.example` became
+  // `env.example`). The local file must stay. It fails with a name match, which deletes it.
+  it('keeps a file the message still has, though the Community renamed it', async () => {
+    const bytes = Buffer.from('API_URL=');
+    const env = await stage('.env.example', bytes, 'community-env');
+    postDelivered([env]);
 
     pages.push({
       items: [
-        remoteNow('zqxfilecanary the report', [
-          {
-            id: 'remote-file-1',
-            name: 'keep.txt',
-            contentType: 'text/plain',
-            byteSize: 'still here'.length,
-            checksum: 'sum',
-          },
+        remoteNow('Ask @Erased member about the zqxfilecanary report', [
+          onCommunity('community-env', 'env.example', bytes),
         ]),
       ],
       nextCursor: 'c1',
@@ -250,14 +271,113 @@ describe('a Community removal drops the local files of a delivered post', () => 
     });
     await sync.sync({ ...target, ownerAuthorId: human.id }, {});
 
-    expect(
-      (await request(fixtureServer).get(`/api/rooms/${roomId}/attachments/${keep}`)).status
-    ).toBe(200);
-    expect(await exists(fileOnDisk(keep, 'txt'))).toBe(true);
-    expect(
-      (await request(fixtureServer).get(`/api/rooms/${roomId}/attachments/${gone}`)).status
-    ).toBe(404);
-    expect(await exists(fileOnDisk(gone, 'txt'))).toBe(false);
+    await fileKept(env, 'example');
+  });
+
+  // Purpose (review probe 2): two files share a name and a size; the Community removes one. The
+  // removed one goes and the other stays. It fails with a name+size match, which keeps the first
+  // and deletes the wrong one.
+  it('drops exactly the file the Community removed when two share a name and size', async () => {
+    const secret = Buffer.from('SECRET');
+    const open = Buffer.from('public');
+    const first = await stage('shot.txt', secret, 'community-secret');
+    const second = await stage('shot.txt', open, 'community-public');
+    postDelivered([first, second]);
+
+    pages.push({
+      items: [
+        remoteNow('zqxfilecanary the report', [onCommunity('community-public', 'shot.txt', open)]),
+      ],
+      nextCursor: 'c1',
+      hasMore: false,
+    });
+    await sync.sync({ ...target, ownerAuthorId: human.id }, {});
+
+    await fileRemoved(first);
+    await fileKept(second);
+  });
+
+  // Purpose: a file delivered before ids were recorded is matched on its bytes' checksum, both
+  // ways: the same two same-named files, one removed on the Community. It fails if legacy files
+  // are matched by name, or all dropped, or all kept.
+  it('matches a file delivered before ids were recorded on its checksum', async () => {
+    const secret = Buffer.from('SECRET');
+    const open = Buffer.from('public');
+    const first = await stage('shot.txt', secret);
+    const second = await stage('.shot.txt', open);
+    postDelivered([first, second]);
+
+    pages.push({
+      items: [
+        remoteNow('zqxfilecanary the report', [onCommunity('community-public', 'shot.txt', open)]),
+      ],
+      nextCursor: 'c1',
+      hasMore: false,
+    });
+    await sync.sync({ ...target, ownerAuthorId: human.id }, {});
+
+    await fileRemoved(first);
+    await fileKept(second);
+  });
+
+  // Purpose: a legacy file with no id and no readable checksum is KEPT while the message still
+  // has files on the Community: never delete on doubt. It fails if doubt deletes.
+  it('keeps a legacy file it cannot identify while the message still has files', async () => {
+    const legacy = await stage('notes.txt', Buffer.from('notes'));
+    postDelivered([legacy]);
+    vi.spyOn(store, 'get').mockResolvedValue(null);
+
+    pages.push({
+      items: [
+        remoteNow('zqxfilecanary the report', [
+          onCommunity('community-other', 'other.txt', Buffer.from('other')),
+        ]),
+      ],
+      nextCursor: 'c1',
+      hasMore: false,
+    });
+    await sync.sync({ ...target, ownerAuthorId: human.id }, {});
+
+    vi.mocked(store.get).mockRestore();
+    expect(rows.get(roomId, legacy)).not.toBeNull();
+    expect(await exists(fileOnDisk(legacy, 'txt'))).toBe(true);
+  });
+
+  // Purpose: a file the page dropped that the plan did not foresee still has its bytes deleted
+  // after the commit. It fails if the post-commit delete is removed.
+  it('deletes the bytes of a dropped file the plan did not foresee', async () => {
+    const report = await stage('report.txt', Buffer.from('zqxbytescanary secret'), 'community-r');
+    postDelivered([report]);
+    vi.spyOn(mirrors, 'plannedAttachmentDrops').mockReturnValueOnce([]);
+
+    pages.push({
+      items: [remoteNow('This message was deleted.')],
+      nextCursor: 'c1',
+      hasMore: false,
+    });
+    await sync.sync({ ...target, ownerAuthorId: human.id }, {});
+
+    await fileRemoved(report);
+    expect(rows.get(roomId, report)).toBeNull();
+  });
+
+  // Purpose: when the page cannot be applied after its bytes were deleted (the mirror was revoked
+  // in between), the rows go too, rather than drawing a file that answers 404. It fails if they
+  // are left behind.
+  it('drops the rows of pre-deleted files when the page cannot be applied', async () => {
+    const report = await stage('report.txt', Buffer.from('zqxbytescanary secret'), 'community-r');
+    postDelivered([report]);
+    vi.spyOn(mirrors, 'applyRedactions').mockReturnValueOnce(null);
+
+    pages.push({
+      items: [remoteNow('This message was deleted.')],
+      nextCursor: 'c1',
+      hasMore: false,
+    });
+    await sync.sync({ ...target, ownerAuthorId: human.id }, {});
+
+    expect(await exists(fileOnDisk(report, 'txt'))).toBe(false);
+    expect(rows.get(roomId, report)).toBeNull();
   });
 
   // Purpose: the bytes go BEFORE the page is recorded, so a stop in between leaves no file on disk
