@@ -106,6 +106,7 @@ const TENANT_TABLES = [
   'managed_blobs',
   'member_limit_overrides',
   'members',
+  'notice_outbox',
   'owner_quota_windows',
   'pending_admissions',
   'read_cursors',

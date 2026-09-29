@@ -5,6 +5,7 @@ import type { z } from 'zod';
 import {
   CommunityAdminCreateRequestSchema,
   CommunityAdminCreateResponseSchema,
+  CommunityAdminHostCapabilitiesSchema,
   CommunityAdminHostProjectionSchema,
 } from '@dorkos/shared/community-admin-wire';
 import type { CommunityConfig } from '../config.js';
@@ -160,7 +161,10 @@ async function createPendingCommunity(
   };
 }
 
-/** Register the host plane's community records: list, read, create, abandon, and lifecycle. */
+/**
+ * Register the host plane's community records (list, read, create, abandon, and lifecycle) and
+ * the host's capabilities.
+ */
 export function registerHostRoutes(
   app: Hono,
   deps: {
@@ -176,6 +180,16 @@ export function registerHostRoutes(
     key: shortNameHoldKey(config.authSecret),
     cooloffDays: config.limits.shortNameCooloffDays,
   };
+
+  // Whether this host can send mail and has single sign-on. Booleans only: never the mail
+  // server, the sender, the issuer, or any credential.
+  app.get('/host/capabilities', async (c) => {
+    await authority.require(c, 'communities:read');
+    return json(c, CommunityAdminHostCapabilitiesSchema, {
+      mail: config.mail !== null,
+      oidc: config.oidc !== null,
+    });
+  });
 
   app.get('/host/communities', async (c) => {
     const actor = await authority.require(c, 'communities:read');

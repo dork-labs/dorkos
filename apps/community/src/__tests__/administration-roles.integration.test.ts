@@ -1079,6 +1079,16 @@ const actions: Action<unknown>[] = [
     },
   }),
   define({
+    rule: 'Read whether this host has mail and single sign-on: host operator yes, community roles no',
+    route: 'GET /host/capabilities',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: '/api/v1/host/capabilities' }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8'))).toEqual({ mail: false, oidc: false });
+    },
+  }),
+  define({
     rule: 'Page through every community usage: host operator yes, community roles no',
     route: 'GET /host/usage',
     allowed: HOST_ROLES,

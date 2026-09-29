@@ -1845,3 +1845,48 @@ export const removedFileBlobs = pgTable(
     check('removed_file_blobs_checksum_check', sql`${table.checksum} ~ '^[a-f0-9]{64}$'`),
   ]
 );
+
+/**
+ * Notices waiting to be mailed, or already resolved. Never an address: the worker reads the
+ * recipient's email when it sends. `recipient_user_id` has no foreign key on purpose, so an
+ * account erasure can delete the account while its queued notice stays to fail.
+ */
+export const noticeOutbox = pgTable(
+  'notice_outbox',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    kind: text('kind').notNull(),
+    subjectId: uuid('subject_id').notNull(),
+    recipientUserId: text('recipient_user_id').notNull(),
+    state: text('state').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    failedAt: timestamp('failed_at', { withTimezone: true }),
+    lastErrorClass: text('last_error_class'),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check(
+      'notice_outbox_kind_check',
+      sql`${table.kind} IN ('owner_replacement.notice','owner_replacement.reminder','owner_replacement.claim_reissued','owner_replacement.ended','owner_replacement.completed')`
+    ),
+    check('notice_outbox_state_check', sql`${table.state} IN ('pending','accepted','failed')`),
+    check('notice_outbox_attempts_check', sql`${table.attempts} >= 0`),
+    check(
+      'notice_outbox_last_error_class_check',
+      sql`${table.lastErrorClass} IS NULL OR ${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
+    ),
+    check(
+      'notice_outbox_state_shape',
+      sql`(${table.state} = 'pending' AND ${table.nextAttemptAt} IS NOT NULL AND ${table.acceptedAt} IS NULL AND ${table.failedAt} IS NULL) OR (${table.state} = 'accepted' AND ${table.acceptedAt} IS NOT NULL AND ${table.failedAt} IS NULL AND ${table.nextAttemptAt} IS NULL AND ${table.leaseUntil} IS NULL AND ${table.lastErrorClass} IS NULL) OR (${table.state} = 'failed' AND ${table.failedAt} IS NOT NULL AND ${table.acceptedAt} IS NULL AND ${table.nextAttemptAt} IS NULL AND ${table.leaseUntil} IS NULL AND ${table.lastErrorClass} IS NOT NULL)`
+    ),
+    index('notice_outbox_due_idx').on(table.state, table.nextAttemptAt),
+    index('notice_outbox_community_idx').on(table.communityId),
+    index('notice_outbox_subject_idx').on(table.subjectId),
+  ]
+);

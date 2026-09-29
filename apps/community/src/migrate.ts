@@ -24,6 +24,7 @@ export const COMMUNITY_MIGRATIONS = [
   [18, '0018_host_legal_hold.sql'],
   [19, '0019_imports.sql'],
   [20, '0020_takedowns.sql'],
+  [21, '0021_notice_outbox.sql'],
 ] as const;
 
 /**
