@@ -7,6 +7,7 @@
 import { useId, useState, type FormEvent } from 'react';
 import type { CloudCommunityMove } from '@dorkos/shared/cloud-schemas';
 import { Button, Input, Label, Progress, Spinner } from '@/layers/shared/ui';
+import { CloudEligibilityNote } from '@/layers/features/cloud-link';
 import { formatBytes, moveFailureCopy, readWebAddress } from '../model/hosting-copy';
 import { useClaimAndConnect } from '../model/use-claim-and-connect';
 import { useMoveCommunity, type MoveStep } from '../model/use-move-community';
@@ -127,6 +128,8 @@ export function moveChooseStep(props: MoveChooseStepProps): HostingStep {
           disabled={false}
         />
         {props.failure.notice && <HostingNoticeView notice={props.failure.notice} />}
+        {/* Last thing above "Start moving", so it is read before the press. */}
+        <CloudEligibilityNote />
       </form>
     ),
     actions: (
