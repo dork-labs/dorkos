@@ -1787,6 +1787,7 @@ async function start() {
     readers: (communityRef, ownerAuthorId) =>
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
     attachmentBytes: roomAttachmentBytes,
+    publishRevisions: (localRoomId, seqs) => roomService.publishEntryRevisions(localRoomId, seqs),
   });
   remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
     bridge: remoteCommunityBridge.current,

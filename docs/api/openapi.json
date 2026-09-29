@@ -12975,6 +12975,31 @@
           "documentId"
         ]
       },
+      "RoomRevisionEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "revision"
+            ]
+          },
+          "entry": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoomEntry"
+              },
+              {
+                "description": "The entry as it stands now. Matches a held entry by `id`; replaces it in place."
+              }
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "entry"
+        ]
+      },
       "ReadCursor": {
         "type": "object",
         "properties": {
@@ -65903,6 +65928,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/RoomCanvasEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RoomRevisionEvent"
                     }
                   ]
                 }
