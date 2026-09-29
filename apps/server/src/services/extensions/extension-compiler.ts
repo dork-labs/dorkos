@@ -354,7 +354,8 @@ export class ExtensionCompiler {
 
   /** The body of {@link compile}, run inside {@link guarded}. */
   private async compileClient(record: ExtensionRecord): Promise<CompileResult> {
-    const entryResult = await this.resolveEntryPoint(record.path);
+    const runDir = record.runPath ?? record.path;
+    const entryResult = await this.resolveEntryPoint(runDir);
     if ('error' in entryResult) {
       return { error: entryResult.error, sourceHash: '' };
     }
@@ -364,7 +365,7 @@ export class ExtensionCompiler {
       return this.compileCached(
         record.id,
         entryPath,
-        record.path,
+        runDir,
         CLIENT_TARGET,
         containmentRootOf(record)
       );
@@ -399,12 +400,15 @@ export class ExtensionCompiler {
         sourceHash: '',
       };
     }
-    const entryPath = record.serverEntryPath;
+    // A copy that runs from its snapshot bundles the snapshot's entry point.
+    const entryPath = record.runPath
+      ? path.join(record.runPath, path.relative(record.path, record.serverEntryPath))
+      : record.serverEntryPath;
     return this.guarded(record, () =>
       this.compileCached(
         record.id,
         entryPath,
-        record.path,
+        record.runPath ?? record.path,
         SERVER_TARGET,
         containmentRootOf(record)
       )

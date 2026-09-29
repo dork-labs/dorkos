@@ -50,7 +50,11 @@ import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { readInstallMetadata } from '../marketplace/installed-metadata.js';
 import { readProjectInstalls } from '../marketplace/lib/project-install-index.js';
 import { trustedSourceOfInstall } from '../marketplace/lib/trusted-source.js';
-import { installFolderDigest, type InstallDigest } from '../marketplace/lib/install-digest.js';
+import {
+  installFolderDigest,
+  installFolderLinks,
+  type InstallDigest,
+} from '../marketplace/lib/install-digest.js';
 import { logger } from '../../lib/logger.js';
 
 /** One install DorkOS's installer recorded, reduced to what proves an origin. */
@@ -65,8 +69,12 @@ export interface TrustedInstall {
 
 /** What a copy's plugin folder looks like on disk now, read by {@link inspectCopy}. */
 export interface CopyOnDisk {
-  /** The whole install folder's digest, or why there is none. */
-  folder: InstallDigest;
+  /**
+   * A project copy: the whole install folder's digest, or why there is none.
+   * A global plugin: only whether it holds a link (`clean` when it does not);
+   * `{dorkHome}` is DorkOS's own and is never digested.
+   */
+  folder: InstallDigest | { kind: 'clean' };
 }
 
 /**
@@ -145,13 +153,13 @@ export function proveOrigin(
     }
   } else if (folder.kind === 'linked') {
     return { ...none, problem: 'linked' };
-  } else if (folder.kind !== 'digest') {
+  } else if (folder.kind === 'unreadable') {
     return none;
   }
   return {
     origin: { plugin: copy.sourcePlugin, source: install.source },
     problem: null,
-    pinnedDigest: folder.digest,
+    pinnedDigest: folder.kind === 'digest' ? folder.digest : null,
   };
 }
 
@@ -177,7 +185,12 @@ export function trustedOriginOf(
  * @param copy - A discovered plugin-carried copy.
  */
 export async function inspectCopy(copy: OriginCopy): Promise<CopyOnDisk> {
-  return { folder: await installFolderDigest(installRootOf(copy.path)) };
+  const root = installRootOf(copy.path);
+  if (copy.scope === 'global') {
+    const links = await installFolderLinks(root);
+    return { folder: { kind: links } };
+  }
+  return { folder: await installFolderDigest(root) };
 }
 
 /**

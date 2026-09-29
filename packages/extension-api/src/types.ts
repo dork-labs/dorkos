@@ -67,6 +67,14 @@ export interface ExtensionRecord {
    */
   currentDigest?: string;
   /**
+   * Where this copy RUNS from, when that is not {@link ExtensionRecord.path}:
+   * the extension's folder inside a verified snapshot of its plugin under
+   * `{dorkHome}/extension-snapshots/`, for a project copy that runs by its
+   * trusted origin rather than a person's approval of this folder. Compiling,
+   * the server half and `ctx.extensionDir` all use it.
+   */
+  runPath?: string;
+  /**
    * The plugin folder digest this copy was judged against. Every compile
    * checks the folder still has it, before and after bundling, so files
    * swapped after the scan never run (`extension-compiler.ts`).

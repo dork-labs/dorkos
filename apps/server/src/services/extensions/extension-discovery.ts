@@ -11,7 +11,13 @@ import {
 } from './extension-enable-resolution.js';
 import { isApprovedCopy, isFromTrustedSource } from './extension-load-policy.js';
 import { mergePluginRecords, type DiscoveredRecord } from './extension-precedence.js';
-import { inspectCopy, proveOrigin, readTrustedInstalls } from './extension-trusted-origin.js';
+import {
+  inspectCopy,
+  installRootOf,
+  proveOrigin,
+  readTrustedInstalls,
+  type CopyOnDisk,
+} from './extension-trusted-origin.js';
 import { logger } from '../../lib/logger.js';
 import {
   satisfiesMinHostVersion,
@@ -125,8 +131,16 @@ export class ExtensionDiscovery {
     // Where each plugin-carried copy provably came from (§9.1): only from this
     // machine's own install records, never from a file inside the project.
     const installs = await readTrustedInstalls(this.dorkHome);
+    // One walk per plugin folder per scan, however many extensions it carries.
+    const inspected = new Map<string, Promise<CopyOnDisk>>();
     for (const rec of pluginRecords) {
-      const onDisk = await inspectCopy(rec);
+      const key = `${rec.scope}:${installRootOf(rec.path)}`;
+      let pending = inspected.get(key);
+      if (!pending) {
+        pending = inspectCopy(rec);
+        inspected.set(key, pending);
+      }
+      const onDisk = await pending;
       const proof = proveOrigin(rec, installs, onDisk);
       if (proof.origin) {
         rec.trustedOrigin = proof.origin;

@@ -15,6 +15,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { initBoundary } from '../../../lib/boundary.js';
@@ -72,8 +73,16 @@ describe('one extension across many projects, from one approved source', () => {
   });
 
   /** One version of the plugin, carrying `flow`, in its own source folder. */
-  async function writeVersion(version: string, ids: string[] = ['flow']): Promise<string> {
-    const dir = path.join(sources, `${version}-${ids.join('-')}`, PLUGIN);
+  async function writeVersion(
+    version: string,
+    ids: string[] = ['flow'],
+    opts: { server?: boolean } = {}
+  ): Promise<string> {
+    const dir = path.join(
+      sources,
+      `${version}-${ids.join('-')}${opts.server ? '-srv' : ''}`,
+      PLUGIN
+    );
     await mkdir(path.join(dir, '.claude-plugin'), { recursive: true });
     await writeFile(
       path.join(dir, '.claude-plugin', 'plugin.json'),
@@ -102,6 +111,26 @@ describe('one extension across many projects, from one approved source', () => {
         JSON.stringify({ id, name: id, version, entry: './index.ts' })
       );
       await writeFile(path.join(extDir, 'index.ts'), 'export {};\n');
+      if (opts.server) {
+        // Like flow: at RUNTIME the server half reads plugin-level code relative
+        // to its own folder, long after the load was checked.
+        await writeFile(
+          path.join(extDir, 'server.ts'),
+          [
+            "import fs from 'node:fs';",
+            "import path from 'node:path';",
+            'export default function register(_router: unknown, ctx: { extensionDir: string }) {',
+            '  (globalThis as Record<string, unknown>).__flowRunsScript = () =>',
+            "    fs.readFileSync(path.join(ctx.extensionDir, '../../../scripts/config-files.ts'), 'utf8');",
+            '}',
+            '',
+          ].join('\n')
+        );
+      }
+    }
+    if (opts.server) {
+      await mkdir(path.join(dir, 'scripts'), { recursive: true });
+      await writeFile(path.join(dir, 'scripts', 'config-files.ts'), `// v${version}, as shipped\n`);
     }
     return dir;
   }
@@ -110,16 +139,17 @@ describe('one extension across many projects, from one approved source', () => {
   async function installInto(
     name: string,
     version: string,
-    ids: string[] = ['flow']
+    ids: string[] = ['flow'],
+    opts: { server?: boolean } = {}
   ): Promise<string> {
     const projectPath = path.join(root, name);
     await mkdir(projectPath, { recursive: true });
     projects.push(projectPath);
-    const fixture = await writeVersion(version, ids);
+    const fixture = await writeVersion(version, ids, opts);
     const harness = buildInstallerForTests(dorkHome, { extensionManager: manager });
     harness.spies.gitLookup.mockResolvedValue({
       kind: 'found',
-      commitSha: commitFor(`${version}${ids.length}`),
+      commitSha: commitFor(`${version}${ids.length}${opts.server ? 9 : 0}`),
       refName: 'HEAD',
     });
     harness.spies.gitFetch.mockImplementation(
@@ -272,5 +302,29 @@ describe('one extension across many projects, from one approved source', () => {
     const record = (await readProjectInstalls(dorkHome)).find((r) => r.projectPath === projectPath);
     expect(record).toBeDefined();
     expect(record?.source).toBeUndefined();
+  });
+
+  it('runs a copy trusted by origin from a verified snapshot, so later edits in the project never run (R1)', async () => {
+    await installInto('repo-a', '1.0.0', ['flow'], { server: true });
+    await manager.approveToRun('flow');
+    const bCopy = await installInto('repo-b', '1.2.0', ['flow'], { server: true });
+
+    const running = manager.get('flow');
+    expect(running?.path).toBe(bCopy);
+    const snapshots = path.join(dorkHome, 'extension-snapshots');
+    expect(running?.runPath?.startsWith(snapshots + path.sep)).toBe(true);
+
+    // An agent in repo B edits the plugin-level script the server half runs.
+    await writeFile(
+      path.join(path.dirname(path.dirname(path.dirname(bCopy))), 'scripts', 'config-files.ts'),
+      '// evil\n'
+    );
+    const runScript = (globalThis as Record<string, unknown>).__flowRunsScript as () => string;
+    expect(runScript()).toBe('// v1.2.0, as shipped\n');
+
+    // The next scan sees B changed: it loses its origin, and its snapshot goes.
+    await manager.reload();
+    expect(manager.get('flow')?.path).not.toBe(bCopy);
+    expect(existsSync(running!.runPath!)).toBe(false);
   });
 });

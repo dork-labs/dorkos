@@ -76,6 +76,7 @@ vi.mock('../../core/config-manager.js', () => ({
 
 const mockScheduledCleanup = vi.fn();
 const mockReleaseListeners = vi.fn();
+const mockDispose = vi.fn();
 const mockCreateDataProviderContext = vi.fn().mockReturnValue({
   ctx: {
     secrets: {},
@@ -87,6 +88,7 @@ const mockCreateDataProviderContext = vi.fn().mockReturnValue({
   },
   getScheduledCleanups: () => [mockScheduledCleanup],
   releaseListeners: () => mockReleaseListeners(),
+  dispose: () => mockDispose(),
 });
 vi.mock('../extension-server-api-factory.js', () => ({
   createDataProviderContext: (...args: unknown[]) => mockCreateDataProviderContext(...args),
@@ -825,11 +827,19 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(timed.getServerRouter('hangs')).toBeNull();
       expect(timed.get('hangs')?.serverError).toMatchObject({ code: 'server_start_timeout' });
       expect(timed.get('hangs')?.serverError?.message).toContain("couldn't start");
-      expect(mockReleaseListeners).toHaveBeenCalled();
-      expect(mockScheduledCleanup).toHaveBeenCalled();
+      // Its context is disposed: what it scheduled is cancelled, what it
+      // registered released, and anything it tries later does nothing.
+      expect(mockDispose).toHaveBeenCalledTimes(1);
       // The one after it still started, and the next scan is not held up.
       expect(timed.getServerRouter('fine')).not.toBeNull();
       await expect(timed.reload()).resolves.toEqual(expect.any(Array));
+
+      // Retrying does not stack instances: each attempt is disposed in turn,
+      // and none of them is ever mounted.
+      await timed.reloadExtension('hangs');
+      await timed.reloadExtension('hangs');
+      expect(mockDispose).toHaveBeenCalledTimes(3);
+      expect(timed.getServerRouter('hangs')).toBeNull();
     });
   });
 });

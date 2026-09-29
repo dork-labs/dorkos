@@ -37,11 +37,16 @@ import {
 import {
   EXTENSION_NOT_APPROVED_CODE,
   approvedSourceOf,
+  isApprovedByOrigin,
+  isApprovedByPath,
   isApprovedCopy,
+  isFromTrustedSource,
   mayRunExtensionCode,
 } from './extension-load-policy.js';
 
 import { logger } from '../../lib/logger.js';
+import { collectSnapshots, ensureSnapshot } from './extension-snapshots.js';
+import { installRootOf } from './extension-trusted-origin.js';
 
 /**
  * How long discovery waits for a burst of project changes to settle before it
@@ -233,6 +238,7 @@ export class ExtensionManager {
         }
       }
     }
+    await this.collectUnusedSnapshots();
   }
 
   /**
@@ -296,9 +302,53 @@ export class ExtensionManager {
       this.extensions.set(rec.id, rec);
     }
     this.bindUnsourcedApprovals(records);
+    await this.placeSnapshots(records);
 
     await this.compileEnabled();
     this.emitChanged();
+  }
+
+  /**
+   * Point every project copy that runs by its trusted origin — not by the
+   * person's approval of that folder — at a verified snapshot of its plugin
+   * (`extension-snapshots.ts`), so what it runs, at load and at runtime, can
+   * no longer be changed from inside the project. A copy whose snapshot cannot
+   * be made (its files changed since the scan) loses its origin instead of
+   * running from the project.
+   *
+   * @param records - The copies this scan chose.
+   */
+  private async placeSnapshots(records: readonly ExtensionRecord[]): Promise<void> {
+    const approvals = configManager.get('extensions');
+    for (const record of records) {
+      if (record.scope !== 'local' || !record.sourcePlugin || !record.trustedOrigin) continue;
+      if (!record.pinnedDigest || isApprovedByPath(record, approvals)) continue;
+      if (!isApprovedByOrigin(record, approvals) && !isFromTrustedSource(record, approvals)) {
+        continue;
+      }
+      const installRoot = installRootOf(record.path);
+      const root = await ensureSnapshot(this.dorkHome, installRoot, record.pinnedDigest);
+      if (root) {
+        record.runPath = path.join(root, path.relative(installRoot, record.path));
+      } else {
+        record.trustedOrigin = undefined;
+        record.pinnedDigest = undefined;
+        record.originProblem = 'changed';
+      }
+    }
+  }
+
+  /** Remove every snapshot no current copy runs from. Best-effort. */
+  private async collectUnusedSnapshots(): Promise<void> {
+    const inUse = new Set<string>();
+    for (const record of this.extensions.values()) {
+      if (record.runPath) inUse.add(path.resolve(installRootOf(record.runPath)));
+    }
+    try {
+      await collectSnapshots(this.dorkHome, inUse);
+    } catch (err) {
+      logger.warn('[Extensions] Could not clear unused extension snapshots', err);
+    }
   }
 
   /**
@@ -370,6 +420,7 @@ export class ExtensionManager {
         rec.id,
         {
           path: path.resolve(rec.path),
+          runPath: rec.runPath ?? null,
           runs: mayRunExtensionCode(rec, configManager.get('extensions')),
         },
       ])
@@ -380,7 +431,11 @@ export class ExtensionManager {
     for (const rec of this.extensions.values()) {
       const prior = before.get(rec.id);
       const runs = mayRunExtensionCode(rec, approvals);
-      const switched = !prior || prior.path !== path.resolve(rec.path) || prior.runs !== runs;
+      const switched =
+        !prior ||
+        prior.path !== path.resolve(rec.path) ||
+        prior.runPath !== (rec.runPath ?? null) ||
+        prior.runs !== runs;
       if (!switched) continue;
       changed.push(rec.id);
       if (prior) await this.serverLifecycle.shutdown(rec.id);
@@ -399,6 +454,9 @@ export class ExtensionManager {
         await this.serverLifecycle.shutdown(id);
       }
     }
+    // Only now, with every server half on its current copy, can a snapshot the
+    // old copies ran from go.
+    await this.collectUnusedSnapshots();
     if (changed.length > 0) this.announceReloaded?.(changed);
     return changed;
   }

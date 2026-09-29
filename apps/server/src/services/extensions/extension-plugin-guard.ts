@@ -35,9 +35,9 @@ export const PLUGIN_CHANGED_CODE = 'plugin_changed_since_check';
 
 /** The install folder a plugin-carried copy is contained to, or null. */
 export function containmentRootOf(
-  record: Pick<ExtensionRecord, 'path' | 'sourcePlugin'>
+  record: Pick<ExtensionRecord, 'path' | 'sourcePlugin' | 'runPath'>
 ): string | null {
-  return record.sourcePlugin ? installRootOf(record.path) : null;
+  return record.sourcePlugin ? installRootOf(record.runPath ?? record.path) : null;
 }
 
 /**
@@ -113,9 +113,12 @@ export function containmentPlugin(root: string, externals: readonly string[]): P
  * @param record - The copy being compiled.
  */
 export async function stillPinned(
-  record: Pick<ExtensionRecord, 'path' | 'sourcePlugin' | 'pinnedDigest'>
+  record: Pick<ExtensionRecord, 'path' | 'sourcePlugin' | 'pinnedDigest' | 'runPath'>
 ): Promise<boolean> {
   if (!record.pinnedDigest) return true;
+  // A snapshot is named by its digest and verified when it was written: it is
+  // the pinned files, by construction, and nothing else writes to it.
+  if (record.runPath) return true;
   const root = containmentRootOf(record);
   if (!root) return false;
   const now = await installFolderDigest(root);

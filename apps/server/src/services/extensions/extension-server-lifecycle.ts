@@ -54,6 +54,7 @@ const require = createRequire(import.meta.url);
 function buildSourceKey(record: ExtensionRecord, serverSourceHash: string | null): string {
   return JSON.stringify({
     path: path.resolve(record.path),
+    runPath: record.runPath ?? null,
     version: record.manifest.version,
     serverEntryPath: record.serverEntryPath ?? null,
     dataProxy: record.manifest.dataProxy ?? null,
@@ -238,9 +239,11 @@ export class ExtensionServerLifecycle {
       }
 
       const router = Router();
-      const { ctx, getScheduledCleanups, releaseListeners } = createDataProviderContext({
+      const { ctx, getScheduledCleanups, releaseListeners, dispose } = createDataProviderContext({
         extensionId: id,
-        extensionDir: record.path,
+        // A copy that runs by origin runs from its verified snapshot, so what
+        // it reaches relative to itself at runtime is the snapshot's too.
+        extensionDir: record.runPath ?? record.path,
         dorkHome: this.dorkHome,
         extensionName: record.manifest.name,
       });
@@ -261,14 +264,10 @@ export class ExtensionServerLifecycle {
           },
           () => undefined
         );
-        for (const cancel of getScheduledCleanups()) {
-          try {
-            cancel();
-          } catch {
-            /* swallow cancellation errors */
-          }
-        }
-        registered?.();
+        // Cancel what it scheduled, release what it registered, and make
+        // anything it still tries later a no-op: a retry then starts a fresh
+        // instance, and nothing of this one keeps running beside it.
+        dispose();
         registered = undefined;
         const seconds = Math.round(this.registerTimeoutMs / 1000);
         const message =
