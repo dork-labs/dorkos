@@ -4,7 +4,17 @@
  * were shown; moves and deletes nothing. Real temp trees.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -15,6 +25,7 @@ import {
 import { writeInstallMetadata } from '../../../installed-metadata.js';
 import { keepUnprovenFiles, keptFilesKey } from '../keep-unproven.js';
 import { verifyInstall } from '../verify-install.js';
+import { withInstallTargetLock } from '../../../transaction.js';
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -154,5 +165,47 @@ describe('keepUnprovenFiles', () => {
     const integrity = await verifyInstall(root);
 
     expect(integrity).toMatchObject({ unproven: { keepKey: await keptFilesKey(root) } });
+  });
+
+  // Purpose (review): a kept symbolic link is bound by where it points, so
+  // re-pointing it after the person looked is not what they said yes to.
+  it('binds a kept link to its target', async () => {
+    const root = await installWithKeptFiles();
+    await symlink('notes/old.md', path.join(root, 'skills', 'link.md'));
+    const record = (await readInstalledFiles(root))!;
+    await writeInstalledFiles(root, {
+      ...record,
+      unproven: {
+        ...record.unproven!,
+        files: { ...record.unproven!.files, 'skills/link.md': 'skills/link.md' },
+      },
+    });
+    const key = (await keptFilesKey(root))!;
+    await rm(path.join(root, 'skills', 'link.md'));
+    await symlink('../elsewhere.md', path.join(root, 'skills', 'link.md'));
+
+    expect(await keepUnprovenFiles(root, key)).toEqual({ outcome: 'changed' });
+  });
+
+  // Purpose (review): what runs after the keep (the approval of a held-back
+  // package) holds the same install lock, so nothing can change the install
+  // between the keep and it.
+  it('runs what follows the keep under the same install lock', async () => {
+    const root = await installWithKeptFiles();
+    const key = (await keptFilesKey(root))!;
+    const events: string[] = [];
+
+    const kept = keepUnprovenFiles(root, key, async () => {
+      events.push('approve-start');
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      events.push('approve-end');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const other = withInstallTargetLock(root, async () => {
+      events.push('other');
+    });
+    await Promise.all([kept, other]);
+
+    expect(events).toEqual(['approve-start', 'approve-end', 'other']);
   });
 });

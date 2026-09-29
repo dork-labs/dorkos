@@ -5,8 +5,8 @@
  * and deletes nothing.
  *
  * For a global package held back from sessions, it also shows everything the
- * package runs, and confirming lets it run in every session as it is now, the
- * same as a Review: the confirm sends back exactly what was shown, and the
+ * package runs, and confirming approves what it discloses now, like a Review:
+ * the confirm sends back exactly what was shown, and the
  * server records it only if the package is still that. Until what it runs has
  * loaded, the confirm waits, so a person never approves something they
  * weren't shown.
@@ -90,8 +90,12 @@ export function KeepFilesDialog({
               </ResponsiveDialogTitle>
               <ResponsiveDialogDescription className="text-left">
                 An update couldn’t tell whether these were yours or left over from the version you
-                had, and there’s no earlier version to sort them with. Keeping them makes them
-                yours: updates keep them. Nothing is moved or deleted.
+                had,{' '}
+                {unproven.check.source === 'local'
+                  ? 'and there’s no earlier version to sort them with.'
+                  : 'and DorkOS couldn’t download the version you had to sort them with.'}{' '}
+                Keeping them makes them yours: updates keep them. Nothing is moved or deleted.
+                {running.length > 0 && ' They run as your own files from now on.'}
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
 

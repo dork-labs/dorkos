@@ -24557,7 +24557,7 @@
           "Marketplace"
         ],
         "summary": "Keep the files an update couldn't sort as the person's",
-        "description": "Make the files an update kept, because it could not tell whether they were the person's or left over from the earlier version, the person's: the record stops listing them, and nothing is moved or deleted (DOR-2341). Only a person may do this: an agent is refused (`operator_only`), and under login so is anything but a signed-in session (`operator_cookie_required`). Bound to `keepKey` as the installed list showed it: when a kept file or the installed version changed since, the answer is 409 `kept_files_changed` and nothing is written. For a global package held back from sessions, `review` (exactly as `GET /held-back` listed it) also approves the package as it is now, the same as a Review.",
+        "description": "Make the files an update kept, because it could not tell whether they were the person's or left over from the earlier version, the person's: the record stops listing them, and nothing is moved or deleted (DOR-2341). Only a person may do this: an agent is refused (`operator_only`), and under login so is anything but a signed-in session (`operator_cookie_required`). Bound to `keepKey` as the installed list showed it: when a kept file or the installed version changed since, the answer is 409 `kept_files_changed` and nothing is written. For a global package held back from sessions, `review` (exactly as `GET /held-back` listed it) also approves what the package discloses now, like a Review.",
         "parameters": [
           {
             "schema": {

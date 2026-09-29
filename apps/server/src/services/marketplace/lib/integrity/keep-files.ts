@@ -5,11 +5,12 @@
  * Review.
  *
  * Ownership and activation are two decisions. Keeping the files changes only
- * the installed-files record (`lib/integrity/keep-unproven.ts`). Approving what
- * a global package runs is recorded only when the caller sends back exactly
- * what `GET /held-back` listed, and only when the package still is that
- * (`recordHeldBackDecision`); otherwise the files are still kept and the
- * package still waits for a Review, and the answer says so.
+ * the installed-files record (`keep-unproven.ts`). For a global package held
+ * back from sessions, it also approves what the package discloses now, like a
+ * Review: only when the caller sends back exactly what `GET /held-back`
+ * listed, only when the package still is that (`recordHeldBackDecision`), and
+ * under the same install lock as the keep. Otherwise the files are still kept,
+ * the package still waits for a Review, and the answer says so.
  *
  * The caller is a person: the route refuses anyone else before this runs.
  *
@@ -72,7 +73,20 @@ export async function keepPackageFiles(opts: {
   keepKey: string;
   review?: { effects: DisclosedEffects; bindsTo: string };
 }): Promise<KeepFilesResult> {
-  const kept = await keepUnprovenFiles(opts.root, opts.keepKey);
+  const dirName = path.basename(opts.root);
+  let approved = false;
+  // Under the same install lock as the keep, so an update landing between the
+  // two cannot be approved on what the person was shown of the old install.
+  const review = opts.global ? opts.review : undefined;
+  const kept = await keepUnprovenFiles(
+    opts.root,
+    opts.keepKey,
+    review
+      ? async () => {
+          approved = await recordHeldBackDecision(opts.dorkHome, dirName, review, 'allow');
+        }
+      : undefined
+  );
   if (kept.outcome === 'changed') throw new KeptFilesChangedError(opts.name);
   if (kept.outcome === 'not-needed') {
     return {
@@ -87,10 +101,6 @@ export async function keepPackageFiles(opts: {
       message: describeKept(opts.name, kept.files.length, undefined),
     };
   }
-  const dirName = path.basename(opts.root);
-  const approved = opts.review
-    ? await recordHeldBackDecision(opts.dorkHome, dirName, opts.review, 'allow')
-    : false;
   const stillHeldBack =
     !approved &&
     (await partitionGlobalPlugins(opts.dorkHome)).withheld.some((w) => w.name === dirName);

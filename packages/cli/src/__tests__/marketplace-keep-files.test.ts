@@ -132,6 +132,30 @@ describe('runMarketplaceKeepFiles', () => {
     });
   });
 
+  // Purpose: Check files comes first where it can help, since it sets
+  // leftovers aside; keeping is for kept files it cannot sort.
+  it('sends a person to Check files first when it can still sort the files', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      mockResponse(200, {
+        packages: [
+          {
+            ...ROW,
+            integrity: {
+              status: 'clean',
+              customized: [],
+              unproven: { ...UNPROVEN, check: { source: 'fetchable' } },
+            },
+          },
+        ],
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await runMarketplaceKeepFiles({ name: 'flow', yes: true, json: false })).toBe(0);
+    expect(printed()).toContain('dorkos marketplace check-files flow');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('says so when there is nothing to keep, or no such package', async () => {
     vi.stubGlobal(
       'fetch',

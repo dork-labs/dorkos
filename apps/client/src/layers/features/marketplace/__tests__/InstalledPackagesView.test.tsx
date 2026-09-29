@@ -1333,6 +1333,8 @@ describe('InstalledPackagesView', () => {
       const dialog = await screen.findByRole('dialog');
       expect(dialog).toHaveTextContent('Keep the files Flow kept as yours?');
       expect(dialog).toHaveTextContent('Nothing is moved or deleted.');
+      expect(dialog).toHaveTextContent('there’s no earlier version to sort them with');
+      expect(dialog).toHaveTextContent('They run as your own files from now on.');
       expect(within(dialog).getByRole('list', { name: 'Still runs' })).toHaveTextContent(
         'skills/old/SKILL.md'
       );
@@ -1342,6 +1344,57 @@ describe('InstalledPackagesView', () => {
         name: FLOW.name,
         options: { installRoot: FLOW.installPath, keepKey: 'sha256:kept' },
       });
+    });
+
+    // Purpose (DOR-2341 review): Check files comes first. Keeping is offered
+    // only where Check files cannot help (no earlier version, or it could not
+    // be downloaded), so a person is never steered past the sort that would
+    // set leftovers aside.
+    it('offers Keep these as mine only where Check files cannot sort the files', async () => {
+      const user = userEvent.setup();
+      const withCheck = (check: object) => ({
+        [FLOW.installPath]: {
+          status: 'clean' as const,
+          customized: [],
+          unproven: {
+            files: ['notes.txt'],
+            running: [],
+            check,
+            keepKey: 'sha256:kept',
+          },
+        },
+      });
+      showRows([FLOW], [makeCheck(FLOW)]);
+
+      setIntegrity(withCheck({ source: 'fetchable' }) as never);
+      render(<InstalledPackagesView />);
+      await user.click(
+        screen.getByTestId('installation-integrity-unproven').querySelector('summary')!
+      );
+      expect(screen.queryByRole('button', { name: /Keep the files Flow kept/ })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
+      cleanup();
+
+      setIntegrity(
+        withCheck({
+          source: 'fetchable',
+          last: {
+            outcome: 'fetch-failed',
+            message: 'Couldn’t fetch the version of flow you had before.',
+          },
+        }) as never
+      );
+      render(<InstalledPackagesView />);
+      await user.click(
+        screen.getByTestId('installation-integrity-unproven').querySelector('summary')!
+      );
+      expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
+      await user.click(screen.getByRole('button', { name: /Keep the files Flow kept/ }));
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog).toHaveTextContent(
+        'DorkOS couldn’t download the version you had to sort them with'
+      );
+      expect(dialog).not.toHaveTextContent('there’s no earlier version');
     });
 
     // Purpose (DOR-2341): for a global package held back from sessions, the

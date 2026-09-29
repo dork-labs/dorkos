@@ -228,7 +228,7 @@ export function KeepFilesDialogShowcase() {
   return (
     <PlaygroundSection
       title="KeepFilesDialog"
-      description="Confirm step for Keep these as mine: the files an update kept but nothing can sort, the ones that still run listed apart, and a plain promise that nothing moves or is deleted. For a global package held back from sessions it also shows everything the package runs, and confirming approves it as it is now."
+      description="Confirm step for Keep these as mine: the files an update kept but nothing can sort, the ones that still run listed apart, and a plain promise that nothing moves or is deleted. For a global package held back from sessions it also shows everything the package runs, and confirming approves what it discloses now, like a Review. Offered only where Check files can't sort the files."
     >
       <ShowcaseDemo>
         <div className="flex gap-3">

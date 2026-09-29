@@ -22,6 +22,7 @@
  * @module services/marketplace/lib/integrity/keep-unproven
  */
 import { createHash } from 'node:crypto';
+import { readlink } from 'node:fs/promises';
 import path from 'node:path';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import { readInstallMetadata } from '../../installed-metadata.js';
@@ -69,7 +70,14 @@ export async function keptFilesKeyOf(
   for (const p of Object.keys(record.unproven.files).sort()) {
     const { kind } = await lstatChain(root, p);
     if (kind === 'missing') continue;
-    files.push([p, kind === 'file' ? await hashFile(fsPath(root, p)) : kind]);
+    files.push([
+      p,
+      kind === 'file'
+        ? await hashFile(fsPath(root, p))
+        : kind === 'symlink'
+          ? `symlink:${await readlink(fsPath(root, p))}`
+          : kind,
+    ]);
   }
   const metadata = await readInstallMetadata(root).catch(() => null);
   return `sha256:${createHash('sha256')
@@ -103,9 +111,15 @@ export async function keptFilesKey(root: string): Promise<string | undefined> {
  *
  * @param root - The install folder.
  * @param key - The {@link keptFilesKey} the person was shown.
+ * @param whileLocked - Run after the record is written, still under the same
+ *   install lock, so nothing can change the install between the keep and it.
  * @returns What was kept, or why nothing was written.
  */
-export async function keepUnprovenFiles(root: string, key: string): Promise<KeepUnprovenResult> {
+export async function keepUnprovenFiles(
+  root: string,
+  key: string,
+  whileLocked?: () => Promise<void>
+): Promise<KeepUnprovenResult> {
   return withInstallTargetLock(root, async (): Promise<KeepUnprovenResult> => {
     const record = await readInstalledFiles(root);
     if (!record?.unproven) return { outcome: 'not-needed' };
@@ -117,6 +131,7 @@ export async function keepUnprovenFiles(root: string, key: string): Promise<Keep
     }
     const { unproven: _theirs, ...rest } = record;
     await writeInstalledFiles(root, rest);
+    await whileLocked?.();
     return { outcome: 'kept', files, running };
   });
 }

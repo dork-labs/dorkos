@@ -94,6 +94,21 @@ export function canCheckFiles(integrity: InstallIntegrity | undefined): boolean 
   return last !== 'mismatch' && last !== 'no-source';
 }
 
+/** The kept files an installation's integrity lists (DOR-2322). */
+type Unproven = NonNullable<Extract<InstallIntegrity, { status: 'clean' }>['unproven']>;
+
+/**
+ * Whether "Keep these as mine" is offered for these kept files (DOR-2341):
+ * only where Check files cannot sort them, because there is no earlier
+ * version (installed from a folder) or its last try could not download it.
+ * Otherwise Check files comes first, since it sets the leftovers aside.
+ *
+ * @param unproven - The kept files, as the row lists them.
+ */
+export function canKeepFiles(unproven: Pick<Unproven, 'check'>): boolean {
+  return unproven.check.source === 'local' || unproven.check.last?.outcome === 'fetch-failed';
+}
+
 /**
  * One group of paths in the opened disclosure, or nothing when it is empty.
  *
@@ -177,7 +192,7 @@ function UnprovenNote({
         {unproven.check.last && <p>{unproven.check.last.message}</p>}
         <PathGroup title="Still runs" paths={running} />
         <PathGroup title="Kept" paths={inert} />
-        {onKeepFiles && (
+        {onKeepFiles && canKeepFiles(unproven) && (
           <Button
             size="sm"
             variant="outline"

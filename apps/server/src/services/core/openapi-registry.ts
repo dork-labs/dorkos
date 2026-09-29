@@ -3111,7 +3111,7 @@ registry.registerPath({
     '(`operator_cookie_required`). Bound to `keepKey` as the installed list showed it: when a ' +
     'kept file or the installed version changed since, the answer is 409 `kept_files_changed` ' +
     'and nothing is written. For a global package held back from sessions, `review` (exactly as ' +
-    '`GET /held-back` listed it) also approves the package as it is now, the same as a Review.',
+    '`GET /held-back` listed it) also approves what the package discloses now, like a Review.',
   request: {
     params: z.object({ name: z.string() }),
     body: {

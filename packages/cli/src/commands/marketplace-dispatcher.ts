@@ -229,7 +229,7 @@ updates keep them, and nothing is moved or deleted.
 
 It prints the files first, and marks the ones that still run. For a global
 package held back from sessions, it also prints everything the package runs,
-and your yes lets it run in every session as it is now.
+and your yes approves what it discloses now, like a Review.
 
 Only you can do this, not an agent. With sign-in on, do it in the app instead.
 

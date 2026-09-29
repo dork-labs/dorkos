@@ -9,8 +9,8 @@
  *
  * - it prints the kept files, marking the ones that still run;
  * - for a global package held back from sessions, it prints everything the
- *   package runs, and your yes also lets it run in every session as it is now,
- *   the same as a Review;
+ *   package runs, and your yes also approves what it discloses now, like a
+ *   Review;
  * - it asks (skip with `--yes`), then sends back exactly what it printed.
  *
  * Nothing is moved or deleted. Deciding is yours: the server refuses an agent,
@@ -126,6 +126,15 @@ export async function runMarketplaceKeepFiles(args: MarketplaceKeepFilesArgs): P
     console.log(`${args.name} has no kept files to sort.`);
     return 0;
   }
+  // Check files comes first where it can help: it sets leftovers aside
+  // rather than keeping them (DOR-2341).
+  if (unproven.check.source !== 'local' && unproven.check.last?.outcome !== 'fetch-failed') {
+    console.log(
+      `Check files can sort the files ${args.name} kept: run ` +
+        `\`dorkos marketplace check-files ${args.name}\` first. Nothing was changed.`
+    );
+    return 0;
+  }
 
   console.log(
     `An update of ${args.name} kept ${unproven.files.length === 1 ? 'this file' : 'these files'}, ` +
@@ -139,7 +148,8 @@ export async function runMarketplaceKeepFiles(args: MarketplaceKeepFilesArgs): P
   }
   console.log('Keeping them makes them yours: updates keep them, and nothing is moved or deleted.');
 
-  // A held-back global package is approved too, the same as a Review, so the
+  // A held-back global package is approved too (what it discloses now, like a
+  // Review), so the
   // person sees everything it runs first.
   let review: KeepFilesOptions['review'];
   if (installation.heldBack && !args.projectPath) {
