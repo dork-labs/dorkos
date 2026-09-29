@@ -8,6 +8,7 @@ import { PlanCards } from './PlanCards';
 import {
   COMPARE,
   COMPARE_PLANS,
+  ELIGIBILITY_NOTE,
   EXTRAS,
   LAST_UPDATED,
   MODEL_PRICES,
@@ -60,6 +61,9 @@ export default function PricingPage() {
         <PlanCards paidFrom={PAID_FROM} />
         <p className="text-warm-gray mt-6 text-center text-sm">
           Every price on this page applies from {PAID_FROM}. {TAX_NOTE}
+        </p>
+        <p className="text-warm-gray mx-auto mt-2 max-w-2xl text-center text-sm text-pretty">
+          {ELIGIBILITY_NOTE}
         </p>
       </section>
 
@@ -353,6 +357,10 @@ function Faq() {
     {
       q: 'Is tax included?',
       a: TAX_NOTE,
+    },
+    {
+      q: 'Who can buy a plan?',
+      a: ELIGIBILITY_NOTE,
     },
     {
       q: 'What if I cancel?',

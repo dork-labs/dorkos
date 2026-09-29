@@ -37,6 +37,13 @@ export const PAID_FROM = formatDay(POSTED_ON, NOTICE_DAYS);
 export const TAX_NOTE =
   'Prices are in US dollars. Sales tax or VAT is added at checkout where it applies.';
 
+/**
+ * Who may buy: shown beside the plan cards and answered in the questions. The free app and
+ * running DorkOS yourself stay open to everyone, so the note says so in the same breath.
+ */
+export const ELIGIBILITY_NOTE =
+  'Paid plans and hosted communities are for people in the United States who are 18 or older. The free, open-source app works everywhere, and so does running DorkOS or a community on your own computer or server.';
+
 // ── Credits and money ────────────────────────────────────────────────────────
 //
 // One credit is one US cent. Credit figures are stored as exact numbers and
