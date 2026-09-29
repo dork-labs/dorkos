@@ -114,6 +114,39 @@ describe('enforceCapabilityTier', () => {
     });
   }
 
+  describe('why a destructive call waits', () => {
+    it('says a connected-app action is high risk, and keeps "cannot be undone" for everything else', () => {
+      const connected = defineCapability({
+        id: 'connectors.execute_destructive',
+        title: 'Take a high-risk action in a connected app',
+        description: 'A connected-app action used by the tier enforcement tests.',
+        tier: 'destructive',
+        input: z.object({ name: z.string(), purge: z.boolean().optional() }),
+        output: z.unknown(),
+        surfaces: {},
+        invoke: async () => ({ ok: true }),
+      });
+      const message = (action: ReturnType<typeof capabilityAt>) => {
+        const decision = enforceCapabilityTier({
+          permission: null,
+          action,
+          input: INPUT,
+          identity: identity(),
+          retryChannel: 'mcp-argument',
+        });
+        if (decision.outcome !== 'approval_required') throw new Error('unreachable');
+        return decision.payload.message;
+      };
+
+      expect(message(connected)).toBe(
+        '"Take a high-risk action in a connected app" is high risk, so a person has to approve it first. DorkOS has asked them.'
+      );
+      expect(message(capabilityAt('destructive'))).toBe(
+        '"Demo destructive" cannot be undone, so a person has to approve it first. DorkOS has asked them.'
+      );
+    });
+  });
+
   describe('an unidentified caller', () => {
     it('reads and makes ordinary changes freely, so no honest flow breaks', () => {
       // These are the calls spec §3.1 protected: external MCP clients and a human

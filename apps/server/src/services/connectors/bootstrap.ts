@@ -89,6 +89,7 @@ import {
 import {
   maybeCreateNangoProvider,
   NangoEncryptionKeyError,
+  NANGO_PROVIDER_TYPE,
   NANGO_SECRET_KEY_REF,
   type MaybeCreateNangoProviderDeps,
 } from './providers/nango.js';
@@ -221,10 +222,17 @@ const UNREACHABLE_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EH
 
 /**
  * Whether a failed check means nothing answered at the service's address: a
- * name that doesn't resolve, a refused connection, or a 404 on the base URL.
+ * name that doesn't resolve or a refused connection. A 404 counts only for
+ * Nango, whose address the person sets, so a 404 means the address is wrong;
+ * from Composio a 404 is the service's own answer, not a wrong address.
+ *
+ * @param type - The way's type.
+ * @param err - What the check threw.
  */
-function isUnreachable(err: unknown): boolean {
-  if ((err as { status?: unknown } | null)?.status === 404) return true;
+function isUnreachable(type: string, err: unknown): boolean {
+  if (type === NANGO_PROVIDER_TYPE && (err as { status?: unknown } | null)?.status === 404) {
+    return true;
+  }
   const cause = (err as { cause?: { code?: unknown } } | null)?.cause;
   return typeof cause?.code === 'string' && UNREACHABLE_CODES.has(cause.code);
 }
@@ -250,7 +258,7 @@ function keyCheckFailure(spec: ManagedProviderSpec, err: unknown): KeyCheckFailu
   if (spec.isRefusal(err) && err instanceof Error)
     return { kind: 'spec_refusal', line: err.message };
   if (isCredentialRefusal(err)) return { kind: 'refused' };
-  return { kind: isUnreachable(err) ? 'unreachable' : 'failed' };
+  return { kind: isUnreachable(spec.type, err) ? 'unreachable' : 'failed' };
 }
 
 /**
@@ -1063,7 +1071,8 @@ export class ConnectorProviderBootstrapper {
   /** Build one provider's reference-free status DTO. */
   private async _statusFor(spec: ManagedProviderSpec): Promise<ConnectorProviderStatus> {
     const failure = this._lastError.get(spec.type);
-    const error = failure && keyCheckLine(spec.type, failure, this._rechecks.has(spec.type));
+    const recheck = this._rechecks.get(spec.type);
+    const error = failure && keyCheckLine(spec.type, failure, recheck !== undefined);
     const liveInstanceId = this._instanceBySpecType.get(spec.type);
     const live = liveInstanceId
       ? this._registry.resolveProviderInstance(liveInstanceId)
@@ -1088,6 +1097,7 @@ export class ConnectorProviderBootstrapper {
           ? MANAGED_CUSTODY_CANONICAL_SENTENCE
           : custodyDisclosure(spec.custody),
       ...(error && { error }),
+      ...(error && recheck && { recheckAt: new Date(recheck.dueAt).toISOString() }),
     };
   }
 }

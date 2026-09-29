@@ -26,4 +26,10 @@ describe('olderVersionIds', () => {
       0
     );
   });
+
+  it('never flags rows that share both the action and the version', () => {
+    expect(olderVersionIds([row('a', 'gmail.send', '2'), row('b', 'gmail.send', '2')]).size).toBe(
+      0
+    );
+  });
 });

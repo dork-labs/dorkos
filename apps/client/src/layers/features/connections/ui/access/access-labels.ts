@@ -29,46 +29,37 @@ export function joinNames(names: string[]): string {
  * agent" with write shows. Known apps get their own words; any other app gets
  * a plain general phrase.
  */
-const WRITE_VERBS: Record<string, { write: string; writeAndDelete: string }> = {
-  gmail: { write: 'send email', writeAndDelete: 'send and delete email' },
-  outlook: { write: 'send email', writeAndDelete: 'send and delete email' },
-  slack: { write: 'send messages', writeAndDelete: 'send and delete messages' },
-  googlecalendar: {
-    write: 'change your calendar',
-    writeAndDelete: 'change and delete calendar events',
-  },
-  google_calendar: {
-    write: 'change your calendar',
-    writeAndDelete: 'change and delete calendar events',
-  },
-  calendar: { write: 'change your calendar', writeAndDelete: 'change and delete calendar events' },
-  googledrive: { write: 'change your files', writeAndDelete: 'change and delete your files' },
-  google_drive: { write: 'change your files', writeAndDelete: 'change and delete your files' },
-  notion: { write: 'change your pages', writeAndDelete: 'change and delete your pages' },
-  github: {
-    write: 'make changes on GitHub',
-    writeAndDelete: 'make changes and delete things on GitHub',
-  },
-  linear: { write: 'change your issues', writeAndDelete: 'change and delete your issues' },
+const WRITE_VERBS: Record<string, string> = {
+  gmail: 'send email',
+  outlook: 'send email',
+  slack: 'send messages',
+  googlecalendar: 'change your calendar',
+  google_calendar: 'change your calendar',
+  calendar: 'change your calendar',
+  googledrive: 'change your files',
+  google_drive: 'change your files',
+  notion: 'change your pages',
+  github: 'make changes on GitHub',
+  linear: 'change your issues',
 };
 
 /**
  * The warning shown when every agent, including future ones, can write:
- * "Every agent — including ones you add later — could send email as you." When
- * every agent can also delete, it says so: "…could send and delete email as you."
+ * "Every agent — including ones you add later — could send email as you."
+ * When every agent also holds a high-risk action, it says so in the shared
+ * words, never "delete": the service marks forwarding and sharing high risk
+ * too. "…could send email and take high-risk actions as you."
  *
  * @param toolkit - The app's toolkit id, e.g. `gmail`.
  * @param serviceName - The app's display name, for apps without their own words.
- * @param canDelete - Whether every agent can also delete.
+ * @param highRisk - Whether every agent also holds a high-risk action.
  */
 export function everyAgentWriteWarning(
   toolkit: string,
   serviceName: string,
-  canDelete = false
+  highRisk = false
 ): string {
-  const words = WRITE_VERBS[toolkit.toLowerCase()];
-  const verb = canDelete
-    ? (words?.writeAndDelete ?? `make changes and delete things in ${serviceName}`)
-    : (words?.write ?? `make changes in ${serviceName}`);
-  return `Every agent — including ones you add later — could ${verb} as you.`;
+  const verb = WRITE_VERBS[toolkit.toLowerCase()] ?? `make changes in ${serviceName}`;
+  const reach = highRisk ? `${verb} and take high-risk actions` : verb;
+  return `Every agent — including ones you add later — could ${reach} as you.`;
 }

@@ -236,7 +236,7 @@ export class ConnectorExecutionBroker {
     if (!approval || approval.via !== 'approval' || approval.authorityBindingDigest !== digest) {
       throw new CapabilityToolError({
         error:
-          'This action can’t be undone, so the person must approve this exact action before it runs.',
+          'This is a high-risk action, so the person must approve this exact action before it runs.',
         code: 'CONNECTOR_APPROVAL_BINDING_MISMATCH',
       });
     }

@@ -15,8 +15,8 @@ interface VersionedAction {
 }
 
 /**
- * The revision ids of every row that has a newer row for the same action in
- * the list. Versions compare naturally (`2` before `10`, dates in order).
+ * The revision ids of every row that has a strictly newer row for the same
+ * action in the list. Versions compare naturally (`2` before `10`, dates in order).
  *
  * @param actions - The rows shown together.
  */
@@ -33,9 +33,15 @@ export function olderVersionIds(actions: readonly VersionedAction[]): ReadonlySe
   }
   return new Set(
     actions
+      // Only a strictly older version is flagged: two rows that share both the
+      // action and the version are not older than each other.
       .filter(
         (action) =>
-          newest.get(action.operationSlug)!.operationRevisionId !== action.operationRevisionId
+          action.toolkitVersion.localeCompare(
+            newest.get(action.operationSlug)!.toolkitVersion,
+            undefined,
+            { numeric: true }
+          ) < 0
       )
       .map((action) => action.operationRevisionId)
   );

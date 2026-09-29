@@ -126,6 +126,30 @@ describe('ConnectionAccessDialog', () => {
     expect(line).toHaveTextContent('stop sharing this account with every agent');
   });
 
+  it('marks the older of an action listed twice in the exact-actions list', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const send = PREVIEW.candidates.find((c) => c.operationRevisionId === 'write-v2')!;
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue({
+      ...PREVIEW,
+      candidates: [
+        ...PREVIEW.candidates,
+        { ...send, operationRevisionId: 'write-v1', toolkitVersion: '2026-08-01' },
+      ],
+    });
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+
+    const bo = await screen.findByRole('group', { name: 'Access for Bo' });
+    await user.click(within(bo).getByRole('button', { name: 'Advanced' }));
+    const rows = within(bo).getAllByRole('listitem');
+    const sendRows = rows.filter((row) => row.textContent?.includes('Send'));
+    expect(sendRows).toHaveLength(2);
+    expect(sendRows.filter((row) => row.textContent?.includes('Older version'))).toHaveLength(1);
+  });
+
   it('says nothing about every agent when it is not shared', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);

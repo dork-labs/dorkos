@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import {
   cardDecision,
-  everyAgentCanDelete,
+  everyAgentHoldsHighRisk,
   everyAgentCanWrite,
   everyAgentDecision,
   initialEveryAgentLevel,
@@ -299,11 +299,29 @@ describe('everyAgentDecision (DOR-2420)', () => {
       'Every agent — including ones you add later — could make changes in Asana as you.'
     );
     expect(everyAgentWriteWarning('gmail', 'Gmail', true)).toBe(
-      'Every agent — including ones you add later — could send and delete email as you.'
+      'Every agent — including ones you add later — could send email and take high-risk actions as you.'
     );
     expect(everyAgentWriteWarning('asana', 'Asana', true)).toBe(
-      'Every agent — including ones you add later — could make changes and delete things in Asana as you.'
+      'Every agent — including ones you add later — could make changes in Asana and take high-risk actions as you.'
     );
+  });
+
+  it('calls a shared forward a high-risk action, never a delete', () => {
+    // The service marks forwarding destructive; nothing here deletes anything.
+    const forwardOnly: ConnectorReconciliationPreview = {
+      ...preview([]),
+      candidates: [
+        candidate('read', 'read'),
+        candidate('send', 'write'),
+        candidate('forward', 'destructive'),
+      ],
+      everyAgent: { available: true, operationRevisionIds: ['read', 'send', 'forward'] },
+    };
+    const held = everyAgentHoldsHighRisk(forwardOnly, null);
+    expect(held).toBe(true);
+    const line = everyAgentWriteWarning('gmail', 'Gmail', held);
+    expect(line).toContain('take high-risk actions');
+    expect(line).not.toMatch(/delete/iu);
   });
 
   it('never starts on Read, or hides the warning, while every agent can write or delete', () => {
@@ -312,10 +330,10 @@ describe('everyAgentDecision (DOR-2420)', () => {
     expect(everyAgentCanWrite(exact, null)).toBe(true);
     expect(everyAgentCanWrite(exact, 'read')).toBe(false);
     // Delete is only ever held, never chosen: the card's levels leave it out.
-    expect(everyAgentCanDelete(exact, null)).toBe(true);
-    expect(everyAgentCanDelete(exact, 'read-write')).toBe(false);
+    expect(everyAgentHoldsHighRisk(exact, null)).toBe(true);
+    expect(everyAgentHoldsHighRisk(exact, 'read-write')).toBe(false);
     expect(
-      everyAgentCanDelete(
+      everyAgentHoldsHighRisk(
         withEvery({ available: true, operationRevisionIds: ['read', 'send'] }),
         null
       )

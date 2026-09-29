@@ -1040,7 +1040,14 @@ describe('ConnectorExecutionBroker', () => {
         },
         destructiveTarget
       )
-    ).rejects.toMatchObject({ payload: { code: 'CONNECTOR_APPROVAL_BINDING_MISMATCH' } });
+    ).rejects.toMatchObject({
+      payload: {
+        code: 'CONNECTOR_APPROVAL_BINDING_MISMATCH',
+        // High risk, never "can't be undone": the class covers forwarding too.
+        error:
+          'This is a high-risk action, so the person must approve this exact action before it runs.',
+      },
+    });
     expect(db.select().from(connectorUsageAttempts).all()).toEqual([]);
   });
 

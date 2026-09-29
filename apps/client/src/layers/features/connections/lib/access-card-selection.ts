@@ -289,14 +289,15 @@ export function everyAgentCanWrite(
 }
 
 /**
- * Whether saving "Every agent" as chosen leaves every agent able to delete.
- * The card's levels never include delete actions, so this is only true while
- * no level is chosen and the current shared set includes one.
+ * Whether saving "Every agent" as chosen leaves every agent holding a
+ * high-risk (destructive-class) action. The card's levels never include one,
+ * so this is only true while no level is chosen and the current shared set
+ * holds one.
  *
  * @param preview - Server snapshot.
  * @param level - The chosen level, or `null` while the switch is mixed.
  */
-export function everyAgentCanDelete(
+export function everyAgentHoldsHighRisk(
   preview: ConnectorReconciliationPreview,
   level: CardAccessLevel | null
 ): boolean {

@@ -40,7 +40,7 @@ import {
 import { NANGO_SECRET_KEY_REF } from '../providers/nango.js';
 import { ManagedCloudConnectorProvider } from '../providers/managed/managed-cloud.js';
 import { ManagedConnectorCloudError } from '../../core/auth/cloud-link-client.js';
-import type { NangoHttpClient } from '../providers/nango-client.js';
+import { NangoApiError, type NangoHttpClient } from '../providers/nango-client.js';
 import type { RawMcpServerDescriptor } from '../providers/raw-mcp.js';
 import { ConnectorOperatorQueryService } from '../resources/operator-query-service.js';
 
@@ -1520,12 +1520,42 @@ describe('ConnectorProviderBootstrapper', () => {
       const composioError = async () =>
         (await bootstrapper.listStatuses()).find((s) => s.type === 'composio')?.error;
 
+      const composioStatus = async () =>
+        (await bootstrapper.listStatuses()).find((s) => s.type === 'composio');
       expect(await composioError()).toBe(KEY_CHECK_COPY.checkingAgain);
+      // The next check's time rides along, so the app knows to read again.
+      expect((await composioStatus())?.recheckAt).toEqual(expect.any(String));
       for (const delay of WAY_RECHECK_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
 
       // Every automatic check is spent: nothing is scheduled, so it never
-      // claims DorkOS will check again.
+      // claims DorkOS will check again, and there is no next check to wait for.
       expect(await composioError()).toBe(KEY_CHECK_COPY.stoppedChecking);
+      expect((await composioStatus())?.recheckAt).toBeUndefined();
+    });
+
+    it('reads a 404 as a wrong address only for the Nango server the person points at', async () => {
+      vi.useFakeTimers();
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      secrets.set(NANGO_SECRET_KEY_REF, 'sk-nango-test');
+      const client = scriptedComposioClient(() =>
+        Promise.reject(new ComposioApiError(404, 'Not found'))
+      );
+      const bootstrapper = makeBootstrapper({
+        composioClient: client,
+        nangoEnv: () => ({ baseUrl: 'http://localhost:3003', encryptionKey: VALID_ENCRYPTION_KEY }),
+        nangoClient: {
+          ...fakeNangoClient(),
+          listConnections: () => Promise.reject(new NangoApiError(404, 'Not found')),
+        },
+      });
+      await bootstrapper.registerBootProviders();
+      const statuses = await bootstrapper.listStatuses();
+
+      expect(statuses.find((s) => s.type === 'nango')?.error).toBe(
+        'DorkOS couldn’t reach your Nango server. It checks again on its own.'
+      );
+      // Composio's own 404 is its answer, not a wrong address.
+      expect(statuses.find((s) => s.type === 'composio')?.error).toBe(KEY_CHECK_COPY.checkingAgain);
     });
 
     it('says plainly when nothing answered at the service address', async () => {
