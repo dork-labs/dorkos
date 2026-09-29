@@ -111,7 +111,8 @@ async function probe(page: Page): Promise<Probe> {
           .map((i) => (i.textContent ?? '').trim())
           .join('\n'),
         working:
-          stopping || !!document.querySelector('[data-testid="inference-indicator-streaming"]'),
+          stopping ||
+          !!document.querySelector('[data-testid="chat-panel"][data-turn-status="streaming"]'),
       };
     });
   } catch {

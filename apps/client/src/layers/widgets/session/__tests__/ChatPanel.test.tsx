@@ -289,6 +289,20 @@ describe('ChatPanel status line', () => {
   });
 });
 
+describe('ChatPanel turn status', () => {
+  // The browser suite's "a turn is running" signal (ChatPage.turnRunning). It
+  // must follow the turn's own status exactly, both ways.
+  it('mirrors the turn status onto the panel', () => {
+    mockChatStatus = 'streaming';
+    const { rerender } = render(<ChatPanel sessionId="test" />);
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-turn-status', 'streaming');
+
+    mockChatStatus = 'idle';
+    rerender(<ChatPanel sessionId="test" />);
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-turn-status', 'idle');
+  });
+});
+
 describe('ChatPanel suggestion-chip slot', () => {
   function registerChip() {
     useExtensionRegistry.getState().register('chat.suggestion-chips', {
