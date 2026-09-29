@@ -103,6 +103,7 @@ beforeEach(() => {
       { id: 'personal', label: null, color: '#222222', implicit: false, routable: true },
       { id: 'default', label: 'Main', color: '#333333', implicit: true, routable: true },
     ],
+    usageOfAccount: () => ({ state: 'ok', windows: [] }),
   } as unknown as AccountUsageStore);
 });
 
@@ -122,6 +123,32 @@ function row(body: { accounts: Row[] }, id: string): Row {
   if (!found) throw new Error(`no row ${id}`);
   return found;
 }
+
+describe('GET /api/runtimes/claude-code/account-eligibility — the launch it would make', () => {
+  // Purpose: the picker's "Default" row names what the ladder will actually
+  // bill in this project, not the default before the rules apply.
+  it('names the next account that may work here when Main may not', async () => {
+    claudeCode().defaultAccountOnlyProjects = [other];
+    const res = await request(server)
+      .get('/api/runtimes/claude-code/account-eligibility')
+      .query({ project: dotted });
+    expect(res.status).toBe(200);
+    expect(res.body.launch).toMatchObject({ ok: true, accountId: 'work' });
+  });
+
+  // Purpose: when nothing may work here, the answer is the refusal sentence.
+  it('says why a launch would be refused when no account may work here', async () => {
+    claudeCode().defaultAccountOnlyProjects = [other];
+    claudeCode().projectAccounts = { [dotted]: { allow: [] } };
+    const res = await request(server)
+      .get('/api/runtimes/claude-code/account-eligibility')
+      .query({ project: dotted });
+    expect(res.body.launch).toEqual({
+      ok: false,
+      message: expect.stringMatching(/^No account is allowed to work in /),
+    });
+  });
+});
 
 describe('GET /api/runtimes/claude-code/account-eligibility', () => {
   it("judges every account by both rules for the folder's project", async () => {

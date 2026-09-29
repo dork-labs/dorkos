@@ -129,6 +129,29 @@ export const AccountEligibilityResponseSchema = z
     allow: z.array(z.string()).nullable(),
     /** Every Claude account, in registry order, Main last when it has no row. */
     accounts: z.array(AccountEligibilityRowSchema),
+    /**
+     * What a new chat in this folder would run on when nobody picks an account:
+     * the launch ladder's own answer (the folder's agent's account, else the
+     * default, skipping to the next account that may work here), or why it
+     * would be refused. A picker's "Default" row names this, never a guess.
+     * Absent on a server too old to say.
+     */
+    launch: z
+      .discriminatedUnion('ok', [
+        z.object({
+          ok: z.literal(true),
+          /** The account's registry id, or `default` for Main. */
+          accountId: z.string(),
+          /** The Claude folder it runs in. */
+          root: z.string(),
+        }),
+        z.object({
+          ok: z.literal(false),
+          /** The plain sentence the launch would be refused with. */
+          message: z.string(),
+        }),
+      ])
+      .optional(),
   })
   .openapi('AccountEligibilityResponse');
 

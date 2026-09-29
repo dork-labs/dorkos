@@ -11,6 +11,7 @@
  *
  * @module services/runtimes/claude-code/launch-account-check
  */
+import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import { homeOf, readHomeManifest, resolveAgentHome } from '../../core/agent-identity/index.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { resolveLaunchAccountRoot, type LaunchAccountResolution } from './claude-config-dir.js';
@@ -21,16 +22,19 @@ import { resolveLaunchAccountRoot, type LaunchAccountResolution } from './claude
  * @param opts - The folder the session runs in, and the person's pick if any.
  * @param opts.cwd - The folder the session runs in.
  * @param opts.hintId - The account the person picked for this session, if any.
+ * @param opts.project - The folder's project when the caller already resolved
+ *   it (null for none); resolved here when omitted.
  */
 export async function checkClaudeLaunchAccount(opts: {
   cwd: string;
   hintId?: string | undefined;
+  project?: ProjectRef | null;
 }): Promise<LaunchAccountResolution> {
   const home = homeOf(resolveAgentHome(opts.cwd));
   const manifest = home ? await readHomeManifest(home).catch(() => null) : null;
   return resolveLaunchAccountRoot({
     hintId: opts.hintId,
     agentAccountId: manifest?.account,
-    project: await projectOfFolder(opts.cwd),
+    project: opts.project !== undefined ? opts.project : await projectOfFolder(opts.cwd),
   });
 }

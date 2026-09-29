@@ -53,7 +53,11 @@ import {
   writeOnlyProjects,
   writeProjectAccounts,
 } from '../services/core/usage/account-eligibility-writes.js';
-import { describeClaudeCodeAccounts } from '../services/runtimes/claude-code/claude-config-dir.js';
+import {
+  describeClaudeCodeAccounts,
+  resolveLaunchAccountRoot,
+} from '../services/runtimes/claude-code/claude-config-dir.js';
+import { checkClaudeLaunchAccount } from '../services/runtimes/claude-code/launch-account-check.js';
 import { projectRegistry } from '../services/projects/project-registry.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
@@ -139,6 +143,26 @@ export function eligibilityFor(project: ProjectRef | null): AccountEligibilityRe
   return { project, allow: allow === null ? null : [...allow], accounts };
 }
 
+/**
+ * What a new chat in `folder` would run on with no account picked: the launch
+ * ladder's own answer, with the folder's agent's account, the default and the
+ * account rules all applied, or the sentence it would be refused with.
+ *
+ * @param folder - The folder the chat runs in, or undefined for none.
+ * @param project - Its project, already resolved (null for none).
+ */
+async function launchFor(
+  folder: string | undefined,
+  project: ProjectRef | null
+): Promise<AccountEligibilityResponse['launch']> {
+  const launch = folder
+    ? await checkClaudeLaunchAccount({ cwd: folder, project })
+    : resolveLaunchAccountRoot({ project });
+  return launch.ok
+    ? { ok: true, accountId: launch.accountId, root: launch.root }
+    : { ok: false, message: launch.error.message };
+}
+
 /** The Claude account ids a rule may name: every routable row, and Main. */
 function knownAccountIds(): Set<string> {
   return new Set([...listedAccounts().map((a) => a.id), IMPLICIT_ACCOUNT_ID]);
@@ -169,7 +193,10 @@ export function mountAccountEligibilityRoutes(router: Router): void {
           code: 'OUTSIDE_BOUNDARY',
         });
       }
-      return res.json(eligibilityFor(project));
+      return res.json({
+        ...eligibilityFor(project),
+        launch: await launchFor(parsed.data.project, project),
+      });
     } catch (err) {
       logger.error('[Runtimes] could not read account eligibility', { err: String(err) });
       return res.status(500).json({ error: 'Could not read which accounts may work here.' });

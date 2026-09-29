@@ -84,12 +84,23 @@ function canonicalList(
  * shape reads as absent rather than failing a launch.
  *
  * @param claudeCode - The stored `runtimes.claudeCode` block, or anything.
- * @param canonical - The canonical spelling of a folder (real path).
+ * @param realCanonical - The canonical spelling of a folder (real path).
  */
 export function readEligibilityRules(
   claudeCode: unknown,
-  canonical: (dir: string) => string = canonicalDirectory
+  realCanonical: (dir: string) => string = canonicalDirectory
 ): EligibilityRules {
+  // One real-path lookup per distinct root for this read, however many rules
+  // name it: every check re-reads the config, so this runs on every launch.
+  const seen = new Map<string, string>();
+  const canonical = (dir: string): string => {
+    let known = seen.get(dir);
+    if (known === undefined) {
+      known = realCanonical(dir);
+      seen.set(dir, known);
+    }
+    return known;
+  };
   const block = isRecord(claudeCode) ? claudeCode : {};
   const onlyProjectsById = new Map<string, readonly string[] | null>();
   const rows = Array.isArray(block.accounts) ? block.accounts : [];

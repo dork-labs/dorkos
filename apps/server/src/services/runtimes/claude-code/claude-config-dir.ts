@@ -439,7 +439,7 @@ export function resolveLaunchAccountRoot(opts: {
   }
   // The automatic choice may not work here: the next eligible account runs it.
   const candidates = [
-    ...launchFallbackOrder('claude-code', project),
+    ...launchFallbackOrder('claude-code', project, config),
     ...accounts
       .filter((account) => account.id !== IMPLICIT_ACCOUNT_ID)
       .map((account) => account.id),
@@ -447,7 +447,9 @@ export function resolveLaunchAccountRoot(opts: {
   ];
   const [next] = eligibleAccountIds(config, 'claude-code', [...new Set(candidates)], project);
   if (next !== undefined) {
-    const row = findRegisteredAccount(accounts, next);
+    // `default` is always the machine root itself, as rungs 1-2 spell it, never
+    // a row the `'0.87.0'` rename left carrying the old name.
+    const row = next === IMPLICIT_ACCOUNT_ID ? undefined : findRegisteredAccount(accounts, next);
     return {
       ok: true,
       root: row ? row.path : machineDefaultClaudeRoot(config),

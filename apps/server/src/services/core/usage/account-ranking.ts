@@ -40,6 +40,7 @@ import {
   joinNames,
   projectOfFolder,
   refusalFor,
+  type EligibilityConfigReader,
   type Ineligible,
 } from './account-eligibility.js';
 import { getAccountUsageStore } from './current-usage-store.js';
@@ -113,20 +114,28 @@ interface Candidate {
 }
 
 /** Whether an account may work in the project (spec `flow-multiproject` §8.2). */
-function mayWorkIn(account: RuntimeAccount, project: ProjectRef | null): boolean {
-  return accountEligibility(configManager, account.runtime, account.id, project).eligible;
+function mayWorkIn(
+  account: RuntimeAccount,
+  project: ProjectRef | null,
+  config: EligibilityConfigReader = configManager
+): boolean {
+  return accountEligibility(config, account.runtime, account.id, project).eligible;
 }
 
 /**
  * The routable accounts of one runtime that may work in the project, in
  * registry order, each with its usage.
  */
-function candidatesOf(runtime: string, project: ProjectRef | null): Candidate[] {
+function candidatesOf(
+  runtime: string,
+  project: ProjectRef | null,
+  config: EligibilityConfigReader = configManager
+): Candidate[] {
   const store = getAccountUsageStore();
   if (!store || !isLedgerRuntime(runtime)) return [];
   return store
     .listAccounts(runtime)
-    .filter((account) => account.routable && mayWorkIn(account, project))
+    .filter((account) => account.routable && mayWorkIn(account, project, config))
     .map((account) => ({ account, usage: store.usageOfAccount(account) }));
 }
 
@@ -183,8 +192,12 @@ function headroom(usage: AccountUsage, key: string): number | null {
  * unless its usage reads `limited`; eligible first by weekly headroom (unknown
  * after known), then 5-hour headroom, then registry order; ineligible after.
  */
-function defaultRanking(ctx: AdvisorContext, project: ProjectRef | null): AccountRanking {
-  const rows = candidatesOf(ctx.runtime, project)
+function defaultRanking(
+  ctx: AdvisorContext,
+  project: ProjectRef | null,
+  config: EligibilityConfigReader = configManager
+): AccountRanking {
+  const rows = candidatesOf(ctx.runtime, project, config)
     .filter(({ account }) => account.id !== ctx.excludeAccountId)
     .map(({ account, usage }, order) => {
       const eligible = usage.state !== 'limited';
@@ -306,9 +319,14 @@ export async function rankAccounts(ctx: AdvisorContext): Promise<AccountRanking>
  *
  * @param runtime - The runtime.
  * @param project - The launch's project, or null for no project.
+ * @param config - Where the rules live: the ladder passes its own reader.
  */
-export function launchFallbackOrder(runtime: string, project: ProjectRef | null): string[] {
-  return defaultRanking({ purpose: 'launch', caller: 'person', cwd: '', runtime }, project)
+export function launchFallbackOrder(
+  runtime: string,
+  project: ProjectRef | null,
+  config: EligibilityConfigReader = configManager
+): string[] {
+  return defaultRanking({ purpose: 'launch', caller: 'person', cwd: '', runtime }, project, config)
     .accounts.filter((row) => row.runtime === runtime)
     .map((row) => row.id);
 }

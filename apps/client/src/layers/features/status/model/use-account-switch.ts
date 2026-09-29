@@ -67,6 +67,12 @@ export interface AccountSwitch {
    * can draw its dot and usage. `undefined` exactly when the label is.
    */
   defaultPath: string | undefined;
+  /**
+   * Why a send with no account picked would be refused here (no account the
+   * folder's agent or the default names may work in this project, and none
+   * other may either), in the server's words; undefined otherwise.
+   */
+  defaultRefusal: string | undefined;
   /** Hold an account (or the sentinel) as this session's launch hint. */
   choose: (value: string) => void;
   /**
@@ -109,8 +115,13 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
   // The agent the launch would resolve against — same directory, same query the
   // agent surfaces read, so this cannot disagree with the profile.
   const agentQuery = useCurrentAgent(selectedCwd);
-  // Which accounts may work in this folder's project; silent until the server says.
-  const eligibility = useAccountEligibility(selectedCwd);
+  // Which accounts may work in this folder's project, and what the ladder would
+  // actually launch on here; silent until the server says. Asked again when the
+  // agent's account or the server default changes.
+  const eligibility = useAccountEligibility(selectedCwd, [
+    agentQuery.data?.account ?? null,
+    resolvedAccount ?? null,
+  ]);
 
   const selectable = accounts.filter((account): account is SelectableAccount =>
     Boolean(account.id)
@@ -146,17 +157,26 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
     if (staleHint) setPendingAccount(null);
   }, [staleHint, setPendingAccount]);
 
-  const defaultPath = resolveDefaultPath({
-    resolvedAccount,
-    selectable,
-    // With no working directory there is no agent to pin anything, so the
-    // server default IS the ladder's answer and can be named right away. With
-    // one, the manifest read has to have landed first — the query is disabled
-    // without a path, so its pending state would otherwise never resolve and
-    // the row would read a bare "Default" forever.
-    agentAccountId: selectedCwd ? agentQuery.data?.account : undefined,
-    agentKnown: !selectedCwd || agentQuery.isSuccess,
-  });
+  // The server's own ladder answer wins: it knows the account rules, so it names
+  // the account a send will really bill in this project (spec
+  // `flow-multiproject` §8.4). The client-side guess below is for a server too
+  // old to say.
+  const launch = eligibility.launch;
+  const defaultPath = launch
+    ? launch.ok
+      ? launch.root
+      : undefined
+    : resolveDefaultPath({
+        resolvedAccount,
+        selectable,
+        // With no working directory there is no agent to pin anything, so the
+        // server default IS the ladder's answer and can be named right away. With
+        // one, the manifest read has to have landed first — the query is disabled
+        // without a path, so its pending state would otherwise never resolve and
+        // the row would read a bare "Default" forever.
+        agentAccountId: selectedCwd ? agentQuery.data?.account : undefined,
+        agentKnown: !selectedCwd || agentQuery.isSuccess,
+      });
 
   return {
     accounts: selectable,
@@ -164,6 +184,7 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
     isMultiAccount,
     defaultLabel: defaultPath ? nameFor(defaultPath) : undefined,
     defaultPath,
+    defaultRefusal: launch && !launch.ok ? launch.message : undefined,
     choose: (value: string) =>
       setPendingAccount(value === DEFAULT_ACCOUNT_VALUE ? null : { id: value, sessionId }),
     notAllowedReason: eligibility.reasonFor,

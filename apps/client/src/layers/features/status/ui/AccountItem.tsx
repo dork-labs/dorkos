@@ -193,7 +193,13 @@ function AccountPicker({
           onValueChange={accountSwitch.choose}
           aria-describedby={noteId}
         >
-          <ResponsiveDropdownMenuRadioItem value={DEFAULT_ACCOUNT_VALUE}>
+          {/* With no account picked, the server's ladder decides. When nothing
+              it would pick may work in this project, say so here, in its words,
+              rather than let a send be refused (spec flow-multiproject §8.3). */}
+          <ResponsiveDropdownMenuRadioItem
+            value={DEFAULT_ACCOUNT_VALUE}
+            description={accountSwitch.defaultRefusal}
+          >
             <AccountMenuRow
               label={
                 accountSwitch.defaultLabel ? `Default: ${accountSwitch.defaultLabel}` : 'Default'

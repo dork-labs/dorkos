@@ -526,3 +526,44 @@ describe('AccountItem before launch — accounts this project may not use (spec 
     await waitFor(() => expect(useAppStore.getState().pendingAccount).toBeNull());
   });
 });
+
+describe('AccountItem before launch — the Default row names what the ladder will bill here', () => {
+  // Purpose: the server's ladder knows the account rules, so when the default
+  // may not work in this project the row names the account a send really
+  // bills, not the default (spec flow-multiproject §8.4).
+  it('names the account the server says a send would run on', async () => {
+    mockServerConfig = withAccounts(ACME.path);
+    mockEligibility = {
+      project: { root: '/work/project', name: 'project' },
+      allow: null,
+      accounts: [],
+      launch: { ok: true, accountId: 'personal', root: PERSONAL.path },
+    };
+    render(<Chip />);
+    await waitFor(() => expect(accountGroup()).toHaveTextContent('Default: Personal'));
+    expect(accountGroup()).not.toHaveTextContent('Default: Acme Corp');
+  });
+
+  // Purpose: when nothing may work here, the row says why a send would be
+  // refused, in the server's own words, instead of naming an account.
+  it('says why a send with no pick would be refused', async () => {
+    mockServerConfig = withAccounts();
+    mockEligibility = {
+      project: { root: '/work/project', name: 'project' },
+      allow: [],
+      accounts: [],
+      launch: {
+        ok: false,
+        message:
+          'No account is allowed to work in project. Choose which accounts it may use in Settings → Runtimes.',
+      },
+    };
+    render(<Chip />);
+    await waitFor(() =>
+      expect(within(accountGroup()).getAllByTestId('radio-description')[0]).toHaveTextContent(
+        'No account is allowed to work in project.'
+      )
+    );
+    expect(accountGroup()).not.toHaveTextContent('Default: Personal');
+  });
+});
