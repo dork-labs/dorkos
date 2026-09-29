@@ -6582,13 +6582,13 @@
       "id": "260926-141753",
       "slug": "claude-account-usage-ledger",
       "title": "DorkOS keeps usage per Claude account in a shared ledger it merges by observation time",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-26",
       "extractedFrom": "claude-account-fleet",
       "specSlug": "claude-account-fleet",
       "supersedes": null,
       "affects": [
-        "apps/server/src/services/runtimes/claude-code/accounts/account-usage-store.ts",
+        "apps/server/src/services/core/usage/account-usage-store.ts",
         "packages/shared/src/account-usage.ts"
       ]
     },
@@ -6596,7 +6596,7 @@
       "id": "260926-141755",
       "slug": "account-limit-as-session-field",
       "title": "A hard usage limit is a field on the session status, not a new lifecycle value",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-26",
       "extractedFrom": "claude-account-fleet",
       "specSlug": "claude-account-fleet",
@@ -6609,14 +6609,14 @@
     {
       "id": "260926-141756",
       "slug": "account-launch-guard-seam",
-      "title": "Account routing policy belongs to an extension; core only asks its launch guards",
-      "status": "draft",
+      "title": "Account routing policy belongs to an extension; core only asks its account advisor",
+      "status": "accepted",
       "created": "2026-09-26",
       "extractedFrom": "claude-account-fleet",
       "specSlug": "claude-account-fleet",
       "supersedes": null,
       "affects": [
-        "apps/server/src/services/runtimes/claude-code/accounts/account-launch-guard.ts",
+        "apps/server/src/services/core/usage/account-advisor.ts",
         "packages/extension-api/src/server-extension-api.ts"
       ]
     },
@@ -6776,6 +6776,7 @@
       "extractedFrom": null,
       "specSlug": null,
       "supersedes": null,
+      "amends": ["260924-213416"],
       "affects": [
         "apps/server/src/services/core/agent-observation/outside-change-observer.ts",
         "apps/server/src/services/tasks/approvals/agent-execution-observer.ts",
