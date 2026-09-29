@@ -5,6 +5,12 @@ covers:
   - 'fix(extensions): vouch for the whole plugin folder, check it at every load, and never stall on a hung extension (DOR-2527)'
   - 'fix(extensions): run origin-trusted copies from a verified snapshot, cache folder digests, and dispose a hung start (DOR-2527)'
   - 'fix(extensions): pin "Stop trusting" to each copy''s digest and run it from its snapshot (DOR-2527)'
+  # This branch was stacked on DOR-2522's own commits, which main took as one
+  # squashed PR (#2326) whose entry already shipped in v0.92.0.
+  - 'feat(server): know every project by one short name, and every item a chat works on (DOR-2522)'
+  - "fix(server): keep the live session stream off git, and trackerItem to this chat's own run (DOR-2522)"
+  - 'fix(server): keep outside repositories and extension-named folders out of the project list (DOR-2522)'
+  - 'fix(server): hold the project cap under bursts, and answer null on a storage clash (DOR-2522)'
 ---
 
 ### Changed
