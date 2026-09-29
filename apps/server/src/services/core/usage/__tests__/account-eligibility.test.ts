@@ -7,7 +7,7 @@
  * on `readEligibilityRules` + `judgeEligibility` with an identity `canonical`;
  * the canonicalization cases use real temporary folders and the real step.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { notAllowedReason } from '../account-ranking.js';
 import { mkdtemp, mkdir, rm, symlink, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,6 +18,7 @@ import {
   accountEligibility,
   assertAccountEligible,
   describeAccountRefusal,
+  warnMalformedAccountRules,
   eligibleAccountIds,
   judgeEligibility,
   onlyProjectsOf,
@@ -445,5 +446,38 @@ describe('the refusal (spec §8.3)', () => {
   it('does nothing for an eligible account', () => {
     // Purpose: the assertion is silent on the allowed path.
     expect(() => assertAccountEligible(config({}), 'claude-code', 'work', DORK)).not.toThrow();
+  });
+});
+
+describe('malformed hand-edited rules', () => {
+  // Purpose: a rule dropped as malformed is said once at boot, naming each path,
+  // and a well-formed config says nothing.
+  it('warns once, naming each malformed rule', () => {
+    const warn = vi.fn();
+    const config = {
+      get: () => ({
+        claudeCode: {
+          defaultAccountOnlyProjects: 'client-app',
+          accounts: [
+            { id: 'work', onlyProjects: [''] },
+            { id: 'ok', onlyProjects: null },
+          ],
+          projectAccounts: { '/w/a': {}, '/w/b': { allow: ['work'] } },
+        },
+      }),
+    };
+    expect(warnMalformedAccountRules(config, warn)).toEqual([
+      'runtimes.claudeCode.defaultAccountOnlyProjects',
+      'runtimes.claudeCode.accounts.0.onlyProjects',
+      'runtimes.claudeCode.projectAccounts["/w/a"]',
+    ]);
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    const quiet = vi.fn();
+    warnMalformedAccountRules(
+      { get: () => ({ claudeCode: { projectAccounts: { '/w/b': { allow: ['work'] } } } }) },
+      quiet
+    );
+    expect(quiet).not.toHaveBeenCalled();
   });
 });

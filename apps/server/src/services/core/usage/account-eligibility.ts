@@ -289,6 +289,74 @@ export interface NoneEligible {
 export type AccountRefusalDetail = Ineligible | NoneEligible;
 
 /**
+ * The account rules in a stored `runtimes.claudeCode` block that are NOT the
+ * shape a writer would store, and so read as "no rule" (a hand edit): Main's
+ * rule, each row's `onlyProjects`, and each `projectAccounts` entry. Pure.
+ *
+ * @param claudeCode - The stored `runtimes.claudeCode` block, or anything.
+ * @returns The dot-paths of the malformed rules, empty when all are well formed.
+ */
+export function malformedAccountRules(claudeCode: unknown): string[] {
+  if (!isRecord(claudeCode)) return [];
+  const out: string[] = [];
+  const isRootList = (value: unknown) =>
+    value === null ||
+    value === undefined ||
+    (Array.isArray(value) && value.every((root) => typeof root === 'string' && root.length > 0));
+  if (!isRootList(claudeCode.defaultAccountOnlyProjects)) {
+    out.push('runtimes.claudeCode.defaultAccountOnlyProjects');
+  }
+  if (Array.isArray(claudeCode.accounts)) {
+    claudeCode.accounts.forEach((row, index) => {
+      if (isRecord(row) && !isRootList(row.onlyProjects)) {
+        out.push(`runtimes.claudeCode.accounts.${index}.onlyProjects`);
+      }
+    });
+  }
+  const projectAccounts = claudeCode.projectAccounts;
+  if (projectAccounts !== undefined && !isRecord(projectAccounts)) {
+    out.push('runtimes.claudeCode.projectAccounts');
+  } else if (isRecord(projectAccounts)) {
+    for (const [root, rule] of Object.entries(projectAccounts)) {
+      const allow = isRecord(rule) ? rule.allow : undefined;
+      const ok =
+        Array.isArray(allow) && allow.every((id) => typeof id === 'string' && id.length > 0);
+      if (!ok) out.push(`runtimes.claudeCode.projectAccounts[${JSON.stringify(root)}]`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Say once, at boot, which hand-edited account rules are malformed and so read
+ * as "no rule": the loader keeps the file rather than refusing it, and a
+ * person who meant a rule must be able to find out it is not in force.
+ *
+ * @param config - Where the rules live.
+ * @param warn - Where the warning goes (the logger; tests pass a spy).
+ * @returns The malformed paths it warned about.
+ */
+export function warnMalformedAccountRules(
+  config: EligibilityConfigReader,
+  warn: (message: string, meta: Record<string, unknown>) => void
+): string[] {
+  let block: unknown;
+  try {
+    block = (config.get('runtimes') as { claudeCode?: unknown } | undefined)?.claudeCode;
+  } catch {
+    return [];
+  }
+  const paths = malformedAccountRules(block);
+  if (paths.length > 0) {
+    warn(
+      '[accounts] Some account rules in config.json are not in the right shape, so DorkOS reads them as no rule (any project, every account). Set them again in Settings → Runtimes.',
+      { paths }
+    );
+  }
+  return paths;
+}
+
+/**
  * The plain sentence for a refusal (spec `flow-multiproject` §8.3).
  *
  * @param project - The project the work was for, or null.
