@@ -141,22 +141,77 @@ async function openChatAccess(page: Page, chat: ChatWithAgentAccess) {
   return { group, row, reload };
 }
 
+/**
+ * Arrange a pending hosted acknowledgement of this agent's own access, without
+ * a live hosted account: the provider switched to managed mode and one pending
+ * command in the outbox. A persistence/status fixture, not a proof of hosted
+ * delivery.
+ *
+ * @returns The fixture command's id, for {@link removePendingHostedUpdate}.
+ */
+function arrangePendingHostedUpdate(db: Database.Database, chat: ChatWithAgentAccess): string {
+  const commandId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO connector_managed_authority_outbox
+    (command_id, connection_id, provider_instance_id, execution_config_generation,
+     owner_kind, owner_id, managed_connection_id, scope_kind, subject_id, scope_version,
+     request_hash, request_json, state, next_attempt_at, created_at, updated_at)
+    SELECT ?, c.id, p.id, p.execution_config_generation, p.owner_kind, p.owner_id,
+      c.external_account_ref, 'agent_grants', ?, 1,
+      'browser-status-fixture', '{}', 'pending', '2099-01-01T00:00:00.000Z', ?, ?
+    FROM connections c JOIN connector_provider_instances p ON p.id = c.provider_instance_id
+    WHERE c.id = ?`
+  ).run(commandId, chat.agentId, now, now, chat.connectionId);
+  db.prepare(
+    `INSERT INTO connector_managed_authority_scopes
+    (managed_connection_id, scope_kind, subject_id, scope_version, last_command_id,
+      last_command_hash, updated_at)
+    SELECT external_account_ref, 'agent_grants', ?, 1, ?,
+      'browser-status-fixture', ? FROM connections WHERE id = ?`
+  ).run(chat.agentId, commandId, now, chat.connectionId);
+  db.prepare(
+    `UPDATE connector_provider_instances SET mode = 'managed'
+    WHERE id = (SELECT provider_instance_id FROM connections WHERE id = ?)`
+  ).run(chat.connectionId);
+  return commandId;
+}
+
+/**
+ * Undo {@link arrangePendingHostedUpdate}, so neither a retry nor a later test
+ * inherits a managed-mode provider or a pending hosted update.
+ */
+function removePendingHostedUpdate(
+  db: Database.Database,
+  chat: ChatWithAgentAccess,
+  commandId: string
+): void {
+  db.prepare(`DELETE FROM connector_managed_authority_scopes WHERE last_command_id = ?`).run(
+    commandId
+  );
+  db.prepare(`DELETE FROM connector_managed_authority_outbox WHERE command_id = ?`).run(commandId);
+  db.prepare(
+    `UPDATE connector_provider_instances SET mode = 'byo'
+    WHERE id = (SELECT provider_instance_id FROM connections WHERE id = ?)`
+  ).run(chat.connectionId);
+}
+
 /** Register the chat (session) access tests inside the credential-sequential Connections spec. */
 export function registerSessionAccessTests(harness: SessionAccessHarness): void {
-  // Two tests, not one, on purpose. As one test this ran six full page reloads
-  // (2–4 s each on a CI runner, plus reopening the right panel) behind an 8 s
-  // chat setup, and its traces show every step succeeding in turn until the
-  // 30 s budget ran out wherever the test happened to be — reopening the panel
-  // after the fifth reload, or waiting for the access dialog to settle. Each
-  // half below does at most three reloads.
+  // Three tests, not one, on purpose. As one test this ran six full page
+  // reloads behind a chat setup of about 6.5 s. The merge-queue traces
+  // (runs 36553260921, 36568080454) put each reload at 2.2–3.7 s on a CI
+  // runner, plus 1.0–1.6 s to reopen the right panel, and show every step
+  // succeeding in turn until the 30 s budget ran out wherever the test
+  // happened to be. So every fixture a test can arrange before the chat opens
+  // is arranged then, and no test below reloads more than once.
   test.describe('Connections — session access status', () => {
-    test('explains a chat’s retained chat-only access, when it is turned off, and while an update is pending', async ({
+    test('explains a chat’s retained chat-only access, and when it is turned off', async ({
       page,
       request,
     }) => {
       const chat = await arrangeChatWithAgentAccess(harness, request);
       const db = new Database(harness.databasePath);
-      let commandId: string | null = null;
       try {
         // Arranged before the chat opens, so the first read already sees it.
         insertChatOnlyAccess(db, chat);
@@ -179,70 +234,41 @@ export function registerSessionAccessTests(harness: SessionAccessHarness): void 
 
         db.prepare(
           `UPDATE session_connection_overrides SET state = 'detached'
-        WHERE session_id = ? AND connection_id = ?`
+          WHERE session_id = ? AND connection_id = ?`
         ).run(chat.sessionId, chat.connectionId);
         await reload();
         await expect(row.getByText('Not available')).toBeVisible();
         await expect(row.getByText('Turned off for this chat.')).toBeVisible();
+      } finally {
+        removeChatOnlyAccess(db, chat);
+        db.close();
+      }
+    });
 
-        // Arrange a pending hosted acknowledgement of this agent's own access
-        // without a live hosted account. This is a persistence/status fixture,
-        // not a proof of hosted delivery.
-        commandId = crypto.randomUUID();
-        const now = new Date().toISOString();
-        db.prepare(
-          `INSERT INTO connector_managed_authority_outbox
-        (command_id, connection_id, provider_instance_id, execution_config_generation,
-         owner_kind, owner_id, managed_connection_id, scope_kind, subject_id, scope_version,
-         request_hash, request_json, state, next_attempt_at, created_at, updated_at)
-        SELECT ?, c.id, p.id, p.execution_config_generation, p.owner_kind, p.owner_id,
-          c.external_account_ref, 'agent_grants', ?, 1,
-          'browser-status-fixture', '{}', 'pending', '2099-01-01T00:00:00.000Z', ?, ?
-        FROM connections c JOIN connector_provider_instances p ON p.id = c.provider_instance_id
-        WHERE c.id = ?`
-        ).run(commandId, chat.agentId, now, now, chat.connectionId);
-        db.prepare(
-          `INSERT INTO connector_managed_authority_scopes
-        (managed_connection_id, scope_kind, subject_id, scope_version, last_command_id,
-          last_command_hash, updated_at)
-        SELECT external_account_ref, 'agent_grants', ?, 1, ?,
-          'browser-status-fixture', ? FROM connections WHERE id = ?`
-        ).run(chat.agentId, commandId, now, chat.connectionId);
-        db.prepare(
-          `UPDATE connector_provider_instances SET mode = 'managed'
-        WHERE id = (SELECT provider_instance_id FROM connections WHERE id = ?)`
-        ).run(chat.connectionId);
-        db.prepare(
-          `UPDATE session_connection_overrides SET state = 'attached'
-        WHERE session_id = ? AND connection_id = ?`
-        ).run(chat.sessionId, chat.connectionId);
-        await reload();
+    test('says a chat’s app is not available while a hosted access update is pending, and allowed once it applies', async ({
+      page,
+      request,
+    }) => {
+      const chat = await arrangeChatWithAgentAccess(harness, request);
+      const db = new Database(harness.databasePath);
+      let commandId: string | null = null;
+      try {
+        // Both arranged before the chat opens, so the first read sees them.
+        insertChatOnlyAccess(db, chat);
+        commandId = arrangePendingHostedUpdate(db, chat);
+        const { row, reload } = await openChatAccess(page, chat);
         await expect(row.getByText('Not available')).toBeVisible();
         await expect(row.getByText('Updating who can use it…')).toBeVisible();
         await expect(row.getByText(/actions available/)).toHaveCount(0);
 
         db.prepare(
           `UPDATE connector_managed_authority_outbox SET state = 'applied'
-        WHERE command_id = ?`
+          WHERE command_id = ?`
         ).run(commandId);
         await reload();
         await expect(row.getByText('Allowed only in this session')).toBeVisible();
       } finally {
-        // Put everything back even when an assertion above failed, so neither a
-        // retry nor a later test inherits a managed-mode provider or a pending
-        // hosted update.
-        if (commandId) {
-          db.prepare(
-            `DELETE FROM connector_managed_authority_scopes WHERE last_command_id = ?`
-          ).run(commandId);
-          db.prepare(`DELETE FROM connector_managed_authority_outbox WHERE command_id = ?`).run(
-            commandId
-          );
-          db.prepare(
-            `UPDATE connector_provider_instances SET mode = 'byo'
-          WHERE id = (SELECT provider_instance_id FROM connections WHERE id = ?)`
-          ).run(chat.connectionId);
-        }
+        if (commandId) removePendingHostedUpdate(db, chat, commandId);
         removeChatOnlyAccess(db, chat);
         db.close();
       }
