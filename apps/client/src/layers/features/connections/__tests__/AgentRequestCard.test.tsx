@@ -681,6 +681,79 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
     });
   });
 
+  /** Allow, pick "New email", send: the answer carries exactly this update. */
+  async function answerWithUpdates(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
+    await user.click(await screen.findByRole('option', { name: 'New email' }));
+    const send = screen.getByRole('button', { name: 'Send updates' });
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+  }
+
+  const PICKED_UPDATES = {
+    decision: 'current_access',
+    connectionId: 'connection-1',
+    eventScopes: [
+      {
+        connectionId: 'connection-1',
+        definitionId: 'definition-1',
+        filter: {},
+        agentId: 'agent-bo',
+        destination: { kind: 'agent', id: 'agent-bo' },
+      },
+    ],
+  };
+
+  it('resends the same updates after turning the app on for this chat', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    vi.mocked(transport.resolveConnectorAgentRequest)
+      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'session_access_off' }))
+      .mockResolvedValueOnce({ ...EVENT_REQUEST, status: 'granted' } as never);
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue(chatTurnedOff(true));
+    vi.mocked(transport.setSessionConnectorAccess).mockResolvedValue({
+      sessionId: EVENT_REQUEST.sessionId,
+      agentId: 'agent-bo',
+      connections: [],
+    });
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+
+    await answerWithUpdates(user);
+    await user.click(await screen.findByRole('button', { name: 'Turn on for this chat' }));
+
+    await waitFor(() => expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(2));
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenNthCalledWith(
+      1,
+      'request-1',
+      PICKED_UPDATES
+    );
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenNthCalledWith(
+      2,
+      'request-1',
+      PICKED_UPDATES
+    );
+  });
+
+  it('resends the same updates on Try again', async () => {
+    const user = userEvent.setup();
+    const transport = updatesTransport();
+    vi.mocked(transport.resolveConnectorAgentRequest)
+      .mockRejectedValueOnce(new Error('network dropped'))
+      .mockResolvedValueOnce({ ...EVENT_REQUEST, status: 'granted' } as never);
+    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
+
+    await answerWithUpdates(user);
+    await user.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    await waitFor(() => expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(2));
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenNthCalledWith(
+      2,
+      'request-1',
+      PICKED_UPDATES
+    );
+  });
+
   it('can leave updates out and still answer the access', async () => {
     const user = userEvent.setup();
     const transport = updatesTransport();
