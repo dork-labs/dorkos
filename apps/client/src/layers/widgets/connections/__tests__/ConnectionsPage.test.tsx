@@ -129,6 +129,24 @@ describe('ConnectionsPage', () => {
     await waitFor(() => expect(nextSearch()).toMatchObject({ flow: 'flow-1' }));
   });
 
+  it('says so on the page when a row’s Sign in again can’t start, instead of failing silently', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([summary()]);
+    vi.mocked(transport.reconnectConnectorConnection).mockRejectedValue(
+      Object.assign(new Error('provider unavailable'), { code: 'authentication_unavailable' })
+    );
+    renderPage(transport);
+
+    const [row] = await screen.findAllByTestId(/^app-row-/);
+    await user.click(within(row!).getByRole('button', { name: 'Sign in again: Notion' }));
+
+    expect(await screen.findByTestId('row-action-error')).toHaveTextContent(
+      'Sign-in isn’t available for this app right now.'
+    );
+    // The row keeps its one fix, so pressing it again is the way on.
+    expect(within(row!).getByRole('button', { name: 'Sign in again: Notion' })).toBeEnabled();
+  });
+
   it('opens the side panel a link names, as a dialog with the app’s name', async () => {
     route.search = { app: 'c-notion' };
     const transport = transportWith([summary()]);

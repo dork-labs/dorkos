@@ -887,8 +887,15 @@
     {
       "idx": 126,
       "version": "6",
-      "when": 1790656821738,
-      "tag": "0126_known_projects",
+      "when": 1790656592708,
+      "tag": "0126_connection_paused_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "6",
+      "when": 1790661468545,
+      "tag": "0127_known_projects",
       "breakpoints": true
     }
   ]

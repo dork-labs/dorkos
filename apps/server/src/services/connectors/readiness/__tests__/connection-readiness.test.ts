@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONNECT_ANOTHER_WAY_COPY,
   CONNECTION_READINESS_COPY,
+  WAY_CHECKING_COPY,
   TURN_ON_FOR_THIS_CHAT_COPY,
   WAY_RECHECK_COPY,
 } from '@dorkos/shared/connector-schemas';
@@ -41,7 +42,20 @@ describe('deriveConnectionReadiness truth table', () => {
     [string, Partial<ConnectionReadinessFacts>, string, string, string | undefined, string?]
   > = [
     [
-      '1 disconnected, nothing owed, way up',
+      '1 closed because the service no longer has the account',
+      {
+        lifecycle: 'disconnected',
+        externalCleanup: 'not_required',
+        closedBecause: 'service_gone',
+        mode: 'managed',
+      },
+      'gone',
+      'gone_at_service',
+      'connect_new',
+      'person',
+    ],
+    [
+      '2 disconnected, nothing owed, way up',
       { lifecycle: 'disconnected', externalCleanup: 'complete' },
       'gone',
       'disconnected',
@@ -49,7 +63,7 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '1 disconnected, not required',
+      '2 disconnected, not required',
       { lifecycle: 'disconnected', externalCleanup: 'not_required' },
       'gone',
       'disconnected',
@@ -57,7 +71,7 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '2 disconnected, nothing owed, way down',
+      '3 disconnected, nothing owed, way down',
       {
         lifecycle: 'disconnected',
         externalCleanup: 'complete',
@@ -69,7 +83,7 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '3 disconnect retrying, way up',
+      '4 disconnect retrying through the DorkOS account, way up',
       {
         lifecycle: 'disconnected',
         externalCleanup: 'pending',
@@ -82,13 +96,21 @@ describe('deriveConnectionReadiness truth table', () => {
       'dorkos',
     ],
     [
-      '4 disconnect retrying, DorkOS account not answering',
+      '4 own-key disconnect DorkOS retries on its own, way up',
+      { lifecycle: 'disconnected', externalCleanup: 'pending', cleanupRetryAt: RETRY_AT },
+      'gone',
+      'disconnect_finishing',
+      'retry',
+      'dorkos',
+    ],
+    [
+      '5 disconnect owed, DorkOS account being re-checked',
       {
         lifecycle: 'disconnected',
         externalCleanup: 'pending',
         mode: 'managed',
         authoritySync: { status: 'pending' },
-        way: down('dorkos_account_unavailable'),
+        way: { ...down('dorkos_account_unavailable'), nextCheckAt: RETRY_AT },
       },
       'gone',
       'disconnect_finishing',
@@ -96,15 +118,27 @@ describe('deriveConnectionReadiness truth table', () => {
       'dorkos',
     ],
     [
-      '5 disconnect owed, own key gone',
-      { lifecycle: 'disconnected', externalCleanup: 'failed', way: down('own_key_unavailable') },
+      '5 disconnect owed, own key being checked right now',
+      {
+        lifecycle: 'disconnected',
+        externalCleanup: 'pending',
+        way: { ...down('own_key_unavailable'), checking: true },
+      },
+      'gone',
+      'disconnect_finishing',
+      'wait',
+      'dorkos',
+    ],
+    [
+      '6 disconnect owed, own key refused or removed',
+      { lifecycle: 'disconnected', externalCleanup: 'pending', way: down('own_key_unavailable') },
       'gone',
       'disconnect_stuck',
       'fix_key',
       'person',
     ],
     [
-      '6 disconnect owed, DorkOS account unlinked (sync failed)',
+      '7 disconnect owed, DorkOS account unlinked (sync failed)',
       {
         lifecycle: 'disconnected',
         externalCleanup: 'pending',
@@ -114,10 +148,11 @@ describe('deriveConnectionReadiness truth table', () => {
       },
       'gone',
       'disconnect_stuck',
-      undefined,
+      'remove',
+      'person',
     ],
     [
-      '6 disconnect owed, DorkOS account unlinked (still pending)',
+      '7 disconnect owed, DorkOS account unlinked (still pending)',
       {
         lifecycle: 'disconnected',
         externalCleanup: 'pending',
@@ -127,32 +162,41 @@ describe('deriveConnectionReadiness truth table', () => {
       },
       'gone',
       'disconnect_stuck',
-      undefined,
+      'remove',
+      'person',
     ],
     [
-      '6 disconnect owed, way unreachable',
-      { lifecycle: 'disconnected', externalCleanup: 'failed', way: down('unreachable') },
+      '7 disconnect owed, DorkOS account unavailable and no longer re-checked',
+      {
+        lifecycle: 'disconnected',
+        externalCleanup: 'pending',
+        mode: 'managed',
+        authoritySync: { status: 'pending' },
+        way: down('dorkos_account_unavailable'),
+      },
       'gone',
       'disconnect_stuck',
-      undefined,
+      'remove',
+      'person',
+    ],
+    [
+      '7 disconnect owed, way unreachable',
+      { lifecycle: 'disconnected', externalCleanup: 'pending', way: down('unreachable') },
+      'gone',
+      'disconnect_stuck',
+      'remove',
+      'person',
     ],
     [
       '7 closed by a new DorkOS account link',
       { lifecycle: 'disconnected', externalCleanup: 'unknown', mode: 'managed' },
       'gone',
       'disconnect_stuck',
-      undefined,
-    ],
-    [
-      '8 disconnect failed, own key works',
-      { lifecycle: 'disconnected', externalCleanup: 'failed' },
-      'gone',
-      'disconnect_failed',
-      'retry',
+      'remove',
       'person',
     ],
     [
-      '8 disconnect refused, relinked',
+      '7 disconnect refused by the service, way up',
       {
         lifecycle: 'disconnected',
         externalCleanup: 'pending',
@@ -160,20 +204,28 @@ describe('deriveConnectionReadiness truth table', () => {
         authoritySync: { status: 'failed', reason: 'Refused.' },
       },
       'gone',
-      'disconnect_failed',
-      'retry',
+      'disconnect_stuck',
+      'remove',
       'person',
     ],
     [
-      '8 own key cleanup unknown',
+      '7 own-key cleanup out of tries',
+      { lifecycle: 'disconnected', externalCleanup: 'failed' },
+      'gone',
+      'disconnect_stuck',
+      'remove',
+      'person',
+    ],
+    [
+      '7 own-key cleanup unknown',
       { lifecycle: 'disconnected', externalCleanup: 'unknown' },
       'gone',
-      'disconnect_failed',
-      'retry',
+      'disconnect_stuck',
+      'remove',
       'person',
     ],
     [
-      '9 off for this chat, the owner can turn it on',
+      '8 off for this chat, the owner can turn it on',
       { offForThisChat: true, canTurnOnForThisChat: true, way: down('own_key_unavailable') },
       'unavailable',
       'off_for_this_chat',
@@ -181,14 +233,14 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '9b off for this chat, nothing to put back',
+      '8b off for this chat, nothing to put back',
       { offForThisChat: true, way: down('own_key_unavailable') },
       'unavailable',
       'off_for_this_chat',
       undefined,
     ],
     [
-      '10 DorkOS account unlinked',
+      '9 DorkOS account unlinked',
       { way: down('dorkos_account_unlinked'), lifecycle: 'paused' },
       'needs_you',
       'dorkos_account_unlinked',
@@ -196,15 +248,47 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '11 DorkOS account unavailable',
-      { way: down('dorkos_account_unavailable') },
+      '10 own key being checked right now',
+      { way: { ...down('own_key_unavailable'), checking: true } },
+      'unavailable',
+      'own_key_unavailable',
+      'wait',
+      'dorkos',
+    ],
+    [
+      '10 DorkOS account being checked right now',
+      { way: { ...down('dorkos_account_unavailable'), checking: true } },
+      'unavailable',
+      'dorkos_account_unavailable',
+      'wait',
+      'dorkos',
+    ],
+    [
+      '11 DorkOS account unavailable, re-check scheduled',
+      { way: { ...down('dorkos_account_unavailable'), nextCheckAt: RETRY_AT } },
       'unavailable',
       'dorkos_account_unavailable',
       'retry',
       'dorkos',
     ],
     [
-      '12 own key gone',
+      '12 DorkOS account unavailable, DorkOS stopped re-checking',
+      { way: down('dorkos_account_unavailable') },
+      'unavailable',
+      'dorkos_account_unavailable',
+      'retry',
+      'person',
+    ],
+    [
+      '13 own key, re-check scheduled',
+      { way: { ...down('own_key_unavailable'), nextCheckAt: RETRY_AT } },
+      'unavailable',
+      'own_key_unavailable',
+      'wait',
+      'dorkos',
+    ],
+    [
+      '14 own key gone',
       { way: down('own_key_unavailable'), authenticationStatus: 'expired' },
       'needs_you',
       'own_key_unavailable',
@@ -212,14 +296,22 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '13 way unreachable',
+      '15 way unreachable, re-check scheduled',
+      { way: { ...down('unreachable'), nextCheckAt: RETRY_AT } },
+      'unavailable',
+      'way_unreachable',
+      'wait',
+      'dorkos',
+    ],
+    [
+      '16 way unreachable',
       { way: down('unreachable') },
       'unavailable',
       'way_unreachable',
       undefined,
     ],
     [
-      '14 account key cannot run actions',
+      '17 account key cannot run actions',
       {
         way: { status: 'up', canRunActions: false, keyCanFix: true, anotherWayWorks: false },
         lifecycle: 'paused',
@@ -230,7 +322,7 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '13 way unreachable, another way works',
+      '16 way unreachable, another way works',
       { way: down('unreachable', true) },
       'unavailable',
       'way_unreachable',
@@ -238,14 +330,14 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '15 self-hosted way cannot run actions',
+      '18 self-hosted way cannot run actions',
       { way: { status: 'up', canRunActions: false, keyCanFix: false, anotherWayWorks: false } },
       'unavailable',
       'cannot_run_actions',
       undefined,
     ],
     [
-      '15 self-hosted way cannot run actions, another way works',
+      '18 self-hosted way cannot run actions, another way works',
       { way: { status: 'up', canRunActions: false, keyCanFix: false, anotherWayWorks: true } },
       'unavailable',
       'cannot_run_actions',
@@ -253,7 +345,7 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '16 paused and signed out: sign in again first (it resumes too)',
+      '19 paused and signed out: sign in again first (it resumes too)',
       { lifecycle: 'paused', authenticationStatus: 'expired' },
       'needs_you',
       'signed_out',
@@ -261,16 +353,39 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '17 paused with an unfinished sign-in',
+      '20 paused with an unfinished sign-in',
       { lifecycle: 'paused', authenticationStatus: 'pending' },
       'needs_you',
       'sign_in_unfinished',
       'sign_in_again',
       'person',
     ],
-    ['18 paused', { lifecycle: 'paused' }, 'paused', 'paused', 'resume', 'person'],
     [
-      '17 expired',
+      '21 paused while a sign-in again runs',
+      { lifecycle: 'paused', pausedBy: 'sign_in' },
+      'needs_you',
+      'signing_in',
+      'sign_in_again',
+      'person',
+    ],
+    [
+      '22 paused by the owner',
+      { lifecycle: 'paused', pausedBy: 'owner' },
+      'paused',
+      'paused',
+      'resume',
+      'person',
+    ],
+    [
+      '22 paused (no record of who)',
+      { lifecycle: 'paused' },
+      'paused',
+      'paused',
+      'resume',
+      'person',
+    ],
+    [
+      '19 expired',
       { authenticationStatus: 'expired' },
       'needs_you',
       'signed_out',
@@ -278,7 +393,7 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '17 revoked',
+      '19 revoked',
       { authenticationStatus: 'revoked' },
       'needs_you',
       'signed_out',
@@ -286,7 +401,7 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '18 sign-in pending',
+      '20 sign-in pending',
       { authenticationStatus: 'pending' },
       'needs_you',
       'sign_in_unfinished',
@@ -294,7 +409,7 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '19 needs review',
+      '23 needs review',
       {
         reconciliationStatus: 'migration_needs_reconcile',
         authoritySync: { status: 'failed', reason: 'x' },
@@ -305,7 +420,7 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '20 access update failed',
+      '24 access update failed',
       { authoritySync: { status: 'failed', reason: 'Refused.' } },
       'needs_you',
       'access_update_failed',
@@ -313,16 +428,16 @@ describe('deriveConnectionReadiness truth table', () => {
       'person',
     ],
     [
-      '21 access updating',
+      '25 access updating',
       { authoritySync: { status: 'pending' } },
       'finishing',
       'access_updating',
       'wait',
       'dorkos',
     ],
-    ['22 ready', {}, 'ready', 'usable', undefined],
+    ['26 ready', {}, 'ready', 'usable', undefined],
     [
-      '22 ready without access sync (an agent view)',
+      '26 ready without access sync (an agent view)',
       { authoritySync: undefined },
       'ready',
       'usable',
@@ -347,19 +462,154 @@ describe('deriveConnectionReadiness truth table', () => {
     expect(updating.fix).toEqual({ action: 'wait', fixableBy: 'dorkos', retryAt: RETRY_AT });
   });
 
-  it('never offers a retry for a disconnect whose DorkOS account link ended', () => {
+  it('offers removing, never a retry, for a disconnect whose DorkOS account link ended', () => {
+    // The live incident: Gmail connected through the DorkOS account, the link
+    // ended overnight, and Disconnect offered a retry that could never work.
     const stuck = deriveConnectionReadiness(
       facts({
         lifecycle: 'disconnected',
         externalCleanup: 'pending',
         mode: 'managed',
+        toolkit: 'gmail',
         authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
         way: down('dorkos_account_unlinked'),
       })
     );
-    expect(stuck.fix).toBeUndefined();
+    expect(stuck.fix).toEqual({ action: 'remove', fixableBy: 'person' });
     expect(stuck.copy.owner).toContain('isn’t linked anymore');
     expect(stuck.copy.owner).toContain('own account settings');
+    // Where the person can end the access themselves, when the page is known.
+    expect(stuck.serviceAccessPage).toEqual({
+      service: 'Google',
+      url: 'https://myaccount.google.com/connections',
+    });
+    // An app whose page isn't known gets the line alone.
+    const unknownPage = deriveConnectionReadiness(
+      facts({
+        lifecycle: 'disconnected',
+        externalCleanup: 'pending',
+        mode: 'managed',
+        toolkit: 'notion',
+        way: down('dorkos_account_unlinked'),
+      })
+    );
+    expect(unknownPage.serviceAccessPage).toBeUndefined();
+    // Fixing the key lets DorkOS finish, so no service page competes with it.
+    const ownKey = deriveConnectionReadiness(
+      facts({
+        lifecycle: 'disconnected',
+        externalCleanup: 'pending',
+        toolkit: 'gmail',
+        way: down('own_key_unavailable'),
+      })
+    );
+    expect(ownKey.fix?.action).toBe('fix_key');
+    expect(ownKey.serviceAccessPage).toBeUndefined();
+  });
+
+  it('shows an account the DorkOS account no longer has as gone, with where to be sure it ended', () => {
+    const gone = deriveConnectionReadiness(
+      facts({
+        lifecycle: 'disconnected',
+        externalCleanup: 'unknown',
+        closedBecause: 'service_gone',
+        mode: 'managed',
+        toolkit: 'gmail',
+      })
+    );
+    expect(gone).toMatchObject({
+      state: 'gone',
+      reason: 'gone_at_service',
+      fix: { action: 'connect_new', fixableBy: 'person' },
+      serviceAccessPage: { service: 'Google' },
+    });
+    expect(gone.copy.owner).toContain('remove it in that app’s own account settings');
+  });
+
+  it('says linking the same DorkOS account again, or adding the same key again, lets DorkOS finish', () => {
+    const unlinked = deriveConnectionReadiness(
+      facts({
+        lifecycle: 'disconnected',
+        externalCleanup: 'pending',
+        mode: 'managed',
+        way: down('dorkos_account_unlinked'),
+      })
+    );
+    expect(unlinked.copy.owner).toContain('Link this computer to the same DorkOS account again');
+    const ownKey = deriveConnectionReadiness(
+      facts({
+        lifecycle: 'disconnected',
+        externalCleanup: 'pending',
+        way: down('own_key_unavailable'),
+      })
+    );
+    expect(ownKey.copy.owner).toContain('Add that same key again');
+  });
+
+  describe('never promises a cleanup DorkOS won’t run', () => {
+    const neverRetried: Array<[string, Partial<ConnectionReadinessFacts>]> = [
+      ['own key out of tries', { mode: 'byo', externalCleanup: 'failed' }],
+      ['own key unconfirmed', { mode: 'byo', externalCleanup: 'unknown' }],
+      ['DorkOS account unconfirmed', { mode: 'managed', externalCleanup: 'unknown' }],
+    ];
+    const ways: Array<[string, ConnectionWayHealth]> = [
+      ['way up', UP],
+      ['own key refused', down('own_key_unavailable')],
+      ['own key re-checked soon', { ...down('own_key_unavailable'), nextCheckAt: RETRY_AT }],
+      ['own key being checked', { ...down('own_key_unavailable'), checking: true }],
+      ['DorkOS account unlinked', down('dorkos_account_unlinked')],
+      [
+        'DorkOS account re-checked soon',
+        { ...down('dorkos_account_unavailable'), nextCheckAt: RETRY_AT },
+      ],
+      ['way unreachable', down('unreachable')],
+    ];
+    it.each(
+      neverRetried.flatMap(([cleanup, f]) => ways.map(([way, w]) => [cleanup, way, f, w] as const))
+    )('%s, %s: remove it, with no promise DorkOS finishes', (_cleanup, _way, cleanupFacts, way) => {
+      const r = deriveConnectionReadiness(
+        facts({ lifecycle: 'disconnected', toolkit: 'gmail', ...cleanupFacts, way })
+      );
+      expect(r).toMatchObject({
+        state: 'gone',
+        reason: 'disconnect_stuck',
+        fix: { action: 'remove', fixableBy: 'person' },
+        serviceAccessPage: { service: 'Google' },
+      });
+      expect(r.copy.owner).toContain('couldn’t confirm its access ended');
+      expect(r.copy.owner).not.toMatch(/finishes it on its own|still removing|same key/);
+    });
+
+    it('keeps DorkOS’s promise only for a cleanup it will try again', () => {
+      // An own-key cleanup still pending waits for that same key.
+      expect(
+        deriveConnectionReadiness(
+          facts({
+            lifecycle: 'disconnected',
+            externalCleanup: 'pending',
+            way: down('own_key_unavailable'),
+          })
+        ).fix?.action
+      ).toBe('fix_key');
+      // A DorkOS-account cleanup the hosted side said failed goes again on a relink.
+      expect(
+        deriveConnectionReadiness(
+          facts({
+            lifecycle: 'disconnected',
+            externalCleanup: 'failed',
+            mode: 'managed',
+            way: down('dorkos_account_unlinked'),
+          })
+        ).copy.owner
+      ).toContain('Link this computer to the same DorkOS account again');
+    });
+  });
+
+  it('carries when DorkOS next tries an own-key cleanup on its own', () => {
+    const finishing = deriveConnectionReadiness(
+      facts({ lifecycle: 'disconnected', externalCleanup: 'pending', cleanupRetryAt: RETRY_AT })
+    );
+    expect(finishing.fix).toEqual({ action: 'retry', fixableBy: 'dorkos', retryAt: RETRY_AT });
   });
 
   it('tells the agent what the person must do, never internal names', () => {
@@ -423,16 +673,41 @@ describe('deriveConnectionReadiness truth table', () => {
       facts({ way: { ...down('dorkos_account_unavailable'), nextCheckAt: RETRY_AT } })
     );
     expect(account.fix).toEqual({ action: 'retry', fixableBy: 'dorkos', retryAt: RETRY_AT });
-    // A disconnect can't be finished by fixing a key DorkOS is only waiting to re-check.
-    const stuck = deriveConnectionReadiness(
+    // A disconnect waiting on a key DorkOS re-checks on its own is DorkOS's
+    // to finish too, when the key answers again.
+    const finishing = deriveConnectionReadiness(
       facts({
         lifecycle: 'disconnected',
-        externalCleanup: 'failed',
+        externalCleanup: 'pending',
         way: { ...down('own_key_unavailable'), nextCheckAt: RETRY_AT },
       })
     );
-    expect(stuck).toMatchObject({ reason: 'disconnect_stuck' });
-    expect(stuck.fix).toBeUndefined();
+    expect(finishing).toMatchObject({
+      reason: 'disconnect_finishing',
+      fix: { action: 'wait', fixableBy: 'dorkos', retryAt: RETRY_AT },
+    });
+  });
+
+  it('shows a check in progress as a wait, not a fix that isn’t needed yet', () => {
+    // A key being checked right now (just saved, or an automatic re-check)
+    // must not read as "Fix the key" for the moment it runs.
+    const checking = deriveConnectionReadiness(
+      facts({ way: { ...down('own_key_unavailable'), checking: true } })
+    );
+    expect(checking).toEqual({
+      state: 'unavailable',
+      reason: 'own_key_unavailable',
+      fix: { action: 'wait', fixableBy: 'dorkos' },
+      copy: WAY_CHECKING_COPY,
+    });
+  });
+
+  it('names the true cause of a review: how DorkOS reaches the account changed', () => {
+    const review = deriveConnectionReadiness(
+      facts({ reconciliationStatus: 'migration_needs_reconcile' })
+    );
+    expect(review.copy.owner).toContain('How DorkOS reaches it changed');
+    expect(review.copy.owner).not.toMatch(/actions changed/i);
   });
 
   it('says linking again with the same account can bring an unlinked account back, never that it will (DOR-2521)', () => {
@@ -474,6 +749,26 @@ describe('wayHealthOf', () => {
       down('own_key_unavailable')
     );
     expect(wayHealthOf(undefined, () => undefined)).toEqual(down('unreachable'));
+  });
+
+  it('says a way that is down is being checked, and when it is checked again', () => {
+    expect(
+      wayHealthOf(
+        undefined,
+        () => 'own_key_unavailable',
+        () => false,
+        () => ({ checking: true, nextCheckAt: RETRY_AT })
+      )
+    ).toEqual({ ...down('own_key_unavailable'), checking: true, nextCheckAt: RETRY_AT });
+    // A way that is up is never "being checked": it answered.
+    expect(
+      wayHealthOf(
+        provider('composio', true),
+        () => undefined,
+        () => false,
+        () => ({ checking: true })
+      )
+    ).toEqual(UP);
   });
 
   it('says whether agents can act, and whether a key would fix it', () => {

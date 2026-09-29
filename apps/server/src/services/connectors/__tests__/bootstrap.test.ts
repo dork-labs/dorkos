@@ -1054,7 +1054,7 @@ describe('ConnectorProviderBootstrapper', () => {
             id: `revision-${connectionId}`,
             providerInstanceId: 'managed-provider',
             toolkit: 'gmail',
-            operationSlug: 'gmail.list',
+            operationSlug: `gmail.list.${connectionId}`,
             toolkitVersion: '1',
             schemaHash: 'sha256:x',
             capabilityClassification: 'read',
@@ -1094,6 +1094,37 @@ describe('ConnectorProviderBootstrapper', () => {
         state.provider = fresh;
         return poll.status === 'connected' ? poll.account!.externalAccountRef : '';
       }
+
+      it('keeps the access of an account the new link still lists, and sends refused changes again', async () => {
+        const { state, cloud } = link('link-1');
+        const relinked: string[] = [];
+        const bootstrapper = new ConnectorProviderBootstrapper({
+          ...bootstrapperOptions(),
+          managedCloud: cloud,
+          onRelinked: (instanceId) => relinked.push(instanceId),
+        });
+        await bootstrapper.registerBootProviders();
+        const kept = await freshSideWithOneAccount(state);
+        keptManagedRow('connection-kept', kept);
+        grantOn('connection-kept');
+        keptManagedRow('connection-other', 'managed-other-account');
+        grantOn('connection-other');
+        const fresh = state.provider;
+        // The same account, linked again: its new link lists this one account.
+        state.digest = 'link-2';
+        state.provider = fresh;
+
+        await bootstrapper.reloadManagedCloud();
+
+        // Listed: the same account, reached again, keeps what it was given.
+        expect(row('connection-kept')).toMatchObject({
+          lifecycleState: 'connected',
+          grantReconciliationStatus: 'ready',
+        });
+        // Not listed: closed exactly as before.
+        expect(row('connection-other').lifecycleState).toBe('disconnected');
+        expect(relinked).toEqual(['managed-provider']);
+      });
 
       it('leaves every account alone when the same link answers without one', async () => {
         const { cloud } = link('link-1');
@@ -1340,17 +1371,19 @@ describe('ConnectorProviderBootstrapper', () => {
 
       // The same facts as readiness reads them: down with the fix, or unreachable.
       // Nothing else answers and runs actions here (the key was refused too).
-      expect(bootstrapper.wayHealth('managed-provider')).toMatchObject({
+      expect(bootstrapper.wayHealth('managed-provider', 'gmail')).toMatchObject({
         status: 'down',
         problem: 'dorkos_account_unavailable',
         anotherWayWorks: false,
       });
-      expect(bootstrapper.wayHealth('raw-mcp-dropped-from-config')).toEqual({
+      expect(bootstrapper.wayHealth('raw-mcp-dropped-from-config', 'gmail')).toEqual({
         status: 'down',
         problem: 'unreachable',
         anotherWayWorks: false,
       });
-      expect(bootstrapper.wayHealth(registry.resolveProvider('mcp')!.instanceId)).toMatchObject({
+      expect(
+        bootstrapper.wayHealth(registry.resolveProvider('mcp')!.instanceId, 'gmail')
+      ).toMatchObject({
         status: 'up',
       });
     });
@@ -1630,6 +1663,97 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(probes).toBe(3);
     });
 
+    it('stops checking a way that never answers, and settles on the person’s one fix', async () => {
+      vi.useFakeTimers();
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      const client = scriptedComposioClient(() =>
+        Promise.reject(new Error('Composio request timed out'))
+      );
+      const bootstrapper = makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+
+      for (const delay of WAY_RECHECK_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+      // One check at boot, then one per wait, then nothing more.
+      expect(client.listings).toBe(1 + WAY_RECHECK_DELAYS_MS.length);
+      expect(bootstrapper.nextWayCheckAt(composioInstance)).toBeUndefined();
+      expect(bootstrapper.wayHealth(composioInstance, 'gmail')).toEqual({
+        status: 'down',
+        problem: 'own_key_unavailable',
+        anotherWayWorks: false,
+      });
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS.at(-1)! * 4);
+      expect(client.listings).toBe(1 + WAY_RECHECK_DELAYS_MS.length);
+
+      // A check the person starts begins a fresh count.
+      await bootstrapper.reload('composio');
+      expect(bootstrapper.nextWayCheckAt(composioInstance)).toBeDefined();
+    });
+
+    it('says a way is being checked while its check runs, not that it needs fixing', async () => {
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      let answer!: (accounts: ComposioConnectedAccount[]) => void;
+      let first = true;
+      const client = scriptedComposioClient(() => {
+        if (first) {
+          first = false;
+          return Promise.resolve([]);
+        }
+        return new Promise((resolve) => {
+          answer = resolve;
+        });
+      });
+      const bootstrapper = makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+
+      // A key saved again: the way is taken down while the new key is checked.
+      const reloading = bootstrapper.reload('composio');
+      await vi.waitFor(() => expect(answer).toBeTypeOf('function'));
+      expect(bootstrapper.wayHealth(composioInstance, 'gmail')).toMatchObject({
+        status: 'down',
+        problem: 'own_key_unavailable',
+        checking: true,
+      });
+      answer([]);
+      await reloading;
+      expect(bootstrapper.wayHealth(composioInstance, 'gmail')).toMatchObject({ status: 'up' });
+    });
+
+    it('counts another way only when it reaches this very app', async () => {
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-wrong');
+      const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
+      const managed = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+        toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
+      });
+      const bootstrapper = makeBootstrapper({
+        composioClient: scriptedComposioClient(() =>
+          Promise.reject(new ComposioApiError(401, 'Invalid API key'))
+        ),
+        managedCloud: {
+          instanceId,
+          configured: () => true,
+          executionConfigDigest: () => 'linked-material',
+          create: () => managed,
+        },
+      });
+      await bootstrapper.registerBootProviders();
+
+      // Nothing is known yet about which apps the DorkOS account reaches.
+      expect(bootstrapper.wayHealth(composioInstance, 'gmail')).toMatchObject({
+        anotherWayWorks: false,
+      });
+      await registry.readCatalog(managed, new AbortController().signal);
+      expect(bootstrapper.wayHealth(composioInstance, 'gmail')).toMatchObject({
+        anotherWayWorks: true,
+      });
+      // It doesn't reach Slack, so connecting Slack again that way can't help.
+      expect(bootstrapper.wayHealth(composioInstance, 'slack')).toMatchObject({
+        anotherWayWorks: false,
+      });
+    });
+
     it('says when the next automatic check of a down way is due, and nothing once none is waiting', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-09-28T12:00:00.000Z'));
@@ -1644,7 +1768,7 @@ describe('ConnectorProviderBootstrapper', () => {
       await bootstrapper.registerBootProviders();
       expect(bootstrapper.nextWayCheckAt(composioInstance)).toBe('2026-09-28T12:00:30.000Z');
       // Readiness reads the same time, so the account says DorkOS is on it.
-      expect(bootstrapper.wayHealth(composioInstance)).toMatchObject({
+      expect(bootstrapper.wayHealth(composioInstance, 'gmail')).toMatchObject({
         status: 'down',
         problem: 'own_key_unavailable',
         nextCheckAt: '2026-09-28T12:00:30.000Z',
@@ -1666,7 +1790,7 @@ describe('ConnectorProviderBootstrapper', () => {
       failure = new ComposioApiError(401, 'Invalid API key');
       await bootstrapper.reload('composio');
       expect(bootstrapper.nextWayCheckAt(composioInstance)).toBeUndefined();
-      expect(bootstrapper.wayHealth(composioInstance)).not.toHaveProperty('nextCheckAt');
+      expect(bootstrapper.wayHealth(composioInstance, 'gmail')).not.toHaveProperty('nextCheckAt');
     });
 
     it.each([

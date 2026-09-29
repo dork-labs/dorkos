@@ -361,6 +361,16 @@ prices here" would be a comfortable claim and a false one:
   difference, and that is the point rather than an accident: somebody paying for inference
   through us can see exactly what the routing costs them without asking. If that ever stops
   being the intent, the field to drop is `listPriceMicro`, and dropping it is a `/v2` change.
+  Its optional `otherCharges` block is the one exception to the pair: a charge that is not
+  inference, such as storage past what an account includes, carries only `dorkosPriceMicro`
+  (credits, like the inference rows'), because nothing upstream is resold and there is no list
+  price to show. Other charges are credits today; a charge billed as money would need a new field,
+  not a reinterpretation of this one. Each row is one billing period whose edges fall on midnight
+  UTC (`periodEnd` exclusive), its `unit` and `displayName` are server-supplied strings the app
+  renders as given, and the service rounds `units` to three decimal places. `totals` stays
+  inference only, so a client that predates the block sums what it always did. A client parsing
+  with this package's zod schemas drops a malformed block and keeps the rest of the answer; a JSON
+  Schema validator reading the published schema cannot, and fails the whole response.
 - **`GET /v1/statement`** may carry the same projection as `GET /v1/usage`, one line per model
   for the statement's period, with `totals` that are the exact sum of the lines, and the `from`
   and `to` of the window the period covers (a period is labelled by a month, but it need not be a

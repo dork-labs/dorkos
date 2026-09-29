@@ -29,8 +29,11 @@
  * **A way that stops answering comes back by itself.** A check that failed for
  * a reason that can pass (no answer, a timeout, a 5xx) is re-run on its own,
  * waiting longer after each failure in a row ({@link WAY_RECHECK_DELAYS_MS});
- * a refused key (401/403), a link the DorkOS account refuses, or a refused
- * setup waits for the person instead.
+ * once those run out it stops, and the person is offered the one fix
+ * (checking it again, or fixing the key). A refused key (401/403), a link the
+ * DorkOS account refuses, or a refused setup waits for the person at once.
+ * While a check runs, {@link ConnectorProviderBootstrapper.wayHealth} says
+ * so, and readiness shows a wait rather than a fix that isn't needed yet.
  * {@link ConnectorProviderBootstrapper.nextWayCheckAt} says when the next
  * automatic check is due. A registered way whose periodic account listing
  * fails is checked again at once
@@ -153,6 +156,13 @@ export interface ConnectorProviderBootstrapperOpts {
    */
   onClosedByNewLink?: (closed: readonly ClosedConnection[]) => void;
   /**
+   * Told when the DorkOS account's route registered under a link it hadn't
+   * worked through before (the account was linked again). The accounts that
+   * link still lists keep the access they were given; this is where what the
+   * old link refused or never applied is sent again.
+   */
+  onRelinked?: (providerInstanceId: ConnectorProvider['instanceId']) => void;
+  /**
    * Test-only client-factory passthroughs for the two vendor providers, so the
    * post-registration connection check (`_swap`'s probe) never touches the
    * network in tests. Production omits both and gets the real fetch clients.
@@ -186,9 +196,11 @@ interface ManagedProviderSpec {
 
 /**
  * How long a way that failed its check waits before the next automatic check,
- * one entry per failure in a row; the last wait then repeats for good. Short
- * at first so a blip clears in seconds, and no more often than the periodic
- * sign-in refresh once an outage lasts.
+ * one entry per failure in a row. Short at first so a blip clears in seconds,
+ * and no more often than the periodic sign-in refresh once an outage lasts.
+ * After the last one DorkOS stops checking on its own: a way that hasn't
+ * answered for about 25 minutes settles on the person's one fix. A failed
+ * listing seen by the periodic sign-in refresh starts the count again.
  */
 export const WAY_RECHECK_DELAYS_MS = [30_000, 60_000, 120_000, 300_000, 900_000] as const;
 
@@ -266,6 +278,9 @@ export class ConnectorProviderBootstrapper {
   private readonly _specs = new Map<string, ManagedProviderSpec>();
   private readonly _managedCloud: ConnectorProviderBootstrapperOpts['managedCloud'];
   private readonly _onClosedByNewLink: ConnectorProviderBootstrapperOpts['onClosedByNewLink'];
+  private readonly _onRelinked: ConnectorProviderBootstrapperOpts['onRelinked'];
+  /** Ways being checked right now (spec type, or the DorkOS account's type). */
+  private readonly _checking = new Set<string>();
   private _managedCloudReload: Promise<void> = Promise.resolve();
   private _managedCloudRecovery: Promise<void> | undefined;
   private readonly _instanceBySpecType = new Map<string, ConnectorProvider['instanceId']>();
@@ -294,6 +309,7 @@ export class ConnectorProviderBootstrapper {
     this._rawMcpPendingConnect = opts.rawMcpPendingConnect;
     this._managedCloud = opts.managedCloud;
     this._onClosedByNewLink = opts.onClosedByNewLink;
+    this._onRelinked = opts.onRelinked;
 
     const { credentials, nangoEnv } = opts;
     const specs: ManagedProviderSpec[] = [
@@ -398,7 +414,9 @@ export class ConnectorProviderBootstrapper {
 
   /** Reconcile the hosted managed provider with the current linked-instance key. */
   reloadManagedCloud(): Promise<void> {
-    const reload = this._managedCloudReload.then(() => this._reloadManagedCloud());
+    const reload = this._managedCloudReload.then(() =>
+      this._checkingWhile(MANAGED_CLOUD_PROVIDER_TYPE, () => this._reloadManagedCloud())
+    );
     this._managedCloudReload = reload.catch(() => {});
     return reload;
   }
@@ -413,7 +431,9 @@ export class ConnectorProviderBootstrapper {
    */
   recoverManagedCloud(): Promise<void> {
     if (this._managedCloudRecovery) return this._managedCloudRecovery;
-    const recovery = this._managedCloudReload.then(() => this._recoverManagedCloud());
+    const recovery = this._managedCloudReload.then(() =>
+      this._checkingWhile(MANAGED_CLOUD_PROVIDER_TYPE, () => this._recoverManagedCloud())
+    );
     this._managedCloudReload = recovery.catch(() => {});
     const sharedRecovery = recovery.finally(() => {
       if (this._managedCloudRecovery === sharedRecovery) this._managedCloudRecovery = undefined;
@@ -519,7 +539,9 @@ export class ConnectorProviderBootstrapper {
   recheckWay(providerInstanceId: ConnectorProvider['instanceId']): Promise<void> {
     const managed = this._managedCloud;
     if (managed?.instanceId === providerInstanceId) {
-      const recheck = this._managedCloudReload.then(() => this._recheckLiveManaged());
+      const recheck = this._managedCloudReload.then(() =>
+        this._checkingWhile(MANAGED_CLOUD_PROVIDER_TYPE, () => this._recheckLiveManaged())
+      );
       this._managedCloudReload = recheck.catch(() => {});
       return recheck;
     }
@@ -527,7 +549,9 @@ export class ConnectorProviderBootstrapper {
       (candidate) => this._instanceBySpecType.get(candidate.type) === providerInstanceId
     );
     if (!spec) return Promise.resolve();
-    return this._queue(spec.type, () => this._recheckLiveOwnKey(spec));
+    return this._queue(spec.type, () =>
+      this._checkingWhile(spec.type, () => this._recheckLiveOwnKey(spec))
+    );
   }
 
   /**
@@ -543,16 +567,30 @@ export class ConnectorProviderBootstrapper {
    * @returns The ISO-8601 time of the next automatic check, or `undefined`.
    */
   nextWayCheckAt(providerInstanceId: string): string | undefined {
-    const key =
-      this._managedCloud?.instanceId === providerInstanceId
-        ? MANAGED_CLOUD_PROVIDER_TYPE
-        : [...this._specs.values()].find(
-            (spec) =>
-              spec.defaultInstanceId === providerInstanceId ||
-              this._instanceBySpecType.get(spec.type) === providerInstanceId
-          )?.type;
+    const key = this._wayKey(providerInstanceId);
     const dueAt = key === undefined ? undefined : this._rechecks.get(key)?.dueAt;
     return dueAt === undefined ? undefined : new Date(dueAt).toISOString();
+  }
+
+  /** The way an instance registers as: its spec type, or the DorkOS account's. */
+  private _wayKey(providerInstanceId: string): string | undefined {
+    return this._managedCloud?.instanceId === providerInstanceId
+      ? MANAGED_CLOUD_PROVIDER_TYPE
+      : [...this._specs.values()].find(
+          (spec) =>
+            spec.defaultInstanceId === providerInstanceId ||
+            this._instanceBySpecType.get(spec.type) === providerInstanceId
+        )?.type;
+  }
+
+  /** Run one way's check, saying it is being checked while it runs. */
+  private async _checkingWhile(key: string, check: () => Promise<void>): Promise<void> {
+    this._checking.add(key);
+    try {
+      await check();
+    } finally {
+      this._checking.delete(key);
+    }
   }
 
   /** Stop every waiting re-check; nothing is scheduled after this. */
@@ -561,6 +599,7 @@ export class ConnectorProviderBootstrapper {
     for (const { timer } of this._rechecks.values()) clearTimeout(timer);
     this._rechecks.clear();
     this._consecutiveFailures.clear();
+    this._checking.clear();
   }
 
   private async _recheckLiveOwnKey(spec: ManagedProviderSpec): Promise<void> {
@@ -624,15 +663,21 @@ export class ConnectorProviderBootstrapper {
 
   /**
    * Schedule one way's next automatic check, waiting longer after each failure
-   * in a row ({@link WAY_RECHECK_DELAYS_MS}, then its last wait for good). A
-   * check already waiting is left alone, so a failure seen by some other read
-   * never pushes it later.
+   * in a row ({@link WAY_RECHECK_DELAYS_MS}). Once those run out, nothing more
+   * is scheduled: the way settles on the person's one fix, and a check they
+   * start (or a periodic listing that fails again later) begins a fresh count.
+   * A check already waiting is left alone, so a failure seen by some other
+   * read never pushes it later.
    */
   private _wayFailed(key: string, recheck: () => Promise<void>): void {
     if (this._stopped || this._rechecks.has(key)) return;
     const failures = (this._consecutiveFailures.get(key) ?? 0) + 1;
+    if (failures > WAY_RECHECK_DELAYS_MS.length) {
+      this._consecutiveFailures.delete(key);
+      return;
+    }
     this._consecutiveFailures.set(key, failures);
-    const delay = WAY_RECHECK_DELAYS_MS[Math.min(failures, WAY_RECHECK_DELAYS_MS.length) - 1]!;
+    const delay = WAY_RECHECK_DELAYS_MS[failures - 1]!;
     const timer = setTimeout(() => {
       this._rechecks.delete(key);
       void recheck().catch((err: unknown) =>
@@ -728,21 +773,30 @@ export class ConnectorProviderBootstrapper {
    * registered, or up, and whether agents can act through it.
    *
    * @param providerInstanceId - The instance the account was connected through.
+   * @param toolkit - The account's app, which another way has to reach to count.
    */
-  wayHealth(providerInstanceId: string): ConnectionWayHealth {
+  wayHealth(providerInstanceId: string, toolkit: string): ConnectionWayHealth {
     return wayHealthOf(
       this._registry.resolveProviderInstance(providerInstanceId as ConnectorProvider['instanceId']),
       () => this.wayProblem(providerInstanceId),
-      () => this._anotherWayWorks(providerInstanceId),
-      () => this.nextWayCheckAt(providerInstanceId)
+      () => this._anotherWayWorks(providerInstanceId, toolkit),
+      () => {
+        const key = this._wayKey(providerInstanceId);
+        const nextCheckAt = this.nextWayCheckAt(providerInstanceId);
+        return {
+          ...(key !== undefined && this._checking.has(key) && { checking: true }),
+          ...(nextCheckAt !== undefined && { nextCheckAt }),
+        };
+      }
     );
   }
 
   /**
-   * Whether a way other than this one answers and can both sign in to apps
-   * and run their actions, so connecting an app again through it would help.
+   * Whether a way other than this one answers, can both sign in to apps and
+   * run their actions, and reaches this very app, so connecting the app again
+   * through it would help. A way whose app list isn't known yet doesn't count.
    */
-  private _anotherWayWorks(providerInstanceId: string): boolean {
+  private _anotherWayWorks(providerInstanceId: string, toolkit: string): boolean {
     const instances = [
       ...this._instanceBySpecType.values(),
       ...(this._managedCloud ? [this._managedCloud.instanceId] : []),
@@ -754,7 +808,8 @@ export class ConnectorProviderBootstrapper {
         ?.getCapabilities().capabilities;
       return (
         capabilities?.authentication.status === 'available' &&
-        capabilities.execution.status === 'available'
+        capabilities.execution.status === 'available' &&
+        this._registry.reachesApp(instanceId as ConnectorProvider['instanceId'], toolkit)
       );
     });
   }
@@ -803,13 +858,26 @@ export class ConnectorProviderBootstrapper {
     // link this instance last worked through, kept across unlinking and
     // restarts. None stored means a first registration, which closes nothing.
     const previousDigest = this._registry.storedExecutionConfigDigest(provider.instanceId);
-    this._registry.register(provider, digest, 'managed');
+    const relinked =
+      previousDigest !== undefined && digest !== undefined && previousDigest !== digest;
+    // The same account, still listed by the new link, keeps the access it was
+    // given: linking again is not a reason to ask the owner to review it.
+    this._registry.register(provider, digest, 'managed', {
+      ...(relinked && {
+        keepAccessFor: new Set(accounts.map((account) => account.externalAccountRef)),
+      }),
+    });
     this._clearRecheck(MANAGED_CLOUD_PROVIDER_TYPE);
     // A changed key fingerprint may be a new link or a continued one (the same
     // link with a replaced key, DOR-2521). Either way only the accounts this
     // full listing lacks are closed, so a continued link keeps its accounts.
-    if (previousDigest !== undefined && digest !== undefined && previousDigest !== digest) {
+    if (relinked) {
       this._closeUnlistedManagedConnections(provider, accounts);
+      try {
+        this._onRelinked?.(provider.instanceId);
+      } catch (error) {
+        logger.warn('[Connectors] Could not send changes again after linking again', { error });
+      }
     }
     // The connection check listed the accounts: what it says about each
     // kept account's sign-in is the freshest fact there is.
@@ -849,7 +917,7 @@ export class ConnectorProviderBootstrapper {
    * key saved mid-check is never overtaken by the check that began before it.
    */
   private _queueSwap(spec: ManagedProviderSpec): Promise<void> {
-    return this._queue(spec.type, () => this._swap(spec));
+    return this._queue(spec.type, () => this._checkingWhile(spec.type, () => this._swap(spec)));
   }
 
   /** Run `work` after everything already queued for one way. */

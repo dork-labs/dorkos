@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Sparkles } from 'lucide-react';
+import { ExternalLink, Sparkles } from 'lucide-react';
 import type { ConnectorConnectionDetail } from '@dorkos/shared/connector-resource-schemas';
 import {
   useConnectorCatalog,
@@ -25,9 +25,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
+  ExternalLinkAnchor,
   QueryErrorState,
   Skeleton,
 } from '@/layers/shared/ui';
+import { accountChangeError } from '../../lib/account-change-error';
 import { accountAppName } from '../../lib/app-list';
 import { retryLine, tryItPrompts, usageLine } from '../../lib/app-panel-copy';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
@@ -171,7 +173,10 @@ function AccountPanelBody({
  * The account's one fix on top of the panel, rendered from the server's
  * readiness: its owner line, and the one button its fix maps to. A ready
  * account shows nothing. A fix that is DorkOS's own (`wait`), or no fix at
- * all, is the line alone: there is never a button that can't work.
+ * all, is the line alone: there is never a button that can't work. A
+ * disconnected account can always be removed from the person's apps, and when
+ * DorkOS can't end its access at the service, the service's own page is
+ * linked where it is known.
  */
 function ReadinessFix({
   detail,
@@ -225,9 +230,11 @@ function ReadinessFix({
       case 'fix_key':
         return { action: 'Fix the key', onAction: () => settings.open('connections', 'ways') };
       case 'retry':
+        // A disconnected account's retry is always DorkOS's own cleanup,
+        // which it keeps trying anyway; pressing it only hurries it along.
         if (gone) {
           return {
-            action: fix.fixableBy === 'dorkos' ? 'Try again now' : 'Try disconnecting again',
+            action: 'Try again now',
             onAction: onRetryDisconnect,
             pending: retryingDisconnect,
           };
@@ -236,6 +243,12 @@ function ReadinessFix({
           action: 'Check again',
           onAction: () => recheck.mutate(),
           pending: recheck.isPending,
+        };
+      case 'remove':
+        return {
+          action: 'Remove from your apps',
+          onAction: () => setConfirmRemove(true),
+          pending: removing,
         };
       // `turn_on_for_this_chat` is offered only in a chat's own view, beside
       // that chat's switch; an account's panel covers every chat.
@@ -246,8 +259,9 @@ function ReadinessFix({
     }
   })();
 
-  // Only an account with nothing owed at the service can be removed.
-  const removable = readiness.reason === 'disconnected';
+  // Removing is final here at once and always works; what is still owed at
+  // the service stays DorkOS's to finish.
+  const page = readiness.serviceAccessPage;
   return (
     <>
       <PanelFix
@@ -255,20 +269,39 @@ function ReadinessFix({
         detail={retryAt}
         {...(button ?? {})}
         secondary={
-          removable && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setConfirmRemove(true)}
-              disabled={removing}
-              data-testid="remove-account"
-            >
-              Remove from your apps
-            </Button>
+          gone && (
+            <>
+              {page && (
+                <Button
+                  asChild
+                  size="sm"
+                  variant="ghost"
+                  className="h-auto min-h-8 max-w-full whitespace-normal"
+                  data-testid="service-access-page"
+                >
+                  <ExternalLinkAnchor href={page.url}>
+                    Open {page.service} settings
+                    <ExternalLink className="size-3.5" aria-hidden />
+                  </ExternalLinkAnchor>
+                </Button>
+              )}
+              {fix?.action !== 'remove' && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-auto min-h-8 max-w-full whitespace-normal"
+                  onClick={() => setConfirmRemove(true)}
+                  disabled={removing}
+                  data-testid="remove-account"
+                >
+                  Remove from your apps
+                </Button>
+              )}
+            </>
           )
         }
       />
-      {removable && (
+      {gone && (
         <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -276,6 +309,8 @@ function ReadinessFix({
               <AlertDialogDescription>
                 It leaves this list. What agents did with it stays on record. If you connect it
                 again, you choose who can use it again.
+                {readiness.reason === 'disconnect_finishing' &&
+                  ' DorkOS still finishes removing its access at the service.'}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -418,24 +453,4 @@ function TryIt({ detail }: { detail: ConnectorConnectionDetail }) {
       </div>
     </PanelSection>
   );
-}
-
-/** Present only known account failure codes; never expose arbitrary server text. */
-function accountChangeError(error: unknown): string {
-  const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
-  switch (code) {
-    case 'connection_cleanup_pending':
-      return 'Finish disconnecting this app, then try again. Agents already can’t use it.';
-    case 'connection_not_disconnected':
-      return 'Disconnect this app before removing it.';
-    case 'connection_not_found':
-      return 'This app is no longer connected. Close this panel and pick it again from the list.';
-    case 'provider_not_found':
-    case 'authentication_unavailable':
-      return 'Sign-in isn’t available for this app right now. Check how DorkOS reaches your apps in Settings › Connections, then try again.';
-    case 'idempotency_conflict':
-      return 'This sign-in was already used. Close this panel and start again.';
-    default:
-      return 'We couldn’t confirm that change. Check the app’s current state before trying again.';
-  }
 }

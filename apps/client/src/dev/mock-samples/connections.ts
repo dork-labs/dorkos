@@ -60,6 +60,8 @@ export const MOCK_READINESS = {
   disconnectStuck: {
     state: 'gone',
     reason: 'disconnect_stuck',
+    fix: { action: 'remove', fixableBy: 'person' },
+    serviceAccessPage: { service: 'Google', url: 'https://myaccount.google.com/connections' },
     copy: {
       owner: disconnectStuckOwnerLine('dorkos_account_unlinked'),
       agent: CONNECTION_GONE_AGENT_COPY,
