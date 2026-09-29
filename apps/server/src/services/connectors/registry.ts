@@ -32,6 +32,7 @@ import {
   ConnectionStore,
   type ClosedConnection,
   type ConnectorProviderDeploymentMode,
+  type RegisterProviderOptions,
   type SignInStatusChange,
   type StableConnectionBinding,
 } from './connection-store.js';
@@ -198,11 +199,13 @@ export class ConnectorRegistry {
    * @param provider - The backend to register.
    * @param executionConfigDigest - Secret-free fingerprint of execution material.
    * @param mode - Server-owned deployment and payer mode; direct registrations are BYO.
+   * @param options - Accounts that keep their access through a setup change.
    */
   register(
     provider: ConnectorProvider,
     executionConfigDigest?: string,
-    mode: ConnectorProviderDeploymentMode = 'byo'
+    mode: ConnectorProviderDeploymentMode = 'byo',
+    options: RegisterProviderOptions = {}
   ): void {
     const digest =
       executionConfigDigest ??
@@ -213,7 +216,7 @@ export class ConnectorRegistry {
         capabilities: provider.getCapabilities(),
       });
     if (this._connections.health().status === 'ready') {
-      this._connections.registerProvider(provider, digest, mode);
+      this._connections.registerProvider(provider, digest, mode, options);
     }
     // Registering over a live registration, even with the same object, is a
     // setup change too: everything kept for the way is dropped.
@@ -481,6 +484,16 @@ export class ConnectorRegistry {
     this._connections.setPaused(connectionId, paused);
   }
 
+  /** Pause a connected account while a "Sign in again" runs (see {@link ConnectionStore.holdForSignIn}). */
+  holdForSignIn(connectionId: ConnectionId): void {
+    this._connections.holdForSignIn(connectionId);
+  }
+
+  /** Lift a sign-in's own pause (see {@link ConnectionStore.releaseSignInHold}). */
+  releaseSignInHold(connectionId: ConnectionId): boolean {
+    return this._connections.releaseSignInHold(connectionId);
+  }
+
   /** Replace the operator-facing label of one stable connection. */
   setLabel(connectionId: ConnectionId, label: string): void {
     this._connections.setLabel(connectionId, label);
@@ -573,6 +586,23 @@ export class ConnectorRegistry {
       return Promise.reject(new Error(`${provider.type} is no longer set up.`));
     }
     return this._catalog.read(provider, digest, signal);
+  }
+
+  /**
+   * Whether one registered way is known to reach one app: its app list, as
+   * already held in memory, names the app. `false` when it doesn't, or when
+   * nothing is held yet, so an answer is only ever "yes" on evidence.
+   *
+   * @param instanceId - The way's registered instance.
+   * @param toolkit - The app's slug.
+   */
+  reachesApp(instanceId: ConnectorProviderInstanceId, toolkit: string): boolean {
+    const digest = this._configDigests.get(instanceId);
+    if (digest === undefined || !this._providers.has(instanceId)) return false;
+    return (
+      this._catalog.heldInMemory(instanceId, digest)?.some((entry) => entry.slug === toolkit) ??
+      false
+    );
   }
 
   /**

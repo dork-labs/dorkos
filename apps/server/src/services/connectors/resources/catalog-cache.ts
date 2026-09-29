@@ -336,6 +336,20 @@ export class ConnectorCatalogCache {
   }
 
   /**
+   * The copy of one service's app list already held in memory for this setup,
+   * without reading the disk or listing upstream: for a lookup that must stay
+   * synchronous, like whether a way reaches one app. `undefined` when nothing
+   * is held (not read yet this run, another setup, or a type that keeps none).
+   *
+   * @param instanceId - The provider instance to look in.
+   * @param configDigest - Its current setup fingerprint.
+   */
+  heldInMemory(instanceId: string, configDigest: string): readonly ConnectorToolkit[] | undefined {
+    const kept = this.#kept.get(instanceId);
+    return kept?.setupKey === setupKeyFor(configDigest) ? kept.toolkits : undefined;
+  }
+
+  /**
    * Forget one service's kept list, in memory and on disk, and discard any
    * refresh still running for it. Called when the service's key or setup
    * changes or it is removed.

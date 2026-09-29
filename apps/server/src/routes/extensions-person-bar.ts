@@ -5,16 +5,17 @@
  * wrong. This is NOT "every write on the extensions router" — that router also
  * writes extension secrets and settings, which are per-extension data rather
  * than a leaf of `extensions` in `~/.dork/config.json`, and they are not covered
- * here. What this bar governs is the four routes that move a leaf of that
+ * here. What this bar governs is the five routes that move a leaf of that
  * section — a section whose every leaf is `operator-only` in
  * `config-write-policy.ts`:
  *
- * | Route                                | Writes                                |
- * | ------------------------------------ | ------------------------------------- |
- * | `POST /api/extensions/:id/enable`    | `extensions.enabled` / `.disabled`    |
- * | `POST /api/extensions/:id/disable`   | `extensions.enabled` / `.disabled`    |
- * | `POST /api/extensions/:id/approve`   | `extensions.approvedToRun`            |
- * | `POST /api/extensions/:id/revoke`    | `extensions.approvedToRun`            |
+ * | Route                                       | Writes                             |
+ * | ------------------------------------------- | ---------------------------------- |
+ * | `POST /api/extensions/:id/enable`           | `extensions.enabled` / `.disabled` |
+ * | `POST /api/extensions/:id/disable`          | `extensions.enabled` / `.disabled` |
+ * | `POST /api/extensions/:id/approve`          | `extensions.approvedToRun`         |
+ * | `POST /api/extensions/:id/revoke`           | `extensions.approvedToRun`         |
+ * | `POST /api/extensions/:id/dismiss-approval` | `extensions.dismissedApprovals`    |
  *
  * The `ExtensionManager` writes those leaves straight through `configManager`,
  * as a **purpose-built writer** is licensed to (`config-write.ts` argues the
@@ -59,7 +60,7 @@
  *
  *    Requests with no `Origin` (curl, the CLI, the desktop shell) pass, the same
  *    allowance `validateMcpOrigin` makes for the same reason: only browsers send
- *    the header, so only browsers can be judged by it. All four routes are
+ *    the header, so only browsers can be judged by it. All five routes are
  *    POST-only, and browsers have sent `Origin` on every POST — `fetch`,
  *    `XMLHttpRequest`, and plain form submission — for years, so a browser
  *    cannot reach that branch.

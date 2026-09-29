@@ -673,6 +673,15 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
       expect.stringContaining('/api/extensions/full-stack/approve'),
       expect.objectContaining({ method: 'POST' })
     );
+    // It binds the copy the card shows, so a copy that took its place since
+    // the card was drawn is refused rather than approved (DOR-2517).
+    const approveCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).endsWith('/api/extensions/full-stack/approve'));
+    expect(JSON.parse(String((approveCall?.[1] as RequestInit | undefined)?.body))).toEqual({
+      version: '1.0.0',
+      plugin: null,
+    });
   });
 
   it('shows an approved extension as allowed, with a way to stop it', async () => {

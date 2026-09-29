@@ -17,6 +17,10 @@
       "types": "./src/approval-schemas.ts",
       "default": "./dist/approval-schemas.js"
     },
+    "./extension-approval-schemas": {
+      "types": "./src/extension-approval-schemas.ts",
+      "default": "./dist/extension-approval-schemas.js"
+    },
     "./notification-schemas": {
       "types": "./src/notification-schemas.ts",
       "default": "./dist/notification-schemas.js"

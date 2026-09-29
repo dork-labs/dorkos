@@ -57,6 +57,9 @@ import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
+import { startAgentExecutionWatch } from './services/tasks/approvals/agent-execution-watch.js';
+import { raiseStanding } from './services/notifications/standing-events.js';
+import { broadcastTasksChanged } from './services/tasks/task-sse-events.js';
 import { createNotificationsRouter } from './routes/notifications.js';
 import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
@@ -261,6 +264,7 @@ import { createTemplateRouter } from './routes/templates.js';
 import { createHarnessRouter } from './routes/harness.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
+import { startExtensionApprovalQueue } from './services/extensions/extension-approval-queue.js';
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
 import { warnRedundantEnabledEntries } from './services/core-extensions/warn-redundant-enabled.js';
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
@@ -280,6 +284,9 @@ import {
 } from './services/marketplace/lib/integrity/legacy-record-sweep.js';
 import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
 import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
+import { migrateSavedCopies } from './services/marketplace/lib/saved-copies/migrate-saved-copies.js';
+import { withInstallTargetLock } from './services/marketplace/transaction.js';
+import { globalApprovalCarryOver } from './services/marketplace/lib/saved-copies/saved-copies-consent.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
 import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
@@ -1343,6 +1350,20 @@ async function start() {
   } catch (err) {
     logger.warn('[Marketplace] Startup install recovery failed', logError(err));
   }
+  // Copies an earlier version saved aside in a global install stop running
+  // and loading (DOR-2340), before anything loads the global packages. Once
+  // per install (a marker), and an approved package stays approved.
+  try {
+    const globalInstalls = await scanInstallationsAcrossScopes(dorkHome, []);
+    await migrateSavedCopies(
+      globalInstalls.map((i) => i.installPath),
+      withInstallTargetLock,
+      logger,
+      globalApprovalCarryOver(dorkHome)
+    );
+  } catch (err) {
+    logger.warn('[Marketplace] Could not check saved copies in global installs', logError(err));
+  }
 
   // Initialize directory boundary (must happen before app creation)
   const boundaryConfig = env.DORKOS_BOUNDARY;
@@ -1493,6 +1514,10 @@ async function start() {
     extensionManager = new ExtensionManager(dorkHome, coreExtensions);
     const initialCwd = env.DORKOS_DEFAULT_CWD ?? null;
     await extensionManager.initialize(initialCwd);
+    // Every extension waiting for a person to let it run asks in the Activity
+    // inbox, and keeps asking as installs, updates and answers change the set
+    // (DOR-2517). Follows the manager for the life of the process.
+    startExtensionApprovalQueue(extensionManager);
     logger.info('[Extensions] Extension system initialized');
   } catch (err) {
     logger.error('[Extensions] Failed to initialize extension system', err);
@@ -2420,6 +2445,26 @@ async function start() {
         .then((summary) => logInstallSweep('project installs', summary))
         .catch((err: unknown) => {
           logger.warn('[Marketplace] Project install recovery failed', logError(err));
+        })
+        // Once installs are settled: copies an earlier version saved aside in
+        // a project install stop running and loading (DOR-2340). Global
+        // installs were done at boot; a done root is skipped by its marker.
+        // Before the legacy-record sweep below, which chains on this promise.
+        .then(async () => {
+          const scopes = (meshCore?.listWithPaths() ?? []).map((a) => ({
+            projectPath: a.projectPath,
+            id: a.id,
+            name: a.displayName ?? a.name,
+          }));
+          const installs = await scanInstallationsAcrossScopes(dorkHome, scopes);
+          await migrateSavedCopies(
+            installs.map((i) => i.installPath),
+            withInstallTargetLock,
+            logger
+          );
+        })
+        .catch((err: unknown) => {
+          logger.warn('[Marketplace] Could not check saved copies', logError(err));
         });
     } catch (err) {
       logger.warn('[Marketplace] Project install recovery failed', logError(err));
@@ -3076,6 +3121,12 @@ async function start() {
     const { testControlRouter } = await import('./routes/test-control.js');
     testControlRouter.use('/composio', testComposioFixture.router);
   }
+  // Built before the ways register: linking the DorkOS account again (seen as
+  // early as boot) sends what the old link refused or never applied again.
+  const managedConnectorAuthority = new ManagedAuthoritySyncService({
+    db,
+    cloud: getCloudLinkManager(),
+  });
   const connectorBootstrapper = new ConnectorProviderBootstrapper({
     ...(testComposioFixture && { composioBaseUrl: testComposioFixture.baseUrl }),
     registry: connectorRegistry,
@@ -3097,6 +3148,16 @@ async function start() {
         displayName: server.displayName,
         connection: { transport: server.transport, url: server.url },
       })),
+    onRelinked: (providerInstanceId) => {
+      void managedConnectorAuthority
+        .restageAfterRelink(providerInstanceId, AbortSignal.timeout(60_000))
+        .catch((error: unknown) => {
+          logger.warn(
+            '[Connectors] Could not send changes again after linking again',
+            logError(error)
+          );
+        });
+    },
     onClosedByNewLink: (closed) => {
       void recordConnectionsClosedByNewLink(activityService, closed).catch((err: unknown) =>
         logger.warn('[Connectors] Could not record connections closed by a new link', { err })
@@ -3162,10 +3223,6 @@ async function start() {
       count: interruptedConnectorStarts,
     });
   }
-  const managedConnectorAuthority = new ManagedAuthoritySyncService({
-    db,
-    cloud: getCloudLinkManager(),
-  });
   const connectorLifecycle = new ConnectorLifecycleService({
     db,
     registry: connectorRegistry,
@@ -3335,7 +3392,8 @@ async function start() {
     keptLogos: () => catalogLogos.keptServiceIds(),
     recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
     appConnections: () => connectorBootstrapper.appConnections(),
-    wayHealth: (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId),
+    wayHealth: (providerInstanceId, toolkit) =>
+      connectorBootstrapper.wayHealth(providerInstanceId, toolkit),
     ...(adapterManager && { relay: adapterManager }),
     agentOwnership: { ownsAgent: connectorOwnsAgent },
     managedUsage: getCloudLinkManager(),
@@ -3358,7 +3416,7 @@ async function start() {
     db,
     connectorRegistry,
     { ownsAgent: connectorOwnsAgent },
-    (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId)
+    (providerInstanceId, toolkit) => connectorBootstrapper.wayHealth(providerInstanceId, toolkit)
   );
   const connectorProgramPrincipals = new ConnectorProgramPrincipalService(db);
   const connectorRuntimePrincipals = meshCore
@@ -3493,7 +3551,7 @@ async function start() {
       revalidatePrincipal: async (principal) =>
         connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false,
     },
-    (providerInstanceId) => connectorBootstrapper.wayHealth(providerInstanceId)
+    (providerInstanceId, toolkit) => connectorBootstrapper.wayHealth(providerInstanceId, toolkit)
   );
   const connectorBroker = new ConnectorExecutionBroker(
     connectorAuthorization,
@@ -3772,6 +3830,24 @@ async function start() {
   // is registered and set as the default above, so that is what a task with no
   // runtime of its own resolves to.
   if (tasksEnabled && taskStore) {
+    // An agent's runtime, model or effort changed by editing its file rather
+    // than through DorkOS re-asks for the approved schedules that follow it
+    // (DOR-2337). `agent-execution-watch.ts` says when it looks and why.
+    const agentExecutionWatch = startAgentExecutionWatch({
+      dorkHome,
+      store: taskStore,
+      agents: () => meshCore?.listWithPaths() ?? [],
+      onParked: async (tasks) => {
+        for (const parked of tasks) {
+          taskRegistrar?.syncTask(parked.id);
+          raiseStanding('schedule.parked', await resolveScheduleParkPayload(parked));
+        }
+        broadcastTasksChanged();
+      },
+      activity: activityService,
+      logger,
+    });
+
     schedulerService = new TaskSchedulerService({
       store: taskStore,
       runtimes: runtimeRegistry,
@@ -3799,6 +3875,7 @@ async function start() {
       meshCore,
       activityService,
       dorkHome,
+      beforeScheduledFire: (task) => agentExecutionWatch.beforeScheduledFire(task),
     });
     // The ONE registration seam, shared by every writer that can change what a
     // task's schedule is: these routes, the file watcher, and the reconciler.
@@ -3822,6 +3899,9 @@ async function start() {
     // meshCore.getProjectPath(agentId) would already return undefined here.
     if (meshCore) {
       meshCore.onUnregister((agentId, projectPath) => {
+        // Forgotten, like its permission record, so a later folder reusing
+        // its id starts fresh (DOR-2337).
+        void agentExecutionWatch.forget(agentId);
         const pausedCount = taskStore.disableTasksByAgentId(agentId);
         if (pausedCount > 0) {
           logger.info(
@@ -3852,7 +3932,8 @@ async function start() {
       taskStore,
       taskRegistrar,
       scheduleIdentities,
-      taskFileWatcher
+      taskFileWatcher,
+      () => agentExecutionWatch.checkAll()
     );
     const discovery = { watcher: taskFileWatcher, reconciler: taskReconciler };
 
@@ -3930,12 +4011,17 @@ async function start() {
           agents: [{ agentId, projectPath }],
         });
         attachAgentRoots(discovery, projectPath, agentId);
+        // A baseline from the moment it arrives (DOR-2337).
+        await agentExecutionWatch.checkAgent(projectPath);
         logger.info(`[Tasks] Watching schedule roots for newly registered agent ${agentId}`);
       };
     }
 
     taskReconciler.start();
     logger.info('[Tasks] File watcher and reconciler started');
+    // Every registered agent gets a baseline before the first fire, so an edit
+    // made after this boot is compared with something (DOR-2337).
+    await agentExecutionWatch.checkAll();
 
     // Ensure default templates exist
     ensureDefaultTemplates(dorkHome).catch((err) => {
@@ -5561,6 +5647,14 @@ async function start() {
       .catch((error: unknown) => {
         logger.warn('[Connectors] Managed authority recovery failed', logError(error));
       });
+    // Removing an own-key account's access at the service is DorkOS's job
+    // after a disconnect; a sign-in again nobody finished gives its account back.
+    void connectorLifecycle
+      .finishOwedCleanups(AbortSignal.timeout(25_000))
+      .catch((error: unknown) => {
+        logger.warn('[Connectors] Account cleanup at the service deferred', logError(error));
+      });
+    connectorAuthenticationFlows.expireAbandoned();
   };
   recoverManagedAuthority();
   managedAuthorityRecoveryInterval = setInterval(recoverManagedAuthority, 30_000);

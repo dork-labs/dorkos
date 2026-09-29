@@ -404,13 +404,20 @@ test.describe('Connections — session access status', () => {
   }) => {
     const connectionId = await connectWorkAccountViaApi(request);
 
-    // Mint a real test-mode session by sending one message.
-    const scenario = await request.post(`${API_URL}/api/test/scenario`, {
-      data: { name: 'simple-text' },
-    });
-    expect(scenario.ok()).toBe(true);
     const seed = await request.post(`${API_URL}/api/test/seed-agent`);
     const { agentDir, agentId } = (await seed.json()) as { agentDir: string; agentId: string };
+    // A conversation of this test's own (DOR-2545). The seeded agent's folder
+    // is shared with the chat-card cases above, and `/session?dir=` opens the
+    // folder's newest conversation — theirs, still bound to the
+    // `connection-request` scenario. The message then asked for Slack and held
+    // the turn open, so the whole test ran against a live turn and ran out of
+    // time, and its retry landed on the same still-working chat, whose
+    // composer is renamed "Compose next" and never matched.
+    const sessionId = crypto.randomUUID();
+    const scenario = await request.post(`${API_URL}/api/test/scenario`, {
+      data: { name: 'simple-text', sessionId },
+    });
+    expect(scenario.ok()).toBe(true);
 
     // Give the seeded agent one exact immutable operation through the same
     // owner reconciliation boundary the Connections access dialog uses.
@@ -439,9 +446,16 @@ test.describe('Connections — session access status', () => {
     expect(apply.ok()).toBe(true);
 
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
-    await chatPage.sendMessage('Hello connectors');
-    await expect(page).toHaveURL(/session=/);
+    await chatPage.goto(sessionId, { dir: agentDir });
+    await chatPage.sendAndLand('Hello connectors');
+    // The reply has begun; let the turn close before the reloads below, so none
+    // of them lands on a live turn. While a turn runs the composer is relabelled
+    // "Compose next — will send when ready", and `input` matches only the idle
+    // "Message…" label, so this waits for the turn to end. New chat tests in this
+    // file must pass their own session id: earlier cases leave a turn running in
+    // the seeded folder's newest chat (DOR-2545).
+    await expect(chatPage.input).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`session=${sessionId}`));
 
     // The session's connector surface lives in the right panel's Session tab.
     const rightPanel = new RightPanelPage(page);
@@ -458,9 +472,6 @@ test.describe('Connections — session access status', () => {
     // Arrange historical session-scoped authority in the isolated database. The
     // app never writes chat-only grants; real queries and rendering must still
     // explain each retained session override accurately.
-    const sessionUrl = page.url();
-    const sessionId = new URL(sessionUrl).searchParams.get('session');
-    expect(sessionId).toBeTruthy();
     const db = new Database(`/tmp/dorkos-test-mode-${MOCK_PORT}/dork.db`);
     try {
       const now = new Date().toISOString();

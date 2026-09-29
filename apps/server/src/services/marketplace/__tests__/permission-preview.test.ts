@@ -8,7 +8,7 @@
  * `ConflictDetector` to verify the end-to-end conflict path.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, rm, mkdir, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type {
@@ -592,11 +592,33 @@ describe('PermissionPreviewBuilder', () => {
       const pkgPath = await createFixturePackage(pkgRoot, manifest);
       await put(pkgPath, 'bin/git', '#!/bin/sh\n');
       await put(pkgPath, 'bin/deploy', '#!/bin/sh\n');
+      await chmod(join(pkgPath, 'bin', 'git'), 0o755);
+      await chmod(join(pkgPath, 'bin', 'deploy'), 0o755);
 
       const preview = await builder.build(pkgPath, manifest);
 
       expect(preview.executables).toEqual(['deploy', 'git']);
     });
+
+    // Purpose: what counts is what the system would run, not the name, so a
+    // copy saved aside with its execute bits cleared stops being disclosed as
+    // a program for the reason it stopped being one (DOR-2340).
+    it.skipIf(process.platform === 'win32')(
+      'leaves out a file in bin/ that is not executable',
+      async () => {
+        const manifest = pluginManifest('bin-inert');
+        const pkgPath = await createFixturePackage(pkgRoot, manifest);
+        await put(pkgPath, 'bin/tool', '#!/bin/sh\n');
+        await chmod(join(pkgPath, 'bin', 'tool'), 0o755);
+        await put(pkgPath, 'bin/tool.dork-old', '#!/bin/sh\n');
+        await chmod(join(pkgPath, 'bin', 'tool.dork-old'), 0o644);
+        await put(pkgPath, 'bin/README', 'notes');
+
+        const preview = await builder.build(pkgPath, manifest);
+
+        expect(preview.executables).toEqual(['tool']);
+      }
+    );
 
     it('reports unreadable program declarations instead of reporting none', async () => {
       // Purpose: "we could not read this" must never look like "there is none".

@@ -240,6 +240,7 @@ describe('checkInstalledPackages (DOR-2197)', () => {
               files: ['notes/a.md', 'skills/x/SKILL.md'],
               running: ['skills/x/SKILL.md'],
               check: { source: 'fetchable' },
+              keepKey: 'sha256:kept',
             },
           },
         },

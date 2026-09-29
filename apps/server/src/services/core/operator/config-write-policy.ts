@@ -591,6 +591,10 @@ export const CONFIG_WRITE_POLICY = {
   // the same record: a caller that could point an approved id at another copy
   // would move a person's decision onto code they never saw.
   'extensions.approvedSources': 'operator-only',
+  // The copies a person said "Not now" to in the Activity inbox (DOR-2517).
+  // Their answer to a consent question: a caller that could write it could
+  // hide the question from them.
+  'extensions.dismissedApprovals': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
@@ -971,6 +975,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.disabled',
       'extensions.approvedToRun',
       'extensions.approvedSources',
+      'extensions.dismissedApprovals',
       'harness.approvedHooks',
       'harness.refusedHooks',
       'runtimes.opencode.binaryPath',

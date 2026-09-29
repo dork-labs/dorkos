@@ -24,6 +24,7 @@ import { useOpenNotification } from '../model/use-open-notification';
 import { groupActivityRows } from '../lib/group-activity-rows';
 import { InboxRow } from './InboxRow';
 import { InboxGroupRow } from './InboxGroupRow';
+import { ExtensionApprovalHistoryRow } from './ExtensionApprovalHistoryRow';
 
 /**
  * The stagger the rows inherit — each row declares the child half.
@@ -164,6 +165,14 @@ export function InboxList({ lens, emptyLabel = 'Nothing yet', onOpened }: InboxL
               expanded={expandedGroups.has(item.stateKey)}
               onToggleExpanded={() => toggleGroup(item.stateKey)}
               onOpenNotification={handleOpen}
+            />
+          ) : item.notification.kind === 'extension.approval' ? (
+            // An answered extension approval reads as the same row the question
+            // was asked in, answered (DOR-2517), not as a generic event line.
+            <ExtensionApprovalHistoryRow
+              key={item.notification.id}
+              notification={item.notification}
+              onOpen={() => handleOpen(item.notification)}
             />
           ) : (
             <InboxRow

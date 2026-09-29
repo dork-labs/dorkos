@@ -7,7 +7,17 @@
  * every package type rather than only flow's.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -231,6 +241,8 @@ describe('agent identity across sources (DOR-2245 §8)', () => {
     const root = first.installPath;
     await put(root, '.dork/agent.json', '{"id":"01OLD"}');
     await put(root, '.dork/MEMORY.md', 'old notes');
+    // Made runnable, to show a set-aside copy never is (DOR-2340).
+    if (process.platform !== 'win32') await chmod(path.join(root, '.dork', 'MEMORY.md'), 0o755);
 
     const same = await harness.installer.install({ name: path.join(FIXTURES_DIR, 'valid-agent') });
     expect(await readFile(path.join(root, '.dork', 'agent.json'), 'utf8')).toBe('{"id":"01OLD"}');
@@ -248,6 +260,9 @@ describe('agent identity across sources (DOR-2245 §8)', () => {
       expect(await readFile(path.join(root, '.dork', 'MEMORY.md.dork-old'), 'utf8')).toBe(
         'old notes'
       );
+      if (process.platform !== 'win32') {
+        expect((await stat(path.join(root, '.dork', 'MEMORY.md.dork-old'))).mode & 0o111).toBe(0);
+      }
       expect(other.warnings.join(' ')).toMatch(/came from a different source/);
     } finally {
       await initBoundary(FIXTURES_DIR);

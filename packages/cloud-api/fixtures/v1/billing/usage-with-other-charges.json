@@ -1,0 +1,39 @@
+{
+  "from": "2026-09-01T00:00:00.000Z",
+  "to": "2026-10-01T00:00:00.000Z",
+  "groupBy": "seat",
+  "state": "active",
+  "rows": [
+    {
+      "key": "seat_opaque_0001",
+      "displayName": "the agent shown in your usage page",
+      "units": 64127,
+      "unit": "tokens",
+      "listPriceMicro": "2137",
+      "dorkosPriceMicro": "2519",
+      "costBasis": "published_price"
+    }
+  ],
+  "totals": {
+    "listPriceMicro": "2137",
+    "dorkosPriceMicro": "2519"
+  },
+  "otherCharges": {
+    "rows": [
+      {
+        "periodStart": "2026-09-01T00:00:00.000Z",
+        "periodEnd": "2026-10-01T00:00:00.000Z",
+        "units": 3.719,
+        "unit": "GB-month",
+        "displayName": "Extra storage",
+        "dorkosPriceMicro": "2864417",
+        "costBasis": "published_price"
+      }
+    ],
+    "dorkosPriceMicro": "2864417"
+  },
+  "denomination": {
+    "currency": "XTS",
+    "microPerCredit": "250"
+  }
+}

@@ -570,7 +570,8 @@ describe('Check files after a rebuild that could not prove everything (DOR-2322)
       outcome: 'sorted',
       setAside: [
         { path: 'a.md.dork-old', savedAs: 'a.md.dork-old' },
-        { path: 'bin/tool', savedAs: 'bin/tool.dork-old' },
+        // A program leaves bin/, which is on the PATH (DOR-2340).
+        { path: 'bin/tool', savedAs: '.dork/saved/bin__tool.dork-old' },
         { path: 'old.md', savedAs: 'old.md.dork-old.2' },
         { path: 'skills/gone/SKILL.md', savedAs: 'skills/gone/SKILL.md.dork-old' },
       ],
@@ -591,7 +592,10 @@ describe('Check files after a rebuild that could not prove everything (DOR-2322)
     expect(after['old.md.dork-old']).toBe('an older copy the person kept');
     expect(after['skills/gone/SKILL.md']).toBeUndefined();
     expect(after['bin/tool']).toBeUndefined();
-    expect((await stat(path.join(root, 'bin', 'tool.dork-old'))).mode & 0o111).toBe(0);
+    expect((await stat(path.join(root, '.dork', 'saved', 'bin__tool.dork-old'))).mode & 0o111).toBe(
+      0
+    );
+    expect(after['bin/tool.dork-old']).toBeUndefined();
     expect(after['mine.txt']).toBe('mine');
     expect(after['a.md']).toBe('a v2');
     expect(after['settings.json']).toBe('same default');

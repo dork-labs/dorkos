@@ -125,6 +125,7 @@ interface ExecutionRow {
   connectionStatus: 'active' | 'expired' | 'revoked' | 'pending';
   lifecycleState: 'connected' | 'disconnected';
   enabled: boolean;
+  pausedBy: 'owner' | 'sign_in' | null;
   reconciliationStatus: 'ready' | 'migration_needs_reconcile';
   providerInstanceId: string;
   providerType: string;
@@ -220,10 +221,12 @@ export class ConnectorExecutionAuthorizationService {
           : row.enabled
             ? 'connected'
             : 'paused',
+      pausedBy: row.pausedBy,
       authenticationStatus: row.connectionStatus,
       reconciliationStatus: row.reconciliationStatus,
       mode: row.providerMode,
-      way: this.wayHealth(row.providerInstanceId),
+      toolkit: row.toolkit,
+      way: this.wayHealth(row.providerInstanceId, row.toolkit),
       ...extra,
     });
     if (readiness.state === 'ready') return refuse(code, NOT_READY_FALLBACK);
@@ -555,6 +558,7 @@ export class ConnectorExecutionAuthorizationService {
         connectionStatus: connections.status,
         lifecycleState: connections.lifecycleState,
         enabled: connections.enabled,
+        pausedBy: connections.pausedBy,
         reconciliationStatus: connections.grantReconciliationStatus,
         providerInstanceId: connectorProviderInstances.id,
         providerType: connectorProviderInstances.type,

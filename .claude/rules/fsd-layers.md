@@ -90,7 +90,7 @@ The graph as it stands (2026-09) — every slice not listed imports no other ent
 | `binding`      | `config`, `mesh`, `relay`, `runtime`                     |
 | `recents`      | `interactions`, `room`, `session`                        |
 | `agent`        | `config`, `mesh`, `relay`, `runtime`, `session`, `tasks` |
-| `attention`    | `agent`, `mesh`, `session`, `tasks`                      |
+| `attention`    | `agent`, `extension`, `mesh`, `session`, `tasks`         |
 
 The table is in dependency order: every arrow points **upward**, to an earlier row or to an unlisted foundation, and never downward. That is what makes it a DAG. Adding an upward edge is ordinary work and needs no ceremony. A **downward** edge — `session` reaching for `attention`, say — is the move that closes a circle, and the linter will say so.
 

@@ -25,7 +25,9 @@ import {
 } from './community-deploy-live-capture.js';
 import {
   describeCommunityLiveGateFailure,
+  describeLauncherStop,
   explainCommunityLiveGateFailure,
+  PUBLISHED_LAUNCHER_STEP,
 } from './community-deploy-live-failure.js';
 import {
   parsePublishedVersion,
@@ -107,7 +109,7 @@ function runLauncherPty(input: {
       running = false;
       clearTimeout(timeout);
       if (exitCode === 0 || interrupted) resolve();
-      else reject(new CommunityLiveGateError('published-launcher'));
+      else reject(new CommunityLiveGateError(PUBLISHED_LAUNCHER_STEP));
     });
   });
   return {
@@ -185,10 +187,10 @@ async function main(): Promise<void> {
       binary,
       ['community', 'deploy', '--help'],
       process.env,
-      'published-launcher'
+      PUBLISHED_LAUNCHER_STEP
     );
     if (!help.includes('Guided setup') && !help.includes('Guide a standalone'))
-      throw new CommunityLiveGateError('published-launcher');
+      throw new CommunityLiveGateError(PUBLISHED_LAUNCHER_STEP);
 
     const capture = (clipboard = await receiveClipboard(socketPath));
     const shimDirectory = join(runDirectory, 'shim');
@@ -361,10 +363,20 @@ async function main(): Promise<void> {
     );
     await rm(durableHome, { recursive: true, force: true });
   } catch (error) {
-    throw await explainCommunityLiveGateFailure(error, { cleanedUp, recoveryCommand }, async () => {
-      const runId = await readRunId();
-      return runId ? recoveryFor(runId) : null;
-    });
+    throw await explainCommunityLiveGateFailure(
+      error,
+      { cleanedUp, recoveryCommand },
+      async () => {
+        const runId = await readRunId();
+        return runId ? recoveryFor(runId) : null;
+      },
+      async () => {
+        const runId = await readRunId();
+        if (!runId) return null;
+        const journal = await readFile(join(journalDirectory, `${runId}.json`), 'utf8');
+        return describeLauncherStop(JSON.parse(journal) as unknown);
+      }
+    );
   } finally {
     if (bootstrap) Buffer.from(bootstrap).fill(0);
     launcher?.kill();

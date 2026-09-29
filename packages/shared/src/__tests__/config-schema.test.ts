@@ -164,7 +164,13 @@ describe('UserConfigSchema', () => {
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
       memory: { provider: 'builtin' },
-      extensions: { enabled: [], disabled: [], approvedToRun: [], approvedSources: {} },
+      extensions: {
+        enabled: [],
+        disabled: [],
+        approvedToRun: [],
+        approvedSources: {},
+        dismissedApprovals: {},
+      },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -543,7 +549,13 @@ describe('USER_CONFIG_DEFAULTS', () => {
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
       memory: { provider: 'builtin' },
-      extensions: { enabled: [], disabled: [], approvedToRun: [], approvedSources: {} },
+      extensions: {
+        enabled: [],
+        disabled: [],
+        approvedToRun: [],
+        approvedSources: {},
+        dismissedApprovals: {},
+      },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -1905,6 +1917,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       disabled: [],
       approvedToRun: [],
       approvedSources: {},
+      dismissedApprovals: {},
     });
   });
 
@@ -1918,6 +1931,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       disabled: [],
       approvedToRun: [],
       approvedSources: {},
+      dismissedApprovals: {},
     });
   });
 
@@ -1931,6 +1945,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       disabled: ['marketplace'],
       approvedToRun: [],
       approvedSources: {},
+      dismissedApprovals: {},
     });
   });
 
@@ -1944,6 +1959,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       disabled: ['marketplace'],
       approvedToRun: [],
       approvedSources: {},
+      dismissedApprovals: {},
     });
   });
 
@@ -1977,6 +1993,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       disabled: [],
       approvedToRun: ['my-ext'],
       approvedSources: {},
+      dismissedApprovals: {},
     });
   });
 
@@ -1996,6 +2013,28 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       extensions: { approvedToRun: ['flow', 'my-ext'], approvedSources },
     });
     expect(result.extensions.approvedSources).toEqual(approvedSources);
+  });
+
+  it('round-trips the copies a person said "Not now" to (DOR-2517)', () => {
+    const dismissedApprovals = {
+      flow: {
+        path: '/h/.dork/plugins/flow/.dork/extensions/flow',
+        plugin: 'flow',
+        version: '1.2.0',
+        dismissedAt: '2026-09-28T12:00:00.000Z',
+      },
+    };
+    const result = UserConfigSchema.parse({ version: 1, extensions: { dismissedApprovals } });
+    expect(result.extensions.dismissedApprovals).toEqual(dismissedApprovals);
+  });
+
+  it('refuses a "Not now" that does not say which version it was for', () => {
+    expect(() =>
+      UserConfigSchema.parse({
+        version: 1,
+        extensions: { dismissedApprovals: { flow: { path: '/p', dismissedAt: 'x' } } },
+      })
+    ).toThrow();
   });
 
   it('rejects an approved copy with no path', () => {

@@ -736,7 +736,15 @@ export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UP
         unproven: {
           files: ['commands/old-review.md', 'notes/team-style.md', 'prompts/review.md.dork-old'],
           running: ['commands/old-review.md'],
-          check: { source: 'fetchable' as const },
+          check: {
+            source: 'fetchable' as const,
+            last: {
+              outcome: 'fetch-failed' as const,
+              message:
+                "Couldn't fetch the version of code-reviewer you had before (offline), so the files it kept stay as they are. Try again when you're online.",
+            },
+          },
+          keepKey: 'sha256:kept',
         },
       },
     };

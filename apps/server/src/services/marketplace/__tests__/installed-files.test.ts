@@ -507,7 +507,7 @@ describe('planCarryOver', () => {
 
   // A person file under a directory the new version made a file saves the whole
   // subtree under one renamed directory (review 11).
-  it('saves files under a path the new version turned into a file inside one renamed folder', () => {
+  it('saves files under a path the new version turned into a file inside one saved folder, under .dork/saved (DOR-2340)', () => {
     const rOld = record({ 'a/b/kept.md': H('k') });
     const rNew = record({ 'a/b': H('f') });
     const p = plan({
@@ -516,9 +516,27 @@ describe('planCarryOver', () => {
       live: liveScan({ 'a/b/kept.md': H('k'), 'a/b/mine.txt': H('m'), 'a/b/two.txt': H('t') }),
     });
     expect(p.actions).toEqual([
-      { kind: 'carry-as', path: 'a/b/mine.txt', savedAs: 'a/b.dork-old/mine.txt' },
-      { kind: 'carry-as', path: 'a/b/two.txt', savedAs: 'a/b.dork-old/two.txt' },
+      { kind: 'carry-as', path: 'a/b/mine.txt', savedAs: '.dork/saved/a__b.dork-old/mine.txt' },
+      { kind: 'carry-as', path: 'a/b/two.txt', savedAs: '.dork/saved/a__b.dork-old/two.txt' },
     ]);
+  });
+
+  // A folder an earlier update saved sits in the live root and is carried as
+  // the person's; a new save never lands on it (DOR-2340).
+  it('never saves a folder onto one an earlier update saved', () => {
+    const rNew = record({ skills: H('f') });
+    const p = plan({
+      rNew,
+      live: liveScan({
+        'skills/mine/SKILL.md': H('m'),
+        '.dork/saved/skills.dork-old/old/SKILL.md': H('o'),
+      }),
+    });
+    expect(p.actions).toContainEqual({
+      kind: 'carry-dir-as',
+      path: 'skills',
+      savedAs: '.dork/saved/skills.dork-old.2',
+    });
   });
 
   // A saved name the staged tree already occupies is never used.

@@ -62,6 +62,8 @@ export const RUNTIME_STATE_PATHS: readonly string[] = [
   '.dork/install-metadata.json',
   '.dork/installed-files.json',
   '.dork/uninstalled-agent.json',
+  // Folders an update or uninstall saved aside (DOR-2340).
+  '.dork/saved',
 ];
 
 /**
