@@ -23,7 +23,7 @@ describe('notification presentation', () => {
       id: '01JZG0000000000000000009',
       kind: 'extension.approval',
       tier: 'notable',
-      subject: { type: 'system', id: 'flow@1.2.0' },
+      subject: { type: 'system', id: '{"id":"flow","path":"/p","plugin":null,"version":"1.2.0"}' },
       title: 'Flow is off for now',
       createdAt: '2026-09-28T12:00:00.000Z',
       outcome: 'dismissed',

@@ -92,14 +92,15 @@ export function errorSessionSignalId(sessionId: string): string {
  * condition is filed under, so a waiting copy that updates in place is a new
  * item rather than the old one quietly changing underneath a count.
  *
- * @param approval - The waiting extension's id, path and version.
+ * @param approval - The waiting extension's id, plugin, path and version.
  */
 export function extensionApprovalSignalId(approval: {
   id: string;
-  path: string;
+  path?: string;
+  plugin: string | null;
   version: string;
 }): string {
-  return `extension:${approval.id}:${approval.path}:${approval.version}`;
+  return `extension:${approval.id}:${approval.plugin ?? ''}:${approval.path ?? ''}:${approval.version}`;
 }
 
 /**

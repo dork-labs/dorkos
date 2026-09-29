@@ -58,7 +58,7 @@ export function ExtensionApprovalHistoryRow({
         disabled={pending?.id === subject?.id}
         onClick={() => {
           if (inPlace && subject && record) {
-            approve({ id: subject.id, name: record.manifest.name });
+            approve({ ...subject, name: record.manifest.name });
           } else {
             onOpen();
           }

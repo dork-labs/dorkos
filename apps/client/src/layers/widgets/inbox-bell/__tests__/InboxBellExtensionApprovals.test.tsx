@@ -186,7 +186,13 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
 
     await waitFor(() => expect(screen.queryByText('Turn on Flow?')).not.toBeInTheDocument());
-    expect(posts).toEqual([{ url: '/api/extensions/flow/approve', body: undefined }]);
+    // The exact copy the row showed, so the server can refuse any other.
+    expect(posts).toEqual([
+      {
+        url: '/api/extensions/flow/approve',
+        body: { path: FLOW.path, version: '1.2.0', plugin: 'flow' },
+      },
+    ]);
   });
 
   it('says "Not now" from 👎 for the copy it showed, and the row leaves', async () => {
@@ -199,7 +205,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect(posts).toEqual([
       {
         url: '/api/extensions/flow/dismiss-approval',
-        body: { path: FLOW.path, version: '1.2.0' },
+        body: { path: FLOW.path, version: '1.2.0', plugin: 'flow' },
       },
     ]);
   });

@@ -29,8 +29,8 @@ describe('deriveWaitingItems — extensions waiting to be turned on', () => {
     });
 
     expect(items).toEqual([
-      { id: `extension:flow:${FLOW.path}:1.2.0`, kind: 'extension-approval' },
-      { id: 'extension:other:/h/other:1.2.0', kind: 'extension-approval' },
+      { id: `extension:flow:flow:${FLOW.path}:1.2.0`, kind: 'extension-approval' },
+      { id: 'extension:other:flow:/h/other:1.2.0', kind: 'extension-approval' },
     ]);
   });
 

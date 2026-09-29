@@ -5,8 +5,28 @@
  */
 import { Puzzle } from 'lucide-react';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
-import { extensionConsentCopy, useExtensionApprovalActions } from '@/layers/entities/extension';
+import {
+  extensionConsentCopy,
+  useExtensionApprovalActions,
+  type ExtensionAnswerInput,
+} from '@/layers/entities/extension';
 import { InboxDecisionRow } from '@/layers/features/inbox';
+
+/**
+ * The exact copy a row shows, sent with either answer so the server acts only
+ * on that copy. The list is read as the person, so `path` is always present.
+ *
+ * @param approval - The waiting extension.
+ */
+function copyOf(approval: PendingExtensionApproval): ExtensionAnswerInput {
+  return {
+    id: approval.id,
+    name: approval.name,
+    path: approval.path ?? '',
+    version: approval.version,
+    plugin: approval.plugin,
+  };
+}
 
 /** Props for {@link ExtensionApprovalList}. */
 export interface ExtensionApprovalListProps {
@@ -59,14 +79,8 @@ export function ExtensionApprovalList({ approvals, onOpenSettings }: ExtensionAp
             kind: 'yes-no',
             approveLabel: 'Turn it on',
             rejectLabel: 'Not now',
-            onApprove: () => approve({ id: approval.id, name: approval.name }),
-            onReject: () =>
-              dismiss({
-                id: approval.id,
-                name: approval.name,
-                path: approval.path,
-                version: approval.version,
-              }),
+            onApprove: () => approve(copyOf(approval)),
+            onReject: () => dismiss(copyOf(approval)),
           }}
           pending={
             pending?.id === approval.id

@@ -10,21 +10,29 @@ import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
 
-/** Which extension to answer, and the name to use if it goes wrong. */
-export interface ApproveExtensionInput {
+/**
+ * Which copy the person answered — the one their row showed — and the name to
+ * use if it goes wrong. The server acts only if the copy on disk is still
+ * exactly this one, and answers `409 stale_approval` otherwise.
+ */
+export interface ExtensionAnswerInput {
   /** Extension id. */
   id: string;
   /** Its name, for the failure toast. */
   name: string;
-}
-
-/** Which copy the person said "Not now" to: the one their row showed. */
-export interface DismissExtensionInput extends ApproveExtensionInput {
   /** The path the row showed. */
   path: string;
   /** The version the row showed. */
   version: string;
+  /** The plugin the row showed, or `null` for a direct install. */
+  plugin: string | null;
 }
+
+/** Which copy to turn on. */
+export type ApproveExtensionInput = ExtensionAnswerInput;
+
+/** Which copy to put off ("Not now"). */
+export type DismissExtensionInput = ExtensionAnswerInput;
 
 /** A failed request's own sentence, or the status when it sent none. */
 async function failureOf(res: Response): Promise<Error> {
@@ -77,9 +85,11 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
   const queryClient = useQueryClient();
 
   const approve = useMutation<void, Error, ApproveExtensionInput, () => void>({
-    mutationFn: async ({ id }) => {
+    mutationFn: async ({ id, path, version, plugin }) => {
       const res = await fetch(`${resolveApiBaseUrl()}/extensions/${id}/approve`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, version, plugin }),
       });
       if (!res.ok) throw await failureOf(res);
     },
@@ -96,11 +106,11 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
   });
 
   const dismiss = useMutation<void, Error, DismissExtensionInput, () => void>({
-    mutationFn: async ({ id, path, version }) => {
+    mutationFn: async ({ id, path, version, plugin }) => {
       const res = await fetch(`${resolveApiBaseUrl()}/extensions/${id}/dismiss-approval`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, version }),
+        body: JSON.stringify({ path, version, plugin }),
       });
       if (!res.ok) throw await failureOf(res);
     },

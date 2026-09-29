@@ -206,7 +206,7 @@ export function InboxDecisionRow({
                   onClick={() => setExpanded((open) => !open)}
                   pressed={expanded}
                   expanded={expanded}
-                  controls={panelId}
+                  controls={expanded ? panelId : undefined}
                 />
               )}
               {actions.kind === 'yes-no' ? (

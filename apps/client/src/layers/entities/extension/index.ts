@@ -27,4 +27,5 @@ export {
   type ExtensionApprovalActions,
   type ApproveExtensionInput,
   type DismissExtensionInput,
+  type ExtensionAnswerInput,
 } from './model/use-extension-approval-actions';

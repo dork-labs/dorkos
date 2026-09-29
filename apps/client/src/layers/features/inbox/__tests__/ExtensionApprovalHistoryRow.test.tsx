@@ -14,6 +14,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
+import { extensionApprovalSubjectId } from '@dorkos/shared/extension-approval-schemas';
+
+/** Where the answered copy lived. */
+const FLOW_PATH = '/home/me/.dork/plugins/flow/.dork/extensions/flow';
 
 const navigate = vi.fn();
 
@@ -31,7 +35,15 @@ function answered(overrides: Partial<NotificationDTO> = {}): NotificationDTO {
     id: '01JZG0000000000000000009',
     kind: 'extension.approval',
     tier: 'notable',
-    subject: { type: 'system', id: 'flow@1.2.0' },
+    subject: {
+      type: 'system',
+      id: extensionApprovalSubjectId({
+        id: 'flow',
+        path: FLOW_PATH,
+        plugin: 'flow',
+        version: '1.2.0',
+      }),
+    },
     title: 'You turned on Flow',
     body: 'Flow tab added',
     createdAt: new Date().toISOString(),
@@ -65,13 +77,13 @@ function flowRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRe
 }
 
 let extensions: ExtensionRecordPublic[];
-let posts: string[];
+let posts: Array<{ url: string; body: unknown }>;
 
 /** A fake of the two extension routes the row reaches. */
 async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = String(input);
   if (init?.method === 'POST') {
-    posts.push(url);
+    posts.push({ url, body: init.body ? JSON.parse(String(init.body)) : undefined });
     return new Response(JSON.stringify({ extension: { id: 'flow' } }), { status: 200 });
   }
   if (url.endsWith('/extensions')) return new Response(JSON.stringify(extensions));
@@ -147,7 +159,16 @@ describe('an answered extension approval in the Activity list', () => {
 
     await user.click(screen.getByRole('button', { name: 'Turn it on' }));
 
-    await waitFor(() => expect(posts).toEqual(['/api/extensions/flow/approve']));
+    // It names the exact copy the row was about, so a copy that took its
+    // place (another plugin, a project folder reusing the id) is refused.
+    await waitFor(() =>
+      expect(posts).toEqual([
+        {
+          url: '/api/extensions/flow/approve',
+          body: { path: FLOW_PATH, version: '1.2.0', plugin: 'flow' },
+        },
+      ])
+    );
     expect(navigate).not.toHaveBeenCalled();
   });
 

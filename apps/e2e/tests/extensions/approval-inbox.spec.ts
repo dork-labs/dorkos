@@ -17,7 +17,15 @@ import { test, expect } from '../../fixtures';
  *
  * Installed here rather than in global setup: a waiting extension shows in the
  * bell on every page, and no other spec should have to reason about it. The
- * plugin is removed again afterwards.
+ * plugin is removed again afterwards. While it is installed it can only touch
+ * specs on this same leg (the cockpit leg, `chromium`), and none of those
+ * asserts the bell's count: the ones that do (`tests/conversation/*`,
+ * `tests/permissions/*`, `tests/connections/*`) run on the test-mode legs,
+ * which have their own data directories. It also never enters Pulse's "Needs
+ * attention", which does not count extensions waiting to be turned on.
+ *
+ * The fixture carries the install sidecar the marketplace installer writes, so
+ * the row says who installed it the way it does for a real install.
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -57,8 +65,8 @@ test.describe('An extension waiting to run asks in the inbox', () => {
     await expect(page.getByText('Turn on Flow?')).toBeVisible();
     await expect(
       page.getByText(
-        'You installed the flow-fixture plugin. This adds a Flow tab that shows a fixture panel ' +
-          'for the browser tests. It runs as you.'
+        'You installed the flow-fixture plugin from dorkos/e2e-fixtures. This adds a Flow tab ' +
+          'that shows a fixture panel for the browser tests. It runs as you.'
       )
     ).toBeVisible();
 

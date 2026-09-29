@@ -65,6 +65,8 @@ describe('InboxDecisionRow', () => {
 
     expect(info).toHaveAttribute('aria-expanded', 'false');
     expect(info).toHaveAttribute('aria-pressed', 'false');
+    // It points at the panel only while there is one to point at.
+    expect(info).not.toHaveAttribute('aria-controls');
     expect(screen.queryByText('None of it has run yet.')).not.toBeInTheDocument();
 
     await user.click(info);
