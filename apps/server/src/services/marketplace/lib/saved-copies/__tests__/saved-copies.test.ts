@@ -9,10 +9,10 @@ import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { carryPersonFiles, lateWritePass } from '../../carry-over.js';
-import { computeInstalledFiles } from '../../installed-files.js';
-import { isPathProgram, readPackagePrograms } from '../../package-programs.js';
-import { readPackageSkills } from '../../package-skills.js';
+import { carryPersonFiles, lateWritePass } from '../../records/carry-over.js';
+import { computeInstalledFiles } from '../../records/installed-files.js';
+import { isPathProgram, readPackagePrograms } from '../../declarations/package-programs.js';
+import { readPackageSkills } from '../../declarations/package-skills.js';
 import { listSkillDirs } from '@dorkos/harness/scan';
 import { freeSavedName, makeInert, savedFolderCandidates } from '../saved-copies.js';
 

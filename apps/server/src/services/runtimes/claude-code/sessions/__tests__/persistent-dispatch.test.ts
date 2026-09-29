@@ -93,7 +93,7 @@ vi.mock('../../messaging/plugin-activation.js', () => ({
 // The global packages a person approved (DOR-2306); the warm-process withdrawal
 // case moves this between refreshes.
 const approvedGlobals = vi.hoisted(() => ({ names: [] as string[] }));
-vi.mock('../../../../marketplace/global-plugin-consent.js', () => ({
+vi.mock('../../../../marketplace/consent/global-plugin-consent.js', () => ({
   listConsentedPluginNames: vi.fn(async () => [...approvedGlobals.names]),
 }));
 vi.mock('../../../../core/credential-env.js', () => ({

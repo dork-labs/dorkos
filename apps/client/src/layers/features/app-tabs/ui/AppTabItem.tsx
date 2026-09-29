@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { MessageSquare, X } from 'lucide-react';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
-import type { AppTab } from '@/layers/shared/model';
+import { useExtensionPageAtPath, type AppTab } from '@/layers/shared/model';
 import {
+  ContributedIcon,
   statusDotClass,
   type RovingTabProps,
   type StatusSignal,
@@ -16,7 +17,7 @@ import {
   useRemoteCommunityRoom,
 } from '@/layers/entities/community';
 import { useSessionBorderState, type SessionBorderKind } from '@/layers/entities/session';
-import { fallbackTabLabel, parseTabHref, ROUTE_ICONS } from '../lib/tab-target';
+import { extensionPageTab, fallbackTabLabel, parseTabHref, ROUTE_ICONS } from '../lib/tab-target';
 
 /** DOM id of the routed content region the active tab controls. */
 export const APP_TAB_PANEL_ID = 'app-tab-panel';
@@ -93,12 +94,14 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
     access.fingerprint
   );
   const room = community ? communityRoom : localRoom;
+  // An extension page names itself (spec `flow-multiproject` §6.5).
+  const extensionTab = extensionPageTab(useExtensionPageAtPath(target.pathname));
 
   const label = agent
     ? getAgentDisplayName(agent)
     : room
       ? roomDisplayTitle(room)
-      : fallbackTabLabel(target);
+      : (extensionTab?.label ?? fallbackTabLabel(target));
   const Icon = ROUTE_ICONS[target.pathname] ?? MessageSquare;
   const signal = isSession ? DOT_SIGNAL[status.kind] : undefined;
 
@@ -136,6 +139,9 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
           <span aria-hidden="true" className="shrink-0 text-sm leading-none">
             {visual.emoji}
           </span>
+        ) : extensionTab ? (
+          // An extension's icon, guarded: a bad one costs the glyph, not the strip.
+          <ContributedIcon icon={extensionTab.icon} className="size-3.5 shrink-0" />
         ) : (
           <Icon className="size-3.5 shrink-0" />
         )}

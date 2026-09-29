@@ -22,6 +22,7 @@ import {
   mayRunExtensionCode,
 } from './extension-load-policy.js';
 import { configManager } from '../core/config-manager.js';
+import { getExtensionInbox } from './inbox/extension-inbox.js';
 import { logger } from '../../lib/logger.js';
 
 const require = createRequire(import.meta.url);
@@ -218,6 +219,7 @@ export class ExtensionServerLifecycle {
         extensionId: id,
         extensionDir: record.path,
         dorkHome: this.dorkHome,
+        extensionName: record.manifest.name,
       });
       // A register() that throws after adding an account listener or advisor
       // must not leave it behind: this instance never becomes active.
@@ -242,6 +244,11 @@ export class ExtensionServerLifecycle {
       });
       registered = undefined;
 
+      // Its inbox decisions show again, escalate again, and a deadline that
+      // passed while it was down fires now that it can answer (spec
+      // `flow-multiproject` §7.1).
+      getExtensionInbox()?.markRunning(id, record.manifest.name);
+
       // A fixed `server.ts` took over, so the failure mark this method wrote
       // above no longer describes anything.
       record.serverError = undefined;
@@ -264,6 +271,10 @@ export class ExtensionServerLifecycle {
   async shutdown(id: string): Promise<void> {
     const active = this.serverExtensions.get(id);
     if (!active) return;
+
+    // Nobody can answer its decisions while it is down: hide them and stop
+    // their clocks before its handler goes away.
+    getExtensionInbox()?.markStopped(id);
 
     for (const cancel of active.scheduledCleanups) {
       try {

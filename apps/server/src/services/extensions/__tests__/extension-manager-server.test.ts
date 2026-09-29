@@ -228,6 +228,7 @@ describe('ExtensionManager — server lifecycle', () => {
         extensionId: 'srv-ext',
         extensionDir: '/fake/extensions/srv-ext',
         dorkHome: '/fake/dork-home',
+        extensionName: expect.any(String),
       });
     });
 

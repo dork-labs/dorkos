@@ -31,6 +31,7 @@ import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
 import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
 import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
+import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
@@ -278,7 +279,7 @@ import {
   FoundClaudeFolderSchema,
   LEDGER_RUNTIMES,
 } from '@dorkos/shared/account-usage';
-import { DisclosedEffectsSchema } from '../marketplace/disclosed-effects.js';
+import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
 
 /**
  * Simplified documentation mirror of `@dorkos/marketplace`'s
@@ -557,8 +558,8 @@ const LocalInstallationUpdatesResultSchema = z.object({
 });
 
 /**
- * Simplified documentation mirror of {@link import('../marketplace/flows/uninstall.js').UninstallResult}.
- * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall.ts`.
+ * Simplified documentation mirror of {@link import('../marketplace/flows/uninstall/support.js').UninstallResult}.
+ * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall/support.ts`.
  */
 const LocalUninstallResultSchema = z.object({
   ok: z.boolean(),
@@ -2941,7 +2942,7 @@ registry.registerPath({
             disclosed: DisclosedEffectsSchema,
             contentHash: z.string(),
             // Raw README markdown read from the staged clone; omitted when the
-            // package ships no README (see routes/marketplace.ts readPackageReadme).
+            // package ships no README (see routes/marketplace/packages.ts readPackageReadme).
             readme: z.string().optional(),
           }),
         },
@@ -7571,6 +7572,9 @@ registry.registerPath({
 
 // projection throws if a capability path shadows a hand-registered one.
 registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
+
+// Extension decisions and per-project settings (spec `flow-multiproject` §7).
+registerExtensionDecisionsOpenApi(registry);
 
 // --- Generator ---
 

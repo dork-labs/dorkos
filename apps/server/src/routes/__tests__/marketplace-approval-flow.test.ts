@@ -24,7 +24,7 @@ import { ApprovalService } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { TokenConfirmationProvider } from '../../services/marketplace-mcp/confirmation-provider.js';
 import { createInstallHandler } from '../../services/marketplace-mcp/tool-install.js';
-import type { InstallerLike } from '../../services/marketplace/marketplace-installer.js';
+import type { InstallerLike } from '../../services/marketplace/installer/marketplace-installer.js';
 import type { MarketplaceMcpDeps } from '../../services/marketplace-mcp/marketplace-mcp-tools.js';
 import { createApprovalsRouter } from '../approvals.js';
 

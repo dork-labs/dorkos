@@ -126,7 +126,7 @@ export function LimitToProjectsDialog({
 
   // Every project the machine knows, plus any the rule names that the list no
   // longer shows (a folder that is gone), so saving never drops one silently.
-  const listed = projects.data?.projects ?? [];
+  const listed = projects.data ?? [];
   const extra = (current ?? []).filter((p) => !listed.some((known) => known.root === p.root));
   const all: ProjectRef[] = [...listed, ...extra];
 

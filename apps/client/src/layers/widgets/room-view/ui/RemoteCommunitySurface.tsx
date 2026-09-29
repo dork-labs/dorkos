@@ -7,6 +7,7 @@ import {
   communityKeys,
   communityAccessState,
   isCommunityContentAuthorityCurrent,
+  applyRemoteCommunityRevisions,
   mergeRemoteCommunityEntries,
   useCommunityContentAuthority,
   useCommunityConnections,
@@ -114,13 +115,21 @@ export function RemoteCommunitySurface({
     access.fingerprint
   );
   const [streamRevision, setStreamRevision] = useState(0);
+  // The confirmed posts this view holds outside the stream, so a change to one of them (a post
+  // of the person's own, erased later) is remembered by the stream (DOR-2544).
+  const heldReceipts = useRef<RemoteCommunityEntry[]>([]);
+  const holdsReceipt = useCallback(
+    (entryId: string) => heldReceipts.current.some((entry) => entry.id === entryId),
+    []
+  );
   const stream = useRemoteCommunityStream(
     community,
     roomId,
     access.capabilities.stream,
     streamRevision,
     access.fingerprint,
-    access.cacheReadable
+    access.cacheReadable,
+    holdsReceipt
   );
   const removed = stream.status === 'removed';
   const room = removed ? null : (stream.room ?? roomQuery.data);
@@ -145,6 +154,9 @@ export function RemoteCommunitySurface({
     () => (receiptState.address === contextAddress ? receiptState.entries : []),
     [contextAddress, receiptState]
   );
+  useEffect(() => {
+    heldReceipts.current = receipts;
+  }, [receipts]);
   const [receiptRevision, setReceiptRevision] = useState(0);
   const [showMembers, setShowMembers] = useState(false);
   const [actionState, setActionState] = useState<{
@@ -163,14 +175,19 @@ export function RemoteCommunitySurface({
     () =>
       removed
         ? []
-        : mergeRemoteCommunityEntries(
-            community,
-            roomId,
-            ...(history.data?.pages.map((page) => page.entries) ?? []),
-            stream.entries,
-            receipts
+        : // Changes last, so a history page read before a message was deleted or erased on the
+          // Community still shows the tombstone (DOR-2544).
+          applyRemoteCommunityRevisions(
+            mergeRemoteCommunityEntries(
+              community,
+              roomId,
+              ...(history.data?.pages.map((page) => page.entries) ?? []),
+              stream.entries,
+              receipts
+            ),
+            stream.revisions
           ),
-    [community, roomId, history.data, stream.entries, receipts, removed]
+    [community, roomId, history.data, stream.entries, stream.revisions, receipts, removed]
   );
   const onReceipt = useCallback(
     (entry: RemoteCommunityEntry) => {

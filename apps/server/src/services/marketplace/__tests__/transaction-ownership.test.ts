@@ -21,8 +21,8 @@ import path from 'node:path';
 import type { PackageFileNotice } from '@dorkos/shared/marketplace-schemas';
 import { runTransaction, type TransactionOwnership } from '../transaction.js';
 import { atomicMove } from '../lib/atomic-move.js';
-import { readInstalledFiles } from '../lib/installed-files.js';
-import { rebuildInstalledFiles } from '../lib/legacy-record.js';
+import { readInstalledFiles } from '../lib/records/installed-files.js';
+import { rebuildInstalledFiles } from '../lib/records/legacy-record.js';
 import { noopLogger } from '@dorkos/shared/logger';
 
 let scratch: string;

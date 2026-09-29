@@ -25,6 +25,11 @@ import { getAccountUsageStore } from '../core/usage/current-usage-store.js';
 import { recordContinuation } from '../core/usage/session-continuation.js';
 import { createProjectsApi } from '../projects/extension-projects-api.js';
 import { projectRegistry } from '../projects/project-registry.js';
+import {
+  createInboxApi,
+  createProjectSettingsReader,
+  createRequirePerson,
+} from './inbox/extension-inbox-context.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../../lib/logger.js';
@@ -149,6 +154,8 @@ interface CreateContextDeps {
   extensionId: string;
   extensionDir: string;
   dorkHome: string;
+  /** The manifest name, which inbox rows, pushes and the person bar say. Defaults to the id. */
+  extensionName?: string;
 }
 
 /**
@@ -162,6 +169,9 @@ interface CreateContextDeps {
  * - The resolved DorkOS data directory (`dorkHome`)
  * - `accounts`: the agent accounts, their usage, and the account advisor seam
  * - `projects`: the projects core knows, scoped to this extension
+ * - `inbox`: decisions in the Activity inbox (spec `flow-multiproject` §7)
+ * - `requirePerson`: the person bar for the extension's own routes
+ * - `projectSettings`: per-project settings only a person writes, read-only here
  *
  * @param deps - Extension identity and directory info
  * @returns The context, a function to retrieve scheduled cleanup functions, and
@@ -211,8 +221,14 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     eventFanOut.broadcast(`ext:${extensionId}:${event}`, data);
   }
 
+  const extensionName = deps.extensionName ?? extensionId;
   const { accounts, release: releaseAccounts } = createAccountsApi(extensionId);
   const { projects, release: releaseProjects } = createProjectsApi(extensionId, projectRegistry);
+  const { inbox, release: releaseInbox } = createInboxApi(extensionId, extensionName);
+  const { projectSettings, release: releaseProjectSettings } = createProjectSettingsReader(
+    extensionId,
+    dorkHome
+  );
 
   const ctx: DataProviderContext = {
     secrets,
@@ -225,6 +241,9 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     dorkHome,
     accounts,
     projects,
+    inbox,
+    requirePerson: createRequirePerson(extensionName),
+    projectSettings,
   };
 
   return {
@@ -233,6 +252,8 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     releaseListeners: () => {
       releaseAccounts();
       releaseProjects();
+      releaseInbox();
+      releaseProjectSettings();
     },
   };
 }

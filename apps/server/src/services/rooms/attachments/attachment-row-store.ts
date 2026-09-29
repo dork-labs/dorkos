@@ -132,6 +132,26 @@ export class AttachmentRowStore {
   }
 
   /**
+   * Remember the id a Community gave this file when the post carrying it was delivered there, so
+   * a later removal on the Community can be matched to exactly this file (DOR-2549).
+   *
+   * @param roomId - The local room.
+   * @param attachmentId - The local attachment id.
+   * @param communityAttachmentId - The Community's id for the uploaded copy.
+   */
+  recordCommunityAttachmentId(
+    roomId: string,
+    attachmentId: string,
+    communityAttachmentId: string
+  ): void {
+    this.db
+      .update(roomAttachments)
+      .set({ communityAttachmentId })
+      .where(and(eq(roomAttachments.roomId, roomId), eq(roomAttachments.id, attachmentId)))
+      .run();
+  }
+
+  /**
    * Point these attachments at the entry that carries them.
    *
    * **Runs inside the entry's own transaction, on the far side of the insert**

@@ -49,7 +49,7 @@
 import { createHash } from 'node:crypto';
 import { access, lstat, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { fileSha256Hex } from './installed-files.js';
+import { fileSha256Hex } from './records/tree-scan.js';
 
 /**
  * Paths inside an install root that DorkOS writes after the package lands:

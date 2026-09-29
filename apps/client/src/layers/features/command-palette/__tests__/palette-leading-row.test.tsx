@@ -140,6 +140,7 @@ vi.mock('@/layers/shared/model', () => ({
   useNow: () => Date.now(),
   // Rows below the agent, so "the highlight moved down" and "the highlight came
   // back to the top" are claims about a list with somewhere else to be.
+  useMenuExtensionPages: () => [],
   useSlotContributions: () => [
     {
       id: 'settings',

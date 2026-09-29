@@ -863,6 +863,10 @@ export default defineConfig({
         // and a `/compact` per run, so reaching this leg would bill the
         // machine's own `claude` sign-in for every one of them.
         '**/chat/compaction*',
+        // Runs against the test-mode leg in `chromium-extension-seams` below:
+        // it turns a core extension on for its own tests and opens chats, and a
+        // chat on this leg is a real claude-code session.
+        '**/extensions/extension-seams.spec.ts',
         // Runs against the production leg in `chromium-production` below, and
         // only there. On this leg its every assertion would be vacuous: Vite's
         // shell carries no Content-Security-Policy, so a spec written to prove
@@ -1042,6 +1046,25 @@ export default defineConfig({
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
       testMatch: ['**/relay/bridged-channel.spec.ts'],
+    },
+    {
+      // The extension seams (spec `flow-multiproject` §12): an extension's page,
+      // its chat status-bar item and its tab dot, driven through the
+      // `hello-world` core extension. Against the test-mode leg so the chats it
+      // opens can never bill a model.
+      //
+      // A separate project rather than a chat-mock suite because it shares none
+      // of chat-mock's scenario/reset choreography. What it does share with its
+      // neighbours is the server's extension set: it turns `hello-world` on for
+      // its own serial tests and off again in `afterAll`, so another test-mode
+      // project can see the extension's page, status item and tab for those few
+      // seconds. Nothing any of them asserts depends on the extension set.
+      name: 'chromium-extension-seams',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: `http://localhost:${MOCK_VITE_PORT}`,
+      },
+      testMatch: ['**/extensions/extension-seams.spec.ts'],
     },
     // The only project whose `baseURL` is an EXPRESS port rather than a Vite
     // one, because the production leg serves the built shell itself — which is

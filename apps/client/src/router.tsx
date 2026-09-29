@@ -20,6 +20,7 @@ import { WorkspacesPage } from '@/layers/widgets/workspaces';
 import { ConnectionsPage } from '@/layers/widgets/connections';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
 import { FeedbackRequestsPage } from '@/layers/widgets/feedback-requests';
+import { ExtensionPageRoute } from '@/layers/widgets/extension-page';
 import { agentFilterSchema, ATTENTION_SORT_FIELD } from '@/layers/features/agents-list';
 import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
@@ -27,6 +28,7 @@ import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
 import {
   ChannelsBar,
+  ExtensionPageBar,
   HomeSurfaceBar,
   SessionHeader,
   TeamHeader,
@@ -45,6 +47,8 @@ import {
 import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
 import { createCommunityRouteMemory } from './app/community-route-memory';
+// Off the `shared/lib` barrel on purpose — see the note there.
+import { parseAppSearch, stringifyAppSearch } from '@/layers/shared/lib/router-search';
 
 // ── Router context ──────────────────────────────────────────
 interface RouterContext {
@@ -568,6 +572,32 @@ const feedbackRequestsRoute = createRoute({
   component: FeedbackRequestsPage,
 });
 
+// ── Extension pages at /x/<extensionId>/<path> ──────────────
+// Two routes, one page component: an extension's home (`/x/flow`) and every
+// page under it (`/x/flow/p/dorkos`). The `x/` prefix is what means no core
+// route can ever collide with a page an extension registers. Which page (if
+// any) answers is decided against the registry at render time, because a deep
+// link on reload arrives before the extension has registered anything.
+//
+// No `validateSearch`: a page is handed its query as the text the address holds
+// (`pageSearchFrom`), and a validator here would be applied as a middleware to
+// every navigation and write its output back into the URL. The router's own
+// read/write rule (`parseAppSearch`/`stringifyAppSearch`) is what keeps that text
+// exact.
+const extensionHomeRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/x/$extensionId',
+  staticData: { header: ExtensionPageBar },
+  component: ExtensionPageRoute,
+});
+
+const extensionPageRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/x/$extensionId/$',
+  staticData: { header: ExtensionPageBar },
+  component: ExtensionPageRoute,
+});
+
 // ── Route tree ──────────────────────────────────────────────
 const routeTree = rootRoute.addChildren([
   appShellRoute.addChildren([
@@ -580,6 +610,8 @@ const routeTree = rootRoute.addChildren([
     marketplaceRoute,
     marketplaceSourcesRoute,
     feedbackRequestsRoute,
+    extensionHomeRoute,
+    extensionPageRoute,
   ]),
 ]);
 
@@ -594,6 +626,10 @@ export function createAppRouter(queryClient: QueryClient, transport: Transport) 
     routeTree,
     context: { queryClient, transport },
     defaultPreload: 'intent',
+    // Exact where TanStack's default is lossy (`?v=1.10` read as 1.1); see
+    // `router-search.ts`. The app's own typed params read the same as before.
+    parseSearch: parseAppSearch,
+    stringifySearch: stringifyAppSearch,
     defaultErrorComponent: RouteErrorFallback,
     defaultNotFoundComponent: NotFoundFallback,
   });

@@ -80,11 +80,7 @@ import type { AgentBrowserPreset } from './agent-browser.js';
 import type { CapabilityCatalog, CapabilityTier } from './capabilities.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
 import type { MemoryProviderStatus } from './memory-provider.js';
-import type {
-  AccountEligibilityResponse,
-  OnlyProjectsResponse,
-  ProjectListResponse,
-} from './project-schemas.js';
+import type { AccountEligibilityResponse, OnlyProjectsResponse } from './project-schemas.js';
 import type { UnattendedAutonomyState } from './permission-semantics.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
 import type {
@@ -252,6 +248,7 @@ import type {
   ConnectorUsagePage,
 } from './connector-schemas.js';
 import type { SearchQuery, SearchResponse } from './search-schemas.js';
+import type { ProjectInfo, ProjectRef } from './project-schemas.js';
 import type {
   ConnectorAgentConnections,
   ConnectorEveryAgentGrants,
@@ -1518,6 +1515,15 @@ export interface Transport
   scanWorktrees(): Promise<WorktreeScanResult>;
   /** Resolve an absolute path (e.g. a session cwd) to its containing workspace, or null. */
   resolveWorkspace(absPath: string): Promise<Workspace | null>;
+
+  // --- Projects (git main checkouts; spec `flow-multiproject` §6.1) ---
+  /** Every known project whose folder exists, by name. */
+  listProjects(): Promise<ProjectInfo[]>;
+  /**
+   * The project a folder belongs to: its git main checkout, or null when the
+   * folder is in no repository. A lookup never adds the folder to the list.
+   */
+  resolveProject(cwd: string): Promise<ProjectRef | null>;
 
   /** Server health check. */
   health(): Promise<HealthResponse>;
@@ -3439,12 +3445,6 @@ export interface Transport
    * @param path - The folder, as the found list gave it.
    */
   dismissFoundClaudeFolder(path: string): Promise<void>;
-
-  /**
-   * Every project this machine knows (`GET /api/projects`), for Settings'
-   * "Limit to projects" choice.
-   */
-  listProjects(): Promise<ProjectListResponse>;
 
   /**
    * Which Claude accounts may work in the project a folder belongs to (`GET

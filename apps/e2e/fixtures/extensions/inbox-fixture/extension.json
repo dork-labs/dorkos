@@ -1,0 +1,9 @@
+{
+  "id": "inbox-fixture",
+  "name": "Inbox Fixture",
+  "version": "1.0.0",
+  "description": "Browser-test fixture: a server half that asks a person things in the Activity inbox.",
+  "serverCapabilities": {
+    "serverEntry": "./server.ts"
+  }
+}

@@ -19,7 +19,6 @@ import type {
 import type {
   AccountEligibilityResponse,
   OnlyProjectsResponse,
-  ProjectListResponse,
 } from '@dorkos/shared/project-schemas';
 import { fetchJSON, fetchNoContent } from './http-client';
 
@@ -89,10 +88,6 @@ export function createAccountMethods(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify({ path }),
       });
-    },
-
-    listProjects(): Promise<ProjectListResponse> {
-      return fetchJSON<ProjectListResponse>(baseUrl, '/projects');
     },
 
     getAccountEligibility(folder?: string): Promise<AccountEligibilityResponse> {

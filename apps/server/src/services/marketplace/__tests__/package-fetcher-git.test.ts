@@ -40,9 +40,10 @@ vi.mock('../../../lib/git-safety.js', async (importOriginal) => ({
   }),
 }));
 
-vi.mock('../source-url-policy.js', async () => {
-  const actual =
-    await vi.importActual<typeof import('../source-url-policy.js')>('../source-url-policy.js');
+vi.mock('../sources/source-url-policy.js', async () => {
+  const actual = await vi.importActual<typeof import('../sources/source-url-policy.js')>(
+    '../sources/source-url-policy.js'
+  );
   return {
     ...actual,
     // This suite's own repository, and nothing else, gets past the door.
@@ -52,7 +53,7 @@ vi.mock('../source-url-policy.js', async () => {
   };
 });
 
-import { MarketplaceCache } from '../marketplace-cache.js';
+import { MarketplaceCache } from '../cache/marketplace-cache.js';
 import { PackageFetcher } from '../package-fetcher.js';
 import { GitCommitNotFoundError, gitTreeSource } from '../lib/git/git-tree.js';
 

@@ -337,7 +337,6 @@ export function createPlaygroundTransport(): Transport {
       if (prop === 'dismissFoundClaudeFolder') return async () => undefined;
       // Account rules (spec `flow-multiproject` §8.6): no projects and no
       // rules, so every account in the showcases reads as allowed.
-      if (prop === 'listProjects') return async () => ({ projects: [] });
       if (prop === 'getAccountEligibility' || prop === 'setProjectAccounts') {
         return async () => ({ project: null, allow: null, accounts: [] });
       }

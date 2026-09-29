@@ -4,6 +4,13 @@ import { devtools } from 'zustand/middleware';
 import type { LucideIcon } from 'lucide-react';
 import type { ComponentType } from 'react';
 import type { Transport } from '@dorkos/shared/transport';
+import type { ExtensionPageProps, StatusBarSlotContext } from '@dorkos/extension-api';
+import {
+  hasPageParams,
+  matchExtensionPage,
+  parseExtensionPagePath,
+  type ExtensionPageMatch,
+} from '@/layers/shared/lib/extension-page-path';
 
 // --- Slot ID Constants ---
 
@@ -16,6 +23,8 @@ export const SLOT_IDS = {
   SETTINGS_TABS: 'settings.tabs',
   RIGHT_PANEL: 'right-panel',
   SUGGESTION_CHIPS: 'chat.suggestion-chips',
+  STATUS_BAR: 'status-bar',
+  PAGES: 'pages',
 } as const;
 
 export type SlotId = (typeof SLOT_IDS)[keyof typeof SLOT_IDS];
@@ -201,6 +210,51 @@ export interface RightPanelContribution extends BaseContribution {
   }) => boolean;
 }
 
+/**
+ * A full page an extension mounted at `/x/<extensionId>/<path>` (spec
+ * `flow-multiproject` §6.5). Registered only through `api.registerPage`; the
+ * id is `<extensionId>:<path>`, so one extension registering a path twice
+ * replaces the first.
+ */
+export interface ExtensionPageContribution extends BaseContribution {
+  /** The extension that registered it. */
+  extensionId: string;
+  /** The page path as registered: `''` for the home, or segments with `:param`. */
+  path: string;
+  /** The page itself. */
+  component: ComponentType<ExtensionPageProps>;
+  /** Title for the page bar, tab, palette and phone menu. */
+  title: string;
+  /** Icon for the page bar, tab, palette and phone menu. */
+  icon?: ComponentType<{ className?: string }>;
+  /** Whether it is listed in the palette and the phone "Add-ons" menu. Param paths never are. */
+  menu: boolean;
+}
+
+/**
+ * An item an extension added to the chat status bar (spec `flow-multiproject`
+ * §6.6). Core draws every visible one inside the one `extensions` status item,
+ * in `priority` order.
+ */
+export interface StatusBarContribution extends BaseContribution {
+  /** The extension that registered it. */
+  extensionId: string;
+  /** Accessible name of the item's region. */
+  label: string;
+  /** The item, given the chat's slot context as props. */
+  component: ComponentType<StatusBarSlotContext>;
+  /** Whether to show it for this chat. Pure; reads only `ctx`. Absent means always. */
+  when?: (ctx: StatusBarSlotContext) => boolean;
+  /** Whether it needs attention. Pure; reads only `ctx`. Absent means never. */
+  urgent?: (ctx: StatusBarSlotContext) => boolean;
+}
+
+/**
+ * The one kind of mark an extension can put on its own right-panel tab. Core
+ * draws it; the extension cannot style it (spec `flow-multiproject` §6.7).
+ */
+export type TabMarker = 'attention';
+
 // --- Slot Contribution Map ---
 
 /**
@@ -222,6 +276,8 @@ export interface SlotContributionMap {
   'settings.tabs': SettingsTabContribution;
   'right-panel': RightPanelContribution;
   'chat.suggestion-chips': SuggestionChipContribution;
+  'status-bar': StatusBarContribution;
+  pages: ExtensionPageContribution;
 }
 
 // --- Store ---
@@ -233,6 +289,15 @@ interface ExtensionRegistryState {
   register: <K extends SlotId>(slotId: K, contribution: SlotContributionMap[K]) => () => void;
   /** Get raw (unsorted) contributions for a slot. */
   getContributions: <K extends SlotId>(slotId: K) => SlotContributionMap[K][];
+  /**
+   * Marks on extension right-panel tabs, keyed by the tab's namespaced
+   * contribution id (`<extensionId>:<tabId>`). Absent means unmarked.
+   */
+  tabMarkers: Readonly<Record<string, TabMarker>>;
+  /** Mark a tab, or clear its mark with `null`. No-op when unchanged. */
+  setTabMarker: (contributionId: string, marker: TabMarker | null) => void;
+  /** Clear every mark an extension set, when it deactivates. */
+  clearTabMarkers: (extensionId: string) => void;
 }
 
 /** Initial state factory -- every slot starts empty. */
@@ -284,6 +349,29 @@ export const useExtensionRegistry = create<ExtensionRegistryState>()(
       },
 
       getContributions: (slotId) => get().slots[slotId],
+
+      tabMarkers: {},
+
+      setTabMarker: (contributionId, marker) => {
+        if ((get().tabMarkers[contributionId] ?? null) === marker) return;
+        set(
+          (state) => {
+            const next = { ...state.tabMarkers };
+            if (marker === null) delete next[contributionId];
+            else next[contributionId] = marker;
+            return { tabMarkers: next };
+          },
+          undefined,
+          `tabMarker/${contributionId}`
+        );
+      },
+
+      clearTabMarkers: (extensionId) => {
+        const prefix = `${extensionId}${EXTENSION_ID_SEPARATOR}`;
+        const kept = Object.entries(get().tabMarkers).filter(([id]) => !id.startsWith(prefix));
+        if (kept.length === Object.keys(get().tabMarkers).length) return;
+        set({ tabMarkers: Object.fromEntries(kept) }, undefined, `tabMarkers/clear/${extensionId}`);
+      },
     }),
     { name: 'extension-registry' }
   )
@@ -308,4 +396,61 @@ export function useSlotContributions<K extends SlotId>(slotId: K): SlotContribut
     () => [...contributions].sort((a, b) => (a.priority ?? 50) - (b.priority ?? 50)),
     [contributions]
   );
+}
+
+/**
+ * The mark on one right-panel tab, or `null`.
+ *
+ * @param contributionId - The tab's contribution id.
+ */
+export function useTabMarker(contributionId: string): TabMarker | null {
+  return useExtensionRegistry((state) => state.tabMarkers[contributionId] ?? null);
+}
+
+/**
+ * The extension pages the command palette and the phone "Add-ons" menu list:
+ * every page that asked to be listed and has no `:param` in its path (a page
+ * that needs a value cannot be opened from a menu), by title.
+ *
+ * @param pages - Every registered page.
+ */
+export function menuExtensionPages(
+  pages: readonly ExtensionPageContribution[]
+): ExtensionPageContribution[] {
+  return pages
+    .filter((page) => page.menu && !hasPageParams(page.path))
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+/** The pages {@link menuExtensionPages} lists, kept live from the registry. */
+export function useMenuExtensionPages(): ExtensionPageContribution[] {
+  const pages = useExtensionRegistry((state) => state.slots.pages);
+  return useMemo(() => menuExtensionPages(pages), [pages]);
+}
+
+/** An extension page address, and the registered page that answers it (if any). */
+export interface ExtensionPageAtPath {
+  /** The extension the address belongs to. */
+  extensionId: string;
+  /** Everything after `/x/<extensionId>/`. */
+  subpath: string;
+  /** The registered page that answers it, with its param values, or null. */
+  match: ExtensionPageMatch<ExtensionPageContribution> | null;
+}
+
+/**
+ * The extension page at a pathname, kept live from the registry: which
+ * extension the address names and which of its pages answers it. Null when the
+ * pathname is not an extension page address at all.
+ *
+ * @param pathname - A router pathname, without query or hash.
+ */
+export function useExtensionPageAtPath(pathname: string): ExtensionPageAtPath | null {
+  const pages = useExtensionRegistry((state) => state.slots.pages);
+  return useMemo(() => {
+    const parsed = parseExtensionPagePath(pathname);
+    if (parsed === null) return null;
+    const own = pages.filter((page) => page.extensionId === parsed.extensionId);
+    return { ...parsed, match: matchExtensionPage(own, parsed.subpath) };
+  }, [pages, pathname]);
 }

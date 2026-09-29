@@ -271,11 +271,11 @@ import type { CoreExtensionInfo } from './services/extensions/extension-enable-r
 import { createExtensionsRouter } from './routes/extensions.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
 import { gitTreeSource } from './services/marketplace/lib/git/git-tree.js';
-import { MarketplaceSourceManager } from './services/marketplace/marketplace-source-manager.js';
-import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
-import { PackageCacheRetention } from './services/marketplace/package-cache-retention.js';
+import { MarketplaceSourceManager } from './services/marketplace/sources/marketplace-source-manager.js';
+import { MarketplaceCache } from './services/marketplace/cache/marketplace-cache.js';
+import { PackageCacheRetention } from './services/marketplace/cache/package-cache-retention.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
-import { rebuildInstalledFiles } from './services/marketplace/lib/legacy-record.js';
+import { rebuildInstalledFiles } from './services/marketplace/lib/records/legacy-record.js';
 import {
   legacySweepDirs,
   rebuildLegacyRecords,
@@ -288,8 +288,8 @@ import { migrateSavedCopies } from './services/marketplace/lib/saved-copies/migr
 import { withInstallTargetLock } from './services/marketplace/transaction.js';
 import { globalApprovalCarryOver } from './services/marketplace/lib/saved-copies/saved-copies-consent.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
-import { ConflictDetector } from './services/marketplace/conflict-detector.js';
-import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
+import { ConflictDetector } from './services/marketplace/preview/conflict-detector.js';
+import { PermissionPreviewBuilder } from './services/marketplace/preview/permission-preview.js';
 import { PluginInstallFlow } from './services/marketplace/flows/install-plugin.js';
 import { AgentInstallFlow } from './services/marketplace/flows/install-agent.js';
 import { SkillPackInstallFlow } from './services/marketplace/flows/install-skill-pack.js';
@@ -317,10 +317,10 @@ import {
   getEnabledExtensionIds,
   listInstalledShapeManifests,
 } from './services/shapes/shape-services.js';
-import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
+import { UninstallFlow } from './services/marketplace/flows/uninstall/uninstall.js';
 import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
-import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
+import { MarketplaceInstaller } from './services/marketplace/installer/marketplace-installer.js';
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
@@ -341,15 +341,16 @@ import { onProjectorTurnBoundary } from './services/session/session-state-projec
 import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-turn.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
-import { globalConsentRecorder } from './services/marketplace/global-plugin-consent.js';
+import { globalConsentRecorder } from './services/marketplace/consent/global-plugin-consent.js';
 import {
   askAboutWithheldGlobalPlugins,
   describeGlobalActivationCapability,
-} from './services/marketplace/ask-withheld-global-plugins.js';
+} from './services/marketplace/consent/ask-withheld-global-plugins.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
   TokenConfirmationProvider,
   describeTemplateCreationCapability,
+  describeWorkspaceCreationCapability,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
@@ -362,8 +363,8 @@ import {
   recoverInterruptedInstalls,
   retryInFlightTargetsLater,
   type InstallSweepSummary,
-} from './services/marketplace/backup-janitor.js';
-import { currentRecordOwner } from './services/marketplace/lib/record-owner.js';
+} from './services/marketplace/recovery/backup-janitor.js';
+import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
@@ -443,6 +444,7 @@ import {
   WorkspaceReconcilerLifecycle,
   resolveWorkspaceRoot,
   setWorkspaceManager,
+  setWorkspaceApprovals,
   setWorkspaceRoot,
   type WorkspaceStore,
 } from './services/workspace/index.js';
@@ -505,7 +507,7 @@ import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
 import { createTerminalRouter } from './routes/terminal.js';
-import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
+import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry/telemetry-reporter.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import {
   registerUsageReporter,
@@ -556,6 +558,12 @@ import { applyTrackerItemsLive } from './services/session/fleet/flow-run-link.js
 import { KnownProjectsStore } from './services/projects/known-projects-store.js';
 import { startProjectRegistry } from './services/projects/project-feeds.js';
 import { projectRegistry } from './services/projects/project-registry.js';
+import {
+  ExtensionInboxService,
+  getExtensionInbox,
+  setExtensionInbox,
+} from './services/extensions/inbox/extension-inbox.js';
+import { createExtensionDecisionsRouter } from './routes/extension-decisions.js';
 import {
   MessageQueueStore,
   SessionEventStore,
@@ -625,7 +633,8 @@ let schedulerService: TaskSchedulerService | null = null;
 let relayCore: RelayCore | undefined;
 /**
  * The marketplace's confirmation provider, once composed: the agents router
- * reads it for an agent's template creation card (DOR-2325).
+ * reads it for an agent's template creation card (DOR-2325), and the workspace
+ * service for a new workspace's card (DOR-2335).
  */
 let templateConfirmationProvider: ConfirmationProvider | undefined;
 /**
@@ -1097,6 +1106,13 @@ async function start() {
   // belong to a saved project and would change on the next read.
   projectRegistry.attachStore(new KnownProjectsStore(db));
 
+  // The inbox extensions ask a person through (`ctx.inbox`, spec
+  // `flow-multiproject` §7). Before extensions start, so an extension that
+  // raises from its `register()` finds it, and so starting one can show its
+  // open decisions again and fire a deadline that passed while it was down.
+  setExtensionInbox(new ExtensionInboxService({ db, projects: projectRegistry, dorkHome }));
+  getExtensionInbox()?.prune();
+
   // A session's usage limit, kept so a restart or an idle eviction does not
   // turn a limited session back into a merely failed one (spec
   // claude-account-fleet D4).
@@ -1351,7 +1367,7 @@ async function start() {
   // half-written fresh install, and delete leftovers of finished ones. Runs
   // before the app serves anything, so nothing lists a half-written package.
   // Project installs are swept once Mesh knows the projects (below); see
-  // services/marketplace/install-recovery.ts for the rules.
+  // services/marketplace/recovery/install-recovery.ts for the rules.
   try {
     // Read this process's own start time now, as close to its real start as
     // possible: records it writes carry it, and a wall-clock step between
@@ -1532,6 +1548,11 @@ async function start() {
     // inbox, and keeps asking as installs, updates and answers change the set
     // (DOR-2517). Follows the manager for the life of the process.
     startExtensionApprovalQueue(extensionManager);
+    // An extension that is no longer installed at all has nobody left to
+    // explain its open decisions: they close as "no longer needed", quietly.
+    getExtensionInbox()?.cancelUndiscovered(
+      new Set(extensionManager.listRecords().map((record) => record.id))
+    );
     logger.info('[Extensions] Extension system initialized');
   } catch (err) {
     logger.error('[Extensions] Failed to initialize extension system', err);
@@ -1735,6 +1756,14 @@ async function start() {
     });
     managedWorkspaces = workspaceStore;
     setWorkspaceManager(workspaceService);
+    // A new workspace's card is raised through the marketplace's confirmation
+    // provider, composed later in boot (DOR-2335).
+    setWorkspaceApprovals(() => templateConfirmationProvider);
+    // A clone staged by a server that stopped before deciding about it is
+    // never adopted: it goes before anything else can stage (DOR-2335).
+    const staleClones = await workspaceService.sweepStaging();
+    if (staleClones > 0)
+      logger.info(`[Workspace] cleared ${staleClones} unfinished staged clone(s)`);
     workspaceReconcilerLifecycle.start(workspaceReconciler);
     logger.info('[Workspace] WorkspaceManager registered');
   }
@@ -3044,7 +3073,8 @@ async function start() {
       return (
         describeHookProjectionCapability(capabilityId) ??
         describeGlobalActivationCapability(capabilityId) ??
-        describeTemplateCreationCapability(capabilityId)
+        describeTemplateCreationCapability(capabilityId) ??
+        describeWorkspaceCreationCapability(capabilityId)
       );
     },
   });
@@ -4709,6 +4739,12 @@ async function start() {
     createPushRouter({ subscriptions: pushSubscriptions, channel: webPushChannel })
   );
   mountedRouters.push('push');
+
+  // The bell and the Activity inbox answer extension decisions here (spec
+  // `flow-multiproject` §7.3). Always mounted: with no extension system it
+  // simply lists nothing.
+  app.use('/api/extension-decisions', createExtensionDecisionsRouter());
+  mountedRouters.push('extension-decisions');
 
   // Mount Extensions routes if extension system initialized successfully.
   if (extensionManager) {

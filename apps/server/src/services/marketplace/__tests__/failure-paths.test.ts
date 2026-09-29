@@ -23,7 +23,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
-import { ConflictError, InvalidPackageError } from '../marketplace-installer.js';
+import { ConflictError, InvalidPackageError } from '../installer/errors.js';
 import { buildInstallerForTests } from './installer-harness.js';
 
 const __filename = fileURLToPath(import.meta.url);

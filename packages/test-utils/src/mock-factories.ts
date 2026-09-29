@@ -628,6 +628,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       warnings: [],
     } satisfies WorktreeScanResult),
     resolveWorkspace: vi.fn().mockResolvedValue(null),
+    // Projects (spec `flow-multiproject` §6.1) — no known projects, and every
+    // folder in none, unless the test overrides it.
+    listProjects: vi.fn().mockResolvedValue([]),
+    resolveProject: vi.fn().mockResolvedValue(null),
     // Rooms (spec `rooms`) — every read answers empty so a component under test
     // renders its empty state unless the test overrides it.
     listRooms: vi.fn().mockResolvedValue([]),
@@ -1279,7 +1283,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     dismissFoundClaudeFolder: vi.fn().mockResolvedValue(undefined),
     // Account rules (spec `flow-multiproject` §8.6): no projects and no rules,
     // so every account reads as allowed unless a test supplies otherwise.
-    listProjects: vi.fn().mockResolvedValue({ projects: [] }),
     getAccountEligibility: vi.fn().mockResolvedValue({ project: null, allow: null, accounts: [] }),
     setProjectAccounts: vi.fn().mockResolvedValue({ project: null, allow: null, accounts: [] }),
     setAccountOnlyProjects: vi.fn().mockResolvedValue({ onlyProjects: null }),

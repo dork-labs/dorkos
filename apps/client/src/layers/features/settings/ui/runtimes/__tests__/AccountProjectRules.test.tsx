@@ -54,13 +54,13 @@ const CLIENT_API = { root: '/work/client-api', name: 'client-api' };
 
 function renderWith(ui: React.ReactElement, overrides = {}) {
   const transport = createMockTransport({
-    listProjects: vi.fn().mockResolvedValue({
-      projects: [CLIENT_APP, CLIENT_API].map((p) => ({
+    listProjects: vi.fn().mockResolvedValue(
+      [CLIENT_APP, CLIENT_API].map((p) => ({
         ...p,
         originRepo: null,
         lastSeenAt: '2026-09-29T10:00:00.000Z',
-      })),
-    }),
+      }))
+    ),
     ...overrides,
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

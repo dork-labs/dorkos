@@ -239,6 +239,7 @@ vi.mock('@/layers/shared/model', () => ({
   useNow: () => Date.now(),
   // One feature and one quick action, so "unread comes first" is a claim about
   // an order that has something else in it.
+  useMenuExtensionPages: () => [],
   useSlotContributions: () => [
     {
       id: 'settings',

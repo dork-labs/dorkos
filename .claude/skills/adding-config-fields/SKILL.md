@@ -16,7 +16,7 @@ DorkOS uses the [`conf`](https://github.com/sindresorhus/conf) library (v15.1.0)
 
 - You're about to edit `packages/shared/src/config-schema.ts` (adding, renaming, removing, or retyping a field in `UserConfigSchema`).
 - You're about to edit `apps/server/src/services/core/config-manager.ts` for any reason related to the `migrations` block or `projectVersion`.
-- (Future) You're about to edit `MarketplacesFileSchema` once `apps/server/src/services/marketplace/marketplace-source-manager.ts` is refactored onto `conf`.
+- (Future) You're about to edit `MarketplacesFileSchema` once `apps/server/src/services/marketplace/sources/marketplace-source-manager.ts` is refactored onto `conf`.
 - A user asks "how do I add a setting to DorkOS?" or "how do config migrations work here?"
 - `/system:release` Phase 2 flags a config schema drift and you need to write the migration.
 
@@ -363,7 +363,7 @@ See `.claude/commands/system/release.md` Phase 2 for the full flow. The scaffold
 
 ## Marketplace follow-up note
 
-`~/.dork/marketplaces.json` is currently owned by a hand-rolled `MarketplaceSourceManager` at `apps/server/src/services/marketplace/marketplace-source-manager.ts`. It has a one-off URL-rewrite map (`LEGACY_SOURCE_MIGRATIONS`) that is **orthogonal** to `conf`'s semver-keyed schema migrations. The rewrite map fixes a known-bad default URL; it is not a schema migration system.
+`~/.dork/marketplaces.json` is currently owned by a hand-rolled `MarketplaceSourceManager` at `apps/server/src/services/marketplace/sources/marketplace-source-manager.ts`. It has a one-off URL-rewrite map (`LEGACY_SOURCE_MIGRATIONS`) that is **orthogonal** to `conf`'s semver-keyed schema migrations. The rewrite map fixes a known-bad default URL; it is not a schema migration system.
 
 A pending refactor will move `marketplaces.json` onto `conf` with the same wrapper pattern as `ConfigManager`. When that lands, this skill extends to cover `MarketplacesFileSchema` too — same process, same step list. Until then, changes to `marketplace-source-manager.ts` are out of scope for this skill.
 

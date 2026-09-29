@@ -8,21 +8,36 @@
  * yanked anybody's tab to announce itself. A tab that selected itself when
  * somebody else acted is the pixel version of a turn that triggers itself.
  *
- * Only the two document tabs can carry one today, so the mapping is a two-entry
- * table rather than a registry field: a contribution that wanted a badge would
- * need one, and inventing that surface before a second caller exists would be a
- * public API nobody asked for.
+ * It has two sources, and they mean different things:
+ *
+ * - **Unread content** on the two built-in document tabs (canvas, browser), a
+ *   two-entry table. Drawn in the primary colour: something new is in there.
+ * - **An extension's marker** (`api.setTabMarker`, spec `flow-multiproject`
+ *   §6.7), from the extension registry. Drawn amber: something in there needs
+ *   you. Core draws it; an extension can set or clear it, never style it. The
+ *   tab's accessible name says so too (see {@link tabAccessibleName}).
  *
  * @module features/right-panel/ui/TabUnreadDot
  */
 import type { CanvasView } from '@/layers/shared/lib';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useTabMarker, type TabMarker } from '@/layers/shared/model';
 
 /** Which document view a right-panel tab draws, for the tabs that draw one. */
 const VIEW_BY_TAB: Record<string, CanvasView> = {
   canvas: 'canvas',
   browser: 'browser',
 };
+
+/**
+ * A right-panel tab's accessible name: its label, plus what its marker means
+ * while an extension has marked it ("Flow, something needs you").
+ *
+ * @param title - The tab's label.
+ * @param marker - The tab's marker, or null.
+ */
+export function tabAccessibleName(title: string, marker: TabMarker | null): string {
+  return marker === 'attention' ? `${title}, something needs you` : title;
+}
 
 /** What {@link TabUnreadDot} is about. */
 export interface TabUnreadDotProps {
@@ -33,8 +48,8 @@ export interface TabUnreadDotProps {
 /**
  * A small dot, or nothing.
  *
- * Decorative: the tab beside it is already named, and the dot means "there is
- * something new in here" rather than carrying a fact of its own.
+ * Decorative: the tab beside it is already named, and for a marker the tab's
+ * accessible name carries the fact the dot draws.
  *
  * @param props - Which tab is asking.
  */
@@ -45,7 +60,17 @@ export function TabUnreadDot({ contributionId }: TabUnreadDotProps) {
     if (roomId === null || view === undefined) return false;
     return (s.roomCanvasUnread[roomId]?.[view].length ?? 0) > 0;
   });
+  const marker = useTabMarker(contributionId);
 
+  if (marker === 'attention') {
+    return (
+      <span
+        data-slot="right-panel-tab-marker"
+        aria-hidden
+        className="bg-status-warning-dot size-1.5 shrink-0 rounded-full"
+      />
+    );
+  }
   if (!unread) return null;
   return (
     <span

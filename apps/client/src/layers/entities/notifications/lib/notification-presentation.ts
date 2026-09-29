@@ -18,6 +18,7 @@ import {
   Hourglass,
   LogIn,
   Mail,
+  MessageCircleQuestion,
   MessageSquare,
   Puzzle,
   RotateCcw,
@@ -87,6 +88,9 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'account.reset': RotateCcw,
   // The mark the right panel's header already uses for extensions (DOR-2517).
   'extension.approval': Puzzle,
+  // Something an extension asks a person (spec `flow-multiproject` §7): a
+  // question, whoever raised it.
+  'extension.decision': MessageCircleQuestion,
 };
 
 /** How loudly a notification draws. */
@@ -292,7 +296,9 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // (`standingDeepLink` in the server's `escalation-service.ts`).
     return { to: '/', search: { settings: EXTENSIONS_SETTINGS_TAB } };
   }
-  if (kind === 'update.installed' || kind === 'report.daily') {
+  // An extension's decision history row carries no link of its own (the
+  // title and body say what happened); "Watch" on the row opens its chat.
+  if (kind === 'update.installed' || kind === 'report.daily' || kind === 'extension.decision') {
     return null;
   }
 

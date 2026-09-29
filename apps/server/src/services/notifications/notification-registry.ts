@@ -386,6 +386,49 @@ export interface NotificationPayloads {
      */
     answer?: 'approved' | 'dismissed';
   };
+  /**
+   * An extension asks a person something through `ctx.inbox` (spec
+   * `flow-multiproject` §7).
+   *
+   * Built by `services/extensions/extension-inbox.ts` from the stored row.
+   * The title and why are the extension's own words and stay in the app: the
+   * push and the chat leg say only {@link extensionDecisionEscalation}'s
+   * generic line, because a lock screen is not private.
+   */
+  'extension.decision': {
+    /** Core's id for the row; the history row's subject. */
+    decisionId: string;
+    /** The extension that raised it. */
+    extensionId: string;
+    /** Its manifest name as core knows it. */
+    extensionName: string;
+    /** The extension's own key. */
+    key: string;
+    /** The decision's title. */
+    title: string;
+    /** The decision's second line. */
+    why: string;
+    /** The checked in-app link, or null (the push then opens `/`). */
+    link: string | null;
+    /** In how many projects this extension had open decisions when this was raised. */
+    openProjects: number;
+    /**
+     * How it was settled. Set only on the resolution edge, so the one history
+     * row says what happened and who decided.
+     */
+    resolution?: {
+      outcome: 'approved' | 'rejected' | 'answered' | 'cleared' | 'cancelled';
+      resolvedBy: 'person' | 'deadline' | 'agent' | 'rule' | 'extension';
+      /** Who, in words, for `agent`, `rule` and `extension`. */
+      resolvedByLabel: string | null;
+      /** What was chosen, in words ("Ship it", "Keep it"), or null. */
+      choiceLabel: string | null;
+      /** True for a decision that was never asked (`ctx.inbox.record`). */
+      recorded: boolean;
+      /** A chat the extension started about it. */
+      watch: { sessionId: string; label: string } | null;
+    };
+  };
 }
 
 /** The payload one kind of notification is raised with. */
@@ -440,7 +483,8 @@ export type StandingNotificationKind =
   | 'approval.pending'
   | 'session.error'
   | 'signin.required'
-  | 'extension.approval';
+  | 'extension.approval'
+  | 'extension.decision';
 
 /**
  * The standing kinds that ALSO write a row the moment they begin — the
@@ -522,6 +566,18 @@ export interface NotificationRegistryEntry<K extends NotificationKind = Notifica
   relay: PerKind<K, RelayPolicy>;
   /** The sentence an out-of-app channel says, when it differs from title + body. */
   channelMessage?: (payload: NotificationPayload<K>) => string;
+  /**
+   * What an escalation (the phone push and the chat leg) says, when it must
+   * not be the title and body. For a kind whose title is somebody else's words
+   * and does not belong on a lock screen.
+   */
+  escalation?: (payload: NotificationPayload<K>) => { title: string; body?: string };
+  /**
+   * Several conditions that should reach a phone once between them: one push
+   * per `key` per `windowMs`, however many of them stand. For a source that
+   * can have many rows open at once (an extension's decisions).
+   */
+  escalationGroup?: (payload: NotificationPayload<K>) => { key: string; windowMs: number };
 }
 
 /**
@@ -593,6 +649,79 @@ function subjectIdForCopy(p: NotificationPayload<'extension.approval'>): Notific
       version: p.version,
     }),
   };
+}
+
+/** Counts an extension's projects with open decisions right now, when the inbox is up. */
+let openProjectCounter: ((extensionId: string) => number) | null = null;
+
+/**
+ * Let the inbox answer "in how many projects?" live, so a push sent minutes
+ * after the first decision counts every project open by then.
+ *
+ * @param counter - The live count, or null to fall back to the payload's.
+ */
+export function setOpenProjectCounter(counter: ((extensionId: string) => number) | null): void {
+  openProjectCounter = counter;
+}
+
+/** One phone push per extension per hour, whatever number of its decisions stand. */
+const EXTENSION_DECISION_PUSH_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * What a phone is told about an extension's decisions: who, and in how many
+ * projects, never the title, key or project name (spec `flow-multiproject`
+ * §7.1). The row in the app carries the detail.
+ *
+ * @param p - That kind's payload.
+ */
+export function extensionDecisionEscalation(p: NotificationPayload<'extension.decision'>): {
+  title: string;
+} {
+  const open = openProjectCounter?.(p.extensionId) ?? p.openProjects;
+  if (open <= 0) return { title: `${p.extensionName} needs you` };
+  const projects = open === 1 ? '1 project' : `${open} projects`;
+  return { title: `${p.extensionName} needs you in ${projects}` };
+}
+
+/**
+ * Who decided, in the words a history row uses (spec §7.9): "you", "decided by
+ * the agent", or the label the extension gave ("the reviewer agent"). The
+ * time is added by the surface, in the viewer's zone.
+ *
+ * @param resolution - How the decision was settled.
+ * @param extensionName - The extension's manifest name.
+ */
+function decidedByWords(
+  resolution: NonNullable<NotificationPayload<'extension.decision'>['resolution']>,
+  extensionName: string
+): string {
+  switch (resolution.resolvedBy) {
+    case 'person':
+      return 'you';
+    case 'deadline':
+      return 'decided by the agent';
+    case 'extension':
+      return resolution.resolvedByLabel ? `answered ${resolution.resolvedByLabel}` : extensionName;
+    default:
+      return resolution.resolvedByLabel ?? extensionName;
+  }
+}
+
+/**
+ * The second part of an `extension.decision` history row (spec §7.4): "Resolved
+ * on its own", "No longer needed", or "<what was chosen> · <who>".
+ *
+ * @param p - That kind's payload, with its resolution.
+ */
+function extensionDecisionHistoryBody(
+  p: NotificationPayload<'extension.decision'>
+): string | undefined {
+  const r = p.resolution;
+  if (!r) return p.why;
+  if (r.outcome === 'cleared') return 'Resolved on its own';
+  if (r.outcome === 'cancelled') return 'No longer needed';
+  const who = decidedByWords(r, p.extensionName);
+  return r.choiceLabel ? `${r.choiceLabel} · ${who}` : who;
 }
 
 /** Longest slice of an agent's note that is used to tell two notes apart. */
@@ -1055,6 +1184,38 @@ const ENTRIES: NotificationRegistryMap = {
     relay: 'never',
   },
 
+  'extension.decision': {
+    kind: 'extension.decision',
+    // `blocking`: somebody's work is stopped on this answer, and the extension
+    // already waited its own time limit before asking (N7), so it may reach a
+    // phone through the escalation ladder. What reaches the phone is generic
+    // (`escalation` below).
+    // History is quiet: a decision that was settled is news, never an alarm,
+    // and a quiet row never draws a native banner with the extension's words.
+    tier: (p) => (p.resolution ? 'quiet' : 'blocking'),
+    storage: 'standing',
+    subjectType: 'system',
+    // The subject is core's id for the row, so an inbox that holds a
+    // one-time follow-up offer for it can find its history row.
+    locate: (p) => ({ subjectId: p.decisionId }),
+    title: (p) => p.title,
+    body: (p) => extensionDecisionHistoryBody(p),
+    // Per ROW, not only per key: `ext-decision:<extension>:<key>` alone would
+    // let the escalation ledger's "already escalated?" answer a later episode
+    // of the same key with an earlier one's push, forever (the reason
+    // `session.error` keys on its `since`). A raise that updates an open row
+    // keeps its id, so one live row is still one clock.
+    dedupeKey: (p) => `ext-decision:${p.extensionId}:${p.key}:${p.decisionId}`,
+    // One history row per row, guaranteed by the inbox service.
+    dedupeWindowMs: 0,
+    relay: 'never',
+    escalation: (p) => extensionDecisionEscalation(p),
+    escalationGroup: (p) => ({
+      key: `ext-decision-push:${p.extensionId}`,
+      windowMs: EXTENSION_DECISION_PUSH_WINDOW_MS,
+    }),
+  },
+
   'report.daily': {
     // The one kind whose title AND body are already fully written when they
     // arrive — `shift-report.ts` composes both from the day's actual counts,
@@ -1133,6 +1294,11 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * `services/extensions/extension-approval-queue.ts`, which follows the extension
  * manager; it writes a history row only for an answer (`approved` or
  * `dismissed`), never for a copy that simply went away.
+ *
+ * `extension.decision` joined them in DOR-2523. It is raised, updated and
+ * resolved by `services/extensions/extension-inbox.ts` (`ctx.inbox`), which
+ * writes exactly one history row per decision, including the history-only
+ * rows `ctx.inbox.record` writes for decisions that were never asked.
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
@@ -1152,6 +1318,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'account.limited',
   'account.reset',
   'extension.approval',
+  'extension.decision',
 ];
 
 /**
