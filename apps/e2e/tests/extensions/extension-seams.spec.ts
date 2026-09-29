@@ -71,26 +71,30 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     // every frame of the load instead of hoping a locator looks at the right
     // moment.
     await page.addInitScript(() => {
-      const seen = { skeleton: false, unavailable: false };
+      const seen = { skeleton: false, unavailable: false, said: '' };
       (window as Window & { __pageLoadSeen?: typeof seen }).__pageLoadSeen = seen;
       new MutationObserver(() => {
         if (document.querySelector('[data-testid="extension-page-skeleton"]')) seen.skeleton = true;
         if (document.body?.textContent?.includes("This page isn't available")) {
           seen.unavailable = true;
+          // What it said, so a failure names which empty state flashed.
+          seen.said ||= document.querySelector('[data-slot="empty-state"]')?.textContent ?? '';
         }
       }).observe(document, { childList: true, subtree: true, characterData: true });
     });
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Hello, Kai' })).toBeVisible();
-    const seen = await page.evaluate(
+    const seen = (await page.evaluate(
       () =>
-        (window as Window & { __pageLoadSeen?: { skeleton: boolean; unavailable: boolean } })
-          .__pageLoadSeen
-    );
-    expect(seen, 'the reload drew the loading skeleton first').toMatchObject({ skeleton: true });
-    expect(seen, 'the reload never said the page was unavailable').toMatchObject({
-      unavailable: false,
-    });
+        (
+          window as Window & {
+            __pageLoadSeen?: { skeleton: boolean; unavailable: boolean; said: string };
+          }
+        ).__pageLoadSeen
+    ))!;
+    expect(seen.skeleton, 'the reload drew the loading skeleton first').toBe(true);
+    expect(seen.said, 'the reload never said the page was unavailable').toBe('');
+    expect(seen.unavailable).toBe(false);
     await expect(page.getByTestId('extension-page-skeleton')).toHaveCount(0);
   });
 
@@ -99,7 +103,8 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     await chat.goto();
     // The item shows only for a chat with a folder, and a chat has one once it
     // has started. On this leg the reply is scripted, so nothing is billed.
-    await chat.sendAndLand('Say hello to the status bar');
+    // Unique per run: a retry reopens the same chat, and the send is matched by text.
+    await chat.sendAndLand(`Say hello to the status bar (${Date.now()})`);
 
     const statusLine = page.getByTestId('status-line');
     const item = statusLine.getByRole('group', { name: 'Hello World' });

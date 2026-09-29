@@ -8,6 +8,10 @@ import { EmptyState, PageContainer, Skeleton } from '@/layers/shared/ui';
 import { useExtensions } from '@/layers/features/extensions';
 import { extensionPageState, type ExtensionPageState } from '../model/extension-page-state';
 import { createPageSearchWriter, pageSearchFrom } from '../model/page-search';
+import { useSettledPageState } from '../model/use-settled-page-state';
+
+/** The answer for `/x/Not_An_Id`: no extension could have that id. */
+const NOT_AN_EXTENSION: ExtensionPageState = { kind: 'not-installed', name: 'This add-on' };
 
 /** Where a person turns an extension on, or lets it run: Settings → Extensions. */
 const EXTENSIONS_SETTINGS_LINK = '?settings=extensions';
@@ -27,7 +31,7 @@ export function ExtensionPageRoute() {
   const location = useLocation();
   const router = useRouter();
   const at = useExtensionPageAtPath(location.pathname);
-  const { extensions, ready } = useExtensions();
+  const { extensions, ready, settling } = useExtensions();
 
   const search = useMemo(() => pageSearchFrom(location.searchStr), [location.searchStr]);
   // One writer per router: it remembers what it last wrote, so two calls in a
@@ -40,9 +44,9 @@ export function ExtensionPageRoute() {
 
   // The router only mounts this component on `/x/…`, so `at` is null only for
   // an id no extension could have (`/x/Not_An_Id`) — nothing is installed there.
-  const state: ExtensionPageState = at
-    ? extensionPageState(at, extensions, ready)
-    : { kind: 'not-installed', name: 'This add-on' };
+  const state = useSettledPageState(
+    at ? extensionPageState(at, extensions, ready, settling) : NOT_AN_EXTENSION
+  );
 
   if (state.kind === 'page') {
     const { page, params } = state.at.match;

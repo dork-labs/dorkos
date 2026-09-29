@@ -14,7 +14,7 @@ import {
 import type { ExtensionPageProps, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { createInitialSlots, useExtensionRegistry } from '@/layers/shared/model';
 
-let mockExtensions: { extensions: ExtensionRecordPublic[]; ready: boolean } = {
+let mockExtensions: { extensions: ExtensionRecordPublic[]; ready: boolean; settling?: boolean } = {
   extensions: [],
   ready: false,
 };
@@ -133,6 +133,34 @@ describe('ExtensionPageRoute (spec flow-multiproject §6.5)', () => {
     await renderAt('/x/hello/nowhere');
     expect(await screen.findByText(new RegExp(text.replace(/[.?]/g, '\\$&')))).toBeInTheDocument();
     expect(screen.queryByTestId('extension-page-skeleton')).not.toBeInTheDocument();
+  });
+
+  it('waits, rather than saying the page is missing, while a reload swaps the extensions', async () => {
+    // A working-folder change tears every extension down and brings it back;
+    // in between the page is unregistered while the extension still runs.
+    mockExtensions = { extensions: [record()], ready: true, settling: true };
+    await renderAt('/x/hello');
+    expect(await screen.findByTestId('extension-page-skeleton')).toBeInTheDocument();
+    expect(screen.queryByText(/doesn't have this page/)).not.toBeInTheDocument();
+  });
+
+  it('never flashes “doesn’t have this page” while the page is re-registered on a reload', async () => {
+    mockExtensions = { extensions: [record()], ready: true };
+    const unregister = registerPage('', () => <h1>Hello page</h1>);
+    await renderAt('/x/hello');
+    expect(await screen.findByRole('heading', { name: 'Hello page' })).toBeInTheDocument();
+
+    // The reload tears the page down while the extension is still listed as
+    // running, and registers it again a moment later.
+    act(() => unregister());
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(screen.queryByText(/doesn't have this page/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('extension-page-skeleton')).toBeInTheDocument();
+    act(() => void registerPage('', () => <h1>Hello page</h1>));
+
+    expect(await screen.findByRole('heading', { name: 'Hello page' })).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(screen.queryByText(/doesn't have this page/)).not.toBeInTheDocument();
   });
 
   it('offers the way to let it run', async () => {

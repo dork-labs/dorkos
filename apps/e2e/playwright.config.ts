@@ -866,7 +866,7 @@ export default defineConfig({
         // Runs against the test-mode leg in `chromium-extension-seams` below:
         // it turns a core extension on for its own tests and opens chats, and a
         // chat on this leg is a real claude-code session.
-        '**/extensions/**',
+        '**/extensions/extension-seams.spec.ts',
         // Runs against the production leg in `chromium-production` below, and
         // only there. On this leg its every assertion would be vacuous: Vite's
         // shell carries no Content-Security-Policy, so a spec written to prove
@@ -1064,7 +1064,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
-      testMatch: ['**/extensions/*.spec.ts'],
+      testMatch: ['**/extensions/extension-seams.spec.ts'],
     },
     // The only project whose `baseURL` is an EXPRESS port rather than a Vite
     // one, because the production leg serves the built shell itself — which is

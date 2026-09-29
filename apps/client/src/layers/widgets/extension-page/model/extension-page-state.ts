@@ -43,14 +43,17 @@ const BROKEN_STATUSES: ReadonlySet<ExtensionRecordPublic['status']> = new Set([
  * @param at - The address, and the page that answers it (if any).
  * @param extensions - Every extension the server discovered.
  * @param ready - Whether the first extension load has finished.
+ * @param settling - Whether a reload is swapping the loaded set right now; the
+ *   page may be about to come back, so this also answers `loading`.
  */
 export function extensionPageState(
   at: ExtensionPageAtPath,
   extensions: readonly ExtensionRecordPublic[],
-  ready: boolean
+  ready: boolean,
+  settling = false
 ): ExtensionPageState {
   if (at.match !== null) return { kind: 'page', at: { ...at, match: at.match } };
-  if (!ready) return { kind: 'loading' };
+  if (!ready || settling) return { kind: 'loading' };
 
   const record = extensions.find((extension) => extension.id === at.extensionId);
   if (!record) return { kind: 'not-installed', name: at.extensionId };
