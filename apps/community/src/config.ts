@@ -192,7 +192,7 @@ export type CommunityMailConfig = {
   from: { name: string | null; address: string };
 };
 
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]']);
 const EMAIL = z.email();
 
 /**
@@ -243,7 +243,13 @@ function parseMail(value: {
   if (query.length && (!starttls || url.protocol !== 'smtp:'))
     throw new Error('COMMUNITY_SMTP_URL takes one option only: ?starttls=required on smtp://');
   const secure = url.protocol === 'smtps:';
-  if (!secure && !starttls && !LOOPBACK_HOSTS.has(url.hostname))
+  if (url.port === '0') throw new Error('COMMUNITY_SMTP_URL must not use port 0');
+  const plain = !secure && !starttls;
+  // For an unencrypted relay `localhost` means the IPv4 loopback address, never whatever a
+  // resolver answers for it, so the no-encryption exemption can only ever reach this machine.
+  const lowered = url.hostname.toLowerCase();
+  const hostname = plain && lowered === 'localhost' ? '127.0.0.1' : lowered;
+  if (plain && !LOOPBACK_HOSTS.has(hostname))
     throw new Error(
       'COMMUNITY_SMTP_URL must encrypt mail off this machine: use smtps://, or smtp:// with ?starttls=required'
     );
@@ -260,7 +266,7 @@ function parseMail(value: {
   }
   return {
     smtp: {
-      host: url.hostname.replace(/^\[(.*)\]$/u, '$1'),
+      host: hostname.replace(/^\[(.*)\]$/u, '$1'),
       port: url.port ? Number(url.port) : secure ? 465 : starttls ? 587 : 25,
       secure,
       requireTLS: starttls,

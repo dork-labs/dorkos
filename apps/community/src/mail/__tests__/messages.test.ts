@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { plainTextMail } from '../messages.js';
+import { plainTextMail, type ComposedMail } from '../messages.js';
 
 describe('plainTextMail', () => {
   it('joins paragraphs with one blank line and ends the body with a newline', () => {
@@ -37,5 +37,14 @@ describe('plainTextMail', () => {
   it('refuses a message with no body', () => {
     // Purpose: fails if an empty notice could be sent.
     expect(() => plainTextMail('Subject', ['', '  '])).toThrow('at least one paragraph');
+  });
+
+  it('is the only way to make a message a composer can return', () => {
+    // Purpose: fails to type-check if a composer could hand the worker text that skipped the
+    // bare-CR clean-up, where `\r.\r` could end the SMTP body early.
+    // @ts-expect-error A plain object is not a ComposedMail.
+    const forged: ComposedMail = { subject: 'Subject', text: 'a\r.\rb' };
+    expect(forged.text).toContain('\r');
+    expect(plainTextMail('Subject', ['a\r.\rb']).text).toBe('a\n.\nb\n');
   });
 });

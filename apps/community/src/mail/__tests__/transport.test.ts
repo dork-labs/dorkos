@@ -13,17 +13,28 @@ describe('classifySmtpFailure', () => {
         });
   });
 
-  it('retries a temporary answer, a timeout, a dropped connection, or a login the host can fix', () => {
-    // Purpose: fails if a greylisting 4xx, a timeout after the body, a refused connection, a TLS
-    // or login failure, or something that is not an SMTP error at all fails the notice for good.
+  it('retries a TLS or login failure under its own code, so the host can tell it apart', () => {
+    // Purpose: fails if a missing STARTTLS or a refused login is reported as an outage, hiding
+    // a setting the host can fix.
+    expect(classifySmtpFailure({ code: 'ETLS' })).toEqual({
+      outcome: 'retrying',
+      errorClass: 'SMTP_TLS',
+    });
+    expect(classifySmtpFailure({ code: 'EAUTH', responseCode: 535 })).toEqual({
+      outcome: 'retrying',
+      errorClass: 'SMTP_AUTH',
+    });
+  });
+
+  it('retries a temporary answer, a timeout, or a dropped connection', () => {
+    // Purpose: fails if a greylisting 4xx, a timeout after the body, a refused connection, or
+    // something that is not an SMTP error at all fails the notice for good.
     for (const error of [
       { code: 'EENVELOPE', responseCode: 421 },
       { code: 'EMESSAGE', responseCode: 451 },
       { code: 'ETIMEDOUT' },
       { code: 'ECONNECTION' },
       { code: 'ESOCKET' },
-      { code: 'ETLS' },
-      { code: 'EAUTH', responseCode: 535 },
       { code: 'EENVELOPE', responseCode: 600 },
       { responseCode: 550 },
       new Error('boom'),

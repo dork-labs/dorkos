@@ -11,12 +11,16 @@ export interface OutgoingMail {
 /**
  * What the host's mail server did with one message. `accepted` means only that the server
  * answered `2xx` for the whole message; the product never claims more. `refused` is a permanent
- * `5xx` answer, and `retrying` a temporary answer, a timeout, or no connection at all.
+ * `5xx` answer. `retrying` is everything else: `SMTP_TLS` when the encrypted connection could not
+ * be made (including a server that does not offer the required STARTTLS), `SMTP_AUTH` when the
+ * login was refused, and `SMTP_UNAVAILABLE` for a temporary answer, a timeout, or no connection.
+ * TLS and login failures are the host's own settings to fix, so they are retried like an outage
+ * but reported under their own codes, where a host watching its logs can tell them apart.
  */
 export type MailDelivery =
   | { outcome: 'accepted' }
   | { outcome: 'refused'; errorClass: 'SMTP_REJECTED' }
-  | { outcome: 'retrying'; errorClass: 'SMTP_UNAVAILABLE' };
+  | { outcome: 'retrying'; errorClass: 'SMTP_TLS' | 'SMTP_AUTH' | 'SMTP_UNAVAILABLE' };
 
 /** Hands messages to the host's mail server. */
 export interface MailTransport {
@@ -33,8 +37,8 @@ export interface SmtpTimeouts {
 }
 
 /**
- * The defaults. A whole attempt fits well inside the worker's five-minute lease, so one slow
- * server is not sent the same message by two replicas at once.
+ * The defaults. nodemailer applies each one per step, so they do not bound a whole attempt; the
+ * worker's own attempt cap does that, inside the message's lease.
  */
 export const SMTP_TIMEOUTS: SmtpTimeouts = {
   connectionMs: 30_000,
@@ -43,10 +47,9 @@ export const SMTP_TIMEOUTS: SmtpTimeouts = {
 };
 
 /**
- * Classify a failed send from its SMTP reply code alone. The reply text is never read: it can
- * echo the recipient's address. A `5xx` answer to the envelope or the message is permanent. Every
- * other failure (a `4xx` answer, a timeout, a refused or dropped connection, a TLS or login
- * failure the host can fix) is temporary and retried.
+ * Classify a failed send from its SMTP reply code and nodemailer's error code alone. The reply
+ * text is never read: it can echo the recipient's address. A `5xx` answer to the envelope or the
+ * message is permanent. Every other failure is retried (see {@link MailDelivery}).
  */
 export function classifySmtpFailure(error: unknown): MailDelivery {
   const reply =
@@ -58,15 +61,16 @@ export function classifySmtpFailure(error: unknown): MailDelivery {
     reply.responseCode >= 500 &&
     reply.responseCode < 600 &&
     (reply.code === 'EENVELOPE' || reply.code === 'EMESSAGE');
-  return permanent
-    ? { outcome: 'refused', errorClass: 'SMTP_REJECTED' }
-    : { outcome: 'retrying', errorClass: 'SMTP_UNAVAILABLE' };
+  if (permanent) return { outcome: 'refused', errorClass: 'SMTP_REJECTED' };
+  if (reply.code === 'ETLS') return { outcome: 'retrying', errorClass: 'SMTP_TLS' };
+  if (reply.code === 'EAUTH') return { outcome: 'retrying', errorClass: 'SMTP_AUTH' };
+  return { outcome: 'retrying', errorClass: 'SMTP_UNAVAILABLE' };
 }
 
 /**
  * Send through the host's SMTP server with nodemailer. One connection per message, closed after
- * it (no pool), so nothing stays open between the worker's rare sends. Plain text only; nodemailer may not
- * read files or fetch URLs on a message's behalf, and it logs nothing.
+ * it (no pool), so nothing stays open between the worker's rare sends. Plain text only;
+ * nodemailer may not read files or fetch URLs on a message's behalf, and it logs nothing.
  */
 export function createSmtpTransport(
   config: CommunityMailConfig,
@@ -77,6 +81,10 @@ export function createSmtpTransport(
     port: config.smtp.port,
     secure: config.smtp.secure,
     requireTLS: config.smtp.requireTLS,
+    // A plain relay on this machine (the only place config allows no encryption) is used as is.
+    // Otherwise nodemailer would try STARTTLS whenever the relay offers it, and a local relay's
+    // self-signed certificate would then fail every send.
+    ignoreTLS: !config.smtp.secure && !config.smtp.requireTLS,
     ...(config.smtp.auth ? { auth: config.smtp.auth } : {}),
     connectionTimeout: timeouts.connectionMs,
     greetingTimeout: timeouts.greetingMs,

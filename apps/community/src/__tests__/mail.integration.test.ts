@@ -410,6 +410,74 @@ it('mints fresh content per attempt and keeps what a failed attempt composed', a
   await h.pool.query('DROP TABLE mail_test_links');
 });
 
+it('sends plainly to a local relay that offers STARTTLS with a self-signed certificate', async () => {
+  // Purpose: fails if a plain loopback relay is upgraded opportunistically, when its self-signed
+  // certificate would fail every send and no notice would ever be delivered.
+  const relay = await startSmtpFake({ offerStartTls: true });
+  try {
+    const recipient = await account();
+    const id = await queue(recipient.id);
+    expect(
+      await deliverNextNotice({
+        pool: h.pool,
+        transport: createSmtpTransport(relay.mail, FAST),
+        composers,
+      })
+    ).toEqual({ noticeId: id, outcome: 'accepted', errorClass: null });
+    expect(relay.received).toHaveLength(1);
+  } finally {
+    await relay.close();
+  }
+});
+
+it('sends nothing when required STARTTLS is not offered, and retries as SMTP_TLS', async () => {
+  // Purpose: fails if a server (or someone in the middle) that strips STARTTLS can downgrade a
+  // remote-style connection to plain text: the message must not go out unencrypted.
+  const recipient = await account();
+  const id = await queue(recipient.id);
+  const required = { ...smtp.mail, smtp: { ...smtp.mail.smtp, requireTLS: true } };
+  expect(
+    await deliverNextNotice({
+      pool: h.pool,
+      transport: createSmtpTransport(required, FAST),
+      composers,
+    })
+  ).toEqual({ noticeId: id, outcome: 'retrying', errorClass: 'SMTP_TLS' });
+  expect(smtp.received).toHaveLength(0);
+  expect(await row(id)).toMatchObject({ state: 'pending', last_error_class: 'SMTP_TLS' });
+});
+
+it('gives up on an attempt that outlasts the attempt limit, composing or sending', async () => {
+  // Purpose: fails if a composer or a mail server that never answers can hold an attempt past
+  // the limit, and so past the lease, where a second replica would send the same message.
+  const recipient = await account();
+  const stuck = await queue(recipient.id);
+  const never: NoticeComposer = () => new Promise(() => undefined);
+  const started = Date.now();
+  expect(
+    await deliverNextNotice({
+      pool: h.pool,
+      transport: createSmtpTransport(smtp.mail, FAST),
+      composers: { 'owner_replacement.notice': never },
+      attemptLimitMs: 200,
+    })
+  ).toEqual({ noticeId: stuck, outcome: 'retrying', errorClass: 'NOTICE_COMPOSE_FAILED' });
+  expect(smtp.connections).toBe(0);
+
+  smtp.behaviour = 'silent-after-body';
+  const slow = await queue(recipient.id);
+  expect(
+    await deliverNextNotice({
+      pool: h.pool,
+      transport: createSmtpTransport(smtp.mail, { ...FAST, socketMs: 10_000 }),
+      composers,
+      attemptLimitMs: 300,
+    })
+  ).toEqual({ noticeId: slow, outcome: 'retrying', errorClass: 'SMTP_UNAVAILABLE' });
+  expect(Date.now() - started).toBeLessThan(5_000);
+  expect(await row(slow)).toMatchObject({ state: 'pending', lease_until: null });
+});
+
 it('fails a kind this server cannot compose, without sending it', async () => {
   // Purpose: fails if a message with no composer is retried forever or sent empty.
   const recipient = await account();
@@ -441,9 +509,8 @@ it('delivers each message exactly once with two workers on one database', async 
         done.push(attempt.noticeId);
       }
     };
+    // Which worker takes how many is up to scheduling; only the union and its uniqueness matter.
     const [first, other] = await Promise.all([drain(h.pool), drain(second)]);
-    expect(first.length).toBeGreaterThan(0);
-    expect(other.length).toBeGreaterThan(0);
     expect([...first, ...other].sort()).toEqual([...ids].sort());
   } finally {
     await second.end();

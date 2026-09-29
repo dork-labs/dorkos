@@ -6,8 +6,15 @@ import type { ComposedMail } from './messages.js';
 import type { NoticeKind } from './outbox.js';
 import { createSmtpTransport, type MailTransport } from './transport.js';
 
-/** How long one replica holds a message while it sends it. Longer than any single attempt. */
+/** How long one replica holds a message while it sends it. */
 export const NOTICE_LEASE_MS = 5 * 60_000;
+/**
+ * The most one attempt (composing and sending) may take before the worker stops waiting on it
+ * and schedules a retry. Shorter than the lease, so another replica never takes a message whose
+ * attempt this replica is still waiting on. A send given up on this way may still finish at the
+ * mail server afterwards, so a notice can, rarely, arrive twice.
+ */
+export const NOTICE_ATTEMPT_LIMIT_MS = 4 * 60_000;
 /** A message the mail server keeps turning away for this long after it was queued fails. */
 export const NOTICE_RETRY_WINDOW_MS = 72 * 60 * 60_000;
 /** How often the worker looks for due messages. */
@@ -32,6 +39,14 @@ export interface ClaimedNotice {
  * recipient is known to be reachable and before the message is sent, once per attempt. It may
  * write what that attempt needs, such as a single-use link it mints; the worker never undoes
  * those writes when the attempt fails, because a timed-out send may still have been delivered.
+ *
+ * Anything a feature must know about the recipient as of the send belongs to the composer too.
+ * The outbox holds no account data and its rows are deleted 30 days after they resolve, so a
+ * composer that needs, say, whether the address was verified reads `"user"."emailVerified"`
+ * here and records it on its own record (such as the owner replacement it notifies).
+ *
+ * It must return {@link ComposedMail}, which only `plainTextMail` makes, and it must finish
+ * within the attempt limit, or the attempt is retried as `NOTICE_COMPOSE_FAILED`.
  */
 export type NoticeComposer = (context: {
   pool: Pool;
@@ -49,6 +64,25 @@ export interface MailWorkerOptions {
   composers: NoticeComposers;
   /** The clock every due check, lease, and deadline uses; tests inject it. */
   now?: () => Date;
+  /** How long one attempt may take; {@link NOTICE_ATTEMPT_LIMIT_MS} unless a test shortens it. */
+  attemptLimitMs?: number;
+}
+
+const TIMED_OUT = Symbol('timed out');
+
+/** Wait for `work` until `deadline` (a wall-clock time in ms), then give up on it. */
+async function before<T>(work: Promise<T>, deadline: number): Promise<T | typeof TIMED_OUT> {
+  // Work given up on may still fail later; that must not become an unhandled rejection.
+  work.catch(() => undefined);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), Math.max(0, deadline - Date.now()));
+  });
+  try {
+    return await Promise.race([work, expired]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** What one attempt did, for the caller and tests. The error class never holds reply text. */
@@ -167,7 +201,7 @@ async function retryLater(
  * when nothing was due.
  *
  * An unreachable recipient fails at once as `RECIPIENT_UNAVAILABLE`, with nothing composed or
- * sent. A kind this server cannot compose fails as `NOTICE_KIND_UNSUPPORTED`. A composer that
+ * sent. An attempt that outlasts {@link NOTICE_ATTEMPT_LIMIT_MS} is abandoned and retried. A kind this server cannot compose fails as `NOTICE_KIND_UNSUPPORTED`. A composer that
  * throws is retried like a mail server that is down, as `NOTICE_COMPOSE_FAILED`.
  */
 export async function deliverNextNotice(options: MailWorkerOptions): Promise<NoticeAttempt | null> {
@@ -185,9 +219,11 @@ export async function deliverNextNotice(options: MailWorkerOptions): Promise<Not
   if (!to) return fail('RECIPIENT_UNAVAILABLE');
   const compose = options.composers[notice.kind];
   if (!compose) return fail('NOTICE_KIND_UNSUPPORTED');
-  let message: ComposedMail;
+  // Measured on the wall clock, not the injected one: it bounds how long this replica waits.
+  const deadline = Date.now() + (options.attemptLimitMs ?? NOTICE_ATTEMPT_LIMIT_MS);
+  let message: ComposedMail | typeof TIMED_OUT;
   try {
-    message = await compose({ pool: options.pool, notice, now: clock() });
+    message = await before(compose({ pool: options.pool, notice, now: clock() }), deadline);
   } catch (error) {
     console.error(
       'Community notice could not be composed',
@@ -195,7 +231,11 @@ export async function deliverNextNotice(options: MailWorkerOptions): Promise<Not
     );
     return retryLater(options.pool, notice, clock(), 'NOTICE_COMPOSE_FAILED');
   }
-  const delivery = await options.transport.send({ to, ...message });
+  if (message === TIMED_OUT)
+    return retryLater(options.pool, notice, clock(), 'NOTICE_COMPOSE_FAILED');
+  const delivery = await before(options.transport.send({ to, ...message }), deadline);
+  // Given up on, not failed: the mail server may still take it, so it is retried.
+  if (delivery === TIMED_OUT) return retryLater(options.pool, notice, clock(), 'SMTP_UNAVAILABLE');
   if (delivery.outcome === 'accepted') {
     const resolved = await resolve(options.pool, notice, clock(), { state: 'accepted' });
     return { noticeId: notice.id, outcome: resolved ? 'accepted' : 'lost', errorClass: null };

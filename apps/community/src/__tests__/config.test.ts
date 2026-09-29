@@ -490,6 +490,22 @@ describe('community startup config', () => {
     }
   });
 
+  it('treats localhost as 127.0.0.1 for a plain relay, and refuses port 0', () => {
+    // Purpose: fails if the no-encryption exemption trusts a name lookup for localhost, is fooled
+    // by upper case, or accepts port 0; an encrypted connection keeps its name for certificates.
+    const env = { ...valid, COMMUNITY_MAIL_FROM: 'notices@example.com' };
+    for (const url of ['smtp://localhost', 'smtp://LocalHost:2525'])
+      expect(parseConfig({ ...env, COMMUNITY_SMTP_URL: url }).mail?.smtp.host, url).toBe(
+        '127.0.0.1'
+      );
+    expect(parseConfig({ ...env, COMMUNITY_SMTP_URL: 'smtps://LOCALHOST' }).mail?.smtp.host).toBe(
+      'localhost'
+    );
+    expect(parseConfig({ ...env, COMMUNITY_SMTP_URL: 'smtp://[::1]' }).mail?.smtp.host).toBe('::1');
+    for (const url of ['smtps://smtp.example.com:0', 'smtp://127.0.0.1:0'])
+      expect(() => parseConfig({ ...env, COMMUNITY_SMTP_URL: url }), url).toThrow('port 0');
+  });
+
   it('refuses mail settings that are half set, unencrypted off loopback, or not one mailbox', () => {
     // Purpose (AC-5): fails if one mail setting alone, plain SMTP to another machine, a stray
     // option, a path, half a credential, or a sender that could add a header or a second

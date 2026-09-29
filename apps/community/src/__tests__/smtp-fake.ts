@@ -34,8 +34,12 @@ export interface SmtpFake {
   close(): Promise<void>;
 }
 
-/** Start the fake. It accepts any login, so a URL with credentials works against it. */
-export async function startSmtpFake(): Promise<SmtpFake> {
+/**
+ * Start the fake. It accepts any login, so a URL with credentials works against it. With
+ * `offerStartTls` it offers STARTTLS with smtp-server's built-in self-signed certificate, as a
+ * local relay often does; otherwise it offers no encryption at all.
+ */
+export async function startSmtpFake(options: { offerStartTls?: boolean } = {}): Promise<SmtpFake> {
   const held: Array<() => void> = [];
   const fake: SmtpFake = {
     port: 0,
@@ -59,7 +63,7 @@ export async function startSmtpFake(): Promise<SmtpFake> {
   };
   const reply = (code: number) => Object.assign(new Error(fake.replyText), { responseCode: code });
   const server = new SMTPServer({
-    disabledCommands: ['STARTTLS'],
+    disabledCommands: options.offerStartTls ? [] : ['STARTTLS'],
     authOptional: true,
     allowInsecureAuth: true,
     logger: false,
