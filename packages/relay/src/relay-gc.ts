@@ -8,7 +8,7 @@
  * sweep, `countNewByEndpoint` grows monotonically until a persistent inbox
  * bricks at `maxMailboxSize` and rejects every further delivery (H4).
  *
- * This module runs one periodic sweep with four phases, ordered so each frees
+ * This module runs one periodic sweep with five phases, ordered so each frees
  * work for the next:
  *
  * 1. **Expiry** — delete expired, non-dead-letter index rows AND their Maildir
@@ -21,7 +21,9 @@
  *    Gated on time-since-CLAIM (the `cur/` file's ctime, stamped by the atomic
  *    claim rename), never the envelope's `createdAt` — queue time says nothing
  *    about whether a handler is still actively processing.
- * 4. **Orphan reaping** — remove mailbox directories that have no registered
+ * 4. **Trace retention** — delete delivery traces no message could still need,
+ *    and each adapter's lifecycle events beyond what its event log can show.
+ * 5. **Orphan reaping** — remove mailbox directories that have no registered
  *    endpoint and no recent activity (e.g. dead-letter drops to `relay.agent.*`
  *    subjects, or historical orphans from the old mesh sweep bug). Durable
  *    `relay.inbox.*` persistent inboxes are NEVER reaped — the endpoint
@@ -80,6 +82,16 @@ export const DEFAULT_IN_FLIGHT_RECOVERY_MS = 30 * 60 * 1000;
  */
 export const DEFAULT_UNDELIVERED_MAIL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * How many delivery traces one trace-retention batch deletes. The phase loops until a batch
+ * comes back short, yielding between batches, so a first sweep over a long-grown table never
+ * holds the event loop for the whole of it.
+ */
+export const TRACE_PRUNE_BATCH = 5_000;
+
+/** The window the delivery metrics count (`TraceStore.getMetrics`): 24 hours. */
+export const TRACE_METRICS_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 // === Types ===
 
 /** Tunable retention windows for the GC sweep. */
@@ -132,6 +144,8 @@ export interface RelayGcResult {
   deadLettersPurged: number;
   /** Messages re-driven from `cur/` back to `new/` for redelivery. */
   inFlightRecovered: number;
+  /** Delivery traces and adapter events deleted by the retention phase. */
+  tracesPruned: number;
   /** Orphan mailbox directories removed. */
   orphansReaped: number;
 }
@@ -187,6 +201,7 @@ export class RelayGc {
       expiredRemoved: 0,
       deadLettersPurged: 0,
       inFlightRecovered: 0,
+      tracesPruned: 0,
       orphansReaped: 0,
     };
 
@@ -197,6 +212,7 @@ export class RelayGc {
     result.inFlightRecovered = await this.guard('crash recovery', () =>
       this.recoverStrandedInFlight(now)
     );
+    result.tracesPruned = await this.guard('trace retention', () => this.pruneTraces(now));
     if (!options?.skipOrphanReap) {
       result.orphansReaped = await this.guard('orphan reap', () => this.reapOrphanMaildirs(now));
     }
@@ -311,6 +327,41 @@ export class RelayGc {
       maxAgeMs: this.config.deadLetterRetentionMs,
     });
     return purged;
+  }
+
+  /**
+   * Delete the traces nothing can read any more (DOR-2574).
+   *
+   * **Delivery spans** are kept for as long as the message they describe can still exist:
+   * unread mail lives for {@link RelayGcConfig.undeliveredMailRetentionMs} and is then
+   * dead-lettered, and a dead letter lives for {@link RelayGcConfig.deadLetterRetentionMs}. A
+   * span older than both describes a message that is gone from every inbox and queue, so the
+   * only thing left to ask of it is a delivery count, and the metrics count the last 24 hours
+   * ({@link TRACE_METRICS_WINDOW_MS}, never pruned into). With the defaults that is 8 days.
+   *
+   * **Adapter lifecycle events** (connected, disconnected, errors) are kept by count, not age:
+   * each adapter keeps what its event log can show, however old (see the store).
+   */
+  private async pruneTraces(now: number): Promise<number> {
+    const store = this.deps.traceStore;
+    if (!store?.pruneDeliverySpans && !store?.capAdapterEvents) return 0;
+    const before =
+      now -
+      Math.max(
+        this.config.undeliveredMailRetentionMs + this.config.deadLetterRetentionMs,
+        TRACE_METRICS_WINDOW_MS
+      );
+    let pruned = 0;
+    if (store.pruneDeliverySpans) {
+      for (;;) {
+        const batch = store.pruneDeliverySpans(before, TRACE_PRUNE_BATCH);
+        pruned += batch;
+        if (batch < TRACE_PRUNE_BATCH) break;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    }
+    pruned += store.capAdapterEvents?.() ?? 0;
+    return pruned;
   }
 
   /**
