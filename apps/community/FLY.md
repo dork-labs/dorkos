@@ -335,9 +335,20 @@ jq . "community-release-v$next.json"
 
 Stop if the check fails. From the manifest, note `image.digest`, `minimumFlyctlVersion`, `minimumNeonCliVersion` and `migrationCompatibilityId`. Check the image with the same command, using `oci://ghcr.io/dork-labs/dorkos-community@<image.digest>` in place of the file name. Then confirm `fly version` and `neonctl --version` meet the minimums.
 
-Download the manifest for your running version the same way. If the two `migrationCompatibilityId` values differ, the upgrade changes the database. From then on, only your backup can take you back.
+Take and check a fresh recovery set (steps 2 to 6), and write down its folder path: a roll-back needs exactly this set. Then download the manifest for the version running now into that set, and check it the same way:
 
-Take and check a fresh recovery set (steps 2 to 6), and write down its folder path: a roll-back needs exactly this set. Then save the configuration Fly holds for your app. Guided setup deployed with a temporary configuration file and deleted it afterward, so this is how you get one:
+```bash
+current=<running-version>
+gh release download "v$current" --repo dork-labs/dorkos \
+  --pattern "community-release-v$current.json" --dir "$backup_dir"
+gh attestation verify "$backup_dir/community-release-v$current.json" --repo dork-labs/dorkos \
+  --signer-workflow dork-labs/dorkos/.github/workflows/publish-community.yml \
+  --source-ref "refs/tags/v$current"
+```
+
+If its `migrationCompatibilityId` differs from the next release's, the upgrade changes the database. From then on, only your backup can take you back.
+
+Next, save the configuration Fly holds for your app. Guided setup deployed with a temporary configuration file and deleted it afterward, so this is how you get one:
 
 ```bash
 fly config save --app <app-name> --config "$backup_dir/fly.toml"
@@ -356,7 +367,7 @@ Never deploy a tag such as `latest`. Afterward:
 2. Confirm its digest is the new release's Linux Intel digest. The manifest lists it under `image.platforms` when it has one. Otherwise run `docker buildx imagetools inspect ghcr.io/dork-labs/dorkos-community@<image.digest>` and read the `linux/amd64` line.
 3. Run the checks in [Upgrade and roll back](OPERATIONS.md#upgrade-and-roll-back): `/health`, sign-in, posting, live updates and one attachment.
 
-The setup journal still names the original version. That is expected: it records setup, not what runs today. Keep the manifest for the release you ran before this upgrade with its recovery set. Its `image.digest` is what a roll-back deploys.
+The setup journal still names the original version. That is expected: it records setup, not what runs today. The manifest for the release you ran before this upgrade is in the recovery set. Its `image.digest` is what a roll-back deploys.
 
 ### 8. Roll back
 
@@ -386,7 +397,7 @@ current_copy="$(mktemp -d "$HOME/community-current.XXXXXXXX")"
      --endpoint-url https://t3.storage.dev --region auto
    ```
 
-4. Deploy the release you ran before this upgrade. Use `image.digest` from that release's manifest (step 7), not the digest in the setup journal: the journal names the version from setup day, which may be older still.
+4. Deploy the release you ran before this upgrade. Use `image.digest` from `$pre_upgrade/community-release-v<previous-version>.json`, the manifest you saved in step 7, not the digest in the setup journal: the journal names the version from setup day, which may be older still.
 
    ```bash
    fly deploy --app <app-name> --config "$pre_upgrade/fly.toml" \
