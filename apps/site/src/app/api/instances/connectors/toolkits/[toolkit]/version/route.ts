@@ -1,7 +1,10 @@
 /** Exact managed toolkit version endpoint. */
 import { ZodError } from 'zod';
 
-import { resolveManagedToolkitVersion } from '@/lib/connectors/managed/discovery-service';
+import {
+  ManagedRequestShapeError,
+  resolveManagedToolkitVersion,
+} from '@/lib/connectors/managed/discovery-service';
 import {
   managedContextFailure,
   resolveManagedConnectorRequest,
@@ -32,10 +35,21 @@ export async function GET(
     );
   } catch (error) {
     if (
-      error instanceof ZodError ||
+      error instanceof ManagedRequestShapeError ||
       (error instanceof Error && error.message === 'invalid_managed_query')
     ) {
       return Response.json({ error: 'invalid_request' }, { status: 400 });
+    }
+    if (error instanceof ZodError) {
+      // Our own answer failed its wire schema: a mapping bug here, never the
+      // caller's fault. Only the class and route are logged, never values.
+      console.error(
+        '[managed-discovery] internal wire-mapping failure',
+        error.constructor.name,
+        request.method,
+        new URL(request.url).pathname
+      );
+      return Response.json({ error: 'internal_error' }, { status: 500 });
     }
     return Response.json({ error: 'managed_connectors_unavailable' }, { status: 503 });
   }
