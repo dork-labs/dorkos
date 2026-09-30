@@ -2,6 +2,7 @@
 covers:
   - 'feat(communities): say what didn’t send when a community is deleted or taken down (DOR-2575)'
   - "fix(communities): answer a gone community's post with its gone refusal, and keep the count first (DOR-2575 review)"
+  - "fix(communities): end a gone community's room stream instead of retrying it (DOR-2575 review)"
 ---
 
 ### Added
