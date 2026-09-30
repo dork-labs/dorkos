@@ -64,6 +64,8 @@ export async function startTenancyHarness(
     env?: Record<string, unknown>;
     /** Another BlobStore (S3) instead of the fixture's own folder. */
     blobStore?: BlobStore;
+    /** Mail composers the app treats as available, as `main.ts` passes the worker's own set. */
+    noticeComposers?: Parameters<typeof createCommunityApp>[0]['noticeComposers'];
   } = {}
 ): Promise<TenancyHarness> {
   const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -99,6 +101,7 @@ export async function startTenancyHarness(
     pool,
     blobStore,
     hooks: { ...options.hooks, now: options.now },
+    noticeComposers: options.noticeComposers,
   });
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
   configureServerTimeouts(server);

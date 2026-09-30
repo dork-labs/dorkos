@@ -25,7 +25,7 @@ import { sweepImportTempDirs } from './imports/upload.js';
 import { configureServerTimeouts } from './http.js';
 import { createEvidenceSink, tidyEvidenceSink } from './takedown/evidence/sink.js';
 import { sweepTakedownEvidence } from './takedown/worker.js';
-import { startMailDelivery } from './mail/worker.js';
+import { startMailDelivery, type NoticeComposers } from './mail/worker.js';
 import { pruneNoticeOutbox } from './mail/outbox.js';
 
 const config = parseConfig(process.env);
@@ -45,7 +45,10 @@ pool.on('error', (error: Error & { code?: string }) => {
 const blobStore = createBlobStore(config);
 const evidenceSink = createEvidenceSink(config.evidence);
 await tidyEvidenceSink(evidenceSink);
-const app = createCommunityApp({ config, pool, blobStore });
+// The mail worker's composers, by notice kind. The same set goes to the app, which refuses to
+// start anything whose notice the worker could not compose.
+const noticeComposers: NoticeComposers = {};
+const app = createCommunityApp({ config, pool, blobStore, noticeComposers });
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 app.use('/assets/*', serveStatic({ root: staticRoot }));
 app.get('/', serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) }));
@@ -247,10 +250,9 @@ const takedownEvidence = setInterval(() => {
     });
 }, 15_000);
 takedownEvidence.unref();
-// Off unless the host configured SMTP. Each feature that queues mail adds its composers here;
-// a queued kind with no composer fails as NOTICE_KIND_UNSUPPORTED. Owner replacements queue
-// their notices from the host routes; their composers arrive with the replacement timeline.
-const mail = startMailDelivery({ config, pool, composers: {} });
+// Off unless the host configured SMTP. Each feature that queues mail adds its composers to
+// `noticeComposers` above; until owner replacements add theirs, the host refuses to start one.
+const mail = startMailDelivery({ config, pool, composers: noticeComposers });
 const onSignal = createSignalHandler(
   createStop({
     server,

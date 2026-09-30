@@ -3,8 +3,10 @@
  * (specs/community-owner-replacement, task 2.2: AC-1, AC-2, AC-3, AC-7 and AC-10 request halves,
  * AC-13, AC-14, AC-20 request half, AC-21). Real PostgreSQL through the tenancy harness.
  *
- * Three hosts: `h` has mail and an injected clock; `sso` has mail and single sign-on; `bare` has
- * neither. No test starts a mail worker, so nothing is ever sent: a notice is only queued.
+ * Four hosts: `h` has mail, stub notice composers, and an injected clock; `sso` has the same and
+ * single sign-on; `mailOnly` has mail but no composers, like a server whose worker cannot yet
+ * write these notices; `bare` has no mail at all. No test starts a mail worker, so nothing is
+ * ever sent: a notice is only queued.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -16,6 +18,9 @@ import {
   CommunityAdminOwnerReplacementListSchema,
   CommunityAdminOwnerReplacementSchema,
 } from '@dorkos/shared/community-admin-wire';
+import { plainTextMail } from '../mail/messages.js';
+import { NOTICE_KINDS } from '../mail/outbox.js';
+import type { NoticeComposers } from '../mail/worker.js';
 import { formatReplacementDate } from '../owner-replacement/dates.js';
 import { hashSecret } from '../security.js';
 import {
@@ -44,11 +49,19 @@ const REFERENCE = 'CASE-4471';
 let h: TenancyHarness;
 let sso: TenancyHarness;
 let bare: TenancyHarness;
+let mailOnly: TenancyHarness;
+/** A composer for every kind, as a server whose worker can write every notice would have. */
+const STUB_COMPOSERS = Object.fromEntries(
+  NOTICE_KINDS.map((kind) => [kind, async () => plainTextMail('Stub', ['Stub notice.'])])
+) as NoticeComposers;
 /** The server's injected clock. Tests move dates in the database relative to it instead. */
 const clock = () => new Date();
-const operator = {} as Record<'h' | 'sso' | 'bare', string>;
+const operator = {} as Record<'h' | 'sso' | 'bare' | 'mailOnly', string>;
 type Key = { id: string; secret: string; prefix: string };
-const keys = {} as Record<'ownership' | 'second' | 'everyOther' | 'read' | 'bare', Key>;
+const keys = {} as Record<
+  'ownership' | 'second' | 'everyOther' | 'read' | 'bare' | 'mailOnly',
+  Key
+>;
 let counter = 0;
 
 /** A community owned by a fresh account that is not a host operator. */
@@ -258,8 +271,33 @@ async function closeDirectly(
   );
 }
 
+/** Open a replacement directly, for a host whose request route refuses to open one. */
+async function seedOpenReplacement(harness: TenancyHarness, c: Owned, key: Key) {
+  const id = randomUUID();
+  const token = randomUUID();
+  await harness.pool.query(
+    `INSERT INTO owner_replacements(id,community_id,reason,claimant_named,claim_token_hash,
+       requested_by_host_actor,idempotency_key,payload_hash,after_objection,after_withdrawal,
+       prior_owner_member_id,requested_at)
+     VALUES($1,$2,'other',false,$3,$4,'seeded',$5,false,false,$6,now())`,
+    [
+      id,
+      c.communityId,
+      hashSecret(token),
+      `api_key:${key.id}`,
+      createHash('sha256').update(id).digest('hex'),
+      c.ownerMemberId,
+    ]
+  );
+  return { id, token };
+}
+
 beforeAll(async () => {
-  h = await startTenancyHarness('owner_replace', { now: clock, env: SMTP_ENV });
+  h = await startTenancyHarness('owner_replace', {
+    now: clock,
+    env: SMTP_ENV,
+    noticeComposers: STUB_COMPOSERS,
+  });
   sso = await startTenancyHarness('owner_replace_sso', {
     env: {
       ...SMTP_ENV,
@@ -267,11 +305,14 @@ beforeAll(async () => {
       COMMUNITY_OIDC_CLIENT_ID: 'community-client',
       COMMUNITY_OIDC_CLIENT_SECRET: 'community-client-secret',
     },
+    noticeComposers: STUB_COMPOSERS,
   });
   bare = await startTenancyHarness('owner_replace_bare');
+  mailOnly = await startTenancyHarness('owner_replace_mailonly', { env: SMTP_ENV });
   operator.h = (await bootstrapHost(h, 'Hana Host', 'hana@host.test')).cookie;
   operator.sso = (await bootstrapHost(sso, 'Sora Host', 'sora@host.test')).cookie;
   operator.bare = (await bootstrapHost(bare, 'Bo Host', 'bo@host.test')).cookie;
+  operator.mailOnly = (await bootstrapHost(mailOnly, 'Mo Host', 'mo@host.test')).cookie;
   keys.ownership = await issueKey(h, operator.h, ['communities:ownership']);
   keys.second = await issueKey(h, operator.h, ['communities:ownership']);
   keys.everyOther = await issueKey(h, operator.h, [
@@ -284,12 +325,14 @@ beforeAll(async () => {
   ]);
   keys.read = await issueKey(h, operator.h, ['communities:read']);
   keys.bare = await issueKey(bare, operator.bare, ['communities:ownership', 'communities:read']);
+  keys.mailOnly = await issueKey(mailOnly, operator.mailOnly, ['communities:ownership']);
 }, 120_000);
 
 afterAll(async () => {
   await h?.close();
   await sso?.close();
   await bare?.close();
+  await mailOnly?.close();
 });
 
 describe('who may ask (AC-1)', () => {
@@ -318,7 +361,8 @@ describe('who may ask (AC-1)', () => {
   });
 
   it('makes a person confirm their password, and a key never send one', async () => {
-    // Purpose: fails if a person skips reauthentication, if a wrong password is anything but
+    // Purpose: fails if a person skips reauthentication, if a missing password is not the
+    // takedowns' REAUTH_REQUIRED, if a wrong password is anything but
     // REAUTH_FAILED, or if a key's password is silently accepted.
     const c = await ownedCommunity(h, operator.h);
     const missing = await request(
@@ -327,7 +371,8 @@ describe('who may ask (AC-1)', () => {
       { cookie: operator.h },
       { password: undefined }
     );
-    expect(missing.status).toBe(400);
+    expect(missing.status).toBe(403);
+    expect(await missing.json()).toMatchObject({ code: 'REAUTH_REQUIRED' });
     const wrong = await request(h, c.communityId, { cookie: operator.h }, { password: 'not-it' });
     expect(wrong.status).toBe(403);
     expect(await wrong.json()).toMatchObject({ code: 'REAUTH_FAILED' });
@@ -361,17 +406,20 @@ describe('who may ask (AC-1)', () => {
     await h.pool.query(`DELETE FROM account WHERE "userId"=$1 AND "providerId"='credential'`, [
       userId,
     ]);
-    const refused = await request(
-      h,
-      c.communityId,
-      { cookie: ssoOnly.ownerCookie },
-      { password: 'anything-at-all' }
-    );
-    expect(refused.status).toBe(403);
-    expect(await refused.json()).toEqual({
-      code: 'PASSWORD_REQUIRED',
-      message: 'Set a password in your account to do this.',
-    });
+    // Told on the first try, whether or not they typed something into the password field.
+    for (const password of [undefined, 'anything-at-all']) {
+      const refused = await request(
+        h,
+        c.communityId,
+        { cookie: ssoOnly.ownerCookie },
+        { password }
+      );
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toEqual({
+        code: 'PASSWORD_REQUIRED',
+        message: 'Set a password in your account to do this.',
+      });
+    }
     expect(await replacementCount(h, c.communityId)).toBe(0);
   });
 
@@ -403,6 +451,85 @@ describe('who may ask (AC-1)', () => {
     expect(await replacementCount(h, c.communityId)).toBe(0);
     expect(await hostAudits(h, c.communityId)).toEqual([]);
   });
+
+  it.each(['cancel', 'claim-token'] as const)(
+    'refuses a key revoked while its %s waits on the community lock, and changes nothing',
+    async (route) => {
+      // Purpose: fails if cancel or reissue trust the key check at the door, so a revocation
+      // that commits while the change waits on the community does not win.
+      const c = await ownedCommunity(h, operator.h);
+      const doomed = await issueKey(h, operator.h, ['communities:ownership']);
+      const open = await created(await request(h, c.communityId, { bearer: doomed.secret }));
+      const id = open.replacement.replacementId;
+      const before = await replacementRow(h, id);
+      const response = await holdingLock(
+        h,
+        'SELECT 1 FROM communities WHERE id=$1 FOR UPDATE',
+        [c.communityId],
+        async (release, holderPid) => {
+          const pending = (route === 'cancel' ? cancel : reissue)(h, c.communityId, id, {
+            bearer: doomed.secret,
+          });
+          await waitForBlockedBy(h, holderPid, 1);
+          await expectStatus(
+            await h.call(`/api/v1/host/api-keys/${doomed.id}/revoke`, {
+              cookie: operator.h,
+              body: {},
+            }),
+            200,
+            'revoke key'
+          );
+          await release();
+          return pending;
+        }
+      );
+      expect(response.status).toBe(401);
+      expect(await replacementRow(h, id)).toEqual(before);
+      expect(await outbox(h, id)).toHaveLength(1);
+      expect(await hostAudits(h, c.communityId)).toHaveLength(1);
+    }
+  );
+});
+
+describe('the owner erasing their account at the same moment', () => {
+  it('neither deadlocks with a request nor lets the owner erase their account', async () => {
+    // Purpose: fails if the request locks the owner's account row after their member row. An
+    // account erasure locks the account and then its member rows, so that order deadlocks
+    // (review probe P3). The request must win or wait, never kill the erasure's transaction.
+    const c = await ownedCommunity(h, operator.h);
+    const ownerUser = await userIdOf(h, c.ownerMemberId);
+    const eraser = await h.pool.connect();
+    try {
+      await eraser.query('BEGIN');
+      // Erasure's first step (routes/account/erasures.ts): the account row.
+      await eraser.query('SELECT 1 FROM "user" WHERE id=$1 FOR UPDATE', [ownerUser]);
+      const pid = (await eraser.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]
+        .pid;
+      const pending = request(h, c.communityId, { bearer: keys.ownership.secret });
+      // The request either finishes without the account row or waits on this session.
+      const settled = await Promise.race([
+        pending.then(() => 'done'),
+        waitForBlockedBy(h, pid, 1).then(
+          () => 'blocked',
+          () => 'never blocked'
+        ),
+      ]);
+      // Erasure's second step: its memberships, in the same order the route takes them.
+      const members = await eraser.query<{ role: string; active: boolean }>(
+        `SELECT m.role,m.active FROM members m JOIN communities c ON c.id=m.community_id
+         WHERE m.user_id=$1 ORDER BY m.community_id,m.id FOR UPDATE OF m`,
+        [ownerUser]
+      );
+      // Still the owner, so the route would refuse the erasure here.
+      expect(members.rows).toEqual([{ role: 'owner', active: true }]);
+      await eraser.query('COMMIT');
+      expect(settled).toBe('done');
+      const response = await pending;
+      expect(response.status).toBe(201);
+    } finally {
+      eraser.release();
+    }
+  });
 });
 
 describe('no mail, no replacement (AC-2)', () => {
@@ -432,27 +559,39 @@ describe('no mail, no replacement (AC-2)', () => {
   it('refuses to reissue a claim it cannot announce', async () => {
     // Purpose: fails if a new claim link can be issued on a host that cannot tell the owner.
     const c = await ownedCommunity(bare, operator.bare);
-    const id = randomUUID();
-    const token = randomUUID();
-    await bare.pool.query(
-      `INSERT INTO owner_replacements(id,community_id,reason,claimant_named,claim_token_hash,
-         requested_by_host_actor,idempotency_key,payload_hash,after_objection,after_withdrawal,
-         prior_owner_member_id,requested_at)
-       VALUES($1,$2,'other',false,$3,$4,'seeded',$5,false,false,$6,now())`,
-      [
-        id,
-        c.communityId,
-        hashSecret(token),
-        `api_key:${keys.bare.id}`,
-        createHash('sha256').update(id).digest('hex'),
-        c.ownerMemberId,
-      ]
-    );
+    const { id, token } = await seedOpenReplacement(bare, c, keys.bare);
     const refused = await reissue(bare, c.communityId, id, { bearer: keys.bare.secret });
     expect(refused.status).toBe(409);
     expect(await refused.json()).toMatchObject({ code: 'NOTICE_DELIVERY_UNAVAILABLE' });
     expect((await replacementRow(bare, id)).claim_token_hash).toBe(hashSecret(token));
     expect((await bare.pool.query('SELECT 1 FROM notice_outbox')).rowCount).toBe(0);
+  });
+
+  it('refuses while mail is set up but the notices cannot be written yet, and cancel still works', async () => {
+    // Purpose: fails if a replacement can start, or a claim be reissued, on a server whose mail
+    // worker has no composer for the notice, so the owner would never be told (the worker would
+    // fail it as NOTICE_KIND_UNSUPPORTED). The stub-composer host `h` proves the accepted side.
+    const c = await ownedCommunity(mailOnly, operator.mailOnly);
+    const auth = { bearer: keys.mailOnly.secret };
+    const refused = await request(mailOnly, c.communityId, auth);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({
+      code: 'NOTICE_DELIVERY_UNAVAILABLE',
+      message: "This server can't send the owner's notice yet, so it can't replace an owner.",
+    });
+    expect(await replacementCount(mailOnly, c.communityId)).toBe(0);
+    expect(await hostAudits(mailOnly, c.communityId)).toEqual([]);
+
+    const { id, token } = await seedOpenReplacement(mailOnly, c, keys.mailOnly);
+    const noReissue = await reissue(mailOnly, c.communityId, id, auth);
+    expect(noReissue.status).toBe(409);
+    expect(await noReissue.json()).toMatchObject({ code: 'NOTICE_DELIVERY_UNAVAILABLE' });
+    expect((await replacementRow(mailOnly, id)).claim_token_hash).toBe(hashSecret(token));
+    expect((await mailOnly.pool.query('SELECT 1 FROM notice_outbox')).rowCount).toBe(0);
+
+    // A request that somehow opened can always be withdrawn.
+    await expectStatus(await cancel(mailOnly, c.communityId, id, auth), 200, 'cancel');
+    expect((await replacementRow(mailOnly, id)).state).toBe('withdrawn');
   });
 });
 

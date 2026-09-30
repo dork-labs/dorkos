@@ -20,7 +20,7 @@ import {
   type HostAuthority,
 } from '../../host/authority.js';
 import { ApiError, json, readJson } from '../../http.js';
-import { queueNotice } from '../../mail/outbox.js';
+import { queueNotice, type NoticeKind } from '../../mail/outbox.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
 import {
   claimUrl,
@@ -37,6 +37,21 @@ import type { ConfirmPassword } from '../../password-confirmation.js';
 import { hashSecret, randomToken } from '../../security.js';
 
 const LIST_LIMIT = 50;
+
+/**
+ * Why a notice of `kind` cannot be sent, or null when it can. Without mail the host is told to
+ * set it up; with mail but no way yet to write this notice, the feature is simply not available.
+ */
+function noticeRefusal(
+  canSendNotice: (kind: NoticeKind) => boolean,
+  config: CommunityConfig,
+  kind: NoticeKind
+): string | null {
+  if (canSendNotice(kind)) return null;
+  return config.mail === null
+    ? "This host can't send email, so it can't give the owner notice. Set up mail first."
+    : "This server can't send the owner's notice yet, so it can't replace an owner.";
+}
 const ReplacementPathSchema = z.strictObject({ communityId: z.uuid(), replacementId: z.uuid() });
 
 /** Parse a replacement route's ids; a malformed one is the same 404 as an unknown one. */
@@ -81,9 +96,13 @@ export function registerHostOwnerReplacementRoutes(
     authority: HostAuthority;
     now: () => Date;
     confirmPassword: ConfirmPassword;
+    /** Whether mail is set up and the mail worker can compose a notice of this kind. */
+    canSendNotice: (kind: NoticeKind) => boolean;
+    /** Whether an account has a password; one that signs in only through single sign-on does not. */
+    hasPassword: (userId: string) => Promise<boolean>;
   }
 ): void {
-  const { pool, config, authority, now, confirmPassword } = deps;
+  const { pool, config, authority, now, confirmPassword, canSendNotice, hasPassword } = deps;
   const cooldownDays = config.ownerReplacement.objectionCooldownDays;
   const project = (row: OwnerReplacementRow) => projectOwnerReplacement(row, cooldownDays);
 
@@ -94,10 +113,12 @@ export function registerHostOwnerReplacementRoutes(
     if (actor.kind === 'api_key' && body.password !== undefined)
       throw new ApiError(400, 'STATE_CONFLICT', 'A host API key does not send a password.');
     if (actor.kind === 'person') {
+      // An operator who signs in only through single sign-on has no password to confirm. They
+      // hear so first, whatever they sent, and use a key with this scope instead.
+      if (!(await hasPassword(actor.userId)))
+        throw new ApiError(403, 'PASSWORD_REQUIRED', 'Set a password in your account to do this.');
       if (!body.password)
-        throw new ApiError(400, 'STATE_CONFLICT', 'Enter your password to take this action.');
-      // An operator who signs in only through single sign-on has no password to confirm and
-      // is told so (403 PASSWORD_REQUIRED); they use a key with this scope instead.
+        throw new ApiError(403, 'REAUTH_REQUIRED', 'Enter your password to take this action.');
       await confirmPassword(c, actor.userId, body.password);
     }
     const subject = body.claimant.oidcSubject;
@@ -124,7 +145,7 @@ export function registerHostOwnerReplacementRoutes(
         reference: body.reference,
         claimant: config.oidc && subject !== null ? { issuer: config.oidc.issuer, subject } : null,
         claimTokenHash: hashSecret(token),
-        mail: config.mail !== null,
+        noticeRefusal: noticeRefusal(canSendNotice, config, 'owner_replacement.notice'),
         objectionCooldownDays: cooldownDays,
         now: now(),
       })
@@ -196,20 +217,17 @@ export function registerHostOwnerReplacementRoutes(
     await transaction(pool, async (client) => {
       const at = now();
       await lockOpenReplacement(client, actor, ids, at);
-      // A new link is announced to the owner, so without mail it cannot be issued.
-      if (!config.mail)
-        throw new ApiError(
-          409,
-          'NOTICE_DELIVERY_UNAVAILABLE',
-          "This host can't send email, so it can't tell the owner. Set up mail first."
-        );
+      // A new link is announced to the owner, so it cannot be issued while that notice cannot.
+      const refusal = noticeRefusal(canSendNotice, config, 'owner_replacement.claim_reissued');
+      if (refusal) throw new ApiError(409, 'NOTICE_DELIVERY_UNAVAILABLE', refusal);
       const owner = await currentOwnerAccount(client, ids.communityId);
       if (!owner)
         throw new ApiError(409, 'STATE_CONFLICT', 'This community has no owner to notify.');
       // The old token stops working here; no date moves.
       await client.query(
-        'UPDATE owner_replacements SET claim_token_hash=$2,claim_reissued_at=$3 WHERE id=$1',
-        [ids.replacementId, hashSecret(token), at]
+        `UPDATE owner_replacements SET claim_token_hash=$3,claim_reissued_at=$4
+         WHERE community_id=$1 AND id=$2`,
+        [ids.communityId, ids.replacementId, hashSecret(token), at]
       );
       await queueNotice(
         client,

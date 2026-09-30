@@ -32,8 +32,11 @@ export interface OwnerReplacementRequest {
   claimant: { issuer: string; subject: string } | null;
   /** The hash of the new claim token; the token itself never reaches the database. */
   claimTokenHash: string;
-  /** Whether this host can send mail. A replacement cannot start without it. */
-  mail: boolean;
+  /**
+   * Why the owner's notice cannot be sent, or null when it can (mail is set up and the mail
+   * worker can compose an `owner_replacement.notice`). A replacement cannot start without it.
+   */
+  noticeRefusal: string | null;
   objectionCooldownDays: number;
   now: Date;
 }
@@ -62,9 +65,9 @@ export function replacementPayloadHash(input: {
 
 /**
  * Start replacing a community's owner, in the caller's transaction. It locks the community
- * first and checks every rule under that lock: the actor is still live, mail is configured, the
+ * first and checks every rule under that lock: the actor is still live, the owner's notice can be sent, the
  * idempotency key, the lifecycle and its version, one open request at a time, and the
- * cooling-off after an objection. It then locks the owner's member and account rows, inserts
+ * cooling-off after an objection. It then locks the owner's member row, inserts
  * the replacement in `notifying` with the claim token's hash, queues one notice to the owner,
  * and audits both planes. Neither audit row names a member, the reference, or the subject.
  *
@@ -82,12 +85,8 @@ export async function requestOwnerReplacement(
   await assertHostActor(client, input.actor, input.now);
   const community = locked.rows[0];
   if (!community) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
-  if (!input.mail)
-    throw new ApiError(
-      409,
-      'NOTICE_DELIVERY_UNAVAILABLE',
-      "This host can't send email, so it can't give the owner notice. Set up mail first."
-    );
+  if (input.noticeRefusal)
+    throw new ApiError(409, 'NOTICE_DELIVERY_UNAVAILABLE', input.noticeRefusal);
 
   // The community lock serializes every request for it, so one key is looked up and written
   // by one request at a time.
@@ -163,7 +162,10 @@ export async function requestOwnerReplacement(
       );
   }
 
-  // Lock order: community, replacement, tokens, member rows in id order, then the account.
+  // The owner's member row, after the community. The account row is deliberately not locked:
+  // an account erasure locks the account and then its member rows, so taking them the other way
+  // round here would deadlock with it. The member lock is enough, because the erasure re-reads
+  // this row under its own lock and refuses an owner.
   const owner = await client.query<{ id: string; user_id: string | null }>(
     `SELECT id,user_id FROM members WHERE community_id=$1 AND role='owner' AND active
      ORDER BY id FOR UPDATE`,
@@ -172,7 +174,6 @@ export async function requestOwnerReplacement(
   const prior = owner.rows[0];
   if (!prior?.user_id)
     throw new ApiError(409, 'STATE_CONFLICT', 'This community has no owner to notify.');
-  await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR SHARE', [prior.user_id]);
 
   const inserted = await client.query<{ id: string }>(
     `INSERT INTO owner_replacements(

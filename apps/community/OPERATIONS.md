@@ -161,17 +161,17 @@ A suspended community can be put on hold directly. It goes from suspended to on 
 
 ## Replacing an owner who has left
 
-Sometimes the person who owns a community leaves, and nobody can manage it any more. If they can still sign in, ask them to hand it over themselves from the community's Settings. That is quicker and needs nothing from you. If they cannot be reached, you can ask to replace them through `POST /api/v1/host/communities/:id/owner-replacements` (see [the API](API.md#replace-an-owner-who-has-left)). Do not use it to settle a disagreement with an owner who is still there: they can say no, and a "no" ends the request for good.
+Sometimes the person who owns a community leaves, and nobody can manage it any more. If they can still sign in, ask them to hand it over themselves from the community's Settings.
 
-It needs mail. The server refuses to start a request until mail is set up (see [Mail](#mail)), because the owner must be told outside the community they may have left.
+This server has the host's side of replacing an owner (`POST /api/v1/host/communities/:id/owner-replacements`, see [the API](API.md#replace-an-owner-who-has-left)), but not yet the owner's side: the email that tells them, and their way to say no. Until that is ready, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE`, even with mail set up. Nothing changes for any community.
 
-**Who can ask.** A host API key with `communities:ownership`, or a host operator with their password. An operator who signs in only through single sign-on has no password to confirm, so they use a key with that permission instead.
+What you can prepare now:
 
-**Naming the new owner.** When this host uses single sign-on, every request must name the new owner by the ID your sign-in service gives that person for this site, and only that account can take ownership. Some sign-in services give each site a different ID for the same person. Use the one your service gives this host, not one another app sees: find it in your own records (for example, a sign-in by that person on this host) or in your sign-in service's admin tools. Without single sign-on, a request names nobody, and whoever opens the claim link and signs in can take ownership.
+- **Mail.** Requests will need it, because the owner must be told outside the community they may have left (see [Mail](#mail)).
+- **Who can ask.** A host API key with `communities:ownership`, or a host operator with their password. An operator who signs in only through single sign-on has no password to confirm, so they use a key with that permission instead.
+- **Naming the new owner.** When this host uses single sign-on, every request must name the new owner by the ID your sign-in service gives that person for this site, and only that account will be able to take ownership. Some sign-in services give each site a different ID for the same person. Use the one your service gives this host, not one another app sees: find it in your own records (for example, a sign-in by that person on this host) or in your sign-in service's admin tools.
 
-**What actually protects the owner.** The owner is told by email, in the community, and in their DorkOS app. They then have a waiting period (at least 7 days, and 30 whenever the notice could not be delivered, the address was never confirmed, or the reason is that the owner left the group), and they can say no with one click from the email, without signing in. Those three things, the notice, the wait, and the objection, are the protection on every host. The claim link is not: whoever can ask can send a new link. Naming the new owner is not either, against someone who has stolen a key or tricked an operator, because they choose the name. What naming the new owner does stop is a stranger using a claim link that leaked. So keep `communities:ownership` for the few programs that need it, and watch the host audit trail for `owner_replacement.request`.
-
-**After the owner says no,** you cannot ask again for `COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS` (90 by default), and every later request gets the long wait. Cancelling your own request starts no such wait, but a new request within 30 days of a cancel also gets the long wait.
+**What will protect the owner.** The design's protection against someone who has stolen a key or tricked an operator is the notice to the owner, the waiting period, and the owner's objection, on every host. The claim link is not a protection: whoever can ask can send a new link. Naming the new owner is not either, because a stolen key chooses the name. What naming does stop is a stranger using a claim link that leaked. So keep `communities:ownership` for the few programs that need it, and watch the host audit trail for `owner_replacement.request`.
 
 ## Legal holds
 

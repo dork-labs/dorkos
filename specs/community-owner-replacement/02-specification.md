@@ -68,7 +68,7 @@ The host-operator spec already has a pattern for a destructive host power done h
 
 - **Host authority stays content-blind.** Host routes here take and return ids, states, dates, a reason code, and the host's own reference. They never return a member id, name, handle, email, or any content. The owner's email is read by the mail worker at send time and never leaves the server except to the configured SMTP server.
 - **Tenant first, lock first.** Every route that names a community resolves the UUID from the path (`404` for unknown or malformed), locks the community row `FOR UPDATE` before changing anything, and re-checks every gate under the lock.
-- **Lock order.** community → `owner_replacements` row → token rows → member rows in id order → `"user"` row. The same order as owner transfer and owner claims, so replacement, transfer, deletion, claim, and erasure cannot deadlock.
+- **Lock order.** community → `owner_replacements` row → token rows → `"user"` row → member rows in id order. An account erasure (`routes/account/erasures.ts`) locks the `"user"` row and then that account's member rows, and an owner transfer locks the community and then member rows, so a `"user"` row is never taken after a member row. A step that only needs to order itself against an erasure of the owner (the host request) locks the owner's member row and no `"user"` row: the erasure re-reads that row under its own lock and refuses an owner. A step that must stop a claimant's erasure (the claim) locks the claimant's `"user"` row before any member row.
 - **One-time secrets.** Claim tokens and object tokens are 256 random bits (`randomToken()`), stored only as `hashSecret(token)`, never in a list, log, audit row, or error. A claim token is returned once to the host with `Cache-Control: no-store` and never emailed. An object token is only ever emailed to the owner (below).
 - **Clock.** Every route and worker takes an injected `now()`, as `host-lifecycle.ts` does, so every date rule is testable.
 
@@ -534,6 +534,8 @@ None open. Resolved while specifying, under the operator's standing instruction,
 - RFC 5321 (SMTP reply classes), RFC 5322 (mailbox syntax), RFC 7208 (SPF), RFC 6376 (DKIM), RFC 7489 (DMARC), OpenID Connect Core 1.0 §8 (pairwise subject identifiers)
 
 ## Changelog
+
+- **2026-09-30** — Task 2.2 review (DOR-2539): the lock order puts the `"user"` row before member rows, the order an account erasure takes them in; the old order (member rows, then `"user"`) deadlocked a host request against the owner's erasure. The host request and claim-token routes also refuse while the mail worker cannot compose their notice.
 
 - **2026-09-29** — Task 2.1 review (DOR-2538): `withdrawn_cause` and `withdrawnBecause`; `claimant_named`, with the named issuer and subject cleared when a request closes; `idempotency_actor` dropped in favour of `requested_by_host_actor`; end hooks re-read the replacement under the community lock; object tokens bound to their request's community and dated from the injected clock.
 

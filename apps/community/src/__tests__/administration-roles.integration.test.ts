@@ -2490,6 +2490,8 @@ it('classifies every registered route, and puts every host and settings route in
     authority,
     now,
     confirmPassword: unused,
+    canSendNotice: () => false,
+    hasPassword: async () => true,
   });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [
