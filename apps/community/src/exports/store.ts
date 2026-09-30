@@ -4,14 +4,17 @@ import type {
   CommunityWireExportFailureCode,
 } from '@dorkos/shared/community-wire';
 import { queueBlobs } from '../content-removal.js';
-import type { ExportScope } from './authority.js';
+import type { ExportJobScope } from './authority.js';
 
 /** Columns of one `export_archives` row the routes and the worker read. */
 export interface ExportRow {
   id: string;
   community_id: string;
-  requester_member_id: string;
-  scope: ExportScope;
+  /** Null only for an evidence export. */
+  requester_member_id: string | null;
+  scope: ExportJobScope;
+  /** The takedown an evidence export preserves; null for every other scope. */
+  evidence_takedown_id: string | null;
   format_version: 1 | 2;
   state: 'queued' | 'building' | 'ready' | 'failed' | 'cancelled';
   blob_key: string | null;
@@ -35,7 +38,8 @@ export interface ExportRow {
 }
 
 /** The `export_archives` columns every read selects. */
-export const EXPORT_COLUMNS = `id,community_id,requester_member_id,scope,format_version,state,blob_key,
+export const EXPORT_COLUMNS = `id,community_id,requester_member_id,scope,evidence_takedown_id,
+  format_version,state,blob_key,
   byte_size::text,created_at,ready_at,expires_at,deleted_at,failure_code,progress_done::text,
   progress_total::text,watermark,last_checked_redaction_id::text,
   verified_content_version::text,rebuild_passes,data_complete,attempts,failures,run_ms::text`;
@@ -48,8 +52,13 @@ const WIRE_FAILURES = new Set<string>([
   'EXPORT_STORAGE_UNAVAILABLE',
 ]);
 
-/** Project one row as its requester sees it; a ready archive past its lifetime reads `expired`. */
+/**
+ * Project one row as its requester sees it; a ready archive past its lifetime reads `expired`.
+ * Every route reads rows by their requester, so an evidence export (which has none) never
+ * reaches here; one that did would be a leak, so it throws instead.
+ */
 export function toWireExport(row: ExportRow, now: Date): CommunityWireExport {
+  if (row.scope === 'evidence') throw new Error('An evidence export is never shown to anyone');
   const expired =
     row.state === 'ready' &&
     (row.deleted_at !== null || (row.expires_at !== null && row.expires_at <= now));
@@ -125,12 +134,15 @@ export async function endExportJob(
 /**
  * Delete every ready archive of a community, queueing its blobs first (a version 2 archive's
  * segments cascade away with the row, so their keys are read before it goes). Erasure and host
- * takedowns use this: a ready archive holds content they must remove.
+ * takedowns use this: a ready archive holds content they must remove. A takedown's evidence
+ * export is left alone: nobody can download it, and it is what the host keeps for the
+ * authorities; the takedown worker deletes it once it is copied.
  */
 export async function deleteReadyExports(client: PoolClient, communityId: string): Promise<void> {
   const ready = await client.query<{ id: string; blob_key: string | null }>(
     `SELECT id,blob_key FROM export_archives
-     WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL FOR UPDATE`,
+     WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL AND scope<>'evidence'
+     FOR UPDATE`,
     [communityId]
   );
   const ids = ready.rows.map((row) => row.id);
@@ -152,7 +164,8 @@ export async function deleteReadyExports(client: PoolClient, communityId: string
 /**
  * Send every job of a community that is still being prepared back to the start: queue the
  * segments it wrote, forget what it covered, and make it `queued` again. The change of state
- * fences a worker still running it, whose next write finds the job no longer its own.
+ * fences a worker still running it, whose next write finds the job no longer its own. An
+ * evidence export is left running, for the reason {@link deleteReadyExports} leaves it.
  *
  * The caller has taken the community row, and the content version when it bumped it, before
  * this locks the jobs: the order `ExportJob.lockJob` sets.
@@ -160,7 +173,7 @@ export async function deleteReadyExports(client: PoolClient, communityId: string
 export async function restartExportJobs(client: PoolClient, communityId: string): Promise<void> {
   const open = await client.query<{ id: string }>(
     `SELECT id FROM export_archives
-     WHERE community_id=$1 AND state IN ('queued','building') FOR UPDATE`,
+     WHERE community_id=$1 AND state IN ('queued','building') AND scope<>'evidence' FOR UPDATE`,
     [communityId]
   );
   for (const job of open.rows) {

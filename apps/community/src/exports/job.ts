@@ -280,6 +280,7 @@ export class ExportJob {
     return transaction(this.pool, (client) =>
       reserveManagedBlob(client, this.job.community_id, 'export', {
         allowArchived: this.job.scope === 'owner',
+        evidence: this.job.evidence_takedown_id ?? undefined,
       })
     );
   }

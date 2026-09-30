@@ -30,7 +30,7 @@ Set these values before starting the service. Keep secrets in your deployment's 
 
 The service checks each setting before it opens its HTTP port. It rejects an incomplete sign-in pair, an incomplete invitation-key rotation pair, a non-HTTPS public address outside local development, a filesystem path that is not absolute, an evidence setting without `COMMUNITY_EVIDENCE_DRIVER`, and an evidence store that shares a place with anything the server serves, stores, or stages.
 
-Two log lines are worth an alert, both with IDs only: `{"event":"community.takedown.evidence_failed",…}` when a copy to the evidence store fails, and `{"event":"community.takedown.evidence_overdue",…}` once an hour while a takedown's copy has waited longer than `COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS`. Two offline commands act on one takedown with only `COMMUNITY_DATABASE_URL` set: `node dist-server/takedown/commands.js evidence-retry <id>` and `node dist-server/takedown/commands.js release-held <id>` (from a source checkout, `pnpm --filter @dorkos/community takedowns:evidence-retry <id>` and `takedowns:release-held <id>`). See [operations](OPERATIONS.md#taking-down-illegal-content).
+Three log lines are worth an alert, all with IDs only: `{"event":"community.takedown.evidence_failed",…}` when a copy to the evidence store fails, `{"event":"community.takedown.evidence_overdue",…}` once an hour while a takedown's copy has waited longer than `COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS`, and `{"event":"community.takedown.community",…}` each time a whole community is taken down, or a takedown is refused by `COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY`. `COMMUNITY_TAKEDOWN_REVERSAL_HOURS` is how long a whole-community takedown can be reversed before the community is deleted. Two offline commands act on one takedown with only `COMMUNITY_DATABASE_URL` set: `node dist-server/takedown/commands.js evidence-retry <id>` and `node dist-server/takedown/commands.js release-held <id>` (from a source checkout, `pnpm --filter @dorkos/community takedowns:evidence-retry <id>` and `takedowns:release-held <id>`). See [operations](OPERATIONS.md#taking-down-illegal-content).
 
 Most people can keep the default limits. Restart the service after changing one. The maximums protect every Community, even when an environment variable requests more.
 
@@ -53,6 +53,8 @@ Most people can keep the default limits. Restart the service after changing one.
 | `COMMUNITY_NAME_LOOKUPS_PER_MINUTE`            |                     60 per IP |                600 per IP |
 | `COMMUNITY_IMPORT_UPLOADS`                     |      2 export uploads at once |                16 at once |
 | `COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS`      |                       6 hours |                 168 hours |
+| `COMMUNITY_TAKEDOWN_REVERSAL_HOURS`            |                      72 hours |   720 hours (at least 24) |
+| `COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY`       |           3 per person or key |                       100 |
 
 Limits marked "per IP" count by the address that connected to the server. Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` to the header your proxy puts the caller's address in (for example `Fly-Client-IP`). It is off unless you set it; see [operations](OPERATIONS.md) before turning it on.
 

@@ -14,7 +14,8 @@ const ENDED_RETENTION_DAYS = 7;
  * segments are queued for the pending-deletion sweep; a version 1 archive (written before
  * background exports, and gone within an hour of the upgrade) deletes its one blob here and keeps
  * failures for retry with backoff. Failed and cancelled jobs queued their segments when they
- * ended, so their rows are simply removed once they stop being listed.
+ * ended, so their rows are simply removed once they stop being listed. A ready evidence export
+ * never expires here: the takedown worker deletes it once it has copied it to the evidence store.
  */
 export async function sweepExpiredExports(
   pool: Pool,
@@ -26,6 +27,7 @@ export async function sweepExpiredExports(
   const result = await pool.query<{ id: string }>(
     `SELECT id FROM export_archives
      WHERE state='ready' AND deleted_at IS NULL AND expires_at<$2 AND cleanup_next_attempt_at<=now()
+       AND scope<>'evidence'
      ORDER BY cleanup_next_attempt_at,expires_at,id LIMIT $1`,
     [batchSize, now]
   );

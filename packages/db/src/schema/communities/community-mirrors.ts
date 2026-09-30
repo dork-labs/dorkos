@@ -89,6 +89,14 @@ export const communityMirrorEntries = sqliteTable(
      * again.
      */
     dispatchClaimedAt: text('dispatch_claimed_at'),
+    /**
+     * The Community id of the entry this one answers, as the Community sent it (migration 0136).
+     * Kept beside `entryJson` so the import can find the replies that arrived before their
+     * parent, and link them, without reading every entry of the room (DOR-2573).
+     */
+    remoteParentEntryId: text('remote_parent_entry_id'),
+    /** The Community id of the entry at the head of this entry's thread, as sent. */
+    remoteThreadRootEntryId: text('remote_thread_root_entry_id'),
   },
   (table) => [
     primaryKey({ columns: [table.communityRef, table.remoteRoomId, table.remoteEntryId] }),
@@ -97,6 +105,14 @@ export const communityMirrorEntries = sqliteTable(
       table.remoteSeq
     ),
     uniqueIndex('community_mirror_entries_local_entry_unique').on(table.localEntryId),
+    // The replies of one entry, for the import to link when that entry arrives. Partial: only
+    // replies carry a parent.
+    index('idx_community_mirror_entries_remote_parent')
+      .on(table.localRoomId, table.remoteParentEntryId)
+      .where(sql`"remote_parent_entry_id" IS NOT NULL`),
+    index('idx_community_mirror_entries_remote_thread_root')
+      .on(table.localRoomId, table.remoteThreadRootEntryId)
+      .where(sql`"remote_thread_root_entry_id" IS NOT NULL`),
   ]
 );
 

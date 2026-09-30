@@ -63,3 +63,20 @@ export async function readmissionBlocked(
   );
   return Boolean(result.rowCount);
 }
+
+/**
+ * SQL, for an erasure request aliased `r`: true while a whole-community takedown's evidence has
+ * not settled in a community it touches (its own, for a membership erasure; any the account
+ * belongs to, for an account erasure). Such an erasure waits, so the copy for the authorities is
+ * what was there at the takedown.
+ */
+export const ERASURE_WAITS_ON_TAKEDOWN_SQL = `EXISTS (
+  SELECT 1 FROM community_takedowns t
+  WHERE t.target_kind='community'
+    AND t.evidence_state IN ('pending','retrying','failed','held_on_primary')
+    AND (
+      (r.kind='membership' AND t.community_id=r.community_id)
+      OR (r.kind='account' AND EXISTS (
+        SELECT 1 FROM members m WHERE m.community_id=t.community_id AND m.user_id=r.user_id))
+    )
+)`;

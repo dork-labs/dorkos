@@ -34,6 +34,7 @@ import {
   CommunityConnectionAccessSchema,
   CommunityWireAuthOptionsSchema,
   CommunityWireAttentionResponseSchema,
+  CommunityWireEventSchema,
 } from '../community-wire.js';
 import {
   CommunityPairingExchangeSecretResponseSchema,
@@ -489,5 +490,39 @@ describe('community server port additions', () => {
         },
       }).success
     ).toBe(false);
+  });
+
+  // Purpose: DorkOS must be able to record, parse, and branch on a host's whole-community
+  // takedown as its own state: a lifecycle with no capabilities, a stream close reason, and an
+  // error code distinct from a suspension or an ordinary deletion. Fails if any of the three is
+  // missing, or if a taken-down community could still be recorded as readable.
+  it('names a taken-down community distinctly in access, streams, and errors', () => {
+    const none = { read: false, post: false, enrollAgent: false, stream: false };
+    const takenDown = {
+      state: 'verified',
+      effective: none,
+      lastKnown: {
+        lifecycle: 'taken_down',
+        capabilities: none,
+        verifiedAt: '2026-09-29T00:00:00.000Z',
+      },
+    };
+    expect(CommunityConnectionAccessSchema.parse(takenDown)).toEqual(takenDown);
+    expect(
+      CommunityConnectionAccessSchema.safeParse({
+        ...takenDown,
+        state: 'unverified',
+        lastKnown: { ...takenDown.lastKnown, capabilities: { ...none, read: true } },
+      }).success
+    ).toBe(false);
+    expect(
+      CommunityWireEventSchema.parse({ type: 'closed', reason: 'taken_down', cursor: 'c1' })
+    ).toEqual({ type: 'closed', reason: 'taken_down', cursor: 'c1' });
+    expect(
+      CommunityWireErrorSchema.parse({
+        code: 'COMMUNITY_TAKEN_DOWN',
+        message: 'This community was removed by its host.',
+      }).code
+    ).toBe('COMMUNITY_TAKEN_DOWN');
   });
 });

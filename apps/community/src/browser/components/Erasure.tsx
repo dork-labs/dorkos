@@ -176,10 +176,20 @@ function EraseMembershipForm({
   );
 }
 
-/** A scheduled erasure's date and its cancel button, or that it is running now. */
+/** What a due erasure held back by the host says: that it waits, never why. */
+const ERASURE_WAITING_ON_HOST =
+  'Your erasure is due, but it is waiting for the person running this host to finish something on their side first. It will run as soon as they do.';
+
+/** A scheduled erasure's date and its cancel button, or that it is running or waiting now. */
 function Scheduled({ erasure, text }: { erasure: CommunityWireErasure; text: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  if (erasure.waitingOnHost)
+    return (
+      <Notice role="status" tone="info">
+        <p className="mb-0">{ERASURE_WAITING_ON_HOST}</p>
+      </Notice>
+    );
   if (erasure.state === 'running')
     return (
       <Notice role="status" tone="info">
@@ -371,9 +381,11 @@ export function AccountErasurePanels({
                 )}
                 {membership.erasure ? (
                   <p className="small muted mb-0">
-                    {membership.erasure.state === 'running'
-                      ? 'Erasing now.'
-                      : `Your messages here will be erased on ${when(membership.erasure.executeAfter)}.`}
+                    {membership.erasure.waitingOnHost
+                      ? ERASURE_WAITING_ON_HOST
+                      : membership.erasure.state === 'running'
+                        ? 'Erasing now.'
+                        : `Your messages here will be erased on ${when(membership.erasure.executeAfter)}.`}
                   </p>
                 ) : erasing === membership.communityId ? (
                   <EraseMembershipForm

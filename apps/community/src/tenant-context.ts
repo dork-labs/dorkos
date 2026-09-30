@@ -31,6 +31,12 @@ export interface CommunityContext {
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 
+interface TenantRow {
+  id: string;
+  lifecycle: CommunityLifecycle;
+  taken_down: boolean;
+}
+
 /**
  * Whether this id names a community whose deletion finished and whose content-free deletion
  * record has not expired yet. The record says only that the id was deleted, so answering from
@@ -44,6 +50,28 @@ export async function isDeletedCommunity(db: Queryable, communityId: string): Pr
   return Boolean(result.rowCount);
 }
 
+/** The refusal every member and installation gets from a community its host took down. */
+export function communityTakenDown(): ApiError {
+  return new ApiError(423, 'COMMUNITY_TAKEN_DOWN', 'This community was removed by its host.');
+}
+
+/**
+ * Why a community a caller can no longer see is gone, if it is: its host took it down (the row
+ * still exists while the takedown's reversal window runs), or its deletion finished (its
+ * content-free deletion record has not expired). Null for anything else.
+ */
+export async function communityGoneReason(
+  db: Queryable,
+  communityId: string
+): Promise<'taken_down' | 'deleted' | null> {
+  const takedown = await db.query(
+    'SELECT 1 FROM communities WHERE id=$1 AND takedown_id IS NOT NULL',
+    [communityId]
+  );
+  if (takedown.rowCount) return 'taken_down';
+  return (await isDeletedCommunity(db, communityId)) ? 'deleted' : null;
+}
+
 /**
  * Resolve the request's immutable tenant before authentication or object lookup.
  *
@@ -51,6 +79,8 @@ export async function isDeletedCommunity(db: Queryable, communityId: string): Pr
  * Canonical routes name a UUID and never fall back to another row. A canonical UUID whose
  * community was deleted answers `410 COMMUNITY_DELETED` while its deletion record lasts, so a
  * caller can tell a community that is gone from a path that never existed (`404 NOT_FOUND`).
+ * A community its host took down answers `423 COMMUNITY_TAKEN_DOWN` on every path that does not
+ * allow a pending deletion, so an installation can tell it from an ordinary deletion.
  */
 export async function resolveCommunityContext(
   c: Context,
@@ -66,13 +96,14 @@ export async function resolveCommunityContext(
     requested && CommunityIdSchema.safeParse(requested).success ? requested : null;
   const result = requested
     ? canonicalId
-      ? await db.query<{ id: string; lifecycle: CommunityLifecycle }>(
-          'SELECT id,lifecycle FROM communities WHERE id=$1',
+      ? await db.query<TenantRow>(
+          'SELECT id,lifecycle,takedown_id IS NOT NULL AS taken_down FROM communities WHERE id=$1',
           [canonicalId]
         )
       : { rows: [] }
-    : await db.query<{ id: string; lifecycle: CommunityLifecycle }>(
-        'SELECT id,lifecycle FROM communities ORDER BY id LIMIT 2'
+    : await db.query<TenantRow>(
+        `SELECT id,lifecycle,takedown_id IS NOT NULL AS taken_down FROM communities
+         ORDER BY id LIMIT 2`
       );
 
   if (!requested && result.rows.length > 1) {
@@ -95,6 +126,7 @@ export async function resolveCommunityContext(
   if (community.lifecycle === 'suspended' && !options.allowSuspended) {
     throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
   }
+  if (community.taken_down && !options.allowDeletionPending) throw communityTakenDown();
   if (community.lifecycle === 'deletion_pending' && !options.allowDeletionPending) {
     throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');
   }

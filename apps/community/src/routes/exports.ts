@@ -12,6 +12,7 @@ import { ApiError, json, readJson } from '../http.js';
 import { downloadHeaders, type BlobStore } from '../storage/index.js';
 import { SegmentedBlobSource, type ArchiveBlob } from '../archive/segmented-source.js';
 import {
+  exportRequesterOf,
   hasExportAuthority,
   OWNER_EXPORT_LIFECYCLES,
   type ExportRequester,
@@ -95,12 +96,10 @@ async function requesterOf(pool: Pool, row: ExportRow): Promise<ExportRequester>
           [row.id, row.community_id]
         )
       : { rows: [] };
-  return {
-    communityId: row.community_id,
-    memberId: row.requester_member_id,
-    scope: row.scope,
-    channelIds: channels.rows.map((channel) => channel.channel_id),
-  };
+  return exportRequesterOf(
+    row,
+    channels.rows.map((channel) => channel.channel_id)
+  );
 }
 
 /** Register export jobs, their status and cancellation, and the resumable archive download. */

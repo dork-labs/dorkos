@@ -167,6 +167,12 @@ export const CommunityWireMembershipSummarySchema = z.strictObject({
   memberId: id,
   displayName: z.string().min(1),
   role: z.enum(['owner', 'admin', 'member']),
+  /**
+   * The host took this whole community down: it reads as removed by its host, not as an
+   * ordinary deletion. Its lifecycle is `deletion_pending` meanwhile. Added later, so a reader
+   * built before it sees no field.
+   */
+  removedByHost: z.boolean().optional(),
 });
 /** Public exact-match short-name lookup: the community a live name leads to. */
 export const CommunityWireShortNameLookupSchema = z.strictObject({
@@ -680,10 +686,12 @@ export const CommunityWireEventSchema = z.discriminatedUnion('type', [
      * Why the stream ended. `archived`: the community or channel became read-only. `removed`:
      * this caller's access ended, including a community that is suspended or whose deletion
      * was requested. `deleted`: the community's deletion finished while this stream was still
-     * open, which is rare because a deletion request already ends streams as `removed`. Added
-     * later: older DorkOS readers parse this enum strictly, fail on it, and reconnect.
+     * open, which is rare because a deletion request already ends streams as `removed`.
+     * `taken_down`: the host took the whole community down (it answers
+     * `423 COMMUNITY_TAKEN_DOWN` from then on). `deleted` and `taken_down` were added later:
+     * older DorkOS readers parse this enum strictly, fail on them, and reconnect.
      */
-    reason: z.enum(['removed', 'archived', 'unavailable', 'deleted']),
+    reason: z.enum(['removed', 'archived', 'unavailable', 'deleted', 'taken_down']),
     cursor,
   }),
 ]);
@@ -823,9 +831,18 @@ export const CommunityConnectionAccessSchema = z
       .strictObject({
         /**
          * `deleted` is never sent by a Community: an installation records it after seeing
-         * `deletion_pending` and then the community's `404` (DOR-2334).
+         * `deletion_pending` and then the community's `404` (DOR-2334). Nor is `taken_down`: an
+         * installation records it after seeing `423 COMMUNITY_TAKEN_DOWN`, or a stream closed
+         * as `taken_down`.
          */
-        lifecycle: z.enum(['active', 'archived', 'suspended', 'deletion_pending', 'deleted']),
+        lifecycle: z.enum([
+          'active',
+          'archived',
+          'suspended',
+          'deletion_pending',
+          'deleted',
+          'taken_down',
+        ]),
         capabilities: CommunityWireGrantCapabilitiesSchema,
         verifiedAt: timestamp,
       })
@@ -867,12 +884,13 @@ export const CommunityConnectionAccessSchema = z
     if (
       (access.lastKnown?.lifecycle === 'suspended' ||
         access.lastKnown?.lifecycle === 'deletion_pending' ||
-        access.lastKnown?.lifecycle === 'deleted') &&
+        access.lastKnown?.lifecycle === 'deleted' ||
+        access.lastKnown?.lifecycle === 'taken_down') &&
       Object.values(access.lastKnown.capabilities).some(Boolean)
     ) {
       context.addIssue({
         code: 'custom',
-        message: 'Suspended, deleting or deleted access has no effective capabilities.',
+        message: 'Suspended, deleting, deleted or taken-down access has no effective capabilities.',
       });
     }
   });
@@ -1117,43 +1135,64 @@ const count = z.int().nonnegative();
 /**
  * `manifest.json` of an export archive, version 2: the last entry before the central directory.
  * Rows live in the NDJSON files it lists, each line parsed by its row schema above.
+ *
+ * `evidence` is the copy of a whole community a host takedown preserves for the authorities:
+ * nobody asked for it, so it has no requester, and it records the community's lifecycle as it
+ * was before the takedown. It is written only to the host's evidence store, never offered for
+ * download, and is not something an owner or member can import.
  */
-export const CommunityExportManifestV2Schema = z.strictObject({
-  version: z.literal(2),
-  scope: z.enum(['personal', 'owner']),
-  exportId: id,
-  requesterMemberId: id,
-  createdAt: timestamp,
-  completedAt: timestamp,
-  community: z.strictObject({
-    id,
-    name: z.string().min(1).max(80),
-    description: z.string().max(1_000).nullable(),
-    admissionPolicy: CommunityAdminAdmissionPolicySchema,
-    lifecycle: z.enum(['active', 'archived']),
-    lifecycleVersion: z.int().positive(),
-    settingsVersion: z.int().positive(),
-    icon: z
-      .strictObject({
-        path: z.literal('community/icon'),
-        contentType: z.string().min(1),
-        byteSize: z.int().positive(),
-        checksum: z.string().regex(/^[a-f0-9]{64}$/),
-      })
-      .nullable(),
-  }),
-  files: z.strictObject(exportFileKeys),
-  counts: z.strictObject({
-    channels: count,
-    members: count,
-    agents: count,
-    channelMembers: count,
-    agentChannelMembers: count,
-    auditEvents: count,
-    entries: count,
-    attachments: count,
-  }),
-});
+export const CommunityExportManifestV2Schema = z
+  .strictObject({
+    version: z.literal(2),
+    scope: z.enum(['personal', 'owner', 'evidence']),
+    exportId: id,
+    /** Null only for an `evidence` archive. */
+    requesterMemberId: id.nullable(),
+    createdAt: timestamp,
+    completedAt: timestamp,
+    community: z.strictObject({
+      id,
+      name: z.string().min(1).max(80),
+      description: z.string().max(1_000).nullable(),
+      admissionPolicy: CommunityAdminAdmissionPolicySchema,
+      /**
+       * Owner and personal archives read a held community as `archived`, as version 1 did. An
+       * evidence archive records the state before the takedown as it was.
+       */
+      lifecycle: z.enum(['active', 'archived', 'held', 'suspended', 'deletion_pending']),
+      lifecycleVersion: z.int().positive(),
+      settingsVersion: z.int().positive(),
+      icon: z
+        .strictObject({
+          path: z.literal('community/icon'),
+          contentType: z.string().min(1),
+          byteSize: z.int().positive(),
+          checksum: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .nullable(),
+    }),
+    files: z.strictObject(exportFileKeys),
+    counts: z.strictObject({
+      channels: count,
+      members: count,
+      agents: count,
+      channelMembers: count,
+      agentChannelMembers: count,
+      auditEvents: count,
+      entries: count,
+      attachments: count,
+    }),
+  })
+  .refine(
+    (manifest) =>
+      manifest.scope === 'evidence' ||
+      manifest.community.lifecycle === 'active' ||
+      manifest.community.lifecycle === 'archived',
+    { message: 'Only an evidence archive records held, suspended, or deletion_pending.' }
+  )
+  .refine((manifest) => (manifest.scope === 'evidence') === (manifest.requesterMemberId === null), {
+    message: 'An evidence archive, and only one, has no requester.',
+  });
 /** Version 2 export manifest. */
 export type CommunityExportManifestV2 = z.infer<typeof CommunityExportManifestV2Schema>;
 
@@ -1301,6 +1340,11 @@ export const CommunityWireErasureSchema = z.strictObject({
   createdAt: timestamp,
   completedAt: timestamp.nullable(),
   cancelledAt: timestamp.nullable(),
+  /**
+   * Due, but waiting for the host to finish a step on its side first (a takedown's copy for the
+   * authorities). Says nothing about why. Added later.
+   */
+  waitingOnHost: z.boolean().optional(),
 });
 /** One erasure request. */
 export type CommunityWireErasure = z.infer<typeof CommunityWireErasureSchema>;
@@ -1438,6 +1482,15 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'OWNER_REPLACEMENT_OPEN',
   /** The owner kept ownership recently; the host may ask again after the cooling-off. */
   'OWNER_REPLACEMENT_COOLDOWN',
+  /**
+   * `423`: the host took this whole community down (for illegal content, a legal order, or its
+   * terms). Nobody can read or post, every credential was revoked, and the host will delete it
+   * once its reversal window ends; if the host reverses the takedown instead, the community is
+   * suspended and its members reconnect later. Distinct from `COMMUNITY_SUSPENDED` (a pause,
+   * `503`) and `COMMUNITY_DELETION_PENDING` (an ordinary deletion). Added later; older readers
+   * see an unknown code.
+   */
+  'COMMUNITY_TAKEN_DOWN',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

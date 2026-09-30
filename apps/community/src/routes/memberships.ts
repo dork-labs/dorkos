@@ -23,12 +23,14 @@ export function registerMembershipRoutes(
       member_id: string;
       display_name: string;
       role: 'owner' | 'admin' | 'member';
+      removed_by_host: boolean;
     }>(
       `SELECT c.id AS community_id,c.name,c.description,c.lifecycle,
               CASE WHEN c.lifecycle='held' THEN c.deletion_notice_at END AS deletion_notice_at,
               (SELECT n.short_name FROM community_short_names n
                 WHERE n.community_id=c.id AND n.state='current') AS short_name,
-              m.id AS member_id,m.display_name,m.role
+              m.id AS member_id,m.display_name,m.role,
+              c.takedown_id IS NOT NULL AS removed_by_host
        FROM members m JOIN communities c ON c.id=m.community_id
        WHERE m.user_id=$1 AND m.active
        ORDER BY lower(c.name),c.id`,
@@ -45,6 +47,7 @@ export function registerMembershipRoutes(
         memberId: row.member_id,
         displayName: row.display_name,
         role: row.role,
+        removedByHost: row.removed_by_host,
       })),
     });
   });
