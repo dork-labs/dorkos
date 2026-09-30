@@ -106,10 +106,10 @@ export function getRemotePairingService(): RemoteCommunityPairingService {
 /**
  * The agents this installation added to one Community for one owner, which disconnecting removes
  * there when still active here (DOR-2603). Read from this installation's own enrollments only;
- * see RemoteInstallationAgentsReader for the shared-local-id limit. Revoked ones are included,
- * marked inactive, so a connection a rejected grant fenced can still name them; they are never
- * removed from here, since that id may since belong to another installation. No database yet means no
- * enrollment yet. Each is named as this app knows it, so the person recognises it, or `null` when
+ * the Community lets this installation's grant remove only the agents it enrolled (DOR-2612).
+ * Revoked ones are included, marked inactive, so a connection a rejected grant fenced can still
+ * name them; they are never removed from here (see RemoteCommunityPairingService.disconnect). No
+ * database yet means no enrollment yet. Each is named as this app knows it, so the person recognises it, or `null` when
  * this app no longer has the agent.
  *
  * @param communityRef - The local connection ref.

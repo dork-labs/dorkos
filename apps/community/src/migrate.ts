@@ -30,6 +30,7 @@ export const COMMUNITY_MIGRATIONS = [
   [24, '0024_query_indexes.sql'],
   [25, '0025_community_takedowns.sql'],
   [26, '0026_erasure_journal.sql'],
+  [29, '0029_agent_enrolling_grant.sql'],
 ] as const;
 
 /**

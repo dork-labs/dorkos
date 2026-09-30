@@ -533,7 +533,8 @@ async function applyHusk(
         [target.communityId, agent.id, agentHandle]
       );
       await client.query(
-        `UPDATE agents SET display_name=$3,handle=$4,local_agent_id=NULL,active=false,
+        `UPDATE agents SET display_name=$3,handle=$4,local_agent_id=NULL,enrolled_by_grant_id=NULL,
+           active=false,
            revoked_at=COALESCE(revoked_at,now())
          WHERE id=$2 AND community_id=$1`,
         [target.communityId, agent.id, ERASED_AGENT_NAME, agentHandle]

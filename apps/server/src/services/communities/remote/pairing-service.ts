@@ -60,10 +60,11 @@ export interface RemoteInstallationAgent {
 /**
  * Read the agents one owner's installation added to one Community, active or
  * revoked here, from local records only. Only these are ever named or removed.
- * One limit: the Community keys an agent by its owner and local agent id, and
- * two installations of the same person can share a local id (it is committed
- * with the agent), so removing an agent active here also removes it for the
- * other installation if that one enrolled the same id.
+ * Two installations of the same person can share a local agent id (it is
+ * committed with the agent), but the Community records which installation's
+ * grant enrolled each agent and lets a grant remove only its own (DOR-2612), so
+ * each installation holds its own agent there and removing one never removes
+ * the other's.
  */
 export type RemoteInstallationAgentsReader = (
   communityRef: CommunityRef,
@@ -866,11 +867,13 @@ export class RemoteCommunityPairingService {
       // throws, so the local copy is always removed below.
       const bearer = await this.store.storedPersonalToken(ref, ownerKey);
       // Agents first: removing one needs the grant that is about to be revoked. Only an agent still
-      // active here is removed. A row revoked here is never sent: the Community names an agent by
-      // its local id, which another installation of the same person can share and re-enroll, so
-      // removing a row this app already let go could remove that installation's live agent. The
-      // ones the person still counts as theirs are named when they stay (see namedOnDisconnect).
-      // Without a bearer none can be removed from here, so all of those are named.
+      // active here is removed. A row revoked here is never sent: this app already asked the
+      // Community to remove it when it let it go. Asking again is not always harmless either: an
+      // agent enrolled before the Community recorded enrolling grants (DOR-2612) is still found by
+      // its owner and local id, which another installation of the same person can share, so a
+      // second request could remove that installation's live agent. The ones the person still
+      // counts as theirs are named when they stay (see namedOnDisconnect). Without a bearer none
+      // can be removed from here, so all of those are named.
       const named = agents.filter((agent) => namedOnDisconnect(agent, record.status));
       const removal = bearer
         ? await this.removeInstallationAgents(
@@ -978,8 +981,10 @@ export class RemoteCommunityPairingService {
       );
       return 'removed';
     } catch (error) {
-      // The Community's own 404: the agent is already gone there (a bare 404 from
-      // something in between proves nothing). A deleted or taken-down community
+      // The Community's own 404: the agent is already gone there, or another
+      // installation now holds it, since a grant removes only the agents it
+      // enrolled; either way it is not this installation's any more (a bare 404
+      // from something in between proves nothing). A deleted or taken-down community
       // holds no agent that can act. Anything else (unreachable, refused, a
       // rejected bearer) leaves the agent active, so the person is told. No HTTP
       // answer at all means the Community was not reached.

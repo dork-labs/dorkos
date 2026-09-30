@@ -685,6 +685,12 @@ export const agents = pgTable(
     displayName: text('display_name').notNull(),
     handle: text('handle').notNull(),
     localAgentId: text('local_agent_id'),
+    /**
+     * The connection grant (installation) that enrolled this agent, or NULL for a legacy row
+     * enrolled before the Community recorded it. A request made with a grant acts only on its
+     * own agents and on legacy ones. No foreign key: see migration 0029.
+     */
+    enrolledByGrantId: uuid('enrolled_by_grant_id'),
     active: boolean('active').notNull().default(true),
     createdAt: time('created_at'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -692,7 +698,12 @@ export const agents = pgTable(
   (table) => [
     uniqueIndex('agents_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('agents_handle_unique').on(table.communityId, table.handle),
-    uniqueIndex('agents_owner_local_id_unique').on(table.ownerMemberId, table.localAgentId),
+    uniqueIndex('agents_grant_local_id_unique')
+      .on(table.enrolledByGrantId, table.localAgentId)
+      .where(sql`${table.enrolledByGrantId} IS NOT NULL`),
+    uniqueIndex('agents_owner_local_id_legacy_unique')
+      .on(table.ownerMemberId, table.localAgentId)
+      .where(sql`${table.enrolledByGrantId} IS NULL`),
     index('agents_owner_active_idx').on(table.ownerMemberId, table.active),
     foreignKey({
       name: 'agents_owner_tenant_fk',

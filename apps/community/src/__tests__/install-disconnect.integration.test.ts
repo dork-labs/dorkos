@@ -146,37 +146,64 @@ it('lets an install disconnect from a suspended community', async () => {
   expect(revoked.rows[0]!.revoked).toBe(true);
 });
 
+/**
+ * A local connection store holding one exchanged grant exactly as a completed pairing leaves it,
+ * in its own folder the caller removes.
+ */
+async function plantConnection(token: string) {
+  const directory = await mkdtemp(join(tmpdir(), 'community-disconnect-local-'));
+  const store = new RemoteConnectionStore(directory);
+  const ref = CommunityRefSchema.parse(`remote_${randomUUID().replaceAll('-', '')}`);
+  const ownerKey = 'local-owner';
+  await store.addPending(
+    {
+      ref,
+      ownerKey,
+      remoteCommunityId: communityId,
+      label: 'Owner Community',
+      pinnedOrigin: h.baseUrl,
+      pairingId: randomUUID(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    },
+    randomUUID()
+  );
+  const capabilities = { read: true, post: true, enrollAgent: true, stream: true };
+  await store.complete(ref, ownerKey, randomUUID(), token, {
+    state: 'verified',
+    effective: capabilities,
+    lastKnown: { lifecycle: 'active', capabilities, verifiedAt: new Date().toISOString() },
+  });
+  return { directory, store, ref, ownerKey };
+}
+
+async function enrollAgent(grant: string, localAgentId: string) {
+  const response = await expectStatus(
+    await h.call(`${tenant()}/agents`, {
+      bearer: grant,
+      body: { localAgentId, displayName: 'Researcher' },
+    }),
+    201,
+    `enroll ${localAgentId}`
+  );
+  return (await response.json()) as { token: string; agent: { memberId: string } };
+}
+
+async function agentActive(id: string): Promise<boolean> {
+  return (await h.pool.query<{ active: boolean }>('SELECT active FROM agents WHERE id=$1', [id]))
+    .rows[0]!.active;
+}
+
 it('DorkOS Disconnect ends the grant on the Community, not just the local copy', async () => {
   const token = await pairInstall(h, communityId, ownerCookie);
   const grant = await grantIdOf(token);
   expect(await listedGrantIds()).toContain(grant);
-  const directory = await mkdtemp(join(tmpdir(), 'community-disconnect-local-'));
+  const { directory, store, ref, ownerKey } = await plantConnection(token);
   try {
-    // Plant the exchanged grant in the local store exactly as a completed pairing leaves it.
-    const store = new RemoteConnectionStore(directory);
-    const ref = CommunityRefSchema.parse(`remote_${randomUUID().replaceAll('-', '')}`);
-    const ownerKey = 'local-owner';
-    await store.addPending(
-      {
-        ref,
-        ownerKey,
-        remoteCommunityId: communityId,
-        label: 'Owner Community',
-        pinnedOrigin: h.baseUrl,
-        pairingId: randomUUID(),
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      },
-      randomUUID()
-    );
-    const capabilities = { read: true, post: true, enrollAgent: true, stream: true };
-    await store.complete(ref, ownerKey, randomUUID(), token, {
-      state: 'verified',
-      effective: capabilities,
-      lastKnown: { lifecycle: 'active', capabilities, verifiedAt: new Date().toISOString() },
-    });
-
     const service = new RemoteCommunityPairingService(store);
-    expect(await service.disconnect(ref, ownerKey)).toEqual({ remoteRevoked: true });
+    expect(await service.disconnect(ref, ownerKey)).toEqual({
+      remoteRevoked: true,
+      agentsNotRemoved: [],
+    });
 
     expect(await listedGrantIds()).not.toContain(grant);
     expect((await h.call(`${tenant()}/me/connection-access`, { bearer: token })).status).toBe(401);
@@ -184,4 +211,55 @@ it('DorkOS Disconnect ends the grant on the Community, not just the local copy',
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+// DOR-2612: the Community records which grant enrolled each agent, so a laptop and a desktop of
+// the same person that run the same agent files (one local agent id) hold one agent each, and
+// the laptop's Disconnect removes only its own.
+it('DorkOS Disconnect on a laptop leaves the desktop’s agent with the same local id running', async () => {
+  const laptop = await pairInstall(h, communityId, ownerCookie);
+  const desktop = await pairInstall(h, communityId, ownerCookie);
+  const onLaptop = await enrollAgent(laptop, 'shared-researcher');
+  const onDesktop = await enrollAgent(desktop, 'shared-researcher');
+  expect(onDesktop.agent.memberId).not.toBe(onLaptop.agent.memberId);
+
+  const local = await plantConnection(laptop);
+  try {
+    // The laptop's own records: its agent, and a stale row naming the desktop's agent, as a
+    // record could after the desktop took over a legacy agent. Both are active here.
+    const service = new RemoteCommunityPairingService(
+      local.store,
+      undefined,
+      undefined,
+      {},
+      undefined,
+      () => [
+        {
+          localAgentId: 'shared-researcher',
+          remoteMemberId: onLaptop.agent.memberId,
+          displayName: 'Researcher',
+          active: true,
+        },
+        {
+          localAgentId: 'stale-record',
+          remoteMemberId: onDesktop.agent.memberId,
+          displayName: 'Stale',
+          active: true,
+        },
+      ]
+    );
+    // The Community answers the stale one "not found": it is not the laptop's to remove, so
+    // from here it is gone, and the person is not told to finish anything.
+    expect(await service.disconnect(local.ref, local.ownerKey)).toEqual({
+      remoteRevoked: true,
+      agentsNotRemoved: [],
+    });
+  } finally {
+    await rm(local.directory, { recursive: true, force: true });
+  }
+
+  expect(await agentActive(onLaptop.agent.memberId)).toBe(false);
+  expect(await agentActive(onDesktop.agent.memberId)).toBe(true);
+  expect((await h.call(`${tenant()}/channels`, { bearer: onDesktop.token })).status).toBe(200);
+  expect((await h.call(`${tenant()}/me/connection-access`, { bearer: desktop })).status).toBe(200);
 });

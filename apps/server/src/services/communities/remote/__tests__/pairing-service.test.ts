@@ -1861,8 +1861,9 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       });
     });
 
-    // An agent revoked here may since have been enrolled again, under the same local id, by
-    // another installation of the same person; the Community would remove that live agent too.
+    // An agent revoked here was already removed on purpose. One enrolled before the Community
+    // recorded enrolling grants is still found by its owner and local id, which another
+    // installation of the same person can share, so a second removal could take that one's.
     it('never sends a removal for an agent revoked here earlier, nor names it', async () => {
       const { service, ref } = await connectedWith('earlier-owner', [scout, relay]);
       expect(await service.disconnectImpact(ref, 'earlier-owner')).toEqual({

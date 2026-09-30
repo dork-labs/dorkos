@@ -945,7 +945,11 @@ export const CommunityWireAgentSchema = z.strictObject({
 });
 /** An enrolled agent identity. */
 export type CommunityWireAgent = z.infer<typeof CommunityWireAgentSchema>;
-/** Enrollment request made under a scoped personal grant. */
+/**
+ * Enrollment request made under a scoped personal grant. The community records the grant as the
+ * agent's enrolling installation, so two installations sharing a `localAgentId` get one agent
+ * each.
+ */
 export const CommunityWireAgentEnrollRequestSchema = z.strictObject({
   // A local harness owns this identifier. It is deliberately not constrained
   // to the community service's UUID vocabulary.
@@ -956,7 +960,11 @@ export const CommunityWireAgentEnrollRequestSchema = z.strictObject({
 });
 /** Public agent management response. */
 export const CommunityWireAgentResponseSchema = z.strictObject({ agent: CommunityWireAgentSchema });
-/** Public list of agents visible to the current member. */
+/**
+ * The caller's active agents. A member signed in to the community sees all of theirs. A
+ * personal grant (one installation) sees only the agents it enrolled, plus any enrolled before
+ * the community recorded grants, and can recover, rotate and remove only those.
+ */
 export const CommunityWireAgentListResponseSchema = z.strictObject({
   agents: z.array(CommunityWireAgentSchema),
 });
