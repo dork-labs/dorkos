@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { Pool } from 'pg';
+import { Client, Pool } from 'pg';
 import { COMMUNITY_MIGRATIONS, migrate } from '../migrate.js';
 import { inspectBackout } from '../backout.js';
 import { createCommunityApp } from '../app.js';
@@ -24,6 +24,18 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Wait for every session on the database to close before forcing the drop. `Pool.end()`,
+  // including the one inside migrate(), resolves before its connections finish closing, and
+  // FORCE terminates a connection mid-close into an uncaught 57P01 that fails the whole run.
+  // Bounded: a connection this file leaked still gets dropped, loudly, rather than hanging.
+  for (let tries = 0; tries < 100; tries++) {
+    const open = await admin.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=$1',
+      [dbName]
+    );
+    if (open.rows[0].n === 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
   await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
   await admin.end();
 });
@@ -51,7 +63,9 @@ async function applyVersionFourSchema(db: Pool): Promise<void> {
 
 it('creates all owner, conversation, credential and auth tables in fresh Postgres', async () => {
   await migrate(testUrl.toString());
-  const db = new Pool({ connectionString: testUrl.toString() });
+  // A Client, not a Pool: its end() resolves only once the connection has closed.
+  const db = new Client({ connectionString: testUrl.toString() });
+  await db.connect();
   try {
     const result = await db.query<{ tablename: string }>(
       "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
