@@ -135,8 +135,10 @@ const flyFixture = `#!${process.execPath}
 ${commonPrelude}
 const state=read();
 recordCredentials('fly');
-// As flyctl does: an exported token wins over the saved session, printed without its scheme.
-if(args[0]==='auth'&&args[1]==='token'&&(process.env.FLY_ACCESS_TOKEN||process.env.FLY_API_TOKEN)) { process.stdout.write(JSON.stringify({token:(process.env.FLY_ACCESS_TOKEN||process.env.FLY_API_TOKEN).replace(/^(FlyV1|Bearer) /,'')})); process.exit(0); }
+// As flyctl does: the first SET token variable wins over the saved session (an empty one leaves
+// the session in charge), printed without its scheme.
+const flyTokenVariable=['FLY_ACCESS_TOKEN','FLY_API_TOKEN'].find((name)=>name in process.env);
+if(args[0]==='auth'&&args[1]==='token'&&flyTokenVariable&&process.env[flyTokenVariable]) { process.stdout.write(JSON.stringify({token:process.env[flyTokenVariable].replace(/^(FlyV1|Bearer) /,'')})); process.exit(0); }
 let value;
 if(args[0]==='version') value={Name:'fly',Version:'0.4.104'};
 else if(args[0]==='orgs'&&args[1]==='show') value={ID:'fly-org-id',InternalNumericID:'1',Name:'Dork Labs',Slug:args[2],Type:'SHARED'};

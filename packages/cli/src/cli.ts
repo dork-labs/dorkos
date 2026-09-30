@@ -250,9 +250,10 @@ if (process.argv[2] === 'community') {
     ]);
     // Child processes need this narrow set of platform variables exactly as the
     // launching shell supplied them. The parsed CLI env intentionally omits
-    // variables the CLI itself does not consume. The Fly and Neon credential
-    // variables ride along so a scoped token a person exported is the one
-    // `fly` and `neonctl` sign in with, not their saved sign-in (DOR-2602).
+    // variables the CLI itself does not consume. Non-empty Fly and Neon
+    // credential variables ride along so a scoped token a person exported is
+    // the one `fly` and `neonctl` sign in with, not their saved sign-in
+    // (DOR-2602); the dispatcher hands them to those two tools only.
     const rawProcessEnv = process.env;
     const childEnv = Object.fromEntries(
       [
@@ -267,12 +268,12 @@ if (process.argv[2] === 'community') {
         'WAYLAND_DISPLAY',
         'FLY_CONFIG_DIR',
         'GH_CONFIG_DIR',
-        ...credentialEnv.COMMUNITY_CREDENTIAL_ENV_NAMES,
       ].flatMap((name) => {
         const value = rawProcessEnv[name];
         return typeof value === 'string' ? [[name, value]] : [];
       })
     );
+    Object.assign(childEnv, credentialEnv.pickCommunityCredentialEnv(rawProcessEnv));
     const exitCode = await dispatcher.runCommunityDispatcher(process.argv.slice(3), {
       cliVersion: __CLI_VERSION__,
       dorkHome: DORK_HOME,

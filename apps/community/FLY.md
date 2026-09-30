@@ -19,7 +19,12 @@ neonctl auth
 dorkos community deploy --help
 ```
 
-To use a limited token instead of your saved sign-in, export it before you run the command. For Fly, set `FLY_API_TOKEN`, or `FLY_ACCESS_TOKEN`, which Fly reads first. For Neon, set `NEON_API_KEY` to a key for the organization you pass to `--neon-org`. A key limited to one project cannot create the new project setup makes. Setup hands these to `fly` and `neonctl` unchanged and says in one line which ones it is using. It never writes a token to the recovery journal or to anything it prints.
+Setup uses those saved sign-ins unless you export a token first. If you do, it hands the token to `fly` or `neonctl` unchanged, says in one line which one it is using, and never writes it to the recovery journal or to anything it prints. An empty variable is ignored.
+
+- **Fly:** set `FLY_API_TOKEN` (or `FLY_ACCESS_TOKEN`, which Fly reads first). Setup creates a new app, so it needs an organization token from `fly tokens create org` for the organization you pass to `--fly-org`. A deploy token from `fly tokens create deploy` belongs to one existing app and cannot create apps.
+- **Neon:** set `NEON_API_KEY` to a key for the organization you pass to `--neon-org`. A key limited to one project cannot create the new project setup makes.
+
+Setup has not yet been tested end to end with a limited Fly token. Until it has, signing in with `fly auth login` is the tested path.
 
 The one-time owner handoff needs a working desktop clipboard session: `pbcopy` on macOS, `wl-copy` in an active Wayland session on Linux, or `clip.exe` on Windows. Before consent, the launcher checks that the local command and desktop session are available. After consent and before it creates any resources, it asks before replacing your current clipboard with harmless test text and runs the exact copy command. It offers to open the browser, but always prints the non-secret owner setup URL if no opener is available.
 

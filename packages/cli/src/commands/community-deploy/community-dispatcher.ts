@@ -27,7 +27,10 @@ import { executeCommunityCreationPhase } from './execute.js';
 import { executeCommunityDeployPhase } from './deploy.js';
 import { executeCommunityOwnerHandoff } from './owner.js';
 import { assertCommunityCliVersions } from './runtime/versions.js';
-import { formatCommunityCredentialNotice } from './runtime/credential-env.js';
+import {
+  formatCommunityCredentialNotice,
+  withoutCommunityCredentialEnv,
+} from './runtime/credential-env.js';
 import type { CommunityPreflightSelection } from './preflight.js';
 import {
   initializeLaunchJournal,
@@ -75,7 +78,10 @@ export interface CommunityDispatcherContext {
   cliVersion: string;
   /** Resolved DorkOS data directory. */
   dorkHome: string;
-  /** Minimal child-process environment for local profiles and executables. */
+  /**
+   * Minimal child-process environment for local profiles and executables, plus any non-empty
+   * Fly and Neon credential variables. Only `fly` and `neonctl` receive those.
+   */
   processEnv: Readonly<Record<string, string>>;
   /** Shared signed-manifest parser bundled with the CLI. */
   parseRelease(bytes: Uint8Array): CompatibleCommunityRelease;
@@ -255,6 +261,8 @@ export async function runCommunityDispatcher(
     throw error;
   }
   const childEnv = context.processEnv;
+  // gh, the clipboard tools and the browser opener never need a Fly or Neon credential.
+  const localEnv = withoutCommunityCredentialEnv(childEnv);
   const cancellation = new AbortController();
   const cancel = () => cancellation.abort();
   process.once('SIGINT', cancel);
@@ -279,7 +287,7 @@ export async function runCommunityDispatcher(
   };
   const releaseSource = createGitHubCommunityReleaseSource({
     executable: 'gh',
-    env: childEnv,
+    env: localEnv,
     timeoutMs: 60_000,
     repository: trusted.repository,
   });
@@ -287,7 +295,7 @@ export async function runCommunityDispatcher(
   // Before the first read, so a person sees which account setup acts as even if it stops.
   process.stdout.write(formatCommunityCredentialNotice(childEnv));
   try {
-    if (!parsed.values['dry-run']) await assertOwnerHandoffPrerequisites(childEnv);
+    if (!parsed.values['dry-run']) await assertOwnerHandoffPrerequisites(localEnv);
     await runCommunityDeploy(
       {
         version,
@@ -340,7 +348,7 @@ export async function runCommunityDispatcher(
             latest = existing;
           }
           await confirmOwnerClipboardWrite(
-            childEnv,
+            localEnv,
             process.platform,
             undefined,
             cancellation.signal
@@ -404,7 +412,7 @@ export async function runCommunityDispatcher(
             createDefaultCommunityOwnerDependencies({
               options: serviceOptions,
               plan: result.plan,
-              env: childEnv,
+              env: localEnv,
               persist,
               now: () => new Date().toISOString(),
               signal: cancellation.signal,
