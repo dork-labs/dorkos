@@ -15,7 +15,7 @@ Some steps depend on work that is not on `main` yet. Do not start a run until ev
 | L2         | The gate's hold arm `DORKOS_COMMUNITY_LIVE_HOLD_MINUTES`, the second-person proof, `handoff.json`             | task 1.1 (DOR-2591)                                  | pending: not on `main`      |
 | L2         | The driver's remote mode, `DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF`                                              | task 1.2 (DOR-2592)                                  | pending: not on `main`      |
 | L2         | The no-DorkOS-host guard, `dorkosHostsContacted` and the single-sign-on check in the gate receipt             | task 1.3 (DOR-2593)                                  | pending: not on `main`      |
-| L2         | `apps/community/FLY.md` "Back up and upgrade a community made with guided setup"                              | task 1.4 (DOR-2594, PR #2384)                        | pending: PR open            |
+| L2         | `apps/community/FLY.md` "Back up and upgrade a community made with guided setup"                              | task 1.4 (DOR-2594, PR #2384)                        | done: merged                |
 | L4         | The draft guide `docs/self-hosting/community.mdx`                                                             | task 1.6 (DOR-2596)                                  | pending: PR open, on `hold` |
 | L3         | A confirmed way to hand the launcher a restricted Neon credential (see [L3 preconditions](#l3-preconditions)) | this checklist, proved by a dry run before any spend | pending: not yet proved     |
 
