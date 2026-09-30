@@ -1,0 +1,222 @@
+---
+title: Run your own community
+description: Set up a Community on your own Fly, Neon and Tigris accounts with one guided terminal command, then invite people and bring in an agent.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+{/* DRAFT (DOR-2596): unlisted until DOR-2601 publishes it (not in meta.json, linked from nowhere). Each PENDING LIVE EVIDENCE comment names the acceptance row and live run in specs/community-launch-acceptance/ that must pass before its claim ships; remove it only when 04-acceptance.md records PASS for that row. */}
+
+# Run your own community
+
+A Community is a place to share channels with other people, and with agents they choose to bring in. This guide sets one up on your own accounts. You end up with a web address like `https://your-community.fly.dev`, your own members, and your own data.
+
+You run one command in your terminal. It shows you everything it plans to create and what may cost money, and it creates nothing until you type the name of your community to agree. After that, it walks you through making the owner account in your browser.
+
+## What you get
+
+- **Your own community on your own accounts.** The server runs on [Fly](https://fly.io), the database on [Neon](https://neon.com), and shared files in a private [Tigris](https://www.tigrisdata.com) storage bucket that Fly sets up for you.
+- **Your data and your bills are yours.** Each of those companies bills your account directly. DorkOS never sees your data or your payment details.
+- **No DorkOS account needed.** People sign up with an email and password on your community itself. Nothing in this guide needs DorkOS Cloud.
+
+{/* PENDING LIVE EVIDENCE (A8, L2): the "no DorkOS Cloud" claim is by design today; the mechanical proof is task 1.3 recorded by L2. */}
+
+## What you need
+
+- **A Mac.** This guide has been tested on macOS with Apple Silicon. Windows and Linux have not been tested.
+- **A Fly account and a Neon account, each with a payment method.** Setup can add charges to both. See [Fly pricing](https://fly.io/docs/about/pricing/) and [Neon pricing](https://neon.com/pricing) before you start.
+- **Four command-line tools, signed in:**
+
+  ```sh
+  npm install -g dorkos   # the DorkOS command
+  fly auth login          # Fly's command, flyctl: https://fly.io/docs/flyctl/install/
+  neonctl auth            # Neon's command: https://neon.com/docs/reference/neon-cli
+  gh auth login           # GitHub's command: https://cli.github.com
+  ```
+
+  DorkOS uses `gh` to download the exact community release and check that DorkOS really published it. If `fly` or `neonctl` is too old, setup tells you which one to update before it creates anything.
+
+{/* PENDING LIVE EVIDENCE (A1, L4): the tool list and the install line come from runs on long-standing accounts; a fresh account following only this page has not run it yet. Add a realistic time estimate from L4. */}
+
+## Pick your names and places
+
+You choose five things. Setup never picks an account or a region for you.
+
+| Choice          | What it is                                                                                                                       | How to find it                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `--fly-org`     | The Fly organization that owns the server and the file storage, and pays for them                                                | `fly orgs list`                                                  |
+| `--fly-region`  | Where the server runs, such as `ord` for Chicago. Pick one near your members                                                     | `fly platform regions`                                           |
+| `--neon-org`    | The Neon organization that owns the database, and pays for it                                                                    | `neonctl orgs list`                                              |
+| `--neon-region` | Where the database runs, such as `aws-us-east-2`. Pick one near your Fly region                                                  | [Neon's region list](https://neon.com/docs/introduction/regions) |
+| `--app-name`    | Your community's name on Fly. It must be unused across all of Fly, and it becomes your web address: `https://<app-name>.fly.dev` | You make it up                                                   |
+
+The database and the file bucket take the same name as the app unless you set `--project-name` or `--bucket-name`. The server is one small, always-on Fly Machine (`shared-cpu-1x`) unless you set `--machine-size`. Run `dorkos community deploy --help` to see every option.
+
+## Preview first
+
+Add `--dry-run` to see the whole plan without creating anything:
+
+```sh
+dorkos community deploy \
+  --fly-org your-fly-org \
+  --fly-region ord \
+  --neon-org your-neon-org-id \
+  --neon-region aws-us-east-2 \
+  --app-name your-community \
+  --dry-run
+```
+
+The plan shows:
+
+- the DorkOS release and the exact server image it will run,
+- the Fly app, its organization and region, and the one Machine,
+- the Neon project, its organization and region,
+- the private Tigris bucket,
+- which accounts may be charged, with links to their pricing pages.
+
+It also lists a few readiness checks marked `unknown`: whether your Fly and Neon roles are allowed to create things, and whether billing and limits allow it. Nobody can know those for sure until the first thing is created, so setup says `unknown` rather than guess. If one turns out to be a problem, setup stops and tells you what exists so far.
+
+## Start setup
+
+Run the same command without `--dry-run`. Setup shows the plan again, then asks you to agree:
+
+```text
+Type your-community to create these resources:
+```
+
+Type the app name exactly. There is no way to skip this step, so setup always runs in a terminal you are watching.
+
+Next, setup checks that it can use your clipboard, because that is how it hands you a one-time secret later. It asks first, because this replaces whatever you have copied:
+
+```text
+Type COPY TEST to replace your current clipboard with harmless DorkOS test text:
+```
+
+Then it creates the Fly app, the Neon database and the Tigris bucket, checking each one before it moves on. The first time you use Tigris, Fly asks you to accept Tigris's terms. Setup pauses for this:
+
+```text
+Fly requires separate Tigris terms acceptance. Accept them in Fly, then type accept:
+```
+
+Accept the terms on Fly's site, come back, and type `accept`.
+
+Last, setup puts the community's private settings on Fly and starts the server. It checks that the right image is running on exactly one Machine and that the server answers.
+
+{/* PENDING LIVE EVIDENCE (A1, L4): the Tigris terms prompt on a brand-new Fly account. Gate run 2 passed the terms check on a long-standing account only. */}
+
+## If setup stops
+
+Setup can stop partway: you press Control-C, your internet drops, or Fly or Neon refuses a step. Nothing is lost, and nothing is deleted on its own.
+
+When it stops, setup prints:
+
+- every piece it has already created, which account owns it, and that it may cost money,
+- a command to look at each piece, and a link to its page on Fly or Neon,
+- a complete command to pick up where it left off.
+
+The pick-up command looks like this, with your own choices filled in:
+
+```sh
+dorkos community deploy --resume <run-id> --version <version> --fly-org ... --app-name your-community ...
+```
+
+Copy it exactly. It must use the same choices as the first run, and setup refuses to continue if they changed.
+
+If you lost the output, list the setups that stopped:
+
+```sh
+dorkos community deploy --list-incomplete
+```
+
+Each line starts with a run ID. Run `dorkos community deploy --resume <run-id>` with that ID and nothing else, and setup prints the full pick-up command again.
+
+Setup saves its progress in a small file under your DorkOS data folder (`~/.dork/launches/community/`). That file holds names and IDs, never passwords or keys.
+
+{/* PENDING LIVE EVIDENCE (A2, A3, A4, L3): a stop during provisioning (not only owner setup), a refused permission, the printed recovery list checked against what really exists, and a resume that finishes. So far this is proven by automated tests and by stops during owner setup only. */}
+
+## Create the owner account
+
+When the server is up, setup asks:
+
+```text
+Open https://your-community.fly.dev and copy the one-time setup secret? Type copy:
+```
+
+Type `copy`. Setup opens your browser (or prints the address for you to open) and puts the **setup secret** on your clipboard. The setup secret is a one-time password that proves you are the person who ran setup. Setup clears your clipboard 30 seconds later, but a clipboard history app may keep a copy.
+
+In the browser:
+
+1. Paste the secret into **Setup secret** and choose **Continue**.
+2. Choose **Create account**.
+3. Add your name, email, password, the community's name and its first channel.
+4. Choose **Create community**.
+
+Back in the terminal, press Enter. Setup checks that your owner account exists, then replaces the setup secret on the server. The one you copied stops working, so nobody who saw it can use it later.
+
+Finally, setup asks you to try it out: post one message, then upload and download one file. Type `complete` when both work.
+
+If you close the terminal before this, run the pick-up command. Setup makes a new setup secret if you never finished creating the owner account.
+
+## What "complete" means, and what it does not
+
+The last screen says your community is running and healthy. It also says **recovery readiness: not verified**. That is on purpose.
+
+<Callout type="warn">
+  Setup does not back anything up, and it does not turn on Tigris snapshots. Before you store
+  anything you cannot lose, set up and practice backups (see [Backups and
+  upgrades](#backups-and-upgrades)).
+</Callout>
+
+## Invite the first person
+
+In your community, open **Manage**, then choose **Create invite** under **Invite someone**. Copy the **One-time invite link** and send it privately. A link lasts seven days and lets in one person.
+
+The person opens the link, chooses **Continue**, then **Create account**, and finishes with **Join community**. The [Communities guide](/docs/guides/communities#start-or-join-a-community) covers invites, minimum ages and more.
+
+{/* PENDING LIVE EVIDENCE (A5, L2): a second person joining a community made by guided setup, through Fly. Proven so far on a hand-built Fly deployment and on local Docker. */}
+
+## Connect DorkOS and add an agent
+
+Your community works on its own in a browser. Connecting the DorkOS app lets you read and post from DorkOS, and lets people in a channel mention an agent you choose.
+
+1. In DorkOS, open the switcher at the top of the sidebar. Choose **Add community**, then **Connect a community**.
+2. Enter your community's address, such as `https://your-community.fly.dev`, and a **Name for this installation**. Choose **Connect community**.
+3. Sign in on the page that opens and choose **Approve connection**. The community appears in the switcher.
+4. Open a channel and choose **Members**. Under **My agents**, pick a **Local agent** and choose **Add to community**.
+5. Choose **Join channel** beside that agent. Now anyone in the channel can write its handle, such as `@researcher`, to ask it something.
+
+More detail, including how to stop or remove an agent, is in [Connect your local DorkOS installation](/docs/guides/communities#connect-your-local-dorkos-installation) and [Add an agent to a Community channel](/docs/guides/communities#add-an-agent-to-a-community-channel).
+
+{/* PENDING LIVE EVIDENCE (A5, A7, L2 and L4): connecting DorkOS and an agent reply on a community made by guided setup; keyboard and phone-width use on the live address. */}
+
+## Backups and upgrades
+
+Your community has two things to back up: the database and the files. A backup of only one cannot bring the other back. The steps for a community made this way (finding what is running, pausing writes, copying the database and every file, practicing a restore, and upgrading to a new release) are in [Back up and upgrade a community made with guided setup](https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md#back-up-and-upgrade-a-community-made-with-guided-setup).
+
+Upgrades only move forward. Take and check a backup before every upgrade, because the only way back is to restore that backup.
+
+{/* PENDING LIVE EVIDENCE (A6, L2): the linked backup, restore and upgrade steps have not yet been followed on a guided-setup community. The link target lands with DOR-2594 (PR #2384). If L2 only redeploys the same image, keep a sentence saying an upgrade between two releases has not been practiced on guided setup. */}
+
+## Remove your community
+
+Removing a community deletes its data for good. Take a backup first if you might want it back.
+
+Check each name before you delete it. Then delete the file bucket, the database and the server, in that order:
+
+```sh
+fly storage destroy your-community --app your-community
+neonctl projects list --org-id your-neon-org-id    # find the project ID for your-community
+neonctl projects delete <project-id>
+fly apps destroy your-community
+```
+
+Afterwards, `fly apps list`, `fly storage list` and `neonctl projects list` should no longer show them.
+
+{/* PENDING LIVE EVIDENCE (A1, L4): these removal steps are what L4 cleans up with. Check afterwards whether Fly leaves a deleted bucket's record or the app's private network behind, and say so here if a person would see it. */}
+
+## Get help
+
+- `dorkos community deploy --help` lists every option.
+- The [manual Fly recipe](https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md) explains each piece setup creates, for when you need to fix something by hand.
+- The [operations guide](https://github.com/dork-labs/dorkos/blob/main/apps/community/OPERATIONS.md) covers running a community day to day: mail, limits, keys and recovery.
+- Something went wrong, or a step here was unclear? [Open an issue](https://github.com/dork-labs/dorkos/issues). Include what setup printed, but never your setup secret, passwords or keys.
