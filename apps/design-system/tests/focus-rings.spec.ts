@@ -4,7 +4,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 
 // Purpose (DOR-2609): every shared form control's keyboard focus ring is at least 3:1 against
 // the page, in light and dark, measured as painted. At half strength the ring measured about
-// 1.9:1 light and 2.4:1 dark. A pointer click on a checkbox, a radio or a slider thumb shows no
+// 1.9:1 light and 2.5:1 dark. A pointer click on a checkbox, a radio or a slider thumb shows no
 // ring; a text box shows one on a click too, which is the browser's own rule for text entry.
 //
 // DORKOS_CATALOG_FOCUS_SHOTS optionally names a directory for reviewable screenshots.
@@ -15,11 +15,17 @@ const shots = process.env.DORKOS_CATALOG_FOCUS_SHOTS;
 /** A ring as painted: its colour's contrast against the page and against the control's fill. */
 interface RingMeasure {
   focusVisible: boolean;
+  /** The ring colour as `r,g,b`, to tell the destructive ring from the normal one. */
+  color: string | null;
   /** Ring width in px, excluding any offset gap; null when no ring is drawn. */
   width: number | null;
   /** The ring against the page right outside the control. */
   page: number | null;
-  /** The ring against the control's own fill, the colour on its inner edge when flush. */
+  /**
+   * The ring against the control's own fill, its inner edge when flush. Reported, not asserted:
+   * WCAG 1.4.11 asks the indicator to stand out from what surrounds it, which is the page side,
+   * and a checked box or white slider thumb in dark is lighter than the ring by design.
+   */
   fill: number | null;
 }
 
@@ -94,6 +100,7 @@ function measureRing(control: Locator): Promise<RingMeasure> {
     const fill = fillBehind(element);
     const result = {
       focusVisible: element.matches(':focus-visible'),
+      color: ring ? ring.color.slice(0, 3).join(',') : null,
       width: ring ? ring.spread - (gap?.spread ?? 0) : null,
       page: ring ? ratio(over(ring.color, outside), outside) : null,
       fill: ring ? ratio(over(ring.color, fill), fill) : null,
@@ -180,6 +187,14 @@ test.describe('keyboard focus rings', () => {
           await shot(page, control, `focus-${name}-${scheme}-${width}`);
           await control.blur();
         }
+        // An invalid box must ring in the destructive colour, not the normal one: both clear 3:1,
+        // so contrast alone would not catch the red being lost to the orange.
+        expect
+          .soft(
+            measured[`${scheme} input-invalid`]?.color,
+            `${scheme}: invalid ring is its own colour`
+          )
+          .not.toBe(measured[`${scheme} input`]?.color);
       }
       await test.info().attach(`focus-rings-${width}.json`, {
         body: JSON.stringify(measured, null, 2),
