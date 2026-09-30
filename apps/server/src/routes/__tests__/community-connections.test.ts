@@ -179,7 +179,7 @@ describe('local connection route authority and public projection', () => {
       expect(response.status).toBe(426);
       expect(response.body).toEqual({
         code: 'COMMUNITY_UPGRADE_REQUIRED',
-        error: 'Upgrade this Community server before connecting it to DorkOS.',
+        error: 'This community’s server is too old to connect. Ask whoever runs it to update it.',
       });
     } finally {
       await new Promise<void>((resolve) => upgradeServer.close(() => resolve()));
@@ -206,7 +206,7 @@ describe('local connection route authority and public projection', () => {
       expect(response.status).toBe(404);
       expect(response.body).toEqual({
         code: 'COMMUNITY_NAME_NOT_FOUND',
-        error: 'No community at this address. Check the link and try again.',
+        error: 'No community uses that short address on this host. Check the spelling.',
       });
     } finally {
       await new Promise<void>((resolve) => nameServer.close(() => resolve()));
@@ -220,9 +220,9 @@ describe('local connection route authority and public projection', () => {
     const limitedService = new RemoteCommunityPairingService(
       new RemoteConnectionStore(limitedDirectory)
     );
-    vi.spyOn(limitedService, 'start').mockRejectedValue(
-      new RemoteCommunityLookupRateLimitedError()
-    );
+    vi.spyOn(limitedService, 'start')
+      .mockRejectedValueOnce(new RemoteCommunityLookupRateLimitedError(17))
+      .mockRejectedValueOnce(new RemoteCommunityLookupRateLimitedError());
     const limitedApp = express();
     limitedApp.use(express.json());
     limitedApp.use('/api/community-connections', createCommunityConnectionsRouter(limitedService));
@@ -234,10 +234,21 @@ describe('local connection route authority and public projection', () => {
         .set('x-test-author', 'author-a')
         .send({ url: 'https://community.example/acme', installName: 'Desktop' });
       expect(response.status).toBe(429);
+      // The host's wait is passed on, as a header and in the body the dialog reads.
+      expect(response.headers['retry-after']).toBe('17');
       expect(response.body).toEqual({
         code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
-        error: 'Too many lookups — try again in a minute.',
+        error: 'The community’s host is getting too many lookups. Wait a minute, then try again.',
+        retryAfterSeconds: 17,
       });
+      // A host that named no wait gets no invented one.
+      const unnamed = await request(limitedServer)
+        .post('/api/community-connections')
+        .set('x-test-author', 'author-a')
+        .send({ url: 'https://community.example/acme', installName: 'Desktop' });
+      expect(unnamed.status).toBe(429);
+      expect(unnamed.headers['retry-after']).toBeUndefined();
+      expect(unnamed.body).not.toHaveProperty('retryAfterSeconds');
     } finally {
       await new Promise<void>((resolve) => limitedServer.close(() => resolve()));
       await rm(limitedDirectory, { recursive: true, force: true });

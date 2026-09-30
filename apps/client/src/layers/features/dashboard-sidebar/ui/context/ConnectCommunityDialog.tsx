@@ -37,24 +37,51 @@ import {
 /**
  * What to say when a connection could not start.
  *
- * One refusal gets its own words: an address that leads to a host holding
- * several communities (the server's `COMMUNITY_SELECTION_REQUIRED`). The
- * address is right as far as it goes, so "check the address" would send the
- * person looking for a typo that is not there; they need one community's own
- * link, so the example is built on the host they typed. Every other failure keeps the general
- * message.
+ * Four refusals get their own words, because "check the address" would send
+ * the person looking for a typo in each of them:
+ *
+ * - `COMMUNITY_SELECTION_REQUIRED`: the address leads to a host holding several
+ *   communities. It is right as far as it goes; they need one community's own
+ *   link, so the example is built on the host they typed.
+ * - `COMMUNITY_NAME_NOT_FOUND`: the host is real but knows no community by that
+ *   short address. Here the spelling really is the thing to check.
+ * - `COMMUNITY_LOOKUP_RATE_LIMITED`: the host is turning lookups away for a
+ *   while. The address may be fine; the answer is to wait, for as long as the
+ *   host said when it said.
+ * - `COMMUNITY_UPGRADE_REQUIRED`: the community's server is older than this
+ *   DorkOS can connect to. Nothing the person types fixes it; whoever runs the
+ *   server has to update it.
+ *
+ * Every other failure keeps the general message.
  *
  * @param error - Why the start failed.
  * @param address - The address the person submitted.
  */
 function startErrorMessage(error: unknown, address: string | undefined): string {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === 'COMMUNITY_SELECTION_REQUIRED'
-  )
-    return `That address has more than one community on it. Enter the link for the one you want: its short address, like ${shortAddressExample(address)}, or its full link, which has /c/ in it.`;
-  return 'Couldn’t connect. Check the community address and try again.';
+  const refusal =
+    typeof error === 'object' && error !== null
+      ? (error as { code?: unknown; body?: { retryAfterSeconds?: unknown } })
+      : {};
+  switch (refusal.code) {
+    case 'COMMUNITY_SELECTION_REQUIRED':
+      return `That address has more than one community on it. Enter the link for the one you want: its short address, like ${shortAddressExample(address)}, or its full link, which has /c/ in it.`;
+    case 'COMMUNITY_NAME_NOT_FOUND':
+      return 'No community uses that short address on this host. Check the spelling, or ask for the community’s full link.';
+    case 'COMMUNITY_LOOKUP_RATE_LIMITED':
+      return `That community’s host is getting too many lookups right now, so your address may be fine. Wait ${waitFor(refusal.body?.retryAfterSeconds)}, then try again.`;
+    case 'COMMUNITY_UPGRADE_REQUIRED':
+      return 'This community’s server is too old to connect to this DorkOS. Ask whoever runs the community to update it, then try again.';
+    default:
+      return 'Couldn’t connect. Check the community address and try again.';
+  }
+}
+
+/** How long to wait, from the host's own `Retry-After` in seconds, or a minute when it gave none. */
+function waitFor(seconds: unknown): string {
+  if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds < 1) return 'a minute';
+  if (seconds < 60) return seconds === 1 ? '1 second' : `${seconds} seconds`;
+  const minutes = Math.ceil(seconds / 60);
+  return minutes === 1 ? 'a minute' : `${minutes} minutes`;
 }
 
 /** A short address on the host the person typed, or a generic one when it cannot be read. */

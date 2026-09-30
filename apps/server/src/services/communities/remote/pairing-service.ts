@@ -157,7 +157,12 @@ export class RemoteCommunityNameNotFoundError extends Error {
 
 /** The host refused a short-name lookup because this server asked too often. */
 export class RemoteCommunityLookupRateLimitedError extends Error {
-  constructor() {
+  /**
+   * Record the host's refusal, with its own wait when it named one.
+   *
+   * @param retryAfterSeconds - How long the host asked this server to wait, when it said.
+   */
+  constructor(readonly retryAfterSeconds?: number) {
     super('The community host is limiting short-name lookups');
     this.name = 'RemoteCommunityLookupRateLimitedError';
   }
@@ -634,7 +639,7 @@ export class RemoteCommunityPairingService {
       if (error instanceof PinnedHttpError && error.status === 404)
         throw new RemoteCommunityNameNotFoundError();
       if (error instanceof PinnedHttpError && error.status === 429)
-        throw new RemoteCommunityLookupRateLimitedError();
+        throw new RemoteCommunityLookupRateLimitedError(error.retryAfterSeconds);
       throw error;
     }
     const parsed = CommunityWireShortNameLookupSchema.safeParse(answer);

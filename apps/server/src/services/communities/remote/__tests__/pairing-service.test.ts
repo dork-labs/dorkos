@@ -120,6 +120,8 @@ beforeAll(async () => {
     if (nameLookup) {
       const answer = shortNameAnswers.get(nameLookup[1]);
       if (answer === 'rate-limited') {
+        // The real Community answers a spent lookup budget this way (apps/community http.ts).
+        res.setHeader('retry-after', '17');
         send({ code: 'RATE_LIMITED', message: 'Slow down.' }, 429);
       } else if (answer === 'redirect') {
         res.statusCode = 301;
@@ -1999,9 +2001,10 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       requests.length = 0;
       try {
         const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
-        await expect(
-          service.start('name-owner', `${origin}/busy-club`, 'Limited')
-        ).rejects.toBeInstanceOf(RemoteCommunityLookupRateLimitedError);
+        const refusal = service.start('name-owner', `${origin}/busy-club`, 'Limited');
+        await expect(refusal).rejects.toBeInstanceOf(RemoteCommunityLookupRateLimitedError);
+        // The host's own wait is carried, so the person can be told how long.
+        await expect(refusal).rejects.toMatchObject({ retryAfterSeconds: 17 });
         expect(pairingStarts()).toEqual([]);
       } finally {
         shortNameAnswers.clear();
