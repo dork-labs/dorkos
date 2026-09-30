@@ -61,15 +61,20 @@ import {
   probeCommunityLiveProvenance,
   readFlyGraphql,
 } from './community-deploy-live-provenance.js';
+import { watchCommunityLiveCreates } from './community-deploy-live-create-watch.js';
 import {
   buildCommunityLiveRemovalReceipt,
   guardRemovalReadsAfterCleanup,
   guardRemovalReadsBeforeCleanup,
+  NAME_RELEASE_DEADLINE_MS,
   readRemovalBeforeCleanup,
+  readRemovalJournalNames,
   readRemovalNamesAfterCleanup,
-  watchCommunityLiveCreates,
+  sleepUnlessAborted,
+  whileInterruptible,
 } from './community-deploy-live-removal-reads.js';
 import { readFlyApps } from '../src/commands/community-deploy/fly-read.js';
+import type { LaunchJournal } from '../src/commands/community-deploy/journal.js';
 import { createDefaultRemovalProbes } from '../src/commands/community-deploy/runtime/default-removal.js';
 import {
   useTigrisClient,
@@ -514,8 +519,9 @@ async function main(): Promise<void> {
           // The removal's own reads against the live launch (DOR-2606), guarded the same way.
           removalBefore = await guardRemovalReadsBeforeCleanup(() =>
             readRemovalBeforeCleanup(journal, observedCreates, {
-              findTigris: (intent, launchJournal) =>
-                removalProbes('tigris').find(intent, launchJournal),
+              // The removal's find reads only `recoveryContext.appName` from the journal it is given.
+              findTigris: (intent) =>
+                removalProbes('tigris').find(intent, journal as unknown as LaunchJournal),
               isAppNameAvailable: (name) => tigris((client) => client.isAppNameAvailable(name)),
             })
           );
@@ -605,21 +611,35 @@ async function main(): Promise<void> {
       );
     }
     // The removal's name reads, once cleanup has finished: how long Fly holds the app name and the
-    // bucket name. Each failure is recorded, and none can fail the gate.
-    const removalAfter = await guardRemovalReadsAfterCleanup(() =>
-      readRemovalNamesAfterCleanup(
-        {
-          appName: journal.recoveryContext?.appName,
-          bucketName: journal.recoveryContext?.bucketName,
-        },
-        {
-          isAppNameAvailable: (name) =>
-            useTigrisClient(serviceOptions, (client) => client.isAppNameAvailable(name)),
-          isTigrisNameHeld: (name) =>
-            useTigrisClient(serviceOptions, (client) => client.isTigrisNameHeld(name)),
-          now: Date.now,
-          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-        }
+    // bucket name. Each failure is recorded, and none can fail the gate. Control-C, SIGTERM or the
+    // terminal closing only stops the wait: the receipt is still written and the finally still runs.
+    quietWriter(process.stdout)(
+      `Waiting up to ${NAME_RELEASE_DEADLINE_MS / 60_000} minutes for Fly to release the app and bucket names (Control-C stops waiting; the receipt is still written)\n`
+    );
+    const removalAfter = await whileInterruptible(process, (interrupt) =>
+      guardRemovalReadsAfterCleanup(
+        (signal) =>
+          readRemovalNamesAfterCleanup(
+            readRemovalJournalNames(journal),
+            {
+              // Each read carries its signal into the Fly session and GraphQL calls, so a
+              // cancelled read stops instead of running on after the receipt.
+              isAppNameAvailable: (name, readSignal) =>
+                useTigrisClient(
+                  { ...serviceOptions, fly: { ...fly, signal: readSignal }, signal: readSignal },
+                  (client) => client.isAppNameAvailable(name)
+                ),
+              isTigrisNameHeld: (name, readSignal) =>
+                useTigrisClient(
+                  { ...serviceOptions, fly: { ...fly, signal: readSignal }, signal: readSignal },
+                  (client) => client.isTigrisNameHeld(name)
+                ),
+              now: Date.now,
+              sleep: sleepUnlessAborted,
+            },
+            { signal }
+          ),
+        { signal: interrupt }
       )
     );
     // This receipt is intentionally non-secret and remains only long enough for the gate's caller.
@@ -680,8 +700,9 @@ async function main(): Promise<void> {
     );
   } finally {
     if (bootstrap) Buffer.from(bootstrap).fill(0);
-    launcher?.kill();
+    // The watch stops first, so its last read never races the launcher being killed.
     await createWatch?.stop();
+    launcher?.kill();
     // Closing twice is harmless; the success path closes it as soon as the
     // last secret has arrived rather than waiting for the run to finish.
     await clipboard?.close();

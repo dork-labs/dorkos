@@ -236,13 +236,26 @@ describe('credentialed live gate entrypoint', () => {
     );
     expect(before).toBeLessThan(cleanup);
     expect(main.slice(before, cleanup)).toContain(
-      "removalProbes('tigris').find(intent, launchJournal)"
+      "removalProbes('tigris').find(intent, journal as unknown as LaunchJournal)"
     );
     // The after-cleanup name reads run only once cleanup has finished, guarded, before the receipt.
-    const after = main.indexOf('const removalAfter = await guardRemovalReadsAfterCleanup(');
+    const after = main.indexOf('const removalAfter = await whileInterruptible(');
     expect(after).toBeGreaterThan(main.indexOf('cleanedUp = true;'));
     expect(after).toBeGreaterThan(main.indexOf('const { cleanup, provenance, tigrisBucketFound'));
     expect(after).toBeLessThan(main.indexOf('await writeFile(\n      receiptPath'));
+    // The wait is announced, and a signal during it only cancels it: the receipt is still written.
+    const notice = main.indexOf('Waiting up to ${NAME_RELEASE_DEADLINE_MS / 60_000} minutes');
+    expect(notice).toBeGreaterThan(main.indexOf('cleanedUp = true;'));
+    expect(notice).toBeLessThan(after);
+    expect(main).toMatch(
+      /const removalAfter = await whileInterruptible\(process, \(interrupt\) =>\s+guardRemovalReadsAfterCleanup\(/u
+    );
+    expect(main.slice(after, main.indexOf('await writeFile('))).toContain('{ signal: interrupt }');
+    // The watch stops before the launcher is killed, in the finally.
+    const finallyBlock = main.slice(main.lastIndexOf('} finally {'));
+    expect(finallyBlock.indexOf('await createWatch?.stop();')).toBeLessThan(
+      finallyBlock.indexOf('launcher?.kill();')
+    );
     // No new write: the removal's delete paths are never called from the gate.
     expect(main).not.toMatch(/removalProbes\([^)]*\)\.(remove|clearBoundSecrets)/u);
   });

@@ -1,25 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { ObservedCreates } from '../../scripts/community-deploy-live-create-watch.js';
 import {
   buildCommunityLiveRemovalReceipt,
-  createIntentObserver,
-  describeCreateWindows,
-  guardRemovalReadsAfterCleanup,
   guardRemovalReadsBeforeCleanup,
   readRemovalBeforeCleanup,
-  readRemovalNamesAfterCleanup,
-  watchCommunityLiveCreates,
-  type ObservedCreates,
-  type RemovalReadsAfterDependencies,
+  readRemovalJournalNames,
 } from '../../scripts/community-deploy-live-removal-reads.js';
 import { FlyGraphqlContractError } from '../commands/community-deploy/fly-graphql-contract.js';
-import {
-  DEFAULT_CREATE_DEADLINE_MS,
-  TIGRIS_CREATE_DEADLINE_MS,
-  type ProbeResult,
-  type TigrisFacts,
+import type {
+  PendingIntent,
+  ProbeResult,
+  TigrisFacts,
 } from '../commands/community-deploy/provenance/uncertain-verdict.js';
 
+// Distinct names, so a check that compares against the wrong one cannot pass by accident.
 const APP = 'dorkos-gate-012345abcdef';
+const BUCKET = 'dorkos-gate-bucket-9876';
 const NETWORK = `dorkos-${'a'.repeat(32)}`;
 const BUCKET_ID = 'addon-1';
 const REQUESTED = '2026-09-30T10:31:03.000Z';
@@ -41,7 +37,7 @@ function finishedJournal(update: Record<string, unknown> = {}) {
       neonOrganization: 'org-gate',
       neonRegion: 'aws-us-east-2',
       neonProjectName: APP,
-      bucketName: APP,
+      bucketName: BUCKET,
     },
     state: 'complete',
     pendingIntent: null,
@@ -62,18 +58,23 @@ function finishedJournal(update: Record<string, unknown> = {}) {
   };
 }
 
+type AddOn = TigrisFacts['addOns'][number];
+
+function bucket(update: Partial<AddOn> = {}): AddOn {
+  return {
+    token: BUCKET_ID,
+    name: BUCKET,
+    organization: 'gate-org',
+    createdAt: '2026-09-30T10:31:09Z',
+    ...update,
+  };
+}
+
 function facts(update: Partial<TigrisFacts> = {}): TigrisFacts {
   return {
     app: { name: APP, organization: 'gate-org', network: NETWORK },
     totalCount: 1,
-    addOns: [
-      {
-        token: BUCKET_ID,
-        name: APP,
-        organization: 'gate-org',
-        createdAt: '2026-09-30T10:31:09Z',
-      },
-    ],
+    addOns: [bucket()],
     ...update,
   };
 }
@@ -89,83 +90,33 @@ function observed(update: Partial<ObservedCreates> = {}): ObservedCreates {
   };
 }
 
-describe('createIntentObserver', () => {
-  it('keeps the first request time and the first id-recorded time for each create', () => {
-    const observer = createIntentObserver();
-    observer.observe({});
-    observer.observe({
-      pendingIntent: { provider: 'fly', requestedAt: '2026-09-30T10:30:10.000Z' },
-      resources: {},
-      updatedAt: '2026-09-30T10:30:10.000Z',
-    });
-    observer.observe({
-      pendingIntent: { provider: 'fly', requestedAt: '2026-09-30T10:30:10.000Z' },
-      resources: { flyAppId: APP },
-      updatedAt: '2026-09-30T10:30:14.000Z',
-    });
-    observer.observe({
-      pendingIntent: null,
-      resources: { flyAppId: APP },
-      updatedAt: '2026-09-30T10:30:16.000Z',
-    });
-    // The Neon intent was missed between two polls: only its recorded id is seen.
-    observer.observe({
-      pendingIntent: null,
-      resources: { flyAppId: APP, neonProjectId: 'project-1' },
-      updatedAt: '2026-09-30T10:30:25.000Z',
-    });
-    observer.unreadable();
-    expect(observer.result()).toEqual({
-      fly: { requestedAt: '2026-09-30T10:30:10.000Z', idRecordedAt: '2026-09-30T10:30:14.000Z' },
-      neon: { requestedAt: null, idRecordedAt: '2026-09-30T10:30:25.000Z' },
-      tigris: { requestedAt: null, idRecordedAt: null },
-      polls: 6,
-      unreadablePolls: 1,
-    });
+async function before(found: TigrisFacts | null, journal: unknown = finishedJournal()) {
+  const result = await readRemovalBeforeCleanup(journal, observed(), {
+    findTigris: async () => ({ kind: 'tigris', facts: found }),
+    isAppNameAvailable: async () => false,
   });
+  return result.listAppTigris;
+}
 
-  it('ignores a provider or time it cannot trust, and counts a non-object as unreadable', () => {
-    const observer = createIntentObserver();
-    observer.observe({ pendingIntent: { provider: 'other', requestedAt: REQUESTED } });
-    observer.observe({ pendingIntent: { provider: 'tigris', requestedAt: 'not a time' } });
-    observer.observe('garbage');
-    expect(observer.result()).toMatchObject({
-      tigris: { requestedAt: null },
-      polls: 3,
-      unreadablePolls: 1,
+describe('readRemovalJournalNames', () => {
+  it('picks each value on its own and drops anything that is not a safe identifier', () => {
+    expect(readRemovalJournalNames(finishedJournal())).toEqual({
+      appName: APP,
+      bucketName: BUCKET,
+      flyOrganization: 'gate-org',
+      flyNetwork: NETWORK,
+      tigrisBucketId: BUCKET_ID,
     });
-  });
-});
-
-describe('watchCommunityLiveCreates', () => {
-  it('reads until stopped, makes one last read, and counts a failed read without stopping', async () => {
-    const revisions: unknown[] = [
-      null,
-      new Error('partial'),
-      { pendingIntent: { provider: 'tigris', requestedAt: REQUESTED }, resources: {} },
-    ];
-    let calls = 0;
-    const read = vi.fn(async () => {
-      const next = revisions[Math.min(calls++, revisions.length - 1)];
-      if (next instanceof Error) throw next;
-      return next;
-    });
-    const watch = watchCommunityLiveCreates(read, 1);
-    await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(3));
-    const first = watch.stop();
-    expect(watch.stop()).toBe(first);
-    const result = await first;
-    expect(result.tigris.requestedAt).toBe(REQUESTED);
-    expect(result.unreadablePolls).toBe(1);
-    const readsAtStop = read.mock.calls.length;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(read.mock.calls.length).toBe(readsAtStop);
+    expect(
+      readRemovalJournalNames({ recoveryContext: { appName: 'bad name', bucketName: BUCKET } })
+    ).toEqual({ bucketName: BUCKET });
+    expect(readRemovalJournalNames('garbage')).toEqual({});
   });
 });
 
 describe('readRemovalBeforeCleanup', () => {
   it('reads through the removal find with the intent a stopped run would carry, and records its verdict', async () => {
-    const findTigris = vi.fn(async (): Promise<ProbeResult> => ({
+    const findTigris = vi.fn(async (_intent: PendingIntent): Promise<ProbeResult> => ({
       kind: 'tigris',
       facts: facts(),
     }));
@@ -174,15 +125,12 @@ describe('readRemovalBeforeCleanup', () => {
       findTigris,
       isAppNameAvailable,
     });
-    expect(findTigris).toHaveBeenCalledWith(
-      {
-        provider: 'tigris',
-        organizationId: 'gate-org',
-        resourceName: APP,
-        requestedAt: REQUESTED,
-      },
-      expect.objectContaining({ runId: '3f2c9a1e-1111-4111-8111-111111111111' })
-    );
+    expect(findTigris).toHaveBeenCalledWith({
+      provider: 'tigris',
+      organizationId: 'gate-org',
+      resourceName: BUCKET,
+      requestedAt: REQUESTED,
+    });
     expect(isAppNameAvailable).toHaveBeenCalledWith(APP);
     expect(result).toEqual({
       listAppTigris: {
@@ -191,7 +139,6 @@ describe('readRemovalBeforeCleanup', () => {
         appNameMatchesJournal: true,
         network: NETWORK,
         networkMatchesJournal: true,
-        organizationSlug: 'gate-org',
         organizationMatchesJournal: true,
         totalCount: 1,
         listedCount: 1,
@@ -201,37 +148,80 @@ describe('readRemovalBeforeCleanup', () => {
           organizationMatchesJournal: true,
           createdAt: '2026-09-30T10:31:09Z',
         },
-        verdict: 'proved',
-        unprovedReason: null,
+        verdict: { ok: true, result: 'proved', unprovedReason: null },
       },
       appNameWhileLive: { ok: true, available: false },
     });
   });
 
+  it('records an app named like the bucket, not the journaled app, as a mismatch', async () => {
+    await expect(
+      before(facts({ app: { name: BUCKET, organization: 'gate-org', network: NETWORK } }))
+    ).resolves.toMatchObject({ appNameMatchesJournal: false });
+  });
+
+  it('records a network that differs from the journal as a mismatch the removal cannot prove', async () => {
+    const other = `dorkos-${'b'.repeat(32)}`;
+    await expect(
+      before(facts({ app: { name: APP, organization: 'gate-org', network: other } }))
+    ).resolves.toMatchObject({
+      network: other,
+      networkMatchesJournal: false,
+      verdict: { ok: true, result: 'unproved', unprovedReason: 'bound-app-unproved' },
+    });
+    await expect(
+      before(facts({ app: { name: APP, organization: 'gate-org', network: null } }))
+    ).resolves.toMatchObject({ network: null, networkMatchesJournal: false });
+  });
+
+  it('records an app in another organization as a mismatch', async () => {
+    await expect(
+      before(facts({ app: { name: APP, organization: 'other-org', network: NETWORK } }))
+    ).resolves.toMatchObject({
+      organizationMatchesJournal: false,
+      verdict: { ok: true, result: 'unproved', unprovedReason: 'bound-app-unproved' },
+    });
+  });
+
+  it('records a bucket in another organization as a mismatch', async () => {
+    await expect(
+      before(facts({ addOns: [bucket({ organization: 'other-org' })] }))
+    ).resolves.toMatchObject({
+      organizationMatchesJournal: true,
+      journaledBucket: { organizationMatchesJournal: false },
+      verdict: { ok: true, result: 'unproved', unprovedReason: 'other-organization' },
+    });
+  });
+
+  it('finds the journaled bucket by its exact id, never by its name', async () => {
+    const result = await before(
+      facts({
+        totalCount: 2,
+        addOns: [
+          bucket({ token: 'addon-impostor', createdAt: '2026-09-30T09:00:00Z' }),
+          bucket({ name: 'renamed-bucket', createdAt: '2026-09-30T10:31:11Z' }),
+        ],
+      })
+    );
+    expect(result).toMatchObject({
+      journaledBucket: { nameMatchesJournal: false, createdAt: '2026-09-30T10:31:11Z' },
+    });
+    // Named only by the impostor, which is outside the window: the removal cannot prove it.
+    await expect(
+      before(facts({ addOns: [bucket({ token: 'addon-impostor' })] }))
+    ).resolves.toMatchObject({ journaledBucket: null });
+  });
+
   it('records the reason the removal would stop, such as a bucket created outside its window', async () => {
-    const late = facts({
-      addOns: [
-        {
-          token: BUCKET_ID,
-          name: APP,
-          organization: 'gate-org',
-          createdAt: '2026-09-30T12:00:00Z',
-        },
-      ],
-    });
-    const result = await readRemovalBeforeCleanup(finishedJournal(), observed(), {
-      findTigris: async () => ({ kind: 'tigris', facts: late }),
-      isAppNameAvailable: async () => false,
-    });
-    expect(result.listAppTigris).toMatchObject({
-      ok: true,
-      verdict: 'unproved',
-      unprovedReason: 'outside-window',
+    await expect(
+      before(facts({ addOns: [bucket({ createdAt: '2026-09-30T12:00:00Z' })] }))
+    ).resolves.toMatchObject({
+      verdict: { ok: true, result: 'unproved', unprovedReason: 'outside-window' },
     });
   });
 
   it('still sends the read when the bucket request time was never seen, and says why it cannot prove', async () => {
-    const findTigris = vi.fn(async (): Promise<ProbeResult> => ({
+    const findTigris = vi.fn(async (_intent: PendingIntent): Promise<ProbeResult> => ({
       kind: 'tigris',
       facts: facts(),
     }));
@@ -241,37 +231,27 @@ describe('readRemovalBeforeCleanup', () => {
       { findTigris, isAppNameAvailable: async () => false }
     );
     expect(findTigris).toHaveBeenCalledWith(
-      expect.not.objectContaining({ requestedAt: expect.anything() }),
-      expect.anything()
+      expect.not.objectContaining({ requestedAt: expect.anything() })
     );
     expect(result.listAppTigris).toMatchObject({
-      verdict: 'unproved',
-      unprovedReason: 'no-marker',
+      verdict: { ok: true, result: 'unproved', unprovedReason: 'no-marker' },
     });
   });
 
   it('records a missing app and a list cut short as the removal reads them', async () => {
-    const missing = await readRemovalBeforeCleanup(finishedJournal(), observed(), {
-      findTigris: async () => ({ kind: 'tigris', facts: null }),
-      isAppNameAvailable: async () => true,
-    });
-    expect(missing.listAppTigris).toMatchObject({
+    await expect(before(null)).resolves.toMatchObject({
       ok: true,
       appFound: false,
+      appNameMatchesJournal: false,
+      organizationMatchesJournal: false,
       network: null,
       complete: false,
       journaledBucket: null,
-      verdict: 'unproved',
-      unprovedReason: 'bound-app-unproved',
+      verdict: { ok: true, result: 'unproved', unprovedReason: 'bound-app-unproved' },
     });
-    const partial = await readRemovalBeforeCleanup(finishedJournal(), observed(), {
-      findTigris: async () => ({ kind: 'tigris', facts: facts({ totalCount: 51 }) }),
-      isAppNameAvailable: async () => false,
-    });
-    expect(partial.listAppTigris).toMatchObject({
+    await expect(before(facts({ totalCount: 51 }))).resolves.toMatchObject({
       complete: false,
-      verdict: 'unproved',
-      unprovedReason: 'incomplete-list',
+      verdict: { ok: true, result: 'unproved', unprovedReason: 'incomplete-list' },
     });
   });
 
@@ -281,7 +261,7 @@ describe('readRemovalBeforeCleanup', () => {
         throw new FlyGraphqlContractError('INVALID_RESPONSE');
       },
       isAppNameAvailable: async () => {
-        throw new Error('Could not find App "dorkos-gate-012345abcdef"');
+        throw new Error(`Could not find App "${APP}"`);
       },
     });
     expect(result).toEqual({
@@ -290,23 +270,34 @@ describe('readRemovalBeforeCleanup', () => {
     });
   });
 
-  it('reads nothing for a journal it cannot parse or one without the bucket identity', async () => {
-    const findTigris = vi.fn();
-    const invalid = await readRemovalBeforeCleanup({ resources: {} }, observed(), {
-      findTigris,
+  it('still reads a journal whose schema drifted, and reports only the verdict as a mismatch', async () => {
+    const drifted = { ...finishedJournal(), schemaVersion: 2, somethingNew: true };
+    const result = await readRemovalBeforeCleanup(drifted, observed(), {
+      findTigris: async () => ({ kind: 'tigris', facts: facts() }),
       isAppNameAvailable: async () => false,
     });
-    expect(invalid).toEqual({
-      listAppTigris: { ok: false, code: 'journal:INVALID_JOURNAL' },
+    expect(result.listAppTigris).toMatchObject({
+      ok: true,
+      appNameMatchesJournal: true,
+      journaledBucket: { nameMatchesJournal: true },
+      verdict: { ok: false, code: 'journal:SCHEMA_MISMATCH' },
+    });
+    expect(result.appNameWhileLive).toEqual({ ok: true, available: false });
+  });
+
+  it('reads nothing it has no names for', async () => {
+    const findTigris = vi.fn();
+    const isAppNameAvailable = vi.fn();
+    const result = await readRemovalBeforeCleanup({ resources: {} }, observed(), {
+      findTigris,
+      isAppNameAvailable,
+    });
+    expect(result).toEqual({
+      listAppTigris: { ok: false, code: 'journal:JOURNAL_TIGRIS_IDENTITY' },
       appNameWhileLive: { ok: false, code: 'journal:JOURNAL_APP_NAME' },
     });
-    const noBucket = await readRemovalBeforeCleanup(
-      finishedJournal({ resources: { flyAppId: APP } }),
-      observed(),
-      { findTigris, isAppNameAvailable: async () => false }
-    );
-    expect(noBucket.listAppTigris).toEqual({ ok: false, code: 'journal:JOURNAL_TIGRIS_IDENTITY' });
     expect(findTigris).not.toHaveBeenCalled();
+    expect(isAppNameAvailable).not.toHaveBeenCalled();
   });
 
   it('is bounded by a guard that records a throw or a hang in place of the reads', async () => {
@@ -323,160 +314,15 @@ describe('readRemovalBeforeCleanup', () => {
   });
 });
 
-describe('describeCreateWindows', () => {
-  it('puts each request time beside the service creation time through the removal window', () => {
-    const windows = describeCreateWindows(observed(), {
-      fly: '2026-09-30T10:30:12Z',
-      neon: '2026-09-30T10:30:19Z',
-      tigris: null,
-    });
-    expect(windows.fly).toEqual({
-      requestedAt: '2026-09-30T10:30:10.000Z',
-      idRecordedAt: '2026-09-30T10:30:14.000Z',
-      createdAt: '2026-09-30T10:30:12Z',
-      createdMinusRequestedMs: 2_000,
-      idRecordedMinusRequestedMs: 4_000,
-      windowDeadlineMs: DEFAULT_CREATE_DEADLINE_MS,
-      windowMarginMs: 120_000,
-      withinWindow: true,
-    });
-    // A service clock one second behind is inside the margin.
-    expect(windows.neon).toMatchObject({ createdMinusRequestedMs: -1_000, withinWindow: true });
-    expect(windows.tigris).toMatchObject({
-      createdAt: null,
-      createdMinusRequestedMs: null,
-      windowDeadlineMs: TIGRIS_CREATE_DEADLINE_MS,
-      withinWindow: false,
-    });
-  });
-
-  it('reports a create outside the window, and one whose request time was never seen', () => {
-    const windows = describeCreateWindows(
-      observed({ neon: { requestedAt: null, idRecordedAt: null } }),
-      {
-        fly: '2026-09-30T10:20:00Z',
-        neon: '2026-09-30T10:30:19Z',
-        tigris: '2026-09-30T10:31:09Z',
-      }
-    );
-    expect(windows.fly).toMatchObject({ createdMinusRequestedMs: -610_000, withinWindow: false });
-    expect(windows.neon).toMatchObject({ requestedAt: null, withinWindow: false });
-    expect(windows.tigris).toMatchObject({ createdMinusRequestedMs: 6_000, withinWindow: true });
-  });
-});
-
-describe('readRemovalNamesAfterCleanup', () => {
-  function clock() {
-    let now = 0;
-    return {
-      now: () => now,
-      sleep: vi.fn(async (ms: number) => {
-        now += ms;
-      }),
-    };
-  }
-
-  it('reads both names once when Fly frees them at once', async () => {
-    const time = clock();
-    const dependencies: RemovalReadsAfterDependencies = {
-      isAppNameAvailable: vi.fn(async () => true),
-      isTigrisNameHeld: vi.fn(async () => false),
-      ...time,
-    };
-    const result = await readRemovalNamesAfterCleanup(
-      { appName: APP, bucketName: APP },
-      dependencies
-    );
-    expect(result).toEqual({
-      appName: {
-        reads: 1,
-        first: { ok: true, held: false },
-        last: { ok: true, held: false },
-        releasedAfterMs: 0,
-      },
-      tigrisName: {
-        reads: 1,
-        first: { ok: true, held: false },
-        last: { ok: true, held: false },
-        releasedAfterMs: 0,
-      },
-    });
-    expect(time.sleep).not.toHaveBeenCalled();
-  });
-
-  it('keeps reading a held name, and a failed read, until it is free', async () => {
-    const time = clock();
-    const answers = [false, 'fail', true];
-    let call = 0;
-    const result = await readRemovalNamesAfterCleanup(
-      { appName: APP, bucketName: APP },
-      {
-        isAppNameAvailable: async () => {
-          const answer = answers[call++];
-          if (answer === 'fail') throw new FlyGraphqlContractError('INVALID_RESPONSE');
-          return answer as boolean;
-        },
-        isTigrisNameHeld: async () => false,
-        ...time,
-      },
-      { intervalMs: 10, deadlineMs: 1_000 }
-    );
-    expect(result.appName).toEqual({
-      reads: 3,
-      first: { ok: true, held: true },
-      last: { ok: true, held: false },
-      releasedAfterMs: 20,
-    });
-    expect(result.tigrisName).toMatchObject({ reads: 1, releasedAfterMs: 0 });
-  });
-
-  it('stops at the deadline and records a name Fly still holds', async () => {
-    const time = clock();
-    const isTigrisNameHeld = vi.fn(async () => true);
-    const result = await readRemovalNamesAfterCleanup(
-      { appName: APP, bucketName: APP },
-      { isAppNameAvailable: async () => true, isTigrisNameHeld, ...time },
-      { intervalMs: 10, deadlineMs: 30 }
-    );
-    expect(result.tigrisName).toEqual({
-      reads: 4,
-      first: { ok: true, held: true },
-      last: { ok: true, held: true },
-      releasedAfterMs: null,
-    });
-    expect(result.appName).toMatchObject({ reads: 1 });
-  });
-
-  it('records missing names without reading', async () => {
-    const isAppNameAvailable = vi.fn();
-    const result = await readRemovalNamesAfterCleanup(
-      { appName: undefined, bucketName: undefined },
-      { isAppNameAvailable, isTigrisNameHeld: vi.fn(), ...clock() }
-    );
-    expect(result).toEqual({
-      appName: { ok: false, code: 'journal:JOURNAL_APP_NAME' },
-      tigrisName: { ok: false, code: 'journal:JOURNAL_BUCKET_NAME' },
-    });
-    expect(isAppNameAvailable).not.toHaveBeenCalled();
-  });
-
-  it('is bounded by a guard that records a hang in place of the reads', async () => {
-    await expect(guardRemovalReadsAfterCleanup(() => new Promise(() => {}), 5)).resolves.toEqual({
-      appName: { ok: false, code: 'guard:PROBE_DEADLINE' },
-      tigrisName: { ok: false, code: 'guard:PROBE_DEADLINE' },
-    });
-  });
-});
-
 describe('buildCommunityLiveRemovalReceipt', () => {
-  it('takes the bucket creation time from the list read and keeps only non-secret fields', async () => {
-    const before = await readRemovalBeforeCleanup(finishedJournal(), observed(), {
+  it('takes the bucket creation time from the list read and holds exactly the recorded fields', async () => {
+    const beforeCleanup = await readRemovalBeforeCleanup(finishedJournal(), observed(), {
       findTigris: async () => ({ kind: 'tigris', facts: facts() }),
       isAppNameAvailable: async () => false,
     });
     const receipt = buildCommunityLiveRemovalReceipt({
       observed: observed(),
-      before,
+      before: beforeCleanup,
       after: {
         appName: { ok: false, code: 'gql:INVALID_RESPONSE' },
         tigrisName: { ok: false, code: 'gql:INVALID_RESPONSE' },
@@ -484,13 +330,31 @@ describe('buildCommunityLiveRemovalReceipt', () => {
       flyCreatedAt: '2026-09-30T10:30:12Z',
       neonCreatedAt: null,
     });
+    expect(Object.keys(receipt).sort()).toEqual([
+      'afterCleanup',
+      'beforeCleanup',
+      'createWindows',
+      'journalWatch',
+    ]);
+    expect(Object.keys(receipt.beforeCleanup.listAppTigris).sort()).toEqual([
+      'appFound',
+      'appNameMatchesJournal',
+      'complete',
+      'journaledBucket',
+      'listedCount',
+      'network',
+      'networkMatchesJournal',
+      'ok',
+      'organizationMatchesJournal',
+      'totalCount',
+      'verdict',
+    ]);
+    expect(Object.keys(receipt.createWindows).sort()).toEqual(['fly', 'neon', 'tigris']);
     expect(receipt.createWindows.tigris).toMatchObject({
       createdAt: '2026-09-30T10:31:09Z',
       withinWindow: true,
     });
     expect(receipt.createWindows.neon).toMatchObject({ createdAt: null, withinWindow: false });
     expect(receipt.journalWatch).toEqual({ polls: 900, unreadablePolls: 0 });
-    const text = JSON.stringify(receipt);
-    expect(text).not.toMatch(/AWS_|token|secret/iu);
   });
 });
