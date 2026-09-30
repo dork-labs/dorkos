@@ -130,7 +130,8 @@ export function buildInstallerForTests(
 
   // Adapter manager stub — just enough surface for ConflictDetector
   // (`listAdapters`) and the adapter install/uninstall paths (`addAdapter`,
-  // `removeAdapter`).
+  // `removeAdapter`, and `getAdapter`, which the install rollback reads to
+  // undo only what it created).
   const adapterAdd = vi.fn().mockResolvedValue(undefined);
   const adapterRemove = vi.fn().mockResolvedValue(undefined);
   const adapterList = vi.fn().mockReturnValue([]);
@@ -138,6 +139,7 @@ export function buildInstallerForTests(
     addAdapter: adapterAdd,
     removeAdapter: adapterRemove,
     listAdapters: adapterList,
+    getAdapter: vi.fn().mockReturnValue(undefined),
   } as unknown as AdapterManager;
 
   const conflictDetector = new ConflictDetector(dorkHome, adapterManager);

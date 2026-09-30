@@ -5,9 +5,9 @@
  * shared {@link runTransaction} engine, then registers the adapter with
  * the running {@link AdapterManager} so the relay subsystem picks it up
  * without a server restart. The transaction restores the previous package
- * contents at the target if activation fails; the adapter config
- * (`relay-adapters.json`) mutation is compensated separately by calling
- * `removeAdapter` if registration fails.
+ * contents at the target if activation fails; an adapter config entry this
+ * install saved to `relay-adapters.json` is compensated separately by calling
+ * `removeAdapter` if registration fails. One that existed before is never touched.
  *
  * @module services/marketplace/flows/install-adapter
  */
@@ -165,8 +165,14 @@ async function activateAdapterPackage(stagingPath: string, installPath: string):
  * Register the adapter with `AdapterManager`, compensating with
  * `removeAdapter` if registration throws. The transaction engine handles
  * removal of the staging directory; this helper is responsible for
- * undoing the effect of `addAdapter` (which mutates `relay-adapters.json`
- * before throwing).
+ * undoing the effect of `addAdapter`, which can save the new entry to
+ * `relay-adapters.json` and then throw while starting it.
+ *
+ * It undoes only what this install created (DOR-2607). A connection that
+ * already had this id before the install is the person's, not the
+ * install's: `addAdapter` refuses it as a duplicate, and removing it here
+ * used to delete that connection, its secrets and its links to agents. So
+ * the rollback runs only when the id was free before and is taken after.
  *
  * @internal
  */
@@ -176,15 +182,20 @@ async function registerAdapterWithCompensation(
   installPath: string,
   logger: Logger
 ): Promise<void> {
+  const existedBefore = adapterManager.getAdapter(manifest.name) !== undefined;
   try {
     await adapterManager.addAdapter(manifest.adapterType, manifest.name, {
       pluginPath: path.join(installPath, '.dork', 'adapters', manifest.adapterType),
     });
   } catch (err) {
-    logger.warn('[marketplace/install-adapter] addAdapter failed, compensating', {
+    const createdByThisInstall =
+      !existedBefore && adapterManager.getAdapter(manifest.name) !== undefined;
+    logger.warn('[marketplace/install-adapter] addAdapter failed', {
       name: manifest.name,
       error: err instanceof Error ? err.message : String(err),
+      compensating: createdByThisInstall,
     });
+    if (!createdByThisInstall) throw err;
     try {
       await adapterManager.removeAdapter(manifest.name);
     } catch (compensationErr) {
