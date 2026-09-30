@@ -23,8 +23,31 @@ import type { CommunityServiceOptions } from './default-services.js';
 import type { LaunchJournal } from '../journal.js';
 import type { LaunchPlan } from '../plan.js';
 import { ProviderMutationError } from '../provider-mutation.js';
+import { resolvePlatformImageDigest } from './image-platform.js';
 
 const COMMUNITY_IMAGE_REPOSITORY = 'ghcr.io/dork-labs/dorkos-community';
+
+/**
+ * Settle which digest Fly will report for the attested release (DOR-2586): the linux/amd64
+ * manifest inside the attested index, read from ghcr.io and accepted only if the index bytes hash
+ * to the attested index digest.
+ *
+ * @param input - The plan and the service bounds.
+ * @returns The linux/amd64 manifest digest.
+ */
+export async function resolveCommunityPlatformDigest(input: {
+  plan: LaunchPlan;
+  options: CommunityServiceOptions;
+  fetch?: typeof fetch;
+}): Promise<string> {
+  return resolvePlatformImageDigest({
+    repository: COMMUNITY_IMAGE_REPOSITORY,
+    digest: input.plan.imageDigest,
+    timeoutMs: input.options.graphqlTimeoutMs,
+    signal: input.options.signal,
+    fetch: input.fetch,
+  });
+}
 
 /** Build the production boundaries used after Fly, Neon, and Tigris creation. */
 export function createDefaultCommunityDeployDependencies(input: {
@@ -33,6 +56,8 @@ export function createDefaultCommunityDeployDependencies(input: {
   latestJournal(): LaunchJournal;
   persist(journal: LaunchJournal, expectedRevision: number): Promise<void>;
   now(): string;
+  /** Settles the platform digest Fly will report; see {@link resolveCommunityPlatformDigest}. */
+  resolvePlatformDigest(): Promise<string>;
 }): CommunityDeployPhaseDependencies {
   return {
     persist: input.persist,
@@ -73,10 +98,11 @@ export function createDefaultCommunityDeployDependencies(input: {
           configPath
         );
       }),
-    verifyNewRuntime: (inventory, previous) =>
-      verifyFlyDeployment(inventory, previous, COMMUNITY_IMAGE_REPOSITORY, input.plan.imageDigest),
-    verifyExistingRuntime: (inventory) =>
-      verifyExistingFlyDeployment(inventory, COMMUNITY_IMAGE_REPOSITORY, input.plan.imageDigest),
+    resolvePlatformDigest: input.resolvePlatformDigest,
+    verifyNewRuntime: (inventory, previous, platformDigest) =>
+      verifyFlyDeployment(inventory, previous, COMMUNITY_IMAGE_REPOSITORY, platformDigest),
+    verifyExistingRuntime: (inventory, platformDigest) =>
+      verifyExistingFlyDeployment(inventory, COMMUNITY_IMAGE_REPOSITORY, platformDigest),
     verifyHealth: (origin) =>
       verifyCommunityHealth(origin, {
         timeoutMs: 120_000,

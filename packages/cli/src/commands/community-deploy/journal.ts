@@ -103,6 +103,12 @@ export const LaunchJournalSchema = z
     revision: z.number().int().nonnegative(),
     planHash: HexHashSchema,
     releaseDigest: Sha256DigestSchema,
+    /**
+     * The linux/amd64 manifest digest inside the attested index, which Fly reports for the running
+     * Machine and release (DOR-2586). Recorded before the first deploy, so a resume checks against
+     * the same digest without reading the registry again.
+     */
+    imagePlatformDigest: Sha256DigestSchema.optional(),
     recoveryContext: z
       .object({
         version: SafeIdentifierSchema,
