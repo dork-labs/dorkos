@@ -96,9 +96,15 @@ function isNamedLeftover(hit: Hit): boolean {
     return true;
   if (hit.table === 'channels' && hit.column === 'name' && hit.rowId === before.adminChannelId)
     return true;
-  // The erasure journal names the deleted account by id, which is how a restored backup erases
-  // it again (DOR-2566). The id is random and its account row is gone.
-  if (hit.table === 'erasure_journal' && hit.column === 'user_id') return true;
+  // The erasure journal names P's deleted account by its id and nothing else, which is how a
+  // restored backup erases it again (DOR-2566). The id is random and its account row is gone.
+  if (
+    hit.table === 'erasure_journal' &&
+    hit.column === 'user_id' &&
+    hit.needle === pA.userId.toLowerCase() &&
+    hit.communityId === null
+  )
+    return true;
   if (hit.table !== 'entries' || hit.column !== 'text') return false;
   return [before.qCode, before.qFreeText, before.qEmailShaped].includes(hit.rowId ?? '');
 }

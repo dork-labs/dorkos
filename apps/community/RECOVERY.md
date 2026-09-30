@@ -41,7 +41,7 @@ A backup brings back everyone who erased themselves after it was taken. Before y
 
 ```bash
 docker compose -f apps/community/compose.yml stop community
-docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js < erasure-journal.log
+cat /var/lib/community-erasure-journal/erasure-journal-*.log | docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
 docker compose -f apps/community/compose.yml up -d community
 ```
 

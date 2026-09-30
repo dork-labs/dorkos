@@ -7,8 +7,12 @@
 -- carries a random `nonce` that a read cursor names, so a cursor past the restored end, or
 -- naming a row the restore replaced, answers 410 and the reader starts again from the start.
 --
--- Backout: revert the code. Code that predates this migration writes no rows and never issues
--- the new scope. This migration stays applied.
+-- Rows are kept for COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS (created_at), as long as a backup
+-- that could need them can exist, then pruned by the cleanup sweep.
+--
+-- Backout: revoke every key holding communities:erasure_journal first, then revert the code.
+-- Older code writes no rows and never issues the scope, but it cannot list keys while one holds
+-- a scope it does not know. This migration stays applied.
 
 -- Read-only, and no other scope implies it. One more scope than before, so the ceiling grows
 -- by one.
@@ -31,8 +35,11 @@ CREATE TABLE erasure_journal (
   community_id uuid,
   member_id uuid,
   user_id text,
+  created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT erasure_journal_record CHECK (
     (kind = 'member' AND community_id IS NOT NULL AND member_id IS NOT NULL AND user_id IS NULL)
     OR (kind = 'account' AND user_id IS NOT NULL AND community_id IS NULL AND member_id IS NULL)
   )
 );
+
+CREATE INDEX erasure_journal_created_idx ON erasure_journal (created_at);

@@ -20,6 +20,8 @@ describe('community startup config', () => {
     const startup = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
 
     expect(startup).not.toContain('reconcileTenantNamespace');
+    // The cleanup sweep prunes the erasure journal with the host's retention (DOR-2566).
+    expect(startup).toContain('pruneErasureJournal(pool, config.erasureJournalRetentionDays)');
   });
 
   it('requires every deployment secret and storage setting', () => {
@@ -33,6 +35,20 @@ describe('community startup config', () => {
     expect(parseConfig(valid).limits.postsPerTenMinutes).toBe(120);
     expect(() => parseConfig({ ...valid, COMMUNITY_POSTS_PER_TEN_MINUTES: '1001' })).toThrow();
     expect(() => parseConfig({ ...valid, COMMUNITY_TEXT_BYTES: '0' })).toThrow();
+  });
+
+  // Purpose: fails if erasure journal rows could be kept for less than a month, or forever, or if
+  // the default no longer covers a year of backups (DOR-2566).
+  it('bounds how long the erasure journal is kept', () => {
+    expect(parseConfig(valid).erasureJournalRetentionDays).toBe(400);
+    expect(
+      parseConfig({ ...valid, COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS: '30' })
+        .erasureJournalRetentionDays
+    ).toBe(30);
+    for (const days of ['29', '3651', '1.5'])
+      expect(() =>
+        parseConfig({ ...valid, COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS: days })
+      ).toThrow();
   });
 
   it('bounds the import settings and keeps their defaults', () => {

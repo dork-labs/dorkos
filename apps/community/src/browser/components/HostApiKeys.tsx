@@ -60,9 +60,9 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
   },
   {
     scope: 'communities:erasure_journal',
-    label: 'Copy the erasure record',
+    label: 'Copy the erasure journal',
     detail:
-      'Read the list of people who were erased, by id only, so a copy can be kept off this server and used after restoring a backup. See “Erasure requests” in OPERATIONS.md.',
+      'Read the erasure journal, the list of people who were erased, by id only, so a copy can be kept off this server and used after restoring a backup. See “Erasure requests” in OPERATIONS.md.',
   },
 ];
 

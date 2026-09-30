@@ -44,7 +44,7 @@ docker compose -f apps/community/compose.yml build community
 docker compose -f apps/community/compose.yml exec -T database pg_restore -U community -d community --exit-on-error < "$community_restore_dir/database.dump"
 docker compose -f apps/community/compose.yml run --rm --no-deps -T --entrypoint tar community -C /data/blobs -xzf - < "$community_restore_dir/blobs.tar.gz"
 # Erase again everyone erased since the backup, from the journal copy kept off the server.
-docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js < /absolute/path/to/erasure-journal.log
+cat /absolute/path/to/erasure-journal-*.log | docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
 docker compose -f apps/community/compose.yml up -d community
 ```
 
@@ -215,27 +215,42 @@ An account that has ever been a host operator cannot be deleted online, because 
 
 Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`, and adds the same line to the **erasure journal** in the database. A restored backup brings back everyone erased since it was taken, and it takes the journal back to the same moment. So keep a copy of the journal **outside the server and outside your backups, for at least as long as you keep backups.**
 
-Copy it with a host API key that has only `communities:erasure_journal`, on a schedule (every hour is plenty), from a machine that is not the Community server. This script adds new lines to `erasure-journal.log` and remembers where it stopped in `erasure-journal.cursor`. It needs `curl` and `jq`:
+The server keeps each journal line for `COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS` (400 days unless you change it; at least 30), then deletes it. Set it to your longest backup or point-in-time-recovery retention plus 30 days: a line is needed only while a backup older than it can still be restored.
+
+Copy the journal on a schedule (every hour is plenty) from a machine that is not the Community server, with a host API key that has only `communities:erasure_journal`. This script needs `curl`, `jq` and `flock` (on Linux, part of util-linux). It adds new lines to one file per month, such as `erasure-journal-2026-09.log`, remembers where it stopped, and deletes month files older than the retention. Keep the key out of the command line and the environment: put it in a curl config file that only the script's user can read (`chmod 600`), containing one line, `header = "Authorization: Bearer dkh_…"`.
 
 ```bash
+#!/usr/bin/env bash
+# Copy new erasure journal lines off the Community server. Run it hourly, for example from cron.
 set -euo pipefail
-url="$COMMUNITY_URL/api/v1/host/erasure-journal"
-touch erasure-journal.log erasure-journal.cursor
+umask 077
+url=https://community.example.com/api/v1/host/erasure-journal
+journal_dir=/var/lib/community-erasure-journal # outside the server and outside your backups
+key_config=/etc/community-erasure-journal/curl.conf # mode 600; see below
+retention_days=400 # the server's COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS
+
+cd "$journal_dir"
+exec 9> "$journal_dir/pull.lock"
+flock -n 9 || exit 0 # the previous pull is still running
+page=$(mktemp "$journal_dir/page.XXXXXX")
+trap 'rm -f "$page"' EXIT
+touch "$journal_dir/cursor"
 while :; do
-  cursor=$(cat erasure-journal.cursor)
-  status=$(curl -sS -o page.json -w '%{http_code}' --get \
-    -H "Authorization: Bearer $COMMUNITY_JOURNAL_KEY" \
+  cursor=$(cat "$journal_dir/cursor")
+  status=$(curl -sS --max-time 60 -K "$key_config" -o "$page" -w '%{http_code}' --get \
     --data-urlencode 'limit=1000' ${cursor:+--data-urlencode "cursor=$cursor"} "$url")
-  if [ "$status" = 410 ]; then : > erasure-journal.cursor; continue; fi
+  # After a restore or a prune the saved place is gone: read from the start again.
+  if [ "$status" = 410 ]; then : > "$journal_dir/cursor"; continue; fi
   [ "$status" = 200 ] || { echo "Erasure journal pull failed: HTTP $status" >&2; exit 1; }
-  jq -c '.lines[]' page.json >> erasure-journal.log
-  jq -r '.nextCursor' page.json > erasure-journal.cursor
-  [ "$(jq -r '.hasMore' page.json)" = true ] || break
+  jq -c '.lines[]' "$page" >> "$journal_dir/erasure-journal-$(date -u +%Y-%m).log"
+  jq -r '.nextCursor' "$page" > "$journal_dir/cursor"
+  [ "$(jq -r '.hasMore' "$page")" = true ] || break
 done
-rm -f page.json
+# A month's file stops changing when the month ends; delete it once it is past the retention.
+find "$journal_dir" -name 'erasure-journal-*.log' -mtime +"$retention_days" -delete
 ```
 
-After a restore, the saved cursor no longer matches, so the next pull reads the journal from the start again and adds lines the copy already has. That is safe: running an erasure twice changes nothing. Alert when the script fails, the same way you would for a failed backup.
+After a restore, or once the line it stopped at has been deleted, the saved place no longer matches, so the next pull reads the journal from the start again and adds lines the copy already has. That is safe: running an erasure twice changes nothing. Alert when the script fails, the same way you would for a failed backup.
 
 You can also set `COMMUNITY_ERASURE_JOURNAL` to a file path, and the server appends every line there too. That file is only useful if it lives on storage that outlasts the server and stays out of your backups; on a host whose disk is replaced at each deploy, such as a Fly Machine without a volume, rely on the pulled copy.
 
@@ -243,11 +258,11 @@ After any restore, stop the app and run the erasures again from your copy before
 
 ```bash
 docker compose -f apps/community/compose.yml stop community
-docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js < erasure-journal.log
+cat /var/lib/community-erasure-journal/erasure-journal-*.log | docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
 docker compose -f apps/community/compose.yml up -d community
 ```
 
-From a source checkout, `pnpm --filter @dorkos/community erasure:reapply < erasure-journal.log` does the same. It prints only counts, and running it twice changes nothing.
+From a source checkout, piping the same files to `pnpm --filter @dorkos/community erasure:reapply` does the same. It prints only counts, and running it twice changes nothing.
 
 A few things inside the community stay on purpose, because they are not attributed to the person in the database: their name typed as plain words in someone else's message, their handle inside code or a quote, an email-shaped string such as `bob@handle`, and the names of channels they created. Two more stay briefly. A message that names their old `@handle` and is posted in the moment between the last mention pass and the end of the erasure keeps that text. And a local install's pairing request that nobody approved or declined names only the install, not a person, so it stays until it is cleaned up, at most 70 minutes after it started.
 

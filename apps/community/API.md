@@ -169,14 +169,14 @@ While any takedown in a community has a copy `pending`, `retrying`, `failed`, or
 
 Each line is the same object the server logs when an erasure finishes, with IDs only: `{ "event": "community.member_erased", "communityId", "memberId" }` or `{ "event": "community.account_erased", "userId" }`. Nothing that was erased is in it. Written one per line, the lines are what `erasure/reapply.js` reads.
 
-The response is `{ lines, nextCursor, hasMore }` with `Cache-Control: no-store`. Leave out `cursor` to read from the start, and send `limit` from 1 to 1,000 (500 when left out). Keep `nextCursor`, even from a page with no lines, and send it next time to get only newer lines; `hasMore` says whether to ask again now. Lines are added in the order their erasures finish, so a cursor never steps past a line that shows up later.
+The response is `{ lines, nextCursor, hasMore }` with `Cache-Control: no-store`. Leave out `cursor` to read from the start, and send `limit` from 1 to 1,000 (500 when left out). Keep `nextCursor`, even from a page with no lines, and send it next time to get only newer lines; `hasMore` says whether to ask again now. Lines are added in the order their erasures finish, so a cursor never steps past a line that shows up later. The server deletes lines older than `COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS`, so pull more often than that.
 
-| Status | Code              | When                                                                                                    |
-| ------ | ----------------- | ------------------------------------------------------------------------------------------------------- |
-| `400`  | `STATE_CONFLICT`  | `limit` is not a whole number from 1 to 1,000                                                           |
-| `401`  | `UNAUTHENTICATED` | No valid key or session                                                                                 |
-| `403`  | `FORBIDDEN`       | The key does not have `communities:erasure_journal`, or the session is not a host operator's            |
-| `410`  | `CURSOR_STALE`    | The cursor was changed, came from another server, or points past a restored backup: read from the start |
+| Status | Code              | When                                                                                                                                               |
+| ------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | `STATE_CONFLICT`  | `limit` is not a whole number from 1 to 1,000                                                                                                      |
+| `401`  | `UNAUTHENTICATED` | No valid key or session                                                                                                                            |
+| `403`  | `FORBIDDEN`       | The key does not have `communities:erasure_journal`, or the session is not a host operator's                                                       |
+| `410`  | `CURSOR_STALE`    | The cursor was changed, came from another server, points past a restored backup, or names a line the server has since deleted: read from the start |
 
 ## Erase a membership or an account
 

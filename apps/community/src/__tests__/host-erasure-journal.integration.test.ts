@@ -14,14 +14,22 @@ import {
   type CommunityAdminErasureJournalPageSchema as PageSchema,
 } from '@dorkos/shared/community-admin-wire';
 import type { z } from 'zod';
-import { appendJournalRow, type ErasureJournalRecord } from '../erasure/journal.js';
+import { eraseMembership } from '../erasure/erasure.js';
+import {
+  appendJournalRow,
+  pruneErasureJournal,
+  type ErasureJournalRecord,
+} from '../erasure/journal.js';
 import { runHostKeyCommand } from '../host-keys.js';
 import type { HostApiKeyScope } from '../host/authority.js';
 import { body, hoursFromNow, PASSWORD, runErasures } from './member-erasure-fixture.js';
 import { makeScene, requestErasure } from './member-erasure-scenes.js';
 import {
   bootstrapHost,
+  createPendingCommunity,
+  preflightOwnerClaim,
   startTenancyHarness,
+  TENANCY_PASSWORD,
   waitForLockWaiters,
   type TenancyHarness,
 } from './tenancy-test-harness.js';
@@ -332,5 +340,91 @@ describe('a real erasure', { timeout: 120_000 }, () => {
     expect(pulled).toContainEqual({ event: 'community.account_erased', userId: s.q.userId });
     for (const needle of [s.p.handle, s.q.handle, email, `hello from ${s.p.handle}`])
       expect(text).not.toContain(needle);
+  });
+});
+
+describe('an erasure finishing while an owner claims the community', { timeout: 60_000 }, () => {
+  // Purpose: fails if the journal shares its lock with community creation. The erasure holds the
+  // community row FOR SHARE when it journals; the claim holds the creation lock and waits for that
+  // row FOR UPDATE. With one key between them, PostgreSQL aborts one of the two (40P01).
+  it('lets both finish', async () => {
+    const pending = await createPendingCommunity(h, operatorCookie, `Claimed ${randomUUID()}`);
+    // A member of a community waiting for an owner, as an imported community has.
+    const userId = `imported_${randomUUID().slice(0, 8)}`;
+    await h.pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+      userId,
+      'Imported member',
+      `${userId}@journal.test`,
+    ]);
+    const memberId = (
+      await h.pool.query<{ id: string }>(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+         VALUES($1,$2,'Imported member',$3,'member') RETURNING id`,
+        [pending.communityId, userId, `m${randomUUID().slice(0, 8)}`]
+      )
+    ).rows[0].id;
+    const grant = await preflightOwnerClaim(h, pending.token);
+    const signedUp = await h.call('/api/auth/sign-up/email', {
+      body: {
+        name: 'New Owner',
+        email: `owner-${randomUUID()}@journal.test`,
+        password: TENANCY_PASSWORD,
+      },
+      cookie: grant,
+    });
+    expect(signedUp.status).toBe(200);
+    const cookie = [
+      grant,
+      ...signedUp.headers.getSetCookie().map((value) => value.split(';')[0]),
+    ].join('; ');
+    let claim: Promise<Response> | undefined;
+    const outcome = await eraseMembership(h.pool, pending.communityId, memberId, {
+      log: () => undefined,
+      hooks: {
+        inBatch: async (step) => {
+          if (step !== 'seal') return;
+          // The erasure holds the community row; the claim now takes its lock and waits for it.
+          claim = h.call('/api/v1/owner-claims/claim', { cookie, body: {} });
+          await waitForLockWaiters(h, 1, 'FOR UPDATE OF c');
+        },
+      },
+    });
+    expect(outcome).toBe('erased');
+    expect((await claim!).status).toBe(200);
+    expect(
+      (await h.pool.query('SELECT 1 FROM erasure_journal WHERE member_id=$1', [memberId])).rowCount
+    ).toBe(1);
+  });
+});
+
+describe('retention', () => {
+  // Purpose: fails if rows older than the retention are kept (a deleted community's and an
+  // account's included), if newer rows are pruned, or if a cursor naming a pruned row is served.
+  it('prunes rows past the retention, and a cursor on a pruned row starts over', async () => {
+    const old = [
+      member(),
+      { kind: 'account' as const, userId: `gone_${randomUUID().slice(0, 8)}` },
+    ];
+    for (const record of old) await append(h, record);
+    const { cursor } = await drain(h);
+    const fresh = member();
+    await append(h, fresh);
+    await h.pool.query(
+      `UPDATE erasure_journal SET created_at=now()-interval '31 days'
+       WHERE member_id=$1 OR user_id=$2`,
+      [(old[0] as { memberId: string }).memberId, (old[1] as { userId: string }).userId]
+    );
+    const edge = member();
+    await append(h, edge);
+    await h.pool.query(
+      `UPDATE erasure_journal SET created_at=now()-interval '29 days' WHERE member_id=$1`,
+      [edge.memberId]
+    );
+    expect(await pruneErasureJournal(h.pool, 30)).toBe(2);
+    const left = (await drain(h)).lines;
+    for (const record of old) expect(left).not.toContainEqual(lineOf(record));
+    expect(left).toContainEqual(lineOf(fresh));
+    expect(left).toContainEqual(lineOf(edge));
+    expect((await read(h, { cursor })).status).toBe(410);
   });
 });

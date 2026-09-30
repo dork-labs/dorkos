@@ -1533,8 +1533,10 @@ export const erasureJournal = pgTable(
     communityId: uuid('community_id'),
     memberId: uuid('member_id'),
     userId: text('user_id'),
+    createdAt: time('created_at'),
   },
   (table) => [
+    index('erasure_journal_created_idx').on(table.createdAt),
     check(
       'erasure_journal_record',
       sql`(${table.kind} = 'member' AND ${table.communityId} IS NOT NULL AND ${table.memberId} IS NOT NULL AND ${table.userId} IS NULL) OR (${table.kind} = 'account' AND ${table.userId} IS NOT NULL AND ${table.communityId} IS NULL AND ${table.memberId} IS NULL)`

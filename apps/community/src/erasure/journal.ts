@@ -23,12 +23,16 @@ export interface ErasureJournalPosition {
  * Serialises journal writers from their insert to their commit, so rows commit in id order and
  * every reader sees a prefix of the ids. Without it an erasure that took id 10 could commit after
  * one that took id 11, and a reader that already moved past 11 would never see 10.
+ *
+ * This key is the journal's alone (the guard in advisory-locks.test.ts keeps each key to one
+ * purpose). Sharing one with code that takes row locks after it deadlocks: an erasure holds its
+ * community row when it gets here.
  */
-const JOURNAL_WRITE_LOCK = 77281503;
+export const JOURNAL_WRITE_LOCK = 77281505;
 
 /**
- * Add one row, inside the caller's transaction. The lock is transaction-scoped and taken last,
- * after every row lock the erasure holds, so it only ever waits on another writer's commit.
+ * Add one row, inside the caller's transaction. The lock is taken last and nothing else ever
+ * takes it, so a writer only waits for another writer's insert and commit, never for a row lock.
  */
 export async function appendJournalRow(
   client: PoolClient,
@@ -41,6 +45,23 @@ export async function appendJournalRow(
       ? ['member', record.communityId, record.memberId, null]
       : ['account', null, null, record.userId]
   );
+}
+
+/**
+ * Delete rows older than `retentionDays`, whatever community or account they name, deleted ones
+ * included: once no backup that predates a row can exist, re-applying it has nothing to undo.
+ * A cursor naming a pruned row answers 410 and its reader starts again, which is harmless.
+ */
+export async function pruneErasureJournal(
+  pool: Pool,
+  retentionDays: number,
+  now = new Date()
+): Promise<number> {
+  const result = await pool.query(
+    `DELETE FROM erasure_journal WHERE created_at < $1::timestamptz - make_interval(days => $2)`,
+    [now, retentionDays]
+  );
+  return result.rowCount ?? 0;
 }
 
 /** The cursor names a row this database no longer has as the reader saw it. */
@@ -64,7 +85,7 @@ interface JournalRow {
  * Read up to `limit` rows after `after`, oldest first.
  *
  * The row the position names must still exist with the nonce the reader saw. After a backup
- * restore it is gone, or its id belongs to a new row, and the read throws
+ * restore, or once pruned, it is gone, or its id belongs to a new row, and the read throws
  * {@link ErasureJournalCursorStale}; the reader starts again from the start, which is safe
  * because re-applying an erasure is idempotent.
  */
