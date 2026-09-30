@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 import { act, render, screen, cleanup, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -66,23 +67,50 @@ const ROUTE_HEADER_STUBS: Record<string, React.ComponentType> = {
   '/feedback-requests': FeedbackRequestsHeaderStub,
 };
 
-/** A route match, shaped exactly like the resolver's `resolveRouteHeader` wants it. */
+/**
+ * The page the router has COMMITTED, when it differs from the address.
+ *
+ * TanStack Router writes the new location as a navigation starts and commits
+ * its matches later, so for a beat the address says one page while the outlet
+ * still draws the last one. `null` — the usual case — means the two agree.
+ */
+let mockCommittedPathname: string | null = null;
+
+/** The page the matches, and so the outlet, are on. */
+function committedPathname(): string {
+  return mockCommittedPathname ?? mockPathname;
+}
+
+/** A route match, shaped like the parts of it the shell reads. */
 interface MockRouteMatch {
   routeId: string;
+  pathname: string;
   staticData: { header: React.ComponentType | null };
 }
 
 /**
  * A two-level match chain — the pathless shell layout (no header of its own)
- * under the leaf route for `mockPathname`. Enough for `resolveRouteHeader` to
- * exercise its leaf-first walk: routes this suite doesn't stub resolve to
+ * under the leaf route for the committed page. Enough for `resolveRouteHeader`
+ * to exercise its leaf-first walk: routes this suite doesn't stub resolve to
  * `null`, exactly like a real route with no `staticData.header` would.
  */
 function mockRouteMatches(): MockRouteMatch[] {
+  const page = committedPathname();
   return [
-    { routeId: '_shell', staticData: { header: null } },
-    { routeId: mockPathname, staticData: { header: ROUTE_HEADER_STUBS[mockPathname] ?? null } },
+    { routeId: '_shell', pathname: '/', staticData: { header: null } },
+    { routeId: page, pathname: page, staticData: { header: ROUTE_HEADER_STUBS[page] ?? null } },
   ];
+}
+
+/** Every mount of a routed page, in order, by the path it was drawn for. */
+const pageMounts: string[] = [];
+
+/** The outlet's content: records each time a page mounts. */
+function RoutedPageStub({ pathname }: { pathname: string }) {
+  useEffect(() => {
+    pageMounts.push(pathname);
+  }, [pathname]);
+  return <div data-testid="routed-page">{pathname}</div>;
 }
 
 /** `?view=` and friends, serialized from `mockSearch` for `location.searchStr`. */
@@ -119,7 +147,12 @@ vi.mock('@tanstack/react-router', () => ({
     // auto-close retired with the drawer (P4).
     subscribe: () => () => {},
   }),
-  Outlet: () => <div data-testid="outlet">outlet</div>,
+  // Draws the committed page, as the real outlet does — never the address.
+  Outlet: () => (
+    <div data-testid="outlet">
+      <RoutedPageStub pathname={committedPathname()} />
+    </div>
+  ),
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: mockPathname }),
   useSearch: () => mockSearch,
@@ -602,6 +635,8 @@ describe('AppShell slot integration', () => {
     cleanup();
     leaveDesktopShell();
     mockSearch = {};
+    mockCommittedPathname = null;
+    pageMounts.length = 0;
     mockOpenRoom = null;
     mockIsMobile = false;
     useMobilePanelStore.setState({ panelUp: false });
@@ -1216,6 +1251,51 @@ describe('AppShell slot integration', () => {
 
       expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
     });
+  });
+
+  describe('the routed page (DOR-2616)', () => {
+    /** The shell as `renderAppShell` draws it, for `rerender` to redraw in place. */
+    function shellTree(queryClient: QueryClient) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={mockTransport}>
+            <TooltipProvider>
+              <AppShell />
+            </TooltipProvider>
+          </TransportProvider>
+        </QueryClientProvider>
+      );
+    }
+
+    it.each([
+      ['a phone', true],
+      ['a desktop', false],
+    ])(
+      'mounts each page once when the address changes before the page does, on %s',
+      (_width, isMobile) => {
+        mockIsMobile = isMobile;
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        mockPathname = '/channels';
+        const { rerender } = render(shellTree(queryClient));
+        expect(pageMounts).toEqual(['/channels']);
+
+        // A navigation home has started: the address is `/`, but the router has
+        // not committed its matches, so the outlet still draws the channel.
+        mockPathname = '/';
+        mockCommittedPathname = '/channels';
+        rerender(shellTree(queryClient));
+        expect(screen.getByTestId('routed-page')).toHaveTextContent('/channels');
+
+        // The commit: the page and its matches change together.
+        mockCommittedPathname = null;
+        rerender(shellTree(queryClient));
+        expect(screen.getByTestId('routed-page')).toHaveTextContent('/');
+
+        // The channel was never drawn a second time under the new address, and
+        // home arrived as a mount of its own.
+        expect(pageMounts).toEqual(['/channels', '/']);
+      }
+    );
   });
 
   describe('static chrome', () => {
