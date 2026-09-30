@@ -225,7 +225,7 @@ export const hostApiKeys = pgTable(
     check('host_api_keys_secret_hash', sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
     check(
       'host_api_keys_scopes',
-      sql`cardinality(${table.scopes}) BETWEEN 1 AND 7 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership']::text[]`
+      sql`cardinality(${table.scopes}) BETWEEN 1 AND 8 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership','communities:erasure_journal']::text[]`
     ),
     check(
       'host_api_keys_issuer',
@@ -1516,6 +1516,29 @@ export const erasureRequests = pgTable(
       .where(sql`${table.state} IN ('scheduled','running')`),
     index('erasure_requests_community_idx').on(table.communityId, table.state),
     index('erasure_requests_parent_idx').on(table.parentRequestId),
+  ]
+);
+
+/**
+ * One finished erasure, by id only, written in the transaction that finishes it. No foreign
+ * keys: a row must outlive the community and account it names, so that re-applying it after a
+ * backup restore erases them again. `nonce` lets a read cursor notice a restore.
+ */
+export const erasureJournal = pgTable(
+  'erasure_journal',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    nonce: uuid('nonce').notNull().defaultRandom(),
+    kind: text('kind').notNull(),
+    communityId: uuid('community_id'),
+    memberId: uuid('member_id'),
+    userId: text('user_id'),
+  },
+  (table) => [
+    check(
+      'erasure_journal_record',
+      sql`(${table.kind} = 'member' AND ${table.communityId} IS NOT NULL AND ${table.memberId} IS NOT NULL AND ${table.userId} IS NULL) OR (${table.kind} = 'account' AND ${table.userId} IS NOT NULL AND ${table.communityId} IS NULL AND ${table.memberId} IS NULL)`
+    ),
   ]
 );
 

@@ -32,6 +32,7 @@ import { registerHostRoutes } from '../routes/host.js';
 import { registerMembershipRoutes } from '../routes/memberships.js';
 import { registerHostLimitRoutes } from '../routes/host-limits.js';
 import { registerHostLegalHoldRoutes } from '../routes/host-legal-hold.js';
+import { registerHostErasureJournalRoutes } from '../erasure/journal-routes.js';
 import { registerHostLifecycleRoutes } from '../routes/host-lifecycle.js';
 import { registerShortNameRoutes } from '../routes/short-names.js';
 import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
@@ -852,6 +853,13 @@ const actions: Action<unknown>[] = [
     allowed: HOST_ROLES,
     status: 200,
     call: () => ({ method: 'GET', path: '/api/v1/host/takedowns' }),
+  }),
+  define({
+    rule: 'Read the erasure journal: host operator yes, community roles no',
+    route: 'GET /host/erasure-journal',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: '/api/v1/host/erasure-journal' }),
   }),
   define<{ id: string }>({
     rule: 'Read one takedown: host operator yes, community roles no',
@@ -2367,6 +2375,7 @@ it('classifies every registered route, and puts every host and settings route in
   registerHostLimitRoutes(modules, { pool, config, authority, now });
   registerHostLifecycleRoutes(modules, { pool, config, blobStore, authority, now });
   registerHostLegalHoldRoutes(modules, { pool, authority, now });
+  registerHostErasureJournalRoutes(modules, { pool, config, authority });
   registerShortNameRoutes(modules, { pool, config, authority, now, limitLookup: () => undefined });
   registerHostKeyRoutes(modules, { pool, auth, authority, now, confirmPassword: unused });
   registerImportRoutes(modules, {

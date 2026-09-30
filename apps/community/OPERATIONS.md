@@ -43,12 +43,14 @@ docker compose -f apps/community/compose.yml up -d --wait database
 docker compose -f apps/community/compose.yml build community
 docker compose -f apps/community/compose.yml exec -T database pg_restore -U community -d community --exit-on-error < "$community_restore_dir/database.dump"
 docker compose -f apps/community/compose.yml run --rm --no-deps -T --entrypoint tar community -C /data/blobs -xzf - < "$community_restore_dir/blobs.tar.gz"
+# Erase again everyone erased since the backup, from the journal copy kept off the server.
+docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js < /absolute/path/to/erasure-journal.log
 docker compose -f apps/community/compose.yml up -d community
 ```
 
 Use fresh, empty volumes. The image initializes its blob volume for the `node` user, which also extracts the archive. A permission error is a failed restore; fix the volume ownership before starting the app. With S3, restore the matching object versions into a separate bucket instead of extracting the file archive, and point the test deployment there.
 
-Start the app only after both restores finish. Check sign-in, channel history, a thread, and exact attachment bytes. Verify that a removed member still cannot sign in to the community. Keep the restored deployment private: it contains the same identities, secrets and community identifier as production.
+Start the app only after both restores and the re-applied erasures finish (see [Erasure requests](#erasure-requests)). Check sign-in, channel history, a thread, and exact attachment bytes. Verify that a removed member still cannot sign in to the community. Keep the restored deployment private: it contains the same identities, secrets and community identifier as production.
 
 A successful archive command is not a recovery test. Rehearse this process before depending on a backup schedule.
 
@@ -122,7 +124,7 @@ Then watch for failed notices. The server logs each attempt that does not delive
 
 ## Host API keys
 
-A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, and `communities:takedown` to take down content by its ID. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
+A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, `communities:takedown` to take down content by its ID, and `communities:erasure_journal` to copy the [erasure journal](#erasure-requests) off the server. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
 
 To create the first key on a host without a browser, run the offline command with `COMMUNITY_DATABASE_URL` set. It prints the key once on standard output, so pipe it straight into your secret store:
 
@@ -211,7 +213,33 @@ People erase themselves. A member can erase their messages from one community, o
 
 An account that has ever been a host operator cannot be deleted online, because host audit records must keep naming who acted. That person can still erase each of their memberships.
 
-Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`. Logs on many hosts are short-lived, so also set `COMMUNITY_ERASURE_JOURNAL` to a file path. Keep either the log lines or the journal **outside your backups, for at least as long as you keep backups.** A restored backup brings back everyone erased since it was taken. After any restore, stop the app and run the erasures again before you start it:
+Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`, and adds the same line to the **erasure journal** in the database. A restored backup brings back everyone erased since it was taken, and it takes the journal back to the same moment. So keep a copy of the journal **outside the server and outside your backups, for at least as long as you keep backups.**
+
+Copy it with a host API key that has only `communities:erasure_journal`, on a schedule (every hour is plenty), from a machine that is not the Community server. This script adds new lines to `erasure-journal.log` and remembers where it stopped in `erasure-journal.cursor`. It needs `curl` and `jq`:
+
+```bash
+set -euo pipefail
+url="$COMMUNITY_URL/api/v1/host/erasure-journal"
+touch erasure-journal.log erasure-journal.cursor
+while :; do
+  cursor=$(cat erasure-journal.cursor)
+  status=$(curl -sS -o page.json -w '%{http_code}' --get \
+    -H "Authorization: Bearer $COMMUNITY_JOURNAL_KEY" \
+    --data-urlencode 'limit=1000' ${cursor:+--data-urlencode "cursor=$cursor"} "$url")
+  if [ "$status" = 410 ]; then : > erasure-journal.cursor; continue; fi
+  [ "$status" = 200 ] || { echo "Erasure journal pull failed: HTTP $status" >&2; exit 1; }
+  jq -c '.lines[]' page.json >> erasure-journal.log
+  jq -r '.nextCursor' page.json > erasure-journal.cursor
+  [ "$(jq -r '.hasMore' page.json)" = true ] || break
+done
+rm -f page.json
+```
+
+After a restore, the saved cursor no longer matches, so the next pull reads the journal from the start again and adds lines the copy already has. That is safe: running an erasure twice changes nothing. Alert when the script fails, the same way you would for a failed backup.
+
+You can also set `COMMUNITY_ERASURE_JOURNAL` to a file path, and the server appends every line there too. That file is only useful if it lives on storage that outlasts the server and stays out of your backups; on a host whose disk is replaced at each deploy, such as a Fly Machine without a volume, rely on the pulled copy.
+
+After any restore, stop the app and run the erasures again from your copy before you start it:
 
 ```bash
 docker compose -f apps/community/compose.yml stop community
