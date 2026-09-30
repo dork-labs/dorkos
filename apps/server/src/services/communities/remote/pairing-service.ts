@@ -159,7 +159,7 @@ export class RemoteCommunityNameNotFoundError extends Error {
  * The host refused a short-name lookup or a pairing start because this server asked too often.
  * Both are limited per caller, so the address itself may be fine.
  */
-export class RemoteCommunityLookupRateLimitedError extends Error {
+export class RemoteCommunityRateLimitedError extends Error {
   /**
    * Record the host's refusal, with its own wait when it named one.
    *
@@ -167,7 +167,7 @@ export class RemoteCommunityLookupRateLimitedError extends Error {
    */
   constructor(readonly retryAfterSeconds?: number) {
     super('The community host is limiting requests from this server');
-    this.name = 'RemoteCommunityLookupRateLimitedError';
+    this.name = 'RemoteCommunityRateLimitedError';
   }
 }
 
@@ -594,8 +594,7 @@ export class RemoteCommunityPairingService {
     } catch (error) {
       if (!(error instanceof PinnedHttpError)) throw error;
       // The host limits pairing starts per caller, as it does name lookups: the address is fine.
-      if (error.status === 429)
-        throw new RemoteCommunityLookupRateLimitedError(error.retryAfterSeconds);
+      if (error.status === 429) throw new RemoteCommunityRateLimitedError(error.retryAfterSeconds);
       // A server built before tenant-qualified routes has no such route, so its 404 carries no
       // code. A coded 404 (NOT_FOUND) is today's server saying the community is gone, which an
       // upgrade would not fix.
@@ -649,7 +648,7 @@ export class RemoteCommunityPairingService {
       if (error instanceof PinnedHttpError && error.status === 404)
         throw new RemoteCommunityNameNotFoundError();
       if (error instanceof PinnedHttpError && error.status === 429)
-        throw new RemoteCommunityLookupRateLimitedError(error.retryAfterSeconds);
+        throw new RemoteCommunityRateLimitedError(error.retryAfterSeconds);
       throw error;
     }
     const parsed = CommunityWireShortNameLookupSchema.safeParse(answer);

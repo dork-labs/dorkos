@@ -2,9 +2,10 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
-import type {
-  CommunityConnectionDescriptor,
-  CommunityConnectionStartResponse,
+import {
+  describeCommunityRetryWait,
+  type CommunityConnectionDescriptor,
+  type CommunityConnectionStartResponse,
 } from '@dorkos/shared/community-connections';
 import { useTransport } from '@/layers/shared/model';
 import { isCommunityAuthorityCurrent, type ConfirmedCommunityAuthority } from '@/layers/shared/lib';
@@ -45,7 +46,7 @@ import {
  *   link, so the example is built on the host they typed.
  * - `COMMUNITY_NAME_NOT_FOUND`: the host is real but knows no community by that
  *   short address. Here the spelling really is the thing to check.
- * - `COMMUNITY_LOOKUP_RATE_LIMITED`: the host limits how often one machine may
+ * - `COMMUNITY_RATE_LIMITED`: the host limits how often one machine may
  *   look up a name or start a connection, and this one has reached it. The
  *   address may be fine; the answer is to wait, for as long as the host said
  *   when it said.
@@ -68,8 +69,8 @@ function startErrorMessage(error: unknown, address: string | undefined): string 
       return `That address has more than one community on it. Enter the link for the one you want: its short address, like ${shortAddressExample(address)}, or its full link, which has /c/ in it.`;
     case 'COMMUNITY_NAME_NOT_FOUND':
       return 'No community uses that short address on this host. Check the spelling, or ask for the community’s full link.';
-    case 'COMMUNITY_LOOKUP_RATE_LIMITED':
-      return `This DorkOS has tried that community too many times in a short while. Your address may be fine. Wait ${waitFor(refusal.body?.retryAfterSeconds)}, then try again.`;
+    case 'COMMUNITY_RATE_LIMITED':
+      return `This DorkOS has tried that community too many times in a short while. Your address may be fine. Wait ${describeCommunityRetryWait(refusal.body?.retryAfterSeconds)}, then try again.`;
     case 'COMMUNITY_UPGRADE_REQUIRED':
       return 'This community’s server is too old to connect to this DorkOS. Ask whoever runs the community to update it, then try again.';
     default:
@@ -85,15 +86,7 @@ function startErrorMessage(error: unknown, address: string | undefined): string 
 function blamesAddress(error: unknown): boolean {
   const code =
     typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : '';
-  return code !== 'COMMUNITY_LOOKUP_RATE_LIMITED' && code !== 'COMMUNITY_UPGRADE_REQUIRED';
-}
-
-/** How long to wait, from the host's own `Retry-After` in seconds, or a minute when it gave none. */
-function waitFor(seconds: unknown): string {
-  if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds < 1) return 'a minute';
-  if (seconds < 60) return seconds === 1 ? '1 second' : `${seconds} seconds`;
-  const minutes = Math.ceil(seconds / 60);
-  return minutes === 1 ? 'a minute' : `${minutes} minutes`;
+  return code !== 'COMMUNITY_RATE_LIMITED' && code !== 'COMMUNITY_UPGRADE_REQUIRED';
 }
 
 /** A short address on the host the person typed, or a generic one when it cannot be read. */

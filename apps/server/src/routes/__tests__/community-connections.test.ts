@@ -40,7 +40,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
 import { createCommunityConnectionsRouter } from '../community-connections.js';
 import { RemoteConnectionStore } from '../../services/communities/remote/connection-store.js';
 import {
-  RemoteCommunityLookupRateLimitedError,
+  RemoteCommunityRateLimitedError,
   RemoteCommunityNameNotFoundError,
   RemoteCommunityPairingService,
   RemotePairingBusyError,
@@ -221,8 +221,8 @@ describe('local connection route authority and public projection', () => {
       new RemoteConnectionStore(limitedDirectory)
     );
     vi.spyOn(limitedService, 'start')
-      .mockRejectedValueOnce(new RemoteCommunityLookupRateLimitedError(17))
-      .mockRejectedValueOnce(new RemoteCommunityLookupRateLimitedError());
+      .mockRejectedValueOnce(new RemoteCommunityRateLimitedError(17))
+      .mockRejectedValueOnce(new RemoteCommunityRateLimitedError());
     const limitedApp = express();
     limitedApp.use(express.json());
     limitedApp.use('/api/community-connections', createCommunityConnectionsRouter(limitedService));
@@ -237,7 +237,7 @@ describe('local connection route authority and public projection', () => {
       // The host's wait is passed on, as a header and in the body the dialog reads.
       expect(response.headers['retry-after']).toBe('17');
       expect(response.body).toEqual({
-        code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
+        code: 'COMMUNITY_RATE_LIMITED',
         error:
           'This DorkOS has tried that community too many times in a short while. Wait 17 seconds, then try again.',
         retryAfterSeconds: 17,
@@ -250,7 +250,7 @@ describe('local connection route authority and public projection', () => {
       expect(unnamed.status).toBe(429);
       expect(unnamed.headers['retry-after']).toBeUndefined();
       expect(unnamed.body).toEqual({
-        code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
+        code: 'COMMUNITY_RATE_LIMITED',
         error:
           'This DorkOS has tried that community too many times in a short while. Wait a minute, then try again.',
       });

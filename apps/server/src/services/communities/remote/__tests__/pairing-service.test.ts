@@ -18,7 +18,7 @@ import {
 import { EncryptedFileCredentialStore } from '../../../core/credential-provider.js';
 import {
   RemoteCommunityPairingService,
-  RemoteCommunityLookupRateLimitedError,
+  RemoteCommunityRateLimitedError,
   RemoteCommunityNameNotFoundError,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
@@ -455,7 +455,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     try {
       for (const link of [origin, `${origin}/c/${remoteCommunityId}`]) {
         const refusal = service.start('limited-owner', link, 'Limited install');
-        await expect(refusal, link).rejects.toBeInstanceOf(RemoteCommunityLookupRateLimitedError);
+        await expect(refusal, link).rejects.toBeInstanceOf(RemoteCommunityRateLimitedError);
         await expect(refusal, link).rejects.toMatchObject({ retryAfterSeconds: 42 });
       }
     } finally {
@@ -2051,7 +2051,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       try {
         const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
         const refusal = service.start('name-owner', `${origin}/busy-club`, 'Limited');
-        await expect(refusal).rejects.toBeInstanceOf(RemoteCommunityLookupRateLimitedError);
+        await expect(refusal).rejects.toBeInstanceOf(RemoteCommunityRateLimitedError);
         // The host's own wait is carried, so the person can be told how long.
         await expect(refusal).rejects.toMatchObject({ retryAfterSeconds: 17 });
         expect(pairingStarts()).toEqual([]);

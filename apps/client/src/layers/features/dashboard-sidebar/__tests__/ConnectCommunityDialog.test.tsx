@@ -254,7 +254,7 @@ describe('ConnectCommunityDialog', () => {
   // Retry-After is ignored.
   it('asks the person to wait, for as long as the host said, when lookups are limited', async () => {
     const alert = await refusedWith(
-      coded(429, 'COMMUNITY_LOOKUP_RATE_LIMITED', { retryAfterSeconds: 17 })
+      coded(429, 'COMMUNITY_RATE_LIMITED', { retryAfterSeconds: 17 })
     );
     expect(alert).toHaveTextContent(
       'This DorkOS has tried that community too many times in a short while. Your address may be fine. Wait 17 seconds, then try again.'
@@ -264,10 +264,10 @@ describe('ConnectCommunityDialog', () => {
 
   it('rounds a long wait up to minutes, and says a minute when the host named none', async () => {
     expect(
-      await refusedWith(coded(429, 'COMMUNITY_LOOKUP_RATE_LIMITED', { retryAfterSeconds: 90 }))
+      await refusedWith(coded(429, 'COMMUNITY_RATE_LIMITED', { retryAfterSeconds: 90 }))
     ).toHaveTextContent('Wait 2 minutes, then try again.');
     cleanup();
-    expect(await refusedWith(coded(429, 'COMMUNITY_LOOKUP_RATE_LIMITED'))).toHaveTextContent(
+    expect(await refusedWith(coded(429, 'COMMUNITY_RATE_LIMITED'))).toHaveTextContent(
       'Wait a minute, then try again.'
     );
   });
@@ -295,7 +295,7 @@ describe('ConnectCommunityDialog', () => {
     expect(address).toHaveAttribute('aria-invalid', 'true');
     cleanup();
 
-    const limited = await refusedWith(coded(429, 'COMMUNITY_LOOKUP_RATE_LIMITED'));
+    const limited = await refusedWith(coded(429, 'COMMUNITY_RATE_LIMITED'));
     const again = screen.getByLabelText('Community address');
     await waitFor(() => expect(again).toHaveFocus());
     expect(again.getAttribute('aria-describedby')?.split(' ')).toContain(limited.id);

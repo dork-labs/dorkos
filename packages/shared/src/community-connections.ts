@@ -189,3 +189,20 @@ export interface CommunityConnectionTransport {
   /** Return a remembered destination only when the owner can still read its room. */
   resolveCommunityNavigation(ref: string): Promise<CommunityNavigationDestination | null>;
 }
+
+/**
+ * Say how long to wait before trying a Community again, from the wait it named in `Retry-After`.
+ *
+ * Whole seconds under a minute, rounded-up minutes past it, and "a minute" when no usable wait
+ * was given. The server's `COMMUNITY_RATE_LIMITED` text and the connect dialog both use it, so
+ * the two never disagree.
+ *
+ * @param seconds - The wait in whole seconds, or anything else when none is known.
+ * @returns A phrase to follow "Wait", such as "17 seconds" or "2 minutes".
+ */
+export function describeCommunityRetryWait(seconds: unknown): string {
+  if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds < 1) return 'a minute';
+  if (seconds < 60) return seconds === 1 ? '1 second' : `${seconds} seconds`;
+  const minutes = Math.ceil(seconds / 60);
+  return minutes === 1 ? 'a minute' : `${minutes} minutes`;
+}

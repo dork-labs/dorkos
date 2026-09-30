@@ -16,6 +16,7 @@ import {
   CommunityConnectionDescriptorSchema,
   CommunityDisconnectResponseSchema,
   type CommunityConnectionDescriptor,
+  describeCommunityRetryWait,
 } from '@dorkos/shared/community-connections';
 import {
   CommunityNavigationMoveRequestSchema,
@@ -36,7 +37,7 @@ import {
 import {
   RemoteCommunityPairingService,
   RemotePairingBusyError,
-  RemoteCommunityLookupRateLimitedError,
+  RemoteCommunityRateLimitedError,
   RemoteCommunityNameNotFoundError,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
@@ -85,14 +86,6 @@ export function resolveCommunityOwner(req: Request, res: Response): string | nul
   return caller.id;
 }
 
-/** A host's wait in words: whole seconds under a minute, rounded-up minutes past it. */
-function waitFor(seconds: number | undefined): string {
-  if (seconds === undefined) return 'a minute';
-  if (seconds < 60) return seconds === 1 ? '1 second' : `${seconds} seconds`;
-  const minutes = Math.ceil(seconds / 60);
-  return minutes === 1 ? 'a minute' : `${minutes} minutes`;
-}
-
 function failure(res: Response, error: unknown): void {
   if (error instanceof RemotePairingBusyError) {
     // Coded so a client can tell "another check of this connection is in
@@ -111,13 +104,13 @@ function failure(res: Response, error: unknown): void {
       code: 'COMMUNITY_NAME_NOT_FOUND',
       error: 'No community uses that short address on this host. Check the spelling.',
     });
-  } else if (error instanceof RemoteCommunityLookupRateLimitedError) {
+  } else if (error instanceof RemoteCommunityRateLimitedError) {
     // The host's own wait, passed on so the person is told how long, not left to guess.
     const { retryAfterSeconds } = error;
     if (retryAfterSeconds !== undefined) res.set('Retry-After', String(retryAfterSeconds));
     res.status(429).json({
-      code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
-      error: `This DorkOS has tried that community too many times in a short while. Wait ${waitFor(retryAfterSeconds)}, then try again.`,
+      code: 'COMMUNITY_RATE_LIMITED',
+      error: `This DorkOS has tried that community too many times in a short while. Wait ${describeCommunityRetryWait(retryAfterSeconds)}, then try again.`,
       ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
     });
   } else if (error instanceof RemoteCommunityUpgradeRequiredError) {
