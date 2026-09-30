@@ -362,7 +362,7 @@ export class FlyTigrisGraphqlClient {
           method: 'POST',
           headers: {
             accept: 'application/json',
-            authorization: `Bearer ${this.accessToken}`,
+            authorization: flyGraphqlAuthorization(this.accessToken),
             'content-type': 'application/json',
           },
           body: JSON.stringify({ query, variables }),
@@ -412,4 +412,22 @@ export class FlyTigrisGraphqlClient {
       this.signal?.removeEventListener('abort', cancel);
     }
   }
+}
+
+/**
+ * Build the Authorization header flyctl itself sends to Fly's GraphQL API for a token.
+ *
+ * `fly auth token` prints the session with its scheme stripped. A scoped token from
+ * `fly tokens create` is a macaroon (`fm1r_`, `fm1a_` or `fm2_`), which flyctl sends under
+ * the `FlyV1` scheme; anything else goes under `Bearer`. This mirrors fly-go's
+ * `tokens.GraphQLHeader`, so a scoped token reaches the API the way `fly` would send it.
+ *
+ * @param token - The comma-separated token list `fly auth token --json` printed.
+ * @returns The header value. It contains the token, so it must never be logged.
+ */
+export function flyGraphqlAuthorization(token: string): string {
+  const macaroon = token
+    .split(',')
+    .some((part) => ['fm1r', 'fm1a', 'fm2'].includes(part.trim().split('_', 1)[0]!));
+  return `${macaroon ? 'FlyV1' : 'Bearer'} ${token}`;
 }

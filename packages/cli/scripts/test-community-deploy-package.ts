@@ -48,6 +48,18 @@ const fakeBin = join(temporary, 'bin');
 const statePath = join(temporary, 'provider-state.json');
 // Every GraphQL document the packaged launcher sends, checked afterwards against Fly's schema.
 const graphqlLogPath = join(temporary, 'graphql-documents.jsonl');
+// Scoped credentials a person might export (DOR-2602). Setup must hand each to `fly` or `neonctl`
+// and write none of them anywhere. They share one mark, so one search finds any of them.
+const CREDENTIAL_MARK = 'dor2602_package_sentinel';
+const CREDENTIAL_SENTINELS = {
+  FLY_ACCESS_TOKEN: `FlyV1 fm2_${CREDENTIAL_MARK}_access`,
+  FLY_API_TOKEN: `FlyV1 fm2_${CREDENTIAL_MARK}_api`,
+  NEON_API_KEY: `napi_${CREDENTIAL_MARK}_neon`,
+};
+// Which credential variables reached each fake, as booleans, and the Authorization header of
+// every GraphQL request. The launcher writes neither; these are the proof's own records.
+const credentialLogPath = join(temporary, 'credential-env.jsonl');
+const authorizationLogPath = join(temporary, 'graphql-authorization.jsonl');
 
 async function migrationCompatibilityId(): Promise<string> {
   const hash = createHash('sha256');
@@ -119,11 +131,17 @@ const read=()=>JSON.parse(fs.readFileSync(statePath,'utf8'));
 const write=(value)=>fs.writeFileSync(statePath,JSON.stringify(value));
 const args=process.argv.slice(2);
 const at=(flag)=>args[args.indexOf(flag)+1];
+const recordCredentials=(bin)=>fs.appendFileSync(${JSON.stringify(credentialLogPath)},JSON.stringify({bin,got:Object.fromEntries(Object.entries(${JSON.stringify(CREDENTIAL_SENTINELS)}).map(([name,value])=>[name,process.env[name]===value]))})+'\\n');
 `;
 
 const flyFixture = `#!${process.execPath}
 ${commonPrelude}
 const state=read();
+recordCredentials('fly');
+// As flyctl does: the first SET token variable wins over the saved session (an empty one leaves
+// the session in charge), printed without its scheme.
+const flyTokenVariable=['FLY_ACCESS_TOKEN','FLY_API_TOKEN'].find((name)=>name in process.env);
+if(args[0]==='auth'&&args[1]==='token'&&flyTokenVariable&&process.env[flyTokenVariable]) { process.stdout.write(JSON.stringify({token:process.env[flyTokenVariable].replace(/^(FlyV1|Bearer) /,'')})); process.exit(0); }
 let value;
 if(args[0]==='version') value={Name:'fly',Version:'0.4.104'};
 else if(args[0]==='orgs'&&args[1]==='show') value={ID:'fly-org-id',InternalNumericID:'1',Name:'Dork Labs',Slug:args[2],Type:'SHARED'};
@@ -148,6 +166,7 @@ process.stdout.write(JSON.stringify(value));
 const neonFixture = `#!${process.execPath}
 ${commonPrelude}
 const state=read();
+recordCredentials('neonctl');
 let value;
 if(args[0]==='--version') { process.stdout.write('5.0.0'); process.exit(0); }
 else if(args[0]==='orgs') value=[{id:'org-dorian',name:'Dorian'}];
@@ -179,6 +198,7 @@ const json=(value,status=200)=>new Response(JSON.stringify(value),{status,header
 const TIGRIS_ENVIRONMENT=${JSON.stringify(TIGRIS_ENVIRONMENT)};
 globalThis.fetch=async (input,init={})=>{
   const url=String(input);
+  if(url==='https://api.fly.io/graphql') fs.appendFileSync(${JSON.stringify(authorizationLogPath)},JSON.stringify(new Headers(init.headers).get('authorization'))+'\\n');
   const state=JSON.parse(fs.readFileSync(statePath,'utf8'));
   if(url.endsWith('/health')) return json({status:'ok'});
   // The registry, offline: an anonymous pull token, then the index by its attested digest.
@@ -312,6 +332,7 @@ try {
     HOME: fakeHome,
     DORK_HOME: dorkHome,
     NODE_OPTIONS: `--import=${bootstrapPath}`,
+    ...CREDENTIAL_SENTINELS,
   } as Record<string, string>;
 
   const dryRun = await runPlain(binary, args(['--dry-run']), environment);
@@ -383,6 +404,50 @@ try {
     )
   ) {
     throw new Error('Packaged launch exposed the bucket secret key');
+  }
+  // DOR-2602: every exported credential reached `fly` and `neonctl`, GraphQL used the one flyctl
+  // reads first under flyctl's own scheme, and no value reached any output or saved file.
+  const credentialRecords = (await readFile(credentialLogPath, 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as { bin: string; got: Record<string, boolean> });
+  for (const bin of ['fly', 'neonctl']) {
+    const records = credentialRecords.filter((record) => record.bin === bin);
+    if (records.length === 0 || records.some(({ got }) => !Object.values(got).every(Boolean))) {
+      throw new Error(`Packaged launch did not hand every exported credential to ${bin}`);
+    }
+  }
+  const authorizations = (await readFile(authorizationLogPath, 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as string);
+  const expectedAuthorization = CREDENTIAL_SENTINELS.FLY_ACCESS_TOKEN;
+  if (
+    authorizations.length === 0 ||
+    authorizations.some((value) => value !== expectedAuthorization)
+  ) {
+    throw new Error(
+      'Packaged launch did not send the exported Fly token to GraphQL as flyctl would'
+    );
+  }
+  const notice =
+    'Using the Fly token in FLY_ACCESS_TOKEN and the Neon key in NEON_API_KEY from your environment';
+  if (![dryRun.output, first.output, second.output].every((text) => text.includes(notice))) {
+    throw new Error('Packaged launch did not say which exported credentials it used');
+  }
+  const savedFiles = (await readdir(dorkHome, { recursive: true, withFileTypes: true })).filter(
+    (entry) => entry.isFile()
+  );
+  const savedTexts = await Promise.all(
+    savedFiles.map((entry) => readFile(join(entry.parentPath, entry.name), 'utf8'))
+  );
+  if (savedFiles.length === 0) throw new Error('Packaged launch saved no files to search');
+  if (
+    [dryRun.output, first.output, second.output, ...savedTexts].some((text) =>
+      text.includes(CREDENTIAL_MARK)
+    )
+  ) {
+    throw new Error('Packaged launch wrote an exported credential to its output or saved files');
   }
   // The fake answers any query, so it cannot tell whether Fly would; the schema snapshot can
   // (DOR-2584: `node(id:)` passed every fake and failed the first real call).

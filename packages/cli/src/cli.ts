@@ -243,13 +243,17 @@ const DORK_HOME = env.DORK_HOME || defaultDorkHome();
 // starts neither the local server nor DorkOS Cloud.
 if (process.argv[2] === 'community') {
   try {
-    const [dispatcher, releaseContract] = await Promise.all([
+    const [dispatcher, releaseContract, credentialEnv] = await Promise.all([
       import('./commands/community-deploy/community-dispatcher.js'),
       import('@dorkos/shared/community-release-manifest'),
+      import('./commands/community-deploy/runtime/credential-env.js'),
     ]);
     // Child processes need this narrow set of platform variables exactly as the
     // launching shell supplied them. The parsed CLI env intentionally omits
-    // variables the CLI itself does not consume.
+    // variables the CLI itself does not consume. Non-empty Fly and Neon
+    // credential variables ride along so a scoped token a person exported is
+    // the one `fly` and `neonctl` sign in with, not their saved sign-in
+    // (DOR-2602); the dispatcher hands them to those two tools only.
     const rawProcessEnv = process.env;
     const childEnv = Object.fromEntries(
       [
@@ -269,6 +273,7 @@ if (process.argv[2] === 'community') {
         return typeof value === 'string' ? [[name, value]] : [];
       })
     );
+    Object.assign(childEnv, credentialEnv.pickCommunityCredentialEnv(rawProcessEnv));
     const exitCode = await dispatcher.runCommunityDispatcher(process.argv.slice(3), {
       cliVersion: __CLI_VERSION__,
       dorkHome: DORK_HOME,
