@@ -105,7 +105,8 @@ async function snapshot(host: ReplacementHost, communityId: string, except: stri
           SELECT id,member_id,revoked_at,scopes FROM connection_grants WHERE community_id=$1) g)
          AS grants,
        (SELECT json_agg(a ORDER BY a.id) FROM (
-          SELECT id,owner_member_id,active,revoked_at FROM agents WHERE community_id=$1) a)
+          SELECT id,owner_member_id,enrolled_by_grant_id,active,revoked_at FROM agents
+          WHERE community_id=$1) a)
          AS agents,
        (SELECT json_agg(k ORDER BY k.id) FROM (
           SELECT id,revoked_at FROM agent_credentials WHERE community_id=$1) k) AS credentials,
@@ -331,8 +332,8 @@ describe('completion equals a transfer (AC-8)', () => {
   it.each(['active', 'archived', 'held'] as const)(
     'swaps only the two roles, in an %s community, and leaves everything else as it was',
     async (lifecycle) => {
-      // Purpose: fails if the claim touches any other member, grant, agent, invitation, channel,
-      // or entry, moves the lifecycle, forgets to bump its version, leaves two owners or none,
+      // Purpose: fails if the claim touches any other member, grant, agent (or which installation
+      // enrolled it), invitation, channel, or entry, moves the lifecycle, forgets to bump its version, leaves two owners or none,
       // or takes away the old owner's membership, handle, connection, or agent.
       const c = await ownedCommunity(plain);
       const channel = await plain.h.call(`${c.base}/channels`, {
@@ -407,9 +408,20 @@ describe('completion equals a transfer (AC-8)', () => {
       }
       const me = await plain.h.call(`${c.base}/me`, { cookie: c.owner.cookie });
       expect((await me.json()).member.role).toBe('member');
-      // Their agent is still theirs to remove, as after a transfer.
+      // Their agent is still theirs to remove, as after a transfer. It stays with the installation
+      // that enrolled it: the new owner's own installation cannot reach it, since a connection
+      // never moderates.
       if (lifecycle === 'active') {
         const agentId = (await enrolled.json()).agent.memberId as string;
+        const claimantGrant = await pairInstall(plain.h, c.communityId, claimant.cookie);
+        expect(
+          (
+            await plain.h.call(`${c.base}/agents/${agentId}`, {
+              method: 'DELETE',
+              bearer: claimantGrant,
+            })
+          ).status
+        ).toBe(404);
         expect(
           (
             await plain.h.call(`${c.base}/agents/${agentId}`, {
