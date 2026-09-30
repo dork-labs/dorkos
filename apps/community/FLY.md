@@ -245,16 +245,26 @@ neonctl connection-string <neon-branch-id> --project-id <neon-project-id> \
   --no-pooled --ssl require > "$backup_dir/database-url"
 ```
 
-You can also copy it from Neon's **Connect** dialog, with **Connection pooling** turned off. Read it into a variable, export, and check that the export opens:
+You can also copy it from Neon's **Connect** dialog, with **Connection pooling** turned off.
+
+A password typed into a command can be seen by other programs on your computer while the command runs. So split the address: the password goes into a private password file that `pg_dump` reads, and the command gets the address without it. Then export, and check that the export opens:
 
 ```bash
 database_url="$(cat "$backup_dir/database-url")"
-pg_dump --format=custom --file="$backup_dir/database.dump" --dbname="$database_url"
-unset database_url
+database_password="${database_url#*://*:}"; database_password="${database_password%%@*}"
+database_host="${database_url#*@}"; database_host="${database_host%%/*}"
+printf '%s:5432:community:community_owner:%s\n' "$database_host" "$database_password" \
+  > "$backup_dir/pgpass"
+unset database_url database_password
+export PGPASSFILE="$backup_dir/pgpass"
+pg_dump --format=custom --file="$backup_dir/database.dump" \
+  --dbname="postgresql://community_owner@$database_host/community?sslmode=require&channel_binding=require"
 pg_restore --list "$backup_dir/database.dump" > /dev/null
 ```
 
-Your `pg_dump` must be version 17 or newer, because guided setup creates a PostgreSQL 17 database. The database address is a password. Delete `database-url` when you finish, or keep it only in encrypted storage.
+If the password contains `:` or `\`, put a `\` in front of each one in the `pgpass` file.
+
+Your `pg_dump` must be version 17 or newer, because guided setup creates a PostgreSQL 17 database. The address and the `pgpass` file both hold the password. Delete them when you finish, or keep them only in encrypted storage.
 
 ### 4. Copy every file
 
@@ -327,7 +337,7 @@ Stop if the check fails. From the manifest, note `image.digest`, `minimumFlyctlV
 
 Download the manifest for your running version the same way. If the two `migrationCompatibilityId` values differ, the upgrade changes the database. From then on, only your backup can take you back.
 
-Take and check a fresh recovery set (steps 2 to 6). Then save the configuration Fly holds for your app. Guided setup deployed with a temporary configuration file and deleted it afterward, so this is how you get one:
+Take and check a fresh recovery set (steps 2 to 6), and write down its folder path: a roll-back needs exactly this set. Then save the configuration Fly holds for your app. Guided setup deployed with a temporary configuration file and deleted it afterward, so this is how you get one:
 
 ```bash
 fly config save --app <app-name> --config "$backup_dir/fly.toml"
@@ -346,28 +356,41 @@ Never deploy a tag such as `latest`. Afterward:
 2. Confirm its digest is the new release's Linux Intel digest. The manifest lists it under `image.platforms` when it has one. Otherwise run `docker buildx imagetools inspect ghcr.io/dork-labs/dorkos-community@<image.digest>` and read the `linux/amd64` line.
 3. Run the checks in [Upgrade and roll back](OPERATIONS.md#upgrade-and-roll-back): `/health`, sign-in, posting, live updates and one attachment.
 
-The setup journal still names the original version. That is expected: it records setup, not what runs today.
+The setup journal still names the original version. That is expected: it records setup, not what runs today. Keep the manifest for the release you ran before this upgrade with its recovery set. Its `image.digest` is what a roll-back deploys.
 
 ### 8. Roll back
 
 **Not yet rehearsed on guided setup.** Never start an older image against a database an upgrade has changed. To go back, restore the database, the files and the image together, all from the recovery set you took before the upgrade. Everything written after that backup is lost, so save it first.
 
-1. Pause writes, then take a copy of the current state (steps 3 and 4) into a new folder.
+Start by naming the two folders. `pre_upgrade` is the recovery set you took in step 7, just before this upgrade. `current_copy` is a new, empty folder for what the community holds now. Do not reuse `backup_dir`: step 2 points it at a new folder every time you run it.
+
+```bash
+pre_upgrade=<path to the recovery set from step 7>
+current_copy="$(mktemp -d "$HOME/community-current.XXXXXXXX")"
+```
+
+1. Pause writes. Then take a copy of the current state by following steps 3 and 4 with `backup_dir="$current_copy"`. Set `backup_dir="$pre_upgrade"` again when you finish.
 2. Return the Neon database to the moment you paused before the upgrade. Neon keeps the current state as a separate branch under the name you give:
 
    ```bash
-   neonctl branches restore <neon-branch-id> "^self@$(cat "$backup_dir/paused-at")" \
+   neonctl branches restore <neon-branch-id> "^self@$(cat "$pre_upgrade/paused-at")" \
      --project-id <neon-project-id> --preserve-under-name before-rollback
    ```
 
-   This works only within your Neon project's history window. See Neon's [restore guide](https://neon.com/docs/guides/branch-restore). Outside that window, `database.dump` is your copy. Restoring it over the live Neon database is not written up here yet. Ask for help before trying it.
+   This works only within your Neon project's history window. See Neon's [restore guide](https://neon.com/docs/guides/branch-restore). Outside that window, `$pre_upgrade/database.dump` is your copy. Restoring it over the live Neon database is not written up here yet. Ask for help before trying it.
 
-3. Put the files back, with a key that can write. `--delete` removes files added after the backup, which the restored database no longer knows about:
+3. Put the files back, with a key that can write. `--delete` removes files added after the backup, which the restored database no longer knows about. They are still in `$current_copy`:
 
    ```bash
-   aws s3 sync "$backup_dir/files" s3://<bucket-name> --delete \
+   aws s3 sync "$pre_upgrade/files" s3://<bucket-name> --delete \
      --endpoint-url https://t3.storage.dev --region auto
    ```
 
-4. Deploy the old image by the `releaseDigest` you saved in step 1, with the same `fly deploy` command as step 7.
+4. Deploy the release you ran before this upgrade. Use `image.digest` from that release's manifest (step 7), not the digest in the setup journal: the journal names the version from setup day, which may be older still.
+
+   ```bash
+   fly deploy --app <app-name> --config "$pre_upgrade/fly.toml" \
+     --image ghcr.io/dork-labs/dorkos-community@<previous image.digest> --ha=false
+   ```
+
 5. Resume service as in step 5. If `fly machine list` shows the Machine still stopped, run `fly machine start <machine-id> --app <app-name>`. Then run the same checks as after an upgrade.
