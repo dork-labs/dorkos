@@ -44,12 +44,24 @@ import {
   cleanupCommunityLiveGate,
   type CommunityLiveGateJournal,
 } from './community-deploy-live-cleanup.js';
+import {
+  guardCommunityLiveProvenance,
+  probeCommunityLiveProvenance,
+  readFlyGraphql,
+} from './community-deploy-live-provenance.js';
 import { readFlyApps } from '../src/commands/community-deploy/fly-read.js';
 import { destroyFlyApp } from '../src/commands/community-deploy/fly-mutate.js';
-import { readNeonProjects } from '../src/commands/community-deploy/neon-read.js';
+import {
+  readNeonBranchTopology,
+  readNeonProjects,
+} from '../src/commands/community-deploy/neon-read.js';
 import { deleteNeonProject } from '../src/commands/community-deploy/neon-mutate.js';
 import { FlyTigrisGraphqlClient } from '../src/commands/community-deploy/fly-graphql-client.js';
-import { readFlySessionCredential } from '../src/commands/community-deploy/tigris-session.js';
+import {
+  readFlySecretInventory,
+  readFlySessionCredential,
+} from '../src/commands/community-deploy/tigris-session.js';
+import { runProviderCommand } from '../src/commands/community-deploy/provider-process.js';
 
 // Derived from the launcher's own deadlines; see COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS.
 const TIMEOUT_MS = COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS;
@@ -60,6 +72,8 @@ const TIMEOUT_MS = COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS;
  * should the resumed launcher exit cleanly without sending it.
  */
 const DELIVERED_CAPTURE_MS = 30_000;
+/** Deadline for the no-op `fly ssh console` probe; the first one may issue an SSH certificate. */
+const SSH_PROBE_TIMEOUT_MS = 120_000;
 
 /** A launcher running in a PTY: its exit, and a way to stop it from the gate's finally. */
 interface LauncherRun {
@@ -354,9 +368,40 @@ async function main(): Promise<void> {
     const credential = await readFlySessionCredential(fly);
     const tigris = <T>(operation: (client: FlyTigrisGraphqlClient) => Promise<T>) =>
       credential.use((token) => operation(new FlyTigrisGraphqlClient({ accessToken: token })));
+    const flyGraphql = (query: string, variables: Readonly<Record<string, string>>) =>
+      credential.use((accessToken) => readFlyGraphql({ accessToken, query, variables }));
     let cleanup;
+    let provenance;
     let tigrisBucketFound: boolean;
     try {
+      // What a finished launch shows about its markers, recorded before cleanup removes the
+      // resources that carry them. The guard resolves on every path within its deadline, so a
+      // probe that throws or hangs can never skip or hold up the cleanup below.
+      provenance = await guardCommunityLiveProvenance(() =>
+        probeCommunityLiveProvenance(journal, {
+          readAppProvenance: (name) => tigris((client) => client.readAppProvenance(name)),
+          flyGraphql,
+          readNeonRoleNames: async (projectId, branchId) =>
+            (await readNeonBranchTopology(neon, projectId, branchId)).roles.map(
+              (role) => role.name
+            ),
+          readNeonProjects: (organization) => readNeonProjects(neon, organization),
+          readTigris: async (id) => {
+            const item = await tigris((client) => client.readTigris(id));
+            return { appId: item.appId, appName: item.appName };
+          },
+          readSecretNames: async (name) =>
+            (await readFlySecretInventory(fly, name)).map((item) => item.name),
+          runSshNoOp: async (name) =>
+            void (await runProviderCommand({
+              ...fly,
+              timeoutMs: SSH_PROBE_TIMEOUT_MS,
+              args: ['ssh', 'console', '--app', name, '--command', 'true'],
+              parse: () => undefined,
+            })),
+          unknownAppName: () => `dorkos-gate-absent-${randomBytes(12).toString('hex')}`,
+        })
+      );
       cleanup = await cleanupCommunityLiveGate(journal, {
         readFlyApps: async (organization) =>
           (await readFlyApps(fly, organization)).map((item) => ({
@@ -434,6 +479,7 @@ async function main(): Promise<void> {
         cleanup,
         initialBootstrapSecretDigest: initialBootstrapDigest,
         bootstrapSecretDigest: bootstrapDigest,
+        provenance,
         ...proof,
       }) + '\n',
       { mode: 0o600, flag: 'wx' }
