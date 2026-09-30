@@ -53,6 +53,29 @@ function mount(connection: CommunityConnectionDescriptor) {
 }
 
 describe('CommunityGonePanel', () => {
+  // DOR-2334 review: a community recorded as taken down that later answers with a rejected
+  // grant (the host reversed the takedown and lifted it) is not gone: reconnecting is the way on,
+  // so the panel steps aside. It fails if the page keeps saying "taken down" with no way back.
+  it('steps aside for a connection that needs reconnecting', () => {
+    const takenDown: CommunityConnectionDescriptor = {
+      ...base,
+      status: 'reconnect-required',
+      access: {
+        state: 'reconnect-required',
+        effective: base.access!.effective,
+        lastKnown: {
+          lifecycle: 'taken_down',
+          capabilities: base.access!.effective,
+          verifiedAt: '2026-09-29T00:00:00.000Z',
+        },
+      },
+    };
+    expect(communityGoneState(takenDown)).toBeNull();
+    expect(
+      communityGoneState({ ...takenDown, seemsGoneSince: '2026-09-01T00:00:00.000Z' })
+    ).toBeNull();
+  });
+
   it('knows which case a connection is in', () => {
     expect(communityGoneState(base)).toBeNull();
     expect(communityGoneState({ ...base, seemsGoneSince: '2026-09-01T00:00:00.000Z' })).toBe(

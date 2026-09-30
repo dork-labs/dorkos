@@ -27,6 +27,10 @@ export function communityGoneState(
   connection: CommunityConnectionDescriptor | undefined
 ): 'deleted' | 'taken-down' | 'seems-gone' | null {
   if (!connection) return null;
+  // The Community answered with a rejected grant, so it is there again — a takedown the host
+  // reversed and lifted, most likely. What was recorded before is history; reconnecting is the
+  // way on, and the page's own reconnect path says so.
+  if (connection.status === 'reconnect-required') return null;
   if (connection.access?.lastKnown?.lifecycle === 'deleted') return 'deleted';
   if (connection.access?.lastKnown?.lifecycle === 'taken_down') return 'taken-down';
   if (connection.seemsGoneSince) return 'seems-gone';

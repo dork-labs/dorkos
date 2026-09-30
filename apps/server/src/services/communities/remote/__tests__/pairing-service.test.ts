@@ -1227,29 +1227,55 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await service.disconnect(ref, 'suspended-owner');
     });
 
-    // Purpose: a reversal suspends the community (no purge, and it no longer shows as taken
-    // down); once the Community answers normally again the lifecycle is the Community's own; and a
-    // later takedown purges afresh. It fails if a reversal stays "taken down", or a second
-    // takedown is skipped.
-    it('follows a reversal back to a live community, and purges a second takedown', async () => {
+    // Purpose: as the real Community does it. A takedown revokes every grant; a reversal
+    // suspends the community (no purge, and it no longer shows as taken down); once the host lifts
+    // that, the old grant is rejected (401), so the connection needs reconnecting rather than
+    // staying "taken down". Reconnecting is a new connection, which a later takedown purges
+    // afresh. It fails if a reversal stays "taken down", or a reversal purges.
+    it('follows a reversal to reconnecting, and purges a takedown of the new connection', async () => {
       const { service, revokeConnection, ref } = await connectedTo('reversed-owner');
       refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
       await service.status(ref, 'reversed-owner');
-      expect(revokeConnection).toHaveBeenCalledTimes(1);
+      expect(revokeConnection.mock.calls).toEqual([[ref, 'reversed-owner']]);
 
       refuse(access, 503, 'COMMUNITY_SUSPENDED');
       const suspended = await service.status(ref, 'reversed-owner');
       expect(suspended.access?.lastKnown?.lifecycle).toBe('suspended');
       expect(revokeConnection).toHaveBeenCalledTimes(1);
 
-      rejectedAuthorization = undefined;
-      const live = await service.status(ref, 'reversed-owner');
-      expect(live.access).toMatchObject({ state: 'verified', lastKnown: { lifecycle: 'active' } });
-
-      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
-      await service.status(ref, 'reversed-owner');
-      expect(revokeConnection).toHaveBeenCalledTimes(2);
+      // The host lifts the suspension; the grant the takedown revoked is refused.
+      refuse(access, 401);
+      const lifted = await service.status(ref, 'reversed-owner');
+      expect(lifted.status).toBe('reconnect-required');
+      expect(lifted.access?.state).toBe('reconnect-required');
       await service.disconnect(ref, 'reversed-owner');
+
+      // Connecting again, then taken down again: that connection is purged too.
+      rejectedAuthorization = undefined;
+      const again = await connectedTo('reversed-owner');
+      expect(
+        (await again.service.status(again.ref, 'reversed-owner')).access?.lastKnown
+      ).toMatchObject({ lifecycle: 'active' });
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      await again.service.status(again.ref, 'reversed-owner');
+      expect(again.revokeConnection.mock.calls).toEqual([[again.ref, 'reversed-owner']]);
+      await again.service.disconnect(again.ref, 'reversed-owner');
+    });
+
+    // Purpose (review 1): the host reverses AND lifts the takedown before this installation checks
+    // again, so the first answer after "taken down" is the revoked grant's 401. The connection then
+    // needs reconnecting (the app's reconnect path), not a "taken down" panel with no way back.
+    it('needs reconnecting when the next answer after a takedown is a rejected grant', async () => {
+      const { service, ref } = await connectedTo('lifted-owner');
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      await service.status(ref, 'lifted-owner');
+      refuse(access, 401);
+      const lifted = await service.status(ref, 'lifted-owner');
+      expect(lifted).toMatchObject({
+        status: 'reconnect-required',
+        access: { state: 'reconnect-required' },
+      });
+      await service.disconnect(ref, 'lifted-owner');
     });
 
     // Purpose: a takedown the host lets run becomes a deletion; the `404 NOT_FOUND` after it is
