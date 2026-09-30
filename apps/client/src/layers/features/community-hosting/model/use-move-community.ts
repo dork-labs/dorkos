@@ -13,11 +13,9 @@
  */
 import { useCallback, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  CLOUD_ACCOUNT_UNREACHABLE_MESSAGE,
-  type CloudCommunityMove,
-  type CloudCommunityMovePollResponse,
-  type CloudCommunityRefusal,
+import type {
+  CloudCommunityMove,
+  CloudCommunityMovePollResponse,
 } from '@dorkos/shared/cloud-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { hostedCommunityKeys } from './hosted-communities';
@@ -79,23 +77,6 @@ export function moveStepOf(move: CloudCommunityMove): MoveStep {
     default:
       return { kind: 'unrecognised', move };
   }
-}
-
-/**
- * Whether a refused start may still have made a move.
- *
- * Only when the account could not be reached: the service may have made the
- * move before its answer was lost, and starting again with the same key picks
- * that move up instead of making a second one. (The local server also answers
- * this way for any other error it could not describe, so the key is kept then
- * too, which is the safe side.) Every other refusal (the service's own
- * problem, or this DorkOS's about the file) comes before a move exists, or
- * after this DorkOS cancelled it.
- *
- * @param refusal - What the start answered.
- */
-function mayHaveStartedAMove(refusal: CloudCommunityRefusal): boolean {
-  return 'message' in refusal && refusal.message === CLOUD_ACCOUNT_UNREACHABLE_MESSAGE;
 }
 
 /** A move the dialog can still act on (not failed, cancelled or unknown). */
@@ -193,11 +174,13 @@ export function useMoveCommunity(resumeMoveId: string | null): MoveCommunity {
           )
         : room;
       // The key is only for picking up a move this start may have made without
-      // hearing back. Once the move is here the dialog follows it by id, and a
-      // refusal left no move to pick up, so either way the next Start makes a
-      // fresh move and hears the real reason, rather than replaying one that
-      // was cancelled or failed (DOR-2611).
-      if (answer.ok || !mayHaveStartedAMove(answer)) key.current = null;
+      // hearing back, which a refusal marks `mayExist` (the account could not
+      // be reached or broke, or a cancel did not go through). Once the move is
+      // here the dialog follows it by id, and any other refusal left no move,
+      // so either way the next Start makes a fresh move and hears the real
+      // reason, rather than replaying one that was cancelled or failed
+      // (DOR-2611).
+      if (answer.ok || answer.mayExist !== true) key.current = null;
       if (answer.ok) {
         seed(answer.move);
         setMoveId(answer.move.moveId);

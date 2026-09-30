@@ -13,10 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Problem } from '@dork-labs/cloud-api';
-import {
-  CLOUD_ACCOUNT_UNREACHABLE_MESSAGE,
-  type CloudCommunityRefusal,
-} from '@dorkos/shared/cloud-schemas';
+import type { CloudCommunityRefusal } from '@dorkos/shared/cloud-schemas';
 import {
   isCommunityAuthorityCurrent,
   openExternalLink,
@@ -43,7 +40,9 @@ export function noticeOf(refusal: CloudCommunityRefusal): HostingNotice {
 }
 
 /** What the app says when it could not reach this DorkOS or the account. */
-export const UNREACHABLE_NOTICE: HostingNotice = { message: CLOUD_ACCOUNT_UNREACHABLE_MESSAGE };
+export const UNREACHABLE_NOTICE: HostingNotice = {
+  message: 'Couldn’t reach your DorkOS account. Try again.',
+};
 
 /** The community being claimed and connected. */
 export interface ClaimTarget {

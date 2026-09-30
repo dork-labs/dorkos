@@ -176,23 +176,23 @@ export interface CloudCreditsStatus {
 // ---------------------------------------------------------------------------
 
 /**
- * What a person reads when a hosted-community write never heard back from the
- * account. The local server answers with it; the app reads it on a refused
- * move start as "the move may exist", and keeps its key so starting again
- * picks that move up instead of making a second one.
- */
-export const CLOUD_ACCOUNT_UNREACHABLE_MESSAGE = 'Couldn’t reach your DorkOS account. Try again.';
-
-/**
  * A refusal from a hosted-community write.
  *
  * `problem` is the service's own envelope, rendered in its own words with its
  * `actionUrl` when it has one; `message` is the local server's plain sentence
  * for everything the service did not describe (unlinked, unreachable). Both
  * answer HTTP 200, for the reason `CloudSeatActionResponse` gives.
+ *
+ * `mayExist: true` says the write may have taken effect even though it was
+ * refused: the account could not be reached, answered with a server error
+ * (5xx), or a clean-up this server tried after it did not go through. A
+ * caller that retries with an idempotency key keeps the same key then, so the
+ * retry picks up what was made instead of making it twice. Absent, the
+ * refusal came before anything was made (or after it was undone).
  */
 export type CloudCommunityRefusal =
-  { ok: false; problem: Problem } | { ok: false; message: string };
+  | { ok: false; problem: Problem; mayExist?: true }
+  | { ok: false; message: string; mayExist?: true };
 
 /**
  * How the local server is getting a move's export to its Community server.

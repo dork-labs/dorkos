@@ -30,19 +30,18 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { CommunityShortNameSchema, type CommunityMove } from '@dork-labs/cloud-api';
-import {
-  CLOUD_ACCOUNT_UNREACHABLE_MESSAGE,
-  type CloudCommunityClaimLinkResponse,
-  type CloudCommunityKeepResponse,
-  type CloudCommunityMove,
-  type CloudCommunityMovePollResponse,
-  type CloudCommunityMoveResponse,
-  type CloudCommunityMoveRoomResponse,
-  type CloudCommunityNameCheckResponse,
-  type CloudCommunityRefusal,
-  type CloudCommunityRestoreResponse,
-  type CloudCommunityStartResponse,
-  type CloudHostedCommunitiesResponse,
+import type {
+  CloudCommunityClaimLinkResponse,
+  CloudCommunityKeepResponse,
+  CloudCommunityMove,
+  CloudCommunityMovePollResponse,
+  CloudCommunityMoveResponse,
+  CloudCommunityMoveRoomResponse,
+  CloudCommunityNameCheckResponse,
+  CloudCommunityRefusal,
+  CloudCommunityRestoreResponse,
+  CloudCommunityStartResponse,
+  CloudHostedCommunitiesResponse,
 } from '@dorkos/shared/cloud-schemas';
 import {
   cancelMove,
@@ -67,11 +66,8 @@ import {
 import { isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
 import { logger, logError } from '../lib/logger.js';
 
-/**
- * What a person reads when the hosting service could not be reached. The app
- * reads a refused move start with these words as "the move may exist".
- */
-const UNREACHABLE = CLOUD_ACCOUNT_UNREACHABLE_MESSAGE;
+/** What a person reads when the hosting service could not be reached. */
+const UNREACHABLE = 'Couldn’t reach your DorkOS account. Try again.';
 
 /** What a person reads when this DorkOS is not linked to an account. */
 const NOT_LINKED = 'This DorkOS is not linked to a DorkOS account.';
@@ -193,7 +189,10 @@ function stagingRefusal(error: StagingError): { status: number; message: string 
  * Answer a failed write in words a person can act on.
  *
  * The service's own problem envelope when it described the refusal; otherwise
- * one plain sentence, never the error's own text.
+ * one plain sentence, never the error's own text. Marked `mayExist` when the
+ * write may still have gone through: the service could not be reached, or it
+ * answered with a server error (5xx), which does not say nothing was made.
+ * A refusal it described with a 4xx made nothing.
  *
  * @param res - The response to answer on.
  * @param error - What the write rejected with.
@@ -201,9 +200,19 @@ function stagingRefusal(error: StagingError): { status: number; message: string 
  */
 function writeFailed(res: Response, error: unknown, what: string) {
   const problem = problemOf(error);
-  if (problem !== null) return res.json({ ok: false, problem } satisfies CloudCommunityRefusal);
+  if (problem !== null) {
+    return res.json({
+      ok: false,
+      problem,
+      ...(problem.status >= 500 ? { mayExist: true as const } : {}),
+    } satisfies CloudCommunityRefusal);
+  }
   logger.warn(`[Cloud] Could not ${what}`, logError(error));
-  return res.json({ ok: false, message: UNREACHABLE } satisfies CloudCommunityRefusal);
+  return res.json({
+    ok: false,
+    message: UNREACHABLE,
+    mayExist: true,
+  } satisfies CloudCommunityRefusal);
 }
 
 /**
@@ -423,12 +432,19 @@ export function createCloudCommunitiesRouter(
       // be refused by the Community server. Stop before a byte leaves.
       const limit = hostLimitBytes(started.upload);
       await discardStagedArchive(staged);
-      await cancelMove(started.move.moveId).catch((error: unknown) =>
-        logger.warn('[Cloud] Could not cancel a move too large for its host', logError(error))
+      // When the cancel does not go through, the move still exists; say so,
+      // so a retry with the same key picks it up rather than making another.
+      const cancelled = await cancelMove(started.move.moveId).then(
+        () => true,
+        (error: unknown) => {
+          logger.warn('[Cloud] Could not cancel a move too large for its host', logError(error));
+          return false;
+        }
       );
       return res.status(413).json({
         ok: false,
         message: `This export is too large for the new host. It is ${describeBytes(staged.bytes, 'up')}, and the most the host takes is ${describeBytes(limit, 'down')}.`,
+        ...(cancelled ? {} : { mayExist: true as const }),
       } satisfies CloudCommunityRefusal);
     }
     if (started.upload === null && started.move.state === 'cancelled') {

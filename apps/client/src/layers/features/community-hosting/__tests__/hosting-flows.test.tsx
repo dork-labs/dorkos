@@ -11,6 +11,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
+import type { Problem } from '@dork-labs/cloud-api';
 import type { CloudCommunityMove } from '@dorkos/shared/cloud-schemas';
 import startFixture from '@dork-labs/cloud-api/fixtures/v1/communities/start.json' with { type: 'json' };
 import moveImportingFixture from '@dork-labs/cloud-api/fixtures/v1/communities/move-importing.json' with { type: 'json' };
@@ -419,24 +420,57 @@ describe('Move a community here', () => {
     expect(transport.startHostedCommunityMove).not.toHaveBeenCalled();
   });
 
-  // Purpose (DOR-2611): when the account could not be reached, the move may
-  // exist, so starting again must reuse the key and pick it up rather than
-  // make a second move. Fails if every refusal resets the key.
-  it('keeps the same key when the account could not be reached', async () => {
+  // Purpose (DOR-2611): a refusal marked `mayExist` (the account could not be
+  // reached, answered with a server error, or a cancel did not go through)
+  // may have left a move, so starting again must reuse the key and pick it up
+  // rather than make a second one. Fails if every refusal resets the key.
+  it('keeps the same key when the refusal says the move may exist', async () => {
     const transport = linkedTransport();
-    vi.mocked(transport.startHostedCommunityMove).mockResolvedValue({
-      ok: false,
-      message: 'Couldn’t reach your DorkOS account. Try again.',
-    });
+    const unavailable = {
+      code: 'temporarily_unavailable',
+      status: 503,
+      title: 'Try again shortly.',
+    };
+    vi.mocked(transport.startHostedCommunityMove)
+      .mockResolvedValueOnce({
+        ok: false,
+        message: 'Couldn’t reach your DorkOS account. Try again.',
+        mayExist: true,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        problem: unavailable as Problem,
+        mayExist: true,
+      })
+      .mockResolvedValue({ ok: false, message: 'The file didn’t arrive. Try again.' });
     renderDialogs(transport, { kind: 'move', moveId: null });
     startMoving(new File(['PK export'], 'old-garden.zip', { type: 'application/zip' }));
     await screen.findByText('Couldn’t reach your DorkOS account. Try again.');
-
     fireEvent.click(screen.getByRole('button', { name: 'Start moving' }));
     await waitFor(() => expect(transport.startHostedCommunityMove).toHaveBeenCalledTimes(2));
-    const [first, second] = vi
-      .mocked(transport.startHostedCommunityMove)
-      .mock.calls.map((call) => call[1].idempotencyKey);
+    fireEvent.click(await screen.findByRole('button', { name: 'Start moving' }));
+    await waitFor(() => expect(transport.startHostedCommunityMove).toHaveBeenCalledTimes(3));
+
+    const [first, second, third] = sentKeys(transport);
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+  });
+
+  // Purpose (DOR-2611): a send that broke or went silent (not a cancel) never
+  // heard back, so the move may exist; the next Start must reuse the key.
+  // Fails if the catch clears the key for anything but a cancel.
+  it('keeps the same key when the send breaks without a cancel', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.startHostedCommunityMove)
+      .mockRejectedValueOnce(new Error('Upload failed'))
+      .mockResolvedValue({ ok: false, message: 'The file didn’t arrive. Try again.' });
+    renderDialogs(transport, { kind: 'move', moveId: null });
+    startMoving(new File(['PK export'], 'old-garden.zip', { type: 'application/zip' }));
+    await screen.findByText('Couldn’t reach your DorkOS account. Try again.');
+    fireEvent.click(screen.getByRole('button', { name: 'Start moving' }));
+    await waitFor(() => expect(transport.startHostedCommunityMove).toHaveBeenCalledTimes(2));
+
+    const [first, second] = sentKeys(transport);
     expect(second).toBe(first);
   });
 

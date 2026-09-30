@@ -112,6 +112,8 @@ interface Script {
   moveStartStatus: number;
   moveStartBody: unknown;
   moveBody: unknown;
+  /** What the move cancel answers with; anything but 200 is a refusal. */
+  cancelStatus: number;
   /** Upload answers in order. `0` breaks the connection instead of answering. */
   uploadStatus: number[];
   /** When set, the move start waits for this before answering. */
@@ -138,6 +140,7 @@ function defaultScript(): Script {
     moveStartStatus: 200,
     moveStartBody: null,
     moveBody: moveImportingFixture,
+    cancelStatus: 200,
     uploadStatus: [200],
     moveStartGate: null,
     entitlements: {
@@ -208,6 +211,13 @@ const fake = listeningServer(async (req, res) => {
     return send(res, script.moveStartStatus, script.moveStartBody);
   }
   if (route === 'POST /v1/communities/moves/move_0001/cancel') {
+    if (script.cancelStatus !== 200) {
+      return send(res, script.cancelStatus, {
+        code: 'temporarily_unavailable',
+        status: script.cancelStatus,
+        title: 'Try again shortly.',
+      });
+    }
     return send(res, 200, moveCancelledFixture);
   }
   if (route === 'GET /v1/communities/moves/move_0001') return send(res, 200, script.moveBody);
@@ -529,9 +539,12 @@ describe('starting a community and claiming it', () => {
       .post('/api/cloud/communities')
       .send({ idempotencyKey: 'k', name: 'Acme' })
       .expect(200);
+    // The service may have made the community before it broke, so a retry
+    // with the same key is the safe next step.
     expect(res.body).toEqual({
       ok: false,
       message: 'Couldn’t reach your DorkOS account. Try again.',
+      mayExist: true,
     });
   });
 
@@ -806,6 +819,34 @@ describe('moving a community in', () => {
     expect(stagedCopies()).toHaveLength(0);
   });
 
+  // Purpose (DOR-2611): a server error from the service does not say the move
+  // was not made, so the refusal is marked `mayExist` and the app keeps its
+  // key; a 4xx it described (above) made nothing and is not marked. Fails if
+  // a 5xx problem, or no answer at all, reads as "nothing was made": the
+  // app's retry could then start a second move.
+  it('marks a refusal that may have made the move anyway', async () => {
+    const unavailable = {
+      code: 'temporarily_unavailable',
+      status: 503,
+      title: 'Try again shortly.',
+    };
+    script.moveStartStatus = 503;
+    script.moveStartBody = unavailable;
+    const fiveHundred = await startMoveRequest().expect(200);
+    expect(fiveHundred.body).toEqual({ ok: false, problem: unavailable, mayExist: true });
+
+    script.moveStartStatus = 200;
+    script.moveStartBody = { nonsense: true };
+    const nonsense = await startMoveRequest().expect(200);
+    expect(nonsense.body).toEqual({
+      ok: false,
+      message: 'Couldn’t reach your DorkOS account. Try again.',
+      mayExist: true,
+    });
+    expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
+    expect(stagedCopies()).toHaveLength(0);
+  });
+
   // Purpose (DOR-2587): an export this computer has no room for is refused
   // with both numbers before a byte is copied or a move exists; one that just
   // fits goes ahead. Fails if the room check is missing, off by the headroom,
@@ -931,6 +972,23 @@ describe('moving a community in', () => {
     expect(received.some((r) => r.path === '/v1/communities/moves/move_0001/cancel')).toBe(true);
     expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
     expect(uploads.progress('move_0001')).toBeNull();
+    expect(stagedCopies()).toHaveLength(0);
+  });
+
+  // Purpose (DOR-2611): when the cancel after a too-large refusal does not go
+  // through, the move still exists, so the refusal says so and the app keeps
+  // its key. Fails if a failed cancel is answered like a clean one.
+  it('marks the too-large refusal when the move could not be cancelled', async () => {
+    const answer = moveStartAnswer();
+    script.moveStartBody = {
+      ...answer,
+      upload: { ...answer.upload, maxBytes: archive.length - 1 },
+    };
+    script.cancelStatus = 503;
+    const res = await startMoveRequest().expect(413);
+    expect(res.body).toMatchObject({ ok: false, mayExist: true });
+    expect(received.some((r) => r.path === '/v1/communities/moves/move_0001/cancel')).toBe(true);
+    expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
     expect(stagedCopies()).toHaveLength(0);
   });
 
