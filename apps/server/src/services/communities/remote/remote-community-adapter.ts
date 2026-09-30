@@ -181,11 +181,38 @@ export function isCommunityDeleted(error: unknown): boolean {
   );
 }
 
+/**
+ * The host took the whole community down (`423 COMMUNITY_TAKEN_DOWN`, DOR-2293), so this room is
+ * gone with it. A {@link CommunityRoomNotFoundError} to the port, like {@link CommunityDeletedError},
+ * so the local routes can say what happened.
+ */
+export class CommunityTakenDownError extends CommunityRoomNotFoundError {
+  constructor(community: CommunityRef, roomId: string) {
+    super(community, roomId);
+    this.name = 'CommunityTakenDownError';
+  }
+}
+
+/** Whether a Community answered that its host took the whole community down. */
+export function isCommunityTakenDown(error: unknown): boolean {
+  return (
+    error instanceof PinnedHttpError &&
+    error.status === 423 &&
+    error.remoteCode === 'COMMUNITY_TAKEN_DOWN'
+  );
+}
+
+/** Whether a Community answered that the whole community is gone: deleted, or taken down. */
+function isCommunityGone(error: unknown): boolean {
+  return isCommunityDeleted(error) || isCommunityTakenDown(error);
+}
+
 /** Translate a server-authoritative room/cursor refusal into the port's safe error. */
 function remoteRoomError(error: unknown, community: CommunityRef, roomId: string): unknown {
   if (!(error instanceof PinnedHttpError)) return error;
   // Before the 410 below: a deleted community is not a stale cursor.
   if (isCommunityDeleted(error)) return new CommunityDeletedError(community, roomId);
+  if (isCommunityTakenDown(error)) return new CommunityTakenDownError(community, roomId);
   if (error.status === 410)
     return new StaleCommunityCursorError(
       community,
@@ -339,8 +366,9 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       ownerKey: string
     ) => Promise<void>,
     /**
-     * Told when any request answers `410 COMMUNITY_DELETED`, so the connection's access check
-     * records the deletion and purges this installation's copies at once (DOR-2334). Never
+     * Told when any request answers `410 COMMUNITY_DELETED` or `423 COMMUNITY_TAKEN_DOWN`, so the
+     * connection's access check records it and purges this installation's copies at once
+     * (DOR-2334). Never
      * awaited: the request still fails as it would have.
      */
     private readonly onCommunityDeleted?: (communityRef: CommunityRef, ownerKey: string) => void
@@ -369,7 +397,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     context: CommunityReadContext | undefined,
     path: string
   ): Promise<never> {
-    if (isCommunityDeleted(error)) {
+    if (isCommunityGone(error)) {
       try {
         this.onCommunityDeleted?.(this.community, this.ownerKey);
       } catch {
@@ -511,7 +539,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       return result;
     } catch (error) {
       // A room in a deleted community is not there, exactly as a missing one is not.
-      if (error instanceof PinnedHttpError && (error.status === 404 || isCommunityDeleted(error)))
+      if (error instanceof PinnedHttpError && (error.status === 404 || isCommunityGone(error)))
         return null;
       throw error;
     }
@@ -626,7 +654,9 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
               // `deleted`: the community's deletion finished while the stream was open. To the
               // port that is access ending; the access check that follows records the deletion.
               reason:
-                event.reason === 'removed' || event.reason === 'deleted'
+                event.reason === 'removed' ||
+                event.reason === 'deleted' ||
+                event.reason === 'taken_down'
                   ? 'access-revoked'
                   : event.reason === 'archived'
                     ? 'archived'
@@ -971,7 +1001,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     } catch (error) {
       if (
         error instanceof PinnedHttpError &&
-        (error.status === 400 || error.status === 404 || isCommunityDeleted(error))
+        (error.status === 400 || error.status === 404 || isCommunityGone(error))
       )
         return [];
       throw error;
@@ -1215,7 +1245,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       // The local revocation above remains authoritative even if cleanup loses
       // the remote response. A confirmed remote absence is idempotent.
       // Nothing to revoke on a deleted community either.
-      if (error instanceof PinnedHttpError && (error.status === 404 || isCommunityDeleted(error)))
+      if (error instanceof PinnedHttpError && (error.status === 404 || isCommunityGone(error)))
         return;
       throw error;
     }

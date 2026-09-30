@@ -115,6 +115,25 @@ describe('CommunityGonePanel', () => {
     await waitFor(() => expect(onRemoved).toHaveBeenCalledOnce());
   });
 
+  // DOR-2334: a community its host took down says so, not "deleted".
+  it('says plainly when the host took the community down', () => {
+    mount({
+      ...base,
+      access: {
+        state: 'verified',
+        effective: base.access!.effective,
+        lastKnown: {
+          lifecycle: 'taken_down',
+          capabilities: base.access!.effective,
+          verifiedAt: '2026-09-29T00:00:00.000Z',
+        },
+      },
+    });
+    expect(screen.getByText('The host took this community down')).toBeInTheDocument();
+    expect(screen.getByText(/The host of Alpha took it down/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove from DorkOS' })).toBeInTheDocument();
+  });
+
   it('says plainly when the community was deleted', () => {
     mount({
       ...base,

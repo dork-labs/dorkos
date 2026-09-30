@@ -29,6 +29,8 @@ export interface CommunitySpec {
   mentions?: number;
   /** When it first answered "not found", once that has lasted two weeks (DOR-2334). */
   seemsGoneSince?: string;
+  /** The lifecycle this installation recorded, when not the ordinary `active` (DOR-2334). */
+  lifecycle?: 'active' | 'taken_down' | 'deleted';
 }
 
 function capabilities(on: boolean) {
@@ -36,7 +38,8 @@ function capabilities(on: boolean) {
 }
 
 function descriptor(community: CommunitySpec) {
-  const online = (community.access ?? 'verified') === 'verified';
+  const gone = community.lifecycle === 'taken_down' || community.lifecycle === 'deleted';
+  const online = !gone && (community.access ?? 'verified') === 'verified';
   return {
     ref: community.ref,
     remoteCommunityId: `remote-${community.ref}`,
@@ -49,8 +52,8 @@ function descriptor(community: CommunitySpec) {
       state: community.access ?? 'verified',
       effective: capabilities(online),
       lastKnown: {
-        lifecycle: 'active',
-        capabilities: capabilities(true),
+        lifecycle: community.lifecycle ?? 'active',
+        capabilities: capabilities(!gone),
         verifiedAt: '2026-09-23T12:00:00.000Z',
       },
     },

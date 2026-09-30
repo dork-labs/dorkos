@@ -239,11 +239,11 @@ export function getRemoteCommunityAdapter(
       getRemoteCommunityEnrollmentStore(),
       (communityRef, ownerKey) =>
         getRemoteCommunityLifecycle().revokeConnection(communityRef, ownerKey),
-      // A request answered `410 COMMUNITY_DELETED`: check access now, which records the
-      // deletion and purges the copies (DOR-2334).
+      // A request answered `410 COMMUNITY_DELETED` or `423 COMMUNITY_TAKEN_DOWN`: check access
+      // now, which records it and purges the copies (DOR-2334).
       (communityRef, ownerKey) => {
         void getRemotePairingService()
-          .communityDeletedSeen(communityRef, ownerKey)
+          .communityGoneSeen(communityRef, ownerKey)
           .catch(() => undefined);
       }
     );

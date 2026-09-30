@@ -46,6 +46,7 @@ export const CommunityNavigationDescriptorSchema = z
       'suspended',
       'deletion-pending',
       'deleted',
+      'taken-down',
       'removed',
     ]),
     connectionState: z.enum(['pending', 'connected', 'reconnect-required', 'disconnected']),

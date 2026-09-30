@@ -94,7 +94,9 @@ function navigationDescriptor(connection: CommunityConnectionDescriptor) {
     membershipState:
       lifecycle === 'deletion_pending'
         ? 'deletion-pending'
-        : (lifecycle ?? (connection.status === 'pending' ? 'pending' : 'active')),
+        : lifecycle === 'taken_down'
+          ? 'taken-down'
+          : (lifecycle ?? (connection.status === 'pending' ? 'pending' : 'active')),
     connectionState: connection.status,
     availability:
       connection.access?.state === 'verified'
@@ -389,7 +391,8 @@ export function CommunityContextSwitcher({
                       connection.status === 'reconnect-required'
                         ? 'Reconnect required'
                         : connection.seemsGoneSince &&
-                            connection.access?.lastKnown?.lifecycle !== 'deleted'
+                            connection.access?.lastKnown?.lifecycle !== 'deleted' &&
+                            connection.access?.lastKnown?.lifecycle !== 'taken_down'
                           ? 'Seems to be gone'
                           : state,
                       attention,

@@ -27,6 +27,7 @@ import {
 } from '../pairing-service.js';
 import {
   CommunityDeletedError,
+  CommunityTakenDownError,
   RemoteCommunityAdapter,
   remoteOriginIdempotencyKeyOf,
   remoteThreadReplySeqOf,
@@ -1077,10 +1078,10 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       const { service, revokeConnection, ref } = await connectedAt('nudged-owner');
       refuse(`${qualified}/me/connection-access`, 410, 'COMMUNITY_DELETED');
       const before = accessRequests;
-      await service.communityDeletedSeen(ref, 'nudged-owner');
+      await service.communityGoneSeen(ref, 'nudged-owner');
       expect(accessRequests).toBe(before + 1);
-      await service.communityDeletedSeen(ref, 'nudged-owner');
-      await service.communityDeletedSeen(ref, 'nudged-owner');
+      await service.communityGoneSeen(ref, 'nudged-owner');
+      await service.communityGoneSeen(ref, 'nudged-owner');
       expect(accessRequests).toBe(before + 1);
       expect(revokeConnection).toHaveBeenCalledOnce();
       await service.disconnect(ref, 'nudged-owner');
@@ -1152,6 +1153,168 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
 
       rejectedAuthorization = undefined;
       eventsTail = `data: ${JSON.stringify({ type: 'closed', reason: 'deleted', cursor: 'resume-1' })}\n\n`;
+      const events: RemoteNativeRoomEvent[] = [];
+      for await (const event of adapter.subscribeNativeRoom(remoteRoomId)) events.push(event);
+      expect(events.at(-1)).toEqual({ type: 'room_closed', reason: 'access-revoked' });
+      await service.disconnect(ref, 'routes-owner');
+    });
+  });
+
+  // DOR-2334 part 3: a whole community its host took down (DOR-2293).
+  describe('a community its host took down', () => {
+    async function connectedTo(owner: string) {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const revokeConnection = vi.fn(async () => undefined);
+      const service = new RemoteCommunityPairingService(store, revokeConnection, undefined, {
+        freshMs: 0,
+      });
+      const started = await service.start(owner, `${origin}/c/${remoteCommunityId}`, 'Takedown');
+      expect((await service.poll(started.connection.ref, owner)).status).toBe('connected');
+      approved = false;
+      return { store, service, revokeConnection, ref: started.connection.ref };
+    }
+    const refuse = (path: string, status: number, code?: string) => {
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = path;
+      rejectedStatus = status;
+      rejectedCode = code;
+    };
+    const access = `${qualified}/me/connection-access`;
+    afterEach(() => {
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      rejectedStatus = 403;
+      rejectedCode = undefined;
+      eventsTail = '';
+    });
+
+    // Purpose: `423 COMMUNITY_TAKEN_DOWN` records `taken_down` and purges exactly this
+    // connection's copies at once, even though the host can reverse it; later checks don't purge
+    // again, and a failed purge is retried. It fails if a takedown reads as an archive or outage.
+    it('records a takedown and purges once, retrying a failed purge', async () => {
+      const { service, revokeConnection, ref } = await connectedTo('taken-owner');
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      revokeConnection.mockRejectedValueOnce(new Error('purge failed'));
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+      const first = await service.status(ref, 'taken-owner');
+      await service.status(ref, 'taken-owner');
+      await service.status(ref, 'taken-owner');
+      warn.mockRestore();
+
+      expect(first.access).toMatchObject({
+        state: 'verified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: { lifecycle: 'taken_down' },
+      });
+      // Failed, retried and succeeded, then left alone; only ever this connection.
+      expect(revokeConnection.mock.calls).toEqual([
+        [ref, 'taken-owner'],
+        [ref, 'taken-owner'],
+      ]);
+      await service.disconnect(ref, 'taken-owner');
+    });
+
+    // Purpose: a host suspension is not a takedown and purges nothing, including the
+    // `503 COMMUNITY_SUSPENDED` a community that was never taken down answers.
+    it('never purges on a suspension', async () => {
+      const { service, revokeConnection, ref } = await connectedTo('suspended-owner');
+      refuse(access, 503, 'COMMUNITY_SUSPENDED');
+      const answer = await service.status(ref, 'suspended-owner');
+      expect(revokeConnection).not.toHaveBeenCalled();
+      expect(answer.access?.lastKnown?.lifecycle).not.toBe('taken_down');
+      await service.disconnect(ref, 'suspended-owner');
+    });
+
+    // Purpose: a reversal suspends the community (no purge, and it no longer shows as taken
+    // down); once the Community answers normally again the lifecycle is the Community's own; and a
+    // later takedown purges afresh. It fails if a reversal stays "taken down", or a second
+    // takedown is skipped.
+    it('follows a reversal back to a live community, and purges a second takedown', async () => {
+      const { service, revokeConnection, ref } = await connectedTo('reversed-owner');
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      await service.status(ref, 'reversed-owner');
+      expect(revokeConnection).toHaveBeenCalledTimes(1);
+
+      refuse(access, 503, 'COMMUNITY_SUSPENDED');
+      const suspended = await service.status(ref, 'reversed-owner');
+      expect(suspended.access?.lastKnown?.lifecycle).toBe('suspended');
+      expect(revokeConnection).toHaveBeenCalledTimes(1);
+
+      rejectedAuthorization = undefined;
+      const live = await service.status(ref, 'reversed-owner');
+      expect(live.access).toMatchObject({ state: 'verified', lastKnown: { lifecycle: 'active' } });
+
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      await service.status(ref, 'reversed-owner');
+      expect(revokeConnection).toHaveBeenCalledTimes(2);
+      await service.disconnect(ref, 'reversed-owner');
+    });
+
+    // Purpose: a takedown the host lets run becomes a deletion; the `404 NOT_FOUND` after it is
+    // final, without purging again.
+    it('treats a 404 after a takedown as the deletion it became', async () => {
+      const { service, revokeConnection, ref } = await connectedTo('after-owner');
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      await service.status(ref, 'after-owner');
+      refuse(access, 404, 'NOT_FOUND');
+      const after = await service.status(ref, 'after-owner');
+      expect(after.access?.lastKnown?.lifecycle).toBe('deleted');
+      expect(revokeConnection).toHaveBeenCalledTimes(1);
+      await service.disconnect(ref, 'after-owner');
+    });
+
+    // Purpose: a takedown is a definite answer, so the "seems gone" count starts over, and once
+    // recorded, other requests answering it don't ask the Community again.
+    it('resets the not-found count, and nudges once', async () => {
+      const { store, service, ref } = await connectedTo('nudge-owner');
+      refuse(access, 404, 'NOT_FOUND');
+      await service.status(ref, 'nudge-owner');
+      expect(await store.notFoundSince(ref, 'nudge-owner')).not.toBeNull();
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      const before = accessRequests;
+      await service.communityGoneSeen(ref, 'nudge-owner');
+      await service.communityGoneSeen(ref, 'nudge-owner');
+      expect(accessRequests).toBe(before + 1);
+      expect(await store.notFoundSince(ref, 'nudge-owner')).toBeNull();
+      await service.disconnect(ref, 'nudge-owner');
+    });
+
+    // Purpose: every route family answers `423 COMMUNITY_TAKEN_DOWN` as gone (never as an archive
+    // or a stale cursor) and nudges the access check; a stream closed as `taken_down` ends as
+    // access revoked.
+    it('answers 423 COMMUNITY_TAKEN_DOWN as gone on every route', async () => {
+      const { store, service, ref } = await connectedTo('routes-owner');
+      const goneSeen = vi.fn();
+      const adapter = new RemoteCommunityAdapter(
+        ref,
+        'routes-owner',
+        store,
+        undefined,
+        undefined,
+        goneSeen
+      );
+      const channel = `${qualified}/channels/${remoteRoomId}`;
+      refuse(`${channel}/entries`, 423, 'COMMUNITY_TAKEN_DOWN');
+      await expect(adapter.listEntries(remoteRoomId)).rejects.toBeInstanceOf(
+        CommunityTakenDownError
+      );
+      refuse(channel, 423, 'COMMUNITY_TAKEN_DOWN');
+      await expect(adapter.getRoom(remoteRoomId)).resolves.toBeNull();
+      refuse(`${channel}/members`, 423, 'COMMUNITY_TAKEN_DOWN');
+      await expect(adapter.listMembers(remoteRoomId)).resolves.toEqual([]);
+      refuse(`${qualified}/agents/${remoteAgentId}`, 423, 'COMMUNITY_TAKEN_DOWN');
+      await expect(adapter.revokeAgent(remoteAgentId)).resolves.toBeUndefined();
+      refuse(`${channel}/events`, 423, 'COMMUNITY_TAKEN_DOWN');
+      await expect(
+        adapter.subscribeNativeRoom(remoteRoomId)[Symbol.asyncIterator]().next()
+      ).rejects.toBeInstanceOf(CommunityTakenDownError);
+      expect(goneSeen).toHaveBeenCalledTimes(5);
+      expect(goneSeen).toHaveBeenCalledWith(ref, 'routes-owner');
+
+      rejectedAuthorization = undefined;
+      eventsTail = `data: ${JSON.stringify({ type: 'closed', reason: 'taken_down', cursor: 'resume-1' })}\n\n`;
       const events: RemoteNativeRoomEvent[] = [];
       for await (const event of adapter.subscribeNativeRoom(remoteRoomId)) events.push(event);
       expect(events.at(-1)).toEqual({ type: 'room_closed', reason: 'access-revoked' });
