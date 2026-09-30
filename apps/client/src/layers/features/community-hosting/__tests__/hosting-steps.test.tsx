@@ -330,7 +330,7 @@ describe('Move a community here', () => {
     const lost = moveStepOf(move({ state: 'awaiting_upload', upload: null }));
     show(moveProgressStep(lost as never, progressHandlers));
     expect(screen.queryByRole('button', { name: 'Send again' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Cancel the move, then start again/)).toBeInTheDocument();
+    expect(screen.getByText(/Cancel the move and start again/)).toBeInTheDocument();
   });
 
   // Purpose: after DorkOS restarts it holds no upload for a move (its one-time upload key is
@@ -340,10 +340,11 @@ describe('Move a community here', () => {
     const restarted = moveStepOf(move({ state: 'awaiting_upload', upload: null }));
     expect(restarted).toMatchObject({ kind: 'upload-failed', why: 'restarted' });
     const first = show(moveProgressStep(restarted as never, progressHandlers));
-    expect(screen.getByRole('heading', { name: 'DorkOS restarted' })).toBeInTheDocument();
     expect(
-      screen.getByText(/DorkOS restarted, so this move has to start again/)
+      screen.getByRole('heading', { name: 'This move has to start again' })
     ).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS restarted since the move began/)).toBeInTheDocument();
+    expect(screen.getByText(/started on another computer/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel move' })).toBeInTheDocument();
     first.unmount();
     const expired = moveStepOf(

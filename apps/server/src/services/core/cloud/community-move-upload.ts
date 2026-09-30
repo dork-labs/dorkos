@@ -405,8 +405,9 @@ export class CommunityMoveUploads {
   private async run(moveId: string, job: UploadJob): Promise<void> {
     const target = job.target;
     if (target === null || job.running) return;
-    // One attempt at a time: set before the first await, so a second "send again" (a double
-    // click, another tab) is refused rather than starting a second upload of the same copy.
+    // One attempt at a time. `running` is the guard of record for that; the `sending` progress
+    // set here (and in `sendParts`) and the check in `retry` only make a second "send again"
+    // (a double click, another tab) refused sooner. Both are set before the first await.
     job.running = true;
     job.progress = { state: 'sending', sentBytes: 0, totalBytes: job.staged.bytes, failure: null };
     try {

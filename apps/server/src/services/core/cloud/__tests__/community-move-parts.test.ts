@@ -11,7 +11,7 @@ import path from 'node:path';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fitsInParts, MAX_WAIT_SECONDS } from '../community-move-parts.js';
+import { CONFLICT_WAIT_SECONDS, fitsInParts, MAX_WAIT_SECONDS } from '../community-move-parts.js';
 import { CommunityMoveUploads, type StagedArchive } from '../community-move-upload.js';
 
 const GIB = 1024 ** 3;
@@ -46,8 +46,10 @@ interface Fake {
   expectedSha256: string;
   /** Authorization headers that were not the token. */
   badAuth: number;
-  /** The Retry-After a busy part answer names. */
+  /** The Retry-After a busy part answer names; empty for none. */
   retryAfter: string;
+  /** When true, `GET …/parts` is read and never answered. */
+  silent: boolean;
 }
 
 async function fakeServer(): Promise<Fake> {
@@ -61,6 +63,7 @@ async function fakeServer(): Promise<Fake> {
     expectedSha256: '',
     badAuth: 0,
     retryAfter: '5',
+    silent: false,
   };
   const server = createServer((req: IncomingMessage, res) => {
     const url = new URL(req.url ?? '/', 'http://fake');
@@ -73,6 +76,7 @@ async function fakeServer(): Promise<Fake> {
     const part = /^\/imp\/parts\/(\d+)$/.exec(url.pathname);
     if (req.method === 'GET' && url.pathname === '/imp/parts') {
       req.resume();
+      if (fake.silent) return;
       return answer(200, {
         parts: [...fake.held].map(([partNumber, held]) => ({ partNumber, ...held })),
         maxPartBytes: 256 * MIB,
@@ -84,7 +88,11 @@ async function fakeServer(): Promise<Fake> {
       const busy = fake.partStatus.shift();
       if (busy) {
         req.resume();
-        return answer(busy, { code: 'RATE_LIMITED' }, { 'retry-after': fake.retryAfter });
+        return answer(
+          busy,
+          { code: busy === 429 ? 'RATE_LIMITED' : 'STATE_CONFLICT' },
+          fake.retryAfter ? { 'retry-after': fake.retryAfter } : {}
+        );
       }
       const hash = createHash('sha256');
       let size = 0;
@@ -327,6 +335,41 @@ describe('an upload in parts', () => {
     expect(waits).toEqual([MAX_WAIT_SECONDS, MAX_WAIT_SECONDS, MAX_WAIT_SECONDS]);
     expect(fake.log.filter((line) => line === 'GET /imp/parts')).toHaveLength(4);
     expect(fake.log.filter((line) => line.startsWith('PUT'))).toHaveLength(4);
+  });
+
+  // Purpose (review): a conflict names no time, and the server may keep a part that broke off
+  // marked as arriving for up to a minute; the three waits span at least that. Fails if a
+  // conflict with no Retry-After is waited out in a few seconds.
+  it('spaces conflict waits over at least a minute', async () => {
+    const fake = await fakeServer();
+    const file = await staged(Buffer.from('0123456789abcdefghij'));
+    fake.expectedSha256 = file.sha256;
+    fake.partStatus = [409, 409, 409];
+    fake.retryAfter = '';
+    const { uploads, waits } = recordingWaits();
+    await uploads.begin('move_conflict', file, target(fake, 8));
+    expect(uploads.progress('move_conflict')).toMatchObject({ state: 'sent' });
+    expect(waits).toEqual([CONFLICT_WAIT_SECONDS, CONFLICT_WAIT_SECONDS, CONFLICT_WAIT_SECONDS]);
+    expect(waits.reduce((sum, wait) => sum + wait, 0)).toBeGreaterThanOrEqual(60);
+  });
+
+  // Purpose (review): a Community server that never answers must not hold the upload for good:
+  // the request is given up after its idle limit, the attempt ends as interrupted, and send
+  // again works. Fails if the attempt hangs or ends any other way.
+  it('gives up on a server that stops answering, so send again works', async () => {
+    const fake = await fakeServer();
+    const file = await staged(Buffer.from('0123456789abcdefghij'));
+    fake.expectedSha256 = file.sha256;
+    fake.silent = true;
+    const uploads = new CommunityMoveUploads({ wait: async () => undefined, idleMs: 200 });
+    await uploads.begin('move_silent', file, target(fake, 8));
+    expect(uploads.progress('move_silent')).toMatchObject({
+      state: 'failed',
+      failure: 'interrupted',
+    });
+    fake.silent = false;
+    expect(uploads.retry('move_silent')).toBe(true);
+    await vi.waitFor(() => expect(uploads.progress('move_silent')?.state).toBe('sent'));
   });
 
   // Purpose (review): a part size that would cut the file into more parts than the contract

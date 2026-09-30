@@ -50,7 +50,15 @@ export interface PartedJob {
 export interface PartedOptions {
   /** Wait `seconds` (from a `Retry-After`), or stop early when `signal` aborts. */
   wait(seconds: number, signal: AbortSignal): Promise<void>;
+  /**
+   * How long a request may go without a byte either way before the attempt ends as
+   * `interrupted` (so "send again" works). Defaults to {@link REQUEST_IDLE_MS}.
+   */
+  idleMs?: number;
 }
+
+/** How long a request may go without a byte sent or received before it is given up. */
+export const REQUEST_IDLE_MS = 2 * 60_000;
 
 /** Waits for real, as long as the server asked. */
 export const REAL_WAIT: PartedOptions['wait'] = (seconds, signal) =>
@@ -72,6 +80,12 @@ export const MAX_WAIT_SECONDS = 60;
 export const MAX_TOTAL_WAIT_SECONDS = 30 * 60;
 /** How many conflicts on one part are waited out before the attempt stops. */
 const MAX_CONFLICTS = 3;
+/**
+ * The least one conflict wait lasts. A conflict names no time, and the server can keep a part
+ * that broke off marked as arriving until its own idle limit (a minute), so the waits together
+ * span at least that long.
+ */
+export const CONFLICT_WAIT_SECONDS = 20;
 /** How long to wait when a busy answer names no time. */
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
 /** The most of an answer kept: a part list of the most parts the contract allows fits. */
@@ -200,6 +214,10 @@ export async function sendParts(
         }
       );
       current = () => req.destroy(new Stopped());
+      // A server that stops answering (or stops reading) must not hold the attempt for good.
+      req.setTimeout(options.idleMs ?? REQUEST_IDLE_MS, () =>
+        req.destroy(new Error('The Community server stopped answering.'))
+      );
       req.on('error', (error) => {
         if (settled) return;
         settled = true;
@@ -290,7 +308,8 @@ export async function sendParts(
         // code. Wait a little, then look at what the server holds before sending again; a
         // conflict that does not clear ends this attempt rather than retrying for minutes.
         if (answer.status === 409 && conflicts++ < MAX_CONFLICTS) {
-          if (!(await waitAsAsked(answer.retryAfter))) return fail('interrupted');
+          if (!(await waitAsAsked(Math.max(answer.retryAfter, CONFLICT_WAIT_SECONDS))))
+            return fail('interrupted');
           const again = await heldParts();
           if (typeof again === 'string') return fail(again);
           held = again;
