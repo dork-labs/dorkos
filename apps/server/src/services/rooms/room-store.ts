@@ -14,7 +14,7 @@ import {
   DEFAULT_AMBIENT_MAX_ENTRIES,
   authors,
   canonicalDmMemberKey,
-  communityMirrorEntries,
+  communityRoomMirrors,
   rooms,
   roomMembers,
   roomEntries,
@@ -102,26 +102,26 @@ function topLevelWindow(roomId: string, opts: TopLevelWindow): SQL | undefined {
 }
 
 /**
- * Authoritative remote sequence for an imported entry, or `NULL` for local rows.
+ * Order a mirrored room's timeline: remote history in the Community's order, then what was
+ * written on this machine, in `seq` order (see `room_entries.timeline_band`).
  *
- * This relation, rather than the local `room_entries.seq` allocator, orders a
- * mirrored conversation. A local pending entry deliberately has no remote
- * sequence and follows remote history in a stable local-ordinal order.
+ * Every read that orders by this also carries {@link inMirrorTimeline}, which is what lets
+ * SQLite read the page from `idx_room_entries_mirror_timeline` in order and stop at the limit.
  */
-function importedRemoteSeq(): SQL<number | null> {
-  return sql<number | null>`(
-    SELECT ${communityMirrorEntries.remoteSeq}
-    FROM ${communityMirrorEntries}
-    WHERE ${communityMirrorEntries.localEntryId} = ${roomEntries.id}
-  )`;
+function remoteTimelineOrder(direction: 'asc' | 'desc'): SQL[] {
+  if (direction === 'asc')
+    return [sql`${roomEntries.timelineBand}`, sql`${roomEntries.timelinePos}`];
+  return [desc(roomEntries.timelineBand), desc(roomEntries.timelinePos)];
 }
 
-/** Order a mirrored room timeline by remote authority first, then local pending rows. */
-function remoteTimelineOrder(direction: 'asc' | 'desc'): [SQL, SQL, SQL] {
-  const remoteSeq = importedRemoteSeq();
-  const kind = sql`CASE WHEN ${remoteSeq} IS NULL THEN 1 ELSE 0 END`;
-  if (direction === 'asc') return [kind, remoteSeq, sql`${roomEntries.seq}`];
-  return [desc(kind), desc(remoteSeq), desc(roomEntries.seq)];
+/**
+ * The partial index's own predicate. SQLite uses a partial index only for a query whose WHERE
+ * names its condition, and every row of a mirrored room carries a band (migration 0136 placed
+ * the old ones; {@link RoomStore.appendEntry} and the mirror import place the new), so this
+ * excludes nothing.
+ */
+function inMirrorTimeline(): SQL {
+  return isNotNull(roomEntries.timelineBand);
 }
 
 /**
@@ -219,6 +219,26 @@ export class RoomStore {
   private timelineOrder(roomId: string, direction: 'asc' | 'desc'): SQL[] {
     if (this.remoteTimelineRoomIds.has(roomId)) return remoteTimelineOrder(direction);
     return direction === 'asc' ? [sql`${roomEntries.seq}`] : [desc(roomEntries.seq)];
+  }
+
+  /**
+   * The condition every read ordered by {@link RoomStore.timelineOrder} carries beside it, so a
+   * mirrored room's page is read from its timeline index; nothing for any other room.
+   *
+   * Nothing for a read of one thread either. Its rows come from `idx_room_entries_thread_root`,
+   * bounded by the thread, and sorting those is cheap; offered the timeline index as well, the
+   * planner walked the whole room looking for the thread's replies (0.17 ms to 12 ms on a
+   * 100,000-entry mirrored room).
+   *
+   * The same holds for the reads bounded another way — a `seq` window, one author, a list of
+   * ids — which carry no scope at all: their own index bounds the rows, and sorting those costs
+   * less than walking the room's timeline to find them.
+   *
+   * @param thread - The thread the read is narrowed to, if any.
+   */
+  private timelineScope(roomId: string, thread?: string | null): SQL | undefined {
+    if (typeof thread === 'string') return undefined;
+    return this.remoteTimelineRoomIds.has(roomId) ? inMirrorTimeline() : undefined;
   }
   /**
    * Session-id-keyed reads, and the memory of which ids the projector has
@@ -1028,11 +1048,10 @@ export class RoomStore {
    *   is checked at statement time. All three writes are in one transaction, so
    *   they land together or not at all. Handed the allocated `seq` for a child
    *   row that wants to record it.
-   * Remote mirrors keep their authoritative sequence in
-   * `community_mirror_entries.remote_seq`. Every local append, imported or
-   * native, receives an independent storage ordinal so neither side can occupy
-   * the other's position. Mirror reads join that relation to order remote
-   * history before any local pending rows.
+   * Every local append, imported or native, receives an independent storage
+   * ordinal so neither side can occupy the other's position. A mirrored room
+   * reads by `timeline_band`/`timeline_pos` instead, which place remote history
+   * before any post written here.
    *
    * @returns The stored entry, with its allocated local `seq`.
    */
@@ -1050,11 +1069,23 @@ export class RoomStore {
           .where(eq(roomEntries.roomId, entry.roomId))
           .get();
         const seq = allocated?.next ?? 1;
+        // A post written here into a mirrored Community room follows the room's remote history,
+        // in `seq` order (`room_entries.timeline_band`). Read from the table, not from the
+        // in-memory registration: a row stored without its place would drop out of the room's
+        // timeline for good.
+        const mirrored =
+          tx
+            .select({ id: communityRoomMirrors.localRoomId })
+            .from(communityRoomMirrors)
+            .where(eq(communityRoomMirrors.localRoomId, entry.roomId))
+            .get() !== undefined;
 
         tx.insert(roomEntries)
           .values({
             roomId: entry.roomId,
             seq,
+            timelineBand: mirrored ? 1 : null,
+            timelinePos: mirrored ? seq : null,
             id: entry.id,
             authorId: entry.authorId,
             kind: entry.kind,
@@ -1134,7 +1165,7 @@ export class RoomStore {
     const rows = this.db
       .select()
       .from(roomEntries)
-      .where(and(...conditions))
+      .where(and(...conditions, this.timelineScope(roomId, opts.threadRootEntryId)))
       .orderBy(...this.timelineOrder(roomId, 'desc'))
       .limit(opts.limit)
       .all();
@@ -1151,36 +1182,32 @@ export class RoomStore {
    * precede local pending rows, and remote rows compare by native sequence.
    */
   private beforeTimelineEntry(roomId: string, beforeSeq: number): SQL {
-    if (!this.remoteTimelineRoomIds.has(roomId)) return lt(roomEntries.seq, beforeSeq);
-    const anchor = this.db
-      .select({ remoteSeq: communityMirrorEntries.remoteSeq })
-      .from(roomEntries)
-      .leftJoin(communityMirrorEntries, eq(communityMirrorEntries.localEntryId, roomEntries.id))
-      .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.seq, beforeSeq)))
-      .get();
+    const anchor = this.timelineAnchor(roomId, beforeSeq);
     if (!anchor) return lt(roomEntries.seq, beforeSeq);
-    const remoteSeq = importedRemoteSeq();
-    if (anchor.remoteSeq !== null) {
-      return and(isNotNull(remoteSeq), lt(remoteSeq, anchor.remoteSeq))!;
-    }
-    return or(isNotNull(remoteSeq), and(isNull(remoteSeq), lt(roomEntries.seq, beforeSeq)))!;
+    return sql`(${roomEntries.timelineBand}, ${roomEntries.timelinePos}) < (${anchor.band}, ${anchor.pos})`;
   }
 
   /** Resolve a numeric forward cursor into its timeline position. */
   private afterTimelineEntry(roomId: string, afterSeq: number): SQL {
-    if (!this.remoteTimelineRoomIds.has(roomId)) return gt(roomEntries.seq, afterSeq);
-    const anchor = this.db
-      .select({ remoteSeq: communityMirrorEntries.remoteSeq })
-      .from(roomEntries)
-      .leftJoin(communityMirrorEntries, eq(communityMirrorEntries.localEntryId, roomEntries.id))
-      .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.seq, afterSeq)))
-      .get();
+    const anchor = this.timelineAnchor(roomId, afterSeq);
     if (!anchor) return gt(roomEntries.seq, afterSeq);
-    const remoteSeq = importedRemoteSeq();
-    if (anchor.remoteSeq !== null) {
-      return or(and(isNotNull(remoteSeq), gt(remoteSeq, anchor.remoteSeq)), isNull(remoteSeq))!;
-    }
-    return and(isNull(remoteSeq), gt(roomEntries.seq, afterSeq))!;
+    return sql`(${roomEntries.timelineBand}, ${roomEntries.timelinePos}) > (${anchor.band}, ${anchor.pos})`;
+  }
+
+  /**
+   * Where the entry at a cursor sits in a mirrored room's timeline, or `null` when the room is
+   * not a mirror or no placed entry holds that `seq` (the cursor then compares by `seq`, as it
+   * always has).
+   */
+  private timelineAnchor(roomId: string, seq: number): { band: number; pos: number } | null {
+    if (!this.remoteTimelineRoomIds.has(roomId)) return null;
+    const anchor = this.db
+      .select({ band: roomEntries.timelineBand, pos: roomEntries.timelinePos })
+      .from(roomEntries)
+      .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.seq, seq)))
+      .get();
+    if (anchor?.band == null || anchor.pos == null) return null;
+    return { band: anchor.band, pos: anchor.pos };
   }
 
   /**
@@ -1506,7 +1533,8 @@ export class RoomStore {
           notInArray(
             roomEntries.authorId,
             this.db.select({ id: authors.id }).from(authors).where(eq(authors.kind, 'system'))
-          )
+          ),
+          this.timelineScope(roomId, opts.threadRootEntryId)
         )
       )
       .orderBy(...this.timelineOrder(roomId, 'desc'))
@@ -1559,7 +1587,8 @@ export class RoomStore {
           this.afterTimelineEntry(roomId, opts.afterSeq),
           opts.threadRootEntryId === undefined
             ? isNull(roomEntries.parentEntryId)
-            : eq(roomEntries.threadRootEntryId, opts.threadRootEntryId)
+            : eq(roomEntries.threadRootEntryId, opts.threadRootEntryId),
+          this.timelineScope(roomId, opts.threadRootEntryId)
         )
       )
       .orderBy(...this.timelineOrder(roomId, 'asc'))
@@ -1653,7 +1682,13 @@ export class RoomStore {
     const rows = this.db
       .select()
       .from(roomEntries)
-      .where(and(eq(roomEntries.roomId, roomId), this.afterTimelineEntry(roomId, opts.afterSeq)))
+      .where(
+        and(
+          eq(roomEntries.roomId, roomId),
+          this.afterTimelineEntry(roomId, opts.afterSeq),
+          this.timelineScope(roomId)
+        )
+      )
       .orderBy(...this.timelineOrder(roomId, 'asc'))
       .limit(opts.limit)
       .all();
@@ -1806,7 +1841,7 @@ export class RoomStore {
     const rows = this.db
       .select({ createdAt: roomEntries.createdAt, body: roomEntries.body })
       .from(roomEntries)
-      .where(eq(roomEntries.roomId, roomId))
+      .where(and(eq(roomEntries.roomId, roomId), this.timelineScope(roomId)))
       .orderBy(...this.timelineOrder(roomId, 'desc'))
       .limit(scan)
       .all();

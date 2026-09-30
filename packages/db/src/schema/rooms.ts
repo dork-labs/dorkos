@@ -706,9 +706,34 @@ export const roomEntries = sqliteTable(
     signature: text('signature'),
 
     createdAt: text('created_at').notNull(),
+
+    /**
+     * Which half of a mirrored Community room's timeline this row belongs to, or null in any
+     * other room (migration 0136, DOR-2573).
+     *
+     * A mirrored room is not read in `seq` order. `seq` is the order rows ARRIVED here, and a
+     * history page older than what is already cached arrives last. The room reads remote history
+     * in the Community's own order first, then what was written on this machine, in `seq` order:
+     *
+     * - `0` — a Community entry the mirror imported. `timeline_pos` is its Community sequence.
+     * - `1` — a post written here into the mirrored room. `timeline_pos` is its `seq`.
+     *
+     * The pair is the room's timeline order, so `idx_room_entries_mirror_timeline` reads a page
+     * in order and stops at the limit. It replaced a correlated lookup of every row's Community
+     * sequence, which sorted the whole room for every page.
+     */
+    timelineBand: integer('timeline_band'),
+
+    /** The row's position inside its {@link roomEntries.timelineBand}; null with it. */
+    timelinePos: integer('timeline_pos'),
   },
   (table) => [
     primaryKey({ columns: [table.roomId, table.seq] }),
+    // A mirrored room's timeline, in order (see `timeline_band`). PARTIAL: only rows of mirrored
+    // rooms carry a band, so an ordinary room's message pays no write here.
+    index('idx_room_entries_mirror_timeline')
+      .on(table.roomId, table.timelineBand, table.timelinePos)
+      .where(sql`"timeline_band" IS NOT NULL`),
     uniqueIndex('room_entries_room_id_entry_id_unique').on(table.roomId, table.id),
     index('idx_room_entries_cascade_root').on(table.roomId, table.cascadeRoot),
     // PARTIAL, like `rooms_channel_slug_unique` above and for the same reason:

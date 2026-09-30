@@ -161,7 +161,14 @@ export function toMember(row: RoomMemberRow): RoomMember {
  * @param row - The stored row.
  */
 export function toEntry(row: RoomEntryRow): RoomEntry {
-  const { dispatchId: _internalDispatchId, ...rest } = row;
+  // Storage-only columns stay here: the turn id for the repeat rule, and a mirrored room's
+  // timeline position, which only orders reads.
+  const {
+    dispatchId: _internalDispatchId,
+    timelineBand: _timelineBand,
+    timelinePos: _timelinePos,
+    ...rest
+  } = row;
   return {
     ...rest,
     kind: row.kind as RoomEntryKind,
