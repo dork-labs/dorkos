@@ -24,6 +24,7 @@ import '@testing-library/jest-dom/vitest';
 import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
+import type { CommunityConnectionOwnerNotice } from '@dorkos/shared/community-connections';
 import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
 import { commitCommunityRouteEpoch } from '@/layers/shared/model';
 import { PageHeading, type SidebarMenuNode } from '@/layers/shared/ui';
@@ -96,6 +97,7 @@ let mockConnections: Array<{
     } | null;
   } | null;
   hostOperator?: boolean;
+  ownerNotice?: CommunityConnectionOwnerNotice;
   attention?: {
     state: 'verified' | 'stale' | 'unavailable';
     unreadCount: number | null;
@@ -166,6 +168,8 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
     await importOriginal<typeof import('@/layers/entities/community')>()
   ).unknownDisconnectAgentsLine,
   useCommunityDisconnectImpact: () => mockDisconnectImpact,
+  openOwnerNotice: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .openOwnerNotice,
   useCommunityConnections: () => ({ data: mockConnections }),
   useCommunityNavigation: () => ({ data: { ownerKey: 'owner-a', order: mockCommunityOrder } }),
   useMoveCommunityNavigation: () => ({ mutate: mockMoveCommunityNavigation }),
@@ -923,6 +927,45 @@ describe('SidebarHeaderBlock', () => {
     expect(alpha).toHaveTextContent('1 mention, 2 other unread, last checked 5m ago');
     expect(beta).toHaveTextContent('1 mention, 2 other unread');
     expect(beta).not.toHaveTextContent('last checked');
+  });
+
+  // DOR-2543. Only the owner's connection carries a notice, and its row is the one with the dot.
+  // Fails if the dot were drawn for a member, or not drawn for the owner.
+  it('marks the owner’s community with a warning dot when someone asked to take it over', async () => {
+    const community = (ref: string, label: string) => ({
+      ref,
+      remoteCommunityId: `remote-${ref}`,
+      label,
+      pinnedOrigin: `https://${ref}.example.com`,
+      connectedHumanMemberId: `person-${ref}`,
+      status: 'connected' as const,
+      expiresAt: null,
+    });
+    mockConnections = [
+      {
+        ...community('a', 'Alpha'),
+        ownerNotice: {
+          state: 'open',
+          replacementId: 'replacement-a',
+          requestState: 'waiting',
+          requestedAt: '2026-09-20T10:00:00.000Z',
+          claimableAfter: '2026-10-04T10:00:00.000Z',
+          claimReissuedAt: null,
+          options: { keep: true, transfer: true, delete: true, needsPassword: false },
+        },
+      },
+      community('b', 'Beta'),
+    ];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const alpha = (await screen.findByText('Alpha')).closest('[role="menuitemradio"]');
+    const beta = screen.getByText('Beta').closest('[role="menuitemradio"]');
+    expect(
+      within(alpha as HTMLElement).getByRole('img', {
+        name: 'Someone asked to take over this community',
+      })
+    ).toBeVisible();
+    expect(within(beta as HTMLElement).queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('discards a delayed destination after the local owner changes', async () => {

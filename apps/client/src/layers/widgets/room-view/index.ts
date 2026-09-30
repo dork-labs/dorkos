@@ -15,6 +15,11 @@ export { ChannelsPage } from './ui/ChannelsPage';
  */
 export { CommunityGonePanel } from './ui/CommunityGonePanel';
 /**
+ * The owner's warning that someone asked to take their community over, exported for the Dev
+ * Playground: producing a real one takes a host asking and a notice being sent.
+ */
+export { CommunityOwnerNoticeBanner } from './ui/CommunityOwnerNoticeBanner';
+/**
  * What a channel — and a DM, which is a channel by another name — can do. The
  * one table that says how this surface differs from the session's, read by the
  * `Conversation.Root` this widget mounts and by the Dev Playground's benches.

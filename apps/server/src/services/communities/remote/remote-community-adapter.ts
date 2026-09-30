@@ -38,6 +38,8 @@ import {
   CommunityWireChannelListResponseSchema,
   CommunityWireChannelResponseSchema,
   CommunityWireAttentionResponseSchema,
+  CommunityWireOwnerReplacementNoticeResponseSchema,
+  type CommunityWireOwnerReplacementNoticeResponse,
   CommunityWireAgentChannelMembershipResponseSchema,
   CommunityWireAgentListResponseSchema,
   CommunityWireAttachmentUploadResponseSchema,
@@ -520,6 +522,17 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
   async attention(): Promise<{ unreadCount: number; mentionCount: number }> {
     return CommunityWireAttentionResponseSchema.parse(
       await this.request(COMMUNITY_API_V1_ROUTES.attention, undefined, undefined, 'GET')
+    );
+  }
+
+  /**
+   * Read what the Community tells this connection's member about a request to replace the
+   * community's owner: the owner's view of an open request (the admins' view for an admin),
+   * and a completed one for 7 days. Untrusted, like every remote answer.
+   */
+  async ownerReplacementNotice(): Promise<CommunityWireOwnerReplacementNoticeResponse> {
+    return CommunityWireOwnerReplacementNoticeResponseSchema.parse(
+      await this.request(COMMUNITY_API_V1_ROUTES.ownerReplacement, undefined, undefined, 'GET')
     );
   }
 

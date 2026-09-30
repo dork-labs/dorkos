@@ -53,6 +53,7 @@ import {
 } from '../services/communities/remote/state.js';
 import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
 import { CommunityAttentionCache } from '../services/communities/remote/community-attention-cache.js';
+import { CommunityOwnerNoticeCache } from '../services/communities/remote/community-owner-notice-cache.js';
 
 /** Resolve the only local human allowed to use a stored community connection. */
 export function resolveCommunityOwner(req: Request, res: Response): string | null {
@@ -153,34 +154,61 @@ function attentionAccess(connection: CommunityConnectionDescriptor): 'read' | 'o
   return 'none';
 }
 
+/** The per-connection reads a connection listing adds, each held within the same budget. */
+interface ActivityCaches {
+  attention: CommunityAttentionCache;
+  ownerNotice: CommunityOwnerNoticeCache;
+}
+
 /**
- * Add attention only after the local owner and remote read grant are verified.
+ * Add attention, and the owner's notice about a request to replace them, only after the local
+ * owner and remote read grant are verified.
  *
- * Remote counts are untrusted. Any failure — transport, a slow answer, or
+ * Remote answers are untrusted. Any failure — transport, a slow answer, or
  * counts that break a descriptor rule — leaves this one connection on the last
  * counts its Community confirmed (`stale`) or on `unavailable`, so a single
  * broken or slow Community can never fail or stall the whole list and hide the
  * Remove control the owner needs to drop it. A Community that is offline this
  * read is not asked at all and keeps its last confirmed counts, also `stale`.
+ *
+ * The owner notice is asked at the same moment as the counts, so it adds nothing to how long the
+ * list takes, and it is never shown stale: a slow, failing or offline Community shows none
+ * (DOR-2543).
  */
 async function withAttention(
   connection: CommunityConnectionDescriptor,
   owner: string,
-  attentionCache: CommunityAttentionCache
+  caches: ActivityCaches
 ): Promise<CommunityConnectionDescriptor> {
   const access = attentionAccess(connection);
   if (access === 'none') {
-    attentionCache.forget(owner, connection.ref);
+    caches.attention.forget(owner, connection.ref);
+    caches.ownerNotice.forget(owner, connection.ref);
     return connection;
   }
-  const attention =
+  const [attention, ownerNotice] =
     access === 'offline'
-      ? attentionCache.lastConfirmed(owner, connection.ref)
-      : await attentionCache.read(owner, connection.ref, () =>
-          getRemoteCommunityAdapter(connection.ref, owner).attention()
-        );
-  const enriched = CommunityConnectionDescriptorSchema.safeParse({ ...connection, attention });
-  return enriched.success ? enriched.data : connection;
+      ? [caches.attention.lastConfirmed(owner, connection.ref), undefined]
+      : await Promise.all([
+          caches.attention.read(owner, connection.ref, () =>
+            getRemoteCommunityAdapter(connection.ref, owner).attention()
+          ),
+          caches.ownerNotice.read(owner, connection.ref, () =>
+            getRemoteCommunityAdapter(connection.ref, owner).ownerReplacementNotice()
+          ),
+        ]);
+  const enriched = CommunityConnectionDescriptorSchema.safeParse({
+    ...connection,
+    attention,
+    ...(ownerNotice ? { ownerNotice } : {}),
+  });
+  if (enriched.success) return enriched.data;
+  // Counts that break a descriptor rule must not take a valid notice down with them.
+  const withNotice = CommunityConnectionDescriptorSchema.safeParse({
+    ...connection,
+    ...(ownerNotice ? { ownerNotice } : {}),
+  });
+  return withNotice.success ? withNotice.data : connection;
 }
 
 /** Build the production route or inject an isolated service in HTTP tests. */
@@ -200,24 +228,25 @@ export function createCommunityConnectionsRouter(
       }
     }
   ),
-  attentionCache: CommunityAttentionCache = new CommunityAttentionCache()
+  attentionCache: CommunityAttentionCache = new CommunityAttentionCache(),
+  ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache()
 ): Router {
   const router = Router();
+  const caches: ActivityCaches = { attention: attentionCache, ownerNotice: ownerNoticeCache };
   router.get('/', async (req, res) => {
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     try {
       const connections = await connectionService.list(owner);
-      attentionCache.retainOnly(
-        owner,
-        connections
-          .filter((connection) => attentionAccess(connection) !== 'none')
-          .map((connection) => connection.ref)
-      );
+      const readable = connections
+        .filter((connection) => attentionAccess(connection) !== 'none')
+        .map((connection) => connection.ref);
+      attentionCache.retainOnly(owner, readable);
+      ownerNoticeCache.retainOnly(owner, readable);
       res.json(
         CommunityConnectionListResponseSchema.parse({
           connections: await Promise.all(
-            connections.map((item) => withAttention(item, owner, attentionCache))
+            connections.map((item) => withAttention(item, owner, caches))
           ),
         })
       );
@@ -334,13 +363,14 @@ export function createCommunityConnectionsRouter(
       return;
     }
     attentionCache.retainOwner(owner);
+    ownerNoticeCache.retainOwner(owner);
     try {
       res.json(
         CommunityConnectionStatusResponseSchema.parse({
           connection: await withAttention(
             await connectionService.status(ref.data, owner),
             owner,
-            attentionCache
+            caches
           ),
         })
       );
@@ -414,9 +444,10 @@ export function createCommunityConnectionsRouter(
     } catch (error) {
       failure(res, error);
     } finally {
-      // Even a failed disconnect may have removed the local copy; counts for a
-      // Community the owner asked to leave must not outlive the request.
+      // Even a failed disconnect may have removed the local copy; counts and notices
+      // for a Community the owner asked to leave must not outlive the request.
       attentionCache.forget(owner, ref.data);
+      ownerNoticeCache.forget(owner, ref.data);
     }
   });
   return router;
