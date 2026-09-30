@@ -156,6 +156,9 @@ export async function claimOwnerReplacement(
       'STATE_CONFLICT',
       `You can take ownership after ${formatReplacementDate(replacement.claimable_after)}.`
     );
+  // Belt and braces: the request was found by its live token, and of the open states that carry
+  // one only `claimable` has a claim_expires_at (owner_replacements_claim_window), so the state
+  // check guards against drift, not a gap the expiry check leaves today.
   if (
     replacement.state !== 'claimable' ||
     !replacement.claim_expires_at ||

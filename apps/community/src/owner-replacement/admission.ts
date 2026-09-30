@@ -44,6 +44,10 @@ export async function ownerReplacementAdmission(
 ): Promise<OwnerReplacementAdmission | null> {
   const token = ownerReplacementCookieToken(cookieHeader, authSecret);
   if (!token) return null;
+  // Belt and braces. A token hash lives only on an open request, and of those only a claimable
+  // one has a claim_expires_at (owner_replacements_claim_token and _claim_window), so the state
+  // filter adds nothing today. Suspending, deleting or taking a community down ends its request
+  // and clears the token, so the lifecycle filter adds nothing either. Both guard against drift.
   const found = await pool.query<{ issuer: string | null; subject: string | null }>(
     `SELECT r.claimant_oidc_issuer AS issuer,r.claimant_oidc_subject AS subject
      FROM owner_replacements r JOIN communities c ON c.id=r.community_id
