@@ -40,6 +40,7 @@ import type {
   PublishResult,
 } from './types.js';
 import type { BudgetRejectionCode } from '@dorkos/shared/relay-schemas';
+import { chatSpanFields } from './lib/chat-span-fields.js';
 
 // === Types ===
 
@@ -484,6 +485,7 @@ export class RelayPublishPipeline {
           messageId,
           subject,
           from: options.from,
+          payload,
           deliveredTo: 0,
           rejected,
           adapterResult: null,
@@ -729,6 +731,7 @@ export class RelayPublishPipeline {
       messageId,
       subject,
       from: envelope.from,
+      payload: envelope.payload,
       deliveredTo,
       rejected,
       adapterResult,
@@ -877,6 +880,7 @@ export class RelayPublishPipeline {
       messageId,
       subject,
       from: envelope.from,
+      payload: envelope.payload,
       deliveredTo: 0,
       rejected,
       adapterResult: null,
@@ -928,6 +932,11 @@ export class RelayPublishPipeline {
      * subject — the observed-chats list counts only the former (DOR-2590).
      */
     from: string;
+    /**
+     * The published payload, read only by {@link chatSpanFields} for a chat's
+     * display name and whether it said anything, never for its body.
+     */
+    payload?: unknown;
     deliveredTo: number;
     rejected: PublishResult['rejected'];
     adapterResult: DeliveryResult | null;
@@ -971,6 +980,7 @@ export class RelayPublishPipeline {
         ...(failureReason ? { error: failureReason } : {}),
         metadata: {
           from: span.from,
+          ...chatSpanFields(span.from, span.payload),
           deliveredTo,
           rejectedCount: rejected?.length ?? 0,
           hasAdapterResult: !!adapterResult,

@@ -370,7 +370,7 @@ export class TraceStore {
   }
 
   /**
-   * Get the chats that have messaged a connection, most recent first.
+   * Get the chats that have messaged a connection recently, most recent first.
    *
    * A chat is read from each delivery span's SUBJECT, which names the
    * connection and the chat (`relay.human.<platform>.<adapterId>[.group].<chatId>`).
@@ -383,10 +383,19 @@ export class TraceStore {
    * stream event of its turn, is published to the same chat subject, so
    * counting those would turn one exchange into dozens of "messages".
    *
+   * A message with no text (the bot being added to a group) names the chat but
+   * is not a message: it adds no count and no "last message" time, and a chat
+   * seen only that way is not listed. `displayName` is the latest non-empty
+   * name any of the chat's spans recorded — the group title, or a DM sender's
+   * name — and stays unset for a chat whose spans carry none.
+   *
+   * "Recently" is literal: delivery spans are pruned after a retention window
+   * (about eight days), so a chat quiet for longer than that drops off the list
+   * until it next sends a message.
+   *
    * This used to read `adapterId` and `chatId` out of span metadata, which no
    * writer ever put there, so the list was empty for every connection
-   * (DOR-2590). Display names are not recorded on spans, so `displayName` is
-   * left unset and callers fall back to the chat id.
+   * (DOR-2590).
    *
    * @param adapterId - Adapter instance ID to filter by
    * @param limit - Maximum number of chats to return (default 100)
@@ -397,6 +406,8 @@ export class TraceStore {
         subject: relayTraces.subject,
         sentAt: relayTraces.sentAt,
         from: sql<string | null>`json_extract(${relayTraces.metadata}, '$.from')`,
+        chatName: sql<string | null>`json_extract(${relayTraces.metadata}, '$.chatName')`,
+        emptyContent: sql<number | null>`json_extract(${relayTraces.metadata}, '$.emptyContent')`,
       })
       .from(relayTraces)
       .where(
@@ -411,11 +422,21 @@ export class TraceStore {
       .all();
 
     const chatMap = new Map<string, ObservedChat>();
+    // Latest non-empty name per chat, with the time it was recorded.
+    const names = new Map<string, { name: string; at: string }>();
 
     for (const row of rows) {
       const parsed = parseHumanSubject(row.subject);
       if (parsed.adapterId !== adapterId || !parsed.chatId) continue;
       if (row.from !== `relay.human.${parsed.platformType}.${adapterId}.bot`) continue;
+
+      if (row.chatName) {
+        const seen = names.get(parsed.chatId);
+        if (!seen || row.sentAt >= seen.at) {
+          names.set(parsed.chatId, { name: row.chatName, at: row.sentAt });
+        }
+      }
+      if (row.emptyContent) continue;
 
       const existing = chatMap.get(parsed.chatId);
       if (existing) {
@@ -431,6 +452,11 @@ export class TraceStore {
         lastMessageAt: row.sentAt,
         messageCount: 1,
       });
+    }
+
+    for (const [chatId, chat] of chatMap) {
+      const named = names.get(chatId);
+      if (named) chat.displayName = named.name;
     }
 
     return Array.from(chatMap.values())

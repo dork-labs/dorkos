@@ -427,7 +427,12 @@ describe('TraceStore', () => {
      * `{ adapterId, chatId }` metadata, a shape no writer produces, so they
      * passed while the list was empty in production.
      */
-    function publishSpan(messageId: string, subject: string, from?: string): void {
+    function publishSpan(
+      messageId: string,
+      subject: string,
+      from?: string,
+      chat: { chatName?: string; emptyContent?: true } = {}
+    ): void {
       const parsed = subject.split('.');
       store.insertSpan({
         messageId,
@@ -436,6 +441,7 @@ describe('TraceStore', () => {
         status: 'delivered',
         metadata: {
           from: from ?? `relay.human.${parsed[2]}.${parsed[3]}.bot`,
+          ...chat,
           deliveredTo: 1,
           rejectedCount: 0,
           hasAdapterResult: false,
@@ -507,6 +513,53 @@ describe('TraceStore', () => {
       const chats = store.getObservedChats('telegram-1');
       expect(chats).toHaveLength(1);
       expect(chats[0]).toMatchObject({ chatId: '111', messageCount: 1 });
+    });
+
+    it('names a chat by the latest non-empty name its messages recorded', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-10T08:00:00.000Z'));
+      publishSpan('msg-001', 'relay.human.telegram.tg-1.group.-100', undefined, {
+        chatName: 'Old Title',
+      });
+      vi.setSystemTime(new Date('2026-03-10T09:00:00.000Z'));
+      publishSpan('msg-002', 'relay.human.telegram.tg-1.group.-100', undefined, {
+        chatName: 'New Title',
+      });
+      vi.setSystemTime(new Date('2026-03-10T10:00:00.000Z'));
+      // A later message that recorded no name keeps the last one it had.
+      publishSpan('msg-003', 'relay.human.telegram.tg-1.group.-100');
+      publishSpan('msg-004', 'relay.human.telegram.tg-1.555');
+      vi.useRealTimers();
+
+      const chats = store.getObservedChats('tg-1');
+      expect(chats.find((c) => c.chatId === '-100')?.displayName).toBe('New Title');
+      expect(chats.find((c) => c.chatId === '555')?.displayName).toBeUndefined();
+    });
+
+    it('does not count a message that said nothing, but keeps the name it carried', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-10T08:00:00.000Z'));
+      publishSpan('msg-001', 'relay.human.telegram.tg-1.group.-100', undefined, {
+        chatName: 'Dev Team',
+        emptyContent: true,
+      });
+      vi.setSystemTime(new Date('2026-03-10T07:00:00.000Z'));
+      publishSpan('msg-002', 'relay.human.telegram.tg-1.group.-100');
+      // A chat seen only through a no-text event (the bot was added) is not listed.
+      publishSpan('msg-003', 'relay.human.telegram.tg-1.group.-200', undefined, {
+        chatName: 'Quiet',
+        emptyContent: true,
+      });
+      vi.useRealTimers();
+
+      const chats = store.getObservedChats('tg-1');
+      expect(chats).toHaveLength(1);
+      expect(chats[0]).toMatchObject({
+        chatId: '-100',
+        displayName: 'Dev Team',
+        messageCount: 1,
+        lastMessageAt: '2026-03-10T07:00:00.000Z',
+      });
     });
 
     it('skips a span with no recorded sender', () => {

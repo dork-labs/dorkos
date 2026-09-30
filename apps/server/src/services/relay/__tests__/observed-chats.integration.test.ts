@@ -53,7 +53,18 @@ describe('observed chats come from the messages a connection carried', () => {
     );
     await relay.publish(
       'relay.human.telegram.tg-main.group.-100777',
-      { content: 'team', senderName: 'Bob', channelType: 'group' },
+      { content: 'team', senderName: 'Bob', channelName: 'Dev Team', channelType: 'group' },
+      {
+        from: 'relay.human.telegram.tg-main.bot',
+        replyTo: 'relay.human.telegram.tg-main.group.-100777',
+      }
+    );
+
+    // The bot being added to the group, published as the Telegram adapter does:
+    // no text, so it is not a message the chat sent.
+    await relay.publish(
+      'relay.human.telegram.tg-main.group.-100777',
+      { content: '', senderName: 'Bob', channelName: 'Dev Team', channelType: 'group' },
       {
         from: 'relay.human.telegram.tg-main.bot',
         replyTo: 'relay.human.telegram.tg-main.group.-100777',
@@ -77,9 +88,9 @@ describe('observed chats come from the messages a connection carried', () => {
 
     expect(chats.map((c) => c.chatId).sort()).toEqual(['-100777', '12345']);
     const dm = chats.find((c) => c.chatId === '12345');
-    expect(dm).toMatchObject({ channelType: 'dm', messageCount: 2 });
+    expect(dm).toMatchObject({ channelType: 'dm', messageCount: 2, displayName: 'Alice' });
     const group = chats.find((c) => c.chatId === '-100777');
-    expect(group).toMatchObject({ channelType: 'group', messageCount: 1 });
+    expect(group).toMatchObject({ channelType: 'group', messageCount: 1, displayName: 'Dev Team' });
   });
 
   it("keeps one connection's chats out of another's list", async () => {
