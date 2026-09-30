@@ -12,13 +12,17 @@ import {
 import type { CommunityConfig } from '../config.js';
 import { transaction } from '../data.js';
 import { parseHostCommunityId } from '../host/communities.js';
-import { assertHostActor, type HostActor, type HostAuthority } from '../host/authority.js';
+import type { HostActor, HostAuthority } from '../host/authority.js';
 import { ApiError, json, readJson } from '../http.js';
 import type { ConfirmPassword } from '../password-confirmation.js';
 import {
+  communityTakedownLogLine,
+  createCommunityTakedown,
+  reverseCommunityTakedown,
+} from '../takedown/community.js';
+import {
   createItemTakedown,
   listTakedowns,
-  lockTakedown,
   projectTakedown,
   releaseHeldEvidence,
   resolveNotify,
@@ -45,7 +49,9 @@ function takedownId(value: string | undefined): string {
 /**
  * Register the host's takedown routes. Every one needs `communities:takedown`. A person proves
  * each takedown with their password; a key never sends one. No request or response here carries
- * content: a takedown names content by id, and its copy goes only to the evidence store.
+ * content: a takedown names content by id, and its copy goes only to the evidence store. A whole
+ * community's takedown is rate limited per actor and logs a warning line each time, and it alone
+ * can be reversed, within its window.
  */
 export function registerHostTakedownRoutes(
   app: Hono,
@@ -55,10 +61,15 @@ export function registerHostTakedownRoutes(
     authority: HostAuthority;
     now: () => Date;
     confirmPassword: ConfirmPassword;
-    hooks?: TakedownHooks;
+    hooks?: TakedownHooks & {
+      /** Runs inside a reversal after the community and takedown are locked. */
+      afterReverseLock?: () => Promise<void>;
+    };
   }
 ): void {
   const { pool, config, authority, now, confirmPassword, hooks } = deps;
+  // A host's alerting watches these lines on standard error; each carries ids only.
+  const warn = (line: string) => console.warn(line);
   const project = (row: TakedownRow) =>
     projectTakedown(
       row,
@@ -92,12 +103,45 @@ export function registerHostTakedownRoutes(
     const person = passwordToCheck(actor, body.password);
     if (person) await confirmPassword(c, person.userId, person.password);
     const target = body.target;
-    if (target.kind === 'community')
-      throw new ApiError(
-        409,
-        'STATE_CONFLICT',
-        'Taking down a whole community is not available yet. Suspend it instead.'
+    if (target.kind === 'community') {
+      const result = await transaction(pool, (client) =>
+        createCommunityTakedown(
+          client,
+          {
+            communityId,
+            actor,
+            target,
+            idempotencyKey: body.idempotencyKey,
+            category: body.category,
+            reference: body.reference,
+            notify: resolveNotify(body.category, body.notify),
+            evidenceStore: config.evidence !== null,
+            publicUrl: config.publicUrl,
+            now: now(),
+            reversalHours: config.limits.takedownReversalHours,
+            communitiesPerDay: config.limits.takedownCommunitiesPerDay,
+            warn,
+          },
+          hooks
+        )
       );
+      // Logged once it has committed, so a host's alerting never hears of one that rolled back.
+      if (!result.replayed)
+        warn(
+          communityTakedownLogLine({
+            outcome: 'created',
+            communityId,
+            actor,
+            takedownId: result.row.id,
+          })
+        );
+      return json(
+        c,
+        CommunityAdminTakedownResponseSchema,
+        { takedown: project(result.row) },
+        result.replayed ? 200 : 201
+      );
+    }
     const result = await transaction(pool, (client) =>
       createItemTakedown(
         client,
@@ -156,17 +200,18 @@ export function registerHostTakedownRoutes(
     const id = takedownId(c.req.param('takedownId'));
     const person = passwordToCheck(actor, body.password);
     if (person) await confirmPassword(c, person.userId, person.password);
-    await transaction(pool, async (client) => {
-      await lockTakedown(client, id);
-      await assertHostActor(client, actor, now());
-    });
     // Only a whole-community takedown waits out a window before anything is destroyed. An
     // item's content was removed at once and cannot be put back.
-    throw new ApiError(
-      409,
-      'STATE_CONFLICT',
-      'A removed message, file, or icon cannot be restored: it is gone.'
+    const row = await transaction(pool, (client) =>
+      reverseCommunityTakedown(client, {
+        takedownId: id,
+        actor,
+        lifecycleVersion: body.lifecycleVersion,
+        now: now(),
+        afterLock: hooks?.afterReverseLock,
+      })
     );
+    return json(c, CommunityAdminTakedownResponseSchema, { takedown: project(row) });
   });
 
   app.post('/host/takedowns/:takedownId/evidence/retry', async (c) => {

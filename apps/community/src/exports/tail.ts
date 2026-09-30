@@ -147,6 +147,14 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
     .filter((segment) => segment.file_count > 0)
     .map((segment) => `attachments/${fileNumber(segment.segment_no)}.ndjson`);
   const { community, tallies } = collected;
+  // An evidence archive records the lifecycle before the takedown, as the takedown stored it;
+  // an owner or personal archive reads a held community as archived, as version 1 did.
+  const lifecycle =
+    job.job.scope === 'evidence'
+      ? await evidenceLifecycle(job)
+      : community.lifecycle === 'active'
+        ? 'active'
+        : 'archived';
   const icon =
     community.icon_blob_key && community.icon_byte_size && community.icon_checksum
       ? {
@@ -168,7 +176,7 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
       name: community.name,
       description: community.description,
       admissionPolicy: community.admission_policy,
-      lifecycle: community.lifecycle === 'active' ? 'active' : 'archived',
+      lifecycle,
       lifecycleVersion: community.lifecycle_version,
       settingsVersion: community.settings_version,
       icon: icon
@@ -271,10 +279,13 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
          WHERE id=$1`,
         [job.job.id, now, job.settings.ttlHours]
       );
-      await client.query(
-        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
-        [job.job.community_id, job.job.requester_member_id, 'export.create', job.job.id]
-      );
+      // Nobody asked for an evidence export, and the community's own audit must not say one
+      // exists: the host audit records the takedown instead.
+      if (job.job.scope !== 'evidence')
+        await client.query(
+          'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
+          [job.job.community_id, job.job.requester_member_id, 'export.create', job.job.id]
+        );
       return true;
     });
   } catch (error) {
@@ -284,6 +295,22 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
   }
   if (!committed) for (const part of parts) await job.discard(part.reservation, part.stored);
   return committed;
+}
+
+/** The lifecycle a takedown's evidence archive records: the one before the takedown. */
+async function evidenceLifecycle(
+  job: ExportJob
+): Promise<CommunityExportManifestV2['community']['lifecycle']> {
+  const takedown = await job.pool.query<{
+    lifecycle: CommunityExportManifestV2['community']['lifecycle'] | null;
+  }>(
+    `SELECT prior_state->>'lifecycle' AS lifecycle FROM community_takedowns
+     WHERE id=$1 AND community_id=$2`,
+    [job.job.evidence_takedown_id, job.job.community_id]
+  );
+  const lifecycle = takedown.rows[0]?.lifecycle;
+  if (!lifecycle) throw new JobFailedError('EXPORT_ACCESS_ENDED');
+  return lifecycle;
 }
 
 /** The community row the manifest describes, with its icon. */

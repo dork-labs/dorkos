@@ -24,7 +24,7 @@ import {
 import { ApiError, json, readJson } from '../http.js';
 import { entryProjection, originKeyForPrincipal } from './entries.js';
 import { attachmentsForEntries } from './attachments.js';
-import { isDeletedCommunity, isReadOnlyLifecycle } from '../tenant-context.js';
+import { communityGoneReason, isReadOnlyLifecycle } from '../tenant-context.js';
 
 interface LiveChannel {
   id: string;
@@ -79,22 +79,28 @@ interface StreamAccess {
   archived: boolean;
   epoch: number;
   lifecycle: string;
+  /** The host took the whole community down. */
+  taken_down: boolean;
 }
 
 /**
  * Why a live stream must close now, or null to keep it open.
  *
  * A read-only community (archived by its owner or held by its host) closes the stream as
- * `archived`: the person can still read, just not live. A community whose deletion finished
- * closes it as `deleted`. A missing credential, a removal, or any other lifecycle (a pending
- * deletion included) closes it as `removed`.
+ * `archived`: the person can still read, just not live. A community its host took down closes
+ * it as `taken_down`, and one whose deletion finished as `deleted`, whether or not the stream's
+ * credential still reads (a takedown revokes every installation's). A missing credential, a
+ * removal, or any other lifecycle (an ordinary pending deletion included) closes it as `removed`.
+ *
+ * @param gone - Why the community is gone, read only when the credential no longer sees it.
  */
 function streamCloseReason(
   state: StreamAccess | null | undefined,
   epoch: number,
-  deleted: boolean
-): 'archived' | 'removed' | 'deleted' | null {
-  if (!state) return deleted ? 'deleted' : 'removed';
+  gone: 'taken_down' | 'deleted' | null
+): 'archived' | 'removed' | 'deleted' | 'taken_down' | null {
+  if (!state) return gone ?? 'removed';
+  if (state.taken_down) return 'taken_down';
   if (state.lifecycle === 'active') {
     if (state.active && state.joined && !state.archived && state.epoch === epoch) return null;
     return state.archived ? 'archived' : 'removed';
@@ -336,14 +342,16 @@ export function registerEventRoutes(
       if (principal.kind === 'agent') values.push(principal.ownerMemberId);
       const active = await pool.query<StreamAccess>(
         principal.kind === 'agent'
-          ? `SELECT (a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,ch.archived,ch.epoch,co.lifecycle
+          ? `SELECT (a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,ch.archived,ch.epoch,co.lifecycle,
+             (co.takedown_id IS NOT NULL) AS taken_down
            FROM agents a JOIN members owner ON owner.id=a.owner_member_id
            JOIN communities co ON co.id=a.community_id
            JOIN channels ch ON ch.id=$2
            LEFT JOIN agent_channel_members cm ON cm.channel_id=ch.id AND cm.agent_id=a.id
            WHERE a.id=$1 AND a.community_id=$3 AND ch.community_id=$3
              AND a.owner_member_id=$5 AND ${credential}`
-          : `SELECT m.active,(cm.member_id IS NOT NULL) AS joined,ch.archived,ch.epoch,co.lifecycle
+          : `SELECT m.active,(cm.member_id IS NOT NULL) AS joined,ch.archived,ch.epoch,co.lifecycle,
+             (co.takedown_id IS NOT NULL) AS taken_down
            FROM members m JOIN communities co ON co.id=m.community_id
            JOIN channels ch ON ch.id=$2
            LEFT JOIN channel_members cm ON cm.channel_id=ch.id AND cm.member_id=m.id
@@ -352,14 +360,14 @@ export function registerEventRoutes(
       );
       return active.rows[0];
     };
-    // Nothing is visible to the stream's credential any more: tell a finished deletion apart
-    // from every other way access ends. The record is read after the access query, and the
-    // worker writes it in the transaction that removes the community, so it is already there.
+    // Nothing is visible to the stream's credential any more: tell a takedown and a finished
+    // deletion apart from every other way access ends. Both are read after the access query,
+    // and each is written in the transaction that ends access, so it is already there.
     const closeReason = async (state: StreamAccess | null | undefined) =>
       streamCloseReason(
         state,
         channel.epoch,
-        !state && (await isDeletedCommunity(pool, principal.community_id))
+        state ? null : await communityGoneReason(pool, principal.community_id)
       );
     const stream = new ReadableStream<Uint8Array>(
       {

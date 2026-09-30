@@ -213,6 +213,7 @@ it('upgrades a populated foundation database without changing human authors', as
       'created_at',
       'stored_at',
       'committed_at',
+      'evidence_takedown_id',
     ]);
     expect(
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(

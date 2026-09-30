@@ -107,6 +107,39 @@ describe('community export wire', () => {
     ).toBe(false);
   });
 
+  // Purpose: only a takedown's evidence archive has no requester and records the state before
+  // the takedown; fails if an owner or personal archive could claim either, or an evidence one
+  // could name a requester.
+  it('lets only an evidence archive be requester-free and record a closed lifecycle', () => {
+    const evidence = {
+      ...manifest,
+      scope: 'evidence',
+      requesterMemberId: null,
+      community: { ...manifest.community, lifecycle: 'held' },
+    };
+    expect(CommunityExportManifestV2Schema.parse(evidence).community.lifecycle).toBe('held');
+    for (const lifecycle of ['suspended', 'deletion_pending'])
+      expect(
+        CommunityExportManifestV2Schema.safeParse({
+          ...evidence,
+          community: { ...evidence.community, lifecycle },
+        }).success
+      ).toBe(true);
+    expect(
+      CommunityExportManifestV2Schema.safeParse({
+        ...manifest,
+        community: { ...manifest.community, lifecycle: 'held' },
+      }).success
+    ).toBe(false);
+    expect(
+      CommunityExportManifestV2Schema.safeParse({ ...manifest, requesterMemberId: null }).success
+    ).toBe(false);
+    expect(
+      CommunityExportManifestV2Schema.safeParse({ ...evidence, requesterMemberId: 'member-1' })
+        .success
+    ).toBe(false);
+  });
+
   // Purpose: an entry row records who removed it, or that its author was erased, and nothing else.
   it('limits an entry row’s removal marker to the known kinds', () => {
     const row = {
