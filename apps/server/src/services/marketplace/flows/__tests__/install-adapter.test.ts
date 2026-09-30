@@ -26,11 +26,17 @@ function buildLogger(): Logger {
   };
 }
 
+/** A saved entry in the fake manager: the adapter type and its config. */
+interface SavedEntry {
+  type: string;
+  config: Record<string, unknown>;
+}
+
 /**
  * Build a partial AdapterManager mock exposing the methods the install flow
- * touches, backed by a set of saved ids like the real one: `addAdapter`
+ * touches, backed by a map of saved entries like the real one: `addAdapter`
  * refuses an id already saved (`DUPLICATE_ID`) and otherwise saves it,
- * `getAdapter` reads the set, and `removeAdapter` deletes from it. Pass
+ * `getAdapter` reads the map, and `removeAdapter` deletes from it. Pass
  * `saved` to start with connections that exist before the install. Cast
  * through `unknown` to satisfy the structural type without re-implementing
  * the entire class surface.
@@ -38,22 +44,25 @@ function buildLogger(): Logger {
 function buildAdapterManagerMock(overrides?: {
   addAdapter?: ReturnType<typeof vi.fn>;
   removeAdapter?: ReturnType<typeof vi.fn>;
-  saved?: Set<string>;
+  saved?: Map<string, SavedEntry>;
 }): AdapterManager {
-  const saved = overrides?.saved ?? new Set<string>();
+  const saved = overrides?.saved ?? new Map<string, SavedEntry>();
   return {
     addAdapter:
       overrides?.addAdapter ??
-      vi.fn(async (_type: string, id: string) => {
+      vi.fn(async (type: string, id: string, config: Record<string, unknown>) => {
         if (saved.has(id)) throw new Error(`Adapter with ID '${id}' already exists`);
-        saved.add(id);
+        saved.set(id, { type, config });
       }),
     removeAdapter:
       overrides?.removeAdapter ??
       vi.fn(async (id: string) => {
         saved.delete(id);
       }),
-    getAdapter: vi.fn((id: string) => (saved.has(id) ? { config: { id } } : undefined)),
+    getAdapter: vi.fn((id: string) => {
+      const entry = saved.get(id);
+      return entry ? { config: { id, type: entry.type, config: entry.config } } : undefined;
+    }),
   } as unknown as AdapterManager;
 }
 
@@ -152,10 +161,10 @@ describe('AdapterInstallFlow', () => {
   it('removes the entry it saved when the adapter then fails to start', async () => {
     const manifest = buildManifest('failing-adapter');
     const packagePath = await writeAdapterPackage(sourceRoot, manifest);
-    const saved = new Set<string>();
+    const saved = new Map<string, SavedEntry>();
     // `addAdapter` saves the entry, then throws while starting it.
-    const addAdapter = vi.fn(async (_type: string, id: string) => {
-      saved.add(id);
+    const addAdapter = vi.fn(async (type: string, id: string, config: Record<string, unknown>) => {
+      saved.set(id, { type, config });
       throw new Error('addAdapter exploded');
     });
     const adapterManager = buildAdapterManagerMock({ addAdapter, saved });
@@ -172,7 +181,9 @@ describe('AdapterInstallFlow', () => {
     const manifest = buildManifest('taken-name');
     const packagePath = await writeAdapterPackage(sourceRoot, manifest);
     // The person's own connection, saved before the install ran.
-    const saved = new Set<string>([manifest.name]);
+    const saved = new Map<string, SavedEntry>([
+      [manifest.name, { type: 'telegram', config: { token: 'theirs' } }],
+    ]);
     const adapterManager = buildAdapterManagerMock({ saved });
     const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
 
@@ -180,6 +191,25 @@ describe('AdapterInstallFlow', () => {
 
     expect(adapterManager.removeAdapter).not.toHaveBeenCalled();
     expect(saved.has(manifest.name)).toBe(true);
+  });
+
+  it("never removes a person's connection saved under the id while the install was registering", async () => {
+    const manifest = buildManifest('raced-name');
+    const packagePath = await writeAdapterPackage(sourceRoot, manifest);
+    const saved = new Map<string, SavedEntry>();
+    // The id is free when the install starts. While `addAdapter` awaits, the
+    // person saves their own connection under it, and the install then fails.
+    const addAdapter = vi.fn(async (_type: string, id: string) => {
+      saved.set(id, { type: 'telegram', config: { token: 'theirs' } });
+      throw new Error(`Adapter with ID '${id}' already exists`);
+    });
+    const adapterManager = buildAdapterManagerMock({ addAdapter, saved });
+    const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
+
+    await expect(flow.install(packagePath, manifest, {})).rejects.toThrow('already exists');
+
+    expect(adapterManager.removeAdapter).not.toHaveBeenCalled();
+    expect(saved.get(manifest.name)?.config).toEqual({ token: 'theirs' });
   });
 
   it('removes nothing when addAdapter refuses before saving', async () => {

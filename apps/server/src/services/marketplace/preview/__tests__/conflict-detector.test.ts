@@ -580,6 +580,27 @@ describe('ConflictDetector', () => {
     });
   });
 
+  it('reports a connection that already uses the package name, when no package of that name is installed (DOR-2607)', async () => {
+    // The person's own connection, saved under the id the install would use.
+    adapterManager = buildMockAdapterManager([{ id: 'team-chat', type: 'telegram' }]);
+    detector = new ConflictDetector(dorkHome, adapterManager);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: adapterManifest('team-chat', 'slack'),
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'adapter-id')).toEqual([
+      {
+        level: 'error',
+        type: 'adapter-id',
+        description:
+          'You already have a connection named "team-chat". Remove or rename it, then install again.',
+      },
+    ]);
+  });
+
   it('does not check adapter ids when the package type is not adapter', async () => {
     adapterManager = buildMockAdapterManager([{ id: 'slack', type: 'slack' }]);
     detector = new ConflictDetector(dorkHome, adapterManager);

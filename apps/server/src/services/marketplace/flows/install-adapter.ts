@@ -172,7 +172,11 @@ async function activateAdapterPackage(stagingPath: string, installPath: string):
  * already had this id before the install is the person's, not the
  * install's: `addAdapter` refuses it as a duplicate, and removing it here
  * used to delete that connection, its secrets and its links to agents. So
- * the rollback runs only when the id was free before and is taken after.
+ * the rollback runs only when the id was free before and is taken after, and
+ * only when the entry now under that id is the one this install asked for:
+ * the same adapter type pointing at this install's own plugin path. A
+ * person's own connection saved under the id while `addAdapter` was awaiting
+ * points nowhere near it, so it is never mistaken for the install's.
  *
  * @internal
  */
@@ -182,14 +186,16 @@ async function registerAdapterWithCompensation(
   installPath: string,
   logger: Logger
 ): Promise<void> {
+  const pluginPath = path.join(installPath, '.dork', 'adapters', manifest.adapterType);
   const existedBefore = adapterManager.getAdapter(manifest.name) !== undefined;
   try {
-    await adapterManager.addAdapter(manifest.adapterType, manifest.name, {
-      pluginPath: path.join(installPath, '.dork', 'adapters', manifest.adapterType),
-    });
+    await adapterManager.addAdapter(manifest.adapterType, manifest.name, { pluginPath });
   } catch (err) {
+    const after = adapterManager.getAdapter(manifest.name)?.config;
     const createdByThisInstall =
-      !existedBefore && adapterManager.getAdapter(manifest.name) !== undefined;
+      !existedBefore &&
+      after?.type === manifest.adapterType &&
+      (after.config as { pluginPath?: unknown } | undefined)?.pluginPath === pluginPath;
     logger.warn('[marketplace/install-adapter] addAdapter failed', {
       name: manifest.name,
       error: err instanceof Error ? err.message : String(err),

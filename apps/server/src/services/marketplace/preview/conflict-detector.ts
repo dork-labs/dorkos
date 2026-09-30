@@ -142,7 +142,7 @@ export class ConflictDetector {
     reports.push(...this.#detectSlotConflicts(stagedExtensions, foreignExtensions));
     reports.push(...this.#detectSkillNameConflicts(stagedSkills, foreignSkills));
     reports.push(...this.#detectCronConflicts(stagedSkills, foreignSkills));
-    reports.push(...this.#detectAdapterIdConflict(ctx));
+    reports.push(...(await this.#detectAdapterIdConflict(ctx)));
     reports.push(...this.#detectAgentScopeExtensionWarning(ctx, stagedExtensions));
 
     return reports;
@@ -310,7 +310,10 @@ export class ConflictDetector {
   }
 
   /**
-   * Rule 5 — adapter type collisions. Only runs for adapter packages; the
+   * Rule 5 — adapter id and type collisions. Only runs for adapter packages.
+   * First, a saved entry already using the package name as its id, when no
+   * package of that name is installed: the person's own connection, which the
+   * install cannot replace (DOR-2607). Then the type check: the
    * staged `adapterType` is compared against the `type` field of every
    * adapter currently registered with {@link AdapterManager.listAdapters}.
    *
@@ -321,17 +324,37 @@ export class ConflictDetector {
    * fire when a package happened to be named after its adapter family,
    * which is the exception, not the rule.
    */
-  #detectAdapterIdConflict(ctx: ConflictDetectionContext): ConflictReport[] {
+  async #detectAdapterIdConflict(ctx: ConflictDetectionContext): Promise<ConflictReport[]> {
     if (ctx.manifest.type !== 'adapter') return [];
-    const stagedType = ctx.manifest.adapterType;
+    const name = ctx.manifest.name;
     const installed = this.#adapterManager.listAdapters();
+
+    // The install saves its entry under `config.id === packageName`, and
+    // `addAdapter` refuses an id already saved. When no package of this name is
+    // installed, an entry with that id is the person's own connection, not a
+    // reinstall of this package, so the install would fail at its last step
+    // (DOR-2607). Say so in the preview, before anything is written.
+    const sameId = installed.find((entry) => entry.config.id === name);
+    if (sameId) {
+      const packageRoot = join(this.#dorkHome, installRootDirForType('adapter'), name);
+      if (!(await hasPackageIdentity(packageRoot))) {
+        return [
+          {
+            level: 'error',
+            type: 'adapter-id',
+            description: `You already have a connection named "${name}". Remove or rename it, then install again.`,
+          },
+        ];
+      }
+    }
+
+    const stagedType = ctx.manifest.adapterType;
     const collision = installed.find((entry) => entry.config.type === stagedType);
     if (!collision) return [];
-    // The adapter is registered under `config.id === packageName`. If the colliding
-    // adapter is this very package, it's a reinstall of its own adapter — not a
-    // collision with a different package — so skip it (mirrors the skill-name
-    // self-comparison filter above). The install transaction re-registers it.
-    if (collision.config.id === ctx.manifest.name) return [];
+    // The colliding entry is this very package's own, installed at its path: a
+    // reinstall of its own adapter, not a collision with a different package,
+    // so skip it (mirrors the skill-name self-comparison filter above).
+    if (collision.config.id === name) return [];
     return [
       {
         level: 'error',

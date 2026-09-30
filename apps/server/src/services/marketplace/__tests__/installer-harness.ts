@@ -59,6 +59,10 @@ export interface InstallerTestSpies {
   agentUnregister: ReturnType<typeof vi.fn>;
   adapterAdd: ReturnType<typeof vi.fn>;
   adapterRemove: ReturnType<typeof vi.fn>;
+  /** `listAdapters`, read by the conflict detector; returns `[]` by default. */
+  adapterList: ReturnType<typeof vi.fn>;
+  /** `getAdapter`, read by the install rollback; returns `undefined` by default. */
+  adapterGet: ReturnType<typeof vi.fn>;
   /** `GitTreeSource.lookup` — resolves a ref to a commit. */
   gitLookup: ReturnType<typeof vi.fn>;
   /** `GitTreeSource.fetch` — populates a temp dir and returns its commit. */
@@ -135,11 +139,12 @@ export function buildInstallerForTests(
   const adapterAdd = vi.fn().mockResolvedValue(undefined);
   const adapterRemove = vi.fn().mockResolvedValue(undefined);
   const adapterList = vi.fn().mockReturnValue([]);
+  const adapterGet = vi.fn().mockReturnValue(undefined);
   const adapterManager = {
     addAdapter: adapterAdd,
     removeAdapter: adapterRemove,
     listAdapters: adapterList,
-    getAdapter: vi.fn().mockReturnValue(undefined),
+    getAdapter: adapterGet,
   } as unknown as AdapterManager;
 
   const conflictDetector = new ConflictDetector(dorkHome, adapterManager);
@@ -227,6 +232,8 @@ export function buildInstallerForTests(
       extensionDisable,
       createAgentWorkspace,
       agentUnregister,
+      adapterList,
+      adapterGet,
       adapterAdd,
       adapterRemove,
       gitLookup,

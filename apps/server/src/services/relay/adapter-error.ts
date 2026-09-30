@@ -29,9 +29,18 @@ export type AdapterErrorCode =
  * Includes a machine-readable `code` for programmatic error handling.
  */
 export class AdapterError extends Error {
+  /**
+   * Build an adapter error.
+   *
+   * @param message - What went wrong, for logs and developer callers.
+   * @param code - Machine-readable reason.
+   * @param adapterId - The id the refusal is about, when there is one, so a
+   *   caller can name it in its own words (e.g. a `DUPLICATE_ID` refusal).
+   */
   constructor(
     message: string,
-    public readonly code: AdapterErrorCode
+    public readonly code: AdapterErrorCode,
+    public readonly adapterId?: string
   ) {
     super(message);
     this.name = 'AdapterError';
