@@ -148,6 +148,24 @@ describe('AdapterInstallFlow', () => {
     expect(removeAdapter).toHaveBeenCalledWith(manifest.name);
   });
 
+  it('keeps delivery history when rolling back a failed install (DOR-2604)', async () => {
+    const manifest = buildManifest('rollback-adapter');
+    const packagePath = await writeAdapterPackage(sourceRoot, manifest);
+    const removeAdapter = vi.fn().mockResolvedValue(undefined);
+    const adapterManager = buildAdapterManagerMock({
+      addAdapter: vi.fn().mockRejectedValue(new Error('addAdapter exploded')),
+      removeAdapter,
+    });
+    const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
+
+    await expect(flow.install(packagePath, manifest, {})).rejects.toThrow('addAdapter exploded');
+
+    // Only a person removing a connection passes `forgetHistory`.
+    for (const call of removeAdapter.mock.calls) {
+      expect(call[1]?.forgetHistory).not.toBe(true);
+    }
+  });
+
   it('returns warnings array containing the secret-configuration hint', async () => {
     const manifest = buildManifest('hint-adapter');
     const packagePath = await writeAdapterPackage(sourceRoot, manifest);

@@ -127,6 +127,17 @@ export interface ConnectionTraceEraser {
   deleteConnectionTraces(adapterId: string): number;
 }
 
+/** Options for {@link AdapterManager.removeAdapter}. */
+export interface RemoveAdapterOptions {
+  /**
+   * Also delete the connection's delivery records, chat names and events
+   * (DOR-2604). Only a person removing the connection passes this: a package
+   * update or an install rollback removes an entry it may put straight back,
+   * and must never erase a history nobody asked to lose. Defaults to `false`.
+   */
+  forgetHistory?: boolean;
+}
+
 /** Minimal ActivityService interface for fire-and-forget event emission. */
 export interface ActivityEmitter {
   emit(event: {
@@ -1035,8 +1046,13 @@ export class AdapterManager {
     await this.persistConfigs();
   }
 
-  /** Remove an adapter instance, stop it if running, and persist the change. */
-  async removeAdapter(id: string): Promise<void> {
+  /**
+   * Remove an adapter instance, stop it if running, and persist the change.
+   *
+   * @param id - The adapter instance to remove.
+   * @param options - Pass `forgetHistory` only when a person removed it.
+   */
+  async removeAdapter(id: string, options: RemoveAdapterOptions = {}): Promise<void> {
     const index = this.configs.findIndex((c) => c.id === id);
     if (index === -1) {
       // Not a running integration — but it may be one whose saved settings
@@ -1047,7 +1063,7 @@ export class AdapterManager {
       // it, so this path has to exist.
       // Its id may still name records from before its settings broke.
       if (await this.removeUnparsedEntry(id)) {
-        this.deleteConnectionHistory(id);
+        if (options.forgetHistory) this.deleteConnectionHistory(id);
         return;
       }
       throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
@@ -1090,7 +1106,7 @@ export class AdapterManager {
     await this.persistConfigs();
     // Best-effort cleanup of the removed adapter's stored secrets (DOR-280).
     await deleteAdapterSecrets(config, this.secretsCtx);
-    this.deleteConnectionHistory(id);
+    if (options.forgetHistory) this.deleteConnectionHistory(id);
 
     // Auto-delete bindings that belonged to the removed adapter
     const bindingStore = this.bindingSubsystem?.getBindingStore();

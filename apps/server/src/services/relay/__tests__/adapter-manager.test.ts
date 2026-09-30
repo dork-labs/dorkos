@@ -1627,7 +1627,9 @@ describe('AdapterManager', () => {
         return traces;
       }
 
-      it("deletes the removed connection's chats, names and events, and no one else's", async () => {
+      it('keeps the history when the removal is internal, not a person removing it', async () => {
+        // A package update and an install rollback both call removeAdapter
+        // without the flag; neither may erase a history nobody asked to lose.
         vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
         const traces = seededTraceStore();
         const withTraces = new AdapterManager(registry, configPath, {
@@ -1637,6 +1639,24 @@ describe('AdapterManager', () => {
         await initAndStart(withTraces);
 
         await withTraces.removeAdapter('tg-main');
+
+        expect(withTraces.listAdapters().find((a) => a.config.id === 'tg-main')).toBeUndefined();
+        expect(traces.getObservedChats('tg-main')).toEqual([
+          expect.objectContaining({ chatId: '111', displayName: 'Ada' }),
+        ]);
+        expect(traces.getAdapterEvents('tg-main')).toHaveLength(1);
+      });
+
+      it("deletes the removed connection's chats, names and events, and no one else's", async () => {
+        vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+        const traces = seededTraceStore();
+        const withTraces = new AdapterManager(registry, configPath, {
+          ...mockDeps,
+          traceEraser: traces,
+        });
+        await initAndStart(withTraces);
+
+        await withTraces.removeAdapter('tg-main', { forgetHistory: true });
 
         expect(traces.getObservedChats('tg-main')).toEqual([]);
         expect(traces.getAdapterEvents('tg-main')).toEqual([]);
@@ -1658,7 +1678,9 @@ describe('AdapterManager', () => {
         await initAndStart(withTraces);
         vi.mocked(writeFile).mockRejectedValueOnce(new Error('disk full'));
 
-        await expect(withTraces.removeAdapter('tg-main')).rejects.toThrow('disk full');
+        await expect(withTraces.removeAdapter('tg-main', { forgetHistory: true })).rejects.toThrow(
+          'disk full'
+        );
 
         expect(traces.getObservedChats('tg-main')).toHaveLength(1);
         expect(traces.getAdapterEvents('tg-main')).toHaveLength(1);
@@ -1677,7 +1699,7 @@ describe('AdapterManager', () => {
         });
         await initAndStart(withTraces);
 
-        await withTraces.removeAdapter('tg-main');
+        await withTraces.removeAdapter('tg-main', { forgetHistory: true });
 
         expect(traces.getObservedChats('tg-main')).toEqual([]);
         expect(traces.getAdapterEvents('tg-main')).toEqual([]);
@@ -1694,7 +1716,7 @@ describe('AdapterManager', () => {
         const withEraser = new AdapterManager(registry, configPath, { ...mockDeps, traceEraser });
         await initAndStart(withEraser);
 
-        await withEraser.removeAdapter('tg-main');
+        await withEraser.removeAdapter('tg-main', { forgetHistory: true });
 
         expect(traceEraser.deleteConnectionTraces).toHaveBeenCalledWith('tg-main');
         expect(withEraser.listAdapters().find((a) => a.config.id === 'tg-main')).toBeUndefined();

@@ -472,6 +472,24 @@ describe('UninstallFlow', () => {
     expect(deps.extensionManager.disable).not.toHaveBeenCalled();
   });
 
+  it('keeps delivery history when an adapter package is updated (DOR-2604)', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'adapter-a');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildAdapterManifest({ name: 'adapter-a', adapterType: 'fixture' }),
+    });
+
+    await new UninstallFlow(deps).uninstall({ name: 'adapter-a', replacing: true });
+
+    // An update removes the entry to put it straight back; only a person
+    // removing a connection passes `forgetHistory`.
+    expect(deps.adapterManager.removeAdapter).toHaveBeenCalledTimes(1);
+    const [, options] = deps.adapterManager.removeAdapter.mock.calls[0];
+    expect(options?.forgetHistory).not.toBe(true);
+  });
+
   it('turns off and forgets the extensions an adapter package carries (DOR-2383)', async () => {
     // An adapter installs under `plugins/`, and discovery now reads the extensions
     // of everything installed there, so what it found must go with the package.
