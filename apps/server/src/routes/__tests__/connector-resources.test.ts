@@ -10,6 +10,7 @@ import { ConnectorAuthenticationFlowError } from '../../services/connectors/reso
 import { ConnectorAppActionsError } from '../../services/connectors/resources/app-actions-service.js';
 import { ConnectorOperatorQueryError } from '../../services/connectors/resources/operator-query-service.js';
 import { ConnectorSessionAccessError } from '../../services/connectors/resources/session-access-service.js';
+import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
@@ -180,6 +181,35 @@ describe('connector resource routes', () => {
     await api()
       .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
       .expect(502, { error: 'Try again.', code: 'actions_unavailable' });
+  });
+
+  it('passes a known cloud refusal behind a failed listing through the honest mapping', async () => {
+    const refusal = (code: 'unauthorized' | 'permission_upgrade_required' | 'unavailable') =>
+      new ConnectorAppActionsError('actions_unavailable', 'Try again.', {
+        cause: new ManagedConnectorCloudError(code, { status: 500 }),
+      });
+    vi.mocked(deps.actions.list)
+      .mockRejectedValueOnce(refusal('unauthorized'))
+      .mockRejectedValueOnce(refusal('permission_upgrade_required'))
+      .mockRejectedValueOnce(refusal('unavailable'))
+      .mockRejectedValueOnce(
+        new ConnectorAppActionsError('actions_unavailable', 'Try again.', {
+          cause: new Error('composio outage'),
+        })
+      );
+    const url = '/api/connectors/apps/gmail/actions?providerInstanceId=provider-a';
+    expect((await api().get(url).expect(401)).body.code).toBe('cloud_link_required');
+    expect((await api().get(url).expect(409)).body.code).toBe('cloud_link_needs_update');
+    expect((await api().get(url).expect(503)).body.code).toBe('cloud_unavailable');
+    await api().get(url).expect(502, { error: 'Try again.', code: 'actions_unavailable' });
+  });
+
+  it('answers a cloud refusal from any resource route honestly, not as a generic 500', async () => {
+    vi.mocked(deps.query.listConnections).mockImplementationOnce(() => {
+      throw new ManagedConnectorCloudError('request_failed', { status: 400 });
+    });
+    const response = await api().get('/api/connectors/connections').expect(502);
+    expect(response.body.code).toBe('cloud_refused');
   });
 
   it('returns a useful generic error without exposing an internal failure', async () => {
