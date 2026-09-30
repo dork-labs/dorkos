@@ -11,8 +11,12 @@ export interface CommunityLiveGateJournal {
   resources: {
     flyAppId?: string;
     neonProjectId?: string;
+    neonBranchId?: string;
+    neonRoleId?: string;
     tigrisBucketId?: string;
   };
+  /** Values read back from the service when a create step completed. */
+  provenance?: { flyNetwork?: string };
   ownerBootstrapRotated?: boolean;
   secretDigests?: Record<string, string>;
 }

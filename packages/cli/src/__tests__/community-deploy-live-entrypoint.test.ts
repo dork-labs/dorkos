@@ -178,4 +178,30 @@ describe('credentialed live gate entrypoint', () => {
     expect(guard).toBeLessThan(main.indexOf("['--filter', 'dorkos', 'build']"));
     expect(guard).toBeLessThan(main.indexOf('createCommunityLivePackDirectory('));
   });
+
+  // The provenance receipt (DOR-2238 phase 2) is only worth anything if it reads the resources
+  // before cleanup deletes them. A real run costs money, so this pins the order in main; the probes
+  // themselves are unit-tested beside them.
+  it('records the provenance receipt before cleanup, with every probe inside the guard', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const probes = main.indexOf(
+      'provenance = await guardCommunityLiveProvenance(() =>\n        probeCommunityLiveProvenance(journal, {'
+    );
+    const cleanup = main.indexOf('await cleanupCommunityLiveGate(');
+    expect(probes).toBeGreaterThan(0);
+    expect(probes).toBeLessThan(cleanup);
+    expect(main).toMatch(/\n\s+provenance,\n/u);
+    expect(main).toContain("args: ['ssh', 'console', '--app', name, '--command', 'true']");
+    // Every probe call, including the unknown-app name, runs inside the guard's callback.
+    const guarded = main.slice(probes, cleanup);
+    expect(guarded).toContain('unknownAppName: () =>');
+    expect(main.slice(0, probes)).not.toContain('probeCommunityLiveProvenance(');
+    expect(main.slice(0, probes)).not.toContain('unknownAppName');
+    // Nothing in Fly's API reads a private network once its app is gone, so no step claims to.
+    expect(main).not.toContain('NetworkAfterCleanup');
+  });
 });
