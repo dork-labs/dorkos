@@ -3,6 +3,7 @@ covers:
   - 'fix(client): draw every keyboard focus ring in the app at full strength (DOR-2615)'
   - 'fix(client): show the answer cursor only after a key, and tighten the faint-ring guard (DOR-2615)'
   - 'fix(client): first arrow key reveals the hidden answer cursor (DOR-2617)'
+  - "fix(client): don't gate Enter submit on the hidden answer cursor (DOR-2617)"
 ---
 
 ### Fixed
