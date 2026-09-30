@@ -1928,7 +1928,7 @@ describe('ConnectorProviderBootstrapper', () => {
         managed.listAccounts = () => {
           probes += 1;
           linked = linkedAfter;
-          return Promise.reject(new ManagedConnectorCloudError(code, status));
+          return Promise.reject(new ManagedConnectorCloudError(code, { status }));
         };
         const bootstrapper = makeBootstrapper({
           managedCloud: {

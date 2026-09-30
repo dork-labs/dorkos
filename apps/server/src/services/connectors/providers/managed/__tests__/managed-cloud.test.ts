@@ -364,7 +364,7 @@ describe('ManagedCloudConnectorProvider', () => {
 
   it('does not mistake a remote unauthorized response for local token absence', async () => {
     vi.mocked(cloud.executeManagedConnectorOperation).mockRejectedValue(
-      new ManagedConnectorCloudError('unauthorized', 401)
+      new ManagedConnectorCloudError('unauthorized', { status: 401 })
     );
     expect(await provider(cloud).execute(command())).toMatchObject({
       status: 'outcome_unknown',

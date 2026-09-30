@@ -156,7 +156,7 @@ describe('CloudLinkManager', () => {
       fetchImpl: routerFetch({
         authority: () => ({
           status: 403,
-          body: { code: 'permission_upgrade_required' },
+          body: { error: 'permission_upgrade_required' },
         }),
       }),
     });
@@ -566,9 +566,9 @@ describe('CloudLinkManager', () => {
       )
       .catch((error: unknown) => error);
 
-    expect(failure).toMatchObject({ code: 'request_failed', status: 503 });
+    expect(failure).toMatchObject({ code: 'unavailable', status: 503 });
     expect(warn).toHaveBeenCalledWith('[CloudLink] Managed authentication start did not complete', {
-      code: 'request_failed',
+      code: 'unavailable',
       status: 503,
     });
     const logged = JSON.stringify(warn.mock.calls);

@@ -844,7 +844,14 @@ export class CloudLinkManager {
     }
     await this.confirmKey(context);
     return this.ownsContext(context)
-      ? new ManagedConnectorCloudError('request_failed', error.status, { cause: error })
+      ? new ManagedConnectorCloudError('request_failed', {
+          status: error.status,
+          cloudCode: error.cloudCode,
+          reason: error.reason,
+          method: error.method,
+          path: error.path,
+          cause: error,
+        })
       : error;
   }
 
