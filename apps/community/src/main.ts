@@ -51,10 +51,10 @@ await tidyEvidenceSink(evidenceSink);
 // start anything whose notice the worker could not compose.
 const noticeComposers: NoticeComposers = { ...ownerReplacementComposers(config) };
 // Whether a host may start an owner replacement. It stays off until the owner can answer the
-// notice end to end: the notice's "Keep ownership" link must open a page that works. Task 2.4
-// (the object-only link and signed-in objection routes, and the claim) and task 3.1 (the
-// /keep-ownership page) turn it on. Until then the worker still sends the notices of any
-// request already open, and every new request is refused.
+// notice end to end: the notice's "Keep ownership" link must open a page that works. The
+// server's routes for keeping ownership and for the claim are in place; task 3.1 (the
+// /keep-ownership and /owner-replacement pages) turns it on. Until then the worker still sends
+// the notices of any request already open, and every new request is refused.
 const ownerReplacementOpen = false;
 const app = createCommunityApp({
   config,
@@ -80,6 +80,16 @@ app.get(
 );
 app.get(
   '/pairing',
+  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+);
+// The owner's object-only link from the email, and the new owner's claim link. Both carry their
+// token after `#`, so it never reaches this server's logs.
+app.get(
+  '/keep-ownership',
+  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+);
+app.get(
+  '/owner-replacement',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );
 app.get(

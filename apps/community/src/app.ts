@@ -49,6 +49,8 @@ import { registerOwnerClaimRoutes } from './routes/host/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host/host-keys.js';
 import { registerHostTakedownRoutes } from './routes/host/host-takedowns.js';
 import { registerHostOwnerReplacementRoutes } from './routes/host/host-owner-replacements.js';
+import { registerOwnerReplacementLinkRoutes } from './routes/account/owner-replacements.js';
+import { registerOwnerReplacementRoutes } from './routes/community/owner-replacement.js';
 import type { NoticeComposers } from './mail/worker.js';
 import { registerTakedownNoticeRoutes } from './routes/community/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host/host-links.js';
@@ -442,6 +444,14 @@ export function createCommunityApp({
       ownerReplacementOpen && config.mail !== null && noticeComposers[kind] !== undefined,
     hasPassword: (userId) => accountHasPassword(pool, userId),
   });
+  registerOwnerReplacementLinkRoutes(hostApi, {
+    pool,
+    auth,
+    config,
+    now,
+    limitAttempt: (c) =>
+      limitAttempts(`owner-replacement:${peer(c)}`, config.limits.bootstrapAttemptsPerMinute),
+  });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
   app.route('/api/v1', hostApi);
@@ -533,6 +543,7 @@ export function createCommunityApp({
   registerOwnerErasureRoutes(communityApi, { pool, auth });
   registerHistoryOriginRoute(communityApi, { pool, auth });
   registerTakedownNoticeRoutes(communityApi, { pool, auth });
+  registerOwnerReplacementRoutes(communityApi, { pool, auth, now });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;

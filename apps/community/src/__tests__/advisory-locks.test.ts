@@ -28,6 +28,10 @@ const REGISTRY: Record<string, { purpose: string; files: string[] }> = {
   },
   '77281504': { purpose: 'assigning handles', files: ['handles.ts'] },
   '77281505': { purpose: 'appending to the erasure journal', files: ['erasure/journal.ts'] },
+  '77281506': {
+    purpose: 'taking ownership through an owner replacement claim',
+    files: ['owner-replacement/claim.ts'],
+  },
 };
 
 function sources(directory: string): string[] {

@@ -32,6 +32,7 @@ import { inspectInvite, issueInvite } from '../../invites.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../../security.js';
 import { mintHandle } from '../../handles.js';
 import { readmissionBlocked } from '../../erasure/guards.js';
+import { clearFormerMembership } from './members.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
 
 interface InviteRow {
@@ -527,38 +528,7 @@ export function registerInviteRoutes(
           [invite.community_id, handle, member.rows[0].id]
         );
       } else if (!member.rows[0].active) {
-        await client.query('DELETE FROM channel_members WHERE member_id=$1 AND community_id=$2', [
-          member.rows[0].id,
-          invite.community_id,
-        ]);
-        await client.query('DELETE FROM read_cursors WHERE member_id=$1 AND community_id=$2', [
-          member.rows[0].id,
-          invite.community_id,
-        ]);
-        await client.query(
-          'UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now()) WHERE member_id=$1 AND community_id=$2',
-          [member.rows[0].id, invite.community_id]
-        );
-        await client.query(
-          'UPDATE connection_pairings SET cancelled_at=COALESCE(cancelled_at,now()) WHERE member_id=$1 AND community_id=$2 AND consumed_at IS NULL',
-          [member.rows[0].id, invite.community_id]
-        );
-        await client.query(
-          `DELETE FROM agent_channel_members
-           WHERE community_id=$2 AND agent_id IN
-             (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2)`,
-          [member.rows[0].id, invite.community_id]
-        );
-        await client.query(
-          'UPDATE agents SET active=false,revoked_at=COALESCE(revoked_at,now()) WHERE owner_member_id=$1 AND community_id=$2',
-          [member.rows[0].id, invite.community_id]
-        );
-        await client.query(
-          `UPDATE agent_credentials SET revoked_at=COALESCE(revoked_at,now())
-           WHERE community_id=$2 AND agent_id IN
-             (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2)`,
-          [member.rows[0].id, invite.community_id]
-        );
+        await clearFormerMembership(client, member.rows[0].id, invite.community_id);
         await client.query(
           "UPDATE members SET active=true,removed_at=NULL,role='member' WHERE id=$1",
           [member.rows[0].id]

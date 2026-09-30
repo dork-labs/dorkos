@@ -31,6 +31,10 @@ Give the member their new password through a private channel. They can sign in w
 
 For a deployment outside Docker, stop all web processes and run `node dist-server/recover-password.js [--keep-linked] <email>` from the built app directory with `COMMUNITY_DATABASE_URL` set, supplying the password on standard input. The command is not exposed over HTTP and does not need a Cloud account, bootstrap secret or mail service.
 
+## An owner who has left
+
+Password recovery never changes who owns a community. To give a community a new owner when its owner has left, use the online request in [Replacing an owner who has left](OPERATIONS.md#replacing-an-owner-who-has-left) first: it emails the owner, waits, lets them keep ownership with one click, and records every step. Changing the owner by editing the database is the last resort, for when that request cannot run: the owner is never told, and members see no record of it.
+
 ## An account that holds someone else's email
 
 If a password account was created with an email address that belongs to someone else, the real owner of that address is refused by single sign-on. Password recovery is the wrong tool here: it would hand the account to whoever you give the password. Instead, if the account never joined a community, remove it with `node dist-server/host/release-unverified-account.js <email>` (see the single sign-on section of [DEPLOYMENT.md](DEPLOYMENT.md)). If it already joined, the community's owner removes the member first, or the person erases their own membership or account, and then you release it.

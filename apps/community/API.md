@@ -187,9 +187,9 @@ The response is `{ lines, nextCursor, hasMore }` with `Cache-Control: no-store`.
 
 ### Replace an owner who has left
 
-These routes are the host's half of replacing a community owner who has left. The owner's half is not built yet: the page behind the "Keep ownership" link in the owner's email, the owner's other ways to say no, and the new owner's claim. Until the owner can answer, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE` ("This server can't send the owner's notice yet, so it can't replace an owner."), even on a host with mail set up, and so is sending a claim link again. Without mail the refusal says to set it up. `GET /api/v1/host/capabilities` reports only whether mail is set up. Cancel and list always work.
+These routes are the host's half of replacing a community owner who has left. The owner's and the new owner's routes are below them. The browser pages behind the emailed links, `/keep-ownership` and `/owner-replacement`, are not built yet, so until they are, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE` ("This server can't send the owner's notice yet, so it can't replace an owner."), even on a host with mail set up, and so is sending a claim link again. Without mail the refusal says to set it up. `GET /api/v1/host/capabilities` reports only whether mail is set up. Cancel and list always work.
 
-The rest of this section describes what the server does with a request once they are accepted. The notices, the waiting period, and the endings below already run for any request that exists.
+The rest of this section describes what the server does with a request once they are accepted. The notices, the waiting period, the endings, and the owner's and new owner's routes below already work for any request that exists.
 
 The host never learns who is in the community: every request, response, and error here carries IDs, states, dates, the reason, and the host's own reference, never a member's name, handle, email, or ID.
 
@@ -216,6 +216,44 @@ A request that is accepted answers `201` with `{ replacement, claimToken, claimU
 - `POST …/:replacementId/claim-token` with `{}` issues a new claim link for an open request and returns it once (`CommunityAdminOwnerReplacementClaimTokenSchema`, `no-store`). The old link stops working, no date moves, and the owner is emailed that the link was sent again. It is refused with `409 NOTICE_DELIVERY_UNAVAILABLE` while that notice cannot be sent.
 
 A request, a cancel, and a reissue each write one host audit row (`owner_replacement.request`, `owner_replacement.cancel`, `owner_replacement.claim_token.reissue`) naming the operator or key, and one community audit row by `host` (`owner.replacement.requested`, `owner.replacement.withdrawn`, `owner.replacement.claim_reissued`). The host row never holds a member, the reference, or the named account. `GET /api/v1/host/communities/:id` shows an open request to any host actor as `ownerReplacement: { replacementId, state, claimableAfter }`.
+
+#### What the owner and members see
+
+`GET /api/v1/owner-replacement` (on the tenant path too) answers any active member, from a browser session or a connection grant of their own DorkOS installation; an agent's credential is `403`. It answers `Cache-Control: no-store` with `{ open, completed }` (`CommunityWireOwnerReplacementNoticeResponseSchema`):
+
+- The owner, while a request is open: `open` with `role: "owner"`, the request's id, state, reason, dates, and notice state, the host's `reference`, `claimReissuedAt` when the claim link was sent again, and `options`: `keep` (always), `transfer` (only in `active`, with a password), `delete` (with a password), and `needsPassword` when the account has none.
+- Admins, while one is open: `open` with `role: "admin"` and the same fields without `reference`, `claimReissuedAt`, or `options`.
+- Everyone, for 7 days after a completion: `completed: { newOwnerDisplayName, completedAt }`.
+- Otherwise both are `null`. No answer names a host operator, a key, a legal hold, or the account named in the request.
+
+`POST /api/v1/owner-replacement/objection` with `{ "replacementId" }` is the owner keeping ownership from their own signed-in browser session, with no password, so an owner who signs in only through single sign-on can say no too. Any `Authorization` header is `403` (a host API key is `401`, as on every community route), and so is anyone but the owner. It works in `active`, `archived`, and `held` communities and in every open state, and answers `204`. The request ends as `objected`, its claim link and every emailed link stop working, and the host cannot ask again for `COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS`. Sending it again for a request already kept answers `204` and writes nothing; a request that ended any other way is `409 STATE_CONFLICT` ("This request has already ended."). An unknown id is `404`.
+
+#### The link to keep ownership
+
+The notice, the reminder, and the message about a new claim link each carry their own link, `<COMMUNITY_PUBLIC_URL>/keep-ownership#<token>`. It can only keep ownership: it is not a sign-in and reaches nothing else. The server keeps only its hash. Both routes are public, take `{ "token" }`, and answer `Cache-Control: no-store`; neither answers a `GET`, so a mail scanner that opens the link changes nothing.
+
+- `POST /api/v1/owner-replacements/object-preflight` answers a live link (unused, its request open) with `{ communityName, claimableAfter }`.
+- `POST /api/v1/owner-replacements/object` keeps ownership, with no sign-in, and answers `{ "outcome": "kept" }`. The request ends as `objected`, exactly as above, and every other link for it stops working. Using any link of a request the owner already kept answers `{ "outcome": "kept" }` again and writes nothing. A link whose request ended any other way answers `{ "outcome": "ended" }`.
+
+A link the server does not know, and on the preflight any link that no longer works, gets one identical `403 FORBIDDEN` ("This link no longer works.").
+
+#### Taking ownership
+
+The claim link is `<COMMUNITY_PUBLIC_URL>/owner-replacement#<token>`. `POST /api/v1/owner-replacements/preflight` with `{ "token" }` answers an open request with `{ communityId, communityName, state, claimableAfter, claimExpiresAt, requiresSingleSignOn }` and sets a signed, HTTP-only, 30-minute `community_owner_replacement` cookie. `requiresSingleSignOn` is `true` when the request names an account. A token that is unknown, replaced by a new link, or whose request ended or whose claim window closed gets one identical `403 FORBIDDEN` ("This ownership claim is unavailable.").
+
+With that cookie, a person with no account can create one, but only while the request is `claimable`, before `claimExpiresAt`, in an `active`, `archived`, or `held` community. When the request names an account, only a sign-up through the host's sign-in service, as that exact account, is let in (`single_sign_on_required` or `claim_account_mismatch` otherwise, and no account is made); a password sign-up is refused. The cookie makes an account, never a membership.
+
+`POST /api/v1/owner-replacements/claim` with `{}`, from a signed-in session holding the cookie, takes ownership. It is refused with:
+
+- `409 STATE_CONFLICT` before the waiting period ends ("You can take ownership after <date>.", or before the notice has been sent, a sentence without a date);
+- `409 STATE_CONFLICT` when a request that named no account meets a host that now uses single sign-on ("This host now uses a sign-in service, so the host must ask again."), or a request that named one meets a host whose sign-in service changed;
+- `403 FORBIDDEN` ("Sign in with the account named in the request, then try again.") unless exactly one account on this host is linked to the named identity and it is the one signed in;
+- `409 STATE_CONFLICT` for the current owner, an account being deleted, or a member who is leaving;
+- `403 FORBIDDEN` ("This ownership claim is unavailable.") once the link no longer works, which also drops the cookie. Every other refusal keeps it, so the person can sign in with the right account and try again. A refused claim changes nothing.
+
+A claim answers `{ community: { id, name }, memberId }` with `Cache-Control: no-store` and drops the cookie. It is the same change an owner's own transfer makes: the owner becomes a `member` and keeps their handle, connections, agents, and sessions; the new owner's membership becomes the owner (a former member's membership comes back, and someone new gets a membership with a handle of their own); the lifecycle stays as it was and `lifecycleVersion` moves on. The old owner's community export that is still being made is cancelled, and a ready one can no longer be downloaded. Nothing else changes. The request ends `completed`, the host audit trail records `owner_replacement.complete` by the system, the community's records `owner.replace` by `host`, and the old owner is emailed who owns the community now.
+
+Every route in this part counts against the caller's `COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE`, and answers `429 RATE_LIMITED` with `Retry-After` once it is spent.
 
 ## Erase a membership or an account
 

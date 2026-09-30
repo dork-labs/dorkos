@@ -83,6 +83,51 @@ export async function remove(
   );
 }
 
+/**
+ * Clear what a former membership may have left behind before it becomes active again: its
+ * channel seats and read cursors, and every connection, pairing, agent, and agent credential it
+ * held. Removing a member already revoked all of it; this makes sure, so an old credential can
+ * never come back with the membership. The caller holds the member row lock.
+ */
+export async function clearFormerMembership(
+  client: PoolClient,
+  memberId: string,
+  communityId: string
+): Promise<void> {
+  await client.query('DELETE FROM channel_members WHERE member_id=$1 AND community_id=$2', [
+    memberId,
+    communityId,
+  ]);
+  await client.query('DELETE FROM read_cursors WHERE member_id=$1 AND community_id=$2', [
+    memberId,
+    communityId,
+  ]);
+  await client.query(
+    'UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now()) WHERE member_id=$1 AND community_id=$2',
+    [memberId, communityId]
+  );
+  await client.query(
+    'UPDATE connection_pairings SET cancelled_at=COALESCE(cancelled_at,now()) WHERE member_id=$1 AND community_id=$2 AND consumed_at IS NULL',
+    [memberId, communityId]
+  );
+  await client.query(
+    `DELETE FROM agent_channel_members
+     WHERE community_id=$2 AND agent_id IN
+       (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2)`,
+    [memberId, communityId]
+  );
+  await client.query(
+    'UPDATE agents SET active=false,revoked_at=COALESCE(revoked_at,now()) WHERE owner_member_id=$1 AND community_id=$2',
+    [memberId, communityId]
+  );
+  await client.query(
+    `UPDATE agent_credentials SET revoked_at=COALESCE(revoked_at,now())
+     WHERE community_id=$2 AND agent_id IN
+       (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2)`,
+    [memberId, communityId]
+  );
+}
+
 /** Register member removal, leave and password-confirmed ownership transfer. */
 export function registerMemberRoutes(
   app: Hono,

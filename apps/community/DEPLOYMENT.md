@@ -57,6 +57,8 @@ Most people can keep the default limits. Restart the service after changing one.
 | `COMMUNITY_TAKEDOWN_REVERSAL_HOURS`            |                      72 hours |   720 hours (at least 24) |
 | `COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY`       |           3 per person or key |                       100 |
 
+`COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE` also counts every use of the links for replacing an owner: keeping ownership, and checking or redeeming a claim.
+
 Limits marked "per IP" count by the address that connected to the server. Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` to the header your proxy puts the caller's address in (for example `Fly-Client-IP`). It is off unless you set it; see [operations](OPERATIONS.md) before turning it on.
 
 Each export upload being received can use up to twice its size (at most 2 GiB) of temporary disk while it is checked and stored, so `COMMUNITY_IMPORT_UPLOADS` sets the most an import can take from the server's temporary folder at once. An upload is refused when that folder has too little free space for it.

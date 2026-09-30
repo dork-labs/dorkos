@@ -68,17 +68,27 @@ export async function startTenancyHarness(
     noticeComposers?: Parameters<typeof createCommunityApp>[0]['noticeComposers'];
     /** Let hosts start owner replacements, as `main.ts` will once the owner can answer. */
     ownerReplacementOpen?: boolean;
+    /**
+     * Serve another harness's database instead of a fresh one, as the same host restarted with
+     * other settings would. Closing this one leaves that database to its owner.
+     */
+    sharesDatabaseOf?: TenancyHarness;
   } = {}
 ): Promise<TenancyHarness> {
   const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
   if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for tenancy tests');
   const admin = new Pool({ connectionString: adminUrl });
-  const dbName = `community_${label}_${randomUUID().replaceAll('-', '')}`;
-  const dbUrl = new URL(adminUrl);
+  const shared = options.sharesDatabaseOf;
+  const dbUrl = new URL(shared ? shared.config.databaseUrl : adminUrl);
+  const dbName = shared
+    ? dbUrl.pathname.slice(1)
+    : `community_${label}_${randomUUID().replaceAll('-', '')}`;
   dbUrl.pathname = `/${dbName}`;
   const storagePath = await mkdtemp(join(tmpdir(), `community-${label}-`));
-  await admin.query(`CREATE DATABASE ${dbName}`);
-  await migrate(dbUrl.toString());
+  if (!shared) {
+    await admin.query(`CREATE DATABASE ${dbName}`);
+    await migrate(dbUrl.toString());
+  }
   // Several pool clients, so concurrent requests really run in parallel transactions.
   const pool = new Pool({ connectionString: dbUrl.toString(), max: 10 });
   const config = parseConfig({
@@ -148,7 +158,7 @@ export async function startTenancyHarness(
     async close() {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await pool.end();
-      await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
+      if (!shared) await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
       await admin.end();
       await rm(storagePath, { recursive: true, force: true });
     },
