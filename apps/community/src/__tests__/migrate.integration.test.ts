@@ -1582,3 +1582,89 @@ it('upgrades a populated database to import parts without changing what old code
     await admin.query(`DROP DATABASE IF EXISTS ${name}`);
   }
 });
+
+it('upgrades a populated database to the notice promise without touching open replacements', async () => {
+  // Purpose: fails if the migration rewrites or closes a replacement that was open before it,
+  // or if old code's insert (which names no promise) stops working.
+  const name = `community_notice_promise_${randomUUID().replaceAll('-', '')}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const db = new Pool({ connectionString: url.toString() });
+  try {
+    // Found by name, so renumbering the migration at merge time needs no change here.
+    await applyBefore(
+      db,
+      COMMUNITY_MIGRATIONS.find(([, filename]) =>
+        filename.endsWith('_owner_replacement_promise.sql')
+      )![1]
+    );
+    const userId = randomUUID();
+    await db.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+      userId,
+      'Owner',
+      `${userId}@example.test`,
+    ]);
+    // The one-owner rule is checked at commit, so the owner arrives with the activation.
+    const setup = await db.connect();
+    let community: string;
+    let member: string;
+    try {
+      await setup.query('BEGIN');
+      community = (
+        await setup.query<{ id: string }>(
+          "INSERT INTO communities(name,lifecycle) VALUES('Before','pending_owner') RETURNING id"
+        )
+      ).rows[0].id;
+      member = (
+        await setup.query<{ id: string }>(
+          `INSERT INTO members(community_id,user_id,display_name,handle,role)
+           VALUES($1,$2,'Owner','owner','owner') RETURNING id`,
+          [community, userId]
+        )
+      ).rows[0].id;
+      await setup.query(
+        "UPDATE communities SET lifecycle='active',activated_at=now(),lifecycle_version=2 WHERE id=$1",
+        [community]
+      );
+      await setup.query('COMMIT');
+    } finally {
+      setup.release();
+    }
+    const insertOpen = () =>
+      db.query<{ id: string }>(
+        `INSERT INTO owner_replacements(community_id,reason,claimant_named,claim_token_hash,
+           requested_by_host_actor,idempotency_key,payload_hash,after_objection,after_withdrawal,
+           prior_owner_member_id,requested_at)
+         VALUES($1,'other',false,$2,'api_key:old-key',$3,$4,false,false,$5,now()) RETURNING id`,
+        [
+          community,
+          createHash('sha256').update(randomUUID()).digest('hex'),
+          randomUUID(),
+          'b'.repeat(64),
+          member,
+        ]
+      );
+    const before = (await insertOpen()).rows[0].id;
+    const snapshot = async () =>
+      (await db.query('SELECT * FROM owner_replacements WHERE id=$1', [before])).rows[0];
+    const was = await snapshot();
+
+    await migrate(url.toString());
+
+    expect(await snapshot()).toEqual({ ...was, notice_promised_at: null });
+    // Old code's insert still works; closing the first keeps one open per community.
+    await db.query(
+      `UPDATE owner_replacements SET state='withdrawn',withdrawn_cause='cancelled',ended_at=now(),
+         claim_token_hash=NULL WHERE id=$1`,
+      [before]
+    );
+    const old = (await insertOpen()).rows[0].id;
+    expect(
+      (await db.query('SELECT notice_promised_at FROM owner_replacements WHERE id=$1', [old])).rows
+    ).toEqual([{ notice_promised_at: null }]);
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+  }
+});

@@ -118,13 +118,16 @@ function composeOpenNotice(settings: Settings, kind: 'notice' | 'reminder' | 'cl
       [notice.recipientUserId]
     );
     const verified = account.rows[0]?.emailVerified === true;
+    const earliest = earliestDate(subject, verified, now, settings);
+    // The notice records the address's verified flag as of this send, since it decides the
+    // wait, and the latest date it has promised, since the stored date may never be earlier.
     if (kind === 'notice')
       await pool.query(
-        `UPDATE owner_replacements SET verified_address=$3
+        `UPDATE owner_replacements SET verified_address=$3,
+           notice_promised_at=GREATEST(notice_promised_at,$4::timestamptz)
          WHERE community_id=$1 AND id=$2 AND state='notifying'`,
-        [notice.communityId, notice.subjectId, verified]
+        [notice.communityId, notice.subjectId, verified, earliest]
       );
-    const earliest = earliestDate(subject, verified, now, settings);
     const date = formatReplacementDate(earliest);
     const link = await mintObjectToken(pool, {
       communityId: notice.communityId,

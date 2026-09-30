@@ -2053,6 +2053,8 @@ export const ownerReplacements = pgTable(
     noticeResolvedAt: timestamp('notice_resolved_at', { withTimezone: true }),
     verifiedAddress: boolean('verified_address'),
     claimableAfter: timestamp('claimable_after', { withTimezone: true }),
+    /** The latest earliest-date a notice promised the owner; the stored date is never before it (0028). */
+    noticePromisedAt: timestamp('notice_promised_at', { withTimezone: true }),
     reminderQueuedAt: timestamp('reminder_queued_at', { withTimezone: true }),
     claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
     requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),

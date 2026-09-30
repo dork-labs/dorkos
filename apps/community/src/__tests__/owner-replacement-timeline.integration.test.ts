@@ -1132,6 +1132,47 @@ describe('review probes (Q1, Q2)', () => {
   });
 });
 
+describe('a promise the settings cannot take back', () => {
+  it('keeps the date the notice promised when the host lowers the wait before the answer', async () => {
+    // Purpose: fails if the stored date is counted only from the settings in force when the
+    // mail server answered, so lowering them after the notice was written lets the new owner
+    // take over before the date the owner was told.
+    const c = await ownedCommunity();
+    const created = await requestReplacement(c);
+    const id = created.replacement.replacementId;
+    const sentAt = advance(HOUR);
+    await send(sentAt);
+    const promised = (await row(id)).notice_promised_at as Date;
+    expect(promised.getTime()).toBe(sentAt.getTime() + N_DAYS * DAY);
+    // The host lowers the short wait to 7 days before the timeline resolves the notice.
+    await advanceOwnerReplacements({
+      pool: h.pool,
+      config: { ownerReplacement: { ...SETTINGS.ownerReplacement, noticeDays: 7 } },
+      now: sentAt,
+    });
+    const stored = await row(id);
+    expect(stored.state).toBe('waiting');
+    expect(stored.claimable_after).toEqual(promised);
+    const [notice] = mailsTo(c.ownerEmail);
+    expect(notice.text).toContain(`on or after ${formatReplacementDate(promised)}.`);
+  });
+
+  it('uses the longer counted date when the settings were raised instead', async () => {
+    // Purpose: fails if the promise replaces the counted date rather than bounding it.
+    const c = await ownedCommunity();
+    const created = await requestReplacement(c);
+    const id = created.replacement.replacementId;
+    const sentAt = advance(HOUR);
+    await send(sentAt);
+    await advanceOwnerReplacements({
+      pool: h.pool,
+      config: { ownerReplacement: { ...SETTINGS.ownerReplacement, noticeDays: 20 } },
+      now: sentAt,
+    });
+    expect(((await row(id)).claimable_after as Date).getTime()).toBe(sentAt.getTime() + 20 * DAY);
+  });
+});
+
 describe('the reminder, sent late', () => {
   it.each([
     [47, 'If you do nothing, that can happen in 2 days, on or after'],

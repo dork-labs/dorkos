@@ -4,6 +4,7 @@ covers:
   - 'fix(community): refuse owner replacements until their notices can be sent (DOR-2539 review)'
   - 'feat(community): email the owner and run the owner-replacement waiting period (DOR-2540)'
   - 'fix(community): keep owner replacements refused until the owner can answer (DOR-2540 review)'
+  - "fix(community): never count an owner's waiting period shorter than their notice promised (DOR-2540 review)"
 ---
 
 ### Added

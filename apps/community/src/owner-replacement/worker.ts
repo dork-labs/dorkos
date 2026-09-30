@@ -27,6 +27,7 @@ export interface TimelineTick {
 /** One replacement as the timeline reads it under the community lock. */
 type TimelineRow = Omit<OwnerReplacementRow, 'requested_by_label'> & {
   reminder_queued_at: Date | null;
+  notice_promised_at: Date | null;
 };
 
 /**
@@ -61,7 +62,7 @@ async function due(pool: Pool, sql: string, now: Date): Promise<Due[]> {
  *   the mail server accepted the notice, the address was marked verified when it was sent, the
  *   owner never objected before, no request was withdrawn in the 30 days before, and the reason
  *   is not that the owner left the group; otherwise after the long wait U. Both count from when
- *   the notice resolved.
+ *   the notice resolved, and the date is never earlier than one a notice already promised.
  * - **Reminder.** 48 hours before that date, one reminder is queued. It never moves the date.
  * - **Claimable.** At that date the claim opens for 14 days. No audit row: nobody acted.
  * - **Expired.** When the claim window closes unclaimed, the request ends and the owner is told.
@@ -104,11 +105,17 @@ export async function advanceOwnerReplacements(input: {
         wait === 'standard'
           ? config.ownerReplacement.noticeDays
           : config.ownerReplacement.unreachableDays;
+      // Never earlier than a date a notice already promised the owner: the settings may have
+      // been lowered since that notice was written.
+      const counted = notice.at.getTime() + days * DAY_MS;
+      const claimableAfter = new Date(
+        Math.max(counted, row.notice_promised_at?.getTime() ?? counted)
+      );
       await client.query(
         `UPDATE owner_replacements SET state='waiting',notice_state=$2,notice_resolved_at=$3,
            verified_address=COALESCE(verified_address,false),claimable_after=$4
          WHERE id=$1`,
-        [row.id, notice.state, notice.at, new Date(notice.at.getTime() + days * DAY_MS)]
+        [row.id, notice.state, notice.at, claimableAfter]
       );
       return true;
     });
