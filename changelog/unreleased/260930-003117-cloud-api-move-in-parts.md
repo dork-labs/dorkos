@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(cloud-api): let a move upload go up in parts (DOR-2297)'
+  - 'docs(cloud-api): say what a parted move upload refuses, and when parts are kept (DOR-2297)'
 ---
 
 ### Added
