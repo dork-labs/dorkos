@@ -688,7 +688,8 @@ export const agents = pgTable(
     /**
      * The connection grant (installation) that enrolled this agent, or NULL for a legacy row
      * enrolled before the Community recorded it. A request made with a grant acts only on its
-     * own agents and on legacy ones. No foreign key: see migration 0029.
+     * own agents, legacy ones, and ones whose enrolling grant is no longer live. No foreign key:
+     * see migration 0029.
      */
     enrolledByGrantId: uuid('enrolled_by_grant_id'),
     active: boolean('active').notNull().default(true),

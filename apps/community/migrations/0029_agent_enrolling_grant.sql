@@ -11,7 +11,10 @@
 --
 -- enrolled_by_grant_id is NULL for a legacy row: one enrolled before this migration whose grant
 -- cannot be proven. A legacy row stays member-scoped, as every row was before, and the first
--- grant that recovers or rotates it adopts it.
+-- grant that recovers or rotates it adopts it. So does an orphaned row, whose enrolling grant was
+-- revoked or deleted: revoking a grant leaves its agents running, and an installation that pairs
+-- again under a new grant gets its agent, handle and channels back. Only a row whose enrolling
+-- grant is still live is out of reach of the owner's other grants.
 --
 -- The backfill names a grant only where it is provable: the owner has only ever held one grant
 -- with the enroll-agent scope in that community, revoked or not. Every enroll, recover and
@@ -25,8 +28,7 @@
 -- their local ids until the erasure finishes, and a key that set the column back to NULL there
 -- would turn two installations' rows for one local id into two legacy rows, which the legacy
 -- index forbids. A grant id is random and never reused, so a row naming a deleted grant is
--- matched by no request made with a grant: only the person, in the Community's own pages, and
--- moderators can remove it, which is right for an installation that is gone. The routes set the
+-- orphaned, exactly like a revoked one: the owner's next grant can take it over. The routes set the
 -- column only from the grant that authenticated the request, in the same community, and the
 -- finished erasure clears it with the local id.
 --

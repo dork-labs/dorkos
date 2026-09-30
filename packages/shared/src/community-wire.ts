@@ -963,7 +963,8 @@ export const CommunityWireAgentResponseSchema = z.strictObject({ agent: Communit
 /**
  * The caller's active agents. A member signed in to the community sees all of theirs. A
  * personal grant (one installation) sees only the agents it enrolled, plus any enrolled before
- * the community recorded grants, and can recover, rotate and remove only those.
+ * the community recorded grants or whose enrolling grant was revoked, and can recover, rotate,
+ * remove and place in channels only those.
  */
 export const CommunityWireAgentListResponseSchema = z.strictObject({
   agents: z.array(CommunityWireAgentSchema),

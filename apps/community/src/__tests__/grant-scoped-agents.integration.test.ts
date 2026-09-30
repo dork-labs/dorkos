@@ -7,8 +7,11 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { recoverPassword } from '../recover-password.js';
+import { responseCookies } from './bootstrap-test-helper.js';
 import {
   admit,
+  createChannel,
   bootstrapHost,
   expectStatus,
   pairInstall,
@@ -89,13 +92,27 @@ const recover = (grant: string, localAgentId: string) =>
 
 /** A new ordinary member with a laptop and a desktop installation. */
 async function personWithTwoInstalls(label: string) {
-  const person = await admit(h, communityId, owner.cookie, {
-    name: label,
-    email: `${label.toLowerCase()}-${randomUUID().slice(0, 8)}@grants.test`,
-  });
+  const email = `${label.toLowerCase()}-${randomUUID().slice(0, 8)}@grants.test`;
+  const person = await admit(h, communityId, owner.cookie, { name: label, email });
   const laptop = await pairInstall(h, communityId, person.cookie);
   const desktop = await pairInstall(h, communityId, person.cookie);
-  return { person, laptop, desktop };
+  return { person, email, laptop, desktop };
+}
+
+async function activeAgentCount(memberId: string): Promise<number> {
+  const row = await h.pool.query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM agents WHERE owner_member_id=$1 AND active',
+    [memberId]
+  );
+  return row.rows[0]!.n;
+}
+
+async function channelsOf(agentId: string): Promise<string[]> {
+  const rows = await h.pool.query<{ channel_id: string }>(
+    'SELECT channel_id FROM agent_channel_members WHERE agent_id=$1 ORDER BY channel_id',
+    [agentId]
+  );
+  return rows.rows.map((row) => row.channel_id);
 }
 
 beforeAll(async () => {
@@ -267,7 +284,7 @@ describe('an agent is never left unremovable', () => {
   });
 
   it('after its grant is revoked, the person still removes it in the Community', async () => {
-    const { person, laptop, desktop } = await personWithTwoInstalls('Max');
+    const { person, laptop } = await personWithTwoInstalls('Max');
     const agent = await enroll(laptop, 'orphan');
     await expectStatus(
       await h.call(`${tenant()}/me/grants/${await grantIdOf(laptop)}`, {
@@ -277,10 +294,8 @@ describe('an agent is never left unremovable', () => {
       204,
       'revoke the laptop in the browser'
     );
-    // The agent keeps running on its own credential; the other installation cannot touch it…
+    // The agent keeps running on its own credential, and the person removes it.
     expect(await credentialWorks(agent.token)).toBe(true);
-    expect((await remove(agent.agent.memberId, { bearer: desktop })).status).toBe(404);
-    // …and the person can.
     await expectStatus(
       await remove(agent.agent.memberId, { cookie: person.cookie }),
       204,
@@ -331,5 +346,182 @@ describe('an agent is never left unremovable', () => {
     );
     expect(await isActive(kept.agent.memberId)).toBe(false);
     expect(await isActive(moderated.agent.memberId)).toBe(false);
+    // Later tests invite through whoever owns the community now.
+    owner = successor;
+  });
+});
+
+// Purpose: revoking a grant leaves its agents running, so an installation that pairs again under
+// a new grant must get its agent back (same id, handle and channels), not a second one that
+// eats the person's agent limit while the first keeps its channels and answers no one.
+describe('an installation that reconnects under a new grant', () => {
+  const revokePaths: Array<{
+    name: string;
+    /** Whether the desktop's grant survives, so its agent stays out of the laptop's scope. */
+    desktopLive: boolean;
+    revoke: (p: { cookie: string; email: string; laptop: string }) => Promise<string>;
+  }> = [
+    {
+      name: 'the person revokes that one installation in the browser',
+      desktopLive: true,
+      revoke: async ({ cookie, laptop }) => {
+        await expectStatus(
+          await h.call(`${tenant()}/me/grants/${await grantIdOf(laptop)}`, {
+            method: 'DELETE',
+            cookie,
+          }),
+          204,
+          'revoke one'
+        );
+        return cookie;
+      },
+    },
+    {
+      name: 'the person disconnects every installation',
+      desktopLive: false,
+      revoke: async ({ cookie }) => {
+        await expectStatus(
+          await h.call(`${tenant()}/me/grants`, {
+            method: 'DELETE',
+            cookie,
+            body: { password: TENANCY_PASSWORD },
+          }),
+          204,
+          'disconnect all'
+        );
+        return cookie;
+      },
+    },
+    {
+      name: 'the host resets the person’s password',
+      desktopLive: false,
+      revoke: async ({ email }) => {
+        await recoverPassword(h.pool, email, 'a-new-password-789');
+        const signIn = await expectStatus(
+          await h.call('/api/auth/sign-in/email', {
+            body: { email, password: 'a-new-password-789' },
+          }),
+          200,
+          'sign in again'
+        );
+        return responseCookies(signIn);
+      },
+    },
+  ];
+
+  for (const path of revokePaths) {
+    it(`gets the same agent, handle and channels back after ${path.name}`, async () => {
+      const { person, email, laptop, desktop } = await personWithTwoInstalls('Nia');
+      const channel = await createChannel(
+        h,
+        communityId,
+        owner.cookie,
+        `room-${randomUUID().slice(0, 6)}`,
+        [person.cookie]
+      );
+      const first = await enroll(laptop, 'researcher');
+      await expectStatus(
+        await h.call(`${tenant()}/channels/${channel}/agents`, {
+          bearer: laptop,
+          body: { agentId: first.agent.memberId },
+        }),
+        200,
+        'join the channel'
+      );
+      const onDesktop = await enroll(desktop, 'researcher');
+      const before = await activeAgentCount(person.memberId);
+
+      const cookie = await path.revoke({ cookie: person.cookie, email, laptop });
+      expect(await isActive(first.agent.memberId)).toBe(true);
+      const laptopAgain = await pairInstall(h, communityId, cookie);
+
+      const recovered = (await (
+        await expectStatus(await recover(laptopAgain, 'researcher'), 200, 'recover after reconnect')
+      ).json()) as Enrolled;
+      expect(recovered.agent.memberId).toBe(first.agent.memberId);
+      expect(recovered.agent.handle).toBe(first.agent.handle);
+      expect(await channelsOf(first.agent.memberId)).toEqual([channel]);
+      expect(await enrolledBy(first.agent.memberId)).toBe(await grantIdOf(laptopAgain));
+      expect(await credentialWorks(recovered.token)).toBe(true);
+      // No second agent: enrolling again is refused, and the limit is where it was.
+      const again = await h.call(`${tenant()}/agents`, {
+        bearer: laptopAgain,
+        body: { localAgentId: 'researcher', displayName: 'Researcher' },
+      });
+      expect(again.status).toBe(409);
+      expect(await activeAgentCount(person.memberId)).toBe(before);
+      expect(await listed(laptopAgain)).toContain(first.agent.memberId);
+      // The laptop took back its own agent, not the desktop's, which stays the desktop's. While
+      // the desktop's grant is live its agent is out of the laptop's scope altogether; once every
+      // grant was revoked it is orphaned too, and whichever installation recovers it first
+      // takes it.
+      expect(await enrolledBy(onDesktop.agent.memberId)).toBe(await grantIdOf(desktop));
+      if (path.desktopLive) {
+        expect(await listed(laptopAgain)).not.toContain(onDesktop.agent.memberId);
+        expect(await credentialWorks(onDesktop.token)).toBe(true);
+      }
+    });
+  }
+
+  it('still refuses an agent whose enrolling grant is live', async () => {
+    const { person, laptop, desktop } = await personWithTwoInstalls('Oak');
+    const onDesktop = await enroll(desktop, 'critic');
+    const laptopAgain = await pairInstall(h, communityId, person.cookie);
+    for (const grant of [laptop, laptopAgain]) {
+      expect((await recover(grant, 'critic')).status).toBe(404);
+      expect((await remove(onDesktop.agent.memberId, { bearer: grant })).status).toBe(404);
+      expect(
+        (
+          await h.call(`${tenant()}/agents/${onDesktop.agent.memberId}/rotate`, {
+            bearer: grant,
+            body: {},
+          })
+        ).status
+      ).toBe(404);
+    }
+    expect(await credentialWorks(onDesktop.token)).toBe(true);
+  });
+
+  it('adds or removes only agents in its scope from a channel', async () => {
+    const { person, laptop, desktop } = await personWithTwoInstalls('Ivy');
+    const channel = await createChannel(
+      h,
+      communityId,
+      owner.cookie,
+      `room-${randomUUID().slice(0, 6)}`,
+      [person.cookie]
+    );
+    const onDesktop = await enroll(desktop, 'editor');
+    const add = await h.call(`${tenant()}/channels/${channel}/agents`, {
+      bearer: laptop,
+      body: { agentId: onDesktop.agent.memberId },
+    });
+    expect(add.status).toBe(404);
+    await expectStatus(
+      await h.call(`${tenant()}/channels/${channel}/agents`, {
+        bearer: desktop,
+        body: { agentId: onDesktop.agent.memberId },
+      }),
+      200,
+      'desktop adds its own'
+    );
+    const take = await h.call(
+      `${tenant()}/channels/${channel}/agents/${onDesktop.agent.memberId}`,
+      {
+        method: 'DELETE',
+        bearer: laptop,
+      }
+    );
+    expect(take.status).toBe(404);
+    expect(await channelsOf(onDesktop.agent.memberId)).toEqual([channel]);
+    // The person, in the browser, still can.
+    await expectStatus(
+      await h.call(`${tenant()}/channels/${channel}/agents/${onDesktop.agent.memberId}`, {
+        method: 'DELETE',
+        cookie: person.cookie,
+      }),
+      204,
+      'person removes from the channel'
+    );
   });
 });
