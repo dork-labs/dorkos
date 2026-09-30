@@ -23,6 +23,24 @@ interface Delivery {
   attachmentIds: string[];
   status: 'sending' | 'failed';
   error?: string;
+  /** The composer it was sent from and exactly what was typed, to go back to if it can never send. */
+  origin: { draft: CommunityDraftAddress; typed: string };
+}
+
+/**
+ * The refusals that mean the whole Community is gone: deleted, or taken down by its host. A
+ * message refused this way can never send, and the page is about to show the gone panel instead
+ * of this room, so it goes back into its composer's draft, where the panel counts it and offers
+ * to copy it (DOR-2575) — never lost with the room.
+ */
+const COMMUNITY_GONE_CODES: ReadonlySet<string> = new Set([
+  'COMMUNITY_DELETED',
+  'COMMUNITY_TAKEN_DOWN',
+]);
+
+function isCommunityGone(cause: unknown): boolean {
+  const code = (cause as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && COMMUNITY_GONE_CODES.has(code);
 }
 
 /** Everything one Community composer's drafts and deliveries are bound to. */
@@ -188,6 +206,10 @@ export function useRemoteCommunityDrafts({
       if (alive.current && job.address === authority.current && job.context === context.current)
         receipt.current(entry);
     } catch (cause) {
+      if (isCommunityGone(cause) && returnToDraft(job)) {
+        jobs.current.delete(job.key);
+        return;
+      }
       job.status = 'failed';
       job.error =
         cause instanceof Error ? cause.message : 'Delivery was not confirmed. Retry this message.';
@@ -195,6 +217,20 @@ export function useRemoteCommunityDrafts({
       running.current.delete(job.key);
       publish();
     }
+  }
+
+  /**
+   * Put a message that can never send back in front of whatever its composer holds now. Refused
+   * (and so `false`) once its connection has ended, when nothing could read the draft back.
+   */
+  function returnToDraft(job: Delivery): boolean {
+    const { draft, typed } = job.origin;
+    const store = useCommunityDraftStore.getState();
+    const held = store.drafts[communityDraftKey(draft)];
+    const text = held?.text.trim() ? `${typed}\n\n${held.text}` : typed;
+    const files = [...job.files.map(({ id, file }) => ({ id, file })), ...(held?.files ?? [])];
+    store.write(draft, { text, files });
+    return communityDraftKey(draft) in useCommunityDraftStore.getState().drafts;
   }
 
   function send(parentEntryId?: string) {
@@ -222,6 +258,7 @@ export function useRemoteCommunityDrafts({
       files,
       attachmentIds: [],
       status: 'sending',
+      origin: { draft: target, typed: held.text },
     };
     jobs.current.set(job.key, job);
     setError(null);

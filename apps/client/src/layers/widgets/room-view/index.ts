@@ -9,6 +9,12 @@
  */
 export { ChannelsPage } from './ui/ChannelsPage';
 /**
+ * What stands in for a Community that is gone, exported for the Dev Playground's rooms page
+ * (`/dev/rooms`): producing a real one takes a host deleting a community or taking it down.
+ * The routed app mounts it through {@link ChannelsPage}.
+ */
+export { CommunityGonePanel } from './ui/CommunityGonePanel';
+/**
  * What a channel — and a DM, which is a channel by another name — can do. The
  * one table that says how this surface differs from the session's, read by the
  * `Conversation.Root` this widget mounts and by the Dev Playground's benches.

@@ -4,20 +4,27 @@
  * removing the local copy happens only on the person's confirmation.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
-import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
+import {
+  confirmCommunityAuthority,
+  getCommunityAuthority,
+  getCommunityConnectionGeneration,
+  invalidateCommunityAuthority,
+} from '@/layers/shared/lib';
+import { useCommunityDraftStore } from '@/layers/entities/community';
 import { TransportProvider } from '@/layers/shared/model';
-import { CommunityGonePanel, communityGoneState } from '../ui/CommunityGonePanel';
+import { CommunityGonePanel, communityGoneState, unsentSummary } from '../ui/CommunityGonePanel';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn() } }));
 
 afterEach(() => {
   cleanup();
+  useCommunityDraftStore.getState().discardAll();
   invalidateCommunityAuthority();
 });
 
@@ -176,5 +183,99 @@ describe('CommunityGonePanel', () => {
         'Alpha no longer exists, so DorkOS removed the copy it kept on this computer.'
       )
     ).toBeInTheDocument();
+  });
+
+  // DOR-2575: what never reached a gone community, from both places it can be.
+  describe('what didn’t send', () => {
+    const deleted: CommunityConnectionDescriptor = {
+      ...base,
+      access: {
+        state: 'verified',
+        effective: base.access!.effective,
+        lastKnown: {
+          lifecycle: 'deleted',
+          capabilities: base.access!.effective,
+          verifiedAt: '2026-09-29T00:00:00.000Z',
+        },
+      },
+    };
+    /** Hold a draft as the composer would, under the owner the panel is mounted for. */
+    function typeDraft(
+      text: string,
+      over: { ref?: string; ownerKey?: string; roomId?: string } = {}
+    ) {
+      const ref = over.ref ?? 'alpha';
+      useCommunityDraftStore.getState().write(
+        {
+          ownerKey: over.ownerKey ?? 'owner-a',
+          epoch: getCommunityAuthority().epoch,
+          ref,
+          generation: getCommunityConnectionGeneration(ref),
+          roomId: over.roomId ?? 'general',
+        },
+        { text, files: [] }
+      );
+    }
+
+    // Purpose: the sentence names each source with its own count and agrees in number. It fails
+    // if a source is dropped, miscounted, or "wasn't"/"weren't" is wrong.
+    it.each([
+      [0, 0, null],
+      [3, 1, '3 messages from your agents and 1 draft of yours weren’t sent.'],
+      [1, 0, '1 message from your agents wasn’t sent.'],
+      [0, 2, '2 drafts of yours weren’t sent.'],
+      [1, 1, '1 message from your agents and 1 draft of yours weren’t sent.'],
+    ] as Array<[number, number, string | null]>)(
+      'says %i agent messages and %i drafts plainly',
+      (agents, drafts, expected) => {
+        expect(unsentSummary(agents, drafts)).toBe(expected);
+      }
+    );
+
+    // Purpose: the panel counts the agents' posts the server kept a count of and the person's
+    // drafts for THIS community only, offers to copy the drafts' text, and warns that removing
+    // clears them. It fails if the server count or the drafts are not shown, if another
+    // community's or owner's draft is counted or copied, or if the copy is not the drafts' text.
+    it('tells the person what didn’t send and lets them copy their drafts', async () => {
+      const user = userEvent.setup();
+      mount({ ...deleted, undeliveredAgentMessages: 3 });
+      act(() => {
+        typeDraft('First thought');
+        typeDraft('Second thought', { roomId: 'random' });
+        typeDraft('Someone else’s community', { ref: 'beta' });
+        typeDraft('Another owner', { ownerKey: 'owner-b' });
+      });
+
+      expect(screen.getByTestId('community-gone-unsent')).toHaveTextContent(
+        '3 messages from your agents and 2 drafts of yours weren’t sent.'
+      );
+      await user.click(screen.getByRole('button', { name: 'Copy your drafts' }));
+      expect(await navigator.clipboard.readText()).toBe('First thought\n\nSecond thought');
+      expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Remove from DorkOS' }));
+      expect(screen.getByRole('alertdialog')).toHaveTextContent(
+        'Your 2 unsent drafts are cleared too.'
+      );
+    });
+
+    // Purpose: with nothing unsent, the panel adds nothing. It fails if an empty line or a copy
+    // button with nothing to copy appears.
+    it('adds nothing when everything was sent', () => {
+      mount(deleted);
+      expect(screen.queryByTestId('community-gone-unsent')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Copy your/ })).not.toBeInTheDocument();
+    });
+
+    // Purpose: a community that only seems gone still has its copy and its agents' posts, so only
+    // the person's drafts are named. It fails if an agent count shows before anything was removed.
+    it('names only the person’s drafts while a community only seems gone', () => {
+      mount({ ...base, seemsGoneSince: '2026-09-01T12:00:00.000Z', undeliveredAgentMessages: 4 });
+      act(() => typeDraft('Half a message'));
+      expect(screen.getByTestId('community-gone-unsent')).toHaveTextContent(
+        '1 draft of yours wasn’t sent.'
+      );
+      expect(screen.getByRole('button', { name: 'Copy your draft' })).toBeInTheDocument();
+    });
   });
 });

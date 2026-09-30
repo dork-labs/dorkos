@@ -70,6 +70,13 @@ export const CommunityConnectionDescriptorSchema = z
      * missing community and a misconfigured host look the same from here.
      */
     seemsGoneSince: z.iso.datetime().optional(),
+    /**
+     * How many of this owner's agent posts never arrived when the Community was found deleted or
+     * taken down: still waiting, or failed, counted just before DorkOS removed its copy
+     * (DOR-2575). Present only on a deleted, deleting or taken-down community, and only when
+     * there were some; the app says so, since the rooms those posts belonged to are gone.
+     */
+    undeliveredAgentMessages: z.number().int().positive().optional(),
   })
   .superRefine((connection, context) => {
     if (

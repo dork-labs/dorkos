@@ -407,6 +407,40 @@ describe('community outbox', () => {
     expect(outbox.isPending(otherRoom.id)).toBe(true);
   });
 
+  // Purpose (DOR-2575): what a deleted community's panel reports as "didn't send" is exactly the
+  // owner's waiting and failed posts to that community: never a delivered one, never one the
+  // person stopped, never another community's or another owner's. It fails if any of those
+  // leaks into the count or a waiting or failed one is missed.
+  it('counts only one owner’s waiting and failed posts to one community', () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const rows: Array<Partial<CommunityOutboxItem>> = [
+      { state: 'pending' },
+      { state: 'failed', failure: 'This community was deleted.' },
+      { state: 'failed', failure: 'expired' },
+      { state: 'confirmed', remoteEntryId: 'remote-1' },
+      { state: 'stopped', failure: 'stopped' },
+      { state: 'pending', communityRef: 'remote_other' as CommunityRef },
+      { state: 'pending', ownerAuthorId: 'someone-else' },
+    ];
+    harness.db.transaction((tx) =>
+      rows.forEach((row, index) =>
+        outbox.enqueue(
+          outboxItem({
+            id: `row-${index}`,
+            idempotencyKey: `key-${index}`,
+            localEntryId: `entry-${index}`,
+            ...row,
+          }),
+          tx
+        )
+      )
+    );
+
+    expect(outbox.undeliveredCount(REF, 'owner')).toBe(3);
+    expect(outbox.undeliveredCount(REF, 'nobody')).toBe(0);
+  });
+
   it('passes abort to a held remote post and records no receipt', async () => {
     const harness = createRoomHarness({ agents: agentLookupFor({}) });
     const outbox = new CommunityOutboxStore(harness.db);

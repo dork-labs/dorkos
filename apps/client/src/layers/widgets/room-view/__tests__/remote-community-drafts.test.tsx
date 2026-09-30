@@ -336,4 +336,57 @@ describe('remote community delivery drafts', () => {
     expect(back.result.current.deliveries).toEqual([]);
     expect(back.result.current.text).toBe('written while I could post');
   });
+
+  // Purpose (DOR-2575): a send the community refuses because it is gone (deleted, or taken down)
+  // can never go through, and the room is about to be replaced by the gone panel, so the message
+  // goes back into its composer's draft, in front of anything typed since, files and all, where
+  // the panel counts it and offers to copy it. It fails if the message is left only in a failed
+  // row that unmounts with the room, or if what was typed after it is lost.
+  it.each(['COMMUNITY_DELETED', 'COMMUNITY_TAKEN_DOWN'])(
+    'puts a message refused with %s back into the draft',
+    async (code) => {
+      const { transport, receipt, wrapper } = harness();
+      let refuse: (reason: unknown) => void = () => undefined;
+      vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(
+        new Promise((_resolve, reject) => {
+          refuse = reject;
+        })
+      );
+      vi.mocked(transport.uploadRemoteCommunityAttachment).mockResolvedValue(file);
+      const attached = new File(['data'], 'notes.txt');
+      const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
+      act(() => {
+        result.current.setText('the message that never arrived');
+        result.current.attachments.add([attached]);
+      });
+      act(() => result.current.send());
+      await waitFor(() => expect(transport.postRemoteCommunityEntry).toHaveBeenCalled());
+      act(() => result.current.setText('typed while it was sending'));
+
+      await act(async () =>
+        refuse(Object.assign(new Error('This community was deleted.'), { code }))
+      );
+
+      await waitFor(() => expect(result.current.deliveries).toEqual([]));
+      expect(result.current.text).toBe(
+        'the message that never arrived\n\ntyped while it was sending'
+      );
+      expect(result.current.attachments.staged.map((item) => item.file)).toEqual([attached]);
+    }
+  );
+
+  // Purpose: any other refusal keeps today's failed row with its retry, and touches no draft.
+  it('keeps any other refusal as a failed row to retry', async () => {
+    const { transport, receipt, wrapper } = harness();
+    vi.mocked(transport.postRemoteCommunityEntry).mockRejectedValue(
+      Object.assign(new Error('This community is archived, so it’s read-only.'), {
+        code: 'COMMUNITY_READ_ONLY',
+      })
+    );
+    const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
+    act(() => result.current.setText('still mine'));
+    act(() => result.current.send());
+    await waitFor(() => expect(result.current.deliveries[0]?.status).toBe('failed'));
+    expect(result.current.text).toBe('');
+  });
 });

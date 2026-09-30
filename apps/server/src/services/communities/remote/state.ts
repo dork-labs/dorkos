@@ -15,6 +15,7 @@ import { RemoteConnectionStore } from './connection-store.js';
 import { RemoteCommunityPairingService } from './pairing-service.js';
 import { RemoteCommunityAdapter } from './remote-community-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
+import { CommunityOutboxStore } from './community-outbox-store.js';
 import type { CommunityOutboxProjection } from './community-outbox-projection.js';
 import type {
   CommunityOutboxRetryInput,
@@ -92,7 +93,12 @@ export function getRemotePairingService(): RemoteCommunityPairingService {
     getRemoteConnectionStore(),
     (communityRef, ownerKey) =>
       getRemoteCommunityLifecycle().revokeConnection(communityRef, ownerKey),
-    () => getRemoteCommunityLifecycle().refreshSubscriptions()
+    () => getRemoteCommunityLifecycle().refreshSubscriptions(),
+    {},
+    // Counted just before a deleted or taken-down community's copy is purged (DOR-2575). No
+    // database yet means no outbox yet, so nothing can be waiting.
+    (communityRef, ownerKey) =>
+      db ? new CommunityOutboxStore(db).undeliveredCount(communityRef, ownerKey) : 0
   ));
 }
 

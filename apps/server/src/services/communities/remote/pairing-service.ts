@@ -225,6 +225,10 @@ export class RemoteCommunityPairingService {
    * @param onReconnectRequired - Revokes and purges everything derived from one owner's
    *   connection: called when the grant is rejected, when the Community is being deleted, and
    *   when the owner disconnects.
+   * @param onAccessAuthorityChanged - Told when a connection's effective access changes.
+   * @param timing - The access re-check budget, freshness window and clock.
+   * @param countUndelivered - How many of one owner's agent posts to one community never
+   *   arrived, read just before a deleted or taken-down community's copy is purged (DOR-2575).
    */
   constructor(
     private readonly store: RemoteConnectionStore,
@@ -236,7 +240,8 @@ export class RemoteCommunityPairingService {
       communityRef: CommunityRef,
       ownerKey: string
     ) => void,
-    timing: Partial<RemoteAccessTiming> = {}
+    timing: Partial<RemoteAccessTiming> = {},
+    private readonly countUndelivered?: (communityRef: CommunityRef, ownerKey: string) => number
   ) {
     this.timing = {
       budgetMs: COMMUNITY_ACCESS_BUDGET_MS,
@@ -324,8 +329,13 @@ export class RemoteCommunityPairingService {
     ownerKey: string
   ): Promise<RemoteConnectionDescriptor> {
     const lifecycle = descriptor.access?.lastKnown?.lifecycle;
-    if (lifecycle === 'deleted' || lifecycle === 'deletion_pending' || lifecycle === 'taken_down')
-      return descriptor;
+    if (lifecycle === 'deleted' || lifecycle === 'deletion_pending' || lifecycle === 'taken_down') {
+      // What its agents had not delivered when it went, so the app can say so (DOR-2575).
+      const undelivered = await this.store.undeliveredWhenGone(descriptor.ref, ownerKey);
+      return undelivered > 0
+        ? { ...descriptor, undeliveredAgentMessages: undelivered }
+        : descriptor;
+    }
     const since = await this.store.notFoundSince(descriptor.ref, ownerKey);
     if (!since || this.timing.now() - Date.parse(since) < COMMUNITY_SEEMS_GONE_AFTER_MS)
       return descriptor;
@@ -486,6 +496,9 @@ export class RemoteCommunityPairingService {
       return unavailable;
     }
     await this.store.clearNotFound(ref, ownerKey);
+    // Live again (a reversed takedown the person reconnected to): nothing it once said went
+    // undelivered is still news.
+    await this.store.clearUndeliveredWhenGone(ref, ownerKey);
     const verified = await this.store.updateAccess(ref, ownerKey, access, await hostOperator);
     this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, verified.access!);
     return verified;
@@ -532,6 +545,22 @@ export class RemoteCommunityPairingService {
       before?.lastKnown?.lifecycle === 'deletion_pending' ||
       before?.lastKnown?.lifecycle === 'deleted' ||
       before?.lastKnown?.lifecycle === 'taken_down';
+    // Count what its agents never delivered before the purge stops it and removes its rooms, and
+    // only on the way in: a later check, or a retried purge, would find those posts already
+    // stopped and count none (DOR-2575). A count that cannot be kept never holds up the purge.
+    if (!wasGone) {
+      try {
+        await this.store.recordUndeliveredWhenGone(
+          ref,
+          ownerKey,
+          this.countUndelivered?.(ref, ownerKey) ?? 0
+        );
+      } catch (error) {
+        logger.warn('[communities] could not count what a deleted community never received', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     if (!(wasGone && this.purgedGone.has(key))) {
       const [purge] = await Promise.allSettled([
         this.onReconnectRequired?.(ref, ownerKey) ?? Promise.resolve(),
@@ -789,6 +818,7 @@ export class RemoteCommunityPairingService {
       }
       await this.store.disconnect(ref, ownerKey);
       await this.store.clearNotFound(ref, ownerKey).catch(() => undefined);
+      await this.store.clearUndeliveredWhenGone(ref, ownerKey).catch(() => undefined);
       return { remoteRevoked };
     } finally {
       this.forgetChecks(ref, ownerKey);
