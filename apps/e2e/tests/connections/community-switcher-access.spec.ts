@@ -288,13 +288,20 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await expect(page.getByPlaceholder(/Message General/)).toBeVisible();
     await expect(heading).toBeFocused();
 
-    // Back to this DorkOS: its page's heading takes focus the same way.
+    // Back to this DorkOS, which lands on Home: its heading takes focus the
+    // same way.
     await trigger.click();
     await page.getByRole('dialog').getByRole('radio', { name: /team/ }).click();
     await expect(page).not.toHaveURL(/community=/);
-    await expect
-      .poll(() => page.evaluate(() => document.activeElement?.matches('h1[data-page-heading]')))
-      .toBe(true);
+    await expect(heading).toHaveAccessibleName('Home');
+    await expect(heading).toBeFocused();
+    // And keeps it once #team has drawn. The room's composer mounts after the
+    // heading has focus, sometimes more than once, and each mount used to take
+    // focus straight back: the heading held it for a few dozen milliseconds, so
+    // a check that happened to look inside them passed (DOR-2613).
+    await expect(page.getByRole('combobox', { name: 'Message #team…' })).toBeVisible();
+    await expect(heading).toBeFocused();
+    expect(await spokenHeadings()).toEqual(['Beta · General', 'Home']);
 
     // Opening and closing without choosing still returns focus to the trigger.
     await trigger.click();
