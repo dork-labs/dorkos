@@ -35,10 +35,58 @@ describe('useToolShortcuts option cursor', () => {
     expect(hook.result.current.focusedOptionIndex).toBe(-1);
   });
 
-  it('shows the cursor once an arrow key moves it', () => {
+  it('reveals the cursor at its current index on the first ArrowDown, without moving it', () => {
     const { hook } = setup();
     press('ArrowDown');
+    expect(hook.result.current.focusedOptionIndex).toBe(0);
+  });
+
+  it('reveals the cursor at its current index on the first ArrowUp, without moving it', () => {
+    const { hook } = setup();
+    press('ArrowUp');
+    expect(hook.result.current.focusedOptionIndex).toBe(0);
+  });
+
+  it('moves the cursor on the second arrow key, once revealed', () => {
+    const { hook } = setup();
+    press('ArrowDown');
+    press('ArrowDown');
     expect(hook.result.current.focusedOptionIndex).toBe(1);
+  });
+
+  it('moves the cursor backward on a second ArrowUp, once revealed', () => {
+    const { hook } = setup();
+    press('ArrowUp');
+    press('ArrowUp');
+    expect(hook.result.current.focusedOptionIndex).toBe(2);
+  });
+
+  it('toggles option 1 and reveals the cursor when Space is pressed while hidden', () => {
+    const { hook, handle } = setup();
+    press(' ');
+    expect(handle.toggleOption).toHaveBeenCalledWith(0);
+    expect(hook.result.current.focusedOptionIndex).toBe(0);
+  });
+
+  it('submits a mouse-picked answer on Enter even while the keyboard cursor is still hidden', () => {
+    // The card's own submit() reads selections, not focusedOptionIndex — a
+    // person who picked an answer with the mouse and never touched an arrow
+    // key must still be able to submit with Enter (single-question or
+    // last-tab ask). Regression test: fails if onSubmit ever re-gates on
+    // keyboardEngaged.
+    const { hook, handle } = setup();
+    press('Enter');
+    expect(handle.submit).toHaveBeenCalled();
+    expect(handle.navigateQuestion).not.toHaveBeenCalled();
+    expect(hook.result.current.focusedOptionIndex).toBe(-1);
+  });
+
+  it('submits on Enter once the cursor is revealed', () => {
+    const { hook, handle } = setup();
+    press('ArrowDown');
+    press('Enter');
+    expect(handle.submit).toHaveBeenCalled();
+    expect(handle.navigateQuestion).not.toHaveBeenCalled();
   });
 
   it('shows the cursor on the option a digit key toggled', () => {
