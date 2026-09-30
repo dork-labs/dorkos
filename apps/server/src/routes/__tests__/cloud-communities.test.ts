@@ -102,6 +102,10 @@ interface Script {
   entitlements: unknown;
   /** When set, the entitlements read waits for this before answering. */
   entitlementsGate: Promise<void> | null;
+  /** The parts the fake Community server holds for a parted upload, by number. */
+  parts: Map<number, Buffer>;
+  /** Answers `complete` gives in order before it succeeds (`202` = still checking). */
+  completeStatus: number[];
 }
 
 let script: Script;
@@ -132,6 +136,8 @@ function defaultScript(): Script {
       used: { ...entitlementsFixture.used, communities: 1 },
     },
     entitlementsGate: null,
+    parts: new Map(),
+    completeStatus: [],
   };
 }
 
@@ -188,6 +194,41 @@ const fake = listeningServer(async (req, res) => {
     return send(res, 200, moveCancelledFixture);
   }
   if (route === 'GET /v1/communities/moves/move_0001') return send(res, 200, script.moveBody);
+  if (route === 'GET /upload/imp_0001/parts') {
+    return send(res, 200, {
+      parts: [...script.parts].map(([partNumber, bytes]) => ({
+        partNumber,
+        byteSize: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      })),
+      maxPartBytes: 8,
+      maxArchiveBytes: 1024,
+    });
+  }
+  const part = /^PUT \/upload\/imp_0001\/parts\/(\d+)$/.exec(route);
+  if (part) {
+    if (createHash('sha256').update(body).digest('hex') !== req.headers['x-part-sha256'])
+      return send(res, 400, { code: 'IMPORT_ARCHIVE_INVALID' });
+    script.parts.set(Number(part[1]), body);
+    return send(res, 200, { partNumber: Number(part[1]), byteSize: body.length });
+  }
+  if (route === 'POST /upload/imp_0001/complete') {
+    const next = script.completeStatus.shift();
+    if (next) {
+      res.setHeader('retry-after', '0');
+      return send(res, next, {});
+    }
+    const request = JSON.parse(body.toString()) as { parts: number; archiveSha256: string };
+    const whole = Buffer.concat(
+      Array.from(
+        { length: request.parts },
+        (_, index) => script.parts.get(index + 1) ?? Buffer.alloc(0)
+      )
+    );
+    if (createHash('sha256').update(whole).digest('hex') !== request.archiveSha256)
+      return send(res, 400, { code: 'IMPORT_ARCHIVE_INVALID' });
+    return send(res, 200, { state: 'validating' });
+  }
   if (route === 'PUT /upload/imp_0001') {
     const status = script.uploadStatus.shift() ?? 200;
     if (status === 0) return req.socket.destroy();
@@ -549,6 +590,52 @@ describe('moving a community in', () => {
     expect(put.headers['content-length']).toBe(String(archive.length));
     expect(put.headers['x-archive-sha256']).toBe(digest);
     expect(put.body.equals(archive)).toBe(true);
+  });
+
+  // Purpose (AC-15): when the Community server takes the file in parts, the export goes up as
+  // numbered parts of at most partBytes, each with its own digest and the token as bearer, and
+  // `complete` (asked again after a 202) puts them together; the token still never reaches the
+  // browser. Fails if a part is too large, a digest is wrong, a byte is lost, or the token leaks.
+  it('sends the export in parts when the Community server offers them', async () => {
+    const answer = moveStartAnswer();
+    script.moveStartBody = {
+      ...answer,
+      upload: { ...answer.upload, parts: { partBytes: 8, maxBytes: 1024 } },
+    };
+    script.completeStatus = [202];
+    const res = await startMoveRequest().expect(200);
+    expect(res.text).not.toContain(UPLOAD_TOKEN);
+    expect(await uploadSettled('move_0001')).toEqual({
+      state: 'sent',
+      sentBytes: archive.length,
+      totalBytes: archive.length,
+      failure: null,
+    });
+    const puts = received.filter((r) => r.method === 'PUT');
+    expect(puts.map((r) => r.path)).toEqual(
+      Array.from(
+        { length: Math.ceil(archive.length / 8) },
+        (_, i) => `/upload/imp_0001/parts/${i + 1}`
+      )
+    );
+    for (const put of puts) {
+      expect(put.body.length).toBeLessThanOrEqual(8);
+      expect(put.authorization).toBe(`Bearer ${UPLOAD_TOKEN}`);
+      expect(put.headers['x-part-sha256']).toBe(
+        createHash('sha256').update(put.body).digest('hex')
+      );
+    }
+    expect(Buffer.concat(puts.map((r) => r.body)).equals(archive)).toBe(true);
+    const completes = received.filter((r) => r.path === '/upload/imp_0001/complete');
+    expect(completes).toHaveLength(2);
+    expect(JSON.parse(completes[1].body.toString())).toEqual({
+      parts: puts.length,
+      archiveBytes: archive.length,
+      archiveSha256: digest,
+    });
+    const poll = await request(server).get('/api/cloud/communities/moves/move_0001').expect(200);
+    expect(poll.text).not.toContain(UPLOAD_TOKEN);
+    expect(received.some((r) => r.method === 'PUT' && r.path === '/upload/imp_0001')).toBe(false);
   });
 
   // Purpose: move state is never cached here. Fails if a poll answers from memory.
