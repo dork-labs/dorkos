@@ -176,7 +176,10 @@ it('DorkOS Disconnect ends the grant on the Community, not just the local copy',
     });
 
     const service = new RemoteCommunityPairingService(store);
-    expect(await service.disconnect(ref, ownerKey)).toEqual({ remoteRevoked: true });
+    expect(await service.disconnect(ref, ownerKey)).toEqual({
+      remoteRevoked: true,
+      agentsNotRemoved: [],
+    });
 
     expect(await listedGrantIds()).not.toContain(grant);
     expect((await h.call(`${tenant()}/me/connection-access`, { bearer: token })).status).toBe(401);
