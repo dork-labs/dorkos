@@ -22,7 +22,9 @@ const buttonVariants = cva(
   // keyboard focus lands on the input, which nobody can see. Brand and destructive
   // fill the button with the ring's own colour, so a flush ring would only make
   // the button look bigger; theirs sits 2px out, past a gap in the page colour,
-  // as the client's `focus-ring` utility draws it.
+  // as the client's `focus-ring` utility draws it. An invalid button's ring is
+  // the destructive colour, solid for the same reason (DOR-2609); the form
+  // controls share both rings from `focus-ring.ts`.
   //
   // **The press lives here, not at the call site.** The design system asks every
   // button for "scale to 0.97 on active, spring back", and for a long time the
@@ -36,7 +38,7 @@ const buttonVariants = cva(
   // across 768px animated the height of every button on screen. `scale` is
   // named as itself: Tailwind v4's scale utilities write the standalone `scale`
   // property, so a list saying `transform` would transition nothing.
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,scale] duration-150 motion-safe:active:scale-[0.97] motion-safe:active:duration-100 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-(--dui-size-icon-sm) shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-dui-ring focus-visible:ring-dui-ring focus-visible:ring-[3px] has-[:focus-visible]:border-dui-ring has-[:focus-visible]:ring-dui-ring has-[:focus-visible]:ring-[3px] aria-invalid:ring-dui-destructive/20 dui-dark:aria-invalid:ring-dui-destructive/40 aria-invalid:border-dui-destructive",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,scale] duration-150 motion-safe:active:scale-[0.97] motion-safe:active:duration-100 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-(--dui-size-icon-sm) shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-dui-ring focus-visible:ring-dui-ring focus-visible:ring-[3px] has-[:focus-visible]:border-dui-ring has-[:focus-visible]:ring-dui-ring has-[:focus-visible]:ring-[3px] aria-invalid:border-dui-destructive aria-invalid:ring-dui-destructive",
   {
     variants: {
       variant: {

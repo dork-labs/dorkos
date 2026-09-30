@@ -3,6 +3,7 @@ import { CircleIcon } from 'lucide-react';
 import { RadioGroup as RadioGroupPrimitive } from 'radix-ui';
 
 import { cn } from './cn.js';
+import { FOCUS_RING, INVALID_RING } from './focus-ring.js';
 
 /**
  * A set of choices where exactly one can be picked.
@@ -48,7 +49,9 @@ function RadioGroupItem({ className, responsive = true, ...props }: RadioGroupIt
     <RadioGroupPrimitive.Item
       data-slot="radio-group-item"
       className={cn(
-        'border-dui-input text-dui-primary focus-visible:border-dui-ring focus-visible:ring-dui-ring/50 aria-invalid:border-dui-destructive aria-invalid:ring-dui-destructive/20 dui-dark:bg-dui-input/30 dui-dark:aria-invalid:ring-dui-destructive/40 aspect-square shrink-0 rounded-full border shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none!',
+        'border-dui-input text-dui-primary dui-dark:bg-dui-input/30 aspect-square shrink-0 rounded-full border shadow-xs transition-[color,box-shadow] outline-none disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none!',
+        FOCUS_RING,
+        INVALID_RING,
         responsive ? 'size-5 md:size-4' : 'size-4',
         className
       )}

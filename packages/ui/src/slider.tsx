@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Slider as SliderPrimitive } from 'radix-ui';
 
 import { cn } from './cn.js';
+import { FOCUS_RING } from './focus-ring.js';
 
 /**
  * A draggable track for picking a number in a range, or two for a span.
@@ -54,7 +55,15 @@ function Slider({
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
-          className="border-dui-primary ring-dui-ring/50 block size-4 shrink-0 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none!"
+          // Hovering the thumb glows the ring colour at half strength, a hint that
+          // it can be dragged; keyboard focus draws the solid ring instead, and
+          // wins when both apply. Dragging with a pointer focuses the thumb
+          // without matching `:focus-visible`, so a drag shows the glow, never
+          // the ring.
+          className={cn(
+            'border-dui-primary hover:ring-dui-ring/50 block size-4 shrink-0 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none!',
+            FOCUS_RING
+          )}
         />
       ))}
     </SliderPrimitive.Root>

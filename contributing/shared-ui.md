@@ -11,6 +11,7 @@
 | Public exports and release metadata           | `packages/ui/package.json`, `packages/ui/src/index.ts`                                     |
 | Theme values and Tailwind source registration | `packages/ui/tokens.css`, `packages/ui/tailwind.css`                                       |
 | Behavior tests                                | `packages/ui/src/__tests__/`                                                               |
+| Keyboard focus ring and its browser proof     | `packages/ui/src/focus-ring.ts`, `apps/design-system/tests/focus-rings.spec.ts`            |
 | Client FSD facade                             | `apps/client/src/layers/shared/ui/index.ts`                                                |
 | Standalone examples                           | `apps/design-system/`                                                                      |
 | Client feature simulations                    | `apps/client/src/dev/`                                                                     |
