@@ -307,27 +307,77 @@ function managedCloudNetworkError(
   });
 }
 
+/** The most of a refusal body read before giving up on it; a real one is tiny. */
+const MANAGED_ERROR_BODY_LIMIT_BYTES = 16 * 1024;
+
+/**
+ * Read at most {@link MANAGED_ERROR_BODY_LIMIT_BYTES} of a response body, then
+ * let the rest go, so a proxy's multi-megabyte error page is never buffered.
+ * A body cut off at the limit simply fails to parse as JSON.
+ */
+async function readBoundedText(response: Response): Promise<string | undefined> {
+  if (!response.body) return undefined;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size < MANAGED_ERROR_BODY_LIMIT_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.byteLength;
+    }
+  } catch {
+    return undefined;
+  } finally {
+    reader.cancel().catch(() => undefined);
+  }
+  const bytes = new Uint8Array(Math.min(size, MANAGED_ERROR_BODY_LIMIT_BYTES));
+  let offset = 0;
+  for (const chunk of chunks) {
+    const room = bytes.byteLength - offset;
+    if (room <= 0) break;
+    bytes.set(chunk.subarray(0, room), offset);
+    offset += Math.min(chunk.byteLength, room);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Read the cloud's `{error, reason?}` refusal body. The exact shape is the
+ * shared schema; anything past it is read field by field, so one oversize or
+ * malformed field never costs the refusal its code. Both strings are capped.
+ */
+function readManagedErrorBody(text: string | undefined): {
+  cloudCode?: string;
+  reason?: string;
+} {
+  if (!text) return {};
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return {};
+  }
+  const parsed = ManagedConnectorErrorBodySchema.safeParse(json);
+  if (parsed.success) return { cloudCode: parsed.data.error, reason: parsed.data.reason };
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return {};
+  const body = json as { error?: unknown; reason?: unknown };
+  return {
+    cloudCode:
+      typeof body.error === 'string' && body.error.length > 0
+        ? body.error.slice(0, 100)
+        : undefined,
+    reason: typeof body.reason === 'string' ? body.reason.slice(0, 200) : undefined,
+  };
+}
+
 /** Map a non-2xx cloud answer to its category, carrying the cloud's own code and reason. */
 async function throwManagedConnectorCloudError(
   response: Response,
   request: ManagedCloudRequest
 ): Promise<never> {
-  const text = await response.text().catch(() => undefined);
-  let cloudCode: string | undefined;
-  let reason: string | undefined;
-  if (text) {
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = undefined;
-    }
-    const parsed = ManagedConnectorErrorBodySchema.safeParse(json);
-    if (parsed.success) {
-      cloudCode = parsed.data.error;
-      reason = parsed.data.reason;
-    }
-  }
+  const { cloudCode, reason } = readManagedErrorBody(await readBoundedText(response));
   const common = {
     status: response.status,
     cloudCode,

@@ -842,6 +842,54 @@ describe('managed cloud refusals', () => {
     expect(logged).not.toContain('limit=');
   });
 
+  it('keeps the cloud code when another field of its body is oversize', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    await expect(
+      catalog(
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({ error: 'permission_upgrade_required', reason: 'r'.repeat(1_500) }),
+              { status: 403 }
+            )
+        )
+      )
+    ).resolves.toMatchObject({
+      code: 'permission_upgrade_required',
+      cloudCode: 'permission_upgrade_required',
+      reason: 'r'.repeat(200),
+    });
+    const longCode = (await catalog(
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'e'.repeat(150), reason: 7 }), { status: 403 })
+      )
+    )) as { code: string; cloudCode: string; reason?: string };
+    expect(longCode.code).toBe('request_failed');
+    expect(longCode.cloudCode).toBe('e'.repeat(100));
+    expect(longCode.reason).toBeUndefined();
+  });
+
+  it('reads at most 16 KiB of a refusal body, however large the body is', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const chunk = new TextEncoder().encode('<html>' + 'x'.repeat(1_018));
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulled += chunk.byteLength;
+          controller.enqueue(chunk);
+          if (pulled >= 4 * 1024 * 1024) controller.close();
+        },
+      },
+      { highWaterMark: 0 }
+    );
+    await expect(
+      catalog(vi.fn(async () => new Response(body, { status: 502 })))
+    ).resolves.toMatchObject({ code: 'unavailable', status: 502, cloudCode: undefined });
+    expect(pulled).toBeLessThanOrEqual(16 * 1024 + chunk.byteLength);
+  });
+
   it('logs a network failure once for resources and both authority calls', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const offline = vi.fn(async () => {
