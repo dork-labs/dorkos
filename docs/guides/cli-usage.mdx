@@ -237,6 +237,8 @@ dorkos community deploy --list-incomplete   # Setups that stopped and can be res
 dorkos community deploy ... --resume <run-id>   # Pick one back up with the same choices
 ```
 
+It uses your saved `fly` and `neonctl` sign-ins. To use a limited token instead, export `FLY_API_TOKEN` (or `FLY_ACCESS_TOKEN`) for Fly and `NEON_API_KEY` for Neon first; setup tells you which ones it is using and never writes them down.
+
 The step-by-step guide, including the manual recipe, is [`apps/community/FLY.md`](https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md).
 
 #### Agent files

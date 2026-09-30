@@ -27,6 +27,7 @@ import { executeCommunityCreationPhase } from './execute.js';
 import { executeCommunityDeployPhase } from './deploy.js';
 import { executeCommunityOwnerHandoff } from './owner.js';
 import { assertCommunityCliVersions } from './runtime/versions.js';
+import { formatCommunityCredentialNotice } from './runtime/credential-env.js';
 import type { CommunityPreflightSelection } from './preflight.js';
 import {
   initializeLaunchJournal,
@@ -283,6 +284,8 @@ export async function runCommunityDispatcher(
     repository: trusted.repository,
   });
 
+  // Before the first read, so a person sees which account setup acts as even if it stops.
+  process.stdout.write(formatCommunityCredentialNotice(childEnv));
   try {
     if (!parsed.values['dry-run']) await assertOwnerHandoffPrerequisites(childEnv);
     await runCommunityDeploy(

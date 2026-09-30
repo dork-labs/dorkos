@@ -11,7 +11,7 @@ const entry = fileURLToPath(new URL('../cli.ts', import.meta.url));
 const tsx = pathToFileURL(require.resolve('tsx/esm')).href;
 
 describe('community CLI environment boundary', () => {
-  it('forwards only allowlisted platform environment to the dispatcher', () => {
+  it('forwards only allowlisted platform and Fly/Neon credential environment to the dispatcher', () => {
     const home = mkdtempSync(path.join(os.tmpdir(), 'dorkos-community-env-'));
     try {
       const output = path.join(home, 'child-env.json');
@@ -45,6 +45,9 @@ export async function runCommunityDispatcher(_args, context) {
           WINDIR: 'C:\\Windows',
           XDG_RUNTIME_DIR: '/run/user/1000',
           WAYLAND_DISPLAY: 'wayland-1',
+          FLY_ACCESS_TOKEN: 'FlyV1 fm2_scoped-access',
+          FLY_API_TOKEN: 'FlyV1 fm2_scoped-api',
+          NEON_API_KEY: 'napi_scoped',
           DO_NOT_FORWARD_SECRET: 'private-value',
         },
       });
@@ -57,6 +60,11 @@ export async function runCommunityDispatcher(_args, context) {
         WINDIR: 'C:\\Windows',
         XDG_RUNTIME_DIR: '/run/user/1000',
         WAYLAND_DISPLAY: 'wayland-1',
+        // A scoped credential a person exported is what `fly` and `neonctl` must sign in with
+        // (DOR-2602): dropping one silently falls back to their saved sign-in.
+        FLY_ACCESS_TOKEN: 'FlyV1 fm2_scoped-access',
+        FLY_API_TOKEN: 'FlyV1 fm2_scoped-api',
+        NEON_API_KEY: 'napi_scoped',
       });
       expect(forwardedEnvironment).not.toContain('DO_NOT_FORWARD_SECRET');
       expect(forwardedEnvironment).not.toContain('private-value');
