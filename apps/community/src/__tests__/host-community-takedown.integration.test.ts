@@ -251,6 +251,21 @@ async function onlyDue(harness: TenancyHarness, id: string) {
   );
 }
 
+/**
+ * Run only this community's export jobs. Every takedown in this file queues an evidence export,
+ * and most tests never build theirs, so an unscoped drain builds every one an earlier test left
+ * queued. That once cost 17 builds in a single test and, under the full suite's load, its whole
+ * 30-second budget. Deferring the others by a day keeps each drain to the test's own work.
+ */
+async function drainExportsOf(harness: TenancyHarness, communityId: string) {
+  await harness.pool.query(
+    `UPDATE export_archives SET next_attempt_at=now()+interval '1 day'
+     WHERE community_id<>$1 AND state IN ('queued','building')`,
+    [communityId]
+  );
+  return drainExports(harness.pool, harness.blobStore);
+}
+
 async function copyEvidence(harness: TenancyHarness, id: string) {
   await onlyDue(harness, id);
   return copyDueTakedownEvidence(
@@ -390,7 +405,7 @@ describe('a whole-community takedown with an evidence store', () => {
       202,
       'owner export'
     );
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     const queued = await body<{ export: { id: string } }>(
       await h.call(`${s.base}/me/export`, { cookie: s.p.cookie, body: {} }),
       202,
@@ -551,7 +566,7 @@ describe('a whole-community takedown with an evidence store', () => {
     expect(await runDeletion(h, s.communityId)).toBe(false);
 
     // The evidence export runs in deletion_pending and lands in the store with record.json.
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: true });
     const stored = await takedownRow(h, takedown.id);
     expect(stored).toMatchObject({ evidence_state: 'stored', evidence_export_id: null });
@@ -975,7 +990,7 @@ describe('reversal', () => {
       200,
       'reverse'
     );
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: true });
     expect(await takedownRow(h, takedown.id)).toMatchObject({
       state: 'reversed',
@@ -1023,7 +1038,7 @@ describe('the evidence copy', () => {
       )
     ).takedown;
     expect(retried.evidence.state).toBe('pending');
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: true });
 
     // AC-8: the relaxed check still refuses a takedown window under a day.
@@ -1042,7 +1057,7 @@ describe('the evidence copy', () => {
     const s = await makeScene(h, operator.cookie, 'gap');
     const key = await issueKey(h, operator.cookie);
     const takedown = await created(await takeDown(h, s.communityId, { bearer: key.secret }));
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     const first = (await takedownRow(h, takedown.id)).evidence_export_id!;
     await h.pool.query(
       `DELETE FROM managed_blobs WHERE blob_key=(
@@ -1058,7 +1073,7 @@ describe('the evidence copy', () => {
     expect(failed.evidence_export_id).not.toBe(first);
     const attempt = join(evidenceDirectory, 'takedowns', takedown.id, 'attempt-1');
     expect(await readdir(attempt).catch(() => [])).not.toContain('record.json');
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: true });
   });
 
@@ -1081,7 +1096,7 @@ describe('the evidence copy', () => {
       ).toBe(204);
     const key = await issueKey(h, operator.cookie);
     const takedown = await created(await takeDown(h, s.communityId, { bearer: key.secret }));
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: true });
     const location = (await takedownRow(h, takedown.id)).evidence_location!;
     const record = CommunityEvidenceRecordV1Schema.parse(
@@ -1104,7 +1119,7 @@ describe('the evidence copy', () => {
     const s = await makeScene(h, operator.cookie, 'keep');
     const key = await issueKey(h, operator.cookie);
     const takedown = await created(await takeDown(h, s.communityId, { bearer: key.secret }));
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     const evidenceId = (await takedownRow(h, takedown.id)).evidence_export_id!;
     await h.pool.query(
       "UPDATE export_archives SET expires_at=now()-interval '1 hour' WHERE id=$1",
@@ -1147,7 +1162,7 @@ describe('a legal hold', () => {
     await body(await place('PUT'), 200, 'legal hold');
     const key = await issueKey(h, operator.cookie);
     const takedown = await created(await takeDown(h, s.communityId, { bearer: key.secret }));
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: true });
     await deletionDue(h, s.communityId);
     expect(await runDeletion(h, s.communityId)).toBe(false);
@@ -1214,7 +1229,7 @@ describe('erasures wait for a community takedown’s evidence', () => {
         )
       ).rowCount
     ).toBe(0);
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     expect(await copyEvidence(h, takedown.id)).toEqual({ claimed: true, stored: true });
     expect((await waiting())?.waitingOnHost).toBe(false);
     const location = (await takedownRow(h, takedown.id)).evidence_location!;
@@ -1392,7 +1407,7 @@ describe('a whole-community takedown with no evidence store', () => {
       'retry'
     );
     expect(await runDeletion(h, s.communityId)).toBe(false);
-    await drainExports(h.pool, h.blobStore);
+    await drainExportsOf(h, s.communityId);
     expect(await copyEvidence(h, row.id)).toEqual({ claimed: true, stored: true });
     const location = (await takedownRow(h, row.id)).evidence_location!;
     const names = await readdir(join(evidenceDirectory, ...location.split('/').filter(Boolean)));
