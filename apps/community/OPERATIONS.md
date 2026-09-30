@@ -139,6 +139,10 @@ Wrong passwords work differently. Leaving, disconnecting all installations, tran
 
 Keys belong to the host, not to the person who made them. Removing a host operator does not stop the keys that operator created. When someone leaves, open **API keys**, find the keys that show their name, and replace or revoke them. **Replace** gives a new key with the same permissions and keeps the old one working for up to a day, so a program can switch over without downtime.
 
+## Pairing requests
+
+When a local DorkOS install asks to connect, the server keeps a pairing request for the member to approve. A request lasts ten minutes. The cleanup sweep deletes each one an hour after it expires, whether it was used, declined, or ignored. A used request lives on as the connection it made, which the member can see and remove in their settings.
+
 ## Community limits
 
 Each community record on the host page has **Limits**: the most active members and the most file space, each shown beside what the community uses now. Leave a field empty for no limit. A lower limit never removes anyone or anything; it only stops new members or new files once the community is at the limit, and people see "This community is full" or "out of file space" instead of a retry. Exports never count, so an owner can always take their data out.

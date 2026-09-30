@@ -3,9 +3,18 @@ import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'no
 import path from 'node:path';
 import { chromium, type Browser, type ElectronApplication, type Page } from '@playwright/test';
 import { REPO_ROOT, readRunConfig } from './config.js';
-import type { Desktop } from './desktop.js';
+import { json, type Desktop } from './desktop.js';
 import { Infrastructure } from './infra.js';
 import { runJourney } from './journey.js';
+import {
+  REMOTE_SKIPPED_STEPS,
+  assertEveryStepAccounted,
+  runsStep,
+  stepIdOf,
+  type StepId,
+} from './plan.js';
+import { redactor } from './redact.js';
+import { prepareTarget } from './target.js';
 
 /**
  * Two-Desktop Community acceptance run: the entry point.
@@ -13,7 +22,10 @@ import { runJourney } from './journey.js';
  * Refuses to start unless `DORKOS_TWO_DESKTOP_ACCEPTANCE=1`. Then, in order:
  * optionally builds the packaged app and the Community server (`--build`),
  * brings up Postgres and two Community servers, drives the journey in
- * `journey.ts`, and tears down exactly what it created. Evidence (step log,
+ * `journey.ts`, and tears down exactly what it created. With
+ * `DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF` it starts no Postgres and no
+ * Community server: it drives the remote steps against a community the live
+ * gate is holding, and cleans up only what it made there. Evidence (step log,
  * receipt, screenshots, per-app network and console trails) lands in a fresh
  * `run-<timestamp>/` folder under the output root; server logs and blobs go
  * in its `private/` subfolder.
@@ -26,6 +38,21 @@ import { runJourney } from './journey.js';
  */
 
 const config = readRunConfig(process.env, process.argv.slice(2));
+const mode = config.remote ? 'remote' : 'local';
+// Every line and the receipt pass through this: no handoff credential leaves the run.
+const redact = redactor(
+  config.remote
+    ? [
+        config.remote.owner.password,
+        config.remote.member.password,
+        config.remote.owner.email,
+        config.remote.member.email,
+        config.remote.inviteLink,
+        // The invite's token travels in its fragment; hide it on its own too.
+        config.remote.inviteLink.split('#')[1] ?? '',
+      ]
+    : []
+);
 const runRoot = path.join(config.outputRoot, `run-${Date.now()}`);
 const shots = path.join(runRoot, 'screenshots');
 mkdirSync(path.join(runRoot, 'private'), { recursive: true, mode: 0o700 });
@@ -33,7 +60,7 @@ mkdirSync(shots, { recursive: true, mode: 0o700 });
 const homeRoot = path.join(config.homeRoot, `dorkos-two-desktop-homes-${Date.now()}`);
 
 function log(line: string) {
-  const text = `${new Date().toISOString()} ${line}`;
+  const text = redact(`${new Date().toISOString()} ${line}`);
   console.log(text);
   appendFileSync(path.join(runRoot, 'steps.log'), text + '\n');
 }
@@ -63,9 +90,17 @@ const findings: Array<Record<string, unknown>> = [];
 const desktops: Desktop[] = [];
 const launched: ElectronApplication[] = [];
 const browserPages: Record<string, Page> = {};
-const receipt: Record<string, unknown> = { startedAt: new Date().toISOString(), runRoot };
+const madeAgents: Array<{ person: 'a' | 'b'; remoteMemberId: string }> = [];
+const receipt: Record<string, unknown> = {
+  startedAt: new Date().toISOString(),
+  runRoot,
+  mode,
+  // The host only: never the handoff, its accounts or its invite.
+  ...(config.remote ? { originHost: new URL(config.remote.origin).hostname } : {}),
+};
 let browser: Browser | undefined;
-const infra = new Infrastructure(runRoot, config.postgresContainer, log);
+/** Built only by a local run; remote mode never creates it. */
+let infra: Infrastructure | null = null;
 
 async function shot(page: Page, name: string) {
   const file = path.join(shots, `${name}.png`);
@@ -74,6 +109,9 @@ async function shot(page: Page, name: string) {
 }
 
 async function step<T>(name: string, work: () => Promise<T>): Promise<T> {
+  const id = stepIdOf(name);
+  if (id && !runsStep(mode, id))
+    throw new Error(`Step ${id} is not part of a ${mode} run (see plan.ts)`);
   const started = Date.now();
   log(`STEP ${name} …`);
   try {
@@ -89,6 +127,14 @@ async function step<T>(name: string, work: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Record a step this mode leaves out; a local run leaves out nothing. */
+function skip(id: StepId) {
+  const reason = mode === 'remote' ? REMOTE_SKIPPED_STEPS[id] : undefined;
+  if (!reason) throw new Error(`Step ${id} is not skipped in a ${mode} run (see plan.ts)`);
+  steps.push({ name: `${id} (skipped)`, skipped: 'remote-mode', reason });
+  log(`SKIP ${id}: remote-mode. ${reason}`);
+}
+
 async function main() {
   try {
     if (config.build) build();
@@ -98,12 +144,10 @@ async function main() {
       cwd: REPO_ROOT,
       encoding: 'utf8',
     }).trim();
-    await infra.startPostgres();
-    const proof = await infra.startCommunity('proof', {
-      // One active agent per member, so step 20 can prove the limit is enforced.
-      COMMUNITY_AGENTS_PER_OWNER: '1',
-    });
-    const isolation = await infra.startCommunity('isolation');
+    const { target } = await prepareTarget(
+      config.remote,
+      () => (infra = new Infrastructure(runRoot, config.postgresContainer, log))
+    );
     browser = await chromium.launch({
       ...(config.browserChannel ? { channel: config.browserChannel } : {}),
       headless: true,
@@ -119,17 +163,20 @@ async function main() {
         runRoot,
         launched,
         onLaunched: ownSignals,
+        redact,
       },
       infra,
-      proof,
-      isolation,
+      target,
       step,
+      skip,
       shot,
       findings,
       desktops,
       receipt,
       browserPages,
+      madeAgents,
     });
+    assertEveryStepAccounted(mode, steps as Array<{ name: string; skipped?: 'remote-mode' }>);
     const productBugs = findings.filter((f) => f.kind === 'product-bug' && !f.pass);
     receipt.outcome = productBugs.length
       ? 'FAIL-PRODUCT-CONTRACT'
@@ -147,7 +194,7 @@ async function main() {
         log(`FAIL url ${desktop.name}: ${desktop.page.url()}`);
         writeFileSync(
           path.join(runRoot, `FAIL-${desktop.name}-aria.yml`),
-          await desktop.page.locator('body').ariaSnapshot()
+          redact(await desktop.page.locator('body').ariaSnapshot())
         );
       } catch (shotError) {
         log(`fail-shot error: ${(shotError as Error).message}`);
@@ -179,31 +226,123 @@ async function main() {
   }
 }
 
+/**
+ * Remote mode only: end what this run made on the held community, and nothing
+ * else. For each app still open, remove every agent enrollment and end every
+ * connection (which revokes that installation's grant); then remove, on the
+ * Community, every agent this run enrolled. The community, its channels and
+ * both accounts stay: the live gate owns them.
+ */
+async function releaseRemote(): Promise<string[]> {
+  const done: string[] = [];
+  for (const desktop of desktops) {
+    let rows: Array<{ ref: string; label: string }>;
+    try {
+      rows = (
+        await json<{ connections: Array<{ ref: string; label: string }> }>(
+          `${desktop.origin}/api/community-connections`
+        )
+      ).connections;
+    } catch (error) {
+      done.push(`${desktop.name}: could not list connections (${(error as Error).message})`);
+      cleanupFailed = true;
+      continue;
+    }
+    for (const { ref } of rows) {
+      try {
+        const { agents } = await json<{ agents: Array<{ localAgentId: string }> }>(
+          `${desktop.origin}/api/communities/${ref}/agents`
+        );
+        for (const agent of agents) {
+          const removed = await json<{ remoteRevoked: boolean }>(
+            `${desktop.origin}/api/communities/${ref}/agents/${encodeURIComponent(agent.localAgentId)}`,
+            { method: 'DELETE' }
+          );
+          done.push(
+            `${desktop.name}: removed agent enrollment ${agent.localAgentId} (community revoked: ${removed.remoteRevoked})`
+          );
+        }
+      } catch (error) {
+        done.push(`${desktop.name}: agent cleanup on ${ref} failed (${(error as Error).message})`);
+        cleanupFailed = true;
+      }
+      try {
+        const ended = await json<{ remoteRevoked: boolean }>(
+          `${desktop.origin}/api/community-connections/${ref}`,
+          { method: 'DELETE' }
+        );
+        done.push(`${desktop.name}: disconnected ${ref} (grant revoked: ${ended.remoteRevoked})`);
+        if (!ended.remoteRevoked) cleanupFailed = true;
+      } catch (error) {
+        done.push(`${desktop.name}: disconnect ${ref} failed (${(error as Error).message})`);
+        cleanupFailed = true;
+      }
+    }
+  }
+  // An agent can outlive its app's enrollment (step 25's Disconnect drops B's
+  // side of it), so remove each one this run made on the Community itself, as
+  // the person who owns it, through that person's signed-in browser.
+  for (const { person, remoteMemberId } of madeAgents) {
+    const page = browserPages[person === 'a' ? 'owner' : 'member'];
+    try {
+      const response = await page!
+        .context()
+        .request.delete(
+          `${config.remote!.origin}/api/v1/agents/${encodeURIComponent(remoteMemberId)}`
+        );
+      // 404: the app's own cleanup above already removed it.
+      const ok = response.ok() || response.status() === 404;
+      done.push(
+        `person-${person}: agent ${remoteMemberId} removed on the community (${response.status()})`
+      );
+      if (!ok) cleanupFailed = true;
+    } catch (error) {
+      done.push(
+        `person-${person}: removing agent ${remoteMemberId} failed (${(error as Error).message})`
+      );
+      cleanupFailed = true;
+    }
+  }
+  return done;
+}
+
 let cleaning: Promise<void> | undefined;
+/** Set by any cleanup step that could not undo what the run made. */
+let cleanupFailed = false;
 let interrupted: NodeJS.Signals | null = null;
 /**
  * Close every app, stop the servers, remove this run's Postgres (or drop only
- * its databases), delete the temporary homes and write the receipt. Runs once,
- * whether the journey ended or the run was interrupted.
+ * its databases), delete the temporary homes and write the receipt. In remote
+ * mode, first end the apps' connections and enrollments on the held community.
+ * Runs once, whether the journey ended or the run was interrupted.
  */
 function cleanup(): Promise<void> {
   cleaning ??= (async () => {
     receipt.steps = steps;
     receipt.findings = findings;
     receipt.finishedAt = new Date().toISOString();
+    // Remote: end the apps' connections and enrollments while the apps can still do it.
+    const remoteCleanup = config.remote ? await releaseRemote() : [];
     // Every app this run started, including one whose launch failed partway.
     for (const app of [...launched].reverse()) await app.close().catch(() => undefined);
     if (browser) await browser.close().catch(() => undefined);
     try {
-      receipt.cleanup = await infra.teardown();
+      receipt.cleanup = [...remoteCleanup, ...(infra ? await infra.teardown() : [])];
     } catch (cleanupError) {
-      receipt.cleanup = `teardown failed: ${(cleanupError as Error).message}`;
-      process.exitCode = 1;
+      receipt.cleanup = [...remoteCleanup, `teardown failed: ${(cleanupError as Error).message}`];
+      cleanupFailed = true;
     }
     if (!config.keepHomes) rmSync(homeRoot, { recursive: true, force: true });
     // Closing the apps makes the journey fail as it unwinds; the signal is the real reason.
     if (interrupted) receipt.outcome = 'INTERRUPTED';
-    writeFileSync(path.join(runRoot, 'receipt.json'), JSON.stringify(receipt, null, 2));
+    // A journey that passed but left something behind did not pass: say so.
+    if (cleanupFailed) {
+      process.exitCode = 1;
+      receipt.cleanupFailed = true;
+      if (typeof receipt.outcome === 'string' && receipt.outcome.startsWith('PASS'))
+        receipt.outcome = 'FAIL-CLEANUP';
+    }
+    writeFileSync(path.join(runRoot, 'receipt.json'), redact(JSON.stringify(receipt, null, 2)));
     log(`receipt: ${path.join(runRoot, 'receipt.json')}`);
     for (const line of [receipt.cleanup].flat()) log(`cleanup: ${String(line)}`);
   })();

@@ -140,15 +140,25 @@ async function lockRevocationMember(
 }
 
 /**
- * Delete pairing requests that expired more than an hour ago and were never exchanged.
- * A pairing lasts ten minutes and nothing else links an abandoned one to a person, so this is
- * what keeps an install name from outliving an erasure.
+ * Delete pairing requests that expired more than an hour ago, exchanged or not.
+ *
+ * A pairing lasts ten minutes, and every reader of the row belongs to that flow: the approval
+ * page's status, the install's poll (which answers `redeemed` once exchanged), the exchange
+ * and a cancel. An install stops polling when the request expires. After that nothing reads
+ * it: an exchanged request lives on as its connection grant (member, scopes, install name,
+ * time), and its approval as the `pairing.approve` audit row. Kept, an exchanged request was
+ * one row per connection ever made, and every tick of this sweep read them all (DOR-2574). An
+ * abandoned one is linked to nobody, so deleting it is also what keeps an install name from
+ * outliving an erasure.
+ *
+ * Unindexed on purpose: the table now holds about seventy minutes of requests, and a host
+ * upgrading with a backlog drains it a batch a minute (18 ms a batch at 100,000 rows).
  */
 export async function sweepExpiredPairings(pool: Pool, batchSize = 500): Promise<number> {
   const result = await pool.query(
     `DELETE FROM connection_pairings WHERE id IN (
        SELECT id FROM connection_pairings
-       WHERE consumed_at IS NULL AND expires_at<now()-interval '1 hour'
+       WHERE expires_at<now()-interval '1 hour'
        ORDER BY expires_at,id LIMIT $1
      )`,
     [batchSize]
