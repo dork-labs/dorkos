@@ -142,11 +142,18 @@ describe('ChatAppPanel', () => {
     // recorded, blocked and ignored ones included (DOR-2608), with the names
     // in them, so the dialog says so.
     expect(confirm).toHaveAccessibleDescription(
-      /So are its recent deliveries and the chats that reached it without an agent, including ones you ignored or blocked, with the names in them\./
+      /So are its recent deliveries and its list of people who messaged it with no agent to answer, ignored and blocked ones included, with their names\..*anyone you blocked there will need blocking again\./
     );
     expect(transport.removeRelayAdapter).not.toHaveBeenCalled();
+    const feedReadsBefore = vi.mocked(transport.listUnclaimedChats).mock.calls.length;
     await user.click(within(confirm).getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(transport.removeRelayAdapter).toHaveBeenCalledWith('telegram-1'));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
+    // The server deleted its waiting chats too (DOR-2608), so the feed is read again.
+    await waitFor(() =>
+      expect(vi.mocked(transport.listUnclaimedChats).mock.calls.length).toBeGreaterThan(
+        feedReadsBefore
+      )
+    );
   });
 });

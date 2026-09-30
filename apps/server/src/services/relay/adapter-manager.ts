@@ -135,9 +135,10 @@ export interface RemoveAdapterOptions {
   /**
    * Also delete the connection's delivery records, chat names and events
    * (DOR-2604), and every chat it recorded for the claim feed, blocked and
-   * ignored ones included (DOR-2608). Only a person removing the connection passes this: a package
-   * update or an install rollback removes an entry it may put straight back,
-   * and must never erase a history nobody asked to lose. Defaults to `false`.
+   * ignored ones included (DOR-2608). Only a person removing the connection
+   * passes this: a package update or an install rollback removes an entry it
+   * may put straight back, and must never erase a history nobody asked to
+   * lose. Defaults to `false`.
    */
   forgetHistory?: boolean;
 }
