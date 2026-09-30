@@ -8,7 +8,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { PAGE_HEADING_PENDING_WAIT_MS, PageHeading, focusPageHeading } from '../page-heading';
+import {
+  PAGE_HEADING_PENDING_WAIT_MS,
+  PageHeading,
+  focusPageHeading,
+  pageHeadingHasFocus,
+} from '../page-heading';
 
 afterEach(() => cleanup());
 
@@ -143,5 +148,31 @@ describe('focusPageHeading', () => {
     acted = true;
     await expect(focused).resolves.toBe(false);
     expect(screen.getByRole('heading', { name: 'Alpha' })).not.toHaveFocus();
+  });
+});
+
+describe('pageHeadingHasFocus', () => {
+  it('is true only while a page heading holds focus', async () => {
+    render(
+      <main>
+        <PageHeading>Home</PageHeading>
+        <input aria-label="Message" />
+      </main>
+    );
+    expect(pageHeadingHasFocus()).toBe(false);
+    await focusPageHeading();
+    expect(pageHeadingHasFocus()).toBe(true);
+    screen.getByLabelText('Message').focus();
+    expect(pageHeadingHasFocus()).toBe(false);
+  });
+
+  it('counts a plain heading focusPageHeading had to make focusable', async () => {
+    render(
+      <main>
+        <h1>A package</h1>
+      </main>
+    );
+    await focusPageHeading();
+    expect(pageHeadingHasFocus()).toBe(true);
   });
 });

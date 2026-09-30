@@ -35,7 +35,8 @@ describe('OptionRow', () => {
       </OptionRow>
     );
     const row = container.firstElementChild!;
-    expect(row.className).toContain('ring-1');
+    expect(row.className).toContain('ring-2');
+    expect(row.className).toContain('ring-ring');
   });
 
   it('derives data-selected from isSelected', () => {

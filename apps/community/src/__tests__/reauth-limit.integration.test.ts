@@ -132,6 +132,22 @@ const ROUTES: GuardedRoute[] = [
       }),
   },
   {
+    route: 'POST /host/communities/:id/owner-replacements',
+    actor: 'operator',
+    call: (cookie, password) =>
+      h.call(`/api/v1/host/communities/${communityId}/owner-replacements`, {
+        cookie,
+        body: {
+          idempotencyKey: `guess-${password}`,
+          lifecycleVersion: 1,
+          reason: 'owner_unreachable',
+          reference: null,
+          claimant: { oidcSubject: null },
+          password,
+        },
+      }),
+  },
+  {
     route: 'POST /host/takedowns/:takedownId/reverse',
     actor: 'operator',
     call: (cookie, password) =>

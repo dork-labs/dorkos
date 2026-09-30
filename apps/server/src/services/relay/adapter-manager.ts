@@ -134,9 +134,11 @@ export interface ConnectionTraceEraser {
 export interface RemoveAdapterOptions {
   /**
    * Also delete the connection's delivery records, chat names and events
-   * (DOR-2604). Only a person removing the connection passes this: a package
-   * update or an install rollback removes an entry it may put straight back,
-   * and must never erase a history nobody asked to lose. Defaults to `false`.
+   * (DOR-2604), and every chat it recorded for the claim feed, blocked and
+   * ignored ones included (DOR-2608). Only a person removing the connection
+   * passes this: a package update or an install rollback removes an entry it
+   * may put straight back, and must never erase a history nobody asked to
+   * lose. Defaults to `false`.
    */
   forgetHistory?: boolean;
 }
@@ -1134,19 +1136,31 @@ export class AdapterManager {
   }
 
   /**
-   * Delete the delivery records a removed connection left behind: its chats'
-   * messages, the chat names they hold, and its connect and error events
-   * (DOR-2604).
+   * Delete what a removed connection left behind: its chats' delivery
+   * records, the chat names they hold, and its connect and error events
+   * (DOR-2604), then every chat it recorded for the claim feed, whatever its
+   * status (DOR-2608).
    *
    * Runs only once the removal is saved, so a removal that fails part way
    * leaves the history of a connection that still exists. A failure here is
    * logged, not thrown: the connection is already gone, and the delivery
    * records still age out with the rest after the retention window
-   * (`relay-gc.ts`).
+   * (`relay-gc.ts`). Each store is tried on its own, so one failing still
+   * clears the other.
    *
    * @param id - The removed connection's id.
    */
   private async deleteConnectionHistory(id: string): Promise<void> {
+    await this.deleteConnectionTraces(id);
+    this.deleteUnclaimedChats(id);
+  }
+
+  /**
+   * Delete a removed connection's delivery records and events (DOR-2604).
+   *
+   * @param id - The removed connection's id.
+   */
+  private async deleteConnectionTraces(id: string): Promise<void> {
     const eraser = this.deps.traceEraser;
     if (!eraser) return;
     try {
@@ -1166,6 +1180,31 @@ export class AdapterManager {
       );
     } catch (err) {
       logger.warn('[AdapterManager] could not delete delivery records for removed adapter', {
+        adapterId: id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Delete every chat a removed connection recorded for the claim feed:
+   * pending, claimed, ignored and blocked, with the sender names and chat
+   * titles they hold (DOR-2608).
+   *
+   * @param id - The removed connection's id.
+   */
+  private deleteUnclaimedChats(id: string): void {
+    const store = this.deps.unclaimedChats;
+    if (!store) return;
+    try {
+      const deleted = store.deleteForConnection(id);
+      logger.info(
+        '[AdapterManager] Deleted %d unclaimed chat(s) for removed adapter %s',
+        deleted,
+        id
+      );
+    } catch (err) {
+      logger.warn('[AdapterManager] could not delete unclaimed chats for removed adapter', {
         adapterId: id,
         error: err instanceof Error ? err.message : String(err),
       });

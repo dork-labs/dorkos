@@ -114,7 +114,7 @@ export function MomentRow({
       role="article"
       aria-label={`Moment: ${entry.body.text}`}
       {...feedArticleProps(feedPosition)}
-      className="focus-visible:ring-ring/50 px-[var(--msg-padding-x)] py-1 outline-none focus-visible:ring-2"
+      className="focus-visible:ring-ring px-[var(--msg-padding-x)] py-1 outline-none focus-visible:ring-2"
     >
       <div className="border-border/60 bg-muted/40 flex items-center gap-2.5 rounded-lg border px-3 py-2">
         <IdentityHoverCard

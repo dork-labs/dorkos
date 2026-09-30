@@ -8,6 +8,7 @@ import type { AdapterManagerDeps, AdapterMeshCoreLike } from '../adapter-manager
 import { BridgeStore } from '../chat-bridge/bridge-store.js';
 import { RoomStore } from '../../rooms/room-store.js';
 import { TraceStore } from '../trace-store.js';
+import { UnclaimedChatStore } from '../unclaimed-chat-store.js';
 
 // Mock fs/promises
 vi.mock('node:fs/promises', () => ({
@@ -1740,6 +1741,155 @@ describe('AdapterManager', () => {
           TRACE_PRUNE_BATCH
         );
         expect(withEraser.listAdapters().find((a) => a.config.id === 'tg-main')).toBeUndefined();
+      });
+    });
+
+    describe('unclaimed chats (DOR-2608)', () => {
+      /**
+       * A real claim feed holding one chat in every status on `tg-main`, and
+       * one pending chat on `tg-main-2`, whose id starts with `tg-main`.
+       */
+      function seededUnclaimedChats(): UnclaimedChatStore {
+        const chats = new UnclaimedChatStore(createTestDb());
+        const decisions = { p: null, c: 'claim', i: 'ignore', b: 'block' } as const;
+        for (const [chatId, decision] of Object.entries(decisions)) {
+          const { chat } = chats.recordSighting({
+            adapterId: 'tg-main',
+            chatId,
+            chatKind: 'dm',
+            senderName: 'Miguel',
+          });
+          if (decision === 'claim') chats.claim(chat.id, 'agent-1');
+          else if (decision) chats[decision](chat.id);
+        }
+        chats.recordSighting({
+          adapterId: 'tg-main-2',
+          chatId: 'p',
+          chatKind: 'dm',
+          senderName: 'Ada',
+        });
+        return chats;
+      }
+
+      /** Every row still on file for `adapterId`, across all four statuses. */
+      function rowsFor(chats: UnclaimedChatStore, adapterId: string) {
+        return (['pending', 'claimed', 'ignored', 'blocked'] as const)
+          .flatMap((status) => chats.list(status))
+          .filter((chat) => chat.adapterId === adapterId);
+      }
+
+      it("deletes every chat the removed connection recorded, blocked and ignored too, and no one else's", async () => {
+        vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+        const chats = seededUnclaimedChats();
+        expect(rowsFor(chats, 'tg-main')).toHaveLength(4);
+        const withChats = new AdapterManager(registry, configPath, {
+          ...mockDeps,
+          unclaimedChats: chats,
+        });
+        await initAndStart(withChats);
+
+        await withChats.removeAdapter('tg-main', { forgetHistory: true });
+
+        expect(rowsFor(chats, 'tg-main')).toEqual([]);
+        expect(chats.isBlocked('tg-main', 'b')).toBe(false);
+        expect(rowsFor(chats, 'tg-main-2')).toEqual([
+          expect.objectContaining({ chatId: 'p', senderName: 'Ada', status: 'pending' }),
+        ]);
+      });
+
+      it('keeps them when the removal is internal, not a person removing it', async () => {
+        vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+        const chats = seededUnclaimedChats();
+        const withChats = new AdapterManager(registry, configPath, {
+          ...mockDeps,
+          unclaimedChats: chats,
+        });
+        await initAndStart(withChats);
+
+        await withChats.removeAdapter('tg-main');
+
+        expect(rowsFor(chats, 'tg-main')).toHaveLength(4);
+        expect(chats.isBlocked('tg-main', 'b')).toBe(true);
+      });
+
+      it('keeps them when the removal could not be saved', async () => {
+        vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+        const chats = seededUnclaimedChats();
+        const withChats = new AdapterManager(registry, configPath, {
+          ...mockDeps,
+          unclaimedChats: chats,
+        });
+        await initAndStart(withChats);
+        vi.mocked(writeFile).mockRejectedValueOnce(new Error('disk full'));
+
+        await expect(withChats.removeAdapter('tg-main', { forgetHistory: true })).rejects.toThrow(
+          'disk full'
+        );
+
+        expect(rowsFor(chats, 'tg-main')).toHaveLength(4);
+      });
+
+      it('deletes the chats of an entry whose saved settings could not be read', async () => {
+        vi.mocked(readFile).mockResolvedValue(
+          JSON.stringify({
+            adapters: [{ id: 'tg-main', type: 'telegram', enabled: 'yes please', config: null }],
+          })
+        );
+        const chats = seededUnclaimedChats();
+        const withChats = new AdapterManager(registry, configPath, {
+          ...mockDeps,
+          unclaimedChats: chats,
+        });
+        await initAndStart(withChats);
+
+        await withChats.removeAdapter('tg-main', { forgetHistory: true });
+
+        expect(rowsFor(chats, 'tg-main')).toEqual([]);
+        expect(rowsFor(chats, 'tg-main-2')).toHaveLength(1);
+      });
+
+      it('still deletes them when the delivery records cannot be deleted', async () => {
+        vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+        const chats = seededUnclaimedChats();
+        const traceEraser = {
+          deleteConnectionTraces: vi.fn(() => {
+            throw new Error('database is locked');
+          }),
+        };
+        const withBoth = new AdapterManager(registry, configPath, {
+          ...mockDeps,
+          traceEraser,
+          unclaimedChats: chats,
+        });
+        await initAndStart(withBoth);
+
+        await withBoth.removeAdapter('tg-main', { forgetHistory: true });
+
+        expect(rowsFor(chats, 'tg-main')).toEqual([]);
+      });
+
+      it('still removes the connection, and deletes its delivery records, when its chats cannot be deleted', async () => {
+        vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+        const chats = seededUnclaimedChats();
+        vi.spyOn(chats, 'deleteForConnection').mockImplementation(() => {
+          throw new Error('database is locked');
+        });
+        const traceEraser = { deleteConnectionTraces: vi.fn(() => 0) };
+        const withBoth = new AdapterManager(registry, configPath, {
+          ...mockDeps,
+          traceEraser,
+          unclaimedChats: chats,
+        });
+        await initAndStart(withBoth);
+
+        await withBoth.removeAdapter('tg-main', { forgetHistory: true });
+
+        expect(chats.deleteForConnection).toHaveBeenCalledWith('tg-main');
+        expect(traceEraser.deleteConnectionTraces).toHaveBeenCalledWith(
+          'tg-main',
+          TRACE_PRUNE_BATCH
+        );
+        expect(withBoth.listAdapters().find((a) => a.config.id === 'tg-main')).toBeUndefined();
       });
     });
 

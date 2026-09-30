@@ -20,6 +20,7 @@ import {
 import type { ConfirmPassword } from '../../password-confirmation.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { memberIsLeaving } from '../../erasure/guards.js';
+import { endOwnerReplacement } from '../../owner-replacement/end.js';
 
 async function live(client: PoolClient, id: string, communityId: string) {
   await lockActiveCommunity(client, communityId);
@@ -89,7 +90,14 @@ export function registerMemberRoutes(
     pool,
     auth,
     confirmPassword,
-  }: { pool: Pool; auth: CommunityAuth; confirmPassword: ConfirmPassword }
+    now,
+  }: {
+    pool: Pool;
+    auth: CommunityAuth;
+    confirmPassword: ConfirmPassword;
+    /** The clock the owner-replacement ending is dated by; tests inject it. */
+    now: () => Date;
+  }
 ) {
   app.get('/me', async (c) => {
     const actor = await requireMember(c, auth, pool);
@@ -224,6 +232,13 @@ export function registerMemberRoutes(
          ) VALUES($1,$2,$3,$4,$5,$6,ARRAY['owner_member_id'])`,
         [actor.community_id, actor.id, 'owner.transfer', successor.id, actor.id, successor.id]
       );
+      // Handing the community on answers any open request to replace this owner. Every step
+      // that ends one holds the community lock taken above, so none can interleave with this.
+      await endOwnerReplacement(client, {
+        communityId: actor.community_id,
+        ending: { state: 'superseded', ownerMemberId: current.id },
+        now: now(),
+      });
       return updated.rows[0].lifecycle_version;
     });
     return json(c, CommunityWireOwnerTransferResponseSchema, {

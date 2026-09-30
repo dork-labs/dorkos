@@ -12,6 +12,7 @@ import { motion } from 'motion/react';
 import { X, Paperclip } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { useIsTouchOnly } from '@/layers/shared/model';
+import { pageHeadingHasFocus } from '@/layers/shared/ui';
 import { useInputKeyboard } from './use-input-keyboard';
 import { INERT_SURFACE } from './editing-surface';
 import type { EditingSurface } from './editing-surface';
@@ -311,9 +312,15 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
     // except on a touch-only device, where it pops the software keyboard and
     // scrolls the view every time a session opens. Read through a ref snapshot so
     // a later device change can never steal focus mid-session.
+    //
+    // Nor from a page heading that holds focus: a phone-layout context switch
+    // puts it there so a screen reader says where the person arrived, and the
+    // room this composer belongs to can mount after that, even more than once
+    // (DOR-2613). Nobody asked for this focus; the heading keeps it.
     const isTouchOnlyOnMountRef = useRef(isTouchOnly);
     useEffect(() => {
       if (isTouchOnlyOnMountRef.current) return;
+      if (pageHeadingHasFocus()) return;
       fieldRef.current?.focus();
     }, []);
 
@@ -439,7 +446,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
         <div
           className={cn(
             'border-input bg-background flex items-end gap-1.5 rounded-md border p-1.5 shadow-xs transition-[color,box-shadow]',
-            isFocused && 'border-ring ring-ring/75 ring-[1px]',
+            isFocused && 'border-ring ring-ring ring-[1px]',
             editingQueueItem && 'border-primary/40',
             !onAttach && 'pl-3'
           )}

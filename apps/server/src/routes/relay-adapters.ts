@@ -269,7 +269,8 @@ export function createAdapterRouter(
       // Capture name before removal since the config will be deleted
       const adapterName = adapterManager.resolveAdapterName(req.params.id);
       // A person removed it, so its delivery records and chat names go too
-      // (DOR-2604). Internal removals (package update, install rollback) keep them.
+      // (DOR-2604), and so do the chats it recorded for the claim feed
+      // (DOR-2608). Internal removals (package update, install rollback) keep them.
       await adapterManager.removeAdapter(req.params.id, { forgetHistory: true });
 
       const activityService = req.app.locals.activityService as ActivityService | undefined;

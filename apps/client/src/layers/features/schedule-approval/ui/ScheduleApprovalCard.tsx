@@ -446,7 +446,7 @@ export function ScheduleApprovalCard({
                 type="button"
                 data-slot="schedule-proposing-session"
                 onClick={() => goToSession(task.proposedBySessionId as string)}
-                className="text-primary focus-visible:ring-ring/50 rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+                className="text-primary focus-visible:ring-ring rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
               >
                 “{sessionTitle}”
               </button>

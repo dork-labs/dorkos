@@ -31,10 +31,13 @@ interface PathInputProps extends Omit<React.ComponentProps<'input'>, 'type' | 'o
  *
  * `aria-invalid` styling is NOT one of the things this recipe restores: the
  * frame gives the field `border-0` and `focus-visible:ring-0`, which also
- * swallows `Input`'s `aria-invalid:border-destructive` and
- * `aria-invalid:ring-destructive/20`. No caller passes `aria-invalid` today,
- * so nothing is broken in practice — but the frame, not the field, is where
- * that treatment would have to be added if one ever does.
+ * swallows `Input`'s red invalid border and ring. No caller passes
+ * `aria-invalid` today, so nothing is broken in practice — but the frame, not
+ * the field, is where that treatment would have to be added if one ever does.
+ *
+ * The frame's own focus ring is the ring colour at full strength. At half
+ * strength it measured about 1.9:1 on a light page and 2.5:1 on a dark one,
+ * under the 3:1 a focus indicator needs (DOR-2615).
  */
 function PathInput({
   className,
@@ -50,7 +53,7 @@ function PathInput({
       data-slot="path-input"
       className={cn(
         'dark:bg-input/30 border-input flex items-center rounded-md border bg-transparent shadow-xs transition-[color,box-shadow]',
-        'focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
+        'focus-within:border-ring focus-within:ring-ring focus-within:ring-[3px]',
         className
       )}
     >

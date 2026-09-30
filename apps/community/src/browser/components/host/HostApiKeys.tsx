@@ -56,7 +56,7 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
     scope: 'communities:ownership',
     label: 'Replace owners',
     detail:
-      'Ask to make someone else a community’s owner when its owner has left, see those requests, cancel them, and send the claim link again. The owner is always told and can say no.',
+      'Ask to make someone else a community’s owner when its owner has left, see those requests, cancel them, and send the claim link again. This server refuses every request for now, until owners can answer them.',
   },
   {
     scope: 'communities:erasure_journal',

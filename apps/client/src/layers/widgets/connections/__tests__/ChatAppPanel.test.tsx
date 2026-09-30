@@ -138,13 +138,22 @@ describe('ChatAppPanel', () => {
     expect(within(more).queryByRole('button', { name: /Set up another/ })).not.toBeInTheDocument();
     await user.click(within(more).getByRole('button', { name: /Remove…/ }));
     const confirm = await screen.findByRole('alertdialog', { name: 'Remove Telegram?' });
-    // Removing deletes its delivery records and the chat names in them, so the dialog says so (DOR-2604).
+    // Removing deletes its delivery records (DOR-2604) and every chat it
+    // recorded, blocked and ignored ones included (DOR-2608), with the names
+    // in them, so the dialog says so.
     expect(confirm).toHaveAccessibleDescription(
-      /its record of recent deliveries, with the chat names it holds/
+      /So are its recent deliveries and its list of people who messaged it with no agent to answer, ignored and blocked ones included, with their names\..*anyone you blocked there will need blocking again\./
     );
     expect(transport.removeRelayAdapter).not.toHaveBeenCalled();
+    const feedReadsBefore = vi.mocked(transport.listUnclaimedChats).mock.calls.length;
     await user.click(within(confirm).getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(transport.removeRelayAdapter).toHaveBeenCalledWith('telegram-1'));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
+    // The server deleted its waiting chats too (DOR-2608), so the feed is read again.
+    await waitFor(() =>
+      expect(vi.mocked(transport.listUnclaimedChats).mock.calls.length).toBeGreaterThan(
+        feedReadsBefore
+      )
+    );
   });
 });

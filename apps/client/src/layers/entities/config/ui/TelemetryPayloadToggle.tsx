@@ -29,7 +29,7 @@ export function TelemetryPayloadToggle({ open, onToggle, className }: TelemetryP
       onClick={onToggle}
       aria-expanded={open}
       className={cn(
-        'text-foreground focus-visible:ring-ring/50 inline-flex items-center gap-1 rounded-sm text-xs font-medium underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2',
+        'text-foreground focus-visible:ring-ring inline-flex items-center gap-1 rounded-sm text-xs font-medium underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2',
         className
       )}
     >

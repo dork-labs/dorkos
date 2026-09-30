@@ -225,4 +225,49 @@ describe('UnclaimedChatStore', () => {
     store.recordSighting({ adapterId: 'tg-bot', chatId: 'chat-new', chatKind: 'dm' });
     expect(store.list('pending')).toHaveLength(200);
   });
+
+  // DOR-2608: removing a connection deletes every chat it recorded, whatever
+  // its status, and matches the whole id rather than a prefix of it.
+  describe('deleteForConnection', () => {
+    it('deletes every status for that connection and reports how many went', () => {
+      for (const chatId of ['p', 'c', 'i', 'b']) {
+        store.recordSighting({ adapterId: 'tg', chatId, chatKind: 'dm', senderName: 'Miguel' });
+      }
+      const idOf = (chatId: string) =>
+        store.list('pending').find((chat) => chat.chatId === chatId)!.id;
+      store.claim(idOf('c'), 'agent-1');
+      store.ignore(idOf('i'));
+      store.block(idOf('b'));
+
+      expect(store.deleteForConnection('tg')).toBe(4);
+
+      for (const status of ['pending', 'claimed', 'ignored', 'blocked'] as const) {
+        expect(store.list(status)).toEqual([]);
+      }
+      expect(store.isBlocked('tg', 'b')).toBe(false);
+    });
+
+    it('leaves a connection whose id only starts with, or looks like a pattern for, the removed one', () => {
+      store.recordSighting({ adapterId: 'tg', chatId: '1', chatKind: 'dm' });
+      store.recordSighting({ adapterId: 'tg-2', chatId: '1', chatKind: 'dm' });
+      store.recordSighting({ adapterId: 'tgx', chatId: '1', chatKind: 'dm' });
+
+      expect(store.deleteForConnection('tg')).toBe(1);
+      expect(store.deleteForConnection('tg%')).toBe(0);
+      expect(store.deleteForConnection('t_')).toBe(0);
+
+      expect(
+        store
+          .list('pending')
+          .map((chat) => chat.adapterId)
+          .sort()
+      ).toEqual(['tg-2', 'tgx']);
+    });
+
+    it('deletes nothing for a connection that recorded nothing', () => {
+      store.recordSighting({ adapterId: 'tg', chatId: '1', chatKind: 'dm' });
+      expect(store.deleteForConnection('slack')).toBe(0);
+      expect(store.list('pending')).toHaveLength(1);
+    });
+  });
 });

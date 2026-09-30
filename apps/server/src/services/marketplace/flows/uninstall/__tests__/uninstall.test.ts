@@ -31,6 +31,10 @@ import {
 import { currentRecordOwner, formatRecordOwner } from '../../../lib/records/record-owner.js';
 import { _internal as recoveryInternal } from '../../../recovery/install-recovery.js';
 import { randomUUID } from 'node:crypto';
+import { AdapterRegistry } from '@dorkos/relay';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { AdapterManager } from '../../../../relay/adapter-manager.js';
+import { UnclaimedChatStore } from '../../../../relay/unclaimed-chat-store.js';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {
@@ -474,6 +478,118 @@ describe('UninstallFlow', () => {
       forgetHistory: true,
     });
     expect(deps.extensionManager.disable).not.toHaveBeenCalled();
+  });
+
+  // DOR-2608, end to end: the uninstall flow driving a real AdapterManager
+  // over a real claim feed. Uninstalling deletes every chat the connection
+  // recorded, blocked ones included, and leaves a connection whose id only
+  // starts the same way; an update of the same package keeps them.
+  describe('with a real connection and claim feed (DOR-2608)', () => {
+    /** A disabled webhook entry: nothing starts, nothing reaches the network. */
+    function webhookEntry(id: string) {
+      return {
+        id,
+        type: 'webhook',
+        enabled: false,
+        config: {
+          inbound: { subject: `relay.webhook.${id}`, secret: 'a-very-long-secret-16' },
+          outbound: { url: 'https://example.com/hook', secret: 'another-long-secret-16' },
+        },
+      };
+    }
+
+    async function setUp() {
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      const installRoot = path.join(deps.dorkHome, 'plugins', 'adapter-a');
+      await stageInstalledPackage({
+        installRoot,
+        manifest: buildAdapterManifest({ name: 'adapter-a', adapterType: 'webhook' }),
+      });
+      const configPath = path.join(deps.dorkHome, 'relay', 'adapters.json');
+      await mkdir(path.dirname(configPath), { recursive: true });
+      await writeFile(
+        configPath,
+        JSON.stringify({ adapters: [webhookEntry('adapter-a'), webhookEntry('adapter-a-2')] })
+      );
+
+      const chats = new UnclaimedChatStore(createTestDb());
+      for (const adapterId of ['adapter-a', 'adapter-a-2']) {
+        chats.recordSighting({ adapterId, chatId: 'p', chatKind: 'dm', senderName: 'Miguel' });
+        const { chat } = chats.recordSighting({
+          adapterId,
+          chatId: 'b',
+          chatKind: 'dm',
+          senderName: 'Ada',
+        });
+        chats.block(chat.id);
+      }
+
+      const secrets = new Map<string, string>();
+      const manager = new AdapterManager(new AdapterRegistry(), configPath, {
+        agentManager: { ensureSession: vi.fn(), sendMessage: vi.fn() } as never,
+        traceStore: { insertSpan: vi.fn(), updateSpan: vi.fn() } as never,
+        credentialStore: {
+          put: vi.fn(async (name: string, secret: string) => {
+            secrets.set(name, secret);
+            return `file:${name}`;
+          }),
+          get: vi.fn(async (name: string) => secrets.get(name) ?? null),
+          delete: vi.fn(async (name: string) => {
+            secrets.delete(name);
+          }),
+        },
+        credentialProvider: {
+          resolve: vi.fn(async (ref: string) => {
+            const secret = secrets.get(ref.slice(ref.indexOf(':') + 1));
+            return secret != null
+              ? ({ ok: true, secret } as const)
+              : ({ ok: false, reason: 'unresolved', ref, message: 'missing' } as const);
+          }),
+        },
+        unclaimedChats: chats,
+      });
+      await manager.initialize();
+      await manager.adaptersStarted();
+
+      const flow = new UninstallFlow({ ...deps, adapterManager: manager });
+      return { flow, manager, chats };
+    }
+
+    /** Every chat still on file for `adapterId`, pending or blocked. */
+    function chatIds(chats: UnclaimedChatStore, adapterId: string): string[] {
+      return [...chats.list('pending'), ...chats.list('blocked')]
+        .filter((chat) => chat.adapterId === adapterId)
+        .map((chat) => chat.chatId)
+        .sort();
+    }
+
+    it("uninstalling the package deletes that connection's chats, blocked ones too", async () => {
+      const { flow, manager, chats } = await setUp();
+      try {
+        const result = await flow.uninstall({ name: 'adapter-a' });
+
+        expect(result.ok).toBe(true);
+        expect(manager.listAdapters().map((a) => a.config.id)).not.toContain('adapter-a');
+        expect(chatIds(chats, 'adapter-a')).toEqual([]);
+        expect(chats.isBlocked('adapter-a', 'b')).toBe(false);
+        expect(chatIds(chats, 'adapter-a-2')).toEqual(['b', 'p']);
+      } finally {
+        await manager.shutdown();
+      }
+    });
+
+    it('updating the package keeps them', async () => {
+      const { flow, manager, chats } = await setUp();
+      try {
+        await flow.uninstall({ name: 'adapter-a', replacing: true });
+
+        expect(chatIds(chats, 'adapter-a')).toEqual(['b', 'p']);
+        expect(chats.isBlocked('adapter-a', 'b')).toBe(true);
+      } finally {
+        await manager.shutdown();
+      }
+    });
   });
 
   it('keeps delivery history when an adapter package is updated (DOR-2604)', async () => {

@@ -109,8 +109,8 @@ export class UninstallSideEffects {
     }
     if (type === 'adapter') {
       // A person uninstalling the package removed the connection, so its
-      // delivery records and chat names go too (DOR-2604). An update puts the
-      // entry straight back, so it keeps them.
+      // delivery records, chat names and claim-feed chats go too (DOR-2604,
+      // DOR-2608). An update puts the entry straight back, so it keeps them.
       await this.deps.adapterManager.removeAdapter(
         located.manifest?.name ?? path.basename(located.installRoot),
         { forgetHistory: !req.replacing }

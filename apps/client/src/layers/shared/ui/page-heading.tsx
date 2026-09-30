@@ -107,10 +107,31 @@ export function focusPageHeading({ cancelled }: FocusPageHeadingOptions = {}): P
       }
       if (!heading.hasAttribute('tabindex')) heading.tabIndex = -1;
       heading.focus({ preventScroll: true });
+      placedHeading = heading;
       resolve(true);
     };
     requestAnimationFrame(attempt);
   });
+}
+
+/** The last heading {@link focusPageHeading} put focus on, plain `h1` fallbacks included. */
+let placedHeading: HTMLElement | null = null;
+
+/**
+ * Whether a page heading holds focus right now.
+ *
+ * A heading only gets focus when a person was moved to a new page on purpose
+ * ({@link focusPageHeading}) or clicked it, so a focus nobody asked for — a
+ * composer focusing itself as it mounts — checks this and leaves it where it
+ * is. Otherwise a screen reader says "Home, heading" and then, a moment later,
+ * the name of a text box the person never went to.
+ *
+ * @returns `true` while the focused element is a page heading.
+ */
+export function pageHeadingHasFocus(): boolean {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return false;
+  return active.hasAttribute('data-page-heading') || active === placedHeading;
 }
 
 function firstOutsideDialogs(selector: string): HTMLElement | undefined {

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { CatalogEntry, CatalogInstance } from '@dorkos/shared/relay-schemas';
+import { useQueryClient } from '@tanstack/react-query';
+import { UNCLAIMED_CHATS_QUERY_KEY } from '@/layers/entities/binding';
 import { useRemoveAdapter, useToggleAdapter } from '@/layers/entities/relay';
 import { ClaimFeed, PanelFix, PanelMoreRow, PanelSection } from '@/layers/features/connections';
 import { AdapterSetupWizard, ChatAppAnswerers, ChatAppRecent } from '@/layers/features/relay';
@@ -38,6 +40,7 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
   const { manifest } = entry;
   const toggle = useToggleAdapter();
   const remove = useRemoveAdapter();
+  const queryClient = useQueryClient();
   const [wizard, setWizard] = useState<'edit' | 'add' | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const broken = instance.status.state === 'error' || instance.status.state === 'disconnected';
@@ -133,8 +136,10 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {manifest.displayName}?</AlertDialogTitle>
             <AlertDialogDescription>
-              It stops working and its settings are deleted. So is its record of recent deliveries,
-              with the chat names it holds. Messages sent to it after that reach nobody.
+              It stops working and its settings are deleted. So are its recent deliveries and its
+              list of people who messaged it with no agent to answer, ignored and blocked ones
+              included, with their names. Messages sent to it after that reach nobody. If you set it
+              up again, anyone you blocked there will need blocking again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -142,7 +147,17 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
             <AlertDialogAction
               className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
               onClick={() => {
-                remove.mutate(instance.id, { onSuccess: onClose });
+                remove.mutate(instance.id, {
+                  onSuccess: () => {
+                    // The server deleted this connection's waiting chats too
+                    // (DOR-2608), and sends no event for it. Refetch, so a
+                    // connection set up again under the same id starts empty.
+                    void queryClient.invalidateQueries({
+                      queryKey: [...UNCLAIMED_CHATS_QUERY_KEY],
+                    });
+                    onClose();
+                  },
+                });
               }}
             >
               Remove

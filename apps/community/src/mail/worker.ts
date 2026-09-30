@@ -46,13 +46,15 @@ export interface ClaimedNotice {
  * here and records it on its own record (such as the owner replacement it notifies).
  *
  * It must return {@link ComposedMail}, which only `plainTextMail` makes, and it must finish
- * within the attempt limit, or the attempt is retried as `NOTICE_COMPOSE_FAILED`.
+ * within the attempt limit, or the attempt is retried as `NOTICE_COMPOSE_FAILED`. It returns
+ * null when the notice is no longer true, such as a notice about a request that has since
+ * ended: nothing is sent, and the message fails as `NOTICE_OBSOLETE`.
  */
 export type NoticeComposer = (context: {
   pool: Pool;
   notice: ClaimedNotice;
   now: Date;
-}) => Promise<ComposedMail>;
+}) => Promise<ComposedMail | null>;
 
 /** The composer for each kind of notice this server sends. */
 export type NoticeComposers = Partial<Record<NoticeKind, NoticeComposer>>;
@@ -201,7 +203,8 @@ async function retryLater(
  * when nothing was due.
  *
  * An unreachable recipient fails at once as `RECIPIENT_UNAVAILABLE`, with nothing composed or
- * sent. An attempt that outlasts {@link NOTICE_ATTEMPT_LIMIT_MS} is abandoned and retried. A kind this server cannot compose fails as `NOTICE_KIND_UNSUPPORTED`. A composer that
+ * sent. An attempt that outlasts {@link NOTICE_ATTEMPT_LIMIT_MS} is abandoned and retried. A kind this server cannot compose fails as `NOTICE_KIND_UNSUPPORTED`, and one whose
+ * composer says it is no longer true fails as `NOTICE_OBSOLETE`, with nothing sent. A composer that
  * throws is retried like a mail server that is down, as `NOTICE_COMPOSE_FAILED`.
  */
 export async function deliverNextNotice(options: MailWorkerOptions): Promise<NoticeAttempt | null> {
@@ -221,7 +224,7 @@ export async function deliverNextNotice(options: MailWorkerOptions): Promise<Not
   if (!compose) return fail('NOTICE_KIND_UNSUPPORTED');
   // Measured on the wall clock, not the injected one: it bounds how long this replica waits.
   const deadline = Date.now() + (options.attemptLimitMs ?? NOTICE_ATTEMPT_LIMIT_MS);
-  let message: ComposedMail | typeof TIMED_OUT;
+  let message: ComposedMail | null | typeof TIMED_OUT;
   try {
     message = await before(compose({ pool: options.pool, notice, now: clock() }), deadline);
   } catch (error) {
@@ -233,6 +236,7 @@ export async function deliverNextNotice(options: MailWorkerOptions): Promise<Not
   }
   if (message === TIMED_OUT)
     return retryLater(options.pool, notice, clock(), 'NOTICE_COMPOSE_FAILED');
+  if (message === null) return fail('NOTICE_OBSOLETE');
   const delivery = await before(options.transport.send({ to, ...message }), deadline);
   // Given up on, not failed: the mail server may still take it, so it is retried.
   if (delivery === TIMED_OUT) return retryLater(options.pool, notice, clock(), 'SMTP_UNAVAILABLE');

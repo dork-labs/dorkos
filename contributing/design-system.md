@@ -947,7 +947,7 @@ Reading it back is three states resolved by one function (`resolvePermission`) r
 ## Accessibility
 
 - All interactive elements keyboard-accessible
-- Focus indicators meet 3:1 contrast ratio (WCAG 2.1 AA)
+- Focus indicators meet 3:1 contrast ratio (WCAG 2.1 AA). The ring colour clears it only at full strength, so never draw it at part opacity (`ring-ring/50` measured 1.9:1 light, 2.5:1 dark). Shared form controls take theirs from `packages/ui/src/focus-ring.ts`, and `apps/design-system/tests/focus-rings.spec.ts` measures them painted (a local run, not in CI yet: `pnpm --filter @dorkos/design-system test:browser`)
 - Color is never the sole indicator of state
 - `aria-label` on icon-only buttons
 - `prefers-reduced-motion` respected — disable entrance animations, reduce transitions to instant

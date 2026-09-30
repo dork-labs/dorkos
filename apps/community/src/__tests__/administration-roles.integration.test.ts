@@ -40,6 +40,7 @@ import { registerHostKeyRoutes } from '../routes/host/host-keys.js';
 import { registerImportRoutes } from '../routes/host/imports.js';
 import { UploadSlots } from '../imports/upload.js';
 import { registerHostTakedownRoutes } from '../routes/host/host-takedowns.js';
+import { registerHostOwnerReplacementRoutes } from '../routes/host/host-owner-replacements.js';
 import { createHostAuthority } from '../host/authority.js';
 import { issueHostApiKey } from '../host/key-store.js';
 import { hashSecret, randomToken } from '../security.js';
@@ -665,6 +666,36 @@ async function closeLeavingInvitations(): Promise<void> {
   await pool.query("UPDATE communities SET admission_policy='closed' WHERE id=$1", [alphaId]);
 }
 
+/**
+ * Give A exactly one open owner replacement, withdrawing any earlier one, and return its id. It is
+ * written directly: this host has no mail, so the request route refuses to open one.
+ */
+async function openReplacement(): Promise<{ id: string }> {
+  await pool.query(
+    `UPDATE owner_replacements SET state='withdrawn',withdrawn_cause='cancelled',ended_at=now(),
+       claim_token_hash=NULL
+     WHERE community_id=$1 AND state IN ('notifying','waiting','claimable')`,
+    [alphaId]
+  );
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO owner_replacements(id,community_id,reason,claimant_named,claim_token_hash,
+       requested_by_host_actor,idempotency_key,payload_hash,after_objection,after_withdrawal,
+       prior_owner_member_id,requested_at)
+     VALUES($1,$2,'other',false,$3,$4,$7,$5,false,false,$6,now())`,
+    [
+      id,
+      alphaId,
+      hashSecret(randomToken()),
+      `person:${userIds.hostOnly}`,
+      createHash('sha256').update(id).digest('hex'),
+      ownerMemberId,
+      `matrix-${id}`,
+    ]
+  );
+  return { id };
+}
+
 const actions: Action<unknown>[] = [
   // ── Host plane ─────────────────────────────────────────────────────────────
   define({
@@ -912,6 +943,67 @@ const actions: Action<unknown>[] = [
       ]);
       expect(row.rows).toEqual([{ evidence_state: 'not_configured' }]);
     },
+  }),
+  define({
+    rule: 'Ask to replace an owner: host operator with their password; no mail here, so refused',
+    route: 'POST /host/communities/:id/owner-replacements',
+    allowed: HOST_ROLES,
+    status: 409,
+    call: (_prepared, secret) => ({
+      method: 'POST',
+      path: `/api/v1/host/communities/${alphaId}/owner-replacements`,
+      body: {
+        idempotencyKey: randomUUID(),
+        lifecycleVersion: 1,
+        reason: 'owner_unreachable',
+        reference: null,
+        claimant: { oidcSubject: null },
+        password: secret,
+      },
+    }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8'))).toMatchObject({
+        code: 'NOTICE_DELIVERY_UNAVAILABLE',
+      });
+    },
+  }),
+  define({
+    rule: 'List owner replacements: host operator yes, community roles no',
+    route: 'GET /host/communities/:id/owner-replacements',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({
+      method: 'GET',
+      path: `/api/v1/host/communities/${alphaId}/owner-replacements`,
+    }),
+  }),
+  define<{ id: string }>({
+    rule: 'Cancel an owner replacement: host operator yes, community roles no',
+    route: 'POST /host/communities/:id/owner-replacements/:replacementId/cancel',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: () => openReplacement(),
+    call: ({ id }) => ({
+      method: 'POST',
+      path: `/api/v1/host/communities/${alphaId}/owner-replacements/${id}/cancel`,
+      body: {},
+    }),
+    effect: async (_body, _role, { id }) => {
+      const row = await pool.query('SELECT state FROM owner_replacements WHERE id=$1', [id]);
+      expect(row.rows).toEqual([{ state: 'withdrawn' }]);
+    },
+  }),
+  define<{ id: string }>({
+    rule: 'Reissue an owner replacement claim: host operator only; no mail here, so refused',
+    route: 'POST /host/communities/:id/owner-replacements/:replacementId/claim-token',
+    allowed: HOST_ROLES,
+    status: 409,
+    prepare: () => openReplacement(),
+    call: ({ id }) => ({
+      method: 'POST',
+      path: `/api/v1/host/communities/${alphaId}/owner-replacements/${id}/claim-token`,
+      body: {},
+    }),
   }),
   define<{ version: number }>({
     rule: 'Set community limits: host operator yes, community roles no',
@@ -2392,6 +2484,15 @@ it('classifies every registered route, and puts every host and settings route in
     uploadIdleMs: 1_000,
   });
   registerHostTakedownRoutes(modules, { pool, config, authority, now, confirmPassword: unused });
+  registerHostOwnerReplacementRoutes(modules, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword: unused,
+    canSendNotice: () => false,
+    hasPassword: async () => true,
+  });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [
     ...new Set(modules.routes.map((route) => `${route.method} ${route.path}`)),

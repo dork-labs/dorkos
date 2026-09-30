@@ -23,6 +23,7 @@ import {
   type HostAuthority,
 } from '../../host/authority.js';
 import { ApiError, json, readJson } from '../../http.js';
+import { endOwnerReplacement } from '../../owner-replacement/end.js';
 import type { BlobStore } from '../../storage/index.js';
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -105,6 +106,13 @@ export function registerHostLifecycleRoutes(
         // host publishes a new notice, and members get the full notice again.
         if (row.deletion_notice_at) changedFields.push('deletion_notice_at');
         await revokeTenantAccess(client, row.id);
+        // A suspension blocks the owner's answer too, so it also withdraws any open request to
+        // replace the owner, as it withdraws a deletion notice.
+        await endOwnerReplacement(client, {
+          communityId: row.id,
+          ending: { state: 'withdrawn', cause: 'suspended' },
+          now: at,
+        });
         await client.query(
           `UPDATE communities SET lifecycle='suspended',suspended_from_state=$2,
              suspended_at=now(),deletion_notice_at=NULL,lifecycle_version=lifecycle_version+1
@@ -266,6 +274,12 @@ export function registerHostLifecycleRoutes(
          ) VALUES($1,$2,$3,$4,$4)`,
         [row.id, requester, updated.rows[0].lifecycle_version, deleteAfter]
       );
+      // A community being deleted gets no new owner: any open request is withdrawn.
+      await endOwnerReplacement(client, {
+        communityId: row.id,
+        ending: { state: 'withdrawn', cause: 'deletion' },
+        now: at,
+      });
       await recordHostAudit(client, actor, {
         action: 'community.delete.request',
         communityId: row.id,

@@ -468,7 +468,8 @@ export async function pollForToken(opts: {
  * token and never retry-loops a dead key.
  *
  * @param opts - Base URL, the Bearer access token, this instance's descriptor,
- *   and an optional `fetchImpl`.
+ *   an optional `fetchImpl`, and an optional `signal` that bounds the request
+ *   (an abort reads as a transient failure, never as a refused key).
  * @returns The heartbeat outcome; never throws for HTTP-level failures.
  */
 export async function sendHeartbeat(opts: {
@@ -476,12 +477,14 @@ export async function sendHeartbeat(opts: {
   accessToken: string;
   descriptor: InstanceDescriptor;
   fetchImpl?: FetchLike;
+  signal?: AbortSignal;
 }): Promise<HeartbeatResult> {
   const fetchImpl = opts.fetchImpl ?? defaultFetch;
   let res: Response;
   try {
     res = await fetchImpl(`${opts.baseUrl}/api/instances/heartbeat`, {
       method: 'POST',
+      ...(opts.signal ? { signal: opts.signal } : {}),
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${opts.accessToken}`,

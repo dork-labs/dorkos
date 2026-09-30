@@ -1,5 +1,6 @@
 /**
- * Whether the routed page may cross-fade in on navigation (DOR-1764).
+ * Whether the routed page may cross-fade in on navigation (DOR-1764), and
+ * which page the fade is keyed on (DOR-2616).
  *
  * @module app/route-fade
  */
@@ -26,4 +27,37 @@
  */
 export function shouldFadeRoute(reducedMotion: boolean): boolean {
   return !reducedMotion;
+}
+
+/** The one field of a TanStack Router match {@link routedPageKey} reads. */
+export interface RoutedPageMatch {
+  /** The path this match resolved, params filled in. */
+  pathname: string;
+}
+
+/**
+ * The key the routed page's fade wrapper remounts on: the path of the page the
+ * `<Outlet />` is drawing, which is the deepest match.
+ *
+ * **Never `location.pathname`.** TanStack Router writes the new location the
+ * moment a navigation starts and commits the new matches later, in a React
+ * transition. In that gap the outlet still draws the page being left. A
+ * wrapper keyed on the location therefore remounted the OLD page under the new
+ * key: every one of its mount effects ran again (a room composer took the
+ * caret, streams resubscribed), the fade played on the page on its way out,
+ * and the new page then swapped in under the same key with no fade at all.
+ * Measured on a phone-width switch from a Community back to Home, in dev and
+ * production builds alike: the Community's composer mounted a second time
+ * 7-47ms after the address changed and was replaced 27-126ms after that. The
+ * matches change in the same commit as the outlet, so a key read from them
+ * changes exactly when the page does.
+ *
+ * Still a pathname, not a full location, so switching sessions on `/session`
+ * (a search change) keeps its own crossfade instead of taking two.
+ *
+ * @param matches - The router's committed matches, root first.
+ * @returns The deepest match's path, or `''` before anything has matched.
+ */
+export function routedPageKey(matches: readonly RoutedPageMatch[]): string {
+  return matches.at(-1)?.pathname ?? '';
 }

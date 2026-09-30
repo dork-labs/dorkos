@@ -257,7 +257,7 @@ function PackageRow({
           ref={rescueTarget}
           tabIndex={-1}
           data-testid="installation-update-status"
-          className="focus-visible:ring-ring/50 mt-1.5 rounded-sm outline-none focus-visible:ring-2"
+          className="focus-visible:ring-ring mt-1.5 rounded-sm outline-none focus-visible:ring-2"
         >
           <InstallationUpdateStatus state={updateState} />
         </div>
@@ -384,8 +384,8 @@ const CONFIRM_WINDOW_MS = 3_000;
  * mutation with `purge: false`, which keeps the package's own data. It does
  * not keep everything: uninstalling a chat-app (adapter) package removes its
  * connection, and with it that connection's delivery history and chat names
- * (DOR-2604). If the window expires without a second click the row resets
- * silently.
+ * (DOR-2604) and every chat it recorded for the claim feed (DOR-2608). If
+ * the window expires without a second click the row resets silently.
  *
  * Renders loading, error, empty, and populated states via shared primitives
  * (`PackageLoadingSkeleton`, `PackageErrorState`, `PackageEmptyState`).

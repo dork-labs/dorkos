@@ -2,6 +2,7 @@
 import { createRef, useState } from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import { PageHeading } from '@/layers/shared/ui';
 import { ComposerInput, type ComposerInputHandle } from '../ui/ComposerInput';
 
 /**
@@ -1550,6 +1551,19 @@ describe('ComposerInput', () => {
       device = PHONE;
       render(<ComposerInput {...defaultProps} />);
       expect(document.activeElement).not.toBe(screen.getByRole('combobox'));
+    });
+
+    // A phone context switch moves focus to the new page's heading so a screen
+    // reader says where the person arrived. On Home the room's composer mounts
+    // after that, sometimes twice, and used to take focus straight back
+    // (DOR-2613).
+    it('leaves focus on a page heading that already holds it', () => {
+      device = NARROW_DESKTOP;
+      render(<PageHeading>Home</PageHeading>);
+      const heading = screen.getByRole('heading', { level: 1, name: 'Home' });
+      act(() => heading.focus());
+      render(<ComposerInput {...defaultProps} />);
+      expect(document.activeElement).toBe(heading);
     });
   });
 

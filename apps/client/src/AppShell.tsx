@@ -47,7 +47,7 @@ import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy
 import { useTasksSync } from '@/layers/entities/tasks';
 import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'motion/react';
-import { shouldFadeRoute } from './app/route-fade';
+import { routedPageKey, shouldFadeRoute } from './app/route-fade';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
 import { MomentHost } from '@/layers/widgets/moments';
@@ -247,6 +247,9 @@ export function AppShell() {
   // global reduced-motion CSS reset and `MotionConfig reducedMotion="user"`,
   // so the fade below needs its own gate.
   const fadesRoute = shouldFadeRoute(useReducedMotion() ?? false);
+  // The page the outlet is drawing, which trails the address bar while a
+  // navigation commits — `routedPageKey` says why the fade must key on this.
+  const routedPage = useRouterState({ select: (s) => routedPageKey(s.matches) });
   useDefaultCwd();
 
   const [selectedCwd] = useDirectoryState();
@@ -894,8 +897,12 @@ export function AppShell() {
                               transform on this wrapper would make it a
                               containing block for the `fixed` PIP layer inside
                               it and would change what the panel group measures.
-                              The key is the pathname, not the full location, so
-                              switching sessions on `/session` keeps its own
+                              The key is the path of the page the outlet is
+                              DRAWING, never the address bar's: the address
+                              changes first, and a key that followed it
+                              remounted the page being left (DOR-2616,
+                              `routedPageKey`). A path, not the full location,
+                              so switching sessions on `/session` keeps its own
                               150ms crossfade instead of taking two.
 
                               **Gated by `fadesRoute`** (see `route-fade.ts`):
@@ -904,7 +911,7 @@ export function AppShell() {
                               alike, so a reader who asked for less motion gets
                               `initial={false}` — the page just appears. ── */}
                           <motion.div
-                            key={rightPanelPathname}
+                            key={routedPage}
                             initial={fadesRoute ? { opacity: 0 } : false}
                             animate={{ opacity: 1 }}
                             transition={

@@ -145,6 +145,7 @@ describe('every-agent grants through a DorkOS account', () => {
           if (!status) throw Object.assign(new Error('absent'), { code: 'not_found' });
           return status;
         },
+        isLinked: () => false,
       },
     });
     let nextId = 0;

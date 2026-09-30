@@ -107,7 +107,7 @@ export function Banner({
             type="button"
             onClick={onDismiss}
             aria-label={dismissLabel}
-            className="focus-visible:ring-ring/50 -m-1 shrink-0 rounded-sm p-1 opacity-70 transition-opacity outline-none hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2"
+            className="focus-visible:ring-ring -m-1 shrink-0 rounded-sm p-1 opacity-70 transition-opacity outline-none hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2"
           >
             <X aria-hidden className="size-3.5" />
           </button>

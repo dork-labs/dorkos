@@ -7,10 +7,22 @@
  * {@link ./cloud-link-client.js | cloud-link client}, persists the issued scoped
  * API key at config `cloud.instanceToken` (the sensitive-field pattern, same
  * handling as `tunnel.authtoken`), and heartbeats on startup and every 15
- * minutes while linked. A `401` from any cloud call marks the instance unlinked:
- * it clears the token and stops — it never retry-loops a dead key.
+ * minutes while linked.
  *
- * Every path that drops a key (unlink, a `401`) keeps that key's relink proof
+ * The heartbeat is the one authoritative check of the key: only a heartbeat
+ * `401` marks the instance unlinked, clearing the token and stopping — it never
+ * retry-loops a dead key. A `401` from any other cloud call (the managed
+ * connector routes) is not proof on its own, since one route can refuse a key
+ * that is still good (DOR-2620): it triggers one confirming heartbeat with that
+ * same key (concurrent refusals share it, and a check that kept the key answers
+ * for later refusals for a few minutes). The refused call fails once that check
+ * settles: with its own `unauthorized` error when the key is gone, or as a
+ * plain refused request (`request_failed`, status 401) when it was kept, so
+ * nothing downstream tells the person they are unlinked while they are not.
+ * Either way, when the caller sees the error, the link state already says
+ * whether the key is gone.
+ *
+ * Every path that drops a key (unlink, a heartbeat `401`) keeps that key's relink proof
  * (an HMAC keyed by it, see `linkProofForKey`) at `cloud.previousLinkProof`;
  * the next link request carries that proof (or the held key's, when re-linking
  * while linked) so the cloud can continue the same
@@ -88,6 +100,17 @@ import { resolveLinkTelemetryInstanceId } from './link-telemetry.js';
 
 /** How often a linked instance heartbeats the cloud. */
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
+/** Upper bound on a confirming heartbeat, which the refused call waits for. */
+const KEY_CHECK_TIMEOUT_MS = 10_000;
+/**
+ * How long a key check that kept the key answers for later refusals of the same
+ * key. Sequential callers (recovery passes, the event pull, sign-in refreshes)
+ * would otherwise each send a heartbeat while a route keeps refusing. Five
+ * minutes caps confirming heartbeats at 12 an hour per key, and delays noticing
+ * a key the account really let go by at most that long: its calls fail either
+ * way, and the scheduled heartbeat still runs.
+ */
+const KEY_CHECK_COOLDOWN_MS = 5 * 60 * 1000;
 let nextLinkGeneration = 0;
 
 interface LinkContext {
@@ -239,6 +262,8 @@ export class CloudLinkManager {
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   private pollController: AbortController | undefined;
   private pollTask: Promise<void> | undefined;
+  private keyCheck:
+    { context: LinkContext; settled: Promise<void>; keptAt: number | undefined } | undefined;
   private linkGeneration = ++nextLinkGeneration;
 
   constructor(private readonly options: CloudLinkManagerOptions = {}) {
@@ -437,6 +462,11 @@ export class CloudLinkManager {
     };
   }
 
+  /** Whether this instance holds a key (a refused call's key check may since have dropped it). */
+  isLinked(): boolean {
+    return this.config.getToken() != null;
+  }
+
   /** Hash the current linked key for provider material-generation tracking. */
   managedConnectorMaterialDigest(): string | undefined {
     const token = this.config.getToken();
@@ -466,10 +496,7 @@ export class CloudLinkManager {
         signal,
       });
     } catch (error) {
-      if (error instanceof ManagedConnectorCloudError && error.code === 'unauthorized') {
-        this.markUnlinked(context);
-      }
-      throw error;
+      throw await this.afterRefusal(error, context);
     }
   }
 
@@ -489,10 +516,7 @@ export class CloudLinkManager {
         signal,
       });
     } catch (error) {
-      if (error instanceof ManagedConnectorCloudError && error.code === 'unauthorized') {
-        this.markUnlinked(context);
-      }
-      throw error;
+      throw await this.afterRefusal(error, context);
     }
   }
 
@@ -743,10 +767,7 @@ export class CloudLinkManager {
     try {
       return await request(token);
     } catch (error) {
-      if (error instanceof ManagedConnectorCloudError && error.code === 'unauthorized') {
-        this.markUnlinked(context);
-      }
-      throw error;
+      throw await this.afterRefusal(error, context);
     }
   }
 
@@ -775,26 +796,113 @@ export class CloudLinkManager {
     baseUrl: string,
     descriptor: InstanceDescriptor,
     accessToken: string,
-    generation: number
+    generation: number,
+    signal?: AbortSignal
   ): Promise<void> {
-    const result = await sendHeartbeat({
-      baseUrl,
-      accessToken,
-      descriptor,
-      fetchImpl: this.fetchImpl,
-    });
+    let result: Awaited<ReturnType<typeof sendHeartbeat>>;
+    try {
+      result = await sendHeartbeat({
+        baseUrl,
+        accessToken,
+        descriptor,
+        fetchImpl: this.fetchImpl,
+        ...(signal ? { signal } : {}),
+      });
+    } catch (error) {
+      // An unreadable answer says nothing about the key: transient.
+      result = {
+        ok: false,
+        unauthorized: false,
+        error: error instanceof Error ? error.message : 'unreadable response',
+      };
+    }
     const context = { generation, token: accessToken, baseUrl };
     if (!this.ownsContext(context)) return;
     if (result.ok) {
       this.lastHeartbeatAt = result.lastSeenAt;
       this.config.setAccountLabel(result.accountLabel);
-      this.setState('linked');
+      // A good answer for the key still held never hides a re-link in progress.
+      if (!this.relinkPending()) this.setState('linked');
     } else if (result.unauthorized) {
       this.markUnlinked(context);
     } else {
       // Transient (network / 5xx): keep the token and the schedule; retry next tick.
       logger.warn(`[CloudLink] Heartbeat failed (transient): ${result.error}`);
     }
+  }
+
+  /**
+   * The error a refused managed call throws once the key check settles. Only
+   * an `unauthorized` refusal is checked; any other error passes unchanged.
+   * When the key is gone (or the call's link was replaced meanwhile) the
+   * original error goes on; when this link kept its key, the call was one
+   * refused request, not an unlinked computer, and says so.
+   */
+  private async afterRefusal(error: unknown, context: LinkContext): Promise<unknown> {
+    if (!(error instanceof ManagedConnectorCloudError) || error.code !== 'unauthorized') {
+      return error;
+    }
+    await this.confirmKey(context);
+    return this.ownsContext(context)
+      ? new ManagedConnectorCloudError('request_failed', error.status, { cause: error })
+      : error;
+  }
+
+  /**
+   * A cloud call other than the heartbeat refused this key (`401`). That alone
+   * does not prove the key is dead, so ask the heartbeat, the one authoritative
+   * key check, with the same key: a heartbeat `401` unlinks as before, a good
+   * answer keeps the link, and a transient failure keeps the key too.
+   *
+   * Refusals of the same key and lifecycle share one check: while it is in
+   * flight, and for {@link KEY_CHECK_COOLDOWN_MS} after it kept the key, so
+   * neither a burst nor a steady trickle of refused calls floods the
+   * heartbeat. The check runs under the refused call's context, so one that
+   * settles after an unlink or a new link changes nothing. Never rejects; it
+   * is bounded by {@link KEY_CHECK_TIMEOUT_MS}.
+   */
+  private confirmKey(context: LinkContext): Promise<void> {
+    if (!this.ownsContext(context)) return Promise.resolve();
+    const known = this.keyCheck;
+    if (
+      known &&
+      known.context.generation === context.generation &&
+      known.context.token === context.token &&
+      known.context.baseUrl === context.baseUrl &&
+      (known.keptAt === undefined || this.now() - known.keptAt < KEY_CHECK_COOLDOWN_MS)
+    ) {
+      return known.settled;
+    }
+    logger.warn('[CloudLink] A cloud call refused the instance key (401); checking the link');
+    const bound = new AbortController();
+    const timer = setTimeout(() => bound.abort(), KEY_CHECK_TIMEOUT_MS);
+    timer.unref?.();
+    const settled = this.heartbeat(
+      context.baseUrl,
+      buildInstanceDescriptor(),
+      context.token,
+      context.generation,
+      bound.signal
+    )
+      .catch((error: unknown) => {
+        // `heartbeat` reads every request failure as transient, so this is
+        // applying the verdict (saving the label, or unlinking) going wrong.
+        logger.error('[CloudLink] Could not apply the link check result', logError(error));
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        const entry = this.keyCheck;
+        if (entry?.settled !== settled) return;
+        if (this.ownsContext(context)) entry.keptAt = this.now();
+        else this.keyCheck = undefined;
+      });
+    this.keyCheck = { context, settled, keptAt: undefined };
+    return settled;
+  }
+
+  /** Whether a device-link poll is in flight (a re-link started while still linked). */
+  private relinkPending(): boolean {
+    return this.pollController !== undefined && !this.pollController.signal.aborted;
   }
 
   private requireConnectorToken(): string {
@@ -811,7 +919,7 @@ export class CloudLinkManager {
     // still saves the new key. Work still holding the old key cannot act on
     // the result, because `ownsContext` also requires the stored token to
     // match, and it is now cleared (and later replaced).
-    const relinkPending = this.pollController !== undefined && !this.pollController.signal.aborted;
+    const relinkPending = this.relinkPending();
     if (!relinkPending) {
       this.advanceGeneration();
       this.cancelPoll();
@@ -822,7 +930,7 @@ export class CloudLinkManager {
     this.setState(relinkPending ? 'pending' : 'unlinked');
     void this.notifyManagedProviderSync();
     logger.warn(
-      `[CloudLink] ${UNLINKED_REASON} — cloud refused the instance key (401); cleared local token`
+      `[CloudLink] ${UNLINKED_REASON} — the heartbeat refused the instance key (401); cleared local token`
     );
   }
 
