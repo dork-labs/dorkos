@@ -238,6 +238,9 @@ vi.mock('../../services/communities/remote/remote-community-adapter.js', async (
     CommunityDeletedError: class CommunityDeletedError extends CommunityRoomNotFoundError {},
     isCommunityDeleted: (error: { status?: number; remoteCode?: string }) =>
       error?.status === 410 && error?.remoteCode === 'COMMUNITY_DELETED',
+    CommunityTakenDownError: class CommunityTakenDownError extends CommunityRoomNotFoundError {},
+    isCommunityTakenDown: (error: { status?: number; remoteCode?: string }) =>
+      error?.status === 423 && error?.remoteCode === 'COMMUNITY_TAKEN_DOWN',
     RemoteRedactionFeedUnsupportedError: class RemoteRedactionFeedUnsupportedError extends Error {},
     remoteSequenceOf: () => 1,
     remoteAuthorOf: (entry: { id: string }) =>

@@ -41,3 +41,21 @@ for (const viewport of [
     await expect(dialog).toBeHidden();
   });
 }
+
+const TAKEN_DOWN = { ref: 'delta', label: 'Delta', lifecycle: 'taken_down' as const };
+
+for (const viewport of [
+  { name: 'desktop', width: 1280, height: 800 },
+  { name: 'phone', width: 390, height: 844 },
+]) {
+  test(`says the host took a Community down (DOR-2334, ${viewport.name})`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await mockCommunities(page, [TAKEN_DOWN]);
+    await page.goto(`/channels?community=${TAKEN_DOWN.ref}&id=${ROOM}`);
+
+    await expect(page.getByText('The host took this community down')).toBeVisible();
+    await expect(page.getByText(/The host of Delta took it down/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Remove from DorkOS' })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`taken-down-${viewport.name}.png`) });
+  });
+}

@@ -21,7 +21,7 @@ import {
   StaleCommunityCursorError,
 } from '@dorkos/shared/community-adapter';
 import { PinnedHttpError } from './pinned-origin.js';
-import { CommunityDeletedError } from './remote-community-adapter.js';
+import { CommunityDeletedError, CommunityTakenDownError } from './remote-community-adapter.js';
 
 /** A local answer for one refused Community request. */
 export interface CommunityRefusal {
@@ -54,6 +54,12 @@ const DELETED: CommunityRefusal = {
   error: 'This community was deleted.',
 };
 
+const TAKEN_DOWN: CommunityRefusal = {
+  status: 423,
+  code: 'COMMUNITY_TAKEN_DOWN',
+  error: 'The host took this community down.',
+};
+
 const REJECTED = 'The community didn’t accept that request.';
 
 /** The caps a Community sets, as `409` codes, in the app's own words. */
@@ -84,6 +90,12 @@ export function communityRefusal(
     (error instanceof PinnedHttpError && error.remoteCode === 'COMMUNITY_DELETED')
   )
     return DELETED;
+  // Before the other 423s, which read as "archived".
+  if (
+    error instanceof CommunityTakenDownError ||
+    (error instanceof PinnedHttpError && error.remoteCode === 'COMMUNITY_TAKEN_DOWN')
+  )
+    return TAKEN_DOWN;
   if (error instanceof CommunityRoomNotFoundError) return NOT_FOUND;
   if (error instanceof StaleCommunityCursorError) return STALE;
   if (error instanceof CommunityUnsupportedError)
