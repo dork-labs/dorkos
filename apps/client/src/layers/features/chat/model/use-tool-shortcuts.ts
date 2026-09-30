@@ -79,16 +79,26 @@ export function useToolShortcuts(
     }
   }, []);
 
-  const onNavigateOption = useCallback((direction: 'up' | 'down') => {
-    setKeyboardEngaged(true);
-    setFocusedOptionIndex((prev) => {
-      const handle = activeToolHandleRef.current;
-      const count = handle && 'getOptionCount' in handle ? handle.getOptionCount() : 0;
-      if (count === 0) return prev;
-      if (direction === 'up') return prev <= 0 ? count - 1 : prev - 1;
-      return prev >= count - 1 ? 0 : prev + 1;
-    });
-  }, []);
+  const onNavigateOption = useCallback(
+    (direction: 'up' | 'down') => {
+      // While the cursor is hidden, the first arrow key only reveals it at its
+      // current (unmoved) index — otherwise the reveal and a move happened in
+      // the same keypress, so ArrowDown looked like it skipped option 1 and
+      // ArrowUp looked like it jumped to the last option (DOR-2617).
+      if (!keyboardEngaged) {
+        setKeyboardEngaged(true);
+        return;
+      }
+      setFocusedOptionIndex((prev) => {
+        const handle = activeToolHandleRef.current;
+        const count = handle && 'getOptionCount' in handle ? handle.getOptionCount() : 0;
+        if (count === 0) return prev;
+        if (direction === 'up') return prev <= 0 ? count - 1 : prev - 1;
+        return prev >= count - 1 ? 0 : prev + 1;
+      });
+    },
+    [keyboardEngaged]
+  );
 
   const onNavigateQuestion = useCallback((direction: 'prev' | 'next') => {
     const handle = activeToolHandleRef.current;
@@ -101,9 +111,17 @@ export function useToolShortcuts(
   }, []);
 
   const onSubmit = useCallback(() => {
+    // Same reveal-first rule as the arrows: while hidden, the cursor's index
+    // is not a choice anyone has actually seen, so Enter must not submit it.
+    // Advancing to the next question is the safe interpretation of "Enter
+    // with nothing selected yet" (DOR-2617).
+    if (!keyboardEngaged) {
+      onNavigateQuestion('next');
+      return;
+    }
     const handle = activeToolHandleRef.current;
     if (handle && 'submit' in handle) handle.submit();
-  }, []);
+  }, [keyboardEngaged, onNavigateQuestion]);
 
   useInteractiveShortcuts({
     activeInteraction: activeInteractionForShortcuts,
