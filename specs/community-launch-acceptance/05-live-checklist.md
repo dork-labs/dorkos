@@ -12,7 +12,7 @@ Some steps depend on work that is not on `main` yet. Do not start a run until ev
 | ---------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------- |
 | L2, L3, L4 | A published release at or after the one containing #2372, #2373, #2374 and #2378                              | the release session                                  | pending: not yet released   |
 | L2, L3, L4 | DOR-2169's published-release live gate PASS, recorded in `specs/community-self-host-launcher/`                | DOR-2169 task 4.3                                    | pending                     |
-| L2         | The gate's hold arm `DORKOS_COMMUNITY_LIVE_HOLD_MINUTES`, the second-person proof, `handoff.json`             | task 1.1 (DOR-2591)                                  | pending: not on `main`      |
+| L2         | The gate's hold arm `DORKOS_COMMUNITY_LIVE_HOLD_MINUTES`, the second-person proof, `handoff.json`             | task 1.1 (DOR-2591)                                  | done: pending merge         |
 | L2         | The driver's remote mode, `DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF`                                              | task 1.2 (DOR-2592)                                  | pending: not on `main`      |
 | L2         | The no-DorkOS-host guard, `dorkosHostsContacted` and the single-sign-on check in the gate receipt             | task 1.3 (DOR-2593)                                  | pending: not on `main`      |
 | L2         | `apps/community/FLY.md` "Back up and upgrade a community made with guided setup"                              | task 1.4 (DOR-2594, PR #2384)                        | done: merged                |
@@ -134,7 +134,7 @@ Covers A5 (two people and one local agent), A6 (backup and upgrade), A7 (keyboar
 
 ### L2 pass criteria
 
-- Gate receipt: `ownerCreated`, `privateFileRoundTrip`, `anonymousDownloadDenied` and `secondMemberProof` all true; `held.endedBy` is `signal`; `dorkosHostsContacted` is `[]`; the community offers no single sign-on. (A8)
+- Gate receipt: `ownerCreated`, `privateFileRoundTrip`, `anonymousDownloadDenied` and `secondMemberProof` all true; `held.endedBy` is `done`; `dorkosHostsContacted` is `[]`; the community offers no single sign-on. (A8)
 - Driver receipt: outcome `PASS` or `PASS-WITH-FINDINGS`, and every remote-mode step passed, including 17, 18 and 22. (A5, A7)
 - Restore check passed with matching bytes; upgrade check passed and is recorded as cross-version or same-image. (A6)
 - Before and after inventories match.

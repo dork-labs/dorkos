@@ -55,10 +55,23 @@ export const COMMUNITY_LIVE_GATE_ENV = [
   ...Object.values(SETTINGS_ENV),
 ] as const;
 
+/**
+ * Optional: keep the finished community alive for this many whole minutes, from 1 to
+ * {@link COMMUNITY_LIVE_GATE_MAX_HOLD_MINUTES}, so an attended run can drive it (the two-Desktop
+ * driver's remote mode) before cleanup. Unset means no hold. A hold keeps one small Machine and one
+ * Neon endpoint running, so its ceiling is fixed here rather than trusted to the operator, and any
+ * other value is refused with every other arm, before a process starts.
+ */
+export const COMMUNITY_LIVE_GATE_HOLD_ENV = 'DORKOS_COMMUNITY_LIVE_HOLD_MINUTES';
+
+/** The longest hold the gate accepts, in minutes. */
+export const COMMUNITY_LIVE_GATE_MAX_HOLD_MINUTES = 45;
+
 /** Every name the gate reads, and so every name that must never reach an ordinary task. */
 export const COMMUNITY_LIVE_GATE_ALL_ENV = [
   ...COMMUNITY_LIVE_GATE_ENV,
   COMMUNITY_LIVE_GATE_TARBALL_ENV,
+  COMMUNITY_LIVE_GATE_HOLD_ENV,
 ] as const;
 
 /** Where the launcher under test comes from. */
@@ -82,6 +95,8 @@ export interface CommunityLiveGateConfig {
   neonRegion: string;
   /** Operator-approved provider spend ceiling recorded in the receipt. */
   budgetUsd: number;
+  /** Minutes to hold the finished community before cleanup, or null for no hold. */
+  holdMinutes: number | null;
 }
 
 /**
@@ -129,7 +144,11 @@ export class CommunityLiveGateNotArmedError extends Error {
 
   /** Create a stable, credential-free refusal. */
   constructor(fields: readonly string[]) {
-    super(`Community live gate is not armed (${fields.join(', ')})`);
+    // The hold is the one optional name, so a refusal of it says what it accepts.
+    const holdRange = fields.includes(COMMUNITY_LIVE_GATE_HOLD_ENV)
+      ? `; ${COMMUNITY_LIVE_GATE_HOLD_ENV} must be a whole number of minutes from 1 to ${COMMUNITY_LIVE_GATE_MAX_HOLD_MINUTES}, or unset`
+      : '';
+    super(`Community live gate is not armed (${fields.join(', ')})${holdRange}`);
     this.name = 'CommunityLiveGateNotArmedError';
     this.fields = fields;
   }
@@ -179,6 +198,16 @@ export function parseCommunityLiveGateConfig(
   if (!Number.isFinite(budgetUsd) || budgetUsd <= 0 || budgetUsd > 25) {
     invalid.push(SETTINGS_ENV.budgetUsd);
   }
+  // Digits only, so `1.5`, `1e1`, ` 5`, `0x10` and `-1` are refused rather than coerced.
+  const rawHold = environment[COMMUNITY_LIVE_GATE_HOLD_ENV];
+  const holdMinutes =
+    rawHold === undefined ? null : /^\d{1,2}$/u.test(rawHold) ? Number(rawHold) : NaN;
+  if (
+    holdMinutes !== null &&
+    !(holdMinutes >= 1 && holdMinutes <= COMMUNITY_LIVE_GATE_MAX_HOLD_MINUTES)
+  ) {
+    invalid.push(COMMUNITY_LIVE_GATE_HOLD_ENV);
+  }
   if (
     invalid.length > 0 ||
     source === null ||
@@ -196,5 +225,6 @@ export function parseCommunityLiveGateConfig(
     neonOrganization: neonOrganization.data,
     neonRegion: neonRegion.data,
     budgetUsd,
+    holdMinutes,
   };
 }

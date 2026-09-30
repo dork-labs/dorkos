@@ -193,8 +193,9 @@ describe('credentialed live gate entrypoint', () => {
       'utf8'
     );
     const main = source.slice(source.indexOf('async function main()'));
-    const probes = main.indexOf(
-      'provenance = await guardCommunityLiveProvenance(() =>\n        probeCommunityLiveProvenance(journal, {'
+    // Whitespace-tolerant: the block moved into the held phase's cleanup callback (DOR-2591).
+    const probes = main.search(
+      /provenance = await guardCommunityLiveProvenance\(\(\) =>\s+probeCommunityLiveProvenance\(journal, \{/u
     );
     const cleanup = main.indexOf('await cleanupCommunityLiveGate(');
     expect(probes).toBeGreaterThan(0);
@@ -208,5 +209,88 @@ describe('credentialed live gate entrypoint', () => {
     expect(main.slice(0, probes)).not.toContain('unknownAppName');
     // Nothing in Fly's API reads a private network once its app is gone, so no step claims to.
     expect(main).not.toContain('NetworkAfterCleanup');
+  });
+
+  // The hold (DOR-2591) runs after provider resources exist, so what matters is where main puts
+  // it: the second-member proof and the hold inside the held phase, and the whole existing cleanup
+  // inside that phase's cleanup callback, so no way out of the phase can skip it. The phase itself
+  // is unit-tested in community-deploy-live-hold.test.ts; a real run costs money.
+  it('runs the second-member proof and the hold inside the held phase, before cleanup', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const phase = main.indexOf('await runHeldPhaseThenCleanUp({');
+    const phaseCallback = main.indexOf('phase: async (signal) => {', phase);
+    const cleanupCallback = main.indexOf('cleanup: async () => {', phase);
+    expect(phase).toBeGreaterThan(main.indexOf('bootstrap-rotation'));
+    expect(phaseCallback).toBeGreaterThan(phase);
+    expect(cleanupCallback).toBeGreaterThan(phaseCallback);
+    const wiring = main.slice(phase, phaseCallback);
+    expect(wiring).toContain('signals: process,');
+    // Output errors after the terminal closes must not crash cleanup (DOR-2591 review).
+    expect(wiring).toContain('streams: [process.stdout, process.stderr],');
+    expect(wiring).toContain('write: quietWriter(process.stderr),');
+    const heldPhase = main.slice(phaseCallback, cleanupCallback);
+    expect(heldPhase).toContain('await runCommunityLiveSecondMemberProof(ownerProof.owner, {');
+    expect(heldPhase).toContain('await holdCommunityLive({');
+    expect(heldPhase).toContain('signal,');
+    expect(heldPhase).toContain('write: quietWriter(process.stdout),');
+    // Every provider read and write of cleanup, and the point it is called finished, are inside
+    // the cleanup callback, never before the phase.
+    for (const step of [
+      'readFlySessionCredential(fly);\n        const tigris',
+      'await cleanupCommunityLiveGate(',
+      'tigrisBucketFound = await tigris(',
+      'cleanedUp = true;',
+    ]) {
+      expect(main.indexOf(step)).toBeGreaterThan(cleanupCallback);
+    }
+    expect(main.slice(0, phase)).not.toContain('await cleanupCommunityLiveGate(');
+  });
+
+  // The handoff holds two passwords and the invitation. Only the hold may see them: the receipt
+  // takes the proofs' own receipt objects, and nothing else of theirs.
+  it('keeps the handoff access and the owner session out of the receipt', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    expect([...main.matchAll(/\.access\b/gu)].map((match) => match[0])).toEqual(['.access']);
+    expect(main).toContain('access: member.access,');
+    const receipt = main.slice(main.indexOf('await writeFile(\n      receiptPath,'));
+    const body = receipt.slice(0, receipt.indexOf("+ '\\n'"));
+    expect(body).toContain('...ownerProof.receipt,');
+    expect(body).toContain('...held.phase.member,');
+    expect(body).toMatch(/\.\.\.\(held\.phase\.hold \? \{ held: held\.phase\.hold \} : \{\}\)/u);
+    expect(body).not.toMatch(
+      /\baccess\b|ownerProof\.owner|ownerProof,|\.\.\.ownerProof\b(?!\.receipt)/u
+    );
+    // The phase returns only the member's receipt and the hold's record.
+    expect(main).toContain('return { member: member.receipt, hold };');
+  });
+
+  // The handoff must never land in this checkout, where it could be committed. A misplaced
+  // DORK_HOME is refused before anything is created.
+  it('refuses a hold whose retained directory is inside the repository, before any process', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const refusal = main.indexOf(
+      "throw new CommunityLiveGateError('hold-directory-inside-repository');"
+    );
+    // Real paths, not path text: a symlinked DORK_HOME must not slip past (DOR-2591 review). The
+    // comparison itself is tested in community-deploy-live-hold.test.ts.
+    const check = main.indexOf('await isWithinDirectory(liveGateHome,');
+    expect(check).toBeGreaterThan(0);
+    expect(check).toBeLessThan(refusal);
+    expect(main).not.toMatch(/relative\(/u);
+    expect(refusal).toBeGreaterThan(main.indexOf('parseCommunityLiveGateConfig(process.env)'));
+    expect(refusal).toBeLessThan(main.indexOf('await mkdtemp('));
+    expect(refusal).toBeLessThan(main.indexOf('await command('));
   });
 });

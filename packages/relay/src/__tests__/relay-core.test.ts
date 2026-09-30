@@ -1865,6 +1865,9 @@ describe('trace store integration', () => {
     const call = (mockTraceStore.insertSpan as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(call.metadata).toEqual(
       expect.objectContaining({
+        // The sender is how the observed-chats list tells a message a chat
+        // connection brought in from the agent's replies to it (DOR-2590).
+        from: 'relay.test.sender',
         deliveredTo: 1,
         rejectedCount: 0,
         hasAdapterResult: false,
