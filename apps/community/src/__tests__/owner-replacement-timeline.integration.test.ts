@@ -1173,6 +1173,61 @@ describe('a promise the settings cannot take back', () => {
   });
 });
 
+describe('review probes (R1, R2)', () => {
+  it('repeats the promised date when the claim link is sent again before the notice resolves', async () => {
+    // Purpose: fails if a claim-reissued email written while the request is still `notifying`
+    // counts a fresh date from its own send time, so it can name a later day than the one
+    // stored (review probe R1: accepted at 23:30 UTC, reissued at 00:30 the next day).
+    const c = await ownedCommunity();
+    // Put the clock at 23:30 UTC, so an hour later is the next calendar day.
+    const late = new Date(clockMs + 2 * DAY);
+    late.setUTCHours(23, 30, 0, 0);
+    clockMs = late.getTime();
+    const created = await requestReplacement(c);
+    const id = created.replacement.replacementId;
+    await send(clock());
+    // The timeline has not ticked yet: the request is still notifying.
+    advance(HOUR);
+    await expectStatus(
+      await h.call(
+        `/api/v1/host/communities/${c.communityId}/owner-replacements/${id}/claim-token`,
+        {
+          bearer: ownership,
+          body: {},
+        }
+      ),
+      200,
+      'reissue'
+    );
+    await send(clock());
+    await tick(clock());
+    const stored = (await row(id)).claimable_after as Date;
+    const again = mailsTo(c.ownerEmail).find((mail) =>
+      mail.text.includes('The host sent the link for the new owner again.')
+    )!;
+    expect(again.text).toContain(`The earliest date is still ${formatReplacementDate(stored)}.`);
+  });
+
+  it('keeps the longer date a lost first send promised after the address is confirmed', async () => {
+    // Purpose: fails if a retried notice replaces the promise instead of raising it, so a first
+    // send that reached the owner (reply lost, long wait for an unconfirmed address) is undercut
+    // once a sign-in service confirms the address and the retry counts the short wait (R2).
+    await send(advance(MINUTE));
+    const c = await ownedCommunity(h, operator, { verified: false });
+    const created = await requestReplacement(c);
+    const id = created.replacement.replacementId;
+    smtp.behaviour = 'silent-once-after-body';
+    await send(advance(MINUTE));
+    const [first] = mailsTo(c.ownerEmail);
+    await h.pool.query('UPDATE "user" SET "emailVerified"=true WHERE id=$1', [c.ownerUserId]);
+    await send(advance(10 * MINUTE));
+    await tick(clock());
+    const stored = (await row(id)).claimable_after as Date;
+    expect(mailsTo(c.ownerEmail)).toHaveLength(2);
+    expect(first.text).toContain(`on or after ${formatReplacementDate(stored)}.`);
+  });
+});
+
 describe('the reminder, sent late', () => {
   it.each([
     [47, 'If you do nothing, that can happen in 2 days, on or after'],

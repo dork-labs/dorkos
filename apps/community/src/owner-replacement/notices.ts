@@ -39,6 +39,8 @@ interface NoticeSubject {
   after_objection: boolean;
   after_withdrawal: boolean;
   claimable_after: Date | null;
+  /** The latest date a message about this request promised, while it was notifying. */
+  notice_promised_at: Date | null;
   community_name: string;
   lifecycle: string;
   new_owner_name: string | null;
@@ -47,6 +49,7 @@ interface NoticeSubject {
 async function readSubject(pool: Pool, notice: ClaimedNotice): Promise<NoticeSubject | null> {
   const row = await pool.query<NoticeSubject>(
     `SELECT r.state,r.reason,r.after_objection,r.after_withdrawal,r.claimable_after,
+       r.notice_promised_at,
        c.name AS community_name,c.lifecycle,m.display_name AS new_owner_name
      FROM owner_replacements r JOIN communities c ON c.id=r.community_id
      LEFT JOIN members m ON m.community_id=r.community_id AND m.id=r.new_owner_member_id
@@ -106,8 +109,9 @@ function optionParagraphs(
 
 /**
  * The notice, the reminder, and the claim-reissued message: each carries its own fresh
- * object-only link, and only while the request is still open. For the notice, the owner's
- * verified flag is recorded on the request as of this send, since it decides the wait.
+ * object-only link, and only while the request is still open. While the notice has not
+ * resolved, each records the date it promised; the notice also records the owner's verified
+ * flag as of this send, since it decides the wait.
  */
 function composeOpenNotice(settings: Settings, kind: 'notice' | 'reminder' | 'claim_reissued') {
   const composer: NoticeComposer = async ({ pool, notice, now }) => {
@@ -118,16 +122,22 @@ function composeOpenNotice(settings: Settings, kind: 'notice' | 'reminder' | 'cl
       [notice.recipientUserId]
     );
     const verified = account.rows[0]?.emailVerified === true;
-    const earliest = earliestDate(subject, verified, now, settings);
-    // The notice records the address's verified flag as of this send, since it decides the
-    // wait, and the latest date it has promised, since the stored date may never be earlier.
-    if (kind === 'notice')
-      await pool.query(
-        `UPDATE owner_replacements SET verified_address=$3,
-           notice_promised_at=GREATEST(notice_promised_at,$4::timestamptz)
-         WHERE community_id=$1 AND id=$2 AND state='notifying'`,
-        [notice.communityId, notice.subjectId, verified, earliest]
-      );
+    // A claim link sent again says "the earliest date is still …": before the notice resolves
+    // that is the date the owner was already promised, never a new one counted from now.
+    const earliest =
+      kind === 'claim_reissued' && !subject.claimable_after && subject.notice_promised_at
+        ? subject.notice_promised_at
+        : earliestDate(subject, verified, now, settings);
+    // While the notice has not resolved, every message records the latest date it promised:
+    // the stored date may never be earlier. Only the notice records the address's verified
+    // flag, since that is what decides the wait.
+    await pool.query(
+      `UPDATE owner_replacements SET
+         verified_address=CASE WHEN $5 THEN $3 ELSE verified_address END,
+         notice_promised_at=GREATEST(notice_promised_at,$4::timestamptz)
+       WHERE community_id=$1 AND id=$2 AND state='notifying'`,
+      [notice.communityId, notice.subjectId, verified, earliest, kind === 'notice']
+    );
     const date = formatReplacementDate(earliest);
     const link = await mintObjectToken(pool, {
       communityId: notice.communityId,
