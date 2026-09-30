@@ -18,8 +18,11 @@ export interface ControlContrast {
  * which is how a dark screenshot once showed light buttons on a dark page (DOR-2567).
  */
 export async function settle(page: Page): Promise<void> {
-  await page.waitForFunction(() =>
-    document.getAnimations().every((animation) => animation.playState !== 'running')
+  // Bounded: an animation that never ends fails here in seconds instead of hanging the test.
+  await page.waitForFunction(
+    () => document.getAnimations().every((animation) => animation.playState !== 'running'),
+    undefined,
+    { timeout: 5_000 }
   );
 }
 

@@ -91,6 +91,19 @@ describe('portable control contract', () => {
       ).toEqual([]);
       unmount();
     }
+    // A ring the same colour as the fill needs a gap to read as an edge.
+    for (const variant of ['brand', 'destructive'] as const) {
+      const { getByRole, unmount } = render(<Button variant={variant}>{variant}</Button>);
+      const classes = getByRole('button').className.split(' ');
+      for (const state of ['focus-visible', 'has-[:focus-visible]'])
+        expect(classes, `${variant} ${state}`).toEqual(
+          expect.arrayContaining([`${state}:ring-offset-2`, `${state}:ring-offset-dui-background`])
+        );
+      unmount();
+    }
+    const { getByRole: plain } = render(<Button variant="outline">Plain</Button>);
+    expect(plain('button').className).not.toContain('ring-offset');
+    cleanup();
     const { container } = render(
       <Button asChild variant="outline">
         <label>

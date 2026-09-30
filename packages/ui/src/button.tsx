@@ -19,7 +19,10 @@ const buttonVariants = cva(
   // and the design system's own rule (DOR-2567). The ring colour itself clears it
   // on both themes. `has-[:focus-visible]` is the same ring for a button that
   // wraps its real control: a file picker is a label around a hidden input, and
-  // keyboard focus lands on the input, which nobody can see.
+  // keyboard focus lands on the input, which nobody can see. Brand and destructive
+  // fill the button with the ring's own colour, so a flush ring would only make
+  // the button look bigger; theirs sits 2px out, past a gap in the page colour,
+  // as the client's `focus-ring` utility draws it.
   //
   // **The press lives here, not at the call site.** The design system asks every
   // button for "scale to 0.97 on active, spring back", and for a long time the
@@ -39,13 +42,14 @@ const buttonVariants = cva(
       variant: {
         default: 'bg-dui-primary text-dui-primary-foreground hover:bg-dui-primary/90',
         destructive:
-          'bg-dui-destructive text-dui-destructive-foreground hover:bg-dui-destructive/90 focus-visible:ring-dui-destructive has-[:focus-visible]:ring-dui-destructive dui-dark:bg-dui-destructive/60',
+          'bg-dui-destructive text-dui-destructive-foreground hover:bg-dui-destructive/90 focus-visible:ring-dui-destructive has-[:focus-visible]:ring-dui-destructive dui-dark:bg-dui-destructive/60 focus-visible:ring-offset-2 focus-visible:ring-offset-dui-background has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-dui-background',
         outline:
           'border border-dui-border bg-dui-background text-dui-foreground shadow-xs hover:bg-dui-accent hover:text-dui-accent-foreground dui-dark:bg-dui-input/30 dui-dark:border-dui-input dui-dark:hover:bg-dui-input/50',
         secondary: 'bg-dui-secondary text-dui-secondary-foreground hover:bg-dui-secondary/80',
         ghost:
           'hover:bg-dui-accent hover:text-dui-accent-foreground dui-dark:hover:bg-dui-accent/50',
-        brand: 'bg-dui-brand text-dui-brand-foreground hover:bg-dui-brand/90',
+        brand:
+          'bg-dui-brand text-dui-brand-foreground hover:bg-dui-brand/90 focus-visible:ring-offset-2 focus-visible:ring-offset-dui-background has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-dui-background',
         link: 'text-dui-primary underline-offset-4 hover:underline',
       },
       size: {
