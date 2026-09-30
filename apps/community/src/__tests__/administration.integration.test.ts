@@ -96,6 +96,7 @@ const TENANT_TABLES = [
   'entries',
   'entry_mentions',
   'entry_redactions',
+  'erasure_journal',
   'erasure_requests',
   'export_archive_channels',
   'export_archives',

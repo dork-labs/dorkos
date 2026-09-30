@@ -13,6 +13,17 @@ import { TOUCH_TARGET_RESPONSIVE_H, TOUCH_TARGET_RESPONSIVE_SIZE } from './touch
 // proportion at both. The `:not([class*='size-'])` guard is the opt-out: any
 // `size-*` class on the svg, token or literal, wins over this default.
 const buttonVariants = cva(
+  // **The focus ring is solid.** It was the ring colour at half strength (a fifth
+  // for destructive and brand), which measured 1.9:1 against a light page and
+  // 2.4:1 against a dark one — under the 3:1 WCAG AA asks of a focus indicator,
+  // and the design system's own rule (DOR-2567). The ring colour itself clears it
+  // on both themes. `has-[:focus-visible]` is the same ring for a button that
+  // wraps its real control: a file picker is a label around a hidden input, and
+  // keyboard focus lands on the input, which nobody can see. Brand and destructive
+  // fill the button with the ring's own colour, so a flush ring would only make
+  // the button look bigger; theirs sits 2px out, past a gap in the page colour,
+  // as the client's `focus-ring` utility draws it.
+  //
   // **The press lives here, not at the call site.** The design system asks every
   // button for "scale to 0.97 on active, spring back", and for a long time the
   // primitive answered a press with nothing — which is why fifteen hand-rolled
@@ -25,20 +36,20 @@ const buttonVariants = cva(
   // across 768px animated the height of every button on screen. `scale` is
   // named as itself: Tailwind v4's scale utilities write the standalone `scale`
   // property, so a list saying `transform` would transition nothing.
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,scale] duration-150 motion-safe:active:scale-[0.97] motion-safe:active:duration-100 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-(--dui-size-icon-sm) shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-dui-ring focus-visible:ring-dui-ring/50 focus-visible:ring-[3px] aria-invalid:ring-dui-destructive/20 dui-dark:aria-invalid:ring-dui-destructive/40 aria-invalid:border-dui-destructive",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,scale] duration-150 motion-safe:active:scale-[0.97] motion-safe:active:duration-100 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-(--dui-size-icon-sm) shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-dui-ring focus-visible:ring-dui-ring focus-visible:ring-[3px] has-[:focus-visible]:border-dui-ring has-[:focus-visible]:ring-dui-ring has-[:focus-visible]:ring-[3px] aria-invalid:ring-dui-destructive/20 dui-dark:aria-invalid:ring-dui-destructive/40 aria-invalid:border-dui-destructive",
   {
     variants: {
       variant: {
         default: 'bg-dui-primary text-dui-primary-foreground hover:bg-dui-primary/90',
         destructive:
-          'bg-dui-destructive text-dui-destructive-foreground hover:bg-dui-destructive/90 focus-visible:ring-dui-destructive/20 dui-dark:focus-visible:ring-dui-destructive/40 dui-dark:bg-dui-destructive/60',
+          'bg-dui-destructive text-dui-destructive-foreground hover:bg-dui-destructive/90 focus-visible:ring-dui-destructive has-[:focus-visible]:ring-dui-destructive dui-dark:bg-dui-destructive/60 focus-visible:ring-offset-2 focus-visible:ring-offset-dui-background has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-dui-background',
         outline:
           'border border-dui-border bg-dui-background text-dui-foreground shadow-xs hover:bg-dui-accent hover:text-dui-accent-foreground dui-dark:bg-dui-input/30 dui-dark:border-dui-input dui-dark:hover:bg-dui-input/50',
         secondary: 'bg-dui-secondary text-dui-secondary-foreground hover:bg-dui-secondary/80',
         ghost:
           'hover:bg-dui-accent hover:text-dui-accent-foreground dui-dark:hover:bg-dui-accent/50',
         brand:
-          'bg-dui-brand text-dui-brand-foreground hover:bg-dui-brand/90 focus-visible:ring-dui-brand/20 dui-dark:focus-visible:ring-dui-brand/40',
+          'bg-dui-brand text-dui-brand-foreground hover:bg-dui-brand/90 focus-visible:ring-offset-2 focus-visible:ring-offset-dui-background has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-dui-background',
         link: 'text-dui-primary underline-offset-4 hover:underline',
       },
       size: {

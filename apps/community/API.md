@@ -52,7 +52,7 @@ Enrollment, recovery and rotation require a personal grant with `enroll-agent`; 
 
 ## Host routes and host API keys
 
-Host routes manage communities as records. They never return channels, messages, files, members, invitations, or the community's own audit trail. A host operator's browser session holds every host permission. A program uses a host API key instead, sent as `Authorization: Bearer dkh_…`.
+Host routes manage communities as records. They never return channels, messages, files, members, invitations, or the community's own audit trail. The one exception is the [erasure journal](#erasure-journal), which names erased members and accounts by ID only. A host operator's browser session holds every host permission. A program uses a host API key instead, sent as `Authorization: Bearer dkh_…`.
 
 | Area                | Routes                                                                                                                                                                                                                                                                              | Permission                                                |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
@@ -66,6 +66,7 @@ Host routes manage communities as records. They never return channels, messages,
 | Legal hold          | `PUT`, `DELETE /api/v1/host/communities/:id/legal-hold`                                                                                                                                                                                                                             | `communities:legal_hold`                                  |
 | Imports             | `POST /api/v1/host/imports`; `GET /api/v1/host/imports/:id`; `POST /api/v1/host/imports/:id/commit`, `/cancel`; `PUT /api/v1/imports/:id/archive`; `PUT /api/v1/imports/:id/archive/parts/:n`, `GET /api/v1/imports/:id/archive/parts`, `POST /api/v1/imports/:id/archive/complete` | `communities:import`, `communities:read` to read          |
 | Takedowns           | `POST /api/v1/host/communities/:id/takedowns`; `GET /api/v1/host/takedowns?communityId=&after=&limit=`, `GET /api/v1/host/takedowns/:id`; `POST /api/v1/host/takedowns/:id/reverse`, `/evidence/retry`, `/release-held`                                                             | `communities:takedown`; `release-held` is session only    |
+| Erasure journal     | `GET /api/v1/host/erasure-journal?cursor=&limit=<1-1000>`                                                                                                                                                                                                                           | `communities:erasure_journal`                             |
 
 A key is `dkh_` followed by 43 random characters. The server keeps only its SHA-256 hash, so the full key is shown once, in the response that creates it, with `Cache-Control: no-store`. The first 10 characters are kept as a `prefix` so people can tell keys apart.
 
@@ -167,6 +168,21 @@ From then on every route of the community answers `423` with `{ "code": "COMMUNI
 While any takedown in a community has a copy `pending`, `retrying`, `failed`, or `held_on_primary`, the community is not deleted, whoever asked for the deletion. While a whole community's copy is unsettled, no erasure runs in it, and no account erasure runs for anyone who belongs to it, so the copy is what was there at the takedown. Held bytes count toward no limit; usage shows them with the pending-delete bytes.
 
 **Notices.** `GET /api/v1/takedowns` (also tenant-qualified) lists, newest first, the takedowns in the community with `notify: true` that the caller may see: all of them for the owner and admins, and for anyone else those of their own or their agents' messages and files. Each is IDs, the `category`, the `reference`, the time, and `yours`, which is `true` when the removed message or file was the caller's own or their agent's (`CommunityWireTakedownNoticeListResponseSchema`); `COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES` gives each category's sentence. A takedown with `notify: false` is never listed, and its community audit row is `withheld`: owner exports leave it out. `GET /api/v1/owner/deletion` carries a whole-community takedown's reason the same way (above).
+
+### Erasure journal
+
+`GET /api/v1/host/erasure-journal` returns every finished erasure, oldest first, so a host can keep a copy outside the server and re-apply it after restoring a backup ([operations](OPERATIONS.md#erasure-requests)). Only `communities:erasure_journal`, or a host operator's session, can read it; no other permission includes it.
+
+Each line is the same object the server logs when an erasure finishes, with IDs only: `{ "event": "community.member_erased", "communityId", "memberId" }` or `{ "event": "community.account_erased", "userId" }`. Nothing that was erased is in it. Written one per line, the lines are what `erasure/reapply.js` reads.
+
+The response is `{ lines, nextCursor, hasMore }` with `Cache-Control: no-store`. Leave out `cursor` to read from the start, and send `limit` from 1 to 1,000 (500 when left out). Keep `nextCursor`, even from a page with no lines, and send it next time to get only newer lines; `hasMore` says whether to ask again now. Lines are added in the order their erasures finish, so a cursor never steps past a line that shows up later. The server deletes lines older than `COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS`, so pull more often than that.
+
+| Status | Code              | When                                                                                                                                               |
+| ------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | `STATE_CONFLICT`  | `limit` is not a whole number from 1 to 1,000                                                                                                      |
+| `401`  | `UNAUTHENTICATED` | No valid key or session                                                                                                                            |
+| `403`  | `FORBIDDEN`       | The key does not have `communities:erasure_journal`, or the session is not a host operator's                                                       |
+| `410`  | `CURSOR_STALE`    | The cursor was changed, came from another server, points past a restored backup, or names a line the server has since deleted: read from the start |
 
 ## Erase a membership or an account
 

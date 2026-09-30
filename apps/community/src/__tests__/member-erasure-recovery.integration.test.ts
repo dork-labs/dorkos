@@ -3,9 +3,11 @@ import { cp, mkdtemp, readdir, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CommunityAdminErasureJournalPageSchema } from '@dorkos/shared/community-admin-wire';
 import { CommunityWireRedactionPageSchema } from '@dorkos/shared/community-wire';
 import { eraseMembership } from '../erasure/erasure.js';
 import { parseErasureJournal, reapplyErasures } from '../erasure/reapply.js';
+import { runHostKeyCommand } from '../host-keys.js';
 import { sweepExpiredPairings } from '../routes/community/pairings.js';
 import {
   bootstrapHost,
@@ -672,6 +674,94 @@ describe('backup re-application (AC-12)', () => {
         saved.redactions.map((item) => item.entry.id).sort()
       );
     }
+    await h.pool.query('DROP SCHEMA IF EXISTS erasure_backup CASCADE');
+    await rm(backup.blobs, { recursive: true, force: true });
+  });
+
+  // Purpose (DOR-2566): fails if the journal a host pulls through the host API is not enough to
+  // erase again, after a restore, someone erased after the backup, or if the cursor the host
+  // kept survives the restore and would skip the journal rows written after it.
+  it('re-applies an erasure made after the backup from the journal pulled through the host API', async () => {
+    const s = await scene('pulled');
+    const issued = await runHostKeyCommand(h.pool, {
+      kind: 'issue',
+      label: 'Journal copy',
+      scopes: ['communities:erasure_journal'],
+      expiresInDays: null,
+    });
+    if (issued.kind !== 'issue') throw new Error('expected a key');
+    // The host's own copy, kept off the server, and where its scheduled pull stands.
+    let copy = '';
+    let cursor: string | undefined;
+    const pull = async () => {
+      for (;;) {
+        const response = await h.call(
+          `/api/v1/host/erasure-journal${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
+          { bearer: issued.secret }
+        );
+        if (response.status === 410) return 410;
+        const page = CommunityAdminErasureJournalPageSchema.parse(
+          await body(response, 200, 'journal page')
+        );
+        for (const line of page.lines) copy += `${JSON.stringify(line)}\n`;
+        cursor = page.nextCursor;
+        if (!page.hasMore) return 200;
+      }
+    };
+    expect(await pull()).toBe(200);
+    const email = (await h.pool.query('SELECT email FROM "user" WHERE id=$1', [s.p.userId])).rows[0]
+      .email as string;
+    const needles = [s.p.handle, s.agent.handle, email, `hello from ${s.p.handle}`];
+    const backup = await snapshot();
+
+    await body(
+      await h.call('/api/v1/account/erasures', {
+        cookie: s.p.cookie,
+        body: { kind: 'account', confirmEmail: email, password: PASSWORD },
+      }),
+      201,
+      'account erasure'
+    );
+    await runErasures(h.pool, hoursFromNow(73));
+    await drainCleanup(h);
+    const erased = JSON.parse(await shapeDigest(h.pool, s));
+    const pulledFrom = copy.length;
+    expect(await pull()).toBe(200);
+    expect(
+      copy
+        .slice(pulledFrom)
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+    ).toEqual([
+      { event: 'community.member_erased', communityId: s.communityId, memberId: s.p.memberId },
+      { event: 'community.account_erased', userId: s.p.userId },
+    ]);
+    expect(needles.some((needle) => copy.includes(needle))).toBe(false);
+
+    await restore(backup);
+    // The restore brought the person back, and took the journal back to before the erasure.
+    expect((await h.pool.query('SELECT 1 FROM "user" WHERE id=$1', [s.p.userId])).rowCount).toBe(1);
+    expect(await pull()).toBe(410);
+
+    const result = await reapplyErasures(h.pool, parseErasureJournal(copy));
+    expect(result.accounts).toBeGreaterThanOrEqual(1);
+    await drainCleanup(h);
+    const reapplied = JSON.parse(await shapeDigest(h.pool, s));
+    // The same erased state; the request rows are the backup's, since the request came after it.
+    for (const part of ['entries', 'members', 'agents', 'counts'])
+      expect(reapplied[part], part).toEqual(erased[part]);
+    expect((await h.pool.query('SELECT 1 FROM "user" WHERE id=$1', [s.p.userId])).rowCount).toBe(0);
+    const hits = (await scanDatabase(h.pool, needles)).filter(
+      (hit) => hit.communityId === s.communityId || hit.communityId === null
+    );
+    expect(hits).toEqual([]);
+    // Re-applying wrote the lines again, so a pull from the start has them once more.
+    cursor = undefined;
+    copy = '';
+    expect(await pull()).toBe(200);
+    expect(copy).toContain(`"memberId":"${s.p.memberId}"`);
+    expect(copy).toContain(`"userId":"${s.p.userId}"`);
     await h.pool.query('DROP SCHEMA IF EXISTS erasure_backup CASCADE');
     await rm(backup.blobs, { recursive: true, force: true });
   });

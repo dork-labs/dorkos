@@ -933,7 +933,7 @@ export class AdapterManager {
     logger.info('[AdapterManager] adding adapter', { type, id, enabled });
 
     if (this.configs.some((c) => c.id === id)) {
-      throw new AdapterError(`Adapter with ID '${id}' already exists`, 'DUPLICATE_ID');
+      throw new AdapterError(`Adapter with ID '${id}' already exists`, 'DUPLICATE_ID', id);
     }
 
     const manifest = this.manifests.get(type);

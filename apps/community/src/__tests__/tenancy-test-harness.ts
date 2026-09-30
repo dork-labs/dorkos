@@ -17,6 +17,9 @@ export const TENANCY_PASSWORD = 'password1234';
 /** Upper bound for one HTTP call, so a lock cycle fails the test instead of hanging it. */
 const REQUEST_TIMEOUT_MS = 20_000;
 
+/** How long the harness server keeps an idle connection: longer than any test runs. */
+const HARNESS_KEEP_ALIVE_MS = 15 * 60_000;
+
 /** One real Community server on its own database, storage folder, and pool. */
 export interface TenancyHarness {
   config: CommunityConfig;
@@ -99,6 +102,13 @@ export async function startTenancyHarness(
   });
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
   configureServerTimeouts(server);
+  // The test's fetch and this server share one event loop, so a test that computes for longer
+  // than Node's idle keep-alive (5 s plus a 1 s buffer), such as building a large archive,
+  // starves both sides' idle timers. When the loop resumes, fetch sends its next request on the
+  // pooled connection before the server's overdue timer closes it, and the request fails with
+  // ECONNRESET. A real client runs on its own loop and closes an idle connection first, as the
+  // server's Keep-Alive hint tells it to, so only the harness keeps connections this long.
+  if ('keepAliveTimeout' in server) server.keepAliveTimeout = HARNESS_KEEP_ALIVE_MS;
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Missing HTTP address');

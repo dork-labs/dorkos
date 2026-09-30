@@ -5,9 +5,9 @@
  * shared {@link runTransaction} engine, then registers the adapter with
  * the running {@link AdapterManager} so the relay subsystem picks it up
  * without a server restart. The transaction restores the previous package
- * contents at the target if activation fails; the adapter config
- * (`relay-adapters.json`) mutation is compensated separately by calling
- * `removeAdapter` if registration fails.
+ * contents at the target if activation fails; an adapter config entry this
+ * install saved to `relay-adapters.json` is compensated separately by calling
+ * `removeAdapter` if registration fails. One that existed before is never touched.
  *
  * @module services/marketplace/flows/install-adapter
  */
@@ -16,6 +16,7 @@ import path from 'node:path';
 import type { AdapterPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
+import type { AdapterConfig } from '@dorkos/relay';
 import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
@@ -165,8 +166,22 @@ async function activateAdapterPackage(stagingPath: string, installPath: string):
  * Register the adapter with `AdapterManager`, compensating with
  * `removeAdapter` if registration throws. The transaction engine handles
  * removal of the staging directory; this helper is responsible for
- * undoing the effect of `addAdapter` (which mutates `relay-adapters.json`
- * before throwing).
+ * undoing the effect of `addAdapter`, which can save the new entry to
+ * `relay-adapters.json` and then throw while starting it.
+ *
+ * It undoes only what this install created (DOR-2607). A connection that
+ * already had this id before the install is the person's, not the
+ * install's: `addAdapter` refuses it as a duplicate, and removing it here
+ * used to delete that connection, its secrets and its links to agents. So
+ * the rollback runs only when the id was free before and is taken after, and
+ * only when the entry now under that id is the one this install asked for:
+ * the same adapter type pointing at this install's own plugin path. A
+ * person's own connection saved under the id while `addAdapter` was awaiting
+ * points nowhere near it, so it is never mistaken for the install's.
+ *
+ * An entry that already matches this install (a reinstall of the same
+ * package) is kept and `addAdapter` is skipped, so the reinstall succeeds
+ * and the connection keeps its secrets and links to agents.
  *
  * @internal
  */
@@ -176,15 +191,34 @@ async function registerAdapterWithCompensation(
   installPath: string,
   logger: Logger
 ): Promise<void> {
-  try {
-    await adapterManager.addAdapter(manifest.adapterType, manifest.name, {
-      pluginPath: path.join(installPath, '.dork', 'adapters', manifest.adapterType),
+  const pluginPath = path.join(installPath, '.dork', 'adapters', manifest.adapterType);
+  /** Whether an entry is the one this install registers: same type, same plugin path. */
+  const isThisInstalls = (entry: AdapterConfig | undefined): boolean =>
+    entry?.type === manifest.adapterType &&
+    (entry.config as { pluginPath?: unknown } | undefined)?.pluginPath === pluginPath;
+
+  const before = adapterManager.getAdapter(manifest.name)?.config;
+  // A reinstall of a package already registered here: the entry is this
+  // package's own, pointing at the path the new copy just landed on. Adding it
+  // again would be refused as a duplicate, and removing it first would delete
+  // its secrets and links to agents, so it is kept as it is.
+  if (isThisInstalls(before)) {
+    logger.info('[marketplace/install-adapter] already registered, keeping it', {
+      name: manifest.name,
     });
+    return;
+  }
+  try {
+    await adapterManager.addAdapter(manifest.adapterType, manifest.name, { pluginPath });
   } catch (err) {
-    logger.warn('[marketplace/install-adapter] addAdapter failed, compensating', {
+    const createdByThisInstall =
+      before === undefined && isThisInstalls(adapterManager.getAdapter(manifest.name)?.config);
+    logger.warn('[marketplace/install-adapter] addAdapter failed', {
       name: manifest.name,
       error: err instanceof Error ? err.message : String(err),
+      compensating: createdByThisInstall,
     });
+    if (!createdByThisInstall) throw err;
     try {
       await adapterManager.removeAdapter(manifest.name);
     } catch (compensationErr) {

@@ -58,6 +58,12 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
     detail:
       'Ask to make someone else a community’s owner when its owner has left, see those requests, cancel them, and send the claim link again. The owner is always told and can say no.',
   },
+  {
+    scope: 'communities:erasure_journal',
+    label: 'Copy the erasure journal',
+    detail:
+      'Read the erasure journal, the list of people who were erased, by id only, so a copy can be kept off this server and used after restoring a backup. See “Erasure requests” in OPERATIONS.md.',
+  },
 ];
 
 function describeState(key: HostApiKey, now: number): string {

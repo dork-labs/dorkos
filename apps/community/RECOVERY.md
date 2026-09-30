@@ -34,3 +34,15 @@ For a deployment outside Docker, stop all web processes and run `node dist-serve
 ## An account that holds someone else's email
 
 If a password account was created with an email address that belongs to someone else, the real owner of that address is refused by single sign-on. Password recovery is the wrong tool here: it would hand the account to whoever you give the password. Instead, if the account never joined a community, remove it with `node dist-server/host/release-unverified-account.js <email>` (see the single sign-on section of [DEPLOYMENT.md](DEPLOYMENT.md)). If it already joined, the community's owner removes the member first, or the person erases their own membership or account, and then you release it.
+
+## After restoring a backup
+
+A backup brings back everyone who erased themselves after it was taken. Before you start the restored app, run those erasures again from the erasure journal copy you keep off the server (pulled through `GET /api/v1/host/erasure-journal` with a `communities:erasure_journal` key):
+
+```bash
+docker compose -f apps/community/compose.yml stop community
+cat /var/lib/community-erasure-journal/erasure-journal-*.log | docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
+docker compose -f apps/community/compose.yml up -d community
+```
+
+It prints only counts, and running it twice changes nothing. How to keep the copy, and why the server's own journal is not enough, is in [Erasure requests](OPERATIONS.md#erasure-requests).

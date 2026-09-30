@@ -26,30 +26,71 @@
  * it already holds. The move's state
  * itself is never cached here; every read goes to the service.
  *
+ * **How large a move can be.** Two limits, neither fixed here. This machine's
+ * is the free space on the data directory's disk, checked against the declared
+ * size before a byte is copied. The new host's is what it offers for the move
+ * (`upload.maxBytes`, or `upload.parts.maxBytes` when it takes parts; see
+ * {@link hostLimitBytes}). The service refuses a declared size above it when
+ * the move starts, and the route checks it again before a byte leaves for the
+ * host. The host's limit is only known once the move exists, and a move
+ * cannot start until the file is measured, so that check comes after staging.
+ * A refusal for room writes nothing, but the browser still sends the whole
+ * file before it reads the answer: quick on this machine, slow over the
+ * tunnel.
+ *
  * @module services/core/cloud/community-move-upload
  */
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, statfs } from 'node:fs/promises';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import path from 'node:path';
 import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { COMMUNITY_ARCHIVE_DIGEST_HEADER, type CommunityMoveUpload } from '@dork-labs/cloud-api';
+import {
+  COMMUNITY_ARCHIVE_DIGEST_HEADER,
+  COMMUNITY_MOVE_MAX_PARTS,
+  type CommunityMoveUpload,
+} from '@dork-labs/cloud-api';
 import type { CloudCommunityMoveUpload } from '@dorkos/shared/cloud-schemas';
 import { logger, logError } from '../../../lib/logger.js';
 import { fitsInParts, REAL_WAIT, sendParts, type PartedOptions } from './community-move-parts.js';
 
 /**
- * The largest export this machine will stage.
+ * Space left free on the data directory's disk after an export is staged.
  *
- * Only a guard for this machine's disk: the service names the real limit
- * (`upload.maxBytes`) and refuses a declared size above it with
- * `import_too_large` before any upload starts. Owner exports are a few hundred
- * megabytes in practice; this leaves generous room above that.
+ * The staged copy shares its disk with the database, the logs and the rest of
+ * this machine, so staging never takes the last of it. There is no fixed
+ * ceiling on the export itself: this machine's limit is its free space
+ * ({@link stageArchive}), and the new host names its own
+ * ({@link hostLimitBytes}).
  */
-export const MOVE_STAGING_MAX_BYTES = 16 * 1024 ** 3;
+export const MOVE_STAGING_HEADROOM_BYTES = 512 * 1024 ** 2;
+
+/**
+ * Reads how many bytes are free on the disk holding a directory.
+ *
+ * @param dir - Any path on the disk.
+ */
+export type FreeSpaceReader = (dir: string) => Promise<number>;
+
+/**
+ * Free bytes on the disk holding `dir`, as an unprivileged process may use them.
+ *
+ * @param dir - Any path on the disk.
+ */
+async function freeSpace(dir: string): Promise<number> {
+  const stats = await statfs(dir);
+  return Number(stats.bavail) * Number(stats.bsize);
+}
+
+/**
+ * Bytes promised to exports still arriving, one entry per staging in flight.
+ * Free space read at the start of one staging does not yet show the bytes
+ * another is about to write, so each counts what the others have yet to write.
+ */
+const stillArriving = new Set<{ remaining: number }>();
 
 /** Where staged exports live, once {@link initMoveStaging} has run. */
 let stagingRoot: string | null = null;
@@ -94,14 +135,31 @@ export interface StagedArchive {
 }
 
 /** Why staging refused a file. */
+export type StagingRefusal =
+  /** The request carried no bytes. */
+  | 'empty'
+  /** The request did not say how large it is, so there is no way to check for room first. */
+  | 'size_unknown'
+  /** The disk holding the data directory has no room for it. */
+  | 'no_room'
+  /** The free space could not be read, so there is no way to know the file fits. */
+  | 'space_unknown'
+  /** The bytes that arrived were not the size the request declared. */
+  | 'size_mismatch';
+
+/** Why staging refused a file. */
 export class StagingError extends Error {
   /**
    * Builds the error.
    *
-   * @param reason - `too_large` when the file passed {@link MOVE_STAGING_MAX_BYTES}, `empty` for no bytes.
+   * @param reason - Why the file was refused.
+   * @param space - For `no_room`: the bytes staging needed free, and the bytes it found free.
    */
-  constructor(readonly reason: 'too_large' | 'empty') {
-    super(reason === 'too_large' ? 'The export is too large to stage.' : 'The export is empty.');
+  constructor(
+    readonly reason: StagingRefusal,
+    readonly space: { neededBytes: number; freeBytes: number } | null = null
+  ) {
+    super(`The export could not be staged (${reason}).`);
     this.name = 'StagingError';
   }
 }
@@ -109,45 +167,93 @@ export class StagingError extends Error {
 /**
  * Copy an incoming export to a private temp file, measuring it as it arrives.
  *
+ * Checks for room first: the declared size plus
+ * {@link MOVE_STAGING_HEADROOM_BYTES} must fit in the disk's free space, less
+ * what other exports still arriving will take. A file that cannot fit, or
+ * whose room cannot be checked, is refused before a byte is read or written.
+ *
  * Streams: nothing is buffered beyond one chunk, so the size of the export
  * never becomes the size of this process. A body that ends early, breaks, or
- * passes `maxBytes` leaves no file behind.
+ * runs past its declared size leaves no file behind.
  *
  * @param body - The request body, the export's raw bytes.
- * @param maxBytes - The most bytes to accept.
- * @throws {StagingError} When the file is empty or too large.
+ * @param declaredBytes - The size the request declared (its `Content-Length`), or `null` when it declared none.
+ * @param readFreeSpace - Reads the disk's free space; tests replace it.
+ * @throws {StagingError} When the file is refused.
  */
 export async function stageArchive(
   body: Readable,
-  maxBytes: number = MOVE_STAGING_MAX_BYTES
+  declaredBytes: number | null,
+  readFreeSpace: FreeSpaceReader = freeSpace
 ): Promise<StagedArchive> {
-  if (stagingRoot === null) throw new Error('Move staging is not set up yet.');
-  const dir = await mkdtemp(path.join(stagingRoot, 'move-'));
-  const filePath = path.join(dir, 'export.zip');
-  const hash = createHash('sha256');
-  let bytes = 0;
-  const measure = new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      bytes += chunk.length;
-      if (bytes > maxBytes) {
-        callback(new StagingError('too_large'));
-        return;
-      }
-      hash.update(chunk);
-      callback(null, chunk);
-    },
-  });
+  const root = stagingRoot;
+  if (root === null) throw new Error('Move staging is not set up yet.');
+  if (declaredBytes === null) throw new StagingError('size_unknown');
+  if (declaredBytes === 0) throw new StagingError('empty');
+
+  let free: number;
   try {
-    await pipeline(body, measure, createWriteStream(filePath, { mode: 0o600 }));
+    free = await readFreeSpace(root);
   } catch (error) {
-    await rm(dir, { recursive: true, force: true });
-    throw error;
+    logger.warn('[Cloud] Could not read the free space for a community export', logError(error));
+    throw new StagingError('space_unknown');
   }
-  if (bytes === 0) {
-    await rm(dir, { recursive: true, force: true });
-    throw new StagingError('empty');
+  if (!Number.isFinite(free)) throw new StagingError('space_unknown');
+  let promised = 0;
+  for (const other of stillArriving) promised += other.remaining;
+  const neededBytes = declaredBytes + MOVE_STAGING_HEADROOM_BYTES;
+  const freeBytes = Math.max(0, free - promised);
+  if (freeBytes < neededBytes) throw new StagingError('no_room', { neededBytes, freeBytes });
+
+  const promise = { remaining: declaredBytes };
+  stillArriving.add(promise);
+  try {
+    const dir = await mkdtemp(path.join(root, 'move-'));
+    const filePath = path.join(dir, 'export.zip');
+    const hash = createHash('sha256');
+    let bytes = 0;
+    const measure = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytes += chunk.length;
+        if (bytes > declaredBytes) {
+          callback(new StagingError('size_mismatch'));
+          return;
+        }
+        promise.remaining = declaredBytes - bytes;
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+    try {
+      await pipeline(body, measure, createWriteStream(filePath, { mode: 0o600 }));
+    } catch (error) {
+      await rm(dir, { recursive: true, force: true });
+      throw error;
+    }
+    if (bytes !== declaredBytes) {
+      await rm(dir, { recursive: true, force: true });
+      throw new StagingError(bytes === 0 ? 'empty' : 'size_mismatch');
+    }
+    return { filePath, bytes, sha256: hash.digest('hex') };
+  } finally {
+    stillArriving.delete(promise);
   }
-  return { filePath, bytes, sha256: hash.digest('hex') };
+}
+
+/**
+ * The largest export the new host takes, from what it offered for this move.
+ *
+ * A single upload takes up to `maxBytes`. When the Community server also takes
+ * the file in parts, it takes up to `parts.maxBytes`, but never more parts
+ * than {@link COMMUNITY_MOVE_MAX_PARTS} of `parts.partBytes` each. A file within
+ * either is sent the way it fits ({@link CommunityMoveUploads}).
+ *
+ * @param upload - Where and how the move's export is to be sent.
+ */
+export function hostLimitBytes(upload: CommunityMoveUpload): number {
+  if (!upload.parts) return upload.maxBytes;
+  const parted = Math.min(upload.parts.maxBytes, upload.parts.partBytes * COMMUNITY_MOVE_MAX_PARTS);
+  return Math.max(upload.maxBytes, parted);
 }
 
 /**

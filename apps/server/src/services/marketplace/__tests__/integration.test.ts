@@ -42,6 +42,9 @@ import {
   scanInstalledPackages,
 } from '../installed-scanner.js';
 import { buildInstallerForTests } from './installer-harness.js';
+import { ConflictError } from '../installer/errors.js';
+import { AdapterError } from '../../relay/adapter-error.js';
+import { mapErrorToStatus } from '../../../routes/marketplace/shared.js';
 import { MarketplaceSourceManager } from '../sources/marketplace-source-manager.js';
 import { UpdateFlow } from '../flows/update.js';
 import { pickInstallation } from '../flows/update-selection.js';
@@ -333,6 +336,87 @@ describe('marketplace install pipeline — integration', () => {
     // A successful install must never call the compensating `removeAdapter`.
     expect(spies.adapterRemove).not.toHaveBeenCalled();
     expect(spies.gitFetch).not.toHaveBeenCalled();
+  });
+
+  it('tells the person up front, and never removes their connection, when it already uses the package name (DOR-2607)', async () => {
+    const { installer, spies } = buildInstallerForTests(dorkHome);
+    // The person's own connection, saved under the id the install would use.
+    // No package of that name is installed.
+    const theirs = {
+      config: { id: 'valid-adapter', type: 'telegram', enabled: true, config: {} },
+      status: { id: 'valid-adapter', type: 'telegram', displayName: 'Telegram' },
+    };
+    spies.adapterList.mockReturnValue([theirs]);
+    spies.adapterGet.mockImplementation((id: string) =>
+      id === theirs.config.id ? theirs : undefined
+    );
+    spies.adapterAdd.mockImplementation(async (_type: string, id: string) => {
+      throw new AdapterError(`Adapter with ID '${id}' already exists`, 'DUPLICATE_ID', id);
+    });
+    const plain =
+      'You already have a connection named "valid-adapter". Remove or rename it, then install again.';
+
+    // 1. The preview says so, as a blocking conflict.
+    const preview = await installer.preview({ name: fixturePath('valid-adapter') });
+    expect(preview.preview.conflicts).toContainEqual({
+      level: 'error',
+      type: 'adapter-id',
+      description: plain,
+    });
+
+    // 2. The install stops at the conflict gate, before anything is written.
+    await expect(installer.install({ name: fixturePath('valid-adapter') })).rejects.toBeInstanceOf(
+      ConflictError
+    );
+    expect(spies.adapterAdd).not.toHaveBeenCalled();
+
+    // 3. Forced past the gate, the install fails at registration, says so in
+    //    plain words, and leaves the person's connection alone.
+    const forced = await installer
+      .install({ name: fixturePath('valid-adapter'), force: true })
+      .then(
+        () => undefined,
+        (err: unknown) => err
+      );
+    expect(forced).toBeInstanceOf(AdapterError);
+    expect(mapErrorToStatus(forced)).toEqual({ status: 409, body: { error: plain } });
+    expect(spies.adapterRemove).not.toHaveBeenCalled();
+  });
+
+  it('reinstalls an installed adapter package, keeping its connection and secrets', async () => {
+    const { installer, spies } = buildInstallerForTests(dorkHome);
+    const installRoot = path.join(dorkHome, 'plugins', 'valid-adapter');
+    // The first install registers the entry; the manager then holds it, with
+    // a secret the person set afterwards.
+    const ours = {
+      config: {
+        id: 'valid-adapter',
+        type: 'slack',
+        enabled: true,
+        config: {
+          pluginPath: path.join(installRoot, '.dork', 'adapters', 'slack'),
+          botToken: '***',
+        },
+      },
+      status: { id: 'valid-adapter', type: 'slack', displayName: 'Slack' },
+    };
+    await installer.install({ name: fixturePath('valid-adapter') });
+    spies.adapterAdd.mockClear();
+    spies.adapterList.mockReturnValue([ours]);
+    spies.adapterGet.mockImplementation((id: string) => (id === ours.config.id ? ours : undefined));
+    spies.adapterAdd.mockImplementation(async (_type: string, id: string) => {
+      throw new AdapterError(`Adapter with ID '${id}' already exists`, 'DUPLICATE_ID', id);
+    });
+
+    // The preview blocks nothing: the package is installed at its own path.
+    const preview = await installer.preview({ name: fixturePath('valid-adapter') });
+    expect(preview.preview.conflicts.filter((c) => c.level === 'error')).toEqual([]);
+
+    const result = await installer.install({ name: fixturePath('valid-adapter') });
+
+    expect(result.ok).toBe(true);
+    expect(spies.adapterAdd).not.toHaveBeenCalled();
+    expect(spies.adapterRemove).not.toHaveBeenCalled();
   });
 
   it('warns (but still installs globally) when an adapter install request carries a projectPath (DOR-1776)', async () => {

@@ -41,6 +41,7 @@ import { registerHostRoutes } from './routes/host/host.js';
 import { registerMembershipRoutes } from './routes/account/memberships.js';
 import { registerHostLimitRoutes } from './routes/host/host-limits.js';
 import { registerHostLegalHoldRoutes } from './routes/host/host-legal-hold.js';
+import { registerHostErasureJournalRoutes } from './routes/host/host-erasure-journal.js';
 import { registerHostLifecycleRoutes } from './routes/host/host-lifecycle.js';
 import { registerShortNameRoutes } from './routes/host/short-names.js';
 import { callerAddress } from './caller-address.js';
@@ -378,6 +379,7 @@ export function createCommunityApp({
   registerHostLimitRoutes(hostApi, { pool, config, authority, now });
   registerHostLifecycleRoutes(hostApi, { pool, config, blobStore, authority, now });
   registerHostLegalHoldRoutes(hostApi, { pool, authority, now });
+  registerHostErasureJournalRoutes(hostApi, { pool, config, authority });
   registerShortNameRoutes(hostApi, {
     pool,
     config,

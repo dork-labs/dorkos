@@ -17,6 +17,7 @@ import { sweepExpiredAdmissions } from './routes/community/invites.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
 import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';
+import { pruneErasureJournal } from './erasure/journal.js';
 import { sweepExpiredPairings } from './routes/community/pairings.js';
 import { IMPORT_POLL_MS, pruneImports, sweepImports } from './imports/worker.js';
 import { IMPORT_UPLOAD_LEASE_MS } from './imports/store.js';
@@ -154,6 +155,12 @@ const cleanup = setInterval(() => {
   void pruneImports(pool).catch((error: unknown) => {
     console.error(
       'Community import record cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
+  void pruneErasureJournal(pool, config.erasureJournalRetentionDays).catch((error: unknown) => {
+    console.error(
+      'Community erasure journal cleanup unavailable',
       error instanceof Error ? error.name : 'unknown'
     );
   });

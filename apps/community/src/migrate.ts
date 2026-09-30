@@ -29,6 +29,7 @@ export const COMMUNITY_MIGRATIONS = [
   [23, '0023_import_parts.sql'],
   [24, '0024_query_indexes.sql'],
   [25, '0025_community_takedowns.sql'],
+  [26, '0026_erasure_journal.sql'],
   [27, '0027_one_key_per_reference.sql'],
 ] as const;
 

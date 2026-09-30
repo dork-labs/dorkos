@@ -44,8 +44,25 @@ vi.mock('../../services/core/auth/cloud-link-client.js', () => ({
   resolveCloudBaseUrl: () => service.baseUrl,
 }));
 
+/**
+ * The staging disk, as the room check sees it. `free: null` reads the real
+ * disk; a number pretends that many bytes are free; `fail` makes the read throw.
+ */
+const disk = vi.hoisted(() => ({ free: null as number | null, fail: false }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...real,
+    statfs: async (...args: Parameters<typeof real.statfs>) => {
+      if (disk.fail) throw Object.assign(new Error('statfs failed'), { code: 'EIO' });
+      const stats = await real.statfs(...args);
+      return disk.free === null ? stats : { ...stats, bavail: disk.free, bsize: 1 };
+    },
+  };
+});
+
 const { createCloudCommunitiesRouter } = await import('../cloud-communities.js');
-const { CommunityMoveUploads, initMoveStaging, moveStagingRoot } =
+const { CommunityMoveUploads, initMoveStaging, moveStagingRoot, MOVE_STAGING_HEADROOM_BYTES } =
   await import('../../services/core/cloud/community-move-upload.js');
 
 /** A throwaway data directory for this file's staged exports. */
@@ -283,6 +300,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   config.cloud = { instanceToken: 'tok_instance' };
+  disk.free = null;
+  disk.fail = false;
   script = defaultScript();
   received.length = 0;
   uploads = new CommunityMoveUploads();
@@ -781,6 +800,126 @@ describe('moving a community in', () => {
     script.moveStartBody = tooLarge;
     const res = await startMoveRequest().expect(200);
     expect(res.body).toEqual({ ok: false, problem: tooLarge });
+    expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
+    expect(stagedCopies()).toHaveLength(0);
+  });
+
+  // Purpose (DOR-2587): an export this computer has no room for is refused
+  // with both numbers before a byte is copied or a move exists; one that just
+  // fits goes ahead. Fails if the room check is missing, off by the headroom,
+  // or runs after the move starts.
+  it('refuses an export the disk has no room for, before a move starts', async () => {
+    disk.free = archive.length + MOVE_STAGING_HEADROOM_BYTES - 1;
+    const res = await startMoveRequest().expect(507);
+    expect(res.body).toEqual({
+      ok: false,
+      message:
+        'This computer doesn’t have room to hold the export. It needs 537 MB free and has 536 MB. Free up some space, then try again.',
+    });
+    expect(serviceRequests()).toHaveLength(0);
+    expect(stagedCopies()).toHaveLength(0);
+
+    disk.free = archive.length + MOVE_STAGING_HEADROOM_BYTES;
+    script.moveStartBody = moveStartAnswer();
+    const fits = await startMoveRequest().expect(200);
+    expect(fits.body.ok).toBe(true);
+    expect(await uploadSettled('move_0001')).toMatchObject({ state: 'sent' });
+  });
+
+  // Purpose (DOR-2587): when the free space cannot be read, the move is refused
+  // rather than copied on hope. Fails if a statfs failure lets it through.
+  it('refuses safely when the free space cannot be read', async () => {
+    disk.fail = true;
+    const res = await startMoveRequest().expect(507);
+    expect(res.body).toMatchObject({ ok: false, message: expect.stringMatching(/free space/) });
+    expect(serviceRequests()).toHaveLength(0);
+    expect(stagedCopies()).toHaveLength(0);
+  });
+
+  // Purpose (DOR-2587): with no declared size there is no room check to make,
+  // so a chunked body is refused before it is copied. Fails if it is staged.
+  it('refuses an export that arrives without its size', async () => {
+    const port = (server.address() as AddressInfo).port;
+    const answer = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const client = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          method: 'POST',
+          path: '/api/cloud/communities/moves?idempotencyKey=chunked&name=Old%20garden',
+          headers: { 'content-type': 'application/zip', 'transfer-encoding': 'chunked' },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () =>
+            resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString() })
+          );
+        }
+      );
+      client.on('error', reject);
+      client.end(archive);
+    });
+    expect(answer.status).toBe(411);
+    expect(JSON.parse(answer.body)).toMatchObject({ ok: false });
+    expect(serviceRequests()).toHaveLength(0);
+    expect(stagedCopies()).toHaveLength(0);
+  });
+
+  // Purpose (DOR-2587): the host's own limit decides, and a host that takes more
+  // in parts than in one piece takes a move above its single-upload limit.
+  // Fails if the single limit (or any fixed ceiling) refuses it.
+  it('sends an export above the single-upload limit when the host takes it in parts', async () => {
+    const answer = moveStartAnswer();
+    script.moveStartBody = {
+      ...answer,
+      upload: {
+        ...answer.upload,
+        maxBytes: archive.length - 1,
+        parts: { partBytes: 8, maxBytes: 1024 },
+      },
+    };
+    const res = await startMoveRequest().expect(200);
+    expect(res.body.ok).toBe(true);
+    expect(await uploadSettled('move_0001')).toMatchObject({ state: 'sent' });
+    expect(received.some((r) => r.path === '/upload/imp_0001/parts/1')).toBe(true);
+  });
+
+  // Purpose (DOR-2587): an export past everything the host offers is refused
+  // in plain words before a byte leaves for the host, and the move that cannot
+  // be filled is cancelled. Fails if the file is sent anyway or the move is
+  // left waiting for an upload that will never come.
+  it('refuses an export larger than the host takes, and cancels the move', async () => {
+    const answer = moveStartAnswer();
+    script.moveStartBody = {
+      ...answer,
+      upload: { ...answer.upload, maxBytes: archive.length - 1 },
+    };
+    const res = await startMoveRequest().expect(413);
+    expect(res.body).toEqual({
+      ok: false,
+      message: `This export is too large for the new host. It is ${archive.length} bytes, and the most the host takes is ${archive.length - 1} bytes.`,
+    });
+    expect(res.text).not.toContain(UPLOAD_TOKEN);
+    expect(received.some((r) => r.path === '/v1/communities/moves/move_0001/cancel')).toBe(true);
+    expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
+    expect(uploads.progress('move_0001')).toBeNull();
+    expect(stagedCopies()).toHaveLength(0);
+  });
+
+  // Purpose (DOR-2587): a parted limit smaller than the export is still the
+  // host's limit. Fails if offering parts at all lets any size through.
+  it('refuses an export larger than the host takes even in parts', async () => {
+    const answer = moveStartAnswer();
+    script.moveStartBody = {
+      ...answer,
+      upload: {
+        ...answer.upload,
+        maxBytes: archive.length - 2,
+        parts: { partBytes: 8, maxBytes: archive.length - 1 },
+      },
+    };
+    await startMoveRequest().expect(413);
     expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
     expect(stagedCopies()).toHaveLength(0);
   });

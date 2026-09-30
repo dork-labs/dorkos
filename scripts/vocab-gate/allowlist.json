@@ -161,6 +161,11 @@
       "reason": "\"An adapter of type X is already configured\" is the install-time collision between two marketplace packages, named with the package type the author declared — the same marketplace-author domain the ADR's registry keeps the word in."
     },
     {
+      "path": "apps/server/src/services/marketplace/preview/conflict-detector.ts",
+      "terms": ["connection"],
+      "reason": "\"You already have a connection named X\" names the person's own Telegram or Slack connection that an adapter package's name collides with (DOR-2607): the Connections-domain noun ADR 260804-021140 settles on, not the retired network-health sense."
+    },
+    {
       "path": "apps/server/src/services/runtimes/test-mode/runtime-constants.ts",
       "terms": ["integration"],
       "reason": "\"Deterministic allow/deny for integration tests\" is the software-testing sense of the word, not the retired product noun, on the `test-mode` runtime that exists only for e2e and reaches no user surface."

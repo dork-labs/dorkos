@@ -26,18 +26,43 @@ function buildLogger(): Logger {
   };
 }
 
+/** A saved entry in the fake manager: the adapter type and its config. */
+interface SavedEntry {
+  type: string;
+  config: Record<string, unknown>;
+}
+
 /**
- * Build a partial AdapterManager mock exposing the two methods the
- * install flow touches. Cast through `unknown` to satisfy the structural
- * type without re-implementing the entire class surface.
+ * Build a partial AdapterManager mock exposing the methods the install flow
+ * touches, backed by a map of saved entries like the real one: `addAdapter`
+ * refuses an id already saved (`DUPLICATE_ID`) and otherwise saves it,
+ * `getAdapter` reads the map, and `removeAdapter` deletes from it. Pass
+ * `saved` to start with connections that exist before the install. Cast
+ * through `unknown` to satisfy the structural type without re-implementing
+ * the entire class surface.
  */
 function buildAdapterManagerMock(overrides?: {
   addAdapter?: ReturnType<typeof vi.fn>;
   removeAdapter?: ReturnType<typeof vi.fn>;
+  saved?: Map<string, SavedEntry>;
 }): AdapterManager {
+  const saved = overrides?.saved ?? new Map<string, SavedEntry>();
   return {
-    addAdapter: overrides?.addAdapter ?? vi.fn().mockResolvedValue(undefined),
-    removeAdapter: overrides?.removeAdapter ?? vi.fn().mockResolvedValue(undefined),
+    addAdapter:
+      overrides?.addAdapter ??
+      vi.fn(async (type: string, id: string, config: Record<string, unknown>) => {
+        if (saved.has(id)) throw new Error(`Adapter with ID '${id}' already exists`);
+        saved.set(id, { type, config });
+      }),
+    removeAdapter:
+      overrides?.removeAdapter ??
+      vi.fn(async (id: string) => {
+        saved.delete(id);
+      }),
+    getAdapter: vi.fn((id: string) => {
+      const entry = saved.get(id);
+      return entry ? { config: { id, type: entry.type, config: entry.config } } : undefined;
+    }),
   } as unknown as AdapterManager;
 }
 
@@ -133,19 +158,108 @@ describe('AdapterInstallFlow', () => {
     );
   });
 
-  it('compensates by calling removeAdapter when addAdapter throws', async () => {
+  it('removes the entry it saved when the adapter then fails to start', async () => {
     const manifest = buildManifest('failing-adapter');
     const packagePath = await writeAdapterPackage(sourceRoot, manifest);
-    const addAdapter = vi.fn().mockRejectedValue(new Error('addAdapter exploded'));
-    const removeAdapter = vi.fn().mockResolvedValue(undefined);
-    const adapterManager = buildAdapterManagerMock({ addAdapter, removeAdapter });
+    const saved = new Map<string, SavedEntry>();
+    // `addAdapter` saves the entry, then throws while starting it.
+    const addAdapter = vi.fn(async (type: string, id: string, config: Record<string, unknown>) => {
+      saved.set(id, { type, config });
+      throw new Error('addAdapter exploded');
+    });
+    const adapterManager = buildAdapterManagerMock({ addAdapter, saved });
     const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
 
     await expect(flow.install(packagePath, manifest, {})).rejects.toThrow('addAdapter exploded');
 
-    // Compensating removeAdapter must have been called for the failed instance
-    expect(removeAdapter).toHaveBeenCalledTimes(1);
-    expect(removeAdapter).toHaveBeenCalledWith(manifest.name);
+    expect(adapterManager.removeAdapter).toHaveBeenCalledTimes(1);
+    expect(adapterManager.removeAdapter).toHaveBeenCalledWith(manifest.name);
+    expect(saved.has(manifest.name)).toBe(false);
+  });
+
+  it('never removes a connection that already had the id (DOR-2607)', async () => {
+    const manifest = buildManifest('taken-name');
+    const packagePath = await writeAdapterPackage(sourceRoot, manifest);
+    // The person's own connection, saved before the install ran.
+    const saved = new Map<string, SavedEntry>([
+      [manifest.name, { type: 'telegram', config: { token: 'theirs' } }],
+    ]);
+    const adapterManager = buildAdapterManagerMock({ saved });
+    const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
+
+    await expect(flow.install(packagePath, manifest, {})).rejects.toThrow('already exists');
+
+    expect(adapterManager.removeAdapter).not.toHaveBeenCalled();
+    expect(saved.has(manifest.name)).toBe(true);
+  });
+
+  it('keeps the connection and its secrets when the same package is installed again', async () => {
+    const manifest = buildManifest('reinstalled');
+    const packagePath = await writeAdapterPackage(sourceRoot, manifest);
+    const pluginPath = path.join(dorkHome, 'plugins', manifest.name, '.dork', 'adapters', 'slack');
+    // Registered by the earlier install of this package, with its secret set since.
+    const saved = new Map<string, SavedEntry>([
+      [manifest.name, { type: 'slack', config: { pluginPath, botToken: 'kept' } }],
+    ]);
+    const adapterManager = buildAdapterManagerMock({ saved });
+    const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
+
+    const result = await flow.install(packagePath, manifest, {});
+
+    expect(result.ok).toBe(true);
+    expect(adapterManager.addAdapter).not.toHaveBeenCalled();
+    expect(adapterManager.removeAdapter).not.toHaveBeenCalled();
+    expect(saved.get(manifest.name)).toEqual({
+      type: 'slack',
+      config: { pluginPath, botToken: 'kept' },
+    });
+  });
+
+  it('still refuses a same-name connection of another type or path', async () => {
+    const manifest = buildManifest('lookalike');
+    const packagePath = await writeAdapterPackage(sourceRoot, manifest);
+    const saved = new Map<string, SavedEntry>([
+      [manifest.name, { type: 'slack', config: { pluginPath: '/somewhere/else' } }],
+    ]);
+    const adapterManager = buildAdapterManagerMock({ saved });
+    const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
+
+    await expect(flow.install(packagePath, manifest, {})).rejects.toThrow('already exists');
+
+    expect(adapterManager.addAdapter).toHaveBeenCalledTimes(1);
+    expect(adapterManager.removeAdapter).not.toHaveBeenCalled();
+    expect(saved.get(manifest.name)?.config).toEqual({ pluginPath: '/somewhere/else' });
+  });
+
+  it("never removes a person's connection saved under the id while the install was registering", async () => {
+    const manifest = buildManifest('raced-name');
+    const packagePath = await writeAdapterPackage(sourceRoot, manifest);
+    const saved = new Map<string, SavedEntry>();
+    // The id is free when the install starts. While `addAdapter` awaits, the
+    // person saves their own connection under it, and the install then fails.
+    const addAdapter = vi.fn(async (_type: string, id: string) => {
+      saved.set(id, { type: 'telegram', config: { token: 'theirs' } });
+      throw new Error(`Adapter with ID '${id}' already exists`);
+    });
+    const adapterManager = buildAdapterManagerMock({ addAdapter, saved });
+    const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
+
+    await expect(flow.install(packagePath, manifest, {})).rejects.toThrow('already exists');
+
+    expect(adapterManager.removeAdapter).not.toHaveBeenCalled();
+    expect(saved.get(manifest.name)?.config).toEqual({ token: 'theirs' });
+  });
+
+  it('removes nothing when addAdapter refuses before saving', async () => {
+    const manifest = buildManifest('unknown-type');
+    const packagePath = await writeAdapterPackage(sourceRoot, manifest);
+    const addAdapter = vi.fn().mockRejectedValue(new Error('Unknown adapter type: slack'));
+    const adapterManager = buildAdapterManagerMock({ addAdapter });
+    const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
+
+    await expect(flow.install(packagePath, manifest, {})).rejects.toThrow('Unknown adapter type');
+
+    expect(adapterManager.removeAdapter).not.toHaveBeenCalled();
   });
 
   it('returns warnings array containing the secret-configuration hint', async () => {

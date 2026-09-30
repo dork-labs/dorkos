@@ -56,6 +56,7 @@ import {
 import {
   communityMoveUploads,
   discardStagedArchive,
+  hostLimitBytes,
   stageArchive,
   StagingError,
   type CommunityMoveUploads,
@@ -101,6 +102,70 @@ const MoveQuerySchema = z.object({
   name: NameSchema,
   shortName: CommunityShortNameSchema.optional(),
 });
+
+/**
+ * A size in the units a person's own computer shows (powers of 1000, as
+ * macOS Finder and most file managers count): GB with one decimal from a
+ * gigabyte up, then whole MB, KB or bytes.
+ *
+ * @param bytes - The size in bytes.
+ * @param round - `up` for space needed, `down` for space on hand, so a
+ *   shortfall never reads as two equal numbers.
+ */
+function describeBytes(bytes: number, round: 'up' | 'down'): string {
+  const fit = round === 'up' ? Math.ceil : Math.floor;
+  if (bytes >= 1e9) return `${(fit(bytes / 1e8) / 10).toFixed(1)} GB`;
+  if (bytes >= 1e6) return `${fit(bytes / 1e6)} MB`;
+  if (bytes >= 1e3) return `${fit(bytes / 1e3)} KB`;
+  return `${bytes} bytes`;
+}
+
+/**
+ * The size a request declared in its `Content-Length`, or `null` when it
+ * declared none (a chunked body) or one that is not a size.
+ *
+ * @param req - The incoming request.
+ */
+function declaredLength(req: Request): number | null {
+  const header = req.headers['content-length'];
+  if (header === undefined || !/^\d+$/.test(header)) return null;
+  const bytes = Number(header);
+  return Number.isSafeInteger(bytes) ? bytes : null;
+}
+
+/**
+ * Why an export could not be staged, in words a person can act on, with the
+ * status that fits it.
+ *
+ * @param error - The refusal.
+ */
+function stagingRefusal(error: StagingError): { status: number; message: string } {
+  switch (error.reason) {
+    case 'empty':
+      return { status: 400, message: 'That file is empty. Choose the export you saved.' };
+    case 'size_unknown':
+      return {
+        status: 411,
+        message:
+          'The file arrived without its size, so DorkOS couldn’t check that it fits. Try again from the computer running DorkOS.',
+      };
+    case 'no_room': {
+      const { neededBytes, freeBytes } = error.space ?? { neededBytes: 0, freeBytes: 0 };
+      return {
+        status: 507,
+        message: `This computer doesn’t have room to hold the export. It needs ${describeBytes(neededBytes, 'up')} free and has ${describeBytes(freeBytes, 'down')}. Free up some space, then try again.`,
+      };
+    }
+    case 'space_unknown':
+      return {
+        status: 507,
+        message:
+          'This computer’s disk can’t report how much free space it has, so DorkOS didn’t start the move. DorkOS holds the file in its data folder while it goes up. If that folder is on a network drive or another special drive, start DorkOS with its data folder on a local disk (set DORK_HOME to a folder there), then start the move again.',
+      };
+    case 'size_mismatch':
+      return { status: 400, message: 'The file didn’t arrive whole. Try again.' };
+  }
+}
 
 /**
  * Answer a failed write in words a person can act on.
@@ -264,16 +329,18 @@ export function createCloudCommunitiesRouter(
     });
     let staged;
     try {
-      staged = await stageArchive(req);
+      staged = await stageArchive(req, declaredLength(req));
     } catch (error) {
       if (error instanceof StagingError) {
-        return res.status(400).json({
-          ok: false,
-          message:
-            error.reason === 'empty'
-              ? 'That file is empty. Choose the export you saved.'
-              : 'That file is too large to move.',
-        } satisfies CloudCommunityRefusal);
+        // Every refusal but `size_mismatch` comes before a byte is read. Let
+        // the rest of the body go by unread so the browser gets this answer
+        // (it reads it once it has sent the file). A mismatch has already
+        // closed the connection, so nobody is left to answer.
+        req.resume();
+        const refusal = stagingRefusal(error);
+        return res
+          .status(refusal.status)
+          .json({ ok: false, message: refusal.message } satisfies CloudCommunityRefusal);
       }
       // The browser stopped sending (a cancel, a closed tab). Nobody is left to answer.
       logger.warn('[Cloud] A community export did not arrive', logError(error));
@@ -304,6 +371,20 @@ export function createCloudCommunitiesRouter(
         logger.warn('[Cloud] Could not cancel a move nobody was waiting for', logError(error))
       );
       return;
+    }
+    if (started.upload !== null && staged.bytes > hostLimitBytes(started.upload)) {
+      // The service checks the declared size against the host's limit when the
+      // move starts, so this should not happen; if it does, sending would only
+      // be refused by the Community server. Stop before a byte leaves.
+      const limit = hostLimitBytes(started.upload);
+      await discardStagedArchive(staged);
+      await cancelMove(started.move.moveId).catch((error: unknown) =>
+        logger.warn('[Cloud] Could not cancel a move too large for its host', logError(error))
+      );
+      return res.status(413).json({
+        ok: false,
+        message: `This export is too large for the new host. It is ${describeBytes(staged.bytes, 'up')}, and the most the host takes is ${describeBytes(limit, 'down')}.`,
+      } satisfies CloudCommunityRefusal);
     }
     if (started.upload !== null) {
       void uploads.begin(started.move.moveId, staged, started.upload);

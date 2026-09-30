@@ -35,6 +35,7 @@ import {
   PathEscapeError,
 } from '../../services/marketplace/lib/package-paths.js';
 import { BoundaryError } from '../../lib/boundary.js';
+import { AdapterError } from '../../services/relay/adapter-error.js';
 
 /** Machine-readable code on the 403 for a batch that would need approval per install. */
 export const BATCH_UPDATE_NEEDS_APPROVAL_CODE = 'batch_update_needs_approval';
@@ -116,6 +117,19 @@ export function mapErrorToStatus(err: unknown): { status: number; body: Record<s
   }
   if (err instanceof ConflictError) {
     return { status: 409, body: { error: err.message, conflicts: err.conflicts } };
+  }
+  // An adapter package whose name a connection the person already has is
+  // using (DOR-2607). The preview reports it as a conflict first; this is what
+  // a forced install, or a connection made after the preview, gets instead of
+  // a 500 naming an internal id.
+  if (err instanceof AdapterError && err.code === 'DUPLICATE_ID') {
+    const named = err.adapterId ? ` named "${err.adapterId}"` : ' with that name';
+    return {
+      status: 409,
+      body: {
+        error: `You already have a connection${named}. Remove or rename it, then install again.`,
+      },
+    };
   }
   // A package that ships DorkOS's own settings, secrets or records path, or a file
   // whose bytes cannot be pinned: refused before anything is written, and the

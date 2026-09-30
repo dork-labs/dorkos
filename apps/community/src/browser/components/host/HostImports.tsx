@@ -148,8 +148,8 @@ export function HostImportForm({ onStarted }: { onStarted: () => void }) {
             variant="outline"
             className={`justify-self-start ${busy ? 'pointer-events-none opacity-50' : ''}`}
           >
-            {/* The input is invisible, so its keyboard focus shows on the button around it. */}
-            <Label className="has-[:focus-visible]:border-dui-ring has-[:focus-visible]:ring-dui-ring/50 relative has-[:focus-visible]:ring-[3px]">
+            {/* The input is invisible; Button shows its keyboard focus on the label around it. */}
+            <Label className="relative">
               <FileUp size={16} /> {file ? 'Choose another file' : 'Choose export file'}
               <input
                 ref={fileInput}
