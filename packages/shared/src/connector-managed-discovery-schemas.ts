@@ -106,7 +106,14 @@ export type ManagedConnectorOperationPageRequest = z.infer<
   typeof ManagedConnectorOperationPageRequestSchema
 >;
 
-/** One immutable managed operation revision with its server-owned hosted identity. */
+/**
+ * One immutable managed operation revision with its server-owned hosted identity.
+ *
+ * The control plane vendors this module byte-for-byte. `displayName` and
+ * `important` are optional presentation hints: the cloud must not send them
+ * until the oldest supported app accepts them, because an older app parses
+ * this object strictly and would refuse the whole page.
+ */
 export const ManagedConnectorOperationSchema = z
   .object({
     hostedRevisionId: z.string().uuid(),
@@ -118,6 +125,10 @@ export const ManagedConnectorOperationSchema = z
     capabilityClassification: ConnectorOperationClassificationSchema,
     retryPolicy: ConnectorRetryPolicySchema,
     inputSchema: ConnectorJsonObjectSchema,
+    // Presentation hints only, mirroring ConnectorOperationPageSchema's own
+    // displayName/important. Optional until every supported app accepts them.
+    displayName: z.string().min(1).max(200).optional(),
+    important: z.boolean().optional(),
   })
   .strict();
 /** One immutable managed operation revision with its server-owned hosted identity. */
