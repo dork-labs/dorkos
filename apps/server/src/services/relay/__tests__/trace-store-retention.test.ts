@@ -93,20 +93,63 @@ describe('TraceStore retention', () => {
 
   it('reads the pruned range on the primary key, not by scanning the table', () => {
     const db = createTestDb();
+    const store = new TraceStore(db);
+    // Plan the statement the store itself sends, captured from the connection.
+    const sent: { sql: string; params: unknown[] }[] = [];
+    const prepare = db.$client.prepare.bind(db.$client);
+    const client = db.$client as unknown as { prepare: typeof prepare };
+    client.prepare = ((source: string) => {
+      const statement = prepare(source);
+      const run = statement.run.bind(statement);
+      (statement as unknown as { run: (...args: unknown[]) => unknown }).run = (
+        ...args: unknown[]
+      ) => {
+        sent.push({ sql: source, params: args });
+        return run(...(args as []));
+      };
+      return statement;
+    }) as typeof prepare;
+    try {
+      store.pruneDeliverySpans(NOW - 8 * DAY, 5000);
+    } finally {
+      client.prepare = prepare;
+    }
+    expect(sent).toHaveLength(1);
     const plan = (
-      db.$client
-        .prepare(
-          `EXPLAIN QUERY PLAN SELECT id FROM relay_traces
-           WHERE id < ? AND sent_at < ? AND kind = 'delivery' ORDER BY id LIMIT 5000`
-        )
-        .all('01K', '2026-01-01') as { detail: string }[]
+      db.$client.prepare(`EXPLAIN QUERY PLAN ${sent[0]!.sql}`).all(...(sent[0]!.params as [])) as {
+        detail: string;
+      }[]
     )
       .map((row) => row.detail)
       .join('\n');
     expect(plan).toMatch(
       /SEARCH relay_traces USING INDEX sqlite_autoindex_relay_traces_1 \(id<\?\)/
     );
+    expect(plan).not.toMatch(/SCAN relay_traces/);
     expect(plan).not.toContain('TEMP B-TREE');
+  });
+
+  it('leaves a connection event written before kind existed to the event-log cap', () => {
+    const db = createTestDb();
+    const store = new TraceStore(db);
+    // Stored as a delivery (migration 0043's default), shown by the event log all the same.
+    span(db, NOW - 300 * DAY, { n: 1, kind: 'delivery', adapterId: 'old', status: 'sent' });
+    span(db, NOW - 300 * DAY, { n: 2 });
+    expect(store.getAdapterEvents('old')).toHaveLength(1);
+
+    expect(store.pruneDeliverySpans(NOW - 8 * DAY, 100)).toBe(1);
+    expect(store.capAdapterEvents()).toBe(0);
+    expect(store.getAdapterEvents('old')).toHaveLength(1);
+
+    for (let n = 3; n <= ADAPTER_EVENTS_KEPT + 2; n++) {
+      span(db, NOW - 10 * DAY + n * 1000, { n, kind: 'lifecycle', adapterId: 'old' });
+    }
+    // Now the oldest of 501, so the cap takes it, and only it.
+    expect(store.capAdapterEvents()).toBe(1);
+    expect(store.getSpanByMessageId('m-delivery-old-1')).toBeNull();
+    expect(store.getAdapterEvents('old', ADAPTER_EVENTS_KEPT + 5)).toHaveLength(
+      ADAPTER_EVENTS_KEPT
+    );
   });
 
   it('keeps the newest events of each adapter its log can show, and no fewer', () => {

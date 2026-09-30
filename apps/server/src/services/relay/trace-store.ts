@@ -454,6 +454,9 @@ export class TraceStore {
     // The smallest ULID of the cutoff's millisecond: every id minted earlier sorts below it.
     const firstIdAtCutoff = `${encodeTime(before, 10)}0000000000000000`;
     const beforeIso = new Date(before).toISOString();
+    // A connection event written before `kind` existed (#665) is stored as a delivery
+    // (migration 0043's default), but the event log still shows it, so it is left to
+    // capAdapterEvents: a delivery span never names an adapter.
     return this.db
       .delete(relayTraces)
       .where(
@@ -462,6 +465,7 @@ export class TraceStore {
           WHERE ${relayTraces.id} < ${firstIdAtCutoff}
             AND ${relayTraces.sentAt} < ${beforeIso}
             AND ${relayTraces.kind} = 'delivery'
+            AND json_extract(${relayTraces.metadata}, '$.adapterId') IS NULL
           ORDER BY ${relayTraces.id}
           LIMIT ${limit}
         )`
@@ -473,6 +477,9 @@ export class TraceStore {
    * Delete each adapter's lifecycle events beyond its newest {@link ADAPTER_EVENTS_KEPT}, in
    * the order its event log reads them. Kept by count, not age: an adapter that has been
    * connected for months still shows when it connected.
+   *
+   * An event is what the event log reads, a row naming its adapter in `metadata.adapterId`,
+   * whatever its `kind`: events written before `kind` existed are stored as deliveries.
    *
    * @returns How many were deleted.
    */
@@ -487,7 +494,7 @@ export class TraceStore {
               ORDER BY ${relayTraces.sentAt} DESC, ${relayTraces.id} DESC
             ) AS newest
             FROM ${relayTraces}
-            WHERE ${relayTraces.kind} = 'lifecycle'
+            WHERE json_extract(${relayTraces.metadata}, '$.adapterId') IS NOT NULL
           )
           WHERE newest > ${ADAPTER_EVENTS_KEPT}
         )`
