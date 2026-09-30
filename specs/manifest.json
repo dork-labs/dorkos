@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260930-230338",
+      "slug": "dorkos-account-by-default",
+      "title": "DorkOS account by default: discovery, usage and management",
+      "created": "2026-09-30",
+      "status": "ideation"
+    },
+    {
       "id": "260930-032224",
       "slug": "community-launch-acceptance",
       "title": "Verify launch-to-first-conversation and publish the entry point",
