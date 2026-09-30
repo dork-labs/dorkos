@@ -3,7 +3,7 @@
  "id": "260924-003842",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-10-01T02:27:59Z; the verdict is computed on 2026-10-02.",
- "computed_at": "2026-09-29T11:15:14.029Z",
+ "computed_at": "2026-09-30T11:03:28.075Z",
  "hypothesis_hash": "06d61237f6284435",
  "metric": "gate.wf.test.community-packaged.ejections_caused",
  "anchor": "2026-09-24T02:27:59Z",
@@ -25,7 +25,7 @@
  "after": {
   "from": "2026-09-24T02:27:59Z",
   "to": "2026-10-01T02:27:59Z",
-  "n": 4,
+  "n": 5,
   "value": 0
  },
  "confounders": [
@@ -35,7 +35,7 @@
   "id": "queue-green",
   "stat": "share",
   "before": 0.6392,
-  "after": 0.7461,
+  "after": 0.7089,
   "movement": "better"
  }
 }
