@@ -1,20 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
+import type { AxeResults } from 'axe-core';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
 import { createCommunityApp } from '../src/app.js';
 import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
+import { measureContrast, settle } from './contrast.js';
 
 // Purpose (DOR-2562, DOR-2563): the Community's own page shows, as the DorkOS app does, how many
 // replies a thread root has — counted by the server and kept current by the live stream without
 // counting a reply twice — and marks an agent's message as an agent's, in its accessible name.
+// DOR-2567: the controls in and beside that thread row stay readable in light and dark, at rest,
+// under the pointer and with keyboard focus.
 //
 // COMMUNITY_THREADS_SCREENSHOTS optionally names a directory for reviewable screenshots.
 
@@ -25,6 +30,7 @@ const dbName = `community_browser_threads_${randomUUID().replaceAll('-', '')}`;
 const dbUrl = new URL(adminUrl);
 dbUrl.pathname = `/${dbName}`;
 const admin = new Pool({ connectionString: adminUrl });
+const AXE_BUNDLE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
@@ -39,11 +45,46 @@ async function freePort() {
   return address.port;
 }
 
-/** Capture a page as it is, at its own width, when screenshots were asked for. */
+/**
+ * Capture a page at its own width, when screenshots were asked for. Transitions are finished
+ * first: straight after a theme switch the shared buttons are still fading from the old colours,
+ * and a picture of that half-way frame was once read as a contrast bug (DOR-2567).
+ */
 async function shot(page: Page, name: string) {
   if (!shots) return;
   await mkdir(shots, { recursive: true });
-  await page.screenshot({ path: join(shots, `${name}.png`) });
+  await page.screenshot({ path: join(shots, `${name}.png`), animations: 'disabled' });
+}
+
+/** Run axe's WCAG A/AA rules on the page as it stands. */
+async function axeViolations(page: Page) {
+  await page.addScriptTag({ path: AXE_BUNDLE });
+  const results = (await page.evaluate(() =>
+    (
+      window as unknown as {
+        axe: { run: (context: object, options: object) => Promise<unknown> };
+      }
+    ).axe.run(
+      { include: [['html']] },
+      {
+        runOnly: {
+          type: 'tag',
+          values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'],
+        },
+      }
+    )
+  )) as AxeResults;
+  return results.violations.map((violation) => `${violation.id}: ${violation.nodes[0]?.target}`);
+}
+
+/**
+ * Give a control keyboard focus, so `:focus-visible` matches as it does for a Tab user: step
+ * off it and back. `target` is what takes focus — the hidden input, for a file picker.
+ */
+async function keyboardFocus(page: Page, target: Locator) {
+  await target.focus();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
 }
 
 test.beforeAll(async () => {
@@ -223,6 +264,71 @@ test('thread roots show their reply counts live, and agent messages say they are
     await shot(writer, 'threads-and-agents-desktop');
     await writer.emulateMedia({ colorScheme: 'dark' });
     await shot(writer, 'threads-and-agents-desktop-dark');
+
+    // DOR-2567: the thread row's two buttons, and the Manage, Attach, Send and Switch community
+    // buttons around them, measured as painted. Text needs 4.5:1 against the button's fill at
+    // rest and under the pointer, an icon 3:1, and the keyboard focus ring 3:1 against the page.
+    const root = writer.getByRole('article').filter({ hasText: 'release notes' });
+    const attach = writer.locator('label[aria-label="Add files"]');
+    const controls: { name: string; control: Locator; focus?: Locator }[] = [
+      { name: 'Reply in thread', control: root.getByRole('button', { name: 'Reply in thread' }) },
+      { name: 'reply count', control: replyLine(writer, 'release notes') },
+      { name: 'Manage', control: writer.getByRole('button', { name: 'Manage' }) },
+      { name: 'Attach', control: attach, focus: attach.locator('input') },
+      { name: 'Send', control: writer.getByRole('button', { name: 'Send' }) },
+      {
+        name: 'Switch community',
+        control: writer.getByRole('button', { name: 'Switch community' }),
+      },
+    ];
+    // Send is only enabled with something to send.
+    await writer.getByLabel('Message #general').fill('Not sent');
+    const measured: Record<string, unknown> = {};
+    for (const scheme of ['light', 'dark'] as const) {
+      await writer.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+      for (const { name, control, focus = control } of controls) {
+        await writer.mouse.move(0, 0);
+        await settle(writer);
+        const rest = await measureContrast(control);
+        await control.hover();
+        await settle(writer);
+        const hover = await measureContrast(control);
+        await writer.mouse.move(0, 0);
+        await keyboardFocus(writer, focus);
+        await settle(writer);
+        const focused = await measureContrast(control);
+        await focus.blur();
+        measured[`${scheme} ${name}`] = { rest, hover, focused };
+        for (const [state, value] of [
+          ['at rest', rest],
+          ['hovered', hover],
+        ] as const) {
+          expect.soft(value.text, `${scheme} ${name} ${state}: text`).toBeGreaterThanOrEqual(4.5);
+          if (value.icon !== null)
+            expect.soft(value.icon, `${scheme} ${name} ${state}: icon`).toBeGreaterThanOrEqual(3);
+        }
+        expect.soft(focused.focusVisible, `${scheme} ${name}: keyboard focus`).toBe(true);
+        expect.soft(focused.ring, `${scheme} ${name}: focus ring`).not.toBeNull();
+        expect.soft(focused.ring ?? 0, `${scheme} ${name}: focus ring`).toBeGreaterThanOrEqual(3);
+      }
+      for (const [page, width] of [
+        [writer, 1280],
+        [reader, 390],
+      ] as const) {
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+        await settle(page);
+        expect.soft(await axeViolations(page), `${scheme} ${width}px: axe`).toEqual([]);
+      }
+      await keyboardFocus(writer, attach.locator('input'));
+      await shot(writer, `thread-row-${scheme}-desktop`);
+      await attach.locator('input').blur();
+      await shot(reader, `thread-row-${scheme}-mobile`);
+    }
+    await test.info().attach('thread-row-contrast.json', {
+      body: JSON.stringify(measured, null, 2),
+      contentType: 'application/json',
+    });
+    if (shots) console.log(`thread-row contrast: ${JSON.stringify(measured)}`);
   } finally {
     await context.close();
   }

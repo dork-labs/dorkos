@@ -68,6 +68,42 @@ describe('portable control contract', () => {
     expect(getByRole('button').className).not.toContain('text-white');
   });
 
+  // A focus ring at part strength fell under 3:1 on both themes (DOR-2567). Every variant keeps
+  // a solid ring, and a label wrapping a hidden file input shows it when the input has focus.
+  it('draws a solid focus ring on every variant, including around a wrapped input', () => {
+    const variants = ['default', 'destructive', 'outline', 'secondary', 'ghost', 'brand', 'link'];
+    for (const variant of variants) {
+      const { getByRole, unmount } = render(
+        <Button variant={variant as 'default'}>{variant}</Button>
+      );
+      const classes = getByRole('button').className.split(' ');
+      const rings = classes.filter((name) =>
+        /^(has-\[:focus-visible\]|focus-visible):ring-dui-/.test(name)
+      );
+      expect(rings.length, variant).toBeGreaterThan(0);
+      expect(
+        rings.filter((name) => name.includes('/')),
+        variant
+      ).toEqual([]);
+      expect(
+        classes.filter((name) => /^dui-dark:focus-visible:ring-/.test(name)),
+        variant
+      ).toEqual([]);
+      unmount();
+    }
+    const { container } = render(
+      <Button asChild variant="outline">
+        <label>
+          Attach
+          <input type="file" className="sr-only" />
+        </label>
+      </Button>
+    );
+    const label = container.querySelector('label')!;
+    expect(label.className).toContain('has-[:focus-visible]:ring-dui-ring');
+    expect(label.className).toContain('has-[:focus-visible]:ring-[3px]');
+  });
+
   // Label clicks and described-by references must reach real mounted elements.
   it('mounts a label, input and one deduplicated error with real IDs', () => {
     const { getByLabelText, getByRole } = render(
