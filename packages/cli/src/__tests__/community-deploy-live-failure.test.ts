@@ -36,6 +36,26 @@ describe('explainCommunityLiveGateFailure', () => {
     expect(describeCommunityLiveGateFailure(explained)).not.toContain('Retained resources');
   });
 
+  // DOR-2593: the gate fails a run whose launcher contacted a DorkOS host only after cleanup, so
+  // nothing billable is stranded. The reason must survive the after-cleanup rewrite.
+  it("keeps a gate check's own step and detail when it fails after cleanup", async () => {
+    const findRecoveryCommand = vi.fn(async () => RECOVERY);
+    const explained = await explainCommunityLiveGateFailure(
+      new CommunityLiveGateError(
+        'dorkos-hosts-contacted',
+        null,
+        'the launcher tried to reach dorkos.ai'
+      ),
+      { cleanedUp: true, recoveryCommand: RECOVERY },
+      findRecoveryCommand
+    );
+    expect(explained).toMatchObject({ step: 'dorkos-hosts-contacted', recoveryCommand: null });
+    expect((explained as Error).message).toBe(
+      'Community live gate failed (dorkos-hosts-contacted): cleanup finished; a later step failed: the launcher tried to reach dorkos.ai'
+    );
+    expect(findRecoveryCommand).not.toHaveBeenCalled();
+  });
+
   it('keeps the recovery command the run already holds before cleanup', async () => {
     const findRecoveryCommand = vi.fn(async () => 'another');
     const explained = await explainCommunityLiveGateFailure(

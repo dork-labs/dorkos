@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runCommunityLiveOwnerProof } from '../../scripts/community-deploy-live-proof.js';
+import {
+  assertNoSingleSignOn,
+  runCommunityLiveOwnerProof,
+} from '../../scripts/community-deploy-live-proof.js';
 
 const communityId = '7ea92c45-1e1d-4bb8-9602-e10816488828';
 const memberId = '9ce578bc-4084-4ddf-8447-321cdacbe33a';
@@ -8,12 +11,26 @@ const attachmentId = '6a154a24-eea3-4ef8-9b5b-beb77214a7d1';
 const entryId = '2357098b-84d5-43c0-a678-fc3863e33d2b';
 
 function harness(
-  options: { corruptFile?: boolean; publicFile?: boolean; failSetup?: boolean } = {}
+  options: {
+    corruptFile?: boolean;
+    publicFile?: boolean;
+    failSetup?: boolean;
+    oidc?: { label: string };
+  } = {}
 ) {
   let stored = new Uint8Array();
   const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
     const path = new URL(String(input)).pathname;
     const headers = new Headers(init?.headers);
+    if (path === '/api/v1/auth-options') {
+      expect(headers.has('cookie')).toBe(false);
+      return Response.json({
+        google: false,
+        github: false,
+        oidc: options.oidc ?? null,
+        minimumAge: null,
+      });
+    }
     if (path.endsWith('/bootstrap/preflight')) {
       if (options.failSetup) return Response.json({ error: 'secret-from-server' }, { status: 403 });
       return Response.json(
@@ -77,8 +94,9 @@ describe('credentialed Community HTTP proof', () => {
       ownerCreated: true,
       privateFileRoundTrip: true,
       anonymousDownloadDenied: true,
+      singleSignOnOffered: false,
     });
-    expect(fetch).toHaveBeenCalledTimes(7);
+    expect(fetch).toHaveBeenCalledTimes(8);
     for (const [url, init] of fetch.mock.calls) {
       expect(String(url).startsWith('https://dorkos-gate-012345abcdef.fly.dev/api/')).toBe(true);
       expect(init?.redirect).toBe('error');
@@ -106,7 +124,28 @@ describe('credentialed Community HTTP proof', () => {
   it('does not create an account when bootstrap preflight is refused', async () => {
     const { run, fetch } = harness({ failSetup: true });
     await expect(run()).rejects.toThrow('http-status');
+    // The sign-in options read, then the refused preflight.
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  // DOR-2593: a launcher-made Community signs people in with its own accounts. Single sign-on on
+  // its sign-in page is how a DorkOS sign-in would arrive, so the gate fails before any setup.
+  it('fails before setup when the new Community offers single sign-on', async () => {
+    const { run, fetch } = harness({ oidc: { label: 'DorkOS' } });
+    await expect(run()).rejects.toThrow('single-sign-on');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts only the wire shape of the sign-in options', () => {
+    const none = { google: false, github: false, oidc: null, minimumAge: null };
+    expect(() => assertNoSingleSignOn(none)).not.toThrow();
+    expect(() => assertNoSingleSignOn({ ...none, oidc: { label: 'Sign in' } })).toThrow(
+      'single-sign-on'
+    );
+    // A missing `oidc` is not an absent one: a changed shape must not read as a pass.
+    expect(() => assertNoSingleSignOn({ google: false, github: false, minimumAge: null })).toThrow(
+      'auth-options'
+    );
   });
 
   it('refuses an existing production app before any network request', async () => {

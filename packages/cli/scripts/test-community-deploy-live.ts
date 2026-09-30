@@ -62,6 +62,10 @@ import {
   readFlySessionCredential,
 } from '../src/commands/community-deploy/tigris-session.js';
 import { runProviderCommand } from '../src/commands/community-deploy/provider-process.js';
+import {
+  readDorkosHostsContacted,
+  withNoDorkosHostsGuard,
+} from './community-deploy-no-dorkos-hosts-record.js';
 
 // Derived from the launcher's own deadlines; see COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS.
 const TIMEOUT_MS = COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS;
@@ -157,6 +161,9 @@ async function main(): Promise<void> {
   const appName = `dorkos-gate-${randomBytes(6).toString('hex')}`;
   const durableHome = join(process.env.DORK_HOME ?? join(homedir(), '.dork'), 'live-gate', appName);
   const socketPath = join(runDirectory, 'bootstrap.sock');
+  // Every DorkOS host the installed launcher tried to reach, recorded by the guard preload
+  // (DOR-2593). Read after cleanup, before the run directory is removed.
+  const dorkosHostsRecordPath = join(runDirectory, 'dorkos-hosts.jsonl');
   const receiptDirectory = join(durableHome, '..', 'receipts');
   const receiptPath = join(receiptDirectory, `${appName}.json`);
   let bootstrap: string | null = null;
@@ -251,10 +258,11 @@ async function main(): Promise<void> {
       'package-install'
     );
     const binary = join(install, 'node_modules/.bin/dorkos');
+    // Guarded like every launcher run (its record is read after cleanup, with the rest).
     const help = await command(
       binary,
       ['community', 'deploy', '--help'],
-      process.env,
+      { ...process.env, ...withNoDorkosHostsGuard({}, dorkosHostsRecordPath) },
       PUBLISHED_LAUNCHER_STEP
     );
     if (!help.includes('Guided setup') && !help.includes('Guide a standalone'))
@@ -282,6 +290,8 @@ async function main(): Promise<void> {
         )
       ),
     };
+    // The launcher runs guarded; the gate's own provider reads below use the plain environment.
+    const launcherEnvironment = withNoDorkosHostsGuard(environment, dorkosHostsRecordPath);
     const fly = { executable: 'fly', env: environment, timeoutMs: 30_000 };
     const neon = { executable: 'neonctl', env: environment, timeoutMs: 30_000 };
     // The launcher asks for Tigris terms only after it has created the Fly app and the Neon
@@ -308,7 +318,7 @@ async function main(): Promise<void> {
     launcher = runLauncherPty({
       binary,
       args: launchArgs,
-      environment,
+      environment: launcherEnvironment,
       appName,
       ownerClaimed: new Promise<void>(() => undefined),
       interruptAtOwnerPending: true,
@@ -333,7 +343,7 @@ async function main(): Promise<void> {
     launcher = runLauncherPty({
       binary,
       args: [...launchArgs, '--resume', runId],
-      environment,
+      environment: launcherEnvironment,
       appName,
       ownerClaimed,
     });
@@ -465,6 +475,16 @@ async function main(): Promise<void> {
       ),
       tigrisBucketFound,
     };
+    // DOR-2593: a self-hosted launch never needs DorkOS. Checked after cleanup, so a run that
+    // fails here strands nothing, and recorded in the receipt so every paid run carries it.
+    const dorkosHostsContacted = await readDorkosHostsContacted(dorkosHostsRecordPath);
+    if (dorkosHostsContacted.length > 0) {
+      throw new CommunityLiveGateError(
+        'dorkos-hosts-contacted',
+        null,
+        `the launcher tried to reach ${dorkosHostsContacted.join(', ')}`
+      );
+    }
     // This receipt is intentionally non-secret and remains only long enough for the gate's caller.
     await mkdir(receiptDirectory, { recursive: true, mode: 0o700 });
     await writeFile(
@@ -480,6 +500,7 @@ async function main(): Promise<void> {
         initialBootstrapSecretDigest: initialBootstrapDigest,
         bootstrapSecretDigest: bootstrapDigest,
         provenance,
+        dorkosHostsContacted,
         ...proof,
       }) + '\n',
       { mode: 0o600, flag: 'wx' }

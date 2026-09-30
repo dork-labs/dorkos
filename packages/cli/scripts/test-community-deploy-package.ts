@@ -9,6 +9,12 @@ import {
   FLY_SCHEMA_SNAPSHOT,
   type IntrospectedSchema,
 } from './community-deploy-contract-graphql.js';
+import { assertNoSingleSignOn } from './community-deploy-live-proof.js';
+import { findDorkosHostInText } from './community-deploy-no-dorkos-hosts.mjs';
+import {
+  readDorkosHostsContacted,
+  withNoDorkosHostsGuard,
+} from './community-deploy-no-dorkos-hosts-record.js';
 
 const root = resolve(import.meta.dirname, '../../..');
 const cliPackage = resolve(import.meta.dirname, '..');
@@ -48,6 +54,8 @@ const fakeBin = join(temporary, 'bin');
 const statePath = join(temporary, 'provider-state.json');
 // Every GraphQL document the packaged launcher sends, checked afterwards against Fly's schema.
 const graphqlLogPath = join(temporary, 'graphql-documents.jsonl');
+// Every DorkOS host the packaged launcher tried to reach, as the guard preload records them.
+const dorkosHostsRecordPath = join(temporary, 'dorkos-hosts.jsonl');
 
 async function migrationCompatibilityId(): Promise<string> {
   const hash = createHash('sha256');
@@ -312,6 +320,9 @@ try {
     DORK_HOME: dorkHome,
     NODE_OPTIONS: `--import=${bootstrapPath}`,
   } as Record<string, string>;
+  // DOR-2593: the guard loads after the offline bootstrap, so it wraps the fake fetch from the
+  // outside and refuses a DorkOS host before the fake could answer for it.
+  Object.assign(environment, withNoDorkosHostsGuard(environment, dorkosHostsRecordPath));
 
   const dryRun = await runPlain(binary, args(['--dry-run']), environment);
   if (
@@ -375,6 +386,37 @@ try {
   ) {
     throw new Error('Packaged launch did not put exactly the bucket keys on the app');
   }
+  // DOR-2593: the launched Community offers no DorkOS sign-in. Everything the launch hands it is
+  // the Fly config's [env] and the staged secrets; the real route, booted on exactly those, must
+  // offer no single sign-on, and none of them may name a DorkOS host.
+  const flyEnvironment = Object.fromEntries(
+    (state.config.split(/^\[env\]$/mu)[1] ?? '')
+      .split(/^\[/mu)[0]!
+      .split('\n')
+      .flatMap((line) => {
+        const match = /^\s*([A-Z0-9_]+) = (".*")$/u.exec(line);
+        return match ? [[match[1]!, JSON.parse(match[2]!) as string]] : [];
+      })
+  );
+  const communityEnvironment = { ...flyEnvironment, ...state.stagedValues };
+  if (!flyEnvironment.COMMUNITY_PUBLIC_URL || !communityEnvironment.COMMUNITY_AUTH_SECRET) {
+    throw new Error('Packaged proof could not read the settings the launch gave the Community');
+  }
+  if (
+    Object.keys(communityEnvironment).some((name) => name.startsWith('COMMUNITY_OIDC_')) ||
+    findDorkosHostInText(JSON.stringify(communityEnvironment)) !== null
+  ) {
+    throw new Error('Packaged launch gave the Community a DorkOS host or a single sign-on');
+  }
+  const authOptions = execFileSync('pnpm', ['--silent', 'auth-options:probe'], {
+    cwd: join(root, 'apps/community'),
+    input: JSON.stringify(communityEnvironment),
+    encoding: 'utf8',
+    // Better Auth's background schema check logs against the probe's query-refusing pool; a
+    // failed probe still throws with its stderr attached.
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  assertNoSingleSignOn(JSON.parse(authOptions.trim().split('\n').at(-1)!) as unknown);
   const journalText = await readFile(join(journalDirectory, journalName), 'utf8');
   if (
     [first.output, second.output, journalText].some((text) =>
@@ -492,8 +534,14 @@ try {
   );
   await assertOrphanSurvives('does not carry the marker this run recorded', 'unmarked app');
 
+  // Last, so it covers every run above: the launch, the resume and both refused removals.
+  const dorkosHostsContacted = await readDorkosHostsContacted(dorkosHostsRecordPath);
+  if (dorkosHostsContacted.length > 0) {
+    throw new Error(`Packaged launcher tried to reach DorkOS: ${dorkosHostsContacted.join(', ')}`);
+  }
+
   process.stdout.write(
-    'Packaged Community launcher proof passed: dry-run, exact release, provisioning with provenance markers, resume, pinned config, owner-pending, uncertain-create removal refused for a marked orphan and an unmarked same-name app.\n'
+    'Packaged Community launcher proof passed: dry-run, exact release, provisioning with provenance markers, resume, pinned config, owner-pending, uncertain-create removal refused for a marked orphan and an unmarked same-name app, no DorkOS host contacted, no single sign-on offered.\n'
   );
 } finally {
   await rm(temporary, { recursive: true, force: true });

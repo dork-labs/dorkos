@@ -119,8 +119,18 @@ export async function explainCommunityLiveGateFailure(
   findRecoveryCommand: () => Promise<string | null>,
   findLauncherStop: () => Promise<string | null> = async () => null
 ): Promise<unknown> {
-  if (state.cleanedUp)
+  // A check the gate makes after cleanup (DOR-2593: the launcher contacted a DorkOS host) keeps its
+  // own fixed step and detail, so the reason is not lost behind the generic after-cleanup one.
+  if (state.cleanedUp) {
+    if (error instanceof CommunityLiveGateError) {
+      return new CommunityLiveGateError(
+        error.step,
+        null,
+        error.detail ? `${CLEANED_UP_DETAIL}: ${error.detail}` : CLEANED_UP_DETAIL
+      );
+    }
     return new CommunityLiveGateError(AFTER_CLEANUP_STEP, null, CLEANED_UP_DETAIL);
+  }
   // A launcher that failed before the gate read its journal may still have written one, and may
   // already have created resources. Find it now rather than stay silent about them.
   const recoveryCommand = state.recoveryCommand ?? (await findRecoveryCommand().catch(() => null));

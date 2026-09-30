@@ -1,6 +1,7 @@
 /** Real HTTP owner and private-file proof for a disposable, explicitly armed launch. */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { CommunityWireAuthOptionsSchema } from '@dorkos/shared/community-wire';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -22,6 +23,8 @@ export interface CommunityLiveOwnerReceipt {
   ownerCreated: true;
   privateFileRoundTrip: true;
   anonymousDownloadDenied: true;
+  /** The new Community's sign-in page offers no single sign-on, so no DorkOS sign-in (DOR-2593). */
+  singleSignOnOffered: false;
 }
 
 /** A stable failure deliberately excluding server bodies and request credentials. */
@@ -31,6 +34,22 @@ export class CommunityLiveProofError extends Error {
     super(`Community live proof failed (${step})`);
     this.name = 'CommunityLiveProofError';
   }
+}
+
+/**
+ * Fail unless a Community's `GET /api/v1/auth-options` answer offers no single sign-on. A
+ * launcher-made Community signs people in with its own accounts; an `oidc` entry would mean it
+ * sends them to some other sign-in, which is how a DorkOS sign-in would arrive. Shared by the
+ * offline package proof (against the real route) and the live gate (against the new Community).
+ *
+ * @param body - The parsed response body.
+ * @throws {CommunityLiveProofError} `auth-options` when the body is not the wire shape, and
+ *   `single-sign-on` when it offers single sign-on.
+ */
+export function assertNoSingleSignOn(body: unknown): void {
+  const parsed = CommunityWireAuthOptionsSchema.safeParse(body);
+  if (!parsed.success) throw new CommunityLiveProofError('auth-options');
+  if (parsed.data.oidc !== null) throw new CommunityLiveProofError('single-sign-on');
 }
 
 interface ProofOptions {
@@ -215,6 +234,17 @@ export async function runCommunityLiveOwnerProof(
 ): Promise<CommunityLiveOwnerReceipt> {
   try {
     const session = new ProofSession(options);
+    // Read before anyone signs in, as a visitor's sign-in page does.
+    const authOptions = await session.request('/api/v1/auth-options', {}, [200], {
+      anonymous: true,
+    });
+    let authOptionsBody: unknown;
+    try {
+      authOptionsBody = JSON.parse(authOptions.toString('utf8'));
+    } catch {
+      throw new CommunityLiveProofError('auth-options');
+    }
+    assertNoSingleSignOn(authOptionsBody);
     const setup = await createOwner(session, options.bootstrapSecret);
     const proof = await proveFile(session, setup);
     return {
@@ -224,6 +254,7 @@ export async function runCommunityLiveOwnerProof(
       ownerCreated: true,
       privateFileRoundTrip: true,
       anonymousDownloadDenied: true,
+      singleSignOnOffered: false,
     };
   } catch (cause) {
     if (cause instanceof CommunityLiveProofError) throw cause;
