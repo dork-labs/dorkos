@@ -468,7 +468,11 @@ describe('UninstallFlow', () => {
     expect(result.packageName).toBe('adapter-a');
     expect(await pathExists(installRoot)).toBe(false);
     expect(deps.adapterManager.removeAdapter).toHaveBeenCalledTimes(1);
-    expect(deps.adapterManager.removeAdapter).toHaveBeenCalledWith('adapter-a');
+    // A person uninstalling the package removed the connection, so its
+    // delivery history goes too (DOR-2604).
+    expect(deps.adapterManager.removeAdapter).toHaveBeenCalledWith('adapter-a', {
+      forgetHistory: true,
+    });
     expect(deps.extensionManager.disable).not.toHaveBeenCalled();
   });
 
