@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(cloud): count move sizes as a computer shows them, and say what the refusals can and cannot do (DOR-2587)'
   - 'fix(cloud): size a community move by the new host and the free disk, not a fixed 16 GiB (DOR-2587)'
 ---
 
