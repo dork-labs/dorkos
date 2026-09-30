@@ -704,15 +704,16 @@ export const COMMUNITY_ARCHIVE_PART_DIGEST_HEADER = 'X-Part-SHA256' as const;
  *   `token` as a bearer credential. The first part must start the zip file,
  *   as a single upload must. It answers a {@link CommunityMovePartSchema}.
  *   Sending a part again with the same digest is a success that writes
- *   nothing; different bytes replace it. It refuses, before reading the
- *   body: `429 RATE_LIMITED` with `Retry-After` when too many parts are
+ *   nothing; different bytes replace it. Before reading the body it may
+ *   refuse with `429 RATE_LIMITED` and `Retry-After` when too many parts are
  *   arriving at once (wait and send again); `409 STATE_CONFLICT` when that
  *   part is already arriving or the parts are being put together (ask again
  *   shortly), or when the import no longer accepts a file (stop); `413
  *   IMPORT_TOO_LARGE` when the part is larger than `parts.partBytes` or the
- *   parts would add up to more than `parts.maxBytes`; `400
- *   IMPORT_ARCHIVE_INVALID` for a part number out of range or bytes that do
- *   not match their digest.
+ *   parts would add up to more than `parts.maxBytes`; or `400
+ *   IMPORT_ARCHIVE_INVALID` for a part number out of range. After reading it,
+ *   bytes that do not match their digest are refused with `400
+ *   IMPORT_ARCHIVE_INVALID` and nothing is kept.
  * - `GET ${url}/parts` answers a {@link CommunityMovePartListSchema}: the parts
  *   received so far, so a sender that lost track mid-upload sends only the
  *   ones missing.
