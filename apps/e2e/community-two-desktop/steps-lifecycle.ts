@@ -15,12 +15,15 @@ import {
   send,
   type Desktop,
 } from './desktop.js';
-import { COMMUNITY, type World } from './world.js';
+import type { World } from './world.js';
 
 /**
  * Steps 24-29: ownership transfer between the two people, Disconnect and
  * Leave from the switcher's Manage menu, an expired invitation, removal by
  * the owner, and a last check for local lookups of Community rooms.
+ *
+ * A remote run takes only step 25: the others change membership on a
+ * community the live gate still needs, or need what only a local run has.
  *
  * @module community-two-desktop/steps-lifecycle
  */
@@ -33,7 +36,9 @@ import { COMMUNITY, type World } from './world.js';
 export async function lifecycleSteps(w: World): Promise<void> {
   const {
     ctx,
+    runs,
     step,
+    skip,
     shot,
     findings,
     a,
@@ -42,6 +47,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
     member,
     communityOrigin,
     communityId,
+    communityName: COMMUNITY,
     refA,
     refIso,
     stamp,
@@ -83,32 +89,39 @@ export async function lifecycleSteps(w: World): Promise<void> {
     });
   }
 
-  await step('24 ownership moves from A to B and back; an owner cannot simply leave', async () => {
-    await settings(owner, 'account');
-    await expect(owner.getByText('Transfer ownership before you leave.')).toBeVisible();
-    const blocked = await shot(owner, '24a-owner-leave-blocked-transfer-first');
-    await transfer(owner, 'Desktop B');
-    // A is now a member, so A's own page offers leaving instead of transfer.
-    await expect(owner.getByRole('button', { name: 'Leave community', exact: true })).toBeVisible();
-    await expect(owner.locator('#successor')).toHaveCount(0);
-    const roles = Object.fromEntries(
-      ((await directory(member)) ?? []).map((m) => [m.displayName, m.role])
+  if (!runs('24')) skip('24');
+  else
+    await step(
+      '24 ownership moves from A to B and back; an owner cannot simply leave',
+      async () => {
+        await settings(owner, 'account');
+        await expect(owner.getByText('Transfer ownership before you leave.')).toBeVisible();
+        const blocked = await shot(owner, '24a-owner-leave-blocked-transfer-first');
+        await transfer(owner, 'Desktop B');
+        // A is now a member, so A's own page offers leaving instead of transfer.
+        await expect(
+          owner.getByRole('button', { name: 'Leave community', exact: true })
+        ).toBeVisible();
+        await expect(owner.locator('#successor')).toHaveCount(0);
+        const roles = Object.fromEntries(
+          ((await directory(member)) ?? []).map((m) => [m.displayName, m.role])
+        );
+        assert.equal(roles['Desktop B'], 'owner', 'B owns the community');
+        assert.equal(roles['Desktop A'], 'member', 'A is an ordinary member');
+        await settings(member, 'account');
+        const bOwner = await shot(member, '24b-desktop-b-now-owner');
+        await transfer(member, 'Desktop A');
+        const back = Object.fromEntries(
+          ((await directory(owner)) ?? []).map((m) => [m.displayName, m.role])
+        );
+        assert.equal(back['Desktop A'], 'owner', 'A owns it again');
+        assert.equal(back['Desktop B'], 'member', 'B is a member again');
+        // Both apps kept working through both transfers.
+        assert.equal((await connections(a)).find((c) => c.ref === refA)?.status, 'connected');
+        assert.equal((await connections(b)).find((c) => c.ref === refB)?.status, 'connected');
+        return { roles, back, blocked, bOwner, restored: await shot(owner, '24c-owner-restored') };
+      }
     );
-    assert.equal(roles['Desktop B'], 'owner', 'B owns the community');
-    assert.equal(roles['Desktop A'], 'member', 'A is an ordinary member');
-    await settings(member, 'account');
-    const bOwner = await shot(member, '24b-desktop-b-now-owner');
-    await transfer(member, 'Desktop A');
-    const back = Object.fromEntries(
-      ((await directory(owner)) ?? []).map((m) => [m.displayName, m.role])
-    );
-    assert.equal(back['Desktop A'], 'owner', 'A owns it again');
-    assert.equal(back['Desktop B'], 'member', 'B is a member again');
-    // Both apps kept working through both transfers.
-    assert.equal((await connections(a)).find((c) => c.ref === refA)?.status, 'connected');
-    assert.equal((await connections(b)).find((c) => c.ref === refB)?.status, 'connected');
-    return { roles, back, blocked, bOwner, restored: await shot(owner, '24c-owner-restored') };
-  });
 
   const grants = (page: Page) =>
     readAs<{ grants: Array<{ installName: string }> }>(page, '/api/v1/me/grants').then(
@@ -182,6 +195,10 @@ export async function lifecycleSteps(w: World): Promise<void> {
     }
   );
 
+  if (!runs('26')) {
+    for (const id of ['26', '27', '28', '29'] as const) skip(id);
+    return;
+  }
   /** Wait until an app no longer holds a live connection to the Community, and has moved off it. */
   async function lostAccess(local: Desktop, ref: string, why: string) {
     const since = Date.now();
@@ -247,24 +264,25 @@ export async function lifecycleSteps(w: World): Promise<void> {
         ['connected', 'connected'],
         'both of A’s connections stay connected'
       );
-      await json(`${a.origin}/api/communities/${refIso}/rooms`);
+      await json(`${a.origin}/api/communities/${refIso!}/rooms`);
       return { opened, leaveShot, access, bShot };
     }
   );
 
+  const proofDatabase = ctx.target.mode === 'local' ? ctx.target.proof.database : '';
   await step('27 an expired invitation is refused and admits no one', async () => {
     await settings(owner, 'community');
     const link = await createInvite(owner);
     const inviteId = /invite=\d+\.v\d+\.([0-9a-f-]{36})\./.exec(decodeURIComponent(link))?.[1];
     assert(inviteId, 'the invite token names its id');
     // Let the invitation's time run out: move its stored expiry into the past.
-    ctx.infra.sql(
-      ctx.proof.database,
+    ctx.infra!.sql(
+      proofDatabase,
       `UPDATE invites SET expires_at = now() - interval '1 minute' WHERE id = '${inviteId}'`
     );
     assert.equal(
-      ctx.infra.sql(
-        ctx.proof.database,
+      ctx.infra!.sql(
+        proofDatabase,
         `SELECT count(*) FROM invites WHERE id = '${inviteId}' AND expires_at < now()`
       ),
       '1'
@@ -335,7 +353,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
       const stillA = `A is unaffected by B's removal ${stamp}`;
       await send(composer(a), stillA);
       await seeNewest(a, stillA);
-      await json(`${a.origin}/api/communities/${refIso}/rooms`);
+      await json(`${a.origin}/api/communities/${refIso!}/rooms`);
       return {
         reactivation,
         rejoined,
