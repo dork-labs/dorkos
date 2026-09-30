@@ -112,6 +112,33 @@ const AddOnNotFoundEnvelopeSchema = z
   })
   .strict();
 
+/**
+ * Fly's answer for an add-on it has deleted (live gate, 2026-09-30): the exact-ID read still returns
+ * it, renamed `<name>_deleted_<suffix>`, with `status: "deleted"` and `app: null`. Fly soft-deletes
+ * and keeps the record, so this, like `NOT_FOUND`, means the bucket is gone; `fly storage list` no
+ * longer shows it. Only this exact shape counts: a deleted status beside an attached app, another
+ * provider, or any error stays an invalid response.
+ */
+const AddOnDeletedEnvelopeSchema = z
+  .object({
+    data: z
+      .object({
+        addOn: z
+          .object({
+            id: SafeIdentifierSchema,
+            name: SafeIdentifierSchema,
+            status: z.literal('deleted'),
+            options: z.unknown(),
+            organization: z.object({ slug: SafeIdentifierSchema }).strict(),
+            addOnProvider: z.object({ name: z.literal('tigris') }).strict(),
+            app: z.null(),
+          })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict();
+
 const AppTigrisEnvelopeSchema = z
   .object({
     data: z
@@ -466,7 +493,10 @@ export function parseTigrisCredentialsResponse(
  * @returns Sanitized add-on identity and binding.
  */
 export function parseTigrisReadResponse(response: unknown): TigrisAddOnIdentity {
-  if (AddOnNotFoundEnvelopeSchema.safeParse(response).success) {
+  if (
+    AddOnNotFoundEnvelopeSchema.safeParse(response).success ||
+    AddOnDeletedEnvelopeSchema.safeParse(response).success
+  ) {
     throw new FlyGraphqlContractError('ADD_ON_MISSING');
   }
   let parsed: z.infer<typeof ReadEnvelopeSchema>;

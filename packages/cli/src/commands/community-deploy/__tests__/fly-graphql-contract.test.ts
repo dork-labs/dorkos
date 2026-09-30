@@ -185,6 +185,41 @@ describe('Fly Tigris GraphQL contract', () => {
     expect(FLY_TIGRIS_READ_QUERY).not.toContain('environment');
   });
 
+  // Fly soft-deletes: right after cleanup the exact-ID read still returns the bucket, renamed, with
+  // status "deleted" and no app (live gate, 2026-09-30, captured and sanitized). Reading that as
+  // invalid failed a run whose cleanup had in fact removed everything.
+  it("reads Fly's soft-deleted add-on as missing, and nothing looser", async () => {
+    const deleted = await fixture('tigris-read-deleted.json');
+    expect(() => parseTigrisReadResponse(deleted)).toThrowError(
+      expect.objectContaining({ code: 'ADD_ON_MISSING' })
+    );
+    const variants: Array<[string, (addOn: Record<string, unknown>) => void]> = [
+      ['still attached to an app', (addOn) => (addOn.app = { id: 'app_fixture_01', name: 'x' })],
+      ['another status', (addOn) => (addOn.status = 'deleting')],
+      ['another provider', (addOn) => (addOn.addOnProvider = { name: 'upstash' })],
+      ['no status', (addOn) => delete addOn.status],
+    ];
+    for (const [label, change] of variants) {
+      const source = await fixture('tigris-read-deleted.json');
+      change(objectAt(source, 'data', 'addOn'));
+      // Never "missing": it is either an ordinary add-on (whose renamed identity cleanup then
+      // refuses) or an invalid response.
+      let code: unknown = null;
+      try {
+        parseTigrisReadResponse(source);
+      } catch (error) {
+        code = (error as { code?: unknown }).code;
+      }
+      expect(code, label).not.toBe('ADD_ON_MISSING');
+    }
+    // A deleted-looking answer that also carries an error is not the clean answer Fly gives.
+    const withError = (await fixture('tigris-read-deleted.json')) as Record<string, unknown>;
+    withError.errors = [{ message: 'x', extensions: { code: 'INTERNAL' } }];
+    expect(() => parseTigrisReadResponse(withError)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
+    );
+  });
+
   // Fly's real answer for an add-on id it does not know (DOR-2584, captured live and sanitized).
   // Cleanup of a bucket that is already gone depends on reading this as "missing", not "invalid".
   it("reads Fly's exact not-found answer as a missing add-on, and nothing looser", async () => {
