@@ -50,6 +50,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
+  buttonVariants,
   EmptyState,
   QueryErrorState,
   Spinner,
@@ -439,7 +440,7 @@ function TopologyGraphInner({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDeleteBinding}
-              className="focus-visible:ring-offset-background bg-red-600 hover:bg-red-700 focus-visible:ring-red-600 focus-visible:ring-offset-2"
+              className={buttonVariants({ variant: 'destructive' })}
             >
               Remove
             </AlertDialogAction>

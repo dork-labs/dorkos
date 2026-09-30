@@ -33,9 +33,75 @@ import ts from 'typescript';
 
 const SRC = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 
-/** A ring or outline colour with an opacity (`ring-ring/50`, `outline-ring/[.4]`), or `ring-opacity-*`. */
-const PART_STRENGTH =
-  /^(?:(?:ring|outline)-(?!offset-)[^/\s]+\/(?!100$)(?:\d+|\[[^\]]+\])|ring-opacity-\d+)$/;
+/**
+ * Whether an alpha value is under full strength.
+ *
+ * A bare Tailwind modifier (`/50`) is a percentage. A bracketed modifier or an
+ * alpha inside a colour function is a fraction (`[.4]`, `/0.5`) unless it says
+ * `%` (`[100%]`, `/50%`). Anything that is not a plain number (a variable, a
+ * `calc()`) cannot be shown to be solid, so it counts as faint.
+ *
+ * @param alpha - The value as written.
+ * @param bareModifier - It came from a bare `/NN` modifier.
+ */
+function belowFull(alpha: string, bareModifier: boolean): boolean {
+  const value = alpha.replace(/^\[|\]$/g, '').trim();
+  if (!/^[\d.]+%?$/.test(value)) return true;
+  const n = parseFloat(value);
+  if (value.endsWith('%')) return n < 100;
+  return bareModifier ? n < 100 : n < 1;
+}
+
+/** The position of the last `/` outside brackets and parentheses, or -1. */
+function topLevelSlash(value: string): number {
+  let depth = 0;
+  let found = -1;
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if (char === '[' || char === '(') depth++;
+    else if (char === ']' || char === ')') depth--;
+    else if (char === '/' && depth === 0) found = i;
+  }
+  return found;
+}
+
+/**
+ * Whether an arbitrary colour (`[rgb(0_0_0/0.5)]`, `[color:oklch(…/50%)]`,
+ * `[rgba(0,0,0,.5)]`, `[#00000080]`, `[transparent]`) carries an alpha under
+ * full strength. A width like `[3px]` carries none.
+ */
+function arbitraryIsFaint(bracketed: string): boolean {
+  const inner = bracketed.slice(1, -1).replace(/^color:/, '');
+  if (inner === 'transparent') return true;
+  const hex = inner.match(/^#([0-9a-f]{4}|[0-9a-f]{8})$/i)?.[1];
+  if (hex) return parseInt(hex.length === 4 ? hex[3].repeat(2) : hex.slice(6), 16) < 255;
+  const slashAlpha = inner.match(/\/[_\s]*([^)_\s]+)[_\s]*\)\s*$/)?.[1];
+  if (slashAlpha) return belowFull(slashAlpha, false);
+  const legacy = inner.match(/^(?:rgba|hsla)\(([^)]*)\)$/)?.[1]?.split(',');
+  if (legacy?.length === 4) return belowFull(legacy[3], false);
+  return false;
+}
+
+/**
+ * Whether one utility (variants already removed) paints a ring or outline
+ * colour under full strength: `ring-ring/50`, `outline-ring/[.4]`,
+ * `inset-ring-ring/30`, `ring-[rgb(0_0_0/0.5)]`, `ring-opacity-50`. Offsets,
+ * widths and full-strength colours (`ring-ring/100`, `ring-ring/[100%]`) pass.
+ *
+ * @param utility - The class with its variants and `!` removed.
+ */
+function isPartStrength(utility: string): boolean {
+  const opacity = utility.match(/^ring-opacity-(\d+)$/);
+  if (opacity) return Number(opacity[1]) < 100;
+  const value = utility.match(/^(?:inset-)?(?:ring|outline)-(.+)$/)?.[1];
+  if (!value || value.startsWith('offset-')) return false;
+  const slash = topLevelSlash(value);
+  if (slash !== -1) {
+    const alpha = value.slice(slash + 1);
+    return belowFull(alpha, !alpha.startsWith('['));
+  }
+  return value.startsWith('[') && value.endsWith(']') && arbitraryIsFaint(value);
+}
 
 /** A variant that applies only while something has focus. */
 const FOCUS_VARIANT = /focus/;
@@ -132,7 +198,8 @@ function splitVariants(token: string): { variants: string[]; utility: string } {
       current += char;
     }
   }
-  return { variants: parts, utility: current.replace(/^!/, '') };
+  // Tailwind v4 writes important as a trailing `!`; v3's leading one still works.
+  return { variants: parts, utility: current.replace(/^!|!$/g, '') };
 }
 
 /** The part-strength rings in one string, sorted into focus rings and at-rest ones. */
@@ -141,7 +208,7 @@ function faintRings(text: string): { focus: string[]; atRest: string[] } {
   const atRest: string[] = [];
   for (const token of text.split(/\s+/)) {
     const { variants, utility } = splitVariants(token);
-    if (!PART_STRENGTH.test(utility)) continue;
+    if (!isPartStrength(utility)) continue;
     (variants.some((v) => FOCUS_VARIANT.test(v)) ? focus : atRest).push(token);
   }
   return { focus, atRest };
@@ -238,6 +305,45 @@ describe('faint focus rings', () => {
           'dark:focus-visible:outline-ring/50 focus-visible:ring-ring/[.4] focus:ring-opacity-50'
       ).focus
     ).toHaveLength(8);
+  });
+
+  it('catches the important forms, trailing and leading', () => {
+    expect(faintRings('focus-visible:ring-ring/50! focus-visible:!ring-ring/50').focus).toEqual([
+      'focus-visible:ring-ring/50!',
+      'focus-visible:!ring-ring/50',
+    ]);
+  });
+
+  it('catches an alpha inside an arbitrary colour', () => {
+    const forms = [
+      'focus-visible:ring-[rgb(0_0_0/0.5)]',
+      'focus-visible:ring-[color:oklch(0.7_0.2_40/50%)]',
+      'focus-visible:ring-[hsl(24_90%_44%_/_.4)]',
+      'focus-visible:ring-[rgba(0,0,0,0.5)]',
+      'focus-visible:ring-[#ff000080]',
+      'focus-visible:ring-[#f008]',
+      'focus-visible:ring-[transparent]',
+      'focus-visible:ring-[var(--x)]/30',
+    ];
+    expect(faintRings(forms.join(' ')).focus).toEqual(forms);
+  });
+
+  it('catches inset rings, behind a focus variant and at rest', () => {
+    expect(faintRings('focus-visible:inset-ring-ring/50 inset-ring-brand/30')).toEqual({
+      focus: ['focus-visible:inset-ring-ring/50'],
+      atRest: ['inset-ring-brand/30'],
+    });
+  });
+
+  it('passes a full-strength colour however it is written', () => {
+    expect(
+      faintRings(
+        'focus-visible:ring-ring/[100%] focus-visible:ring-ring/[1] focus-visible:ring-[rgb(0_0_0/1)] ' +
+          'focus-visible:ring-[color:oklch(0.7_0.2_40/100%)] focus-visible:ring-[#ff0000ff] ' +
+          'focus-visible:ring-[rgba(0,0,0,1)] focus-visible:inset-ring-ring focus-visible:ring-[3px] ' +
+          'focus-visible:ring-[hsl(var(--ring))]'
+      )
+    ).toEqual({ focus: [], atRest: [] });
   });
 
   it('counts a faint ring with no focus variant as at rest', () => {
