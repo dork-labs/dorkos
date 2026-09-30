@@ -45,7 +45,7 @@ Assumptions:
 
 ## 3) Codebase map
 
-- Launcher: `packages/cli/src/commands/community-deploy/` (preflight, plan, journal, execute, resume, owner handoff). Preflight marks `fly-role`, `neon-role`, billing and quota as `unknown`: a missing permission can only surface at the first write. Provider CLIs inherit the full process environment, so `FLY_API_TOKEN` and `NEON_API_KEY` reach `fly` and `neonctl`.
+- Launcher: `packages/cli/src/commands/community-deploy/` (preflight, plan, journal, execute, resume, owner handoff). Preflight marks `fly-role`, `neon-role`, billing and quota as `unknown`: a missing permission can only surface at the first write. Provider CLIs do not inherit the full process environment: `packages/cli/src/cli.ts` passes `fly` and `neonctl` a fixed list of variables, so `FLY_API_TOKEN` and `NEON_API_KEY` never reach them. A restricted Fly token goes in through `FLY_CONFIG_DIR`; the Neon route is set in `05-live-checklist.md`.
 - Live gate: `packages/cli/scripts/test-community-deploy-live.ts` and its `community-deploy-live-*.ts` siblings; owner proof in `community-deploy-live-proof.ts` (HTTP only: owner, one post, one private file, anonymous denial).
 - Two-Desktop driver: `apps/e2e/community-two-desktop/` (`infra.ts` starts its own Community servers; no remote-origin mode today).
 - Docs: `apps/community/FLY.md`, `docs/guides/cli-usage.mdx`, `docs/guides/communities.mdx`, `docs/self-hosting/meta.json`.
