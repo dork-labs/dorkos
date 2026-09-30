@@ -462,7 +462,7 @@ try {
   if (journal.imagePlatformDigest !== platformDigest)
     throw new Error('Packaged journal did not record the platform digest Fly reports');
   process.stdout.write(
-    'Packaged Community launcher proof passed: dry-run, exact release, provisioning, resume, pinned config, owner-pending, exported credentials used and never written.\n'
+    'Packaged Community launcher proof passed: dry-run, exact release, provisioning, resume, pinned config, owner-pending.\n'
   );
 } finally {
   await rm(temporary, { recursive: true, force: true });
