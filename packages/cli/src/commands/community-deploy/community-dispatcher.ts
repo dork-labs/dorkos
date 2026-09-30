@@ -14,7 +14,10 @@ import {
   readDefaultCommunityPreflight,
   createDefaultCommunityCreationDependencies,
 } from './runtime/default-services.js';
-import { createDefaultCommunityDeployDependencies } from './runtime/default-deploy.js';
+import {
+  createDefaultCommunityDeployDependencies,
+  resolveCommunityPlatformDigest,
+} from './runtime/default-deploy.js';
 import {
   assertOwnerHandoffPrerequisites,
   confirmOwnerClipboardWrite,
@@ -317,6 +320,13 @@ export async function runCommunityDispatcher(
             signal: cancellation.signal,
           }),
         execute: async (result) => {
+          // The digest Fly will report for the running image (DOR-2586), settled once per process.
+          let settledPlatformDigest: Promise<string> | undefined;
+          const platformDigest = () =>
+            (settledPlatformDigest ??= resolveCommunityPlatformDigest({
+              plan: result.plan,
+              options: serviceOptions,
+            }));
           if (parsed.values.resume) {
             const existing = resumeJournal!;
             assertCommunityLaunchPlanUnchanged(existing, result.plan);
@@ -375,6 +385,7 @@ export async function runCommunityDispatcher(
               latestJournal: () => latest!,
               persist,
               now: () => new Date().toISOString(),
+              resolvePlatformDigest: platformDigest,
             })
           );
           latest = deployed.journal;
@@ -390,6 +401,7 @@ export async function runCommunityDispatcher(
               persist,
               now: () => new Date().toISOString(),
               signal: cancellation.signal,
+              platformDigest: async () => latest?.imagePlatformDigest ?? platformDigest(),
             })
           );
           process.stdout.write(
