@@ -80,8 +80,11 @@ const TIMEOUT_MS = COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS;
 const DELIVERED_CAPTURE_MS = 30_000;
 /** Deadline for the no-op `fly ssh console` probe; the first one may issue an SSH certificate. */
 const SSH_PROBE_TIMEOUT_MS = 120_000;
-/** Launcher processes each run starts under the DorkOS-host guard: `--help`, launch, resume. */
-const GUARDED_LAUNCHER_RUNS = 3;
+/**
+ * The parents of the launcher processes each run starts under the DorkOS-host guard: `--help`,
+ * the launch and the resume, each spawned directly by the gate (node-pty's helper execs in place).
+ */
+const GUARDED_LAUNCHER_PARENTS = [process.pid, process.pid, process.pid];
 
 /** A launcher running in a PTY: its exit, and a way to stop it from the gate's finally. */
 interface LauncherRun {
@@ -493,7 +496,7 @@ async function main(): Promise<void> {
     // Three guarded launcher processes: `--help`, the interrupted launch and the resume.
     const dorkosHostsContacted = await readDorkosHostsContacted(
       dorkosHostsRecordPath,
-      GUARDED_LAUNCHER_RUNS
+      GUARDED_LAUNCHER_PARENTS
     ).catch((error: unknown) => {
       // Its message is fixed and non-secret; wrapped so the reason survives the after-cleanup path.
       throw new CommunityLiveGateError('dorkos-hosts-guard', null, (error as Error).message);
@@ -548,7 +551,7 @@ async function main(): Promise<void> {
     // record is read on every failure too, before the finally removes it. Best-effort.
     throw withDorkosHostsContacted(
       explained,
-      await readDorkosHostsContacted(dorkosHostsRecordPath, 0).catch((): string[] => [])
+      await readDorkosHostsContacted(dorkosHostsRecordPath, null).catch((): string[] => [])
     );
   } finally {
     if (bootstrap) Buffer.from(bootstrap).fill(0);

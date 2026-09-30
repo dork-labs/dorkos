@@ -230,11 +230,12 @@ function args(extra: string[] = []): string[] {
   ];
 }
 
-// Every launcher process the proof starts; the DorkOS-host guard must have loaded into each.
-let launcherRuns = 0;
+// The parent of every launcher process the proof starts, once per launcher: this process for a
+// plain run, the PTY helper for an interactive one. The DorkOS-host guard must load into each.
+const launcherParents: number[] = [];
 
 function runPlain(binary: string, commandArgs: string[], environment: NodeJS.ProcessEnv) {
-  launcherRuns++;
+  launcherParents.push(process.pid);
   return new Promise<{ code: number; output: string }>((resolvePromise, reject) => {
     const child = spawn(binary, commandArgs, {
       env: environment,
@@ -255,13 +256,14 @@ function runInteractive(
   commandArgs: string[],
   environment: NodeJS.ProcessEnv
 ) {
-  launcherRuns++;
   return new Promise<{ code: number; output: string }>((resolvePromise, reject) => {
     const child = spawn('python3', [helper, process.execPath, binary, ...commandArgs], {
       cwd: temporary,
       env: { ...environment, COMMUNITY_PROOF_APP_NAME: appName },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // The helper forks the launcher inside its PTY, so the launcher's parent is the helper.
+    if (child.pid !== undefined) launcherParents.push(child.pid);
     let output = '';
     child.stdout.on('data', (data) => (output += String(data)));
     child.stderr.on('data', (data) => (output += String(data)));
@@ -540,7 +542,10 @@ try {
   await assertOrphanSurvives('does not carry the marker this run recorded', 'unmarked app');
 
   // Last, so it covers every run above: the launch, the resume and both refused removals.
-  const dorkosHostsContacted = await readDorkosHostsContacted(dorkosHostsRecordPath, launcherRuns);
+  const dorkosHostsContacted = await readDorkosHostsContacted(
+    dorkosHostsRecordPath,
+    launcherParents
+  );
   if (dorkosHostsContacted.length > 0) {
     throw new Error(`Packaged launcher tried to reach DorkOS: ${dorkosHostsContacted.join(', ')}`);
   }

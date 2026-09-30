@@ -32,8 +32,8 @@
  * CLIs a minimal environment without `NODE_OPTIONS`, so only their command line and environment
  * values are checked.
  *
- * Each process the preload loads into appends one `{"loaded":<pid>}` line, so a caller can prove
- * the guard ran in every launcher it started, not just in one of them.
+ * Each process the preload loads into appends one `{"loaded":<pid>,"parent":<ppid>}` line, so a
+ * caller can prove the guard ran in every launcher it started, and in exactly those.
  *
  * @module scripts/community-deploy-no-dorkos-hosts
  */
@@ -43,6 +43,7 @@ import { appendFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import { syncBuiltinESMExports } from 'node:module';
+import { promisify } from 'node:util';
 import net from 'node:net';
 import process from 'node:process';
 import tls from 'node:tls';
@@ -172,21 +173,41 @@ export function installNoDorkosHostsGuard({ recordPath, extraHosts = cloudHostsF
     appendFileSync(recordPath, `${JSON.stringify({ seam, host })}\n`);
     return new DorkosHostRefusedError(seam, host);
   };
-  const patch = (target, name, wrap) => {
+  // Every host the call names is checked: an options object can override a URL's host.
+  const dorkosHostIn = (readHost, args) =>
+    [readHost(args)].flat().find((item) => item && isDorkosHost(item, extraHosts));
+  const patch = (target, name, seam, readHost, { returnsPromise = false } = {}) => {
     const original = target[name];
     if (typeof original !== 'function') return;
-    target[name] = wrap(original);
+    const guarded = function guarded(...args) {
+      const host = dorkosHostIn(readHost, args);
+      if (host) {
+        const error = refuse(seam, host);
+        if (returnsPromise) return Promise.reject(error);
+        throw error;
+      }
+      return original.apply(this, args);
+    };
+    // `util.promisify` reads a function's own symbols: `promisify.custom` (on `exec`/`execFile`,
+    // resolving `{ stdout, stderr }`) and Node's internal `customPromisifyArgs` (on `dns.lookup`,
+    // resolving `{ address, family }`). Carry every own symbol over, guarding `promisify.custom`,
+    // so a promisified seam keeps its shape under the guard and is still refused.
+    for (const symbol of Object.getOwnPropertySymbols(original)) {
+      const value = original[symbol];
+      guarded[symbol] =
+        symbol === promisify.custom && typeof value === 'function'
+          ? function guardedPromisified(...args) {
+              const host = dorkosHostIn(readHost, args);
+              if (host) return Promise.reject(refuse(seam, host));
+              return value.apply(this, args);
+            }
+          : value;
+    }
+    target[name] = guarded;
     restores.push(() => {
       target[name] = original;
     });
   };
-  const hostGuard = (seam, readHost) => (original) =>
-    function guarded(...args) {
-      // Every host the call names is checked: an options object can override a URL's host.
-      const host = [readHost(args)].flat().find((item) => item && isDorkosHost(item, extraHosts));
-      if (host) throw refuse(seam, host);
-      return original.apply(this, args);
-    };
 
   if (typeof globalThis.fetch === 'function') {
     const original = globalThis.fetch;
@@ -210,8 +231,8 @@ export function installNoDorkosHostsGuard({ recordPath, extraHosts = cloudHostsF
     ['http', http],
     ['https', https],
   ]) {
-    patch(module, 'request', hostGuard(`${label}.request`, requestHost));
-    patch(module, 'get', hostGuard(`${label}.get`, requestHost));
+    patch(module, 'request', `${label}.request`, requestHost);
+    patch(module, 'get', `${label}.get`, requestHost);
   }
 
   // `connect(options, [cb])`, `connect(port, [host], [cb])`, or `connect(path, [cb])` for a socket.
@@ -222,24 +243,13 @@ export function installNoDorkosHostsGuard({ recordPath, extraHosts = cloudHostsF
     ...hostsOfOptions(second),
     ...hostsOfOptions(third),
   ];
-  patch(net, 'connect', hostGuard('net.connect', socketHost));
-  patch(net, 'createConnection', hostGuard('net.createConnection', socketHost));
-  patch(tls, 'connect', hostGuard('tls.connect', socketHost));
+  patch(net, 'connect', 'net.connect', socketHost);
+  patch(net, 'createConnection', 'net.createConnection', socketHost);
+  patch(tls, 'connect', 'tls.connect', socketHost);
 
   const lookupHost = ([hostname]) => normalizeHost(hostname);
-  patch(dns, 'lookup', hostGuard('dns.lookup', lookupHost));
-  patch(
-    dns.promises,
-    'lookup',
-    (original) =>
-      function guardedLookup(...args) {
-        const host = lookupHost(args);
-        if (host && isDorkosHost(host, extraHosts)) {
-          return Promise.reject(refuse('dns.promises.lookup', host));
-        }
-        return original.apply(this, args);
-      }
-  );
+  patch(dns, 'lookup', 'dns.lookup', lookupHost);
+  patch(dns.promises, 'lookup', 'dns.promises.lookup', lookupHost, { returnsPromise: true });
 
   // A spawner's program, arguments and environment values are all it can aim at a host.
   const commandHost = ([command, second, third]) => {
@@ -264,7 +274,7 @@ export function installNoDorkosHostsGuard({ recordPath, extraHosts = cloudHostsF
     'execFileSync',
     'fork',
   ]) {
-    patch(childProcess, name, hostGuard(name, commandHost));
+    patch(childProcess, name, name, commandHost);
   }
 
   syncBuiltinESMExports();
@@ -276,9 +286,10 @@ export function installNoDorkosHostsGuard({ recordPath, extraHosts = cloudHostsF
 
 // Loaded as a preload: install only when a record file is named, so importing the module for its
 // helpers (the unit tests do) changes nothing. The `loaded` line is how the caller knows the guard
-// ran at all: a run with fewer loads than launchers is an unguarded run, never a clean one.
+// ran at all. It names the parent process too, so the caller counts only the launchers it started
+// itself: a guarded node grandchild cannot stand in for a launcher that ran unguarded.
 const recordPath = process.env[NO_DORKOS_HOSTS_RECORD_VARIABLE];
 if (recordPath) {
-  appendFileSync(recordPath, `${JSON.stringify({ loaded: process.pid })}\n`);
+  appendFileSync(recordPath, `${JSON.stringify({ loaded: process.pid, parent: process.ppid })}\n`);
   installNoDorkosHostsGuard({ recordPath });
 }

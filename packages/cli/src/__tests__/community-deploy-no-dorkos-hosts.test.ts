@@ -180,7 +180,10 @@ process.stdout.write(JSON.stringify(outcomes));
       'spawn',
       'spawn',
     ]);
-    expect(await readDorkosHostsContacted(record)).toEqual(['dorkos.ai', 'cloud.dorkos.ai']);
+    expect(await readDorkosHostsContacted(record, [process.pid])).toEqual([
+      'dorkos.ai',
+      'cloud.dorkos.ai',
+    ]);
   });
 
   it('refuses the configured DorkOS Cloud address too', async () => {
@@ -196,7 +199,7 @@ process.stdout.write(JSON.stringify(outcomes));
       DORKOS_CLOUD_URL: 'https://cloud.example.test',
     });
     expect(result.code, result.output).toBe(0);
-    expect(await readDorkosHostsContacted(record)).toEqual(['cloud.example.test']);
+    expect(await readDorkosHostsContacted(record, [process.pid])).toEqual(['cloud.example.test']);
   });
 
   it('leaves an empty record for a run that contacts no DorkOS host', async () => {
@@ -205,24 +208,70 @@ process.stdout.write(JSON.stringify(outcomes));
     const script = join(directory, 'launcher.mjs');
     await writeFile(script, 'process.exitCode = 0;\n');
     await runNode(script, withNoDorkosHostsGuard({}, record));
-    expect(await readDorkosHostsContacted(record)).toEqual([]);
+    expect(await readDorkosHostsContacted(record, [process.pid])).toEqual([]);
   });
 
   // Purpose: fails if a launcher that never loaded the guard could pass as one that contacted
-  // nothing. Each guarded process records its load; fewer loads than launchers is an error.
-  it('treats fewer loads than launchers as an unguarded run, not a clean one', async () => {
+  // nothing, including when a guarded node grandchild adds a load of its own. Only loads whose
+  // parent started a launcher count, exactly one per launcher.
+  it('counts one load per launcher it started, and no grandchild stands in for one', async () => {
     const directory = await scratch();
-    await expect(readDorkosHostsContacted(join(directory, 'never.jsonl'))).rejects.toThrow(
-      'loaded into 0 of 1'
+    await expect(
+      readDorkosHostsContacted(join(directory, 'never.jsonl'), [process.pid])
+    ).rejects.toThrow('loaded into 0 of the 1');
+    const record = join(directory, 'record.jsonl');
+    const plain = join(directory, 'launcher.mjs');
+    await writeFile(plain, 'process.exitCode = 0;\n');
+    // A guarded launcher that starts a guarded node child, which inherits NODE_OPTIONS.
+    const parent = join(directory, 'parent.mjs');
+    await writeFile(
+      parent,
+      `import { execFileSync } from 'node:child_process';\nexecFileSync(process.execPath, [${JSON.stringify(plain)}]);\n`
     );
+    await runNode(parent, withNoDorkosHostsGuard({}, record));
+    // The second launcher ran unguarded. Two loads are on record, but only one is a launcher's.
+    await runNode(plain, {});
+    const loads = (await readFile(record, 'utf8')).trim().split('\n');
+    expect(loads).toHaveLength(2);
+    await expect(readDorkosHostsContacted(record, [process.pid, process.pid])).rejects.toThrow(
+      'loaded into 1 of the 2'
+    );
+    await runNode(plain, withNoDorkosHostsGuard({}, record));
+    expect(await readDorkosHostsContacted(record, [process.pid, process.pid])).toEqual([]);
+    // A best-effort read on a failure path skips the count.
+    expect(await readDorkosHostsContacted(join(directory, 'never.jsonl'), null)).toEqual([]);
+  });
+
+  // Purpose: fails if the guard changes what `util.promisify` makes of a guarded function (it
+  // would drop `dns.lookup`'s own promisified form, resolving a bare address instead of
+  // `{ address, family }`), or if the promisified form lets a DorkOS host through.
+  it('keeps the promisified shape of dns.lookup and exec, and still refuses', async () => {
+    const directory = await scratch();
     const record = join(directory, 'record.jsonl');
     const script = join(directory, 'launcher.mjs');
-    await writeFile(script, 'process.exitCode = 0;\n');
-    await runNode(script, withNoDorkosHostsGuard({}, record));
-    await runNode(script, {});
-    await expect(readDorkosHostsContacted(record, 2)).rejects.toThrow('loaded into 1 of 2');
-    await runNode(script, withNoDorkosHostsGuard({}, record));
-    expect(await readDorkosHostsContacted(record, 2)).toEqual([]);
+    await writeFile(
+      script,
+      `
+import { exec } from 'node:child_process';
+import dns from 'node:dns';
+import { promisify } from 'node:util';
+const lookup = promisify(dns.lookup);
+const local = await lookup('localhost');
+const run = await promisify(exec)('echo hi');
+let refused = 'allowed';
+try { await lookup('dorkos.ai'); } catch (error) { refused = error.code; }
+process.stdout.write(JSON.stringify({ local: typeof local, family: typeof local.family, stdout: run.stdout, refused }));
+`
+    );
+    const result = await runNode(script, withNoDorkosHostsGuard({}, record));
+    expect(result.code, result.output).toBe(0);
+    expect(JSON.parse(result.output)).toEqual({
+      local: 'object',
+      family: 'number',
+      stdout: 'hi\n',
+      refused: 'DORKOS_HOST_REFUSED',
+    });
+    expect(await readDorkosHostsContacted(record, [process.pid])).toEqual(['dorkos.ai']);
   });
 
   // Purpose: fails if an options field can hide a DorkOS host behind another host-naming field.
@@ -243,7 +292,10 @@ for (const run of tries) { try { run(); } catch {} }
 `
     );
     await runNode(script, withNoDorkosHostsGuard({}, record));
-    expect(await readDorkosHostsContacted(record)).toEqual(['dorkos.ai', 'cloud.dorkos.ai']);
+    expect(await readDorkosHostsContacted(record, [process.pid])).toEqual([
+      'dorkos.ai',
+      'cloud.dorkos.ai',
+    ]);
   });
 
   it('appends itself after any preload already in NODE_OPTIONS', () => {

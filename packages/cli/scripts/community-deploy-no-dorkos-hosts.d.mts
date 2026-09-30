@@ -16,6 +16,14 @@ export interface DorkosHostRefusal {
   host: string;
 }
 
+/** One process the guard loaded into, and the process that started it. */
+export interface DorkosGuardLoad {
+  /** The guarded process's pid. */
+  loaded: number;
+  /** Its parent's pid: the gate for a launcher it spawned directly. */
+  parent: number;
+}
+
 /** Reduce a host, `host:port`, bracketed IPv6 literal or URL to a bare lowercase host name. */
 export declare function normalizeHost(value: unknown): string;
 

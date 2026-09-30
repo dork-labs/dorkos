@@ -8,6 +8,7 @@
 import { readFile } from 'node:fs/promises';
 import {
   NO_DORKOS_HOSTS_RECORD_VARIABLE,
+  type DorkosGuardLoad,
   type DorkosHostRefusal,
 } from './community-deploy-no-dorkos-hosts.mjs';
 
@@ -41,18 +42,21 @@ export function withNoDorkosHostsGuard(
 /**
  * Every DorkOS host the guarded launchers tried to reach, in first-seen order.
  *
- * Each process the guard loads into records a `loaded` line first. Fewer loads than the launcher
- * processes the caller started means at least one ran unguarded (it ignored `NODE_OPTIONS`, say)
- * and proves nothing: that is an error, never a clean pass.
+ * Each process the guard loads into records a `loaded` line naming its parent. The caller lists the
+ * parent of every launcher it started (its own pid for a direct spawn, a wrapper's pid otherwise),
+ * once per launcher; each parent must have exactly that many guarded children. Loads with any
+ * other parent (a guarded node grandchild) are ignored, so they can never stand in for a launcher
+ * that ran unguarded, and an unguarded launcher is an error, never a clean pass.
  *
  * @param recordPath - The file named in the guarded environment.
- * @param expectedLoads - How many launcher processes the caller started with this record.
+ * @param launcherParents - The parent pid of each launcher process started, one entry per launcher;
+ *   `null` skips the load check (a best-effort read on a failure path).
  * @returns Distinct host names; empty when no launcher contacted any.
- * @throws When the guard loaded fewer times than `expectedLoads`.
+ * @throws When a listed parent has a different number of guarded children than it started.
  */
 export async function readDorkosHostsContacted(
   recordPath: string,
-  expectedLoads = 1
+  launcherParents: readonly number[] | null
 ): Promise<string[]> {
   let text = '';
   try {
@@ -63,12 +67,20 @@ export async function readDorkosHostsContacted(
   const lines = text
     .split('\n')
     .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as DorkosHostRefusal | { loaded: number });
-  const loads = lines.filter((line) => 'loaded' in line).length;
-  if (loads < expectedLoads) {
-    throw new Error(
-      `The DorkOS-host guard loaded into ${loads} of ${expectedLoads} launcher processes`
-    );
+    .map((line) => JSON.parse(line) as DorkosHostRefusal | DorkosGuardLoad);
+  if (launcherParents) {
+    const loads = lines.flatMap((line) => ('loaded' in line ? [line.parent] : []));
+    const count = (list: readonly number[], parent: number) =>
+      list.filter((item) => item === parent).length;
+    for (const parent of new Set(launcherParents)) {
+      const started = count(launcherParents, parent);
+      const guarded = count(loads, parent);
+      if (guarded !== started) {
+        throw new Error(
+          `The DorkOS-host guard loaded into ${guarded} of the ${started} launcher processes started by ${parent}`
+        );
+      }
+    }
   }
   const hosts = lines.flatMap((line) => ('host' in line ? [line.host] : []));
   return [...new Set(hosts)];
