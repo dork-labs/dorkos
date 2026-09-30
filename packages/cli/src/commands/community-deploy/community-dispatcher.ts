@@ -283,6 +283,8 @@ export async function runCommunityDispatcher(
         `--remove-uncertain cannot be combined with ${combined.map((flag) => `--${flag}`).join(', ')}`
       );
     }
+    // Removal acts on an account too, so it names an exported credential the same way.
+    process.stdout.write(formatCommunityCredentialNotice(context.processEnv));
     return runRemoveUncertainCommand({
       runId: removeRunId,
       journalPath: launchJournalPath(context.dorkHome, removeRunId),

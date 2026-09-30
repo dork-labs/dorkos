@@ -3,6 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CompatibleCommunityRelease } from '../release-resolver.js';
+import { createInitialCommunityLaunchJournal } from '../resume.js';
+import { initializeLaunchJournal, launchJournalPath } from '../journal.js';
+import { createLaunchPlan } from '../plan.js';
 
 // The prompts need a real terminal; everything a credential could travel through stays real.
 vi.mock('../consent.js', () => ({
@@ -74,7 +77,14 @@ async function fakeTools(bin: string, seenPath: string, statePath: string): Prom
   };
   await writeFile(
     statePath,
-    JSON.stringify({ flyApp: null, neonProject: null, secrets: {}, neonCreates: 0 })
+    JSON.stringify({
+      flyApp: null,
+      flyNetwork: null,
+      flyCreatedAt: null,
+      neonProject: null,
+      neonRole: null,
+      secrets: {},
+    })
   );
   // Each fake records WHICH credential variables arrived (booleans, never values). The fake
   // `fly auth token` answers as flyctl does: the first SET variable wins, scheme stripped, and an
@@ -102,17 +112,17 @@ else if (name === 'fly' && args[0] === 'orgs' && args[1] === 'show') value = {ID
 else if (name === 'fly' && args[0] === 'orgs') value = {'dork-labs':'Dork Labs'};
 else if (name === 'fly' && args[0] === 'platform') value = [{code:'ord',name:'Chicago',latitude:41.8,longitude:-87.6,gateway_available:true,requires_paid_plan:false,deprecated:false}];
 else if (name === 'fly' && args[0] === 'apps' && args[1] === 'list') value = state.flyApp ? [state.flyApp] : [];
-else if (name === 'fly' && args[0] === 'apps' && args[1] === 'create') { state.flyApp = {ID:args[2],Name:args[2],Status:'deployed',Organization:{ID:'fly-org-id',Slug:at('--org'),Name:'Dork Labs'}}; save(); value = state.flyApp; }
+else if (name === 'fly' && args[0] === 'apps' && args[1] === 'create') { state.flyNetwork = at('--network'); state.flyCreatedAt = new Date().toISOString(); state.flyApp = {ID:args[2],Name:args[2],Status:'deployed',Network:'',Organization:{ID:'fly-org-id',Slug:at('--org'),Name:'Dork Labs'}}; save(); value = state.flyApp; }
 else if (name === 'fly' && args[0] === 'secrets' && args[1] === 'list') value = Object.entries(state.secrets).map(([secret, item]) => ({name:secret,digest:item.digest,status:item.status}));
 else if (name === 'fly' && args[0] === 'secrets' && args[1] === 'import') { const input = fs.readFileSync(0, 'utf8'); for (const line of input.trim().split('\\n')) { const secret = line.slice(0, line.indexOf('=')); state.secrets[secret] = {digest:'digest-' + secret.toLowerCase().replaceAll('_', '-'),status:'Staged'}; } save(); value = {}; }
 else if (name === 'neonctl' && args[0] === '--version') { process.stdout.write('5.0.0'); process.exit(0); }
 else if (name === 'neonctl' && args[0] === 'orgs') value = [{id:'org-dorian',name:'Dorian'}];
 else if (name === 'neonctl' && args[0] === 'api' && args[1] === '/regions') value = {regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:'40.4',geo_long:'-82.9'}]};
 else if (name === 'neonctl' && args[0] === 'projects' && args[1] === 'list') value = state.neonProject ? [state.neonProject] : [];
-else if (name === 'neonctl' && args[0] === 'projects' && args[1] === 'create') { state.neonProject = {id:'neon-project-1',org_id:at('--org-id'),name:at('--name'),region_id:at('--region-id'),pg_version:Number(at('--pg-version'))}; save(); value = {project: state.neonProject}; }
+else if (name === 'neonctl' && args[0] === 'projects' && args[1] === 'create') { state.neonRole = at('--role'); state.neonProject = {id:'neon-project-1',org_id:at('--org-id'),name:at('--name'),region_id:at('--region-id'),pg_version:Number(at('--pg-version')),created_at:new Date().toISOString()}; save(); value = {project: state.neonProject}; }
 else if (name === 'neonctl' && args[0] === 'branches') value = [{id:'branch-1',project_id:'neon-project-1',name:'main',default:true}];
-else if (name === 'neonctl' && args[0] === 'databases') value = [{id:4821907,branch_id:'branch-1',name:'community',owner_name:'community_owner',created_at:'2026-09-21T00:00:00Z',updated_at:'2026-09-21T00:00:00Z'}];
-else if (name === 'neonctl' && args[0] === 'roles') value = [{branch_id:'branch-1',name:'community_owner'}];
+else if (name === 'neonctl' && args[0] === 'databases') value = [{id:4821907,branch_id:'branch-1',name:'community',owner_name:state.neonRole,created_at:'2026-09-21T00:00:00Z',updated_at:'2026-09-21T00:00:00Z'}];
+else if (name === 'neonctl' && args[0] === 'roles') value = [{branch_id:'branch-1',name:state.neonRole}];
 else if (name === 'neonctl' && args[0] === 'api' && args[1].endsWith('/endpoints')) value = {endpoints:[{id:'ep-fixture',project_id:'neon-project-1',branch_id:'branch-1',region_id:'aws-us-east-2',host:'ep-fixture.aws-us-east-2.aws.neon.tech',type:'read_write'}]};
 else process.exit(3);
 process.stdout.write(JSON.stringify(value));
@@ -178,6 +188,35 @@ describe('exported credentials on a real (fake-service) launch', () => {
       }
       if (query.includes('DorkosReadTigris'))
         return json({ data: { addOn: created ? tigris : null } });
+      if (query.includes('DorkosReadAppProvenance')) {
+        // The launch marker round trip reads the app Fly made, as the fake recorded it.
+        const state = JSON.parse(await readFile(statePath, 'utf8')) as {
+          flyApp: { ID: string; Name: string } | null;
+          flyNetwork: string;
+          flyCreatedAt: string;
+          secrets: Record<string, unknown>;
+        };
+        if (!state.flyApp) {
+          return json({ data: { app: null }, errors: [{ message: 'Could not find App' }] });
+        }
+        return json({
+          data: {
+            app: {
+              id: state.flyApp.ID,
+              internalNumericId: 4817203,
+              name: state.flyApp.Name,
+              network: state.flyNetwork,
+              createdAt: state.flyCreatedAt,
+              organization: { slug: 'dork-labs' },
+              machines: { totalCount: 0 },
+              volumes: { totalCount: 0 },
+              ipAddresses: { totalCount: 0 },
+              certificates: { totalCount: 0 },
+              secrets: Object.keys(state.secrets).map((name) => ({ name })),
+            },
+          },
+        });
+      }
       return new Response('{}', { status: 500 });
     });
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
@@ -247,5 +286,49 @@ describe('exported credentials on a real (fake-service) launch', () => {
     const failureText =
       failure instanceof Error ? `${failure.message}\n${failure.stack ?? ''}` : String(failure);
     for (const text of [printed, failureText, ...saved]) expect(text).not.toContain(MARK);
+  });
+
+  it('names an exported credential on the removal path too, and prints no value', async () => {
+    const dorkHome = await temporary('dorkos-community-removal-home-');
+    const runId = '8b2f7c1e-4d3a-4e5f-9a6b-1c2d3e4f5a6b';
+    const plan = createLaunchPlan({
+      dorkosVersion: '0.76.0',
+      imageDigest: `sha256:${'a'.repeat(64)}`,
+      fly: {
+        organizationId: 'dork-labs',
+        organizationName: 'Dork Labs',
+        appName: APP,
+        region: 'ord',
+        machineSize: 'shared-cpu-1x',
+      },
+      neon: {
+        organizationId: 'org-dorian',
+        organizationName: 'Dorian',
+        projectName: APP,
+        region: 'aws-us-east-2',
+      },
+      tigris: { bucketName: APP, private: true },
+    });
+    await initializeLaunchJournal(
+      launchJournalPath(dorkHome, runId),
+      createInitialCommunityLaunchJournal(runId, plan, '2026-09-21T00:00:00.000Z')
+    );
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    await expect(
+      runCommunityDispatcher(['deploy', '--remove-uncertain', runId], {
+        cliVersion: '0.76.0',
+        dorkHome,
+        processEnv: { PATH: '', ...SENTINELS },
+        parseRelease: () => {
+          throw new Error('unused');
+        },
+      })
+    ).resolves.toBe(0);
+
+    const printed = stdout.mock.calls.map(([value]) => String(value)).join('');
+    expect(printed.match(/from your environment/gu)).toHaveLength(1);
+    expect(printed).toContain('This run has no unresolved resource.');
+    expect(printed).not.toContain(MARK);
   });
 });
