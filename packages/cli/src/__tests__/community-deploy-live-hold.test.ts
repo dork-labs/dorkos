@@ -12,7 +12,10 @@ import {
   HOLD_DONE_FILE_NAME,
   HOLD_POLL_MS,
   holdCommunityLive,
+  isWithinDirectory,
+  quietWriter,
   runHeldPhaseThenCleanUp,
+  type HeldPhaseEvent,
   writeCommunityLiveHandoff,
   type HoldClock,
 } from '../../scripts/community-deploy-live-hold.js';
@@ -74,11 +77,13 @@ function fakeSignals() {
   const emitter = new EventEmitter();
   return {
     source: {
-      on: (event: 'SIGINT' | 'SIGTERM', listener: () => void) => emitter.on(event, listener),
-      off: (event: 'SIGINT' | 'SIGTERM', listener: () => void) => emitter.off(event, listener),
+      on: (event: HeldPhaseEvent, listener: (...args: unknown[]) => void) =>
+        emitter.on(event, listener),
+      off: (event: HeldPhaseEvent, listener: (...args: unknown[]) => void) =>
+        emitter.off(event, listener),
     },
-    send: (event: 'SIGINT' | 'SIGTERM') => emitter.emit(event),
-    listening: () => emitter.listenerCount('SIGINT') + emitter.listenerCount('SIGTERM'),
+    send: (event: HeldPhaseEvent, ...args: unknown[]) => emitter.emit(event, ...args),
+    listening: () => emitter.eventNames().reduce((n, e) => n + emitter.listenerCount(e), 0),
   };
 }
 
@@ -204,6 +209,104 @@ describe('Community live gate hold', () => {
     expect(run.cleanup).toHaveBeenCalledOnce();
   });
 
+  it('ends on SIGHUP, the terminal closing', async () => {
+    // Catches a closed terminal killing the gate with the community running and the handoff on disk.
+    const signals = fakeSignals();
+    const run = await heldRun({ signals, onSleep: () => void signals.send('SIGHUP') });
+    expect((await run.result).phase.endedBy).toBe('interrupt');
+    expect(run.cleanup).toHaveBeenCalledOnce();
+    expect(existsSync(run.handoff()!.directory)).toBe(false);
+  });
+
+  it.each(['uncaughtException', 'unhandledRejection'] as const)(
+    'ends the hold on a stray %s, cleans up once, then reports the run failed',
+    async (event) => {
+      // Catches a stray error elsewhere in the process ending it before cleanup.
+      const signals = fakeSignals();
+      const run = await heldRun({
+        signals,
+        onSleep: (poll) => {
+          if (poll === 2) signals.send(event, new Error('boom owner-password-FAKE'));
+        },
+      });
+      const failure = await run.result.catch((error: unknown) => error);
+      expect(run.cleanup).toHaveBeenCalledOnce();
+      expect(existsSync(run.handoff()!.directory)).toBe(false);
+      expect((failure as CommunityLiveHeldPhaseError).step).toBe('unexpected-error');
+      expect(run.output.join('') + String(failure)).not.toContain('owner-password-FAKE');
+      expect(signals.listening()).toBe(0);
+    }
+  );
+
+  it('swallows output stream errors and writer throws, so a closed terminal cannot stop cleanup', async () => {
+    // Catches an EPIPE/EIO on stdout or stderr (no listener means Node throws) crashing cleanup.
+    const stream = new EventEmitter();
+    const signals = fakeSignals();
+    const cleanup = vi.fn(async () => {
+      signals.send('SIGINT');
+      stream.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+      return 'cleaned';
+    });
+    const result = await runHeldPhaseThenCleanUp({
+      signals: signals.source,
+      streams: [stream],
+      write: () => {
+        throw Object.assign(new Error('write EIO'), { code: 'EIO' });
+      },
+      phase: async (signal) => {
+        signals.send('SIGHUP');
+        return signal.aborted;
+      },
+      cleanup,
+    });
+    expect(result).toEqual({ phase: true, cleanup: 'cleaned' });
+    expect(() => stream.emit('error', new Error('later EPIPE'))).not.toThrow();
+    expect(() =>
+      quietWriter({
+        write: () => {
+          throw new Error('EIO');
+        },
+      })('x')
+    ).not.toThrow();
+  });
+
+  it('removes the handoff directory when writing it fails part way', async () => {
+    // Catches a failed write or chmod leaving a directory (and possibly passwords) behind.
+    const root = await parent();
+    const broken = {
+      ...access,
+      get member(): typeof access.member {
+        throw new Error('write failed');
+      },
+    };
+    await expect(writeCommunityLiveHandoff(root, broken)).rejects.toThrow('write failed');
+    const { readdirSync } = await import('node:fs');
+    expect(readdirSync(root)).toEqual([]);
+  });
+
+  it('sees a directory inside the checkout through a symlink on either side', async () => {
+    // Catches the repository check comparing path text, which a symlinked DORK_HOME defeats.
+    const { mkdir, symlink } = await import('node:fs/promises');
+    const root = await parent();
+    const repository = join(root, 'repository');
+    const elsewhere = join(root, 'elsewhere');
+    await mkdir(join(repository, 'apps'), { recursive: true });
+    await mkdir(elsewhere);
+    await symlink(repository, join(root, 'repo-link'));
+    await symlink(join(repository, 'apps'), join(elsewhere, 'home-link'));
+    // Not yet existing children resolve through their nearest existing ancestor.
+    expect(await isWithinDirectory(join(root, 'repo-link', '.dork', 'live-gate'), repository)).toBe(
+      true
+    );
+    expect(await isWithinDirectory(join(elsewhere, 'home-link', 'live-gate'), repository)).toBe(
+      true
+    );
+    expect(await isWithinDirectory(join(repository, 'x'), join(root, 'repo-link'))).toBe(true);
+    expect(await isWithinDirectory(repository, repository)).toBe(true);
+    expect(await isWithinDirectory(join(elsewhere, 'live-gate'), repository)).toBe(false);
+    expect(await isWithinDirectory(join(root, 'repository-2', 'x'), repository)).toBe(false);
+  });
+
   it('still removes the handoff and cleans up once when the hold throws', async () => {
     // Catches an error inside the hold skipping cleanup, or leaving the credentials on disk.
     let polls = 0;
@@ -309,43 +412,56 @@ describe('Community live gate hold', () => {
   });
 });
 
-describe('Community live gate hold, in a real process', () => {
-  // The fakes above prove the decisions; this proves the wiring the operator actually meets. The
-  // gate runs under tsx (`pnpm --filter dorkos test:community-live`), which relays signals to a
-  // child process, so a Control-C that tsx or Node's default handler turned into an exit would
-  // skip cleanup and leave a paid community running. Nothing here touches a provider.
-  it('ends the hold on SIGINT, removes the handoff, and finishes cleanup before exiting', async () => {
-    const { spawn } = await import('node:child_process');
-    const { pathToFileURL } = await import('node:url');
-    const { resolve } = await import('node:path');
-    const root = await parent();
-    const marker = join(root, 'cleanup-finished');
-    const script = join(root, 'hold.mts');
-    const module = pathToFileURL(
-      resolve(import.meta.dirname, '../../scripts/community-deploy-live-hold.ts')
-    ).href;
-    await writeFile(
-      script,
-      `import { writeFileSync, readdirSync } from 'node:fs';
-import { holdCommunityLive, runHeldPhaseThenCleanUp } from ${JSON.stringify(module)};
+/**
+ * Write a child script that runs the real held phase with the real `process` and streams, the way
+ * the gate does, and records what cleanup found in `marker`. Cleanup is slow on purpose, so a
+ * second signal lands while it runs.
+ */
+async function writeChildScript(root: string, marker: string): Promise<string> {
+  const { pathToFileURL } = await import('node:url');
+  const { resolve } = await import('node:path');
+  const script = join(root, 'hold.mts');
+  const module = pathToFileURL(
+    resolve(import.meta.dirname, '../../scripts/community-deploy-live-hold.ts')
+  ).href;
+  await writeFile(
+    script,
+    `import { writeFileSync, readdirSync } from 'node:fs';
+import { holdCommunityLive, quietWriter, runHeldPhaseThenCleanUp } from ${JSON.stringify(module)};
 const root = ${JSON.stringify(root)};
 const result = await runHeldPhaseThenCleanUp({
   signals: process,
-  write: (text) => void process.stderr.write(text),
+  streams: [process.stdout, process.stderr],
+  write: quietWriter(process.stderr),
   phase: (signal) => holdCommunityLive({
     parent: root, access: ${JSON.stringify(access)}, minutes: 1, signal,
-    write: (text) => void process.stdout.write(text),
+    write: quietWriter(process.stdout),
   }),
   cleanup: async () => {
-    // Slow on purpose, so a second Control-C lands while cleanup is running.
-    await new Promise((done) => setTimeout(done, 300));
+    await new Promise((done) => setTimeout(done, 500));
+    // Written to a closed terminal after a hangup; must not stop cleanup.
+    process.stderr.write('cleanup note\\n');
     const left = readdirSync(root).filter((name) => name.startsWith('handoff-'));
     writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ left }));
   },
 });
 process.stdout.write('ended by ' + result.phase.endedBy + '\\n');
 `
-    );
+  );
+  return script;
+}
+
+describe('Community live gate hold, in a real process', () => {
+  // The fakes above prove the decisions; these prove the wiring the operator actually meets. The
+  // gate runs under tsx (`pnpm --filter dorkos test:community-live`), which relays SIGINT and
+  // SIGTERM to its child but not SIGHUP. Anything Node's default handler turned into an exit would
+  // skip cleanup and leave a paid community running. Nothing here touches a provider.
+  it('ends the hold on SIGINT, removes the handoff, and finishes cleanup before exiting', async () => {
+    const { spawn } = await import('node:child_process');
+    const { resolve } = await import('node:path');
+    const root = await parent();
+    const marker = join(root, 'cleanup-finished');
+    const script = await writeChildScript(root, marker);
     const tsx = resolve(process.cwd(), 'node_modules/tsx/dist/cli.mjs');
     const child = spawn(process.execPath, [tsx, script], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
@@ -369,5 +485,48 @@ process.stdout.write('ended by ' + result.phase.endedBy + '\\n');
     expect(stdout).toContain('ended by interrupt');
     expect(JSON.parse(await readFile(marker, 'utf8'))).toEqual({ left: [] });
     for (const secret of SECRETS) expect(stdout + stderr).not.toContain(secret);
+  }, 30_000);
+
+  it('survives the terminal closing: SIGHUP to the whole group, with its output pipes gone', async () => {
+    // A closed terminal sends SIGHUP to the foreground process group and leaves every later write
+    // failing. The tsx parent dies of it (exit 129); the gate process must still clean up.
+    const { spawn } = await import('node:child_process');
+    const { resolve } = await import('node:path');
+    const root = await parent();
+    const marker = join(root, 'cleanup-finished');
+    const script = await writeChildScript(root, marker);
+    const tsx = resolve(process.cwd(), 'node_modules/tsx/dist/cli.mjs');
+    const child = spawn(process.execPath, [tsx, script], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    });
+    try {
+      let stdout = '';
+      await new Promise<void>((ready, fail) => {
+        const timer = setTimeout(() => fail(new Error('hold never started')), 15_000);
+        child.stdout.on('data', (chunk: Buffer) => {
+          stdout += chunk.toString();
+          if (stdout.includes('Handoff file:')) {
+            clearTimeout(timer);
+            ready();
+          }
+        });
+      });
+      // Close our end of both pipes first, so every write after the hangup fails with EPIPE.
+      child.stdout.destroy();
+      child.stderr.destroy();
+      process.kill(-child.pid!, 'SIGHUP');
+      const deadline = Date.now() + 10_000;
+      while (!existsSync(marker) && Date.now() < deadline)
+        await new Promise((done) => setTimeout(done, 100));
+      expect(JSON.parse(await readFile(marker, 'utf8'))).toEqual({ left: [] });
+    } finally {
+      // Only this test's own detached group, and only if something is still running in it.
+      try {
+        process.kill(-child.pid!, 'SIGKILL');
+      } catch {
+        // Already gone.
+      }
+    }
   }, 30_000);
 });

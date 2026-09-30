@@ -134,7 +134,7 @@ Covers A5 (two people and one local agent), A6 (backup and upgrade), A7 (keyboar
 
 ### L2 pass criteria
 
-- Gate receipt: `ownerCreated`, `privateFileRoundTrip`, `anonymousDownloadDenied` and `secondMemberProof` all true; `held.endedBy` is `signal`; `dorkosHostsContacted` is `[]`; the community offers no single sign-on. (A8)
+- Gate receipt: `ownerCreated`, `privateFileRoundTrip`, `anonymousDownloadDenied` and `secondMemberProof` all true; `held.endedBy` is `done`; `dorkosHostsContacted` is `[]`; the community offers no single sign-on. (A8)
 - Driver receipt: outcome `PASS` or `PASS-WITH-FINDINGS`, and every remote-mode step passed, including 17, 18 and 22. (A5, A7)
 - Restore check passed with matching bytes; upgrade check passed and is recorded as cross-version or same-image. (A6)
 - Before and after inventories match.

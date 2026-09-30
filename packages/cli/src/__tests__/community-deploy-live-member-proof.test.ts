@@ -23,6 +23,10 @@ type Faults = {
   hideOwnerPost?: boolean;
   /** Redemption is refused. */
   refuseRedeem?: boolean;
+  /** A signed-in account that has not joined can download the private file. */
+  openToSignedIn?: boolean;
+  /** The member's reply lands as a new top-level post instead of in the owner's thread. */
+  replyTopLevel?: boolean;
 };
 
 /**
@@ -91,7 +95,10 @@ function community(faults: Faults = {}) {
       const body = JSON.parse(String(init?.body)) as { parentEntryId?: string };
       if (member) {
         expect(body.parentEntryId).toBe(entryId);
-        return Response.json({ entry: { id: replyId } }, { status: 201 });
+        return Response.json(
+          { entry: { id: replyId, parentEntryId: faults.replyTopLevel ? null : entryId } },
+          { status: 201 }
+        );
       }
       return Response.json({ entry: { id: entryId } }, { status: 201 });
     }
@@ -106,6 +113,8 @@ function community(faults: Faults = {}) {
       const joined = calls.includes('POST /invites/redeem');
       if (!cookie && !(faults.publicAfterJoin && joined))
         return Response.json({ error: 'Authentication required' }, { status: 401 });
+      if (member && !joined && !faults.openToSignedIn)
+        return Response.json({ error: 'Not a member' }, { status: 403 });
       return new Response(member && faults.corruptMemberFile ? 'wrong bytes' : stored);
     }
     throw new Error(`Unexpected ${method} ${path}`);
@@ -137,6 +146,7 @@ describe('second-member Community HTTP proof', () => {
       'POST /invites',
       'POST /invites/preflight',
       'POST /api/auth/sign-up/email',
+      `GET /attachments/${attachmentId}`,
       'POST /invites/bind',
       'POST /invites/redeem',
       `GET /channels/${channelId}/entries`,
@@ -189,6 +199,16 @@ describe('second-member Community HTTP proof', () => {
   it('fails when the member cannot see the owner post', async () => {
     // Catches a member admitted to the community but not to the channel.
     await expect(community({ hideOwnerPost: true }).run()).rejects.toThrow('member-read');
+  });
+
+  it('fails when a signed-in account that has not joined can download the private file', async () => {
+    // Catches file access granted to any account on the server rather than to members.
+    await expect(community({ openToSignedIn: true }).run()).rejects.toThrow('non-member-download');
+  });
+
+  it('fails when the reply does not land in the owner thread', async () => {
+    // Catches a reply accepted as a new top-level post, which would not prove threading.
+    await expect(community({ replyTopLevel: true }).run()).rejects.toThrow('member-reply');
   });
 
   it('names only the failing step when the server refuses the join', async () => {

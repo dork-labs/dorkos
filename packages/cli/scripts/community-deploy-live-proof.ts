@@ -14,6 +14,9 @@ const UploadSchema = z.object({ attachment: ResourceSchema });
 const EntrySchema = z.object({ entry: ResourceSchema });
 const InviteSchema = z.object({ token: z.string().min(1).max(4096) });
 const RedeemSchema = z.object({ memberId: z.uuid() });
+const ReplySchema = z.object({
+  entry: z.object({ id: z.uuid(), parentEntryId: z.uuid().nullable() }),
+});
 const EntryPageSchema = z.object({
   entries: z.array(z.object({ id: z.uuid(), parentEntryId: z.uuid().nullable().optional() })),
 });
@@ -317,7 +320,8 @@ export interface CommunityLiveSecondMemberProof {
  * Prove a second person can join and use the community through its public HTTP contract only.
  *
  * As the owner, issue a one-seat invitation to the proven channel. As a new, anonymous browser,
- * open it, sign up a fresh account, bind and redeem it. Then, as that member: read the channel and
+ * open it and sign up a fresh account; that signed-in account must be refused the owner's private
+ * file until it has joined. Then it binds and redeems. As that member: read the channel and
  * find the owner's post, reply to it in a thread, and download the owner's private file with the
  * same sha256 the owner uploaded. Last, an anonymous download of that file must still be refused,
  * so admitting a member did not open the file to everyone.
@@ -355,6 +359,10 @@ export async function runCommunityLiveSecondMemberProof(
       { name: 'Second acceptance member', ...account },
       200
     );
+    // Signed in but not yet a member: an account alone must not open the private file.
+    step = 'non-member-download';
+    await member.request(`${path}/attachments/${owner.attachmentId}`, {}, [401, 403]);
+    step = 'member-join';
     await member.json(`${path}/invites/bind`, {}, 200);
     const { memberId } = RedeemSchema.parse(await member.json(`${path}/invites/redeem`, {}, 200));
     step = 'member-read';
@@ -364,7 +372,7 @@ export async function runCommunityLiveSecondMemberProof(
     if (!entries.some((entry) => entry.id === owner.entryId))
       throw new CommunityLiveProofError('member-read');
     step = 'member-reply';
-    const reply = EntrySchema.parse(
+    const reply = ReplySchema.parse(
       await member.json(
         `${path}/channels/${owner.channelId}/entries`,
         {
@@ -375,6 +383,8 @@ export async function runCommunityLiveSecondMemberProof(
         201
       )
     ).entry;
+    // The reply must land in the owner's thread, not as a new top-level post.
+    if (reply.parentEntryId !== owner.entryId) throw new CommunityLiveProofError('member-reply');
     step = 'member-file';
     const downloaded = await member.request(`${path}/attachments/${owner.attachmentId}`, {}, [200]);
     try {

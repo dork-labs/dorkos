@@ -222,11 +222,16 @@ describe('credentialed live gate entrypoint', () => {
     expect(phase).toBeGreaterThan(main.indexOf('bootstrap-rotation'));
     expect(phaseCallback).toBeGreaterThan(phase);
     expect(cleanupCallback).toBeGreaterThan(phaseCallback);
-    expect(main.slice(phase, phaseCallback)).toContain('signals: process,');
+    const wiring = main.slice(phase, phaseCallback);
+    expect(wiring).toContain('signals: process,');
+    // Output errors after the terminal closes must not crash cleanup (DOR-2591 review).
+    expect(wiring).toContain('streams: [process.stdout, process.stderr],');
+    expect(wiring).toContain('write: quietWriter(process.stderr),');
     const heldPhase = main.slice(phaseCallback, cleanupCallback);
     expect(heldPhase).toContain('await runCommunityLiveSecondMemberProof(ownerProof.owner, {');
     expect(heldPhase).toContain('await holdCommunityLive({');
     expect(heldPhase).toContain('signal,');
+    expect(heldPhase).toContain('write: quietWriter(process.stdout),');
     // Every provider read and write of cleanup, and the point it is called finished, are inside
     // the cleanup callback, never before the phase.
     for (const step of [
@@ -273,6 +278,12 @@ describe('credentialed live gate entrypoint', () => {
     const refusal = main.indexOf(
       "throw new CommunityLiveGateError('hold-directory-inside-repository');"
     );
+    // Real paths, not path text: a symlinked DORK_HOME must not slip past (DOR-2591 review). The
+    // comparison itself is tested in community-deploy-live-hold.test.ts.
+    const check = main.indexOf('await isWithinDirectory(liveGateHome,');
+    expect(check).toBeGreaterThan(0);
+    expect(check).toBeLessThan(refusal);
+    expect(main).not.toMatch(/relative\(/u);
     expect(refusal).toBeGreaterThan(main.indexOf('parseCommunityLiveGateConfig(process.env)'));
     expect(refusal).toBeLessThan(main.indexOf('await mkdtemp('));
     expect(refusal).toBeLessThan(main.indexOf('await command('));

@@ -8,7 +8,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { isAbsolute, join, relative } from 'node:path';
+import { join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import * as pty from 'node-pty';
@@ -21,7 +21,12 @@ import {
   runCommunityLiveOwnerProof,
   runCommunityLiveSecondMemberProof,
 } from './community-deploy-live-proof.js';
-import { holdCommunityLive, runHeldPhaseThenCleanUp } from './community-deploy-live-hold.js';
+import {
+  holdCommunityLive,
+  isWithinDirectory,
+  quietWriter,
+  runHeldPhaseThenCleanUp,
+} from './community-deploy-live-hold.js';
 import {
   CommunityLiveGateError,
   receiveClipboard,
@@ -160,16 +165,11 @@ async function main(): Promise<void> {
   ensureNodePtySpawnHelperExecutable({ resolveFrom: import.meta.url });
   const liveGateHome = join(process.env.DORK_HOME ?? join(homedir(), '.dork'), 'live-gate');
   // The handoff file holds two passwords. It is written under the retained run directory, which
-  // must not be inside this checkout, where a `git add` could pick it up. Checked before anything
-  // is created, so a misplaced DORK_HOME costs nothing.
-  const fromRepository = relative(
-    fileURLToPath(new URL('../../../', import.meta.url)),
-    liveGateHome
-  );
+  // must not be inside this checkout, where a `git add` could pick it up. Real paths are compared,
+  // so a symlinked DORK_HOME cannot hide it. Checked before anything is created.
   if (
     config.holdMinutes !== null &&
-    !fromRepository.startsWith('..') &&
-    !isAbsolute(fromRepository)
+    (await isWithinDirectory(liveGateHome, fileURLToPath(new URL('../../../', import.meta.url))))
   )
     throw new CommunityLiveGateError('hold-directory-inside-repository');
   const runDirectory = await mkdtemp(join(tmpdir(), 'dorkos-community-live-'));
@@ -390,7 +390,8 @@ async function main(): Promise<void> {
     // failed is reported only after it (see runHeldPhaseThenCleanUp).
     const held = await runHeldPhaseThenCleanUp({
       signals: process,
-      write: (text) => void process.stderr.write(text),
+      streams: [process.stdout, process.stderr],
+      write: quietWriter(process.stderr),
       phase: async (signal) => {
         const member = await runCommunityLiveSecondMemberProof(ownerProof.owner, {
           appName,
@@ -406,7 +407,7 @@ async function main(): Promise<void> {
                 access: member.access,
                 minutes: config.holdMinutes,
                 signal,
-                write: (text) => void process.stdout.write(text),
+                write: quietWriter(process.stdout),
               });
         return { member: member.receipt, hold };
       },
