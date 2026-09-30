@@ -1,3 +1,4 @@
+import { channelWatermarks } from '../content/watermark.js';
 import { transaction } from '../data.js';
 import { BlobStoreError, queueCommittedBlobDeletion } from '../storage/index.js';
 import { exportRequesterOf, hasExportAuthority, READABLE_CHANNEL_SQL } from './authority.js';
@@ -293,13 +294,8 @@ class ExportRun extends ExportJob {
               [this.job.requester_member_id, this.job.community_id]
             );
       const ids = channels.rows.map((row) => row.id);
-      const marks = await client.query<{ channel_id: string; seq: string }>(
-        `SELECT channel_id,max(seq)::text AS seq FROM entries
-         WHERE community_id=$1 AND channel_id=ANY($2::uuid[]) GROUP BY channel_id`,
-        [this.job.community_id, ids]
-      );
       const watermark = Object.fromEntries(
-        marks.rows.map((row) => [row.channel_id, Number(row.seq)])
+        await channelWatermarks(client, this.job.community_id, ids)
       );
       const redaction = await client.query<{ id: string }>(
         'SELECT COALESCE(max(id),0)::text AS id FROM entry_redactions WHERE community_id=$1',

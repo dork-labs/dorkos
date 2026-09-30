@@ -20,6 +20,10 @@ import { sql } from 'drizzle-orm';
 const time = (name: string) => timestamp(name, { withTimezone: true }).notNull().defaultNow();
 const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 
+// A reference from one community-owned row to another is declared once, as the table's
+// (community_id, …) tenant foreignKey below, never also as a column `.references()`: the tenant
+// key enforces the plain one, and a second key doubles every insert's and delete's checks (0027).
+
 /** Immutable identity and display record for this independent deployment. */
 export const communities = pgTable(
   'communities',
@@ -423,9 +427,7 @@ export const invites = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    issuerMemberId: uuid('issuer_member_id')
-      .notNull()
-      .references(() => members.id),
+    issuerMemberId: uuid('issuer_member_id').notNull(),
     channelId: uuid('channel_id'),
     tokenHash: text('token_hash').notNull().unique(),
     seatLimit: integer('seat_limit').notNull(),
@@ -455,9 +457,7 @@ export const inviteUses = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    inviteId: uuid('invite_id')
-      .notNull()
-      .references(() => invites.id),
+    inviteId: uuid('invite_id').notNull(),
     userId: text('user_id')
       .notNull()
       .references(() => users.id),
@@ -482,9 +482,7 @@ export const pendingAdmissions = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    inviteId: uuid('invite_id')
-      .notNull()
-      .references(() => invites.id),
+    inviteId: uuid('invite_id').notNull(),
     tokenHash: text('token_hash').notNull().unique(),
     accountId: text('account_id'),
     boundAt: timestamp('bound_at', { withTimezone: true }),
@@ -521,13 +519,9 @@ export const admissionReceipts = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    inviteId: uuid('invite_id')
-      .notNull()
-      .references(() => invites.id),
+    inviteId: uuid('invite_id').notNull(),
     accountId: text('account_id').notNull(),
-    memberId: uuid('member_id')
-      .notNull()
-      .references(() => members.id),
+    memberId: uuid('member_id').notNull(),
     createdAt: time('created_at'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   },
@@ -570,7 +564,7 @@ export const connectionPairings = pgTable(
     verifierHash: text('verifier_hash').notNull(),
     installName: text('install_name').notNull(),
     scopes: text('scopes').array().notNull(),
-    memberId: uuid('member_id').references(() => members.id),
+    memberId: uuid('member_id'),
     codeHash: text('code_hash'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
@@ -599,9 +593,7 @@ export const connectionGrants = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    memberId: uuid('member_id')
-      .notNull()
-      .references(() => members.id),
+    memberId: uuid('member_id').notNull(),
     tokenHash: text('token_hash').notNull().unique(),
     installName: text('install_name').notNull(),
     scopes: text('scopes').array().notNull(),
@@ -646,12 +638,8 @@ export const channelMembers = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    channelId: uuid('channel_id')
-      .notNull()
-      .references(() => channels.id),
-    memberId: uuid('member_id')
-      .notNull()
-      .references(() => members.id),
+    channelId: uuid('channel_id').notNull(),
+    memberId: uuid('member_id').notNull(),
     joinedAt: time('joined_at'),
   },
   (table) => [
@@ -679,9 +667,7 @@ export const agents = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    ownerMemberId: uuid('owner_member_id')
-      .notNull()
-      .references(() => members.id),
+    ownerMemberId: uuid('owner_member_id').notNull(),
     displayName: text('display_name').notNull(),
     handle: text('handle').notNull(),
     localAgentId: text('local_agent_id'),
@@ -709,9 +695,7 @@ export const agentCredentials = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    agentId: uuid('agent_id')
-      .notNull()
-      .references(() => agents.id),
+    agentId: uuid('agent_id').notNull(),
     tokenHash: text('token_hash').notNull().unique(),
     createdAt: time('created_at'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -733,12 +717,8 @@ export const agentChannelMembers = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    channelId: uuid('channel_id')
-      .notNull()
-      .references(() => channels.id),
-    agentId: uuid('agent_id')
-      .notNull()
-      .references(() => agents.id),
+    channelId: uuid('channel_id').notNull(),
+    agentId: uuid('agent_id').notNull(),
     joinedAt: time('joined_at'),
   },
   (table) => [
@@ -765,12 +745,8 @@ export const communityHandles = pgTable(
       .notNull()
       .references(() => communities.id),
     handle: text('handle').notNull(),
-    memberId: uuid('member_id')
-      .unique()
-      .references(() => members.id),
-    agentId: uuid('agent_id')
-      .unique()
-      .references(() => agents.id),
+    memberId: uuid('member_id').unique(),
+    agentId: uuid('agent_id').unique(),
   },
   (table) => [
     primaryKey({ columns: [table.communityId, table.handle] }),
@@ -795,12 +771,10 @@ export const entries = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    channelId: uuid('channel_id')
-      .notNull()
-      .references(() => channels.id),
+    channelId: uuid('channel_id').notNull(),
     seq: bigint('seq', { mode: 'number' }).notNull(),
-    authorMemberId: uuid('author_member_id').references(() => members.id),
-    authorAgentId: uuid('author_agent_id').references(() => agents.id),
+    authorMemberId: uuid('author_member_id'),
+    authorAgentId: uuid('author_agent_id'),
     authorDisplayName: text('author_display_name').notNull(),
     text: text('text').notNull(),
     parentEntryId: uuid('parent_entry_id'),
@@ -912,12 +886,10 @@ export const attachments = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    channelId: uuid('channel_id')
-      .notNull()
-      .references(() => channels.id),
-    uploaderMemberId: uuid('uploader_member_id').references(() => members.id),
-    uploaderAgentId: uuid('uploader_agent_id').references(() => agents.id),
-    entryId: uuid('entry_id').references(() => entries.id),
+    channelId: uuid('channel_id').notNull(),
+    uploaderMemberId: uuid('uploader_member_id'),
+    uploaderAgentId: uuid('uploader_agent_id'),
+    entryId: uuid('entry_id'),
     blobKey: text('blob_key').notNull().unique(),
     displayName: text('display_name').notNull(),
     contentType: text('content_type').notNull(),
@@ -983,7 +955,7 @@ export const exportArchives = pgTable(
       .notNull()
       .references(() => communities.id),
     /** Null only for an evidence export, which nobody asked for (0025). */
-    requesterMemberId: uuid('requester_member_id').references(() => members.id),
+    requesterMemberId: uuid('requester_member_id'),
     scope: text('scope').notNull(),
     /** The whole-community takedown an evidence export preserves (0025). */
     evidenceTakedownId: uuid('evidence_takedown_id'),
@@ -1348,12 +1320,8 @@ export const readCursors = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    channelId: uuid('channel_id')
-      .notNull()
-      .references(() => channels.id),
-    memberId: uuid('member_id')
-      .notNull()
-      .references(() => members.id),
+    channelId: uuid('channel_id').notNull(),
+    memberId: uuid('member_id').notNull(),
     seq: bigint('seq', { mode: 'number' }).notNull().default(0),
     updatedAt: time('updated_at'),
   },
@@ -1380,9 +1348,7 @@ export const ownerQuotaWindows = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    ownerMemberId: uuid('owner_member_id')
-      .notNull()
-      .references(() => members.id),
+    ownerMemberId: uuid('owner_member_id').notNull(),
     windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
     postCount: integer('post_count').notNull().default(0),
     uploadBytes: bigint('upload_bytes', { mode: 'number' }).notNull().default(0),
@@ -1405,7 +1371,7 @@ export const auditEvents = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    actorMemberId: uuid('actor_member_id').references(() => members.id),
+    actorMemberId: uuid('actor_member_id'),
     action: text('action').notNull(),
     subjectId: text('subject_id'),
     actorKind: text('actor_kind').notNull().default('member'),
