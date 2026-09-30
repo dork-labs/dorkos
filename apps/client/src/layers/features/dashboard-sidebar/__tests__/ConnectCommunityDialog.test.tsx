@@ -257,7 +257,7 @@ describe('ConnectCommunityDialog', () => {
       coded(429, 'COMMUNITY_LOOKUP_RATE_LIMITED', { retryAfterSeconds: 17 })
     );
     expect(alert).toHaveTextContent(
-      'That community’s host is getting too many lookups right now, so your address may be fine. Wait 17 seconds, then try again.'
+      'This DorkOS has tried that community too many times in a short while. Your address may be fine. Wait 17 seconds, then try again.'
     );
     expect(alert).not.toHaveTextContent('Check the community address');
   });
@@ -280,6 +280,27 @@ describe('ConnectCommunityDialog', () => {
       'This community’s server is too old to connect to this DorkOS. Ask whoever runs the community to update it, then try again.'
     );
     expect(alert).not.toHaveTextContent('Check the community address');
+  });
+
+  // Purpose: after a refusal, a keyboard or screen-reader user lands back on the address with
+  // the message tied to it. The field is marked invalid only when the address is in doubt.
+  // Fails if focus stays lost on the disabled field, or the alert is not linked to the input.
+  it('returns focus to the address and ties the message to it', async () => {
+    const alert = await refusedWith(coded(404, 'COMMUNITY_NAME_NOT_FOUND'));
+    const address = screen.getByLabelText('Community address');
+    await waitFor(() => expect(address).toHaveFocus());
+    expect(alert.id).not.toBe('');
+    expect(address.getAttribute('aria-describedby')?.split(' ')).toContain(alert.id);
+    expect(address).toHaveAccessibleDescription(expect.stringContaining('No community uses'));
+    expect(address).toHaveAttribute('aria-invalid', 'true');
+    cleanup();
+
+    const limited = await refusedWith(coded(429, 'COMMUNITY_LOOKUP_RATE_LIMITED'));
+    const again = screen.getByLabelText('Community address');
+    await waitFor(() => expect(again).toHaveFocus());
+    expect(again.getAttribute('aria-describedby')?.split(' ')).toContain(limited.id);
+    // Too many tries is not the address's fault.
+    expect(again).not.toHaveAttribute('aria-invalid');
   });
 
   // Purpose: only the known codes get their own words. An unknown code, and the server's own

@@ -45,9 +45,10 @@ import {
  *   link, so the example is built on the host they typed.
  * - `COMMUNITY_NAME_NOT_FOUND`: the host is real but knows no community by that
  *   short address. Here the spelling really is the thing to check.
- * - `COMMUNITY_LOOKUP_RATE_LIMITED`: the host is turning lookups away for a
- *   while. The address may be fine; the answer is to wait, for as long as the
- *   host said when it said.
+ * - `COMMUNITY_LOOKUP_RATE_LIMITED`: the host limits how often one machine may
+ *   look up a name or start a connection, and this one has reached it. The
+ *   address may be fine; the answer is to wait, for as long as the host said
+ *   when it said.
  * - `COMMUNITY_UPGRADE_REQUIRED`: the community's server is older than this
  *   DorkOS can connect to. Nothing the person types fixes it; whoever runs the
  *   server has to update it.
@@ -68,12 +69,23 @@ function startErrorMessage(error: unknown, address: string | undefined): string 
     case 'COMMUNITY_NAME_NOT_FOUND':
       return 'No community uses that short address on this host. Check the spelling, or ask for the community’s full link.';
     case 'COMMUNITY_LOOKUP_RATE_LIMITED':
-      return `That community’s host is getting too many lookups right now, so your address may be fine. Wait ${waitFor(refusal.body?.retryAfterSeconds)}, then try again.`;
+      return `This DorkOS has tried that community too many times in a short while. Your address may be fine. Wait ${waitFor(refusal.body?.retryAfterSeconds)}, then try again.`;
     case 'COMMUNITY_UPGRADE_REQUIRED':
       return 'This community’s server is too old to connect to this DorkOS. Ask whoever runs the community to update it, then try again.';
     default:
       return 'Couldn’t connect. Check the community address and try again.';
   }
+}
+
+/**
+ * Whether a failed start puts the address itself in doubt. A busy host or an
+ * outdated server is not the address's fault, so the field is not marked
+ * invalid for those; the message is still tied to it.
+ */
+function blamesAddress(error: unknown): boolean {
+  const code =
+    typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : '';
+  return code !== 'COMMUNITY_LOOKUP_RATE_LIMITED' && code !== 'COMMUNITY_UPGRADE_REQUIRED';
 }
 
 /** How long to wait, from the host's own `Retry-After` in seconds, or a minute when it gave none. */
@@ -376,6 +388,13 @@ function ConnectCommunityBody({
   });
   const end = useEndCommunityConnection();
 
+  // A failed start hands focus back to the address, where the fix (or the retry) begins. The
+  // field was disabled while the start ran, so focus is moved once it is enabled again.
+  const startError = start.error;
+  useEffect(() => {
+    if (startError) addressInput.current?.focus();
+  }, [startError]);
+
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!url.trim() || !installName.trim() || start.isPending) return;
@@ -433,7 +452,8 @@ function ConnectCommunityBody({
               type="url"
               inputMode="url"
               placeholder="https://spaces.example.com/acme"
-              aria-describedby={`${id}-url-hint`}
+              aria-describedby={start.error ? `${id}-url-hint ${id}-url-error` : `${id}-url-hint`}
+              aria-invalid={start.error && blamesAddress(start.error) ? true : undefined}
               required
               autoComplete="url"
               value={url}
@@ -460,7 +480,7 @@ function ConnectCommunityBody({
             </p>
           </div>
           {start.error && (
-            <p role="alert" className="text-destructive text-sm">
+            <p id={`${id}-url-error`} role="alert" className="text-destructive text-sm">
               {startErrorMessage(start.error, start.variables)}
             </p>
           )}

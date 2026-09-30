@@ -66,6 +66,11 @@ let rejectedStatus = 403;
 /** The wire error code sent with a rejection, when a test needs one. */
 let rejectedCode: string | undefined;
 let rejectedPath: string | undefined;
+/**
+ * A refusal the host gives to a qualified pairing start instead of starting one, when a test
+ * needs it: its status, JSON body and optional `Retry-After` header.
+ */
+let pairingStartRefusal: { status: number; body: unknown; retryAfter?: string } | undefined;
 /** What the host says to `/me/host-access`; `undefined` models a host built before it (404). */
 let hostAccessAnswer: { status: number; body: unknown } | undefined;
 /** What `/me/connection-access` reports: `archived` models a host hold, as installations see it. */
@@ -196,6 +201,10 @@ beforeAll(async () => {
         description: null,
         createdAt: new Date().toISOString(),
       });
+    } else if (req.url === `${qualified}/pairings/start` && pairingStartRefusal) {
+      if (pairingStartRefusal.retryAfter)
+        res.setHeader('retry-after', pairingStartRefusal.retryAfter);
+      send(pairingStartRefusal.body, pairingStartRefusal.status);
     } else if (req.url === `${qualified}/pairings/start` && !legacySingletonServer) {
       const pairingId = randomUUID();
       send(
@@ -430,6 +439,46 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       ).resolves.toMatchObject({ connection: { remoteCommunityId } });
     } finally {
       requireExplicitCommunity = false;
+    }
+  });
+
+  // Purpose: the host limits pairing starts per caller (5 a minute by default), which says
+  // nothing about the address. Fails if that 429 is rethrown as a generic failure, which the
+  // dialog would show as "check the community address", or if the host's wait is lost.
+  it('reports a limited pairing start as rate limited, with the host’s wait', async () => {
+    const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+    pairingStartRefusal = {
+      status: 429,
+      body: { code: 'RATE_LIMITED', message: 'Too many attempts. Try again soon.' },
+      retryAfter: '42',
+    };
+    try {
+      for (const link of [origin, `${origin}/c/${remoteCommunityId}`]) {
+        const refusal = service.start('limited-owner', link, 'Limited install');
+        await expect(refusal, link).rejects.toBeInstanceOf(RemoteCommunityLookupRateLimitedError);
+        await expect(refusal, link).rejects.toMatchObject({ retryAfterSeconds: 42 });
+      }
+    } finally {
+      pairingStartRefusal = undefined;
+    }
+  });
+
+  // Purpose: only a server with no qualified pairing route (an uncoded 404) needs upgrading. A
+  // current server's coded NOT_FOUND means the community went away between discovery and
+  // pairing, which an upgrade would not fix. Fails if any 404 there reads as "upgrade".
+  it('asks for an upgrade only on an uncoded 404 from the pairing start', async () => {
+    const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+    pairingStartRefusal = { status: 404, body: { code: 'NOT_FOUND', message: 'Not found.' } };
+    try {
+      const gone = service.start('gone-owner', origin, 'Gone install');
+      await expect(gone).rejects.toBeInstanceOf(PinnedHttpError);
+      await expect(gone).rejects.toMatchObject({ status: 404, remoteCode: 'NOT_FOUND' });
+      pairingStartRefusal = { status: 404, body: {} };
+      await expect(service.start('old-owner', origin, 'Old install')).rejects.toBeInstanceOf(
+        RemoteCommunityUpgradeRequiredError
+      );
+    } finally {
+      pairingStartRefusal = undefined;
     }
   });
 

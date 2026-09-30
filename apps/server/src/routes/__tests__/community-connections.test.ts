@@ -238,7 +238,8 @@ describe('local connection route authority and public projection', () => {
       expect(response.headers['retry-after']).toBe('17');
       expect(response.body).toEqual({
         code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
-        error: 'The community’s host is getting too many lookups. Wait a minute, then try again.',
+        error:
+          'This DorkOS has tried that community too many times in a short while. Wait 17 seconds, then try again.',
         retryAfterSeconds: 17,
       });
       // A host that named no wait gets no invented one.
@@ -248,7 +249,11 @@ describe('local connection route authority and public projection', () => {
         .send({ url: 'https://community.example/acme', installName: 'Desktop' });
       expect(unnamed.status).toBe(429);
       expect(unnamed.headers['retry-after']).toBeUndefined();
-      expect(unnamed.body).not.toHaveProperty('retryAfterSeconds');
+      expect(unnamed.body).toEqual({
+        code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
+        error:
+          'This DorkOS has tried that community too many times in a short while. Wait a minute, then try again.',
+      });
     } finally {
       await new Promise<void>((resolve) => limitedServer.close(() => resolve()));
       await rm(limitedDirectory, { recursive: true, force: true });

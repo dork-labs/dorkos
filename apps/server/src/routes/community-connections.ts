@@ -85,6 +85,14 @@ export function resolveCommunityOwner(req: Request, res: Response): string | nul
   return caller.id;
 }
 
+/** A host's wait in words: whole seconds under a minute, rounded-up minutes past it. */
+function waitFor(seconds: number | undefined): string {
+  if (seconds === undefined) return 'a minute';
+  if (seconds < 60) return seconds === 1 ? '1 second' : `${seconds} seconds`;
+  const minutes = Math.ceil(seconds / 60);
+  return minutes === 1 ? 'a minute' : `${minutes} minutes`;
+}
+
 function failure(res: Response, error: unknown): void {
   if (error instanceof RemotePairingBusyError) {
     // Coded so a client can tell "another check of this connection is in
@@ -109,7 +117,7 @@ function failure(res: Response, error: unknown): void {
     if (retryAfterSeconds !== undefined) res.set('Retry-After', String(retryAfterSeconds));
     res.status(429).json({
       code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
-      error: 'The community’s host is getting too many lookups. Wait a minute, then try again.',
+      error: `This DorkOS has tried that community too many times in a short while. Wait ${waitFor(retryAfterSeconds)}, then try again.`,
       ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
     });
   } else if (error instanceof RemoteCommunityUpgradeRequiredError) {
