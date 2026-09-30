@@ -160,7 +160,7 @@ function stagingRefusal(error: StagingError): { status: number; message: string 
       return {
         status: 507,
         message:
-          'DorkOS couldn’t check how much free space this computer has, so it didn’t start the move. Try again.',
+          'This computer’s disk can’t report how much free space it has, so DorkOS didn’t start the move. DorkOS holds the file in its data folder while it goes up. If that folder is on a network drive or another special drive, start DorkOS with its data folder on a local disk (set DORK_HOME to a folder there), then start the move again.',
       };
     case 'size_mismatch':
       return { status: 400, message: 'The file didn’t arrive whole. Try again.' };

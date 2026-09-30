@@ -213,6 +213,29 @@ describe('stageArchive', () => {
     await discardStagedArchive(second);
   });
 
+  // Purpose (DOR-2587): the room was checked for the declared size only, so a
+  // body that runs past it must be stopped mid-copy, not when it ends (a body
+  // that never ends would otherwise fill the disk). Fails if the in-copy check
+  // is removed: this body never ends, so staging would never settle.
+  it('stops a body that runs past its declared size before the body ends', async () => {
+    const before = new Set(stagingDirs());
+    let ended = false;
+    const endless = new Readable({
+      read() {
+        this.push(Buffer.alloc(8));
+      },
+    });
+    endless.on('end', () => (ended = true));
+    const outcome = await Promise.race([
+      stageArchive(endless, 10, roomy).catch((e: unknown) => e),
+      new Promise((resolve) => setTimeout(() => resolve('still copying'), 2_000)),
+    ]);
+    expect(outcome).toMatchObject({ reason: 'size_mismatch' });
+    expect(ended).toBe(false);
+    expect(newDirs(before)).toEqual([]);
+    endless.destroy();
+  });
+
   // Purpose: the file must be exactly the size declared (the room was checked
   // for that size, and the service is told it). Fails if a longer or shorter
   // body is kept.
