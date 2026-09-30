@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -156,5 +156,63 @@ exit 2
     expect(generator).not.toMatch(/through-\d+/);
     expect(workflow).toContain('MINIMUM_FLYCTL_VERSION: 0.4.104');
     expect(workflow).toContain('MINIMUM_NEON_CLI_VERSION: 5.0.0');
+  });
+
+  // DOR-2586: the generator records each platform's own manifest digest from the index Buildx
+  // pushed, read here from the real, unmodified 0.92.0 index.
+  it('records each platform digest from the real 0.92.0 index and skips attestation entries', () => {
+    const work = mkdtempSync(join(tmpdir(), 'community-manifest-'));
+    try {
+      const migrations = join(work, 'migrations');
+      mkdirSync(migrations);
+      writeFileSync(join(migrations, '0001_init.sql'), 'select 1;\n');
+      const output = join(work, 'manifest.json');
+      const run = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          join(root, 'scripts/generate-community-release-manifest.ts'),
+          '--version',
+          '0.92.0',
+          '--digest',
+          'sha256:b6d5f2b93365c88200bd7b6cd310d2e6c6ea02f7933009e218984a00f1de9b14',
+          '--index',
+          join(
+            root,
+            'packages/cli/src/commands/community-deploy/__tests__/fixtures/ghcr/community-0.92.0-index.oci'
+          ),
+          '--output',
+          output,
+          '--migrations',
+          migrations,
+          '--workflow-ref',
+          'dork-labs/dorkos/.github/workflows/publish-community.yml@refs/tags/v0.92.0',
+          '--minimum-flyctl',
+          '0.4.104',
+          '--minimum-neon-cli',
+          '5.0.0',
+        ],
+        { cwd: root, encoding: 'utf8' }
+      );
+      expect(run.status, run.stderr).toBe(0);
+      const manifest = JSON.parse(readFileSync(output, 'utf8')) as {
+        image: { platforms: Array<{ os: string; architecture: string; digest?: string }> };
+      };
+      expect(manifest.image.platforms).toEqual([
+        {
+          os: 'linux',
+          architecture: 'amd64',
+          digest: 'sha256:6f4f88ac5042746b6976c51270405a327fe863d12027db44099d8b44738359f3',
+        },
+        {
+          os: 'linux',
+          architecture: 'arm64',
+          digest: 'sha256:765da4ab06100dc47ac9ce8c399a8bfb90bdcb168a8ff1cd88d16ce24e0bec13',
+        },
+      ]);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
   });
 });

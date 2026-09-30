@@ -9,6 +9,7 @@ import type { ExtensionAPIDeps, LoadedExtension } from './types';
 import { createElement } from 'react';
 import { ManifestSettingsPanel, ManifestSettingsIcon } from '../ui/ManifestSettingsPanel';
 import { extensionApiUrl } from './extension-api-url';
+import { runningCopiesOnly } from '@/layers/entities/extension';
 
 /**
  * Fetch the extension list from the server.
@@ -22,7 +23,7 @@ async function fetchExtensions(): Promise<ExtensionRecordPublic[]> {
     console.error('[extensions] Failed to fetch extension list:', res.status);
     return [];
   }
-  return res.json() as Promise<ExtensionRecordPublic[]>;
+  return runningCopiesOnly((await res.json()) as ExtensionRecordPublic[]);
 }
 
 /**
@@ -38,7 +39,7 @@ async function fetchExtensionsOrThrow(): Promise<ExtensionRecordPublic[]> {
   if (!res.ok) {
     throw new Error(`Failed to fetch extension list: ${res.status}`);
   }
-  return res.json() as Promise<ExtensionRecordPublic[]>;
+  return runningCopiesOnly((await res.json()) as ExtensionRecordPublic[]);
 }
 
 /**

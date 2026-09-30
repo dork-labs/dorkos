@@ -129,6 +129,11 @@ export class MockExtensionAPI {
     return [];
   }
 
+  /** No-op: a test run never starts a chat; answers a placeholder id. */
+  async startWork(): Promise<{ sessionId: string }> {
+    return { sessionId: 'test-harness-session' };
+  }
+
   /** No-op per-project settings: nothing stored, writes dropped. */
   readonly projectSettings = {
     get: async (): Promise<null> => null,

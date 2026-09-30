@@ -4,18 +4,50 @@ import { chmod, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import process from 'node:process';
+import {
+  checkGraphqlDocument,
+  FLY_SCHEMA_SNAPSHOT,
+  type IntrospectedSchema,
+} from './community-deploy-contract-graphql.js';
 
 const root = resolve(import.meta.dirname, '../../..');
 const cliPackage = resolve(import.meta.dirname, '..');
 const temporary = await mkdtemp(join(tmpdir(), 'dorkos-community-package-'));
 const version = JSON.parse(await readFile(join(cliPackage, 'package.json'), 'utf8'))
   .version as string;
-const imageDigest = `sha256:${'a'.repeat(64)}`;
+// A two-platform OCI index like the one the release workflow pushes. The release manifest pins
+// the index by its own hash (as a real one does), and carries no per-platform digests (as 0.92.0's
+// does not), so the launcher must read the index from the registry, which the bootstrap below
+// serves offline, and prove the deploy against the linux/amd64 manifest Fly reports (DOR-2586).
+const platformDigest = `sha256:${'6'.repeat(64)}`;
+const imageIndex = Buffer.from(
+  JSON.stringify({
+    schemaVersion: 2,
+    mediaType: 'application/vnd.oci.image.index.v1+json',
+    manifests: [
+      {
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        digest: platformDigest,
+        size: 1813,
+        platform: { architecture: 'amd64', os: 'linux' },
+      },
+      {
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        digest: `sha256:${'7'.repeat(64)}`,
+        size: 1813,
+        platform: { architecture: 'arm64', os: 'linux' },
+      },
+    ],
+  })
+);
+const imageDigest = `sha256:${createHash('sha256').update(imageIndex).digest('hex')}`;
 const appName = `dorkos-package-${randomUUID().slice(0, 8)}`;
 const dorkHome = join(temporary, 'dork-home');
 const fakeHome = join(temporary, 'home');
 const fakeBin = join(temporary, 'bin');
 const statePath = join(temporary, 'provider-state.json');
+// Every GraphQL document the packaged launcher sends, checked afterwards against Fly's schema.
+const graphqlLogPath = join(temporary, 'graphql-documents.jsonl');
 
 async function migrationCompatibilityId(): Promise<string> {
   const hash = createHash('sha256');
@@ -63,13 +95,21 @@ const initialState = {
   neonProject: null,
   neonRole: null,
   tigris: null,
-  secrets: {
-    AWS_ACCESS_KEY_ID: { digest: 'aws-access-digest', status: 'Deployed' },
-    AWS_SECRET_ACCESS_KEY: { digest: 'aws-secret-digest', status: 'Deployed' },
-  },
+  // Fly sets no secrets when it creates a bucket (DOR-2559): the launcher must stage them itself.
+  secrets: {},
+  stagedValues: {},
   deployed: false,
   imageDigest: null,
+  registryReads: 0,
   config: null,
+};
+
+const TIGRIS_ENVIRONMENT = {
+  AWS_ACCESS_KEY_ID: 'tid_package_fixture',
+  AWS_SECRET_ACCESS_KEY: 'tsec_package_fixture_value',
+  AWS_ENDPOINT_URL_S3: 'https://fly.storage.tigris.dev',
+  AWS_REGION: 'auto',
+  BUCKET_NAME: appName,
 };
 
 const commonPrelude = `
@@ -93,11 +133,12 @@ else if(args[0]==='apps'&&args[1]==='list') value=state.flyApp?[state.flyApp]:[]
 else if(args[0]==='apps'&&args[1]==='create') { state.flyCreates++; state.flyNetwork=at('--network'); state.flyCreatedAt=new Date().toISOString(); state.flyApp={ID:args[2],Name:args[2],Status:'deployed',Network:'',Organization:{ID:'fly-org-id',Slug:at('--org'),Name:'Dork Labs'}}; write(state); value=state.flyApp; }
 else if(args[0]==='auth'&&args[1]==='token') value={token:'fixture-fly-token'};
 else if(args[0]==='secrets'&&args[1]==='list') value=Object.entries(state.secrets).map(([name,item])=>({name,digest:item.digest,status:item.status}));
-else if(args[0]==='secrets'&&args[1]==='import') { const input=fs.readFileSync(0,'utf8'); for(const line of input.trim().split('\\n')) { const name=line.slice(0,line.indexOf('=')); state.secrets[name]={digest:'digest-'+name.toLowerCase().replaceAll('_','-')+'-'+Date.now(),status:'Staged'}; } write(state); value={}; }
+else if(args[0]==='secrets'&&args[1]==='import') { const input=fs.readFileSync(0,'utf8'); for(const line of input.trim().split('\\n')) { const name=line.slice(0,line.indexOf('=')); state.stagedValues[name]=line.slice(line.indexOf('=')+1); state.secrets[name]={digest:'digest-'+name.toLowerCase().replaceAll('_','-')+'-'+Date.now(),status:'Staged'}; } write(state); value={}; }
+else if(args[0]==='secrets'&&args[1]==='deploy'&&args.some((arg)=>!['secrets','deploy','--app',at('--app'),'--detach'].includes(arg))) { process.stderr.write('Error: unknown flag'); process.exit(1); }
 else if(args[0]==='secrets'&&args[1]==='deploy') { for(const item of Object.values(state.secrets)) item.status='Deployed'; write(state); value={}; }
 else if(args[0]==='deploy') { state.deployed=true; state.imageDigest=at('--image').split('@')[1]; state.config=fs.readFileSync(at('--config'),'utf8'); for(const item of Object.values(state.secrets)) item.status='Deployed'; write(state); value={}; }
-else if(args[0]==='machine') value=state.deployed?[{id:'machine-1',name:'machine-1',state:'started',region:'ord',image_ref:{digest:state.imageDigest,registry:'ghcr.io',repository:'dork-labs/dorkos-community'},checks:[{name:'http',status:'passing'}]}]:[];
-else if(args[0]==='releases') value=state.deployed?[{ID:'release-1',ImageRef:'ghcr.io/dork-labs/dorkos-community@'+state.imageDigest,Status:'complete',Stable:false,Version:1}]:[];
+else if(args[0]==='machine') value=state.deployed?[{id:'machine-1',name:'machine-1',state:'started',region:'ord',image_ref:{digest:state.imageDigest===${JSON.stringify(imageDigest)}?${JSON.stringify(platformDigest)}:state.imageDigest,registry:'ghcr.io',repository:'dork-labs/dorkos-community'},checks:[{name:'http',status:'passing'}]}]:[];
+else if(args[0]==='releases') value=state.deployed?[{ID:'release-1',ImageRef:'ghcr.io/dork-labs/dorkos-community@'+(state.imageDigest===${JSON.stringify(imageDigest)}?${JSON.stringify(platformDigest)}:state.imageDigest),Status:'complete',Stable:false,Version:1}]:[];
 else if(args[0]==='ips') value=state.deployed?[{ID:'',Address:'1.2.3.4',Type:'shared_v4',Region:'',CreatedAt:'2026-09-21T00:00:00Z',ServiceName:'',Network:null}]:[];
 else process.exit(3);
 process.stdout.write(JSON.stringify(value));
@@ -133,16 +174,24 @@ const bootstrap = `
 import fs from 'node:fs';
 const statePath=${JSON.stringify(statePath)};
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json'}});
+// The keys Fly hands out only in the create answer, as flyctl reads them (synthetic values).
+const TIGRIS_ENVIRONMENT=${JSON.stringify(TIGRIS_ENVIRONMENT)};
 globalThis.fetch=async (input,init={})=>{
   const url=String(input);
   const state=JSON.parse(fs.readFileSync(statePath,'utf8'));
   if(url.endsWith('/health')) return json({status:'ok'});
+  // The registry, offline: an anonymous pull token, then the index by its attested digest.
+  if(url.startsWith('https://ghcr.io/token?')) return json({token:'anonymous-pull'});
+  if(url==='https://ghcr.io/v2/dork-labs/dorkos-community/manifests/${imageDigest}') { state.registryReads++; fs.writeFileSync(statePath,JSON.stringify(state)); return new Response(Buffer.from(${JSON.stringify(imageIndex.toString('base64'))},'base64'),{status:200,headers:{'content-type':'application/vnd.oci.image.index.v1+json'}}); }
+  if(url.startsWith('https://ghcr.io/')) return new Response('',{status:404});
   if(url.endsWith('/api/v1/community')) return json({},404);
   const body=JSON.parse(String(init.body??'{}'));
   const query=String(body.query??'');
+  fs.appendFileSync(${JSON.stringify(graphqlLogPath)},JSON.stringify(query)+'\\n');
   if(query.includes('DorkosTigrisTerms')) return json({data:{viewer:{agreedToProviderTos:true}}});
-  if(query.includes('DorkosCreateTigris')) { state.tigrisCreates++; state.tigris={id:'tigris-1',name:${JSON.stringify(appName)},status:'ready',options:{public:false},organization:{slug:'dork-labs'},addOnProvider:{name:'tigris'},app:{id:${JSON.stringify(appName)},name:${JSON.stringify(appName)}}}; fs.writeFileSync(statePath,JSON.stringify(state)); return json({data:{createAddOn:{addOn:state.tigris}}}); }
-  if(query.includes('DorkosReadTigris')) return json({data:{node:state.tigris}});
+  if(query.includes('DorkosReadTigrisCredentials')) return json({data:{addOn:state.tigris?{id:state.tigris.id,environment:null}:null}});
+  if(query.includes('DorkosCreateTigris')) { state.tigrisCreates++; state.tigris={id:'tigris-1',name:${JSON.stringify(appName)},status:'ready',options:null,organization:{slug:'dork-labs'},addOnProvider:{name:'tigris'},app:{id:${JSON.stringify(appName)},name:${JSON.stringify(appName)}}}; fs.writeFileSync(statePath,JSON.stringify(state)); return json({data:{createAddOn:{addOn:{...state.tigris,environment:TIGRIS_ENVIRONMENT}}}}); }
+  if(query.includes('DorkosReadTigris')) return json({data:{addOn:state.tigris}});
   if(query.includes('DorkosReadAppProvenance')) {
     const app=state.flyApp;
     if(!app||app.Name!==body.variables?.name) return json({data:{app:null},errors:[{message:'Could not find App'}]});
@@ -300,6 +349,8 @@ try {
     neonRole: string | null;
     config: string | null;
     imageDigest: string | null;
+    registryReads: number;
+    stagedValues: Record<string, string>;
   };
   if (state.flyCreates !== 1 || state.neonCreates !== 1 || state.tigrisCreates !== 1) {
     throw new Error('Packaged resume repeated a provider create');
@@ -312,16 +363,53 @@ try {
   }
   if (state.imageDigest !== imageDigest)
     throw new Error('Packaged deployment did not use the exact digest');
+  // Read once, before the deploy; the resume and the owner step reuse the journal's record.
+  if (state.registryReads !== 1) {
+    throw new Error(`Packaged launch read the image index ${state.registryReads} times, not once`);
+  }
+  if (
+    state.stagedValues.AWS_ACCESS_KEY_ID !== TIGRIS_ENVIRONMENT.AWS_ACCESS_KEY_ID ||
+    state.stagedValues.AWS_SECRET_ACCESS_KEY !== TIGRIS_ENVIRONMENT.AWS_SECRET_ACCESS_KEY ||
+    'BUCKET_NAME' in state.stagedValues
+  ) {
+    throw new Error('Packaged launch did not put exactly the bucket keys on the app');
+  }
+  const journalText = await readFile(join(journalDirectory, journalName), 'utf8');
+  if (
+    [first.output, second.output, journalText].some((text) =>
+      text.includes(TIGRIS_ENVIRONMENT.AWS_SECRET_ACCESS_KEY)
+    )
+  ) {
+    throw new Error('Packaged launch exposed the bucket secret key');
+  }
+  // The fake answers any query, so it cannot tell whether Fly would; the schema snapshot can
+  // (DOR-2584: `node(id:)` passed every fake and failed the first real call).
+  const schema = JSON.parse(await readFile(FLY_SCHEMA_SNAPSHOT, 'utf8')) as IntrospectedSchema;
+  const documents = [
+    ...new Set(
+      (await readFile(graphqlLogPath, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as string)
+    ),
+  ];
+  const invalid = documents.flatMap((document) => checkGraphqlDocument(document, schema));
+  if (documents.length < 3 || invalid.length > 0) {
+    throw new Error(`Packaged launch sent GraphQL Fly would refuse: ${invalid.join('; ')}`);
+  }
   const journal = JSON.parse(await readFile(join(journalDirectory, journalName), 'utf8')) as {
     state: string;
     provenance?: { flyNetwork?: string };
     resources: { neonRoleId?: string; neonDatabaseId?: unknown };
+    imagePlatformDigest?: string;
   };
   if (journal.state !== 'owner_pending')
     throw new Error('Packaged resume did not retain owner-pending state');
   // Neon reports database ids as integers; the journal must keep the id the launcher normalized.
   if (journal.resources.neonDatabaseId !== '4821907')
     throw new Error('Packaged journal did not keep the Neon database id as a string');
+  if (journal.imagePlatformDigest !== platformDigest)
+    throw new Error('Packaged journal did not record the platform digest Fly reports');
   // Each create carried a fresh marker: the Fly app its own private network, the Neon project a
   // marker role. The journal keeps the network the provenance read reported, not a copy of the intent.
   if (!/^dorkos-[a-f0-9]{32}$/u.test(state.flyNetwork ?? '')) {

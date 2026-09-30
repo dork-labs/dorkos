@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `GET /api/rooms/:id/sessions` — where a room's work runs, and who may ask.
  *
@@ -70,7 +71,7 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const server = listeningServer(app);
 

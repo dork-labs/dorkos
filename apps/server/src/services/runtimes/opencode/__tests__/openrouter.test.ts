@@ -45,6 +45,8 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
         defaultAccount: null,
         accounts: [],
         defaultAccountColor: null,
+        defaultAccountOnlyProjects: null,
+        projectAccounts: {},
         dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,

@@ -18,6 +18,7 @@ import {
   useSaveConnectorCredential,
   useDeleteConnectorCredential,
 } from '../index';
+import { PROVIDERS_RECHECK_POLL_MS } from '../model/use-connector-providers';
 
 const providerStatus: ConnectorProviderStatus = {
   type: 'composio',
@@ -57,6 +58,46 @@ const APP_CONNECTIONS: ConnectorAppConnections = {
 };
 
 describe('useConnectorProviders', () => {
+  it('reads the statuses again only while DorkOS has a key re-check scheduled', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const checking = {
+        ...providerStatus,
+        configured: true,
+        error: 'DorkOS couldn’t check this key just now. It checks again on its own.',
+        recheckAt: '2026-09-29T00:00:30.000Z',
+      };
+      const stopped = {
+        ...providerStatus,
+        configured: true,
+        error:
+          'DorkOS couldn’t check this key and has stopped trying on its own. Save it again to check it now.',
+      };
+      const transport = createMockTransport();
+      vi.mocked(transport.getConnectorProviders)
+        .mockResolvedValueOnce({ providers: [checking], appConnections: APP_CONNECTIONS })
+        .mockResolvedValue({ providers: [stopped], appConnections: APP_CONNECTIONS });
+      const { result } = renderHook(() => useConnectorProviders(), {
+        wrapper: createWrapper(transport).wrapper,
+      });
+      await waitFor(() => expect(result.current.data?.[0]?.error).toBe(checking.error));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROVIDERS_RECHECK_POLL_MS);
+      });
+      await waitFor(() => expect(result.current.data?.[0]?.error).toBe(stopped.error));
+
+      // Nothing is scheduled any more, so it stops reading.
+      const calls = vi.mocked(transport.getConnectorProviders).mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROVIDERS_RECHECK_POLL_MS * 3);
+      });
+      expect(vi.mocked(transport.getConnectorProviders).mock.calls.length).toBe(calls);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('fetches provider statuses via transport.getConnectorProviders', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConnectorProviders).mockResolvedValue({

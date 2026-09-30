@@ -168,7 +168,15 @@ export function registerExtensionApprovalRoutes(
       // extension's contributions instead of waiting for a page reload.
       broadcastExtensionReloaded([id]);
 
-      return res.json({ extension });
+      // The one-time "Next time, trust everything from <source>?" (spec
+      // `flow-multiproject` §9.3, V9): only when this copy provably came from a
+      // source the person does not trust yet. Returned to the app that
+      // answered and never stored, so it shows once, on that device.
+      const trustSource = extensionManager.trustOfferFor(id);
+      return res.json({
+        extension,
+        ...(trustSource ? { trustOffer: { source: trustSource } } : {}),
+      });
     } catch (err) {
       logger.error(`[Extensions] Failed to approve ${req.params.id}`, err);
       return res.status(500).json({ error: 'Failed to approve extension' });

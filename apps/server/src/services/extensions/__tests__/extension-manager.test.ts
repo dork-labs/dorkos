@@ -119,7 +119,9 @@ describe('ExtensionManager', () => {
     expect(mockDiscover).toHaveBeenCalledWith(
       '/my/project',
       { enabled: ['ext-a'], disabled: [], ...approved(['ext-a']) },
-      expect.any(Map)
+      expect.any(Map),
+      // No project registry wired: only the working directory is scanned.
+      []
     );
     expect(mockCompile).toHaveBeenCalledWith(enabledRecord);
   });

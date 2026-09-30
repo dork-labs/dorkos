@@ -19,10 +19,18 @@ import {
 } from '../exports/authority.js';
 import { endExportJob, EXPORT_COLUMNS, toWireExport, type ExportRow } from '../exports/store.js';
 
-/** A download re-checks its authority after at most this many bytes... */
+/** A download re-checks the requester's authority after at most this many bytes... */
 export const DOWNLOAD_RECHECK_BYTES = 16 * 1024 * 1024;
 /** ...or this much time, whichever comes first. */
 export const DOWNLOAD_RECHECK_MS = 10_000;
+/**
+ * A download re-checks that its archive still exists after at most this many bytes... A
+ * takedown or an erasure that deletes the archive stops the download within this window, while
+ * a fast download makes one database round trip per window rather than one per chunk.
+ */
+export const ARCHIVE_RECHECK_BYTES = 256 * 1024;
+/** ...or this much time, whichever comes first. */
+export const ARCHIVE_RECHECK_MS = 250;
 
 /** Exports still open, or ended within the last week, are listed. */
 const LISTED = `(state IN ('queued','building')
@@ -276,25 +284,36 @@ export function registerExportRoutes(
     }
     const start = range?.start ?? 0;
     const end = range?.end ?? source.size - 1;
-    // Re-check the requester and the archive row itself: an erasure or takedown that deletes
-    // the export stops a download already in progress.
+    // The requester's authority is re-checked every few megabytes or seconds.
     const stillAllowed = async () => {
       const current = await requireMember(c, auth, pool).catch(() => null);
       return (
-        current !== null &&
-        current.id === member.id &&
-        (await readyRow()) !== null &&
-        (await hasExportAuthority(pool, requester))
+        current !== null && current.id === member.id && (await hasExportAuthority(pool, requester))
       );
     };
     const iterator = source.read(start, end, { signal: c.req.raw.signal })[Symbol.asyncIterator]();
     let sinceCheck = 0;
     let checkedAt = Date.now();
+    let sinceArchiveCheck = 0;
+    let archiveCheckedAt = checkedAt;
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {
           const next = await iterator.next();
+          // As a file download does, the end carries no bytes and is not refused, and a check runs
+          // after a chunk is read and before it is queued. The archive row goes before its bytes
+          // do, so an erasure or takedown that deletes the export stops the download here, within
+          // one window, even while its segments still wait for the cleanup sweep.
           if (next.done) return controller.close();
+          if (
+            sinceArchiveCheck + next.value.length > ARCHIVE_RECHECK_BYTES ||
+            Date.now() - archiveCheckedAt >= ARCHIVE_RECHECK_MS
+          ) {
+            if (!(await readyRow())) throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
+            sinceArchiveCheck = 0;
+            archiveCheckedAt = Date.now();
+          }
+          sinceArchiveCheck += next.value.length;
           if (
             sinceCheck + next.value.length > DOWNLOAD_RECHECK_BYTES ||
             Date.now() - checkedAt >= DOWNLOAD_RECHECK_MS

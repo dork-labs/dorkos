@@ -149,7 +149,11 @@ export function ExtensionCard({
                 data-testid={`extension-run-allowed-${extension.id}`}
               >
                 <ShieldCheck className="size-3.5 shrink-0" aria-hidden="true" />
-                <span>You allowed this to run inside DorkOS.</span>
+                <span>
+                  You allowed this to run inside DorkOS.
+                  {extension.originProblem === 'changed' &&
+                    ' You said yes to its files as they are now; they had changed after DorkOS installed it, so any further change will ask you again.'}
+                </span>
                 <button
                   type="button"
                   onClick={() => onSetRunApproval(extension.id, false)}
@@ -165,6 +169,20 @@ export function ExtensionCard({
                 data-testid={`extension-needs-approval-${extension.id}`}
               >
                 <p className="text-sm font-medium">This extension is waiting for you</p>
+                {/* Why DorkOS can't vouch for a copy its installer recorded
+                    (spec flow-multiproject §9.1). A changed copy of an id the
+                    person approved for another copy is never listed, so it
+                    never gets this card. */}
+                {extension.originProblem && (
+                  <p
+                    className="text-status-warning-fg text-sm"
+                    data-testid={`extension-origin-problem-${extension.id}`}
+                  >
+                    {extension.originProblem === 'changed'
+                      ? 'Its files changed after DorkOS installed it, so DorkOS can’t vouch for where this copy came from. It won’t run until you look it over and say yes.'
+                      : 'Its plugin holds a shortcut to files somewhere else, so DorkOS can’t vouch for where this copy came from. It won’t run until you say yes.'}
+                  </p>
+                )}
                 {/* One sentence shared with the Activity inbox's ⓘ panel
                     (DOR-2517), so the two places that ask say the same thing. */}
                 <p className="text-muted-foreground text-sm">

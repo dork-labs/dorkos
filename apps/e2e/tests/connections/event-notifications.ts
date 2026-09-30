@@ -574,6 +574,21 @@ async function listSubscriptions(
   return ((await response.json()) as { subscriptions: EventSubscription[] }).subscriptions;
 }
 
+/**
+ * The route id of the person's own Composio key, found by its type rather than
+ * its display name, which is person-facing copy and may change.
+ */
+async function ownKeyInstanceId(request: APIRequestContext, apiUrl: string): Promise<string> {
+  const response = await request.get(`${apiUrl}/api/connectors/providers`);
+  expect(response.ok(), await response.text()).toBe(true);
+  const body = (await response.json()) as {
+    appConnections: { ways: Array<{ type: string; providerInstanceId?: string }> };
+  };
+  const id = body.appConnections.ways.find((way) => way.type === PROVIDER)?.providerInstanceId;
+  expect(id).toBeTruthy();
+  return id!;
+}
+
 async function connectComposioGmail(
   request: APIRequestContext,
   apiUrl: string,
@@ -597,10 +612,11 @@ async function connectComposioGmail(
       }>;
     }>;
   };
+  const providerInstanceId = await ownKeyInstanceId(request, apiUrl);
   const route = body.services
     .find((service) => service.serviceSlug === 'gmail')
     ?.intents.find((intent) => intent.kind === 'account')
-    ?.routes?.find((candidate) => candidate.displayName.toLowerCase() === PROVIDER);
+    ?.routes?.find((candidate) => candidate.providerInstanceId === providerInstanceId);
   expect(route).toBeTruthy();
   const started = await request.post(`${apiUrl}/api/connectors/connections`, {
     data: {
@@ -676,16 +692,24 @@ async function latestFixtureAccountOrdinal(
 }
 
 async function cleanupComposio(request: APIRequestContext, apiUrl: string): Promise<void> {
+  const providers = await request.get(`${apiUrl}/api/connectors/providers`);
+  const ownKeyId = providers.ok()
+    ? (
+        (await providers.json()) as {
+          appConnections: { ways: Array<{ type: string; providerInstanceId?: string }> };
+        }
+      ).appConnections.ways.find((way) => way.type === PROVIDER)?.providerInstanceId
+    : undefined;
   const list = await request.get(`${apiUrl}/api/connectors/connections`);
-  if (list.ok()) {
+  if (ownKeyId && list.ok()) {
     const { connections } = (await list.json()) as { connections: ConnectionSummary[] };
     for (const connection of connections) {
       const detail = await request.get(
         `${apiUrl}/api/connectors/connections/${connection.connectionId}`
       );
       if (!detail.ok()) continue;
-      const projection = (await detail.json()) as { provider: { displayName: string } };
-      if (projection.provider.displayName.toLowerCase() !== PROVIDER) continue;
+      const projection = (await detail.json()) as { provider: { providerInstanceId: string } };
+      if (projection.provider.providerInstanceId !== ownKeyId) continue;
       const subscriptions = await request.get(
         `${apiUrl}/api/connectors/connections/${connection.connectionId}/events/subscriptions`
       );

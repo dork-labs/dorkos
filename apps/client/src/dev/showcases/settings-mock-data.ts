@@ -210,6 +210,9 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
         color: DEFAULT_ACCOUNT_COLORS[1]!,
         colorIsDefault: true,
         isAccountRoot: true,
+        // Kept to the client's own repository (spec `flow-multiproject` §8.5),
+        // so the row shows its "Only for" line.
+        onlyProjects: [{ root: '/Users/dev/Dev/acme-app', name: 'acme-app' }],
       },
       {
         id: 'claude3',
@@ -227,6 +230,11 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
         colorIsDefault: true,
         isAccountRoot: false,
       },
+    ],
+    // One project that allows only its client's account, so the "Project
+    // limits" list has a row to show.
+    projectAccounts: [
+      { project: { root: '/Users/dev/Dev/acme-app', name: 'acme-app' }, allow: ['acme-corp'] },
     ],
   },
 };

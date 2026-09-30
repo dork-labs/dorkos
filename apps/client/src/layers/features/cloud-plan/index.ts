@@ -15,8 +15,9 @@
  *   failing when this instance has no cloud account, so the whole section
  *   collapses to one line on an install that has never touched the cloud.
  *
- * FSD: `features/cloud-plan` — imports only from `entities`, `shared` and its
- * own slice.
+ * FSD: `features/cloud-plan` — imports from `entities`, `shared` and its own
+ * slice, and composes one piece of `features/cloud-link` UI (the line saying who
+ * can buy a plan) through that slice's barrel.
  *
  * @module features/cloud-plan
  */

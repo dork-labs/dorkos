@@ -13,6 +13,8 @@ import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
 import { hashSecret } from '../src/security.js';
 import { registerShortNamePages } from '../src/short-names/pages.js';
+import { sweepImports } from '../src/imports/worker.js';
+import { createBlobStore } from '../src/storage/factory.js';
 
 // COMMUNITY_HOST_PAGE_SCREENSHOTS optionally names a directory for reviewable screenshots.
 const { COMMUNITY_TEST_DATABASE_URL: adminUrl, COMMUNITY_HOST_PAGE_SCREENSHOTS: shots } =
@@ -28,6 +30,7 @@ let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
 let blobDir: string;
+let config: ReturnType<typeof parseConfig>;
 
 async function freePort() {
   const socket = createServer();
@@ -61,7 +64,7 @@ test.beforeAll(async () => {
   blobDir = await mkdtemp(join(tmpdir(), 'community-browser-host-'));
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
-  const config = parseConfig({
+  config = parseConfig({
     COMMUNITY_DATABASE_URL: dbUrl.toString(),
     COMMUNITY_AUTH_SECRET: 'a'.repeat(32),
     COMMUNITY_INVITE_SECRET: 'b'.repeat(32),
@@ -804,5 +807,74 @@ test('a community opens at its short address, and an old address moves to the ne
     await pool.query('DELETE FROM community_short_names');
     await context.close();
     await outsider.close();
+  }
+});
+
+test('a host moves a community in from its owner’s export and watches it through to ready', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  const blobStore = createBlobStore(config);
+  // The server under test runs no background worker; each step of the import is one sweep.
+  const work = async () => {
+    for (let round = 0; round < 10; round++) {
+      const result = await sweepImports(pool, blobStore, config.limits);
+      if (!result.claimed) return;
+    }
+  };
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    const section = page.getByRole('region', { name: 'Move a community here' });
+    await section.getByLabel('Name of the moved community').fill('Moved Place');
+    // The file chooser is a button whose visible words are its name, and keyboard focus on it
+    // shows a ring even though the file input inside it is invisible.
+    const chooser = section.getByLabel('Choose export file');
+    const shadow = () =>
+      chooser.evaluate((input) => getComputedStyle(input.closest('label')!).boxShadow);
+    const resting = await shadow();
+    await section.getByLabel('Name of the moved community').press('Tab');
+    await expect(chooser).toBeFocused();
+    await expect.poll(shadow).not.toBe(resting);
+    await chooser.setInputFiles(
+      fileURLToPath(new URL('../src/__tests__/fixtures/owner-export-v1.zip', import.meta.url))
+    );
+    await expect(section).toContainText('owner-export-v1.zip will be sent when the import starts.');
+    await section.getByRole('button', { name: 'Start import' }).click();
+    await expect(section).toContainText('Export received. It is being checked now.');
+    // The upload details are still shown once, for anyone else who holds the file.
+    await expect(section.getByLabel('Upload token')).toHaveValue(/.+/);
+    const card = page.getByRole('article', { name: 'Moved Place community' });
+    await expect(card).toContainText('Import: Checking the export');
+    await shot(page, 'host-import-checking');
+
+    await work();
+    await page.reload();
+    await expect(card).toContainText('Import: Checked. Ready to import.');
+    await expect(card).toContainText(
+      '3 channels, 9 messages, 2 files (1 KiB), 3 past members, 1 past agent.'
+    );
+    // Nobody can claim it while it is being imported.
+    await expect(card.getByRole('button', { name: 'Reissue owner claim' })).toHaveCount(0);
+
+    await card.getByRole('button', { name: 'Import now' }).click();
+    await expect(card).toContainText('Import: Importing');
+    await work();
+    await page.reload();
+    await expect(card).toContainText('Import: Imported. Send an owner claim to finish.');
+    await expect(card.getByRole('button', { name: 'Cancel import' })).toHaveCount(0);
+    const restored = await pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM entries e JOIN community_imports i
+         ON i.community_id=e.community_id WHERE i.state='ready'`
+    );
+    expect(restored.rows[0].n).toBe(9);
+    await shot(page, 'host-import-ready');
+  } finally {
+    await context.close();
   }
 });

@@ -1,6 +1,7 @@
 /** Transactional migration from provider-scoped legacy accounts to stable connections. */
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
+import { connectionWayName } from '@dorkos/shared/connector-schemas';
 import type { Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 
@@ -116,11 +117,11 @@ function missingProvider(type: string, custody: string): ConfiguredConnectorProv
     instanceId: legacyDefaultProviderInstanceId(type),
     type,
     mode: 'byo',
-    displayName: `${type} (configuration missing)`,
+    displayName: `${connectionWayName(type)} (not set up)`,
     custody: safeCustody,
     capabilityJson: '{}',
     status: 'unavailable',
-    error: 'Provider configuration is missing. Reconfigure it to reconcile this connection.',
+    error: 'This way isn’t set up anymore. Set it up again in Settings › Connections.',
   };
 }
 
@@ -500,7 +501,7 @@ export function runLegacyConnectionMigration(
     return {
       status: 'migration_failed',
       error:
-        'Connector data could not be upgraded. Connector changes are unavailable; restart DorkOS to retry.',
+        'DorkOS couldn’t upgrade its saved connections. Changes to connections are off until you restart DorkOS.',
     };
   }
 }

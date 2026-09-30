@@ -1,5 +1,6 @@
 {
   "repo": "dork-labs/marketplace",
-  "commit": "098a50c72b779a56dfe62147ea6ec12b50178982",
-  "contractVersion": "4.0.1"
+  "commit": "239f682932f66e446e3b6a5993f4ac8a1298f431",
+  "contractVersion": "4.2.0",
+  "proposed": "4.2.0 (project-eligibility.cases.json and its README section) is DorkOS's contract-first proposal for account eligibility (DOR-2526). The rest is byte-for-byte marketplace 239f682 (4.1.0). flow adopts 4.2.0 upstream in F4 (DOR-2532); re-sync from marketplace once it lands, which drops this note."
 }

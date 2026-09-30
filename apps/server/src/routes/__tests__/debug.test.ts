@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The diagnostic read surface: what it answers, and — the load-bearing half —
  * what it refuses to say.
@@ -88,7 +89,7 @@ const POISON = {
 };
 
 function buildApp(deps?: DebugDeps) {
-  const app = createApp();
+  const app = createApp({ admission: new MainRequestAdmission() });
   if (deps) app.locals.debugDeps = deps;
   finalizeApp(app);
   return target.mount(app);

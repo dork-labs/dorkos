@@ -114,6 +114,21 @@ export class TestModeSessionRegistry {
   }
 
   /**
+   * Give a session its title (`renameSession`). A session not tracked yet is
+   * tracked now, so a title set a moment before its first message arrives is
+   * the one it keeps: `recordMessage` derives a title only for an untitled one.
+   *
+   * @param sessionId - The session.
+   * @param title - Its new title.
+   */
+  rename(sessionId: string, title: string): void {
+    const session = this.upsert(sessionId, {});
+    session.title = title;
+    session.updatedAt = new Date().toISOString();
+    this.emit({ type: 'session_upserted', session: { ...session } });
+  }
+
+  /**
    * Apply operator settings to a tracked session (the PATCH path).
    *
    * @returns false when the session is not tracked.

@@ -471,7 +471,10 @@ export function ConnectionsShowcases() {
             connection={mockConnection({
               lifecycle: 'disconnected',
               externalCleanup: 'pending',
-              authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
+              authoritySync: {
+                status: 'failed',
+                reason: 'This computer isn’t linked to your DorkOS account anymore.',
+              },
               readiness: MOCK_READINESS.disconnectStuck,
             })}
           >

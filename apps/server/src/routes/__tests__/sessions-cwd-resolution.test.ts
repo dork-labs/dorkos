@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * @vitest-environment node
  *
@@ -156,7 +157,7 @@ import { RoomError } from '../../services/rooms/room-errors.js';
 import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
 import { workspaceGateFor } from '../../services/workspace/index.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const server = createServer(app);
 

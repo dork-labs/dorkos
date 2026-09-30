@@ -628,6 +628,47 @@ describe('PATCH /api/config', () => {
     });
   });
 
+  describe('the account rules in a PATCH (spec flow-multiproject §8.1)', () => {
+    // Purpose: a write that states a rule in the wrong shape is refused, never
+    // stored as the wider "no rule" the tolerant read would make of it.
+    it('refuses a malformed rule with a 400 naming it, and stores nothing', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      const { configManager } = await import('../../services/core/config-manager.js');
+      const before = JSON.stringify(configManager.get('runtimes'));
+      const bad: [string, Record<string, unknown>][] = [
+        ['defaultAccountOnlyProjects', { defaultAccountOnlyProjects: 'client-app' }],
+        ['defaultAccountOnlyProjects', { defaultAccountOnlyProjects: [''] }],
+        ['projectAccounts', { projectAccounts: { '/work/client.app': {} } }],
+        ['projectAccounts', { projectAccounts: { '/work/a': { allowed: ['work'] } } }],
+        ['projectAccounts', { projectAccounts: { '/work/a': { allow: ['work', ''] } } }],
+      ];
+      for (const [leaf, claudeCode] of bad) {
+        const refused = await request(server)
+          .patch('/api/config')
+          .send({ runtimes: { claudeCode } })
+          .expect(400);
+        expect(JSON.stringify(refused.body)).toContain(`runtimes.claudeCode.${leaf}`);
+      }
+      expect(JSON.stringify(configManager.get('runtimes'))).toBe(before);
+    });
+
+    it('stores a well-formed rule (control)', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+      await request(server)
+        .patch('/api/config')
+        .send({
+          runtimes: { claudeCode: { projectAccounts: { '/work/a': { allow: ['work'] } } } },
+        })
+        .expect(200);
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.get('runtimes').claudeCode.projectAccounts).toMatchObject({
+        '/work/a': { allow: ['work'] },
+      });
+    });
+  });
+
   describe('the default account color (runtimes.claudeCode.defaultAccountColor, DOR-2492)', () => {
     async function stored(): Promise<unknown> {
       const { configManager } = await import('../../services/core/config-manager.js');
@@ -1711,6 +1752,9 @@ describe('GET /api/config', () => {
         // Nobody registered the inherited folder and Main never follows the
         // env (contract rev 6d), so no row is named; the override says where.
         launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: '/tmp/inherited-claude' },
+        // No account rules: Main works anywhere and no project limits accounts.
+        defaultAccountOnlyProjects: null,
+        projectAccounts: [],
         // Warm agents default on, exposed here for the Control Center switch.
         persistentSession: true,
       });
@@ -1731,6 +1775,8 @@ describe('GET /api/config', () => {
             { id: 'gone', path: missing, label: null, color: null },
           ],
           defaultAccountColor: null,
+          defaultAccountOnlyProjects: null,
+          projectAccounts: {},
           dismissedFolders: [],
           defaultModel: null,
           defaultEffort: null,
@@ -1759,6 +1805,7 @@ describe('GET /api/config', () => {
             color: '#12ab9f',
             colorIsDefault: false,
             isAccountRoot: true,
+            onlyProjects: null,
           },
           {
             id: 'gone',
@@ -1768,8 +1815,11 @@ describe('GET /api/config', () => {
             color: DEFAULT_ACCOUNT_COLORS[1],
             colorIsDefault: true,
             isAccountRoot: false,
+            onlyProjects: null,
           },
         ],
+        defaultAccountOnlyProjects: null,
+        projectAccounts: [],
         // The warm-agents value flows through from config to the Control Center.
         persistentSession: false,
       });

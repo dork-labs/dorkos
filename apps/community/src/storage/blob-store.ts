@@ -29,9 +29,11 @@ export interface PutBlobInput {
 /**
  * What a put holds, which decides the accepted first bytes and the size ceiling. `export` is a
  * whole version 1 archive; `export_segment` is one piece of a segmented archive, which starts with
- * a local file header, a central directory record, or the ZIP64 end record.
+ * a local file header, a central directory record, or the ZIP64 end record. `import_part` is one
+ * uploaded part of an export being imported: it can be cut anywhere, so any bytes are accepted,
+ * stored as opaque, and only ever read back by the import worker.
  */
-export type BlobKind = 'attachment' | 'export' | 'export_segment' | 'icon';
+export type BlobKind = 'attachment' | 'export' | 'export_segment' | 'icon' | 'import_part';
 
 /** An inclusive byte range of a stored object, as in an HTTP `Range: bytes=start-end`. */
 export interface BlobRange {
@@ -73,12 +75,38 @@ export class BlobStoreError extends Error {
       | 'BLOB_NOT_FOUND'
       | 'BLOB_RANGE_NOT_SATISFIABLE'
       | 'BLOB_TOO_LARGE'
-      | 'BLOB_TYPE_REJECTED',
+      | 'BLOB_TYPE_REJECTED'
+      | 'BLOB_UNAVAILABLE',
     message: string
   ) {
     super(message);
     this.name = 'BlobStoreError';
   }
+}
+
+/**
+ * Whether a storage provider's error says to try again: a server-side fault, throttling, or
+ * a timeout. Provider SDKs mark these without a Node error code (the AWS SDK sets `$fault`,
+ * `$retryable`, and `$metadata.httpStatusCode`), so they are read here.
+ */
+export function isRetryableProviderError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const provider = error as {
+    name?: unknown;
+    $fault?: unknown;
+    $retryable?: unknown;
+    $metadata?: { httpStatusCode?: unknown };
+  };
+  const status = provider.$metadata?.httpStatusCode;
+  return (
+    provider.$fault === 'server' ||
+    Boolean(provider.$retryable) ||
+    (typeof status === 'number' && (status >= 500 || status === 429)) ||
+    (typeof provider.name === 'string' &&
+      /^(SlowDown|InternalError|ServiceUnavailable|RequestTimeout|TimeoutError|ThrottlingException)$/.test(
+        provider.name
+      ))
+  );
 }
 
 /** Backend-neutral byte store. Authorization and metadata lifetime belong to Postgres callers. */
@@ -169,6 +197,7 @@ const ZIP_SEGMENT_SIGNATURES = [
 ];
 
 function detectedType(sample: Buffer, textValid: boolean, kind: BlobKind): string {
+  if (kind === 'import_part') return 'application/octet-stream';
   if (kind === 'export_segment') {
     const head = sample.subarray(0, 4);
     if (ZIP_SEGMENT_SIGNATURES.some((signature) => head.equals(signature))) {
@@ -205,7 +234,7 @@ function detectedType(sample: Buffer, textValid: boolean, kind: BlobKind): strin
 /** Stage a bounded source to a private temporary file and verify its bytes. */
 export async function stageBlob(directory: string, input: PutBlobInput) {
   const ceiling =
-    input.kind === 'export' || input.kind === 'export_segment'
+    input.kind === 'export' || input.kind === 'export_segment' || input.kind === 'import_part'
       ? 1024 * 1024 * 1024
       : 25 * 1024 * 1024;
   if (!Number.isSafeInteger(input.maxBytes) || input.maxBytes < 1 || input.maxBytes > ceiling) {

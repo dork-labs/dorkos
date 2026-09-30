@@ -12,7 +12,7 @@ import {
   usePreviewConnectorReconciliation,
 } from '@/layers/entities/connectors';
 
-/** True when the server accepted exactly the replacement sets that were sent. */
+/** True when the server accepted exactly the replacement sets, and levels, that were sent. */
 function acceptedExactGrants(
   expected: ConnectorReconciliationGrantSelection[],
   actual: ConnectorReconciliationGrantSelection[]
@@ -22,6 +22,7 @@ function acceptedExactGrants(
       .map((grant) => ({
         agentId: grant.agentId,
         operationRevisionIds: [...grant.operationRevisionIds].sort(),
+        level: grant.level ?? null,
       }))
       .sort((left, right) => left.agentId.localeCompare(right.agentId));
   return JSON.stringify(normalize(expected)) === JSON.stringify(normalize(actual));
@@ -154,11 +155,13 @@ export function useAccessReconciliation({
     void syncQuery.refetch().then((result) => {
       if (!result.data || !saveOutcome || !connectionId) return;
       const expectedGrants = saveOutcome.grants;
+      // The account read confirms the revisions; the level was confirmed by the save itself.
       const canonicalGrants = expectedGrants.map((expected) => ({
         agentId: expected.agentId,
         operationRevisionIds:
           result.data.agents.find((agent) => agent.agentId === expected.agentId)
             ?.operationRevisionIds ?? [],
+        ...(expected.level && { level: expected.level }),
       }));
       if (
         result.data.connection.connectionId !== connectionId ||

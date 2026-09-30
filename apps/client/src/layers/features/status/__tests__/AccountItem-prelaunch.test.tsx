@@ -67,12 +67,20 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
       children,
       value,
       description,
+      disabled,
     }: {
       children: React.ReactNode;
       value: string;
       description?: string;
+      disabled?: boolean;
     }) => (
-      <div role="radio" aria-checked={false} data-radio-value={value}>
+      <div
+        role="radio"
+        aria-checked={false}
+        aria-disabled={disabled ? true : undefined}
+        data-radio-value={disabled ? undefined : value}
+        data-value-shown={value}
+      >
         <span>{children}</span>
         {description && <span data-testid="radio-description">{description}</span>}
       </div>
@@ -91,6 +99,8 @@ const SESSION = 'session-a';
 
 /** What `GET /api/config` answers for the current test. */
 let mockServerConfig: Partial<ServerConfig> = {};
+/** What `GET /api/runtimes/claude-code/account-eligibility` answers for the current test. */
+let mockEligibility: unknown = { project: null, allow: null, accounts: [] };
 /** The agent at the launch directory, as `getAgentByPath` answers it. */
 let mockAgent: AgentManifest | null = null;
 let lastTransport: ReturnType<typeof createMockTransport>;
@@ -111,6 +121,7 @@ afterEach(() => {
   vi.clearAllMocks();
   mockServerConfig = {};
   mockAgent = null;
+  mockEligibility = { project: null, allow: null, accounts: [] };
 });
 
 /** The status line's wiring in miniature: the one source, then the chip. */
@@ -125,6 +136,7 @@ function render(ui: React.ReactElement, getAgent = () => Promise.resolve(mockAge
     // Present so a test can assert the picker calls it NOT AT ALL.
     updateConfig: vi.fn(() => Promise.resolve()),
     getAgentByPath: vi.fn(getAgent),
+    getAccountEligibility: vi.fn(() => Promise.resolve(mockEligibility as never)),
   });
   lastTransport = transport;
   lastQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -195,7 +207,7 @@ function accountGroup() {
 function radioValues() {
   return within(accountGroup())
     .getAllByRole('radio')
-    .map((el) => el.getAttribute('data-radio-value'));
+    .map((el) => el.getAttribute('data-value-shown'));
 }
 
 describe('AccountItem before launch — the account picker', () => {
@@ -433,5 +445,125 @@ describe('AccountItem before launch — the account picker', () => {
     await waitFor(() => expect(lastQueryClient.getQueryData(['capabilities'])).toBeDefined());
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+});
+
+describe('AccountItem before launch — accounts this project may not use (spec flow-multiproject §8.4)', () => {
+  /** The eligibility answer with Acme Corp kept to another project. */
+  function acmeOnlyForClientApp() {
+    return {
+      project: { root: '/work/project', name: 'project' },
+      allow: null,
+      accounts: [
+        {
+          id: 'personal',
+          label: 'Personal',
+          color: '#3b82f6',
+          implicit: false,
+          onlyProjects: null,
+          allowedByAccount: true,
+          allowedByProject: true,
+          eligible: true,
+        },
+        {
+          id: 'acme-corp',
+          label: 'Acme Corp',
+          color: '#1d8a4a',
+          implicit: false,
+          onlyProjects: [{ root: '/work/client-app', name: 'client-app' }],
+          allowedByAccount: false,
+          allowedByProject: true,
+          eligible: false,
+        },
+      ],
+    };
+  }
+
+  // Purpose: the picker draws an account kept to another project disabled with
+  // "Only for <project>", and asks the server about THIS chat's folder.
+  it('shows it disabled with "Only for" and its project', async () => {
+    mockServerConfig = withAccounts();
+    mockEligibility = acmeOnlyForClientApp();
+    render(<Chip />);
+    await waitFor(() =>
+      expect(within(accountGroup()).getByText('Only for client-app')).toBeInTheDocument()
+    );
+    const acme = within(accountGroup())
+      .getAllByRole('radio')
+      .find((el) => el.getAttribute('data-value-shown') === 'acme-corp')!;
+    expect(acme).toHaveAttribute('aria-disabled', 'true');
+    const personal = within(accountGroup())
+      .getAllByRole('radio')
+      .find((el) => el.getAttribute('data-value-shown') === 'personal')!;
+    expect(personal).not.toHaveAttribute('aria-disabled');
+    expect(lastTransport.getAccountEligibility).toHaveBeenCalledWith('/work/project');
+  });
+
+  // Purpose: a project's own list reads "Not used in <project>".
+  it('says "Not used in" when the project leaves the account out', async () => {
+    mockServerConfig = withAccounts();
+    const answer = acmeOnlyForClientApp();
+    answer.accounts[1] = {
+      ...answer.accounts[1]!,
+      onlyProjects: null,
+      allowedByAccount: true,
+      allowedByProject: false,
+    };
+    mockEligibility = answer;
+    render(<Chip />);
+    await waitFor(() =>
+      expect(within(accountGroup()).getByText('Not used in project')).toBeInTheDocument()
+    );
+  });
+
+  // Purpose: a pick held before the rule changed is dropped, so the first
+  // message never carries an account the server would refuse.
+  it('drops a held pick the project may not use', async () => {
+    mockServerConfig = withAccounts();
+    mockEligibility = acmeOnlyForClientApp();
+    useAppStore.setState({ pendingAccount: { id: 'acme-corp', sessionId: SESSION } });
+    render(<Chip />);
+    await waitFor(() => expect(useAppStore.getState().pendingAccount).toBeNull());
+  });
+});
+
+describe('AccountItem before launch — the Default row names what the ladder will bill here', () => {
+  // Purpose: the server's ladder knows the account rules, so when the default
+  // may not work in this project the row names the account a send really
+  // bills, not the default (spec flow-multiproject §8.4).
+  it('names the account the server says a send would run on', async () => {
+    mockServerConfig = withAccounts(ACME.path);
+    mockEligibility = {
+      project: { root: '/work/project', name: 'project' },
+      allow: null,
+      accounts: [],
+      launch: { ok: true, accountId: 'personal', root: PERSONAL.path },
+    };
+    render(<Chip />);
+    await waitFor(() => expect(accountGroup()).toHaveTextContent('Default: Personal'));
+    expect(accountGroup()).not.toHaveTextContent('Default: Acme Corp');
+  });
+
+  // Purpose: when nothing may work here, the row says why a send would be
+  // refused, in the server's own words, instead of naming an account.
+  it('says why a send with no pick would be refused', async () => {
+    mockServerConfig = withAccounts();
+    mockEligibility = {
+      project: { root: '/work/project', name: 'project' },
+      allow: [],
+      accounts: [],
+      launch: {
+        ok: false,
+        message:
+          'No account is allowed to work in project. Choose which accounts it may use in Settings → Runtimes.',
+      },
+    };
+    render(<Chip />);
+    await waitFor(() =>
+      expect(within(accountGroup()).getAllByTestId('radio-description')[0]).toHaveTextContent(
+        'No account is allowed to work in project.'
+      )
+    );
+    expect(accountGroup()).not.toHaveTextContent('Default: Personal');
   });
 });

@@ -3,6 +3,7 @@ import { CommunityLiveGateError } from '../../scripts/community-deploy-live-capt
 import { CommunityLiveGateCleanupError } from '../../scripts/community-deploy-live-cleanup.js';
 import { CommunityLiveGateNotArmedError } from '../../scripts/community-deploy-live-config.js';
 import {
+  describeLauncherExit,
   AFTER_CLEANUP_STEP,
   CLEANED_UP_DETAIL,
   describeCommunityLiveGateFailure,
@@ -221,6 +222,121 @@ describe('describeCommunityLiveGateFailure', () => {
   it('never prints the message of an error it does not own', () => {
     expect(describeCommunityLiveGateFailure(new Error('token=abc'))).toBe(
       'Community live gate failed\n'
+    );
+  });
+});
+
+// A launcher that refuses its release stops before writing a launch record, so there is no
+// journal to explain it (DOR-2169, a tarball packed past its release's migrations).
+describe('describeLauncherExit', () => {
+  const failed = (message: string) =>
+    `\u001b[1mDorkOS Community 0.92.0\u001b[0m\r\nResolving release…\r\n\u001b[31mCommunity setup failed: ${message}\u001b[39m\r\n`;
+
+  it('names the launcher code from its last failure line', () => {
+    expect(
+      describeLauncherExit(
+        failed('Community release resolution failed (COMMUNITY_RELEASE_INVALID)')
+      )
+    ).toBe('launcher exited with COMMUNITY_RELEASE_INVALID');
+  });
+
+  it('uses the last failure line and the last code in it', () => {
+    expect(
+      describeLauncherExit(
+        failed('first (TIMEOUT)') + failed('Provider command failed (EXIT) then (ACCESS_DENIED)')
+      )
+    ).toBe('launcher exited with ACCESS_DENIED');
+  });
+
+  it.each([
+    ['no failure line', 'Resolving release…\r\nDone\r\n'],
+    ['no code', failed('something went wrong')],
+    ['a code this checkout does not know', failed('failed (FLY_ORGANIZATION_NOT_FOUND)')],
+    ['a lowercase token', failed('failed (dork-labs)')],
+    ['text that is not a code', failed('token=secret-value (Bearer abc)')],
+  ])('returns null for %s, so nothing unchecked is printed', (_label, transcript) => {
+    expect(describeLauncherExit(transcript)).toBeNull();
+  });
+
+  it('never carries anything but the code into the gate error', async () => {
+    const transcript = failed('org dork-labs-secret says (COMMUNITY_RELEASE_INVALID)');
+    const error = new CommunityLiveGateError(
+      PUBLISHED_LAUNCHER_STEP,
+      null,
+      describeLauncherExit(transcript) ?? undefined
+    );
+    const explained = await explainCommunityLiveGateFailure(
+      error,
+      { cleanedUp: false, recoveryCommand: null },
+      async () => null,
+      async () => null
+    );
+    const text = describeCommunityLiveGateFailure(explained);
+    expect(text).toBe(
+      'Community live gate failed (published-launcher): launcher exited with COMMUNITY_RELEASE_INVALID before writing a launch record\n'
+    );
+    expect(text).not.toContain('dork-labs-secret');
+  });
+
+  it('prefers the journal stop, which names the service, over the launcher output', async () => {
+    const error = new CommunityLiveGateError(
+      PUBLISHED_LAUNCHER_STEP,
+      null,
+      'launcher exited with TIMEOUT'
+    );
+    const explained = await explainCommunityLiveGateFailure(
+      error,
+      { cleanedUp: false, recoveryCommand: 'npx dorkos … --resume run-1' },
+      async () => null,
+      async () => 'launcher stopped with CREATION_OUTCOME_UNCERTAIN (neon)'
+    );
+    expect((explained as Error).message).toBe(
+      'Community live gate failed (published-launcher): launcher stopped with CREATION_OUTCOME_UNCERTAIN (neon)'
+    );
+    expect((explained as CommunityLiveGateError).recoveryCommand).toBe(
+      'npx dorkos … --resume run-1'
+    );
+  });
+
+  // A resumed launcher can stop with a journal (and resources) already in place, and a journal whose
+  // saved error is null is the normal state. It must never say nothing was written beside a
+  // recovery command.
+  it.each([
+    ['a recovery command the run already holds', 'npx dorkos … --resume run-1', null],
+    ['a journal found after the stop', null, 'npx dorkos … --resume run-1'],
+  ])('never says nothing was written when there is %s', async (_label, held, found) => {
+    const explained = await explainCommunityLiveGateFailure(
+      new CommunityLiveGateError(
+        PUBLISHED_LAUNCHER_STEP,
+        null,
+        'launcher exited with COMMUNITY_RELEASE_NOT_READY'
+      ),
+      { cleanedUp: false, recoveryCommand: held },
+      async () => found,
+      // The journal exists but its lastSafeError is null.
+      async () => describeLauncherStop({ lastSafeError: null, pendingIntent: null })
+    );
+    const text = describeCommunityLiveGateFailure(explained);
+    expect(text).toBe(
+      'Community live gate failed (published-launcher): launcher exited with COMMUNITY_RELEASE_NOT_READY\n' +
+        'Retained resources can be reconciled with:\n  npx dorkos … --resume run-1\n'
+    );
+    expect(text).not.toContain('before writing a launch record');
+  });
+
+  it('says nothing was written only when there is no journal and no recovery command', async () => {
+    const explained = await explainCommunityLiveGateFailure(
+      new CommunityLiveGateError(
+        PUBLISHED_LAUNCHER_STEP,
+        null,
+        'launcher exited with COMMUNITY_RELEASE_INVALID'
+      ),
+      { cleanedUp: false, recoveryCommand: null },
+      async () => null,
+      async () => null
+    );
+    expect((explained as Error).message).toBe(
+      'Community live gate failed (published-launcher): launcher exited with COMMUNITY_RELEASE_INVALID before writing a launch record'
     );
   });
 });

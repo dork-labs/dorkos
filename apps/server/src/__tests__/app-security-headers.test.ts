@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 
 vi.mock('../services/core/tunnel-manager.js', () => ({
@@ -80,7 +81,7 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
 
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = '*';
-    app = createApp();
+    app = createApp({ admission: new MainRequestAdmission() });
 
     fixtureTarget.mount(app);
   });
@@ -115,7 +116,7 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
   it('warns the operator once, naming the variable and what to set instead', () => {
     vi.mocked(logger.warn).mockClear();
 
-    createApp();
+    createApp({ admission: new MainRequestAdmission() });
 
     const warnings = corsWarnings();
     expect(warnings).toHaveLength(1);
@@ -154,7 +155,7 @@ describe('CORS: DORKOS_CORS_ORIGIN with surrounding whitespace', () => {
 
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = ' * ';
-    app = createApp();
+    app = createApp({ admission: new MainRequestAdmission() });
 
     fixtureTarget.mount(app);
   });
@@ -178,7 +179,7 @@ describe('CORS: DORKOS_CORS_ORIGIN with surrounding whitespace', () => {
   it('warns about it rather than passing silently', () => {
     vi.mocked(logger.warn).mockClear();
 
-    createApp();
+    createApp({ admission: new MainRequestAdmission() });
 
     expect(corsWarnings()).toHaveLength(1);
   });
@@ -207,7 +208,7 @@ describe('X-Content-Type-Options', () => {
 
   beforeAll(() => {
     delete process.env.DORKOS_CORS_ORIGIN;
-    app = createApp();
+    app = createApp({ admission: new MainRequestAdmission() });
 
     fixtureTarget.mount(app);
   });
@@ -230,7 +231,7 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
 
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = 'http://localhost:5173,https://dorkos.example.com';
-    app = createApp();
+    app = createApp({ admission: new MainRequestAdmission() });
 
     fixtureTarget.mount(app);
   });
@@ -259,7 +260,7 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
   });
 
   it('does not warn about a real allowlist', () => {
-    createApp();
+    createApp({ admission: new MainRequestAdmission() });
 
     expect(corsWarnings()).toHaveLength(0);
   });

@@ -3,8 +3,15 @@ import {
   COMMUNITY_RESERVED_SHORT_NAMES,
   COMMUNITY_SHORT_NAME_PATTERN,
 } from '@dorkos/shared/community-admin-wire';
-import { isAbsolute } from 'node:path';
-import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
+import { realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  COMMUNITY_MINIMUM_AGE_CEILING,
+  COMMUNITY_MINIMUM_AGE_FLOOR,
+  parseCommunityReportMailto,
+} from '@dorkos/shared/community-wire';
 
 const integer = (name: string, fallback: number, ceiling: number) =>
   z.coerce.number().int().min(1, `${name} must be positive`).max(ceiling).default(fallback);
@@ -120,6 +127,159 @@ function parseOidc(value: {
   };
 }
 
+/** The directory the server serves its web app from (`main.ts`), from `src/` or `dist-server/`. */
+const SERVED_WEB_APP_DIRECTORY = fileURLToPath(new URL('../dist/', import.meta.url));
+
+/**
+ * A path with every symbolic link resolved, for as much of it as exists, so `/tmp/x` and
+ * `/private/tmp/x` compare equal on a host where one links to the other.
+ */
+function realPath(path: string): string {
+  const absolute = resolve(path);
+  let existing = absolute;
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync.native(existing), ...rest.reverse());
+    } catch {
+      const parent = dirname(existing);
+      if (parent === existing) return absolute;
+      rest.push(basename(existing));
+      existing = parent;
+    }
+  }
+}
+
+/** Whether `child` is `parent` or sits anywhere inside it. */
+function within(child: string, parent: string): boolean {
+  const path = relative(parent, child);
+  return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path));
+}
+
+/** Whether two directories are the same, or one contains the other. */
+function directoriesOverlap(a: string, b: string): boolean {
+  for (const left of new Set([resolve(a), realPath(a)])) {
+    for (const right of new Set([resolve(b), realPath(b)])) {
+      if (within(left, right) || within(right, left)) return true;
+    }
+  }
+  return false;
+}
+
+/** Refuse an S3 endpoint that is not HTTPS (or HTTP on localhost) or that carries credentials. */
+function checkS3Endpoint(name: string, value: string | undefined): void {
+  if (!value) return;
+  const endpoint = new URL(value);
+  if (
+    endpoint.protocol !== 'https:' &&
+    !(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(endpoint.hostname))
+  ) {
+    throw new Error(`${name} must use HTTPS, or HTTP on localhost`);
+  }
+  if (endpoint.username || endpoint.password) {
+    throw new Error(`${name} must not contain credentials`);
+  }
+}
+
+/** Where and how the Community hands mail to the host's own SMTP server. */
+export type CommunityMailConfig = {
+  smtp: {
+    host: string;
+    port: number;
+    /** Implicit TLS from the first byte (`smtps:`). */
+    secure: boolean;
+    /** Refuse to send unless the server upgrades the connection with STARTTLS. */
+    requireTLS: boolean;
+    auth: { user: string; pass: string } | null;
+  };
+  /** The sender every notice carries, from `COMMUNITY_MAIL_FROM`. */
+  from: { name: string | null; address: string };
+};
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]']);
+const EMAIL = z.email();
+
+/**
+ * Read the one RFC 5322 mailbox notices come from: `notices@example.com` or
+ * `Example Community <notices@example.com>`. A line break, a second address, or a group is
+ * refused, so the setting can never add a header.
+ */
+function parseMailFrom(value: string): CommunityMailConfig['from'] {
+  const invalid = () =>
+    new Error(
+      'COMMUNITY_MAIL_FROM must be one mailbox, such as notices@example.com or Example <notices@example.com>'
+    );
+  if (/[\p{Cc}]/u.test(value)) throw invalid();
+  const named = /^\s*(?:"([^"\\]{1,80})"|([^"<>,;:@\\]{1,80}?))\s*<([^<>\s]+)>\s*$/u.exec(value);
+  const address = named ? named[3] : value.trim();
+  if (!EMAIL.safeParse(address).success) throw invalid();
+  const name = named ? (named[1] ?? named[2]).trim() : '';
+  return { name: name || null, address };
+}
+
+/**
+ * Read the mail settings: `COMMUNITY_SMTP_URL` and `COMMUNITY_MAIL_FROM` together, or neither.
+ * Off loopback the connection must be encrypted: `smtps://` (TLS from the start), or `smtp://`
+ * with `?starttls=required`. Credentials, if any, go in the URL and are percent-decoded.
+ */
+function parseMail(value: {
+  COMMUNITY_SMTP_URL?: string;
+  COMMUNITY_MAIL_FROM?: string;
+}): CommunityMailConfig | null {
+  const { COMMUNITY_SMTP_URL: smtpUrl, COMMUNITY_MAIL_FROM: mailFrom } = value;
+  if (!smtpUrl && !mailFrom) return null;
+  if (!smtpUrl || !mailFrom)
+    throw new Error('COMMUNITY_SMTP_URL and COMMUNITY_MAIL_FROM must be set together');
+  const shape = 'COMMUNITY_SMTP_URL must be smtps://host[:port] or smtp://host[:port]';
+  let url: URL;
+  try {
+    url = new URL(smtpUrl);
+  } catch {
+    // eslint-disable-next-line preserve-caught-error -- Node's URL error carries the input, password and all.
+    throw new Error(shape);
+  }
+  if ((url.protocol !== 'smtp:' && url.protocol !== 'smtps:') || !url.hostname)
+    throw new Error(shape);
+  if ((url.pathname !== '' && url.pathname !== '/') || url.hash)
+    throw new Error(`${shape}, with no path or fragment`);
+  const query = [...url.searchParams.entries()];
+  const starttls = query.length === 1 && query[0][0] === 'starttls' && query[0][1] === 'required';
+  if (query.length && (!starttls || url.protocol !== 'smtp:'))
+    throw new Error('COMMUNITY_SMTP_URL takes one option only: ?starttls=required on smtp://');
+  const secure = url.protocol === 'smtps:';
+  if (url.port === '0') throw new Error('COMMUNITY_SMTP_URL must not use port 0');
+  const plain = !secure && !starttls;
+  // For an unencrypted relay `localhost` means the IPv4 loopback address, never whatever a
+  // resolver answers for it, so the no-encryption exemption can only ever reach this machine.
+  const lowered = url.hostname.toLowerCase();
+  const hostname = plain && lowered === 'localhost' ? '127.0.0.1' : lowered;
+  if (plain && !LOOPBACK_HOSTS.has(hostname))
+    throw new Error(
+      'COMMUNITY_SMTP_URL must encrypt mail off this machine: use smtps://, or smtp:// with ?starttls=required'
+    );
+  if (Boolean(url.username) !== Boolean(url.password))
+    throw new Error('COMMUNITY_SMTP_URL must carry both a user name and a password, or neither');
+  let auth: CommunityMailConfig['smtp']['auth'] = null;
+  if (url.username) {
+    try {
+      auth = { user: decodeURIComponent(url.username), pass: decodeURIComponent(url.password) };
+    } catch {
+      // eslint-disable-next-line preserve-caught-error -- the cause would name the encoded password.
+      throw new Error('COMMUNITY_SMTP_URL has a badly encoded user name or password');
+    }
+  }
+  return {
+    smtp: {
+      host: hostname.replace(/^\[(.*)\]$/u, '$1'),
+      port: url.port ? Number(url.port) : secure ? 465 : starttls ? 587 : 25,
+      secure,
+      requireTLS: starttls,
+      auth,
+    },
+    from: parseMailFrom(mailFrom),
+  };
+}
+
 const schema = z.object({
   COMMUNITY_DATABASE_URL: z.url().startsWith('postgres'),
   COMMUNITY_AUTH_SECRET: z.string().min(32),
@@ -148,6 +308,37 @@ const schema = z.object({
   COMMUNITY_S3_ENDPOINT: z.url().optional(),
   COMMUNITY_S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   COMMUNITY_S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  // The evidence store: a second, independent place takedowns copy removed content to. The
+  // server only ever writes there. Unset means no evidence store.
+  COMMUNITY_EVIDENCE_DRIVER: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.enum(['filesystem', 's3']).optional()
+  ),
+  COMMUNITY_EVIDENCE_PATH: optionalText,
+  COMMUNITY_EVIDENCE_S3_BUCKET: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(3).max(63).optional()
+  ),
+  COMMUNITY_EVIDENCE_S3_REGION: optionalText,
+  COMMUNITY_EVIDENCE_S3_ENDPOINT: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.url().optional()
+  ),
+  COMMUNITY_EVIDENCE_S3_ACCESS_KEY_ID: optionalText,
+  COMMUNITY_EVIDENCE_S3_SECRET_ACCESS_KEY: optionalText,
+  COMMUNITY_EVIDENCE_S3_PREFIX: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z
+      .string()
+      .regex(/^(?!\/)(?!.*\/\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._/-]{1,200}$/)
+      .optional()
+  ),
+  // How long a takedown's evidence may stay unsaved before the worker logs a warning each hour.
+  COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS: integer(
+    'COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS',
+    6,
+    168
+  ),
   COMMUNITY_PORT: integer('COMMUNITY_PORT', 6481, 65535),
   COMMUNITY_TEST_RUNTIME: z.enum(['true', 'false']).default('false'),
   COMMUNITY_POSTS_PER_TEN_MINUTES: integer('COMMUNITY_POSTS_PER_TEN_MINUTES', 120, 1000),
@@ -213,6 +404,9 @@ const schema = z.object({
   COMMUNITY_EXPORT_MAX_HOURS: between(1, 24, 168),
   COMMUNITY_EXPORT_CONCURRENCY: between(1, 1, 8),
   COMMUNITY_IMPORT_UPLOADS: integer('COMMUNITY_IMPORT_UPLOADS', 2, 16),
+  COMMUNITY_IMPORT_PART_CONCURRENCY: between(1, 8, 64),
+  COMMUNITY_IMPORT_MAX_BYTES: between(MIB, 1024 * MIB, 1024 * 1024 * MIB),
+  COMMUNITY_IMPORT_UPLOAD_HOURS: between(1, 24, 168),
   COMMUNITY_ERASURE_JOURNAL: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.string().min(1).optional()
@@ -226,9 +420,26 @@ const schema = z.object({
   COMMUNITY_OIDC_CLIENT_SECRET: optionalText,
   COMMUNITY_OIDC_LABEL: optionalText,
   COMMUNITY_OIDC_SCOPES: optionalText,
+  COMMUNITY_SMTP_URL: optionalText,
+  COMMUNITY_MAIL_FROM: optionalText,
+  // Owner replacement: the wait after a notice reaches the owner, the longer wait when it may
+  // not have, and how long a host must wait to ask again after the owner said no.
+  COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS: between(7, 14, 90),
+  COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS: between(14, 30, 180),
+  COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS: between(30, 90, 365),
   COMMUNITY_TERMS_URL: optionalText,
   COMMUNITY_PRIVACY_URL: optionalText,
   COMMUNITY_REPORT_ABUSE_URL: optionalText,
+  // The age a person confirms before a new account is created here. Unset asks nothing.
+  COMMUNITY_MINIMUM_AGE: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.coerce
+      .number()
+      .int()
+      .min(COMMUNITY_MINIMUM_AGE_FLOOR)
+      .max(COMMUNITY_MINIMUM_AGE_CEILING)
+      .optional()
+  ),
 });
 
 /** Validated deployment settings, resolved only when the server starts. */
@@ -249,6 +460,12 @@ export function parseConfig(env: Record<string, unknown>) {
   ) {
     throw new Error(
       'Previous invite key ID and secret must be set together, with an ID different from the current key'
+    );
+  }
+  // An export arrives in at most 10,000 parts of at most one export segment each.
+  if (value.COMMUNITY_IMPORT_MAX_BYTES > 10_000 * value.COMMUNITY_EXPORT_SEGMENT_BYTES) {
+    throw new Error(
+      'COMMUNITY_IMPORT_MAX_BYTES must be at most 10,000 times COMMUNITY_EXPORT_SEGMENT_BYTES, the most an import can arrive in'
     );
   }
   for (const name of ['GOOGLE', 'GITHUB'] as const) {
@@ -298,18 +515,7 @@ export function parseConfig(env: Record<string, unknown>) {
         'COMMUNITY_S3_ACCESS_KEY_ID and COMMUNITY_S3_SECRET_ACCESS_KEY must be set together'
       );
     }
-    if (value.COMMUNITY_S3_ENDPOINT) {
-      const endpoint = new URL(value.COMMUNITY_S3_ENDPOINT);
-      if (
-        endpoint.protocol !== 'https:' &&
-        !(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(endpoint.hostname))
-      ) {
-        throw new Error('COMMUNITY_S3_ENDPOINT must use HTTPS, or HTTP on localhost');
-      }
-      if (endpoint.username || endpoint.password) {
-        throw new Error('COMMUNITY_S3_ENDPOINT must not contain credentials');
-      }
-    }
+    checkS3Endpoint('COMMUNITY_S3_ENDPOINT', value.COMMUNITY_S3_ENDPOINT);
     return {
       kind: 's3' as const,
       bucket: value.COMMUNITY_S3_BUCKET,
@@ -320,6 +526,78 @@ export function parseConfig(env: Record<string, unknown>) {
     };
   })();
   const oidc = parseOidc(value);
+  const evidence = (() => {
+    const driver = value.COMMUNITY_EVIDENCE_DRIVER;
+    if (!driver) {
+      const stray = Object.keys(value).find(
+        (name) => name.startsWith('COMMUNITY_EVIDENCE_') && value[name as keyof typeof value]
+      );
+      if (stray) throw new Error(`${stray} is set, but COMMUNITY_EVIDENCE_DRIVER is not`);
+      return null;
+    }
+    if (driver === 'filesystem') {
+      const directory = value.COMMUNITY_EVIDENCE_PATH;
+      if (!directory || !isAbsolute(directory)) {
+        throw new Error(
+          'COMMUNITY_EVIDENCE_PATH must be an absolute path for a filesystem evidence store'
+        );
+      }
+      // Evidence must never be where the server serves, stages, or stores anything else: a
+      // served folder would publish it, and a store or temporary folder may be swept.
+      const forbidden = [
+        ...(storage.kind === 'filesystem' ? [['COMMUNITY_STORAGE_PATH', storage.directory]] : []),
+        ['the web app folder', SERVED_WEB_APP_DIRECTORY],
+        ['the temporary folder (where file stores stage their uploads)', tmpdir()],
+      ];
+      for (const [name, path] of forbidden) {
+        if (directoriesOverlap(directory, path)) {
+          throw new Error(`COMMUNITY_EVIDENCE_PATH must not be, contain, or sit inside ${name}`);
+        }
+      }
+      return { kind: 'filesystem' as const, directory: resolve(directory) };
+    }
+    if (!value.COMMUNITY_EVIDENCE_S3_BUCKET || !value.COMMUNITY_EVIDENCE_S3_REGION) {
+      throw new Error(
+        'COMMUNITY_EVIDENCE_S3_BUCKET and COMMUNITY_EVIDENCE_S3_REGION are required for an S3 evidence store'
+      );
+    }
+    if (
+      Boolean(value.COMMUNITY_EVIDENCE_S3_ACCESS_KEY_ID) !==
+      Boolean(value.COMMUNITY_EVIDENCE_S3_SECRET_ACCESS_KEY)
+    ) {
+      throw new Error(
+        'COMMUNITY_EVIDENCE_S3_ACCESS_KEY_ID and COMMUNITY_EVIDENCE_S3_SECRET_ACCESS_KEY must be set together'
+      );
+    }
+    checkS3Endpoint('COMMUNITY_EVIDENCE_S3_ENDPOINT', value.COMMUNITY_EVIDENCE_S3_ENDPOINT);
+    if (
+      storage.kind === 's3' &&
+      storage.bucket === value.COMMUNITY_EVIDENCE_S3_BUCKET &&
+      (storage.endpoint ?? '') === (value.COMMUNITY_EVIDENCE_S3_ENDPOINT ?? '')
+    ) {
+      throw new Error(
+        'The evidence store must be a different bucket from COMMUNITY_S3_BUCKET, or on a different endpoint'
+      );
+    }
+    return {
+      kind: 's3' as const,
+      bucket: value.COMMUNITY_EVIDENCE_S3_BUCKET,
+      region: value.COMMUNITY_EVIDENCE_S3_REGION,
+      endpoint: value.COMMUNITY_EVIDENCE_S3_ENDPOINT,
+      accessKeyId: value.COMMUNITY_EVIDENCE_S3_ACCESS_KEY_ID,
+      secretAccessKey: value.COMMUNITY_EVIDENCE_S3_SECRET_ACCESS_KEY,
+      prefix: value.COMMUNITY_EVIDENCE_S3_PREFIX,
+    };
+  })();
+  const mail = parseMail(value);
+  if (
+    value.COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS <
+    value.COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS
+  ) {
+    throw new Error(
+      'COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS must not be shorter than COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS'
+    );
+  }
   const hostLinks = {
     termsUrl: hostLink('COMMUNITY_TERMS_URL', value.COMMUNITY_TERMS_URL),
     privacyUrl: hostLink('COMMUNITY_PRIVACY_URL', value.COMMUNITY_PRIVACY_URL),
@@ -335,6 +613,8 @@ export function parseConfig(env: Record<string, unknown>) {
     bootstrapSecret: value.COMMUNITY_BOOTSTRAP_SECRET,
     publicUrl: publicUrl.origin,
     storage,
+    /** Where takedowns copy removed content, outside the API; null when the host set none. */
+    evidence,
     port: value.COMMUNITY_PORT,
     testRuntime: value.COMMUNITY_TEST_RUNTIME === 'true',
     /** Background exports: segment size, archive lifetime, per-job deadline, jobs per replica. */
@@ -344,9 +624,23 @@ export function parseConfig(env: Record<string, unknown>) {
       maxHours: value.COMMUNITY_EXPORT_MAX_HOURS,
       concurrency: value.COMMUNITY_EXPORT_CONCURRENCY,
     },
+    /**
+     * Imports: part uploads one replica receives at once, the largest export accepted in parts,
+     * and how long an import's upload token works.
+     */
+    imports: {
+      partConcurrency: value.COMMUNITY_IMPORT_PART_CONCURRENCY,
+      maxBytes: value.COMMUNITY_IMPORT_MAX_BYTES,
+      uploadHours: value.COMMUNITY_IMPORT_UPLOAD_HOURS,
+    },
     /** Where each completed erasure's id-only line is also appended, outside the database. */
     erasureJournal: value.COMMUNITY_ERASURE_JOURNAL,
     hostLinks,
+    /**
+     * The age a person must confirm they have reached before any new account is created, by
+     * password, Google, GitHub or single sign-on; `null` when the host set none.
+     */
+    minimumAge: value.COMMUNITY_MINIMUM_AGE ?? null,
     /** The header a trusted proxy puts the caller's address in; per-caller limits read it. */
     trustedProxyHeader: value.COMMUNITY_TRUSTED_PROXY_HEADER?.toLowerCase(),
     /** Every short name no community may take: the built-in paths and this host's additions. */
@@ -371,6 +665,14 @@ export function parseConfig(env: Record<string, unknown>) {
           : undefined,
     },
     oidc,
+    /** The host's SMTP server and sender, or `null`: then the Community sends no mail at all. */
+    mail,
+    /** Owner-replacement waits, in days. */
+    ownerReplacement: {
+      noticeDays: value.COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS,
+      unreachableDays: value.COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS,
+      objectionCooldownDays: value.COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS,
+    },
     limits: {
       postsPerTenMinutes: value.COMMUNITY_POSTS_PER_TEN_MINUTES,
       agentsPerOwner: value.COMMUNITY_AGENTS_PER_OWNER,
@@ -389,6 +691,7 @@ export function parseConfig(env: Record<string, unknown>) {
       nameLookupsPerMinute: value.COMMUNITY_NAME_LOOKUPS_PER_MINUTE,
       /** Export uploads one replica receives at once; each can stage up to twice its size. */
       importUploads: value.COMMUNITY_IMPORT_UPLOADS,
+      takedownEvidenceAlertHours: value.COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS,
     },
   };
 }

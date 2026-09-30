@@ -53,6 +53,25 @@ outside 0-100, which the rules left unwritten. Writers clamp, and so does a
 reader: 130 reads as 100 and -5 as 0 (`window-read` cases). A reader never
 treats such an entry as invalid, and never drops the file over it.
 
+4.1.0 (spec `flow-multiproject` §6, in this repo) is a minor: two new optional
+`FlowRun` fields. `dispatchedBy` is the session id of the chat that launched a
+run, when another chat did (a `flow drain`, or `flow claim --dispatched-by`), so
+DorkOS can show the run in that chat too. `updatedAt` is when the record was last
+written; every writer stamps it on the record it writes, and only there. Both
+are plain strings; a record from before 4.1.0 has neither and still reads. A
+`flow-run` write case gives the writer's clock as `input.now`: the written
+record reads back with `updatedAt` equal to it. flow's runner checks this on
+both the pure upsert and the real run store.
+
+4.2.0 (spec `flow-multiproject` §8 in `dork-labs/dorkos`) is a minor: account
+eligibility. A Claude Code account may be kept to projects (`onlyProjects` on its
+row, `defaultAccountOnlyProjects` for Main) and a project may limit which accounts
+it uses (`projectAccounts`). An account works in a project only when both allow
+it, and an account kept to projects never works in a folder that is in no
+project. A project is a git main checkout; roots compare canonically. The rules
+are new optional fields, so a config from before 4.2.0 has none and every
+account works everywhere, as before (`project-eligibility` cases).
+
 ## What is here
 
 | File | What it pins | The call it drives |
@@ -67,6 +86,7 @@ treats such an entry as invalid, and never drops the file over it.
 | `ledger-merge.cases.json` | Folding new readings (windows, plan, credits, spend) into a ledger | `mergeLedger(existing, observations, now, { runtime, accountId })` |
 | `codex-rate-limits.cases.json` | Codex's `rate_limits` payload as ledger observations | `codexObservations(rateLimits, observedAt, source)` |
 | `prune.cases.json` | Which ledger files go when their account is no longer registered | `pruneTargets(registered, onDisk)` |
+| `project-eligibility.cases.json` | Which Claude Code accounts may work in which projects (4.2.0) | `eligibility(config, account, projectRoot) -> { eligible, reason? }` |
 | `flow-run.cases.json` | Reading `flow-state.json`, and keeping unknown fields when one run is written | the all-or-nothing reader, and an upsert by `issueId` |
 | `usage-ledger.schema.json` | The ledger file shape a WRITER may store (JSON Schema draft-07). Readers accept more: a `usedPct` outside 0-100 reads clamped (spec 1.2 "One entry"), and one entry a reader does not understand never makes it drop the file | |
 | `fleet-policy.schema.json` | The `fleet.json` shape a WRITER may store (JSON Schema draft-07). Readers accept more: no `v` reads as 1, and a bare key from before 2.0.0 reads as `claude-code:<key>` (see the `fleet-policy` cases and spec 1.1b) | |

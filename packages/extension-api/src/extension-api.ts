@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import type { ExtensionEventsAPI } from './extension-events.js';
+import type { StartWorkInput } from './start-work.js';
 
 /**
  * Slot identifiers matching the Phase 2 registry.
@@ -418,6 +419,17 @@ export interface ExtensionAPI {
 
   /** This extension's open decisions (scoped to its id), as the inbox shows them. */
   listDecisions(): Promise<ExtensionDecisionView[]>;
+
+  /**
+   * Start work in a NEW chat (spec §7.7; scoped to this extension; behind the
+   * person bar). Never touches the current chat and never navigates: show
+   * "Sorting 12 ideas… · Watch" and open `/session?session=<sessionId>` on
+   * Watch. Recorded as started by the extension, because the bar keeps agents
+   * out but cannot tell a click from this page's own code. Throws
+   * {@link StartWorkError} on refusal. Probe with
+   * `typeof api.startWork === 'function'`.
+   */
+  startWork(input: StartWorkInput): Promise<{ sessionId: string }>;
 
   /**
    * Per-project settings core holds for this extension (spec §7.10): the home

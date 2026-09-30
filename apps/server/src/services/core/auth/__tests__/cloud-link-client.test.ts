@@ -448,7 +448,8 @@ describe('managed connector authority commands', () => {
       })
     ).rejects.toMatchObject({
       code: 'permission_upgrade_required',
-      message: 'Relink this instance to enable managed connections.',
+      message:
+        'Your DorkOS account link needs updating. Link this computer again in Settings › Access.',
     });
     await expect(
       submitManagedConnectorAuthorityCommand({

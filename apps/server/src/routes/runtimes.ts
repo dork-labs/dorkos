@@ -77,8 +77,14 @@ import {
   requireOperatorCookieUnderLogin,
 } from '../lib/caller-authority.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
+import { mountAccountEligibilityRoutes } from './runtimes-account-eligibility.js';
 
 const router = Router();
+
+// Which Claude accounts may work in which projects (spec `flow-multiproject`
+// §8.6), in their own module; mounted first so no `/:type/...` pattern below
+// can shadow them.
+mountAccountEligibilityRoutes(router);
 
 /**
  * Reject non-local requests with 403; returns `true` when the request was

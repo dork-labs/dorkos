@@ -10,9 +10,23 @@ import {
   describeClaudeCodeAccounts,
   resolveActiveClaudeRoot,
   resolveClaudeRootSet,
-  resolveLaunchAccountRoot,
+  resolveLaunchAccountRoot as resolveLaunch,
 } from '../claude-config-dir.js';
 import { logger } from '../../../../lib/logger.js';
+
+/**
+ * The ladder's folder for a launch in no project (where no account rule
+ * applies), or the refusal thrown: what this file asserts on.
+ */
+function resolveLaunchAccountRoot(
+  opts: Omit<Parameters<typeof resolveLaunch>[0], 'project'> & {
+    project?: Parameters<typeof resolveLaunch>[0]['project'];
+  }
+): string {
+  const launch = resolveLaunch({ project: null, ...opts });
+  if (!launch.ok) throw launch.error;
+  return launch.root;
+}
 
 /**
  * A config reader over one `runtimes.claudeCode` section, standing in for the
@@ -28,6 +42,8 @@ function fakeConfig(claudeCode: Partial<UserConfig['runtimes']['claudeCode']> = 
       defaultAccount: null,
       accounts: [],
       defaultAccountColor: null,
+      defaultAccountOnlyProjects: null,
+      projectAccounts: {},
       dismissedFolders: [],
       defaultModel: null,
       defaultEffort: null,
@@ -333,6 +349,10 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       // No row: Main is ~/.claude (never the env, contract rev 6d), and nobody
       // registered the inherited folder. The override says where sessions go.
       launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: '/tmp/inherited-claude' },
+      // No account rules: Main works in any project, and no project limits
+      // which accounts it uses (spec flow-multiproject §8.5).
+      defaultAccountOnlyProjects: null,
+      projectAccounts: [],
     });
   });
 
@@ -439,6 +459,7 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
         color: '#12ab9f',
         colorIsDefault: false,
         isAccountRoot: true,
+        onlyProjects: null,
       },
       {
         id: 'gone',
@@ -448,6 +469,7 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
         color: DEFAULT_ACCOUNT_COLORS[1],
         colorIsDefault: true,
         isAccountRoot: false,
+        onlyProjects: null,
       },
     ]);
   });

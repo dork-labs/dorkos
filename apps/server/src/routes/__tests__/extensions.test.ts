@@ -47,6 +47,9 @@ let TEST_CWD: string;
 function createMockManager() {
   return {
     listPublic: vi.fn<() => ExtensionRecordPublic[]>().mockReturnValue([]),
+    listShadowedPublic: vi.fn().mockReturnValue([]),
+    requestRefresh: vi.fn(),
+    trustOfferFor: vi.fn().mockReturnValue(null),
     get: vi.fn<(id: string) => ExtensionRecord | undefined>().mockReturnValue(undefined),
     enable:
       vi.fn<
@@ -257,15 +260,17 @@ describe('Extension Routes', () => {
   });
 
   describe('POST /api/extensions/reload', () => {
-    it('returns updated extension list', async () => {
+    it('answers with the list as it stands and scans after, off the request path', async () => {
       const records = [stubPublicRecord()];
-      manager.reload.mockResolvedValue(records);
+      manager.listPublic.mockReturnValue(records);
 
       const res = await request(fixtureServer).post('/api/extensions/reload');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
       expect(res.body[0].id).toBe('test-ext');
+      expect(manager.requestRefresh).toHaveBeenCalledOnce();
+      expect(manager.reload).not.toHaveBeenCalled();
     });
   });
 

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `POST /api/sessions/:id/ui-action` — the generative-UI interactivity return
  * channel (spec gen-ui-tier1 §3, PR E).
@@ -72,7 +73,7 @@ import {
 } from '../../services/session/session-state-projector.js';
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

@@ -44,6 +44,9 @@ const RecordSchema = z.strictObject({
 });
 type ConnectionRecord = z.infer<typeof RecordSchema>;
 
+/** `not-found-since.json`: owner-and-ref key to the ISO time of the first `404 NOT_FOUND`. */
+const NotFoundSinceSchema = z.record(z.string(), z.iso.datetime());
+
 /** Non-secret status handed to the browser through the local route. */
 export type RemoteConnectionDescriptor = CommunityConnectionDescriptor;
 
@@ -218,6 +221,86 @@ export class RemoteConnectionStore {
           record.status === 'connected' && record.access?.lastKnown?.lifecycle === 'archived'
       )
       .map((record) => ({ communityRef: record.ref, ownerAuthorId: record.ownerKey }));
+  }
+
+  /**
+   * Every owner's connection, in any state, as the file on disk holds it — or `null` when there
+   * is no file at all. Unlike every other read here, an absent file is NOT "no connections": the
+   * orphaned-mirror sweep deletes copies whose connection is missing, so it must be able to tell
+   * "positively none" from "not loaded". An unreadable or invalid file throws.
+   */
+  async connectionsIfLoaded(): Promise<
+    { communityRef: CommunityRef; ownerAuthorId: string }[] | null
+  > {
+    let text: string;
+    try {
+      text = await readFile(this.file, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+    return z
+      .array(RecordSchema)
+      .parse(JSON.parse(text))
+      .map((record) => ({ communityRef: record.ref, ownerAuthorId: record.ownerKey }));
+  }
+
+  // === "Not found" since (DOR-2334) ===
+  //
+  // Kept in a file of its own beside connections.json, not on the connection record: an older
+  // DorkOS parses connections.json strictly and would fail on a field it does not know.
+
+  private get notFoundFile(): string {
+    return path.join(this.directory, 'not-found-since.json');
+  }
+
+  private async readNotFound(): Promise<Record<string, string>> {
+    try {
+      return NotFoundSinceSchema.parse(JSON.parse(await readFile(this.notFoundFile, 'utf8')));
+    } catch {
+      // Missing or unreadable: nothing has been seen missing, so nothing is prompted.
+      return {};
+    }
+  }
+
+  private async writeNotFound(entries: Record<string, string>): Promise<void> {
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const temporary = path.join(this.directory, `.not-found-${randomUUID()}.tmp`);
+    try {
+      await writeFile(temporary, JSON.stringify(entries), { mode: 0o600, flag: 'wx' });
+      await rename(temporary, this.notFoundFile);
+    } finally {
+      await rm(temporary, { force: true });
+    }
+  }
+
+  /**
+   * When the Community first answered `404 NOT_FOUND` for this connection without a pending
+   * deletion first, or `null`. What decides whether it "seems to be gone".
+   */
+  async notFoundSince(ref: CommunityRef, ownerKey: string): Promise<string | null> {
+    return (await this.readNotFound())[`${ownerKey}\0${ref}`] ?? null;
+  }
+
+  /** Remember the first `404 NOT_FOUND`; a later one never moves the date. */
+  async markNotFound(ref: CommunityRef, ownerKey: string, at: string): Promise<void> {
+    await this.exclusive(async () => {
+      const entries = await this.readNotFound();
+      const key = `${ownerKey}\0${ref}`;
+      if (entries[key]) return;
+      await this.writeNotFound({ ...entries, [key]: at });
+    });
+  }
+
+  /** Forget it: the Community answered as a community that exists, or the connection ended. */
+  async clearNotFound(ref: CommunityRef, ownerKey: string): Promise<void> {
+    await this.exclusive(async () => {
+      const entries = await this.readNotFound();
+      const key = `${ownerKey}\0${ref}`;
+      if (!(key in entries)) return;
+      delete entries[key];
+      await this.writeNotFound(entries);
+    });
   }
 
   /** Remove expired pending proof before list/status can display it after restart. */

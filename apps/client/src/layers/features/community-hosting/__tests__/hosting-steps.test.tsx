@@ -59,6 +59,24 @@ const progressHandlers = {
   onClose: noop,
 };
 
+/**
+ * The line saying who can buy, with its link, placed ABOVE the button that
+ * commits: the body is drawn before the footer, so a line that moved below the
+ * press (or into it) would fail the order check.
+ */
+function expectEligibilityLineBefore(commitButton: HTMLElement) {
+  const line = screen.getByText(
+    /Paid plans, and communities that DorkOS hosts for you, are for people in the United States who are 18 or older\./
+  );
+  const link = within(line).getByRole('link', { name: 'Who can buy a plan?' });
+  expect(link).toHaveAttribute('href', 'https://dorkos.ai/pricing#faq');
+  expect(
+    line.compareDocumentPosition(commitButton) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
+  // Quiet text, not an alert.
+  expect(line.closest('[role="alert"]')).toBeNull();
+}
+
 function startForm(overrides: Partial<Parameters<typeof startFormStep>[0]> = {}) {
   return startFormStep({
     name: 'Night shift',
@@ -98,6 +116,11 @@ describe('Start a community: the form', () => {
   it('says a reserved web address can’t be used', () => {
     show(startForm({ webAddress: 'admin', webAddressStatus: { kind: 'reserved' } }));
     expect(screen.getByText('That web address can’t be used.')).toBeInTheDocument();
+  });
+
+  it('says who can have a community hosted, with a link, before Start community', () => {
+    show(startForm());
+    expectEligibilityLineBefore(screen.getByRole('button', { name: 'Start community' }));
   });
 
   it('locks while submitting', () => {
@@ -241,6 +264,8 @@ describe('Move a community here', () => {
       )
     ).toBeInTheDocument();
     expect(screen.getByText('Confirm with your password.')).toBeInTheDocument();
+    // Nothing is committed here yet; the line waits for the step that starts the move.
+    expect(screen.queryByText(/18 or older/)).not.toBeInTheDocument();
   });
 
   it('needs a file before it will start', () => {
@@ -261,6 +286,7 @@ describe('Move a community here', () => {
     );
     expect(screen.getByLabelText('Export file')).toHaveAttribute('accept', '.zip,application/zip');
     expect(screen.getByRole('button', { name: 'Start moving' })).toBeDisabled();
+    expectEligibilityLineBefore(screen.getByRole('button', { name: 'Start moving' }));
   });
 
   it('shows determinate progress while the file reaches this DorkOS', () => {
@@ -304,7 +330,33 @@ describe('Move a community here', () => {
     const lost = moveStepOf(move({ state: 'awaiting_upload', upload: null }));
     show(moveProgressStep(lost as never, progressHandlers));
     expect(screen.queryByRole('button', { name: 'Send again' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Cancel the move, then start again/)).toBeInTheDocument();
+    expect(screen.getByText(/Cancel the move and start again/)).toBeInTheDocument();
+  });
+
+  // Purpose: after DorkOS restarts it holds no upload for a move (its one-time upload key is
+  // kept in memory only), and the person must be told that plainly, not shown a generic
+  // failure. A closed upload window says so in its own words. Fails if either reads as the other.
+  it('says plainly that a move must start again after DorkOS restarted', () => {
+    const restarted = moveStepOf(move({ state: 'awaiting_upload', upload: null }));
+    expect(restarted).toMatchObject({ kind: 'upload-failed', why: 'restarted' });
+    const first = show(moveProgressStep(restarted as never, progressHandlers));
+    expect(
+      screen.getByRole('heading', { name: 'This move has to start again' })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS restarted since the move began/)).toBeInTheDocument();
+    expect(screen.getByText(/started on another computer/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel move' })).toBeInTheDocument();
+    first.unmount();
+    const expired = moveStepOf(
+      move({
+        state: 'awaiting_upload',
+        upload: { state: 'failed', sentBytes: 5, totalBytes: 100, failure: 'expired' },
+      })
+    );
+    expect(expired).toMatchObject({ why: 'expired' });
+    show(moveProgressStep(expired as never, progressHandlers));
+    expect(screen.getByRole('heading', { name: 'The time to upload ran out' })).toBeInTheDocument();
+    expect(screen.queryByText(/DorkOS restarted/)).not.toBeInTheDocument();
   });
 
   it('says the upload needs DorkOS running, but not this window', () => {

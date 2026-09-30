@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `POST /api/rooms/:id/entries/:entryId/reactions` and what a reaction does to
  * the room's SSE stream, driven through the REAL app mount.
@@ -59,7 +60,7 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 const ANA_PATH = '/agents/ana';

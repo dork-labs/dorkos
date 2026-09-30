@@ -386,7 +386,12 @@ export function CommunityContextSwitcher({
                   itemRef={connection.ref === selectedRef ? selectedItem : undefined}
                   description={
                     [
-                      connection.status === 'reconnect-required' ? 'Reconnect required' : state,
+                      connection.status === 'reconnect-required'
+                        ? 'Reconnect required'
+                        : connection.seemsGoneSince &&
+                            connection.access?.lastKnown?.lifecycle !== 'deleted'
+                          ? 'Seems to be gone'
+                          : state,
                       attention,
                     ]
                       .filter(Boolean)

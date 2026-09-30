@@ -955,6 +955,19 @@ describe('ConnectorOperatorQueryService', () => {
     });
   });
 
+  it('names a way from its type when read, never the raw name an older version stored', async () => {
+    // An older version stored the raw type as the way's name. With the way
+    // not running, the detail is read from the stored row alone.
+    registry.unregisterProviderInstance(PROVIDER_ID);
+    db.update(connectorProviderInstances)
+      .set({ type: 'dorkos-managed', displayName: 'dorkos-managed' })
+      .where(eq(connectorProviderInstances.id, PROVIDER_ID))
+      .run();
+
+    const detail = await service.getConnection(OWNER, 'connection-a');
+    expect(detail.provider.displayName).toBe('Your DorkOS account');
+  });
+
   it('scopes connection detail and agent profiles to the verified owner', async () => {
     await expect(service.listConnections(OWNER)).resolves.toEqual([
       expect.objectContaining({
@@ -1371,7 +1384,10 @@ describe('ConnectorOperatorQueryService', () => {
     listManagedConnectorUsage.mockRejectedValueOnce(new Error('cloud unavailable'));
     await expect(managedService.listConnections(OWNER)).resolves.toEqual([
       expect.objectContaining({
-        usage: { status: 'unavailable', reason: 'Managed usage is temporarily unavailable.' },
+        usage: {
+          status: 'unavailable',
+          reason: 'DorkOS couldn’t read this account’s usage from your DorkOS account.',
+        },
       }),
     ]);
   });

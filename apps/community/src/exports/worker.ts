@@ -279,13 +279,14 @@ class ExportRun extends ExportJob {
     }
     await this.checkpoint();
     const started = await transaction(this.pool, async (client) => {
-      await this.lockJob(client);
+      // Version before job, as `lockJob` explains.
       if (!(await hasExportAuthority(client, this.requester, true)))
         throw new JobFailedError('EXPORT_ACCESS_ENDED');
       const version = await client.query<{ version: string }>(
         'SELECT version::text AS version FROM community_content_versions WHERE community_id=$1 FOR SHARE',
         [this.job.community_id]
       );
+      await this.lockJob(client);
       const channels =
         this.job.scope === 'owner'
           ? await client.query<{ id: string }>(

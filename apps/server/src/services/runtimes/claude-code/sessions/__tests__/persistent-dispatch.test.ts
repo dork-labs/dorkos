@@ -16,7 +16,7 @@ const optIn = vi.hoisted(() => ({ persistentSession: false }));
 
 vi.mock('../../claude-config-dir.js', () => ({
   resolveActiveClaudeRoot: () => '/tmp/fake-claude',
-  resolveLaunchAccountRoot: () => '/tmp/fake-claude',
+  resolveLaunchAccountRoot: () => ({ ok: true, root: '/tmp/fake-claude', accountId: 'default' }),
   resolveClaudeRootSet: () => ['/tmp/fake-claude'],
   claudeConfigDirEnv: (root: string) => ({ CLAUDE_CONFIG_DIR: root }),
   describeClaudeCodeAccounts: () => ({

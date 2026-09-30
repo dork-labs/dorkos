@@ -332,3 +332,67 @@ export const PutProjectSettingsRequestSchema = z
     value: z.unknown(),
   })
   .openapi('PutProjectSettingsRequest');
+
+// --- Starting work in a new chat (spec §7.7) --------------------------------
+
+/** The limits on what starting work takes, and on how often (§7.7). */
+export const START_WORK_LIMITS = {
+  /** The first message, sent at once. */
+  prompt: 20_000,
+  /** The chat's title, plain words. */
+  title: 80,
+  /** Why it was started, shown as the chat's first line. */
+  reason: 200,
+  /** Most chats one extension may start in a rolling hour (its chats' chats included). */
+  perHour: 10,
+  /** Most of its started chats that may be running a turn at once. */
+  running: 3,
+} as const;
+
+/** Why a start was refused. Shared by `api.startWork` and `ctx.sessions.start`. */
+export const START_WORK_ERROR_CODES = [
+  'not_a_project',
+  'account_not_allowed_here',
+  'start_limit',
+] as const;
+
+/** One of {@link START_WORK_ERROR_CODES}. */
+export type StartWorkErrorCode = (typeof START_WORK_ERROR_CODES)[number];
+
+/** Body of `POST /api/extensions/:id/start-work` (what `api.startWork` sends). */
+export const StartWorkRequestSchema = z
+  .object({
+    /** Any folder inside a known project; the chat runs in the project root. */
+    project: z.string().min(1),
+    /** Sent at once as the chat's first message. */
+    prompt: z.string().trim().min(1).max(START_WORK_LIMITS.prompt),
+    /** The chat's title, plain words. */
+    title: z.string().trim().min(1).max(START_WORK_LIMITS.title),
+    /** Why it was started, shown as the chat's first line. */
+    reason: z.string().trim().min(1).max(START_WORK_LIMITS.reason),
+  })
+  .openapi('StartWorkRequest');
+
+/** Body of `POST /api/extensions/:id/start-work`. */
+export type StartWorkRequest = z.infer<typeof StartWorkRequestSchema>;
+
+/** Response of `POST /api/extensions/:id/start-work`. */
+export const StartWorkResponseSchema = z
+  .object({
+    /** The new chat: open it at `/session?session=<sessionId>`. */
+    sessionId: z.string(),
+  })
+  .openapi('StartWorkResponse');
+
+/** Response of `POST /api/extensions/:id/start-work`. */
+export type StartWorkResponse = z.infer<typeof StartWorkResponseSchema>;
+
+/** A refused start: the sentence to show, and which rule refused it. */
+export const StartWorkErrorResponseSchema = z
+  .object({
+    /** Plain words, safe to show as they are. */
+    error: z.string(),
+    /** Which rule refused it. */
+    code: z.enum(START_WORK_ERROR_CODES),
+  })
+  .openapi('StartWorkErrorResponse');

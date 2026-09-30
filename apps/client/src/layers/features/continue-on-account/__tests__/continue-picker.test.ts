@@ -51,6 +51,16 @@ describe('isSelectable (Q2)', () => {
   });
 });
 
+describe('isSelectable: accounts this project may not use (spec flow-multiproject D7)', () => {
+  // Purpose: the account rules bind a person's own pick, so such a row is
+  // shown with its reason and never pickable, whatever its usage.
+  it('disables an account the project may not use', () => {
+    expect(
+      isSelectable(row({ eligible: false, reason: 'Only for client-app', notAllowed: true }))
+    ).toBe(false);
+  });
+});
+
 describe('keptOutLine', () => {
   it('says nothing when nothing is left out', () => {
     expect(keptOutLine([])).toBeNull();

@@ -14,8 +14,17 @@ function useProvidersResource<T>(select: (resource: ConnectorProvidersResource) 
     queryKey: connectorKeys.providers(),
     queryFn: () => transport.getConnectorProviders(),
     select,
+    // While DorkOS has a key re-check scheduled, read again now and then so
+    // "checks again on its own" gives way to the next line once it stops.
+    refetchInterval: (query) =>
+      query.state.data?.providers.some((status) => status.recheckAt !== undefined)
+        ? PROVIDERS_RECHECK_POLL_MS
+        : false,
   });
 }
+
+/** How often the key statuses are read again while a re-check is scheduled. */
+export const PROVIDERS_RECHECK_POLL_MS = 30_000;
 
 const selectProviders = (resource: ConnectorProvidersResource) => resource.providers;
 const selectAppConnections = (resource: ConnectorProvidersResource) => resource.appConnections;

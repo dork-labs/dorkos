@@ -111,7 +111,8 @@ export class ConnectorExecutionBroker {
   async execute(input: ConnectorBrokerExecutionInput): Promise<ConnectorExecutionResponse> {
     if (!isCapabilityAuthorityBinding(input.authorityBinding)) {
       throw new CapabilityToolError({
-        error: 'Connector execution requires authenticated preflight authority.',
+        error:
+          'DorkOS couldn’t confirm this action was checked before it ran, so it didn’t run. Try again.',
         code: 'CONNECTOR_PREFLIGHT_REQUIRED',
       });
     }
@@ -127,7 +128,8 @@ export class ConnectorExecutionBroker {
           return { logicalOperationId, attemptCount, result: safePublicResult(lastResult) };
         }
         throw new CapabilityToolError({
-          error: 'Connector caller authority changed before dispatch.',
+          error:
+            'Who is running this action changed before it was sent, so it didn’t run. Try again.',
           code: 'CONNECTOR_PRINCIPAL_CHANGED',
         });
       }
@@ -233,7 +235,8 @@ export class ConnectorExecutionBroker {
     if (capabilityId !== 'connectors.execute_destructive') return;
     if (!approval || approval.via !== 'approval' || approval.authorityBindingDigest !== digest) {
       throw new CapabilityToolError({
-        error: 'Destructive connector execution requires approval for this exact authority.',
+        error:
+          'This is a high-risk action, so the person must approve this exact action before it runs.',
         code: 'CONNECTOR_APPROVAL_BINDING_MISMATCH',
       });
     }
@@ -278,7 +281,9 @@ export class ConnectorExecutionBroker {
           return {
             status: 'error',
             code: 'MANAGED_EXECUTION_CONTEXT_UNAVAILABLE',
-            message: 'Managed account access is not ready.',
+            // Not retryable, so it never tells the agent to try again soon.
+            message:
+              'Access to this account through the person’s DorkOS account isn’t ready, so the action didn’t run. Tell the person: they can check it on the Connections page in the DorkOS app.',
             retryable: false,
           };
         }

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * @vitest-environment node
  *
@@ -111,7 +112,7 @@ import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { OpenCodeRuntime } from '../../services/runtimes/opencode/opencode-runtime.js';
 import { peekProjector, disposeProjector } from '../../services/session/session-state-projector.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

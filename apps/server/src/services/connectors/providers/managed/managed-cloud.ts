@@ -325,13 +325,13 @@ export class ManagedCloudConnectorProvider implements ConnectorProvider {
           status: 'error',
           code: 'MANAGED_LINK_REQUIRED',
           message:
-            'This instance is not linked to a DorkOS account. Nothing was sent. Ask the owner to open Settings > Access and choose Link this instance.',
+            'This computer isn’t linked to a DorkOS account, so nothing was sent. Ask the person to link it in Settings › Access in the DorkOS app.',
           retryable: false,
         };
       }
       return terminalUnknown(
         'MANAGED_EXECUTION_OUTCOME_UNKNOWN',
-        'The hosted service did not confirm the managed connector outcome.'
+        'DorkOS’s servers didn’t confirm whether the action ran. Check the app before trying again.'
       );
     }
     if ('receipt' in response) {

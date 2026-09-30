@@ -166,6 +166,10 @@ describe('Database Migrations', () => {
       // Derived cache binding a ConnectionId → owning connector provider
       // (connector-gateway spec §Detailed Design 2, migration 0029).
       'connected_accounts',
+      // The access level the owner chose, kept as intent, and when DorkOS
+      // last followed it on its own (migration 0132).
+      'connection_access_levels',
+      'connection_level_follows',
       // Provider instances, stable DorkOS connections, immutable operation
       // revisions, exact grants, event delivery, review/resume state, usage,
       // and the application-backfill ledger (Connections P1, migration 0086).
@@ -305,6 +309,9 @@ describe('Database Migrations', () => {
       // "Added context for the next reply" receipt already is (DOR-1324,
       // migration 0073).
       'session_staged_context',
+      // Who started a chat that no person typed into, and the counter for an
+      // extension's start limits (spec flow-multiproject §7.7, migration 0135).
+      'session_started_by',
       // The durable claim feed for inbound chats with no binding — metadata
       // only, never a message body (connection-scoping spec §Part 3,
       // migration 0048).

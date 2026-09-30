@@ -13,8 +13,25 @@ import os from 'os';
 import path from 'path';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
-import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
+import {
+  claudeConfigDirEnv,
+  resolveLaunchAccountRoot as resolveLaunch,
+} from '../claude-config-dir.js';
 import { logger } from '../../../../lib/logger.js';
+
+/**
+ * The ladder's folder for a launch in no project (where no account rule
+ * applies), or the refusal thrown: what this file asserts on.
+ */
+function resolveLaunchAccountRoot(
+  opts: Omit<Parameters<typeof resolveLaunch>[0], 'project'> & {
+    project?: Parameters<typeof resolveLaunch>[0]['project'];
+  }
+): string {
+  const launch = resolveLaunch({ project: null, ...opts });
+  if (!launch.ok) throw launch.error;
+  return launch.root;
+}
 
 /** The account roots the ladder chooses between, one per rung. */
 const HINT_ROOT = '/staged/claude-hint';
@@ -41,6 +58,8 @@ function fakeConfig(claudeCode: Partial<UserConfig['runtimes']['claudeCode']> = 
       defaultAccount: null,
       accounts: [],
       defaultAccountColor: null,
+      defaultAccountOnlyProjects: null,
+      projectAccounts: {},
       dismissedFolders: [],
       defaultModel: null,
       defaultEffort: null,

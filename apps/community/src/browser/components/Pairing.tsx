@@ -4,6 +4,7 @@ import { createAuthClient } from 'better-auth/react';
 import { Check, KeyRound, Laptop2, ShieldCheck } from 'lucide-react';
 import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
 import { describeError, hostRequest, RequestError, request } from '../api.js';
+import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import { HostPolicyLinks } from './HostLinks.js';
 import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
 
@@ -46,7 +47,7 @@ export function Pairing({ search = location.search }: { search?: string }) {
   const pairingId = new URLSearchParams(search).get('pairingId');
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [error, setError] = useState(() =>
-    pairingId ? (takeSignInError() ?? '') : 'This approval link is incomplete.'
+    pairingId ? (takeSignInError({ signInOnly: true }) ?? '') : 'This approval link is incomplete.'
   );
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [email, setEmail] = useState('');
@@ -115,7 +116,7 @@ export function Pairing({ search = location.search }: { search?: string }) {
     }
   }
 
-  async function social(provider: 'google' | 'github' | 'oidc') {
+  async function social(provider: SignInProvider) {
     if (!pairingId) return;
     setBusy(true);
     setError('');
@@ -217,40 +218,11 @@ export function Pairing({ search = location.search }: { search?: string }) {
                 <KeyRound size={16} />
               </Button>
             </form>
-            {(providers.google || providers.github || providers.oidc) && (
-              <div className="row mt-4">
-                {providers.google && (
-                  <Button
-                    variant="outline"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void social('google')}
-                  >
-                    Continue with Google
-                  </Button>
-                )}
-                {providers.github && (
-                  <Button
-                    variant="outline"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void social('github')}
-                  >
-                    Continue with GitHub
-                  </Button>
-                )}
-                {providers.oidc && (
-                  <Button
-                    variant="outline"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void social('oidc')}
-                  >
-                    Continue with {providers.oidc.label}
-                  </Button>
-                )}
-              </div>
-            )}
+            <ProviderButtons
+              providers={providers}
+              disabled={busy}
+              onChoose={(provider) => void social(provider)}
+            />
           </>
         )}
         {!error && !status && !needsSignIn && <p role="status">Loading the request…</p>}

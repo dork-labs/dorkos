@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `POST /api/rooms/:id/repo` — giving a room files of its own, and who may.
  *
@@ -88,7 +89,7 @@ function gitInRepo(args: string[], store: RoomRepoStore, roomId: string): Promis
   return runGit(args, store.repoPath(roomId), store.homeDir(roomId));
 }
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

@@ -1,7 +1,8 @@
 import { Cable } from 'lucide-react';
+import { connectionAccessWords } from '@dorkos/shared/connector-schemas';
 import { cn } from '@/layers/shared/lib';
 import { useEveryAgentConnectorGrants } from '../model/use-connector-resources';
-import { accessLevelWords, serviceName } from '../lib/access-copy';
+import { serviceName } from '../lib/access-copy';
 
 /** Props for {@link EveryAgentAccessNotice}. */
 export interface EveryAgentAccessNoticeProps {
@@ -63,7 +64,7 @@ export function EveryAgentAccessNotice({ agentName, className }: EveryAgentAcces
       (toolkitCounts.get(grant.toolkit) ?? 0) > 1
         ? `${serviceName(grant.toolkit)} · ${grant.label}`
         : serviceName(grant.toolkit);
-    const level = accessLevelWords(grant.access.classifications);
+    const level = connectionAccessWords(grant.access.classifications);
     return `${name} (${grant.lifecycle === 'paused' ? `${level}, paused` : level})`;
   });
 

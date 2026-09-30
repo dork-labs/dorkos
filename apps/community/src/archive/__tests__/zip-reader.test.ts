@@ -418,3 +418,35 @@ describe('fuzz: damaged archives', () => {
     );
   });
 });
+
+describe('directory windows', () => {
+  // Purpose: after a full pass, the directory can be walked a bounded window at a time and
+  // yields exactly the entries of the full pass, each of which opens; before a pass it refuses,
+  // so no entry is ever read from a directory nobody checked whole.
+  it('walks the directory in windows after a complete pass', async () => {
+    const files: [string, Uint8Array][] = Array.from({ length: 7 }, (_, index) => [
+      randomUUID(),
+      randomBytes(100 + index),
+    ]);
+    const bytes = versionOneArchive(new TextEncoder().encode('{}'), files);
+    const archive = await openZipArchive(bufferReader(bytes), { allowName: allowV1 });
+    await expect(archive.directoryWindow(0, 3)).rejects.toThrow('completed pass');
+    const full: ZipEntry[] = [];
+    for await (const entry of archive.entries()) full.push(entry);
+    const walked: ZipEntry[] = [];
+    let next: number | null = 0;
+    let windows = 0;
+    while (next !== null) {
+      const window = await archive.directoryWindow(next, 3);
+      expect(window.entries.length).toBeLessThanOrEqual(3);
+      walked.push(...window.entries);
+      next = window.next;
+      windows++;
+    }
+    expect(windows).toBe(3);
+    expect(walked).toEqual(full);
+    const last = walked.at(-1)!;
+    expect(await collectBytes(archive.openEntry(last))).toEqual(Buffer.from(files.at(-1)![1]));
+    await expect(archive.directoryWindow(1, 3)).rejects.toMatchObject({ code: 'ZIP_CORRUPT' });
+  });
+});

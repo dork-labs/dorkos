@@ -1,0 +1,1185 @@
+{
+  "contract": "fleet",
+  "about": "Which Claude Code accounts may work in which projects (spec flow-multiproject 8.1-8.2 in dork-labs/dorkos; contract 4.2.0). The rules live in DorkOS's config.json under runtimes.claudeCode: each registered row's 'onlyProjects' (a list of project roots, or null/absent for any project), Main's rule 'defaultAccountOnlyProjects' (the same, for the id 'default', which has no row), and 'projectAccounts' (project root to { allow: [account ids] }; a project with no entry allows every account; 'default' may be listed). An account may work in a project only when BOTH rules allow it. An account rule that is a list never allows 'no project': a folder in no git repository. 'No project' has no project rule. A project is the git main checkout a folder belongs to: input.git maps a folder to the main checkout git reports for it (a linked worktree and a subfolder map to their main checkout); a folder absent from input.git, or input.folder null, is in no project. Roots are compared canonically: without a trailing slash, and through input.realpath (a folder to its real path; a folder absent from it is already real), on both the stored roots and the project's. A stored value of the wrong shape reads as no rule (a reader never fails a launch over a hand edit). Call eligibility(config, account, projectRoot) with projectRoot the canonical root (or null). expected.eligible says whether the account may work there; when it may not, expected.reason is 'only-projects' (the account's own rule) or 'project-allowlist' (the project's rule), and the account rule is checked first. flow's mayServe for Claude Code routing must agree with this for every case; DorkOS enforces it at every place an account is picked.",
+  "cases": [
+    {
+      "name": "no rules: any account works in any project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "no rules: any account works in a folder in no project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": null,
+        "git": {}
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "onlyProjects null is any project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/home/me/personal",
+        "git": {
+          "/home/me/personal": "/home/me/personal"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "an account kept to a project works there",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-app"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "an account kept to a project does not work in another",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-app"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/home/me/personal",
+        "git": {
+          "/home/me/personal": "/home/me/personal"
+        }
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "only-projects"
+      }
+    },
+    {
+      "name": "an account kept to projects never works in no project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-app",
+                    "/work/client-api"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": null,
+        "git": {}
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "only-projects"
+      }
+    },
+    {
+      "name": "an empty onlyProjects allows no project at all",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": []
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "only-projects"
+      }
+    },
+    {
+      "name": "another account's rule does not bind this one",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-app"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "personal",
+        "folder": "/home/me/personal",
+        "git": {
+          "/home/me/personal": "/home/me/personal"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "a project's list allows the accounts it names",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": [
+                    "work"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "a project's list refuses an account it does not name",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": [
+                    "work"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "personal",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "project-allowlist"
+      }
+    },
+    {
+      "name": "a project's list binds only that project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": [
+                    "work"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "personal",
+        "folder": "/home/me/personal",
+        "git": {
+          "/home/me/personal": "/home/me/personal"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "no project has no project rule",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": []
+                }
+              }
+            }
+          }
+        },
+        "account": "personal",
+        "folder": null,
+        "git": {}
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "both rules must allow: the account's rule refuses first",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-api"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": [
+                    "personal"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "only-projects"
+      }
+    },
+    {
+      "name": "both rules must allow: the account allows, the project refuses",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-app"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": [
+                    "personal"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "project-allowlist"
+      }
+    },
+    {
+      "name": "both rules allow",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-app"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": [
+                    "work",
+                    "personal"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "Main is judged by defaultAccountOnlyProjects and works in its project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "defaultAccountOnlyProjects": [
+                "/home/me/personal"
+              ]
+            }
+          }
+        },
+        "account": "default",
+        "folder": "/home/me/personal",
+        "git": {
+          "/home/me/personal": "/home/me/personal"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "Main kept to a project does not work in another",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "defaultAccountOnlyProjects": [
+                "/home/me/personal"
+              ]
+            }
+          }
+        },
+        "account": "default",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "only-projects"
+      }
+    },
+    {
+      "name": "Main kept to projects never works in no project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "defaultAccountOnlyProjects": [
+                "/home/me/personal"
+              ]
+            }
+          }
+        },
+        "account": "default",
+        "folder": null,
+        "git": {}
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "only-projects"
+      }
+    },
+    {
+      "name": "a project's list may name Main as default",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": [
+                    "default"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "default",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "a project's list that leaves Main out refuses it",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": [
+                    "work"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "default",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "project-allowlist"
+      }
+    },
+    {
+      "name": "Main's rule does not bind registered accounts",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "defaultAccountOnlyProjects": [
+                "/home/me/personal"
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "a stored root with a trailing slash names the same project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-app/"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-api/": {
+                  "allow": [
+                    "personal"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "a trailing slash on a project list's key still binds that project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-api/": {
+                  "allow": [
+                    "personal"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-api",
+        "git": {
+          "/work/client-api": "/work/client-api"
+        }
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "project-allowlist"
+      }
+    },
+    {
+      "name": "a stored root that is a symlink to the project names the same project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/links/client-app"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        },
+        "realpath": {
+          "/links/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "a folder reached through a symlink is the project it points into",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-app"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/links/client-app",
+        "git": {
+          "/links/client-app": "/links/client-app"
+        },
+        "realpath": {
+          "/links/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "a linked worktree belongs to its main checkout's project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-app"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": [
+                    "work"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/home/me/.dork/workspaces/client-app/fix-login",
+        "git": {
+          "/home/me/.dork/workspaces/client-app/fix-login": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "a worktree of a project the account is not kept to is refused",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/home/me/personal"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/home/me/.dork/workspaces/client-app/fix-login",
+        "git": {
+          "/home/me/.dork/workspaces/client-app/fix-login": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "only-projects"
+      }
+    },
+    {
+      "name": "a subfolder belongs to its main checkout's project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": [
+                    "/work/client-app"
+                  ]
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/work/client-app/packages/ui",
+        "git": {
+          "/work/client-app/packages/ui": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "an unregistered account id has no account rule; the project's rule still applies",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allow": [
+                    "work"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "someone-else",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": false,
+        "reason": "project-allowlist"
+      }
+    },
+    {
+      "name": "a hand-edited onlyProjects that is not a list reads as any project",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null,
+                  "onlyProjects": "client-app"
+                }
+              ]
+            }
+          }
+        },
+        "account": "work",
+        "folder": "/home/me/personal",
+        "git": {
+          "/home/me/personal": "/home/me/personal"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "name": "a project entry without an allow list reads as no rule",
+      "input": {
+        "config": {
+          "runtimes": {
+            "claudeCode": {
+              "accounts": [
+                {
+                  "id": "work",
+                  "path": "/home/me/.claude-work",
+                  "label": "Work",
+                  "color": null
+                },
+                {
+                  "id": "personal",
+                  "path": "/home/me/.claude2",
+                  "label": null,
+                  "color": null
+                }
+              ],
+              "projectAccounts": {
+                "/work/client-app": {
+                  "allowed": [
+                    "work"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "account": "personal",
+        "folder": "/work/client-app",
+        "git": {
+          "/work/client-app": "/work/client-app"
+        }
+      },
+      "expected": {
+        "eligible": true
+      }
+    }
+  ]
+}

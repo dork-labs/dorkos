@@ -153,6 +153,9 @@ export async function deleteReadyExports(client: PoolClient, communityId: string
  * Send every job of a community that is still being prepared back to the start: queue the
  * segments it wrote, forget what it covered, and make it `queued` again. The change of state
  * fences a worker still running it, whose next write finds the job no longer its own.
+ *
+ * The caller has taken the community row, and the content version when it bumped it, before
+ * this locks the jobs: the order `ExportJob.lockJob` sets.
  */
 export async function restartExportJobs(client: PoolClient, communityId: string): Promise<void> {
   const open = await client.query<{ id: string }>(

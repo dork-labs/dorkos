@@ -76,6 +76,7 @@ vi.mock('../../core/config-manager.js', () => ({
 
 const mockScheduledCleanup = vi.fn();
 const mockReleaseListeners = vi.fn();
+const mockDispose = vi.fn();
 const mockCreateDataProviderContext = vi.fn().mockReturnValue({
   ctx: {
     secrets: {},
@@ -87,6 +88,7 @@ const mockCreateDataProviderContext = vi.fn().mockReturnValue({
   },
   getScheduledCleanups: () => [mockScheduledCleanup],
   releaseListeners: () => mockReleaseListeners(),
+  dispose: () => mockDispose(),
 });
 vi.mock('../extension-server-api-factory.js', () => ({
   createDataProviderContext: (...args: unknown[]) => mockCreateDataProviderContext(...args),
@@ -789,6 +791,55 @@ describe('ExtensionManager — server lifecycle', () => {
         expect.any(Error)
       );
       expect(manager.getServerRouter('startup-throws')).toBeNull();
+    });
+  });
+
+  describe('a register() that never finishes (security review, DOR-2527)', () => {
+    it('stops waiting, marks it as unable to start, and lets every later scan run', async () => {
+      const hung = makeRecord('hangs', {
+        status: 'enabled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/hangs/server.ts',
+      });
+      const fine = makeRecord('fine', {
+        status: 'enabled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/fine/server.ts',
+      });
+      mockConfigGet.mockReturnValue({
+        enabled: ['hangs', 'fine'],
+        disabled: [],
+        ...approved(['hangs', 'fine']),
+      });
+      mockDiscover.mockResolvedValue([hung, fine]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockImplementation(async (record: ExtensionRecord) => ({
+        code:
+          record.id === 'hangs'
+            ? 'module.exports = function register() { return new Promise(function () {}); };'
+            : makeCjsModule(),
+        sourceHash: `srv-${record.id}`,
+      }));
+      const timed = new ExtensionManager('/fake/dork-home', [], { registerTimeoutMs: 50 });
+
+      await timed.initialize('/my/project');
+
+      expect(timed.getServerRouter('hangs')).toBeNull();
+      expect(timed.get('hangs')?.serverError).toMatchObject({ code: 'server_start_timeout' });
+      expect(timed.get('hangs')?.serverError?.message).toContain("couldn't start");
+      // Its context is disposed: what it scheduled is cancelled, what it
+      // registered released, and anything it tries later does nothing.
+      expect(mockDispose).toHaveBeenCalledTimes(1);
+      // The one after it still started, and the next scan is not held up.
+      expect(timed.getServerRouter('fine')).not.toBeNull();
+      await expect(timed.reload()).resolves.toEqual(expect.any(Array));
+
+      // Retrying does not stack instances: each attempt is disposed in turn,
+      // and none of them is ever mounted.
+      await timed.reloadExtension('hangs');
+      await timed.reloadExtension('hangs');
+      expect(mockDispose).toHaveBeenCalledTimes(3);
+      expect(timed.getServerRouter('hangs')).toBeNull();
     });
   });
 });

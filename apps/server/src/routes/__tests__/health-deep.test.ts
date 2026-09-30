@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -29,7 +30,9 @@ const fixtureTarget = swappableServer();
 
 describe('GET /api/health/deep', () => {
   it('answers 200 with a schema-valid body even when nothing is wired', async () => {
-    const res = await request(fixtureTarget.mount(createApp())).get('/api/health/deep');
+    const res = await request(
+      fixtureTarget.mount(createApp({ admission: new MainRequestAdmission() }))
+    ).get('/api/health/deep');
 
     expect(res.status).toBe(200);
     expect(DeepHealthResponseSchema.safeParse(res.body).success).toBe(true);
@@ -37,7 +40,7 @@ describe('GET /api/health/deep', () => {
   });
 
   it('answers 200 — not 500 — when a check finds something broken', async () => {
-    const app = createApp();
+    const app = createApp({ admission: new MainRequestAdmission() });
     app.locals.deepHealthDeps = {
       dorkHome: '/nonexistent',
       relay: { isAccessControlQuarantined: () => true, listAccessRules: () => [] },
@@ -50,7 +53,7 @@ describe('GET /api/health/deep', () => {
   });
 
   it('answers 200 with the other checks intact when a subsystem throws', async () => {
-    const app = createApp();
+    const app = createApp({ admission: new MainRequestAdmission() });
     app.locals.deepHealthDeps = {
       dorkHome: '/nonexistent',
       relay: {
@@ -70,7 +73,9 @@ describe('GET /api/health/deep', () => {
   });
 
   it('leaves the liveness probe alone', async () => {
-    const res = await request(fixtureTarget.mount(createApp())).get('/api/health');
+    const res = await request(
+      fixtureTarget.mount(createApp({ admission: new MainRequestAdmission() }))
+    ).get('/api/health');
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('status', 'ok');

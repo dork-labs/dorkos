@@ -61,6 +61,8 @@ import {
 } from './execution/resolve-run-execution.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { AgentExecutionDefaults } from '../session/resolve-session-defaults.js';
+import type { AccountNotAllowedError } from '../core/usage/account-eligibility.js';
+import { scheduleAccountRefusal } from './lifecycle/schedule-account-eligibility.js';
 
 /**
  * Whether the relay can run a turn on this runtime — asked per run, answered by
@@ -1136,6 +1138,16 @@ export class TaskSchedulerService {
           model: execution.settings.model ?? null,
         });
         this.reportUnregisteredAccount(task, run, execution);
+        // The account rule (spec `flow-multiproject` §8.4): a run that would
+        // start a conversation on an account that may not work in this folder's
+        // project fails here with the plain sentence, before either dispatch
+        // path starts anything, so direct and relay runs say the same thing.
+        const accountRefusal = await this.refusedRunAccount(task, execution, placement);
+        if (accountRefusal) {
+          this.failRun(run, accountRefusal);
+          recordDispatchEnd(dispatchId, 'failed');
+          return;
+        }
 
         // **Only a runtime the relay can actually drive, right now** (DOR-1614,
         // DOR-1636). This read `execution.runtimeType === 'claude-code'` while
@@ -1184,6 +1196,32 @@ export class TaskSchedulerService {
         }
       })
     );
+  }
+
+  /**
+   * The refusal for a run whose schedule names a Claude account that may not
+   * work in the folder the run starts in (spec `flow-multiproject` §8.4), or
+   * null. Only where the account would actually be read: a claude-code run
+   * that starts a conversation.
+   *
+   * @param task - The task being dispatched.
+   * @param execution - What the run resolved to.
+   * @param placement - Where the run starts.
+   */
+  private async refusedRunAccount(
+    task: Task,
+    execution: RunExecution,
+    placement: RunPlacement
+  ): Promise<AccountNotAllowedError | null> {
+    const account = execution.settings.accountHint;
+    if (!account || execution.runtimeType !== 'claude-code') return null;
+    const { hasStarted } = resolveRunSession(this.store, task, {
+      runtimeType: execution.runtimeType,
+    });
+    // A sticky run resuming its conversation stays on that conversation's
+    // account: the rule applies when an account is picked, never mid-conversation.
+    if (hasStarted) return null;
+    return scheduleAccountRefusal({ account, runtime: 'claude-code', folder: placement.cwd });
   }
 
   /**

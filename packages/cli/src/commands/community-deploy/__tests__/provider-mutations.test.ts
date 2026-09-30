@@ -8,6 +8,8 @@ import {
   assertFlyAppNameAvailable,
   createFlyApp,
   deployFlyImage,
+  deployFlySecrets,
+  FLY_DEPLOY_TIMEOUT_MS,
   destroyFlyApp,
   stageFlySecrets,
   verifyFlyDeployment,
@@ -20,6 +22,8 @@ import {
   deleteNeonProject,
 } from '../neon-mutate.js';
 import { mutateTrustedProviderFields } from './provider-contract-harness.js';
+import { PROVIDER_WRITE_TIMEOUT_MS } from '../provider-mutation.js';
+import { readFlyApps } from '../fly-read.js';
 
 const temporaryDirectories: string[] = [];
 const network = 'dorkos-7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a';
@@ -273,6 +277,70 @@ cat > "$CAPTURE_STDIN"
     ).toThrow();
   });
 
+  it('lets a deploy outlive the shared 30-second Fly deadline', async () => {
+    // A live `fly deploy` of the 0.92.0 image took ~27s once and was killed at 30s the next run,
+    // leaving the release interrupted (DOR-2169). The fake sleeps past the caller's deadline.
+    const { executable } = await fakeProvider('sleep 1.5');
+    const short = { ...options(executable), timeoutMs: 1_000 };
+    await expect(
+      deployFlyImage(short, 'community-space', `ghcr.io/dork-labs/dorkos-community@${digest}`)
+    ).resolves.toEqual({ operation: 'deploy' });
+    await expect(deployFlySecrets(short, 'community-space')).resolves.toEqual({
+      operation: 'deploy',
+    });
+    expect(FLY_DEPLOY_TIMEOUT_MS).toBeGreaterThanOrEqual(5 * 60_000);
+  });
+
+  // A write cut off by the launcher is an unknown, not a failure: the launch stops as uncertain for
+  // the operator to reconcile by hand (DOR-2169). Every one-call write outlives the 30-second
+  // deadline the reads share; the reads themselves keep it.
+  it('lets every provider write outlive the deadline the reads share, and only the writes', async () => {
+    const appJson = await readFile(
+      new URL('./fixtures/fly/app-create.json', import.meta.url),
+      'utf8'
+    );
+    const projectJson = await readFile(
+      new URL('./fixtures/neon/project-create.json', import.meta.url),
+      'utf8'
+    );
+    const { executable } = await fakeProvider(`sleep 1.5; printf '%s' "$FIXTURE_JSON"`);
+    const short = (fixture = '') => ({
+      ...options(executable, { FIXTURE_JSON: fixture }),
+      timeoutMs: 1_000,
+    });
+    await Promise.all([
+      expect(
+        createFlyApp(
+          short(appJson),
+          'community-fixture-app',
+          'fixture-org',
+          'dorkos-7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a',
+          async () => null
+        )
+      ).resolves.toMatchObject({ name: 'community-fixture-app' }),
+      expect(
+        stageFlySecrets(short(), 'community-space', { COMMUNITY_AUTH_SECRET: 'x'.repeat(43) })
+      ).resolves.toEqual({ operation: 'secrets-stage' }),
+      expect(destroyFlyApp(short(), 'community-space')).resolves.toMatchObject({}),
+      expect(
+        createNeonProject(short(projectJson), {
+          organizationId: 'org_fixture_01',
+          name: 'Community Fixture',
+          regionId: 'aws-us-east-2',
+          databaseName: 'community',
+          roleName: 'community_owner',
+          postgresVersion: 17,
+        })
+      ).resolves.toMatchObject({ id: 'project_fixture_01' }),
+      expect(deleteNeonProject(short(), 'project_123')).resolves.toMatchObject({
+        operation: 'delete',
+      }),
+      // A read with the same slow provider still stops at its own deadline.
+      expect(readFlyApps(short('[]'), 'dork-labs')).rejects.toMatchObject({ code: 'TIMEOUT' }),
+    ]);
+    expect(PROVIDER_WRITE_TIMEOUT_MS).toBeGreaterThanOrEqual(2 * 60_000);
+  });
+
   it('deploys only an immutable image with HA disabled and verifies exact runtime state', async () => {
     const { executable, directory } = await fakeProvider(`printf '%s' "$*" > "$CAPTURE_ARGS"`);
     const argsPath = join(directory, 'args');
@@ -286,6 +354,11 @@ cat > "$CAPTURE_STDIN"
     expect(await readFile(argsPath, 'utf8')).toBe(
       `deploy --app community-space --image ghcr.io/dork-labs/dorkos-community@${digest} --ha=false --yes`
     );
+    // flyctl v0.4.104 `secrets deploy` has no `--yes` and rejects unknown flags.
+    await expect(
+      deployFlySecrets(options(executable, { CAPTURE_ARGS: argsPath }), 'community-space')
+    ).resolves.toEqual({ operation: 'deploy' });
+    expect(await readFile(argsPath, 'utf8')).toBe('secrets deploy --app community-space');
     const inventory = {
       machines: [
         {

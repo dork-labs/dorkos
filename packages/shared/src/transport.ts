@@ -80,6 +80,7 @@ import type { AgentBrowserPreset } from './agent-browser.js';
 import type { CapabilityCatalog, CapabilityTier } from './capabilities.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
 import type { MemoryProviderStatus } from './memory-provider.js';
+import type { AccountEligibilityResponse, OnlyProjectsResponse } from './project-schemas.js';
 import type { UnattendedAutonomyState } from './permission-semantics.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
 import type {
@@ -3444,4 +3445,37 @@ export interface Transport
    * @param path - The folder, as the found list gave it.
    */
   dismissFoundClaudeFolder(path: string): Promise<void>;
+
+  /**
+   * Which Claude accounts may work in the project a folder belongs to (`GET
+   * /api/runtimes/claude-code/account-eligibility`, spec `flow-multiproject`
+   * §8.6), for the pickers that show an account that may not work there
+   * disabled with its reason.
+   *
+   * @param folder - Any folder, or undefined for a folder in no project.
+   */
+  getAccountEligibility(folder?: string): Promise<AccountEligibilityResponse>;
+
+  /**
+   * Choose which Claude accounts a project may use, or remove its list with
+   * `null` (`PUT /api/runtimes/claude-code/project-accounts`). Only a person
+   * may; rejects with the server's `message` and `status`.
+   *
+   * @param project - Any folder in the project.
+   * @param allow - Account ids (`default` is Main), or null for every account.
+   */
+  setProjectAccounts(project: string, allow: string[] | null): Promise<AccountEligibilityResponse>;
+
+  /**
+   * Keep a Claude account to some projects, or free it with `null` (`PUT
+   * /api/runtimes/claude-code/accounts/:id/only-projects`). Only a person may;
+   * rejects with the server's `message` and `status`.
+   *
+   * @param accountId - A registry id, or `default` for Main.
+   * @param projects - Folders of the projects, or null for any project.
+   */
+  setAccountOnlyProjects(
+    accountId: string,
+    projects: string[] | null
+  ): Promise<OnlyProjectsResponse>;
 }

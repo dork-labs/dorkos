@@ -13,7 +13,6 @@
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import { dorkosAccountApps, toImpactApp, type ImpactApp } from '@/layers/entities/connectors';
-import { providerName } from './presentation';
 
 /** Connected apps grouped by the way each one reaches its service. */
 export interface AppsByWay {
@@ -42,15 +41,4 @@ export function groupAppsByWay(
     (grouped.byKeyInstance[connection.providerInstanceId] ??= []).push(toImpactApp(connection));
   }
   return grouped;
-}
-
-/**
- * What a person calls one of their own keys: "Your Composio key". Nango is a
- * server the person runs, so it is named as one.
- *
- * @param type - The key's type, e.g. `'composio'`.
- */
-export function keyWayName(type: string): string {
-  if (type === 'nango') return 'Your Nango server';
-  return `Your ${providerName(type)} key`;
 }

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -243,19 +243,25 @@ describe('AgentRequestCard — no account yet', () => {
         newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
       },
     } as never);
-    vi.mocked(transport.getConnectorProviders).mockResolvedValue([
-      {
-        type: 'composio',
-        configured: false,
-        registered: false,
-        custody: 'managed',
-        disclosure: 'Composio keeps sign-ins.',
-      },
-    ] as never);
+    vi.mocked(transport.getConnectorProviders).mockResolvedValue({
+      providers: [
+        {
+          type: 'composio',
+          providerInstanceId: 'composio-1',
+          configured: false,
+          registered: false,
+          custody: 'managed',
+          disclosure: 'Composio keeps sign-ins.',
+        },
+      ],
+      appConnections: { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
+    } as never);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
     await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
-    expect(await screen.findByTestId('first-connect-step')).toBeInTheDocument();
+    const step = await screen.findByTestId('first-connect-step');
+    // Composio isn't set up, so its key is the choice the step offers.
+    expect(within(step).getByRole('button', { name: /Use my Composio key/ })).toBeInTheDocument();
     expect(transport.startConnectorAgentRequestAuthentication).not.toHaveBeenCalled();
   });
 
@@ -323,7 +329,7 @@ describe('AgentRequestCard — an account exists', () => {
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     vi.mocked(transport.resolveConnectorAgentRequest).mockResolvedValue({
       ...REQUEST,
@@ -345,7 +351,7 @@ describe('AgentRequestCard — an account exists', () => {
     // Only the fixed agent's access was written, and before the answer.
     expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
       previewId: 'preview-1',
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
   });
 
@@ -353,7 +359,7 @@ describe('AgentRequestCard — an account exists', () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     vi.mocked(transport.resolveConnectorAgentRequest)
       .mockRejectedValueOnce(new Error('network dropped'))
@@ -379,7 +385,7 @@ describe('AgentRequestCard — an account exists', () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     vi.mocked(transport.resolveConnectorAgentRequest)
       .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'session_access_off' }))
@@ -420,7 +426,7 @@ describe('AgentRequestCard — an account exists', () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValue(
       Object.assign(new Error('off'), { code: 'session_access_off' })
@@ -443,7 +449,7 @@ describe('AgentRequestCard — an account exists', () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValue(
       Object.assign(new Error('off'), { code: 'session_access_off' })
@@ -466,7 +472,7 @@ describe('AgentRequestCard — an account exists', () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValue(
       Object.assign(new Error('refused'), { code })
@@ -544,7 +550,7 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     vi.mocked(transport.getConnectionEventSource).mockResolvedValue({
       setupMode: 'managed',
@@ -1010,7 +1016,7 @@ describe('AgentRequestCard — an account that needs attention first', () => {
       providerInstanceId: 'composio-1',
       toolkit: 'gmail',
       state: 'failed',
-      reason: 'The service could not complete sign-in.',
+      reason: 'Sign-in didn’t finish. Try again.',
     } as never);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
@@ -1075,7 +1081,7 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'ready',
       authoritySync: { status: 'pending' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     vi.mocked(transport.getConnectorConnection).mockResolvedValue({
       connection: {
@@ -1109,7 +1115,7 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
     expect(screen.queryByTestId('account-attention')).not.toBeInTheDocument();
     expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
+    await user.click(screen.getByRole('button', { name: 'Check if it’s done' }));
     await waitFor(() =>
       expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
         decision: 'current_access',
@@ -1137,7 +1143,7 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
       connectionId: 'connection-1' as never,
       reconciliationStatus: 'migration_needs_reconcile',
       authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
     });
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
@@ -1188,7 +1194,9 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
   it('never starts below the level the agent already holds', async () => {
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'] }])
+      preview([
+        { agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'], level: 'read-write' },
+      ])
     );
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
     await screen.findByTestId('requested-access');
@@ -1206,7 +1214,7 @@ describe('AgentRequestCard — access through "Every agent"', () => {
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue({
       ...preview(),
-      everyAgent: { available: true, operationRevisionIds: ['read-v1'] },
+      everyAgent: { available: true, operationRevisionIds: ['read-v1'], level: 'read' },
     });
     vi.mocked(transport.resolveConnectorAgentRequest).mockResolvedValue({
       ...REQUEST,
@@ -1232,7 +1240,7 @@ describe('AgentRequestCard — access through "Every agent"', () => {
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue({
       ...preview(),
-      everyAgent: { available: false, operationRevisionIds: ['read-v1'] },
+      everyAgent: { available: false, operationRevisionIds: ['read-v1'], level: 'read' },
     });
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
     await screen.findByRole('heading', { name: 'Let Bo use Gmail?' });

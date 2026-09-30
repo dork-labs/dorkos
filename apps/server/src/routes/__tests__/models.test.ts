@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock boundary before importing app
@@ -93,7 +94,7 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 
 describe('Models Routes', () => {

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { createHmac } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
@@ -44,7 +45,10 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 function mount() {
-  const app = createApp({ connectorEventIngress: { verifier: () => verifier, accept } });
+  const app = createApp({
+    admission: new MainRequestAdmission(),
+    connectorEventIngress: { verifier: () => verifier, accept },
+  });
   app.get('/api/ordinary-event-test', (_req, res) => res.json({ ordinary: true }));
   target.mount(app);
 }

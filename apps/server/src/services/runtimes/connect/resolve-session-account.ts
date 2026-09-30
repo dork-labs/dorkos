@@ -24,7 +24,7 @@ import { runtimeRegistry } from '../../core/runtime-registry.js';
  */
 interface AccountAwareRuntime {
   /** The absolute config directory this session runs and bills on. */
-  accountRootForSession(sessionId: string, projectDir: string): Promise<string>;
+  accountRootForSession(sessionId: string, projectDir: string): Promise<string | null>;
 }
 
 /** Whether this runtime can name a session's account. */
@@ -53,7 +53,9 @@ export async function resolveAccountRootForSession(sessionId: string): Promise<s
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     if (!isAccountAware(runtime)) return undefined;
     const projectDir = (await runtimeRegistry.getSessionAgentPath(sessionId)) ?? DEFAULT_CWD;
-    return await runtime.accountRootForSession(sessionId, projectDir);
+    // `null`: no account may work in the session's project, so there is no
+    // account of its own to sign into.
+    return (await runtime.accountRootForSession(sessionId, projectDir)) ?? undefined;
   } catch (err) {
     // An unregistered runtime, a session with no binding row, an unreadable
     // manifest: none of these are worth refusing a sign-in over.

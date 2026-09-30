@@ -40,6 +40,9 @@ export const CommunityConnectionAttentionSchema = z.discriminatedUnion('state', 
 /** Owner-safe aggregate activity for one Community connection. */
 export type CommunityConnectionAttention = z.infer<typeof CommunityConnectionAttentionSchema>;
 
+/** How long a Community must keep answering "not found" before it seems to be gone: 14 days. */
+export const COMMUNITY_SEEMS_GONE_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
+
 /** A community connection visible to its local install owner. */
 export const CommunityConnectionDescriptorSchema = z
   .strictObject({
@@ -60,6 +63,13 @@ export const CommunityConnectionDescriptorSchema = z
      * page checks host authority again.
      */
     hostOperator: z.boolean().optional(),
+    /**
+     * When the Community first answered that this community does not exist, present only once
+     * it has kept saying so for {@link COMMUNITY_SEEMS_GONE_AFTER_MS} (DOR-2334). It "seems to
+     * be gone": the app offers to remove the local copy, and never removes it on its own — a
+     * missing community and a misconfigured host look the same from here.
+     */
+    seemsGoneSince: z.iso.datetime().optional(),
   })
   .superRefine((connection, context) => {
     if (

@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  COMMUNITY_LIVE_GATE_ALL_ENV,
   COMMUNITY_LIVE_GATE_ENV,
+  COMMUNITY_LIVE_GATE_TARBALL_ENV,
   CommunityLiveGateNotArmedError,
   communityLiveGateRecoveryCommand,
   parseCommunityLiveGateConfig,
@@ -109,8 +111,11 @@ process.stdout.write(JSON.stringify({ args, journal }));
       refusal = error;
     }
     expect(refusal).toBeInstanceOf(CommunityLiveGateNotArmedError);
-    // Names exactly the one missing variable, so the list and the parser check the same names.
-    expect((refusal as CommunityLiveGateNotArmedError).fields).toEqual([name]);
+    // Names exactly the one missing variable, so the list and the parser check the same names. A
+    // missing version is a missing source, and either name can supply one.
+    expect((refusal as CommunityLiveGateNotArmedError).fields).toEqual(
+      name === 'DORKOS_COMMUNITY_LIVE_VERSION' ? [name, COMMUNITY_LIVE_GATE_TARBALL_ENV] : [name]
+    );
     expect(boundary).not.toHaveBeenCalled();
   });
 
@@ -122,12 +127,96 @@ process.stdout.write(JSON.stringify({ args, journal }));
 
   it('returns only non-secret, exact release and account choices when fully armed', () => {
     expect(parseCommunityLiveGateConfig(armed)).toEqual({
-      version: '0.76.0',
+      source: { kind: 'release', version: '0.76.0' },
       flyOrganization: 'dorkos-live-test',
       flyRegion: 'iad',
       neonOrganization: 'org-live-test',
       neonRegion: 'aws-us-east-1',
       budgetUsd: 5,
+    });
+  });
+
+  describe('unreleased tarball source', () => {
+    const { DORKOS_COMMUNITY_LIVE_VERSION: _version, ...withoutVersion } = armed;
+    const tarball = '/work/packs/dorkos-0.92.0.tgz';
+
+    it('lists the tarball name among every name the gate reads', () => {
+      expect(COMMUNITY_LIVE_GATE_ALL_ENV).toContain(COMMUNITY_LIVE_GATE_TARBALL_ENV);
+      expect(COMMUNITY_LIVE_GATE_ENV).not.toContain(COMMUNITY_LIVE_GATE_TARBALL_ENV);
+    });
+
+    it('takes an absolute .tgz path instead of a version, with every other arm still required', () => {
+      expect(
+        parseCommunityLiveGateConfig({
+          ...withoutVersion,
+          [COMMUNITY_LIVE_GATE_TARBALL_ENV]: tarball,
+        }).source
+      ).toEqual({ kind: 'tarball', path: tarball });
+      for (const name of COMMUNITY_LIVE_GATE_ENV.filter(
+        (entry) => entry !== 'DORKOS_COMMUNITY_LIVE_VERSION'
+      )) {
+        expect(() =>
+          parseCommunityLiveGateConfig({
+            ...withoutVersion,
+            [COMMUNITY_LIVE_GATE_TARBALL_ENV]: tarball,
+            [name]: undefined,
+          })
+        ).toThrow(CommunityLiveGateNotArmedError);
+      }
+    });
+
+    it('refuses both a version and a tarball, and neither', () => {
+      for (const environment of [
+        { ...armed, [COMMUNITY_LIVE_GATE_TARBALL_ENV]: tarball },
+        withoutVersion,
+      ]) {
+        let refusal: unknown;
+        try {
+          parseCommunityLiveGateConfig(environment);
+        } catch (error) {
+          refusal = error;
+        }
+        expect((refusal as CommunityLiveGateNotArmedError).fields).toEqual([
+          'DORKOS_COMMUNITY_LIVE_VERSION',
+          COMMUNITY_LIVE_GATE_TARBALL_ENV,
+        ]);
+      }
+    });
+
+    it.each([
+      'dorkos-0.92.0.tgz',
+      './dorkos-0.92.0.tgz',
+      '/work/packs/dorkos-0.92.0.tar.gz',
+      '/work/packs/dorkos-0.92.0',
+      '/work/packs/dorkos\n.tgz',
+      '',
+    ])('refuses a tarball path that is not an absolute .tgz: %j', (path) => {
+      let refusal: unknown;
+      try {
+        parseCommunityLiveGateConfig({
+          ...withoutVersion,
+          [COMMUNITY_LIVE_GATE_TARBALL_ENV]: path,
+        });
+      } catch (error) {
+        refusal = error;
+      }
+      expect((refusal as CommunityLiveGateNotArmedError).fields).toEqual([
+        COMMUNITY_LIVE_GATE_TARBALL_ENV,
+      ]);
+    });
+
+    it('prints a recovery command that installs from the same tarball', () => {
+      expect(
+        communityLiveGateRecoveryCommand(
+          '0.92.0',
+          ['--app-name', 'dorkos-gate-012345abcdef'],
+          'run-1',
+          '/retained/home',
+          "/work/it's here/dorkos-0.92.0.tgz"
+        )
+      ).toBe(
+        "DORK_HOME='/retained/home' npx --yes --package '/work/it'\\''s here/dorkos-0.92.0.tgz' dorkos community deploy '--app-name' 'dorkos-gate-012345abcdef' --resume 'run-1'"
+      );
     });
   });
 });

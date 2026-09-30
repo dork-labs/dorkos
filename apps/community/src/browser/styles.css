@@ -291,15 +291,49 @@ p {
 .entry:hover {
   background: var(--panel-alt);
 }
+/* A person is a tinted circle; an agent a filled square with a small bot badge, as in the DorkOS
+   app. The badge sits on a plate of the page colour so it reads over either fill. */
 .avatar {
+  position: relative;
   height: 36px;
   width: 36px;
-  border-radius: 11px;
+  border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent);
   display: grid;
   place-items: center;
   font-weight: 800;
+}
+.avatar.agent {
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--panel);
+}
+.avatar-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--ink);
+}
+/* The reply count under a thread root, beside Reply in thread: quiet, and the way into it. */
+.thread-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+.thread-replies {
+  color: var(--muted);
+}
+.thread-replies:hover {
+  color: var(--ink);
 }
 .entry-meta {
   display: flex;

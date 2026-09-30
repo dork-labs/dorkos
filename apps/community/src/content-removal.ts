@@ -69,6 +69,46 @@ export async function queueBlobs(
 }
 
 /**
+ * Hold blobs for a takedown's evidence copy, in the transaction that removed the rows naming
+ * them. `evidence_hold` bytes stay in primary storage, but no route reaches them, no limit counts
+ * them, and the pending-deletion sweep leaves them, until {@link releaseHeldBlobs}.
+ */
+export async function holdBlobs(
+  client: PoolClient,
+  communityId: string,
+  keys: readonly string[]
+): Promise<void> {
+  if (!keys.length) return;
+  await client.query(
+    `UPDATE managed_blobs SET state='evidence_hold'
+     WHERE community_id=$1 AND blob_key=ANY($2::text[]) AND state IN ('committed','stored')`,
+    [communityId, keys]
+  );
+}
+
+/**
+ * Queue held blobs for deletion, once their evidence copy has landed or a host operator has
+ * released them. A key with no inventory row (a legacy blob) is queued all the same.
+ */
+export async function releaseHeldBlobs(
+  client: PoolClient,
+  communityId: string,
+  keys: readonly string[]
+): Promise<void> {
+  if (!keys.length) return;
+  await client.query(
+    `UPDATE managed_blobs SET state='pending_delete'
+     WHERE community_id=$1 AND blob_key=ANY($2::text[]) AND state='evidence_hold'`,
+    [communityId, keys]
+  );
+  await client.query(
+    `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at)
+     SELECT key,0,now() FROM unnest($1::text[]) AS key ON CONFLICT(blob_key) DO NOTHING`,
+    [keys]
+  );
+}
+
+/**
  * Record one redaction row per changed entry, for the redaction feed. The caller has already
  * bumped the content version in this transaction ({@link bumpContentVersion}).
  */
@@ -145,6 +185,7 @@ interface LockedEntry {
   parent_entry_id: string | null;
   text: string;
   removed_at: Date | null;
+  removed_by: RemovedBy | null;
   erased_at: Date | null;
 }
 
@@ -156,11 +197,133 @@ async function lockEntry(
   // FOR NO KEY UPDATE, not FOR UPDATE: a reply holds FOR KEY SHARE on its parent while it holds
   // its channel, and a removal never changes an entry's key.
   const result = await client.query<LockedEntry>(
-    `SELECT id,channel_id,parent_entry_id,text,removed_at,erased_at FROM entries
+    `SELECT id,channel_id,parent_entry_id,text,removed_at,removed_by,erased_at FROM entries
      WHERE id=$2 AND community_id=$1 FOR NO KEY UPDATE`,
     [communityId, entryId]
   );
   return result.rows[0] ?? null;
+}
+
+/** How one removal treats the bytes of the files it takes away. */
+interface RemovalInput {
+  communityId: string;
+  removedBy: RemovedBy;
+  /**
+   * Keep the files' bytes as `evidence_hold` for a host takedown's evidence copy, instead of
+   * queueing them for deletion.
+   */
+  holdBlobs?: boolean;
+}
+
+/** Queue or hold the bytes a removal took away, as the removal asked. */
+async function detachBlobs(client: PoolClient, input: RemovalInput, keys: readonly string[]) {
+  if (input.holdBlobs) await holdBlobs(client, input.communityId, keys);
+  else await queueBlobs(client, input.communityId, keys);
+}
+
+/** The columns a removed file's description keeps, as `DELETE … RETURNING` reads them. */
+const REMOVED_FILE_COLUMNS = `blob_key,entry_id,id AS attachment_id,display_name,content_type,
+  byte_size,checksum,uploaded_at,uploader_member_id,uploader_agent_id`;
+
+/** A removed file whose bytes wait for the sweep, as a host takedown finds it again. */
+export interface RemovedFileRow {
+  blob_key: string;
+  entry_id: string;
+  attachment_id: string;
+  display_name: string;
+  content_type: string;
+  byte_size: number;
+  checksum: string;
+  uploaded_at: Date;
+  uploader_member_id: string | null;
+  uploader_agent_id: string | null;
+}
+
+/**
+ * Keep a description of the posted files an author or admin just removed, for as long as their
+ * bytes wait for the sweep, so a host takedown of the message can still hold them as evidence.
+ * A host's own removal holds or releases the bytes itself and needs none.
+ */
+async function rememberRemovedFiles(
+  client: PoolClient,
+  input: RemovalInput,
+  rows: readonly RemovedFileRow[]
+): Promise<void> {
+  if (input.removedBy === 'host' || input.holdBlobs || !rows.length) return;
+  await client.query(
+    `INSERT INTO removed_file_blobs(
+       blob_key,community_id,entry_id,attachment_id,display_name,content_type,byte_size,
+       checksum,uploaded_at,uploader_member_id,uploader_agent_id
+     )
+     SELECT r.blob_key,$1,r.entry_id,r.attachment_id,r.display_name,r.content_type,r.byte_size,
+            r.checksum,r.uploaded_at,r.uploader_member_id,r.uploader_agent_id
+     FROM jsonb_to_recordset($2::jsonb) AS r(
+       blob_key text,entry_id uuid,attachment_id uuid,display_name text,content_type text,
+       byte_size int,checksum text,uploaded_at timestamptz,uploader_member_id uuid,
+       uploader_agent_id uuid
+     )
+     ON CONFLICT (blob_key) DO NOTHING`,
+    [input.communityId, JSON.stringify(rows)]
+  );
+}
+
+/**
+ * Lock the files an author or admin removed from one message whose bytes the sweep has not
+ * deleted yet. The inventory rows are locked first, as the sweep locks them, so a file the sweep
+ * is deleting right now is simply not found.
+ */
+export async function lockRemovedFiles(
+  client: PoolClient,
+  communityId: string,
+  entryId: string
+): Promise<RemovedFileRow[]> {
+  const pending = await client.query<{ blob_key: string }>(
+    `SELECT m.blob_key FROM managed_blobs m
+     JOIN removed_file_blobs r ON r.blob_key=m.blob_key
+     WHERE r.community_id=$1 AND r.entry_id=$2 AND m.community_id=$1
+       AND m.state='pending_delete' AND m.byte_size IS NOT NULL
+     ORDER BY m.blob_key FOR UPDATE OF m`,
+    [communityId, entryId]
+  );
+  if (!pending.rows.length) return [];
+  const rows = await client.query<RemovedFileRow>(
+    `SELECT blob_key,entry_id,attachment_id,display_name,content_type,byte_size,checksum,
+            uploaded_at,uploader_member_id,uploader_agent_id
+     FROM removed_file_blobs WHERE blob_key=ANY($1::text[]) ORDER BY uploaded_at,attachment_id
+     FOR UPDATE`,
+    [pending.rows.map((row) => row.blob_key)]
+  );
+  return rows.rows;
+}
+
+/**
+ * Take removed files back from the deletion queue and hold them for a takedown's evidence copy.
+ * Their description has moved into the takedown's staged record, so its row goes.
+ */
+export async function reholdRemovedFiles(
+  client: PoolClient,
+  communityId: string,
+  keys: readonly string[]
+): Promise<void> {
+  if (!keys.length) return;
+  await client.query(
+    `UPDATE managed_blobs SET state='evidence_hold'
+     WHERE community_id=$1 AND blob_key=ANY($2::text[]) AND state='pending_delete'`,
+    [communityId, keys]
+  );
+  await client.query('DELETE FROM pending_blob_deletions WHERE blob_key=ANY($1::text[])', [keys]);
+  await client.query('DELETE FROM removed_file_blobs WHERE blob_key=ANY($1::text[])', [keys]);
+}
+
+/**
+ * Lock one message's files in id order. Every path that deletes files takes them before the
+ * content version (erasure too), so no two removals ever wait on each other in a cycle.
+ */
+async function lockEntryFiles(client: PoolClient, communityId: string, entryId: string) {
+  await client.query(
+    'SELECT 1 FROM attachments WHERE community_id=$1 AND entry_id=$2 ORDER BY id FOR UPDATE',
+    [communityId, entryId]
+  );
 }
 
 /**
@@ -168,33 +331,55 @@ async function lockEntry(
  * entry keeps its id, sequence, thread links, author, time, and idempotency key.
  *
  * The caller has taken the community row `FOR SHARE` and checked the lifecycle and the actor.
- * An entry already removed or erased is left as it is (`changed: false`): erasure wins over a
- * removal, and a repeat changes nothing.
+ * An erased entry is left as it is (`changed: false`): erasure wins over a removal. An entry
+ * already removed is left as it is too, except that a host takedown relabels an author's or
+ * moderator's tombstone to the host's (`previouslyRemoved: true`), so the reason a member sees
+ * is the one that stands.
  *
  * @throws ApiError 404 when the entry is not in this community.
  */
 export async function removeEntry(
   client: PoolClient,
-  input: { communityId: string; entryId: string; removedBy: RemovedBy },
+  input: RemovalInput & { entryId: string },
   hooks: ContentRemovalHooks = {}
-): Promise<{ changed: boolean; channelId: string; blobKeys: string[] }> {
+): Promise<{
+  changed: boolean;
+  previouslyRemoved: boolean;
+  channelId: string;
+  blobKeys: string[];
+}> {
   const entry = await lockEntry(client, input.communityId, input.entryId);
   if (!entry) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
-  if (entry.removed_at || entry.erased_at)
-    return { changed: false, channelId: entry.channel_id, blobKeys: [] };
+  const unchanged = { changed: false, previouslyRemoved: false, channelId: entry.channel_id };
+  if (entry.erased_at) return { ...unchanged, blobKeys: [] };
+  if (entry.removed_at) {
+    if (input.removedBy !== 'host' || entry.removed_by === 'host')
+      return { ...unchanged, blobKeys: [] };
+    // Its files went with the first removal, so only the sentence changes.
+    await bumpContentVersion(client, input.communityId);
+    await hooks.afterVersionBump?.();
+    await tombstoneRemoved(client, input.communityId, entry, 'host');
+    await recordRedactions(client, input.communityId, [
+      { entryId: entry.id, channelId: entry.channel_id },
+    ]);
+    return { changed: true, previouslyRemoved: true, channelId: entry.channel_id, blobKeys: [] };
+  }
+  await lockEntryFiles(client, input.communityId, entry.id);
   await bumpContentVersion(client, input.communityId);
   await hooks.afterVersionBump?.();
   await tombstoneRemoved(client, input.communityId, entry, input.removedBy);
-  const files = await client.query<{ blob_key: string }>(
-    'DELETE FROM attachments WHERE community_id=$1 AND entry_id=$2 RETURNING blob_key',
+  const files = await client.query<RemovedFileRow>(
+    `DELETE FROM attachments WHERE community_id=$1 AND entry_id=$2
+     RETURNING ${REMOVED_FILE_COLUMNS}`,
     [input.communityId, entry.id]
   );
   const blobKeys = files.rows.map((row) => row.blob_key);
-  await queueBlobs(client, input.communityId, blobKeys);
+  await detachBlobs(client, input, blobKeys);
+  await rememberRemovedFiles(client, input, files.rows);
   await recordRedactions(client, input.communityId, [
     { entryId: entry.id, channelId: entry.channel_id },
   ]);
-  return { changed: true, channelId: entry.channel_id, blobKeys };
+  return { changed: true, previouslyRemoved: false, channelId: entry.channel_id, blobKeys };
 }
 
 /**
@@ -208,7 +393,7 @@ export async function removeEntry(
  */
 export async function removeAttachment(
   client: PoolClient,
-  input: { communityId: string; attachmentId: string; removedBy: RemovedBy },
+  input: RemovalInput & { attachmentId: string },
   hooks: ContentRemovalHooks = {}
 ): Promise<{ entryId: string | null; entryTombstoned: boolean; blobKeys: string[] }> {
   // Lock order is always entry, then file, as removeEntry takes them (it locks the entry and
@@ -240,14 +425,14 @@ export async function removeAttachment(
     input.communityId,
     input.attachmentId,
   ]);
-  await queueBlobs(client, input.communityId, blobKeys);
+  await detachBlobs(client, input, blobKeys);
   return { entryId: null, entryTombstoned: false, blobKeys };
 }
 
 /** Remove a posted file: lock its message, then the file, and record the message's change. */
 async function removeBoundAttachment(
   client: PoolClient,
-  input: { communityId: string; attachmentId: string; removedBy: RemovedBy },
+  input: RemovalInput & { attachmentId: string },
   entryId: string,
   hooks: ContentRemovalHooks
 ): Promise<{ entryId: string | null; entryTombstoned: boolean; blobKeys: string[] }> {
@@ -264,11 +449,12 @@ async function removeBoundAttachment(
   const blobKeys = [locked.rows[0].blob_key];
   await bumpContentVersion(client, input.communityId);
   await hooks.afterVersionBump?.();
-  await client.query('DELETE FROM attachments WHERE id=$2 AND community_id=$1', [
-    input.communityId,
-    input.attachmentId,
-  ]);
-  await queueBlobs(client, input.communityId, blobKeys);
+  const removed = await client.query<RemovedFileRow>(
+    `DELETE FROM attachments WHERE id=$2 AND community_id=$1 RETURNING ${REMOVED_FILE_COLUMNS}`,
+    [input.communityId, input.attachmentId]
+  );
+  await detachBlobs(client, input, blobKeys);
+  await rememberRemovedFiles(client, input, removed.rows);
   const others = await client.query(
     'SELECT 1 FROM attachments WHERE community_id=$1 AND entry_id=$2 LIMIT 1',
     [input.communityId, entry.id]

@@ -5,6 +5,7 @@ import type {
   ConnectorCatalogProviderRoute,
   ConnectorCatalogService,
 } from '@dorkos/shared/connector-resource-schemas';
+import { connectionUsageLine } from '@dorkos/shared/connector-schemas';
 import {
   useConnectorAuthentication,
   useConnectorCatalog,
@@ -65,13 +66,13 @@ function authenticationGuidance(
   const setup = route.authenticationSetup;
   if (!setup) return null;
   if (setup.source === 'configured') {
-    return `This ${serviceName} connection uses the custom sign-in setup configured for this service.`;
+    return `${serviceName} signs in with the sign-in page set up for it.`;
   }
   if (setup.kind === 'oauth') {
-    return `Continue to Composio to approve access to ${serviceName}.`;
+    return `A sign-in page opens next, where you let DorkOS use ${serviceName}.`;
   }
   if (setup.kind === 'fields' && route.mode === 'managed') {
-    return `Enter the account details requested by ${serviceName} on dorkos.ai. DorkOS passes them to Composio without saving them.`;
+    return `Enter the account details ${serviceName} asks for on dorkos.ai. DorkOS passes them on without saving them.`;
   }
   if (setup.kind === 'none' && route.mode === 'managed') {
     return `Review and confirm this ${serviceName} connection on dorkos.ai. No account details are needed.`;
@@ -137,6 +138,7 @@ export function ConnectDialog({
   const serviceName =
     resolvedService?.displayName ?? toolkitServiceName(activeFlow?.toolkit ?? 'service');
   const guidance = route ? authenticationGuidance(route, serviceName) : null;
+  const usageLine = route ? connectionUsageLine(route) : null;
   const whoAsks = signInLine(route, resolvedService);
   const close = () => {
     setOpen(false);
@@ -246,7 +248,7 @@ export function ConnectDialog({
                           size="sm"
                           onClick={() => setShowProviders((value) => !value)}
                         >
-                          Change setup
+                          Connect another way
                         </Button>
                       )}
                     </div>
@@ -256,11 +258,7 @@ export function ConnectDialog({
                     {guidance && (
                       <p className="text-muted-foreground text-xs leading-relaxed">{guidance}</p>
                     )}
-                    <p className="text-muted-foreground text-xs">
-                      {route.payer === 'dorkos_managed'
-                        ? 'DorkOS covers service usage.'
-                        : 'Service usage is billed to you.'}
-                    </p>
+                    {usageLine && <p className="text-muted-foreground text-xs">{usageLine}</p>}
                   </div>
                 ) : null}
 
@@ -272,7 +270,7 @@ export function ConnectDialog({
 
                 {showProviders && (
                   <fieldset className="space-y-2">
-                    <legend className="text-xs font-medium">Available setups</legend>
+                    <legend className="text-xs font-medium">Ways to connect</legend>
                     {routes.map((candidate) => {
                       const available =
                         candidate.capabilities.authentication.status === 'available';
@@ -290,11 +288,6 @@ export function ConnectDialog({
                           <span>
                             <span className="block text-sm font-medium">
                               {candidate.displayName}
-                            </span>
-                            <span className="text-muted-foreground block text-xs">
-                              {candidate.mode === 'managed'
-                                ? 'Managed by DorkOS'
-                                : 'Your own account'}
                             </span>
                           </span>
                           {!available && (
@@ -329,18 +322,12 @@ export function ConnectDialog({
                     {guidance && (
                       <p className="text-muted-foreground text-xs leading-relaxed">{guidance}</p>
                     )}
-                    <p className="text-muted-foreground text-xs">
-                      {route.payer === 'dorkos_managed'
-                        ? 'DorkOS covers service usage.'
-                        : 'Service usage is billed to you.'}
-                    </p>
+                    {usageLine && <p className="text-muted-foreground text-xs">{usageLine}</p>}
                   </div>
                 )}
                 {activeFlow.state === 'pending' && activeFlow.authorizeUrl ? (
                   <>
-                    <p className="text-sm">
-                      {whoAsks ?? `Continue with ${route?.displayName ?? 'the selected service'}.`}
-                    </p>
+                    <p className="text-sm">{whoAsks ?? `Continue to sign in to ${serviceName}.`}</p>
                     {/* The authorize URL is the connector flow's answer, so it
                         clears the app's scheme allowlist before the browser is
                         handed anything (DOR-924). */}
@@ -360,8 +347,7 @@ export function ConnectDialog({
                   </p>
                 )}
                 <p className="text-muted-foreground text-xs">
-                  This step is saved in the page address. You can return or reload without starting
-                  over.
+                  You can reload or come back to this page without starting over.
                 </p>
                 {flow.isError && (
                   <QueryErrorState

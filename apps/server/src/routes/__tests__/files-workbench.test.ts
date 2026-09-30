@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import { execFile } from 'child_process';
@@ -41,7 +42,7 @@ import { createApp } from '../../app.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const execFileAsync = promisify(execFile);
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 const sha = (s: string) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 

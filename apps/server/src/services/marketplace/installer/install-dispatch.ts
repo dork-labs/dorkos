@@ -19,6 +19,7 @@ import { writeInstallMetadata } from '../installed-metadata.js';
 import { deriveSourceProvenance } from '../lib/source-provenance.js';
 import { materializePackageSchedules } from '../lib/schedules/materialize-schedules.js';
 import { recordProjectInstall } from '../lib/project-install-index.js';
+import { trustedSourceOfInstall } from '../lib/trusted-source.js';
 import {
   describeDisclosedEffects,
   disclosedEffectsOf,
@@ -241,6 +242,16 @@ export class InstallDispatcher {
       // but it only finds project installs through the agent registry, which
       // misses unregistered folders. This record is how it finds the rest.
       if (req.projectPath && isInsideDir(req.projectPath, result.installPath)) {
+        // Where it came from, recorded HERE rather than trusted from the
+        // sidecar inside the project later: this record is the only proof of
+        // a project copy's origin (spec `flow-multiproject` §9.1). Only a
+        // branch or tag of the source repository counts, and the staged
+        // folder's digest is kept so a later write anywhere in the plugin
+        // never inherits the origin.
+        const source = trustedSourceOfInstall({
+          sourceRepo: deriveSourceProvenance(resolved).sourceRepo,
+          sourceKey: staged.sourceKey,
+        });
         try {
           await recordProjectInstall(this.deps.dorkHome, {
             projectPath: req.projectPath,
@@ -248,6 +259,11 @@ export class InstallDispatcher {
             name: result.packageName,
             ...(staged.commitSha !== undefined && { commitSha: staged.commitSha }),
             ...(staged.sourceKey !== undefined && { subpath: staged.sourceKey.subpath }),
+            ...(source !== null &&
+              result.installDigest !== undefined && {
+                source,
+                installDigest: result.installDigest,
+              }),
           });
         } catch (err) {
           // Best-effort like the sidecar: the package is installed; at worst
@@ -259,6 +275,13 @@ export class InstallDispatcher {
           });
         }
       }
+
+      // The sidecar and the project record above are what prove where a
+      // plugin's extensions came from (spec `flow-multiproject` §9.1), and both
+      // land after the plugin flow enabled them. Re-scan so a newer copy of an
+      // extension from an approved source takes over; it runs in the
+      // background, after this install answers.
+      if (result.type === 'plugin') this.deps.pluginFlow.refreshExtensionCopies();
 
       await this.reportTerminalOutcome({
         resolved,

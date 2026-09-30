@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createExtensionAPI } from '../model/extension-api-factory';
+import { StartWorkError } from '@dorkos/extension-api';
 import type { ExtensionAPIDeps } from '../model/types';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 
@@ -777,6 +778,75 @@ describe('createExtensionAPI', () => {
         project: '/repos/my.app',
         value: { autonomy: 'just-do-it' },
       });
+    });
+  });
+
+  describe('startWork (spec flow-multiproject §7.7)', () => {
+    const input = {
+      project: '/repos/dorkos',
+      prompt: 'Sort the new ideas.',
+      title: 'Sorting 12 new ideas in dorkos',
+      reason: '12 new ideas were waiting to be sorted',
+    };
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('posts to this extension’s own route, answers the new chat, and navigates nowhere', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ sessionId: 'chat-new' }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      await expect(api.startWork(input)).resolves.toEqual({ sessionId: 'chat-new' });
+      expect(fetchMock.mock.calls[0][0]).toBe('/api/extensions/my-ext/start-work');
+      expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'POST' });
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(input);
+      expect(deps.navigate).not.toHaveBeenCalled();
+    });
+
+    it('throws a StartWorkError carrying the refusal’s code and sentence', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 429,
+          json: vi.fn().mockResolvedValue({
+            error: 'Mine has started a lot of chats in the last hour. Try again later.',
+            code: 'start_limit',
+          }),
+        })
+      );
+      const { api } = createExtensionAPI('my-ext', deps);
+      const err = await api.startWork(input).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(StartWorkError);
+      expect(err).toMatchObject({
+        name: 'StartWorkError',
+        code: 'start_limit',
+        message: 'Mine has started a lot of chats in the last hour. Try again later.',
+      });
+    });
+
+    it('throws a plain error for any other refusal, such as the person bar', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 403,
+          json: vi.fn().mockResolvedValue({
+            error: 'Only a person can start this.',
+            code: 'start_work_person_required',
+          }),
+        })
+      );
+      const { api } = createExtensionAPI('my-ext', deps);
+      const err = await api.startWork(input).catch((e: unknown) => e);
+      expect(err).not.toBeInstanceOf(StartWorkError);
+      expect(err).toMatchObject({ code: 'start_work_person_required', status: 403 });
     });
   });
 

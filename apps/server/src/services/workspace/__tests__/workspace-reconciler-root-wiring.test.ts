@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../core/lifecycle/main-request-admission.js';
 /** Structural root wiring and an isolated startup-catch callback; no server boot/exit proof. */
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
@@ -65,6 +66,13 @@ function expectAwaitedDisposal(statement: ts.Statement, owner: string) {
   ).toBe(true);
   if (!ts.isCallExpression(call)) throw new Error('Expected disposal call');
   expect(call.arguments).toHaveLength(0);
+}
+
+function expectAdmissionClose(statement: ts.Statement) {
+  expect(
+    ts.isExpressionStatement(statement) &&
+      namedCall(statement.expression, 'mainRequestAdmission', 'close')
+  ).toBe(true);
 }
 
 function startupCatch(): ts.ArrowFunction {
@@ -135,21 +143,23 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
     ).toHaveLength(0);
   });
 
-  it('unconditionally awaits workspace disposal first in ordinary cleanup and propagates rejection', () => {
+  it('closes admission then unconditionally awaits workspace disposal and propagates rejection', () => {
     const owner = ownerName();
     const shutdown = source.statements
       .filter(ts.isFunctionDeclaration)
       .find((node) => node.name?.text === 'shutdownServices');
     expect(shutdown?.body).toBeDefined();
-    // A bare first await has no enclosing try/catch or continuation to swallow rejection.
-    expectAwaitedDisposal(shutdown!.body!.statements[0], owner);
+    // No unrelated work or await may separate admission close from the workspace fence.
+    expectAdmissionClose(shutdown!.body!.statements[0]);
+    expectAwaitedDisposal(shutdown!.body!.statements[1], owner);
   });
 
   it('awaits the same owner first in startup failure and contains only that disposal failure', () => {
     const owner = ownerName();
     const callback = startupCatch();
     if (!ts.isBlock(callback.body)) throw new Error('Expected startup callback block');
-    const first = callback.body.statements[0];
+    expectAdmissionClose(callback.body.statements[0]);
+    const first = callback.body.statements[1];
     expect(ts.isTryStatement(first)).toBe(true);
     if (!ts.isTryStatement(first)) throw new Error('Expected scoped workspace cleanup try');
     expect(first.tryBlock.statements).toHaveLength(1);
@@ -164,7 +174,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
     ).toBe(true);
     expect(descendants(caught!.block).some(ts.isThrowStatement)).toBe(false);
     // The existing unrelated fixture cleanup remains outside the contained failure.
-    const fixtureClose = callback.body.statements[1];
+    const fixtureClose = callback.body.statements[2];
     expect(
       ts.isExpressionStatement(fixtureClose) && ts.isAwaitExpression(fixtureClose.expression)
     ).toBe(true);
@@ -209,6 +219,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
       }).outputText;
       const run = runInNewContext(javascript, {
         [ownerName()]: owner,
+        mainRequestAdmission: new MainRequestAdmission(),
         logger: logged,
         logError,
         process: { exit },

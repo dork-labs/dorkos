@@ -10,6 +10,7 @@ import type {
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
 import {
+  accessLevelRevisionIds,
   CONNECTION_GONE_AGENT_COPY,
   CONNECTION_READINESS_COPY,
   disconnectStuckOwnerLine,
@@ -296,7 +297,7 @@ export function mockConnectionDetail(
     connection,
     provider: {
       providerInstanceId: connection.providerInstanceId,
-      displayName: 'Composio',
+      displayName: 'Your DorkOS account',
       mode: 'managed',
       custody: 'managed',
       payer: 'dorkos_managed',
@@ -308,7 +309,8 @@ export function mockConnectionDetail(
         execution: { status: 'available' },
         triggers: { status: 'unsupported', reason: 'Not available yet.' },
       },
-      disclosure: 'Composio keeps your login access in its own secure vault.',
+      disclosure:
+        "Composio stores your connected accounts' login access in its own secure vault, not on your computer. Choose which agents can use this account. You can disconnect anytime.",
     },
     agents: [
       {
@@ -413,15 +415,7 @@ export function mockAccessPreview(connectionId: string): ConnectorReconciliation
           supported: true,
         }))
       : [];
-  const ids = (level: 'read' | 'read-write') =>
-    candidates
-      .filter(
-        (candidate) =>
-          candidate.capabilityClassification === 'read' ||
-          (level === 'read-write' && candidate.capabilityClassification === 'write')
-      )
-      .map((candidate) => candidate.operationRevisionId)
-      .sort();
+  const ids = (level: 'read' | 'read-write') => accessLevelRevisionIds(candidates, level);
   return {
     previewId: `preview-${connectionId}`,
     connection: {
@@ -438,8 +432,8 @@ export function mockAccessPreview(connectionId: string): ConnectorReconciliation
       { agentId: 'mailroom', displayName: 'mailroom' },
     ],
     currentGrants: [
-      { agentId: 'dorkbot', operationRevisionIds: ids('read-write') },
-      { agentId: 'mailroom', operationRevisionIds: ids('read') },
+      { agentId: 'dorkbot', operationRevisionIds: ids('read-write'), level: 'read-write' },
+      { agentId: 'mailroom', operationRevisionIds: ids('read'), level: 'read' },
     ],
     everyAgent: { available: true, operationRevisionIds: [] },
     catalogComplete: true,

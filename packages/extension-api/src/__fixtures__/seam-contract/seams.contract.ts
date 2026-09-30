@@ -12,8 +12,9 @@
  * Phase 2 PR (a) declared the project and tracker-item seams (1.0.0). PR (c)
  * added the client seams: pages, the status-bar slot, the tab marker, in-app
  * navigation and `currentProject` (1.1.0). PR (b) adds the inbox,
- * `requirePerson`, per-project settings and `requireLogin` (1.2.0). Each later
- * phase adds its own members here.
+ * `requirePerson`, per-project settings and `requireLogin` (1.2.0). Starting
+ * work in a new chat adds `api.startWork`, `ctx.sessions`, `StartWorkInput` and
+ * `StartWorkError` (1.3.0). Each later phase adds its own members here.
  *
  * @module extension-api/__fixtures__/seam-contract
  */
@@ -74,6 +75,34 @@ export interface DataProviderContextSeams {
   readonly requirePerson: RequestHandler;
   /** Read-only per-project settings. */
   readonly projectSettings: ProjectSettingsReader;
+  /** Start work in a new chat, by the extension's own rules. */
+  readonly sessions: SessionsApi;
+}
+
+/** Shared by api.startWork and ctx.sessions.start. */
+export interface StartWorkInput {
+  /** Any path inside a known project; the chat runs in the project root. */
+  project: string;
+  /** Sent at once as the first message (≤ 20,000). Never shown as the headline. */
+  prompt: string;
+  /** The chat's title, plain words (1-80). */
+  title: string;
+  /** Why it was started (1-200), shown as the chat's first line. */
+  reason: string;
+}
+
+/** Codes: 'not_a_project' | 'account_not_allowed_here' | 'start_limit'. `message` is plain words. */
+export declare class StartWorkError extends Error {
+  /** Which rule refused the start. */
+  readonly code: 'not_a_project' | 'account_not_allowed_here' | 'start_limit';
+  /** Refuse a start. */
+  constructor(code: 'not_a_project' | 'account_not_allowed_here' | 'start_limit', message: string);
+}
+
+/** `ctx.sessions`. */
+export interface SessionsApi {
+  /** Start work in a new chat in a project, without a person. */
+  start(input: StartWorkInput): Promise<{ sessionId: string }>;
 }
 
 /** The `SessionInfo` / `LimitedSessionInfo` members this contract covers. */
@@ -446,6 +475,8 @@ export interface ExtensionAPISeams {
   answerDecision(decisionId: string, answer: DecisionAnswer): Promise<DecisionAnswerResult>;
   /** This extension's open decisions. */
   listDecisions(): Promise<ExtensionDecisionView[]>;
+  /** Start work in a NEW chat; never touches the current one. */
+  startWork(input: StartWorkInput): Promise<{ sessionId: string }>;
   /** Per-project settings core holds for this extension. */
   readonly projectSettings: {
     /** The stored value for a project, or null. */

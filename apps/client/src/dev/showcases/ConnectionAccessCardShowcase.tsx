@@ -53,7 +53,9 @@ function preview(connectionId: string, label: string): ConnectorReconciliationPr
       agentId: name.toLowerCase().replace(' ', '-'),
       displayName: name,
     })),
-    currentGrants: [{ agentId: 'mailroom', operationRevisionIds: ['list-messages'] }],
+    currentGrants: [
+      { agentId: 'mailroom', operationRevisionIds: ['list-messages'], level: 'read' },
+    ],
     // "shared" starts shared with every agent (read); "managed" is through a
     // DorkOS account on a computer that cannot reach the service keeping its
     // access, the one case where every agent isn't offered (DOR-2439).
@@ -68,6 +70,7 @@ function preview(connectionId: string, label: string): ConnectorReconciliationPr
                 : connectionId === 'gmail-exact'
                   ? ['list-messages', 'send-message', 'delete-message']
                   : [],
+            ...(connectionId === 'gmail-shared' && { level: 'read' as const }),
           },
     catalogComplete: true,
     createdAt: '2026-09-26T00:00:00.000Z',

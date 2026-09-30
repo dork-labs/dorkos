@@ -7,6 +7,7 @@
  * are real, so "does it exist" and "does it hold a copy" are real reads. The
  * store is the real SQLite table, so persistence is what a restart sees.
  */
+import { knownProjectRootsForExtensions } from '../extension-scan-roots.js';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -285,6 +286,19 @@ describe('reported roots are second-class', () => {
     expect((await reg.list()).map((p) => p.name)).toEqual(['seen-one']);
     await reg.resolve(reported);
     expect((await reg.list()).map((p) => p.name)).toEqual(['reported-one', 'seen-one']);
+  });
+
+  it('never hands extension discovery a root only an extension reported (spec §9.2)', async () => {
+    const seen = repo('home', 'scan', 'seen-root');
+    const reported = repo('home', 'scan', 'reported-root');
+    const reg = registry({}, db);
+    await reg.resolve(seen);
+    await reg.report(reported, 'flow');
+
+    const roots = await knownProjectRootsForExtensions(reg, folder('home', 'scan', 'dork'), null);
+
+    expect(roots).toContain(seen);
+    expect(roots).not.toContain(reported);
   });
 
   it(`caps the new roots one extension can name at ${MAX_REPORTED_ROOTS_PER_EXTENSION}`, async () => {
