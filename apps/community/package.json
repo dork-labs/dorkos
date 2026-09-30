@@ -33,7 +33,7 @@
     "fflate": "0.8.3",
     "hono": "4.13.8",
     "lucide-react": "1.47.0",
-    "nodemailer": "10.0.1",
+    "nodemailer": "10.0.9",
     "pg": "8.23.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
