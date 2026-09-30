@@ -24,6 +24,11 @@
  *   ladder, exactly as a person's launch does.
  * - **No pile-up.** Every launch counts against `AGENT_LAUNCH_MAX_LIVE` in the
  *   launch service, released when its turn settles.
+ * - **No way around an extension's limits.** The new chat records who started
+ *   it (`session_started_by`, spec `flow-multiproject` §7.7): the calling chat,
+ *   with an optional `reason`, and the extension at the root of the calling
+ *   chat's chain. A chat started from an extension's chat counts against that
+ *   extension's start limits, and a start past them is refused.
  *
  * @module services/runtimes/claude-code/mcp-tools/session-tools
  */
@@ -43,6 +48,7 @@ import {
   type LedgerRuntime,
 } from '@dorkos/shared/account-usage';
 import { sessionPath } from '@dorkos/shared/session-link';
+import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
 import type { EffortLevel, PermissionMode } from '@dorkos/shared/types';
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
 import { logError, logger } from '../../../../lib/logger.js';
@@ -59,6 +65,7 @@ import {
   AGENT_LAUNCH_CAP_MESSAGE,
 } from '../../../session/launch/launch-session.js';
 import { clampSchedulePermissionMode } from '../../../tasks/schedule-permission-clamp.js';
+import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -81,8 +88,12 @@ export const OTHER_AGENTS_HOME_MESSAGE =
  * Who is calling, resolved at CALL time: the home of the agent making the call.
  * In session, the session's identity anchor; on the external `/mcp` server, the
  * agent the request's token names. `undefined` when neither names one.
+ *
+ * `sessionId` is the chat the call is made from, in session only: it is who
+ * the new chat says started it. The external server has no chat to name.
  */
-export type SessionStartCallerResolver = () => { agentPath?: string } | undefined;
+export type SessionStartCallerResolver = () =>
+  { agentPath?: string; sessionId?: string } | undefined;
 
 /** The input `session_start` accepts. */
 export const SessionStartInputShape = {
@@ -130,6 +141,16 @@ export const SessionStartInputShape = {
       'Your own agent folder. The session always runs as you, so this can be left out; any ' +
         'other agent is refused.'
     ),
+  reason: z
+    .string()
+    .trim()
+    .min(1)
+    .max(START_WORK_LIMITS.reason)
+    .optional()
+    .describe(
+      'Why you are starting it, in plain words (at most 200 characters). The new session ' +
+        'shows it as its first line: "Started from <this chat>: <reason>".'
+    ),
 };
 
 /** Parsed `session_start` arguments. */
@@ -143,6 +164,7 @@ export interface SessionStartArgs {
   permissionMode?: PermissionMode;
   seedContext?: string;
   agentPath?: string;
+  reason?: string;
 }
 
 /** The result of a started session. */
@@ -181,15 +203,42 @@ interface CallerAgent {
   label: string;
 }
 
-/** The calling agent, when it is one Mesh has registered. */
+/** The calling agent, when it is one Mesh has registered, and the chat it calls from. */
 function callerOf(
   deps: McpToolDeps,
   resolveCaller: SessionStartCallerResolver | undefined
-): CallerAgent | null {
-  const agentPath = resolveCaller?.()?.agentPath;
+): (CallerAgent & { sessionId: string | null }) | null {
+  const resolved = resolveCaller?.();
+  const agentPath = resolved?.agentPath;
   if (!agentPath) return null;
   const agent = deps.meshCore?.listWithPaths().find((a) => a.projectPath === agentPath);
-  return agent ? { agentPath, label: agent.displayName ?? agent.name } : null;
+  return agent
+    ? {
+        agentPath,
+        label: agent.displayName ?? agent.name,
+        sessionId: resolved.sessionId ?? null,
+      }
+    : null;
+}
+
+/**
+ * Claim a start slot for a chat started from `parentSessionId`, recording who
+ * started it. The new chat inherits the parent's origin extension, so it counts
+ * against that extension's start limits and is refused past them. Without a
+ * calling chat (the external `/mcp` server) or before boot wired the seam,
+ * nothing is recorded and nothing is limited here.
+ */
+function reserveChatStart(
+  sessionId: string,
+  parentSessionId: string | null,
+  reason: string | undefined
+): { ok: true; reservation: StartReservation | null } | { ok: false; message: string } {
+  const service = getStartWorkService();
+  if (!parentSessionId || !service) return { ok: true, reservation: null };
+  const claimed = service.reserveFromChat({ sessionId, parentSessionId, reason: reason ?? null });
+  return claimed.ok
+    ? { ok: true, reservation: claimed.reservation }
+    : { ok: false, message: claimed.error.message };
 }
 
 /** Whether `dir` is `root` or inside it. */
@@ -339,6 +388,12 @@ export function createSessionStartHandler(
     if (isAgentLaunchCapFull()) return refuse(AGENT_LAUNCH_CAP_MESSAGE, 'LAUNCH_CAP_FULL');
 
     const sessionId = crypto.randomUUID();
+    // Who started it, and the start limits of the extension at the root of the
+    // calling chat's chain: asked before the settings write, so a refused start
+    // leaves nothing behind.
+    const claimed = reserveChatStart(sessionId, caller.sessionId, args.reason);
+    if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
+    const reservation = claimed.reservation;
     // Already clamped by the schema on a real call; clamped again for a direct
     // caller of this handler.
     const permissionMode = args.permissionMode
@@ -347,11 +402,16 @@ export function createSessionStartHandler(
     // What the pre-launch picker saves, saved the same way: an unbound settings
     // row the first send reads and the binding write fills around. Only the row:
     // no runtime holds an in-memory session for this id until the send.
-    await runtimeRegistry.saveSessionSettings(sessionId, {
-      ...(args.model !== undefined ? { model: args.model } : {}),
-      ...(args.effort !== undefined ? { effort: args.effort } : {}),
-      ...(permissionMode !== undefined ? { permissionMode } : {}),
-    });
+    try {
+      await runtimeRegistry.saveSessionSettings(sessionId, {
+        ...(args.model !== undefined ? { model: args.model } : {}),
+        ...(args.effort !== undefined ? { effort: args.effort } : {}),
+        ...(permissionMode !== undefined ? { permissionMode } : {}),
+      });
+    } catch (err) {
+      reservation?.cancel();
+      throw err;
+    }
 
     let result: Awaited<ReturnType<typeof dispatchSessionMessage>>;
     try {
@@ -371,12 +431,15 @@ export function createSessionStartHandler(
         // A session minted here is in no room.
         roomSessionPlace: undefined,
         countsTowardLaunchCap: true,
+        onSettled: () => reservation?.settle(),
       });
     } catch (err) {
+      reservation?.cancel();
       await discardUnstartedSession(sessionId);
       throw err;
     }
     if (isSessionLaunchRefusal(result)) {
+      reservation?.cancel();
       await discardUnstartedSession(sessionId);
       // The launch ladder's account refusal (the unnamed path: the agent's or
       // the default account may not work in this project) reads like the
@@ -387,11 +450,13 @@ export function createSessionStartHandler(
       );
     }
     if (!result.accepted) {
+      reservation?.cancel();
       await discardUnstartedSession(sessionId);
       return refuse('The session could not be started.', 'NOT_STARTED');
     }
 
     const canonicalId = result.canonicalId ?? sessionId;
+    if (canonicalId !== sessionId) reservation?.rekey(canonicalId);
     const accountName = account ? (account.label ?? account.id) : null;
     void deps.activityService?.emit({
       actorType: 'agent',

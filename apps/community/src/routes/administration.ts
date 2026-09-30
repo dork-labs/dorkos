@@ -383,12 +383,20 @@ export function registerAdministrationRoutes(
       mapIconBlobError(error);
     }
     const iterator = blob.body[Symbol.asyncIterator]();
+    const key = icon.icon_blob_key;
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {
           const next = await iterator.next();
-          if (next.done) controller.close();
-          else controller.enqueue(next.value);
+          if (next.done) return controller.close();
+          // An icon taken down or replaced while it downloads stops at the next chunk, as a file
+          // does: a taken-down icon's bytes stay in storage for the evidence copy.
+          const current = await pool.query(
+            'SELECT 1 FROM communities WHERE id=$1 AND icon_blob_key=$2',
+            [tenant.communityId, key]
+          );
+          if (!current.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Community icon not found.');
+          controller.enqueue(next.value);
         } catch (error) {
           blob.body.destroy();
           controller.error(error);

@@ -225,7 +225,7 @@ export const hostApiKeys = pgTable(
     check('host_api_keys_secret_hash', sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
     check(
       'host_api_keys_scopes',
-      sql`cardinality(${table.scopes}) BETWEEN 1 AND 6 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown']::text[]`
+      sql`cardinality(${table.scopes}) BETWEEN 1 AND 7 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership']::text[]`
     ),
     check(
       'host_api_keys_issuer',
@@ -825,6 +825,13 @@ export const entries = pgTable(
       sql`(${table.authorMemberId} IS NULL) <> (${table.authorAgentId} IS NULL)`
     ),
     index('entries_thread_idx').on(table.channelId, table.threadRootEntryId, table.seq),
+    // Serve the reply and thread-root foreign key checks when a message is deleted.
+    index('entries_parent_ref_idx')
+      .on(table.parentEntryId, table.communityId)
+      .where(sql`${table.parentEntryId} IS NOT NULL`),
+    index('entries_thread_root_ref_idx')
+      .on(table.threadRootEntryId, table.communityId)
+      .where(sql`${table.threadRootEntryId} IS NOT NULL`),
     index('entries_community_created_idx').on(table.communityId, table.createdAt.desc()),
     foreignKey({
       name: 'entries_channel_tenant_fk',
@@ -1624,10 +1631,26 @@ export const communityImports = pgTable(
     createdByApiKeyId: uuid('created_by_api_key_id').references(() => hostApiKeys.id),
     validatedAt: timestamp('validated_at', { withTimezone: true }),
     adoptMemberId: uuid('adopt_member_id').references(() => members.id, { onDelete: 'set null' }),
+    /** How the export arrived: one upload, or numbered parts put together by `complete`. */
+    uploadKind: text('upload_kind'),
+    /** Whether the create request named a description; a version 2 export fills it in if not. */
+    descriptionGiven: boolean('description_given').notNull().default(true),
+    /** Whether the create request named an admission policy; as for the description. */
+    admissionPolicyGiven: boolean('admission_policy_given').notNull().default(true),
+    /** Where a version 2 restore stands: step, file, and lines of that file committed. */
+    restoreProgress: jsonb('restore_progress'),
     createdAt: time('created_at'),
     updatedAt: time('updated_at'),
   },
   (table) => [
+    check(
+      'community_imports_upload_kind',
+      sql`${table.uploadKind} IS NULL OR (${table.uploadKind} IN ('single','parts') AND ${table.archiveSha256} IS NOT NULL)`
+    ),
+    check(
+      'community_imports_restore_progress',
+      sql`${table.restoreProgress} IS NULL OR jsonb_typeof(${table.restoreProgress}) = 'object'`
+    ),
     check(
       'community_imports_idempotency_key',
       sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
@@ -1689,8 +1712,60 @@ export const communityImportFiles = pgTable(
       .unique()
       .references(() => managedBlobs.blobKey),
     contentType: text('content_type').notNull(),
+    /** A restored attachment, or the community icon (under the nil UUID). */
+    purpose: text('purpose').notNull().default('attachment'),
   },
-  (table) => [primaryKey({ columns: [table.importId, table.sourceAttachmentId] })]
+  (table) => [
+    primaryKey({ columns: [table.importId, table.sourceAttachmentId] }),
+    check(
+      'community_import_files_purpose',
+      sql`${table.purpose} IN ('attachment','icon') AND (${table.purpose} = 'icon') = (${table.sourceAttachmentId} = '00000000-0000-0000-0000-000000000000')`
+    ),
+  ]
+);
+
+/** One uploaded part of an export, stored as a managed blob and put together in order. */
+export const communityImportParts = pgTable(
+  'community_import_parts',
+  {
+    importId: uuid('import_id')
+      .notNull()
+      .references(() => communityImports.id, { onDelete: 'cascade' }),
+    partNumber: integer('part_number').notNull(),
+    blobKey: text('blob_key')
+      .notNull()
+      .unique()
+      .references(() => managedBlobs.blobKey, { onDelete: 'cascade' }),
+    byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+    sha256: text('sha256').notNull(),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.importId, table.partNumber] }),
+    check('community_import_parts_number', sql`${table.partNumber} BETWEEN 1 AND 10000`),
+    check('community_import_parts_size', sql`${table.byteSize} > 0`),
+    check('community_import_parts_sha256', sql`${table.sha256} ~ '^[a-f0-9]{64}$'`),
+  ]
+);
+
+/** One part upload in flight on any replica, held by a short renewed lease. */
+export const communityImportPartUploads = pgTable(
+  'community_import_part_uploads',
+  {
+    leaseToken: uuid('lease_token').primaryKey().defaultRandom(),
+    importId: uuid('import_id')
+      .notNull()
+      .references(() => communityImports.id, { onDelete: 'cascade' }),
+    partNumber: integer('part_number').notNull(),
+    /** The size the upload declared, counted toward the import's limit while it arrives. */
+    declaredBytes: bigint('declared_bytes', { mode: 'number' }).notNull(),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    check('community_import_part_uploads_number', sql`${table.partNumber} BETWEEN 1 AND 10000`),
+    check('community_import_part_uploads_size', sql`${table.declaredBytes} > 0`),
+    index('community_import_part_uploads_import_idx').on(table.importId, table.partNumber),
+  ]
 );
 
 /**
@@ -1852,5 +1927,247 @@ export const removedFileBlobs = pgTable(
     index('removed_file_blobs_entry_idx').on(table.communityId, table.entryId),
     check('removed_file_blobs_byte_size_check', sql`${table.byteSize} > 0`),
     check('removed_file_blobs_checksum_check', sql`${table.checksum} ~ '^[a-f0-9]{64}$'`),
+  ]
+);
+
+/**
+ * Notices waiting to be mailed, or already resolved. Never an address: the worker reads the
+ * recipient's email when it sends. `recipient_user_id` has no foreign key on purpose, so an
+ * account erasure can delete the account while its queued notice stays to fail.
+ */
+export const noticeOutbox = pgTable(
+  'notice_outbox',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    kind: text('kind').notNull(),
+    subjectId: uuid('subject_id').notNull(),
+    recipientUserId: text('recipient_user_id').notNull(),
+    state: text('state').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    failedAt: timestamp('failed_at', { withTimezone: true }),
+    lastErrorClass: text('last_error_class'),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check(
+      'notice_outbox_kind_check',
+      sql`${table.kind} IN ('owner_replacement.notice','owner_replacement.reminder','owner_replacement.claim_reissued','owner_replacement.ended','owner_replacement.completed')`
+    ),
+    check('notice_outbox_state_check', sql`${table.state} IN ('pending','accepted','failed')`),
+    check('notice_outbox_attempts_check', sql`${table.attempts} >= 0`),
+    check(
+      'notice_outbox_last_error_class_check',
+      sql`${table.lastErrorClass} IS NULL OR ${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
+    ),
+    check(
+      'notice_outbox_state_shape',
+      sql`(${table.state} = 'pending' AND ${table.nextAttemptAt} IS NOT NULL AND ${table.acceptedAt} IS NULL AND ${table.failedAt} IS NULL) OR (${table.state} = 'accepted' AND ${table.acceptedAt} IS NOT NULL AND ${table.failedAt} IS NULL AND ${table.nextAttemptAt} IS NULL AND ${table.leaseUntil} IS NULL AND ${table.lastErrorClass} IS NULL) OR (${table.state} = 'failed' AND ${table.failedAt} IS NOT NULL AND ${table.acceptedAt} IS NULL AND ${table.nextAttemptAt} IS NULL AND ${table.leaseUntil} IS NULL AND ${table.lastErrorClass} IS NOT NULL)`
+    ),
+    index('notice_outbox_due_idx').on(table.state, table.nextAttemptAt),
+    index('notice_outbox_community_idx').on(table.communityId),
+    index('notice_outbox_subject_idx').on(table.subjectId),
+  ]
+);
+
+const OPEN_OWNER_REPLACEMENT_STATES = sql`('notifying','waiting','claimable')`;
+const CLOSED_OWNER_REPLACEMENT_STATES = sql`('completed','objected','withdrawn','superseded','expired')`;
+
+/**
+ * A host's request to make the account named in it the owner of a community whose owner has
+ * left. At most one is open per community; a closed one never reopens. The claim token is
+ * stored only as its hash, and only while the request is open.
+ */
+export const ownerReplacements = pgTable(
+  'owner_replacements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    state: text('state').notNull().default('notifying'),
+    reason: text('reason').notNull(),
+    /** The host's own pointer; never shown to admins or members, never in mail or audit. */
+    reference: text('reference'),
+    /** Whether the request names an account; kept after it closes, for the host's list. */
+    claimantNamed: boolean('claimant_named').notNull(),
+    /**
+     * The named account's OIDC issuer and subject. They identify a person, so they live only as
+     * long as the request: the helper that closes a request (task 2.3's `end.ts`) clears them.
+     */
+    claimantOidcIssuer: text('claimant_oidc_issuer'),
+    claimantOidcSubject: text('claimant_oidc_subject'),
+    claimTokenHash: text('claim_token_hash').unique(),
+    claimReissuedAt: timestamp('claim_reissued_at', { withTimezone: true }),
+    requestedByHostActor: text('requested_by_host_actor').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    payloadHash: text('payload_hash').notNull(),
+    afterObjection: boolean('after_objection').notNull(),
+    afterWithdrawal: boolean('after_withdrawal').notNull(),
+    /** Why a withdrawn request was withdrawn; set on exactly the withdrawn ones. */
+    withdrawnCause: text('withdrawn_cause'),
+    priorOwnerMemberId: uuid('prior_owner_member_id').notNull(),
+    newOwnerMemberId: uuid('new_owner_member_id'),
+    noticeState: text('notice_state').notNull().default('pending'),
+    noticeResolvedAt: timestamp('notice_resolved_at', { withTimezone: true }),
+    verifiedAddress: boolean('verified_address'),
+    claimableAfter: timestamp('claimable_after', { withTimezone: true }),
+    reminderQueuedAt: timestamp('reminder_queued_at', { withTimezone: true }),
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'owner_replacements_state_check',
+      sql`${table.state} IN ('notifying','waiting','claimable','completed','objected','withdrawn','superseded','expired')`
+    ),
+    check(
+      'owner_replacements_reason_check',
+      sql`${table.reason} IN ('owner_left_group','owner_unreachable','other')`
+    ),
+    check(
+      'owner_replacements_reference_check',
+      sql`${table.reference} ~ '^[A-Za-z0-9 ._#-]{1,80}$'`
+    ),
+    check(
+      'owner_replacements_claimant_oidc_issuer_check',
+      sql`char_length(${table.claimantOidcIssuer}) BETWEEN 1 AND 2048`
+    ),
+    check(
+      'owner_replacements_claimant_oidc_subject_check',
+      sql`char_length(${table.claimantOidcSubject}) BETWEEN 1 AND 255`
+    ),
+    check(
+      'owner_replacements_claim_token_hash_check',
+      sql`${table.claimTokenHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'owner_replacements_requested_by_host_actor_check',
+      sql`${table.requestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$'`
+    ),
+    check(
+      'owner_replacements_withdrawn_cause_check',
+      sql`${table.withdrawnCause} IN ('cancelled','suspended','deletion')`
+    ),
+    check(
+      'owner_replacements_idempotency_key_check',
+      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
+    ),
+    check('owner_replacements_payload_hash_check', sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'owner_replacements_notice_state_check',
+      sql`${table.noticeState} IN ('pending','accepted','failed')`
+    ),
+    check(
+      'owner_replacements_claimant',
+      sql`(${table.claimantOidcIssuer} IS NULL) = (${table.claimantOidcSubject} IS NULL)`
+    ),
+    check(
+      'owner_replacements_claimant_named',
+      sql`(${table.claimantNamed} OR ${table.claimantOidcIssuer} IS NULL) AND (${table.state} NOT IN ${OPEN_OWNER_REPLACEMENT_STATES} OR (${table.claimantOidcIssuer} IS NOT NULL) = ${table.claimantNamed})`
+    ),
+    check(
+      'owner_replacements_withdrawn_cause',
+      sql`(${table.state} = 'withdrawn') = (${table.withdrawnCause} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_notice',
+      sql`(${table.noticeState} = 'pending') = (${table.noticeResolvedAt} IS NULL)`
+    ),
+    check(
+      'owner_replacements_waiting',
+      sql`${table.state} NOT IN ('waiting','claimable','completed','expired') OR ${table.noticeState} <> 'pending'`
+    ),
+    check(
+      'owner_replacements_claimable_after',
+      sql`(${table.state} <> 'notifying' OR ${table.claimableAfter} IS NULL) AND (${table.state} NOT IN ('waiting','claimable','completed','expired') OR ${table.claimableAfter} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_claim_window',
+      sql`(${table.state} NOT IN ('notifying','waiting') OR ${table.claimExpiresAt} IS NULL) AND (${table.state} NOT IN ('claimable','completed','expired') OR ${table.claimExpiresAt} IS NOT NULL) AND (${table.claimExpiresAt} IS NULL OR (${table.claimableAfter} IS NOT NULL AND ${table.claimExpiresAt} > ${table.claimableAfter}))`
+    ),
+    check(
+      'owner_replacements_reminder',
+      sql`${table.reminderQueuedAt} IS NULL OR ${table.claimableAfter} IS NOT NULL`
+    ),
+    check(
+      'owner_replacements_ended',
+      sql`(${table.state} IN ${CLOSED_OWNER_REPLACEMENT_STATES}) = (${table.endedAt} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_new_owner',
+      sql`(${table.state} = 'completed') = (${table.newOwnerMemberId} IS NOT NULL)`
+    ),
+    check(
+      'owner_replacements_claim_token',
+      sql`(${table.state} IN ${OPEN_OWNER_REPLACEMENT_STATES}) = (${table.claimTokenHash} IS NOT NULL)`
+    ),
+    foreignKey({
+      name: 'owner_replacements_prior_owner_tenant_fk',
+      columns: [table.communityId, table.priorOwnerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'owner_replacements_new_owner_tenant_fk',
+      columns: [table.communityId, table.newOwnerMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    uniqueIndex('owner_replacements_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('owner_replacements_idempotency').on(
+      table.communityId,
+      table.requestedByHostActor,
+      table.idempotencyKey
+    ),
+    uniqueIndex('owner_replacements_open_unique')
+      .on(table.communityId)
+      .where(sql`${table.state} IN ${OPEN_OWNER_REPLACEMENT_STATES}`),
+    index('owner_replacements_objected_idx')
+      .on(table.communityId, table.endedAt.desc())
+      .where(sql`${table.state} = 'objected'`),
+    index('owner_replacements_requested_idx').on(
+      table.communityId,
+      table.requestedAt.desc(),
+      table.id.desc()
+    ),
+  ]
+);
+
+/**
+ * Object-only links: one per send attempt of a notice, reminder, or reissue message, stored
+ * only as a hash. A token can only object, only while its request is open, and is never deleted
+ * when an attempt fails. `outboxId` has no foreign key: the message row is deleted 30 days after
+ * it resolves, while the token lives as long as its request.
+ */
+export const ownerReplacementObjectTokens = pgTable(
+  'owner_replacement_object_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    replacementId: uuid('replacement_id').notNull(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    tokenHash: text('token_hash').notNull().unique(),
+    outboxId: uuid('outbox_id'),
+    /** Set from the caller's clock; no default. */
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'owner_replacement_object_tokens_token_hash_check',
+      sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    foreignKey({
+      name: 'owner_replacement_object_tokens_tenant_fk',
+      columns: [table.communityId, table.replacementId],
+      foreignColumns: [ownerReplacements.communityId, ownerReplacements.id],
+    }).onDelete('cascade'),
+    index('owner_replacement_object_tokens_replacement_idx').on(table.replacementId),
   ]
 );

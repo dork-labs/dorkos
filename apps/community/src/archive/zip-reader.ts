@@ -200,6 +200,61 @@ export class ZipArchive {
   }
 
   /**
+   * Read up to `limit` central directory records starting `from` bytes into the directory, after a
+   * complete pass over {@link entries} has checked the whole directory. Returns the entries (each
+   * may be opened) and the offset of the next record, or `null` once the directory is done.
+   *
+   * This lets a caller walk a directory of any length in bounded memory, a window at a time,
+   * without holding one read open across the slow work it does per entry (an importer hashing
+   * every file). Each record is parsed with the same refusals as the full pass.
+   */
+  async directoryWindow(
+    from: number,
+    limit: number
+  ): Promise<{ entries: ZipEntry[]; next: number | null }> {
+    if (!this.sortedStarts) throw new Error('Read a window only after a completed pass');
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError('limit must be positive');
+    if (!Number.isSafeInteger(from) || from < 0 || from > this.centralDirectorySize)
+      throw new RangeError('from must be inside the central directory');
+    if (from === this.centralDirectorySize) return { entries: [], next: null };
+    const entries: ZipEntry[] = [];
+    let consumed = from;
+    let pending: Buffer = Buffer.alloc(0);
+    const stream = this.source.read(
+      this.centralDirectoryOffset + from,
+      this.centralDirectoryOffset + this.centralDirectorySize - 1,
+      { signal: this.options.signal }
+    );
+    for await (const chunk of stream) {
+      const bytes = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+      pending = pending.length > 0 ? Buffer.concat([pending, bytes]) : bytes;
+      let at = 0;
+      while (pending.length - at >= CENTRAL_DIRECTORY_RECORD_BYTES) {
+        if (pending.readUInt32LE(at) !== CENTRAL_DIRECTORY_SIGNATURE) {
+          throw corrupt('A central directory record is missing its signature');
+        }
+        const length =
+          CENTRAL_DIRECTORY_RECORD_BYTES +
+          pending.readUInt16LE(at + 28) +
+          pending.readUInt16LE(at + 30) +
+          pending.readUInt16LE(at + 32);
+        if (pending.length - at < length) break;
+        const { entry } = this.parseRecord(pending.subarray(at, at + length));
+        at += length;
+        consumed += length;
+        this.issued.add(entry);
+        entries.push(entry);
+        if (entries.length >= limit) {
+          return { entries, next: consumed < this.centralDirectorySize ? consumed : null };
+        }
+      }
+      pending = at > 0 ? Buffer.from(pending.subarray(at)) : pending;
+    }
+    if (pending.length > 0) throw corrupt('The central directory ends inside a record');
+    return { entries, next: null };
+  }
+
+  /**
    * Stream an entry's uncompressed bytes. The local header must agree with the central directory
    * (name, method, and any sizes it states), the data must end before the next entry starts, and
    * inflating past the declared size fails at once. The CRC-32 and exact length are checked at the

@@ -548,7 +548,14 @@ export const roomMembers = sqliteTable(
     /** The `(member, room)` read cursor — the highest `seq` this member has seen. */
     lastReadSeq: integer('last_read_seq').notNull().default(0),
   },
-  (table) => [primaryKey({ columns: [table.roomId, table.authorId] })]
+  (table) => [
+    primaryKey({ columns: [table.roomId, table.authorId] }),
+    // "Every room this author is in" (`listMembershipsFor`), asked by the room
+    // directory, room search and the member directory on every request. The
+    // primary key leads with room_id, so without this each call read the whole
+    // table, and a mirrored Community room adds a row per remote author.
+    index('idx_room_members_author').on(table.authorId),
+  ]
 );
 
 /**
@@ -752,7 +759,17 @@ export const roomEntries = sqliteTable(
     // hot path, inside the `seq`-allocating transaction — pays one more b-tree
     // write. Taken because the read it serves runs on every room-list request,
     // where the alternative is a full scan of the largest table in the schema.
-    index('idx_room_entries_author_room').on(table.authorId, table.roomId),
+    //
+    // **`thread_root_entry_id` is the third column for `listThreadsForMember`**
+    // (migration 0134). Its "did this author post in this thread" EXISTS runs
+    // once per reply in every room, and with two columns the planner (no
+    // statistics, as above) answered it from `(author_id, room_id)` and read
+    // every row the author ever wrote in that room, per reply: 10.9 seconds for
+    // one thread list on a 500,000-entry install. With the third column the
+    // check is one covering lookup, and the whole list went from 137M to 4.3M
+    // VM steps (10.9 s to 0.4 s). Widening this index
+    // rather than adding one keeps the insert cost where it was.
+    index('idx_room_entries_author_room').on(table.authorId, table.roomId, table.threadRootEntryId),
   ]
 );
 

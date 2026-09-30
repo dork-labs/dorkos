@@ -179,7 +179,15 @@ export class ExportJob {
     if (renewed.rowCount !== 1) throw new JobLostError();
   }
 
-  /** Lock the job row for this claim inside a commit transaction. */
+  /**
+   * Lock the job row for this claim inside a commit transaction.
+   *
+   * Lock order: the community and the requester (`hasExportAuthority`), then the content
+   * version, then the job row. A transaction that reads the content version takes it before
+   * calling this, because erasure and host takedowns bump the version and then lock every open
+   * job of the community (`restartExportJobs`); taking the job first would wait on them in a
+   * cycle (DOR-2330).
+   */
   async lockJob(client: PoolClient): Promise<void> {
     const locked = await client.query(
       `SELECT 1 FROM export_archives WHERE id=$1 AND state='building' AND attempts=$2 FOR UPDATE`,

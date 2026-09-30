@@ -131,8 +131,9 @@ export interface TargetSnapshot {
   subjectMemberId: string | null;
   subjectId: string;
   /**
-   * Files an author or admin removed from this message earlier whose bytes the sweep has not
-   * deleted yet: a takedown holds them again. Already swept is already gone.
+   * Files an author or admin removed from this message earlier (with the message, or one by one
+   * from a message that stays) whose bytes the sweep has not deleted yet: a takedown holds them
+   * again. Already swept is already gone.
    */
   reheldKeys: string[];
 }
@@ -198,14 +199,14 @@ export async function snapshotTarget(
        WHERE community_id=$1 AND entry_id=$2 ORDER BY id FOR UPDATE`,
       [community.id, entry.id]
     );
-    // A message its author or an admin already removed has no files left, but their bytes may
-    // still be waiting for the sweep. An erased message stays erased.
-    const removed =
-      entry.removed_at && !entry.erased_at
-        ? await lockRemovedFiles(client, community.id, entry.id)
-        : [];
-    for (const row of removed)
-      files.rows.push({ ...row, id: row.attachment_id } as EvidenceFileRow);
+    // Files its author or an admin already took out, with the whole message or one at a time
+    // from a message that stays, are gone from it, but their bytes may still be waiting for the
+    // sweep. An erased message stays erased.
+    const removed = entry.erased_at ? [] : await lockRemovedFiles(client, community.id, entry.id);
+    const evidenceFiles = [
+      ...files.rows.map((row) => evidenceFile(row)),
+      ...removed.map((row) => evidenceFile({ ...row, id: row.attachment_id }, true)),
+    ];
     const who = await readEvidenceAuthor(client, community.id, {
       memberId: entry.author_member_id,
       agentId: entry.author_agent_id,
@@ -217,9 +218,9 @@ export async function snapshotTarget(
         entry: await entryEvidence(client, community.id, entry),
         author: who.author,
         account: who.account,
-        files: files.rows.map(evidenceFile),
+        files: evidenceFiles,
       },
-      blobKeys: files.rows.map((row) => row.blob_key),
+      blobKeys: [...files.rows, ...removed].map((row) => row.blob_key),
       hasContent: (!entry.removed_at && !entry.erased_at) || removed.length > 0,
       entryId: entry.id,
       channelId: entry.channel_id,

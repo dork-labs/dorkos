@@ -1,6 +1,6 @@
 {
   "data": {
-    "node": {
+    "addOn": {
       "id": "addon_fixture_01",
       "name": "community-fixture-bucket",
       "status": "ready",

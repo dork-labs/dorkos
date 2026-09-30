@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { transaction } from './data.js';
 import { releaseCommunityShortNames, type ShortNameHolds } from './host/short-names.js';
 import { BlobStoreError, reconcileTenantNamespace, type BlobStore } from './storage/index.js';
+import { BLOB_DELETE_TIMEOUT_MS, BLOB_LOCK_TIMEOUT_MS } from './storage/pending-deletions.js';
 import { UNSETTLED_EVIDENCE_SQL } from './takedown/takedowns.js';
 
 const DELETE_BATCH = 25;
@@ -64,11 +65,6 @@ export async function prepareCommunityDeletionInventory(
   }
   return (await countMissingDeletionInventory(pool, communityId)) === 0;
 }
-
-/** How long a file deletion waits for the community row lock before it counts as failed. */
-export const BLOB_LOCK_TIMEOUT_MS = 5_000;
-/** How long one storage delete may take while the community row is held. */
-export const BLOB_DELETE_TIMEOUT_MS = 60_000;
 
 /**
  * Delete one due tenant in bounded, restart-safe object and database phases.
@@ -363,12 +359,15 @@ export async function sweepCommunityDeletions(
       'community_handles',
       'export_archives',
       'owner_quota_windows',
+      'owner_replacement_object_tokens',
+      'owner_replacements',
       'invite_uses',
       'pending_admissions',
       'connection_grants',
       'connection_pairings',
       'invites',
       'audit_events',
+      'notice_outbox',
       'agents',
       'channels',
     ]) {

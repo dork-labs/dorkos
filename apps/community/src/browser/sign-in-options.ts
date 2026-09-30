@@ -2,9 +2,17 @@ import { useEffect, useState } from 'react';
 import type { CommunityWireAuthOptions } from '@dorkos/shared/community-wire';
 import { request } from './api.js';
 
-const NO_PROVIDERS: CommunityWireAuthOptions = { google: false, github: false, oidc: null };
+const NO_PROVIDERS: CommunityWireAuthOptions = {
+  google: false,
+  github: false,
+  oidc: null,
+  minimumAge: null,
+};
 
-/** The sign-in buttons this host offers beside email and password; none until loaded. */
+/**
+ * The sign-in buttons this host offers beside email and password, and the minimum age a new
+ * account must confirm; none until loaded.
+ */
 export function useSignInOptions(): CommunityWireAuthOptions {
   const [options, setOptions] = useState(NO_PROVIDERS);
   useEffect(() => {
@@ -24,6 +32,8 @@ export function useSignInOptions(): CommunityWireAuthOptions {
 const MESSAGES: Record<string, string> = {
   invitation_required:
     'This account is not on this host yet. Open your invitation link first, then sign in.',
+  age_confirmation_required:
+    'Your account was not created. Choose to create an account, tick the box that confirms your age, then try again.',
   account_not_linked:
     'An account with this email already exists here. Sign in with your password, then link single sign-on from Settings, Account.',
   unable_to_get_user_info:
@@ -35,11 +45,25 @@ const MESSAGES: Record<string, string> = {
 };
 
 /**
- * Say why a Google, GitHub or single sign-on round trip came back with `?error=<code>`, in words
- * a person can act on. Unknown codes get a general message rather than the raw code.
+ * Where a page only signs in to accounts that already exist (pairing approval), it offers no way
+ * to create one, so a refusal must not point at one.
  */
-export function describeSignInError(code: string): string {
-  return MESSAGES[code] ?? 'Sign-in did not finish. Try again, or sign in with your password.';
+const SIGN_IN_ONLY_MESSAGES: Record<string, string> = {
+  age_confirmation_required:
+    'There is no account here for that sign-in yet, and this page only signs in to existing accounts. Create your account from your invitation link first, then come back.',
+};
+
+/**
+ * Say why a Google, GitHub or single sign-on round trip came back with `?error=<code>`, in words
+ * a person can act on. Unknown codes get a general message rather than the raw code. Pass
+ * `signInOnly` from a page that cannot create an account.
+ */
+export function describeSignInError(code: string, signInOnly = false): string {
+  return (
+    (signInOnly ? SIGN_IN_ONLY_MESSAGES[code] : undefined) ??
+    MESSAGES[code] ??
+    'Sign-in did not finish. Try again, or sign in with your password.'
+  );
 }
 
 // Read once, as the page loads: the app may rewrite the address (for example `/` to `/c/<id>`)
@@ -53,7 +77,7 @@ let pendingError: string | null = (() => {
  * Take the error a provider round trip returned with, once, and drop it from the address so a
  * reload or a shared link does not show it again. `null` when there is none.
  */
-export function takeSignInError(): string | null {
+export function takeSignInError({ signInOnly = false } = {}): string | null {
   const code = pendingError;
   pendingError = null;
   if (!code) return null;
@@ -61,7 +85,7 @@ export function takeSignInError(): string | null {
   url.searchParams.delete('error');
   url.searchParams.delete('error_description');
   window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
-  return describeSignInError(code);
+  return describeSignInError(code, signInOnly);
 }
 
 /** Where a provider round trip returns to, success or failure: this same page. */

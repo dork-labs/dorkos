@@ -10,7 +10,7 @@ export const IMPORT_POLL_MS = 15_000;
 
 /**
  * Cancel every import whose window closed: an upload window that ended before a matching
- * export arrived, and a checked import left uncommitted for seven days. A cancelled import is
+ * export arrived (once no upload or `complete` holds its lease), and a checked import left uncommitted for seven days. A cancelled import is
  * then torn down like one the host cancelled.
  */
 export async function expireImports(pool: Pool, now = new Date()): Promise<number> {
@@ -19,7 +19,9 @@ export async function expireImports(pool: Pool, now = new Date()): Promise<numbe
        UPDATE community_imports SET state='cancelled',lease_token=NULL,next_attempt_at=$1,
          updated_at=$1
        WHERE settled_at IS NULL AND (
-         (state='awaiting_upload' AND upload_expires_at<=$1)
+         (state='awaiting_upload' AND upload_expires_at<=$1
+          -- An upload or a complete still holding its lease finishes first.
+          AND (upload_lease_until IS NULL OR upload_lease_until<$1))
          OR (state='validated' AND validated_at<=$1::timestamptz - ($2 * interval '1 millisecond'))
        )
        RETURNING community_id,

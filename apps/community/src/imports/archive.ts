@@ -1,23 +1,19 @@
 import { createHash } from 'node:crypto';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
-import { SegmentedBlobSource } from '../archive/segmented-source.js';
+import type { RangeReader } from '../archive/segmented-source.js';
 import { collectBytes } from '../archive/streams.js';
+import { openZipArchive, type ZipArchive, type ZipEntry } from '../archive/zip-reader.js';
 import {
-  openZipArchive,
-  ZipReaderError,
-  type ZipArchive,
-  type ZipEntry,
-  type ZipReaderErrorCode,
-} from '../archive/zip-reader.js';
-import type { BlobStore } from '../storage/index.js';
-import {
+  asImportFailure,
   ImportFailure,
   MAX_IMPORT_ATTACHMENT_BYTES,
   MAX_IMPORT_ATTACHMENTS_BYTES,
   MAX_MANIFEST_BYTES,
   V1_ATTACHMENT_ENTRY,
   parseManifest,
+  parseManifestJson,
 } from './manifest.js';
+import { isV2EntryName, MAX_V2_ENTRIES } from './v2-archive.js';
 
 /** An owner export opened from storage: its manifest and one zip entry per attachment. */
 export interface OpenedExport {
@@ -27,54 +23,38 @@ export interface OpenedExport {
 }
 
 /**
- * Turn a zip reader refusal into the import's redacted failure code. Any other error (a
- * storage read that failed) passes through, for the worker to retry.
+ * The `version` of an archive's `manifest.json`, read under the names either version allows
+ * and nothing else, so each version's own rules then apply in full.
+ *
+ * `1` and `2` are the versions this host reads. Any other integer fails as
+ * `IMPORT_VERSION_UNSUPPORTED`; an archive with no readable manifest, or a version that is not
+ * an integer, as `IMPORT_ARCHIVE_INVALID`.
  */
-export function asImportFailure(error: unknown): unknown {
-  if (!(error instanceof ZipReaderError)) return error;
-  if (error.code === 'ZIP_TOO_MANY_ENTRIES' || error.code === 'ZIP_TOO_LARGE')
-    return new ImportFailure('IMPORT_TOO_LARGE');
-  if (error.code === 'ZIP_CRC_MISMATCH') return new ImportFailure('IMPORT_CHECKSUM_MISMATCH');
-  return new ImportFailure('IMPORT_ARCHIVE_INVALID');
-}
-
-/** Zip reader refusals a well-formed export of another version can cause under version 1 rules. */
-const LAYOUT_REFUSALS = new Set<ZipReaderErrorCode>([
-  'ZIP_NAME_REJECTED',
-  'ZIP_TOO_LARGE',
-  'ZIP_TOO_MANY_ENTRIES',
-]);
-
-/**
- * The integer `version` of an archive's `manifest.json`, read without the version 1 layout
- * rules, or null when there is no readable manifest. Only asked after those rules refused the
- * archive, so an export from a later exporter (version 2 names its data files differently and
- * puts its manifest last) is named as an unsupported version rather than as a damaged file.
- */
-async function manifestVersion(
-  blobStore: BlobStore,
-  staging: { key: string; byteSize: number },
+export async function readManifestVersion(
+  source: RangeReader,
   signal?: AbortSignal
-): Promise<number | null> {
+): Promise<1 | 2> {
   try {
-    const archive = await openZipArchive(
-      new SegmentedBlobSource(blobStore, [{ key: staging.key, byteSize: staging.byteSize }]),
-      { allowName: () => true, maxEntries: 10_001, signal }
-    );
+    const archive = await openZipArchive(source, {
+      allowName: (name) =>
+        name === 'manifest.json' || V1_ATTACHMENT_ENTRY.test(name) || isV2EntryName(name),
+      maxEntries: MAX_V2_ENTRIES,
+      signal,
+    });
     let manifestEntry: ZipEntry | undefined;
     for await (const entry of archive.entries()) {
       if (entry.name === 'manifest.json') manifestEntry = entry;
     }
-    if (!manifestEntry || manifestEntry.uncompressedSize > MAX_MANIFEST_BYTES) return null;
-    const raw: unknown = JSON.parse(
-      (await collectBytes(archive.openEntry(manifestEntry))).toString('utf8')
+    if (!manifestEntry) throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
+    if (manifestEntry.uncompressedSize > MAX_MANIFEST_BYTES)
+      throw new ImportFailure('IMPORT_TOO_LARGE');
+    const { version } = parseManifestJson(await collectBytes(archive.openEntry(manifestEntry)));
+    if (version === 1 || version === 2) return version;
+    throw new ImportFailure(
+      Number.isInteger(version) ? 'IMPORT_VERSION_UNSUPPORTED' : 'IMPORT_ARCHIVE_INVALID'
     );
-    const version = (raw as { version?: unknown } | null)?.version;
-    return Number.isInteger(version) ? (version as number) : null;
   } catch (error) {
-    // A storage read that failed is the worker's to retry; anything unreadable has no version.
-    if (error instanceof ZipReaderError || error instanceof SyntaxError) return null;
-    throw error;
+    throw asImportFailure(error);
   }
 }
 
@@ -87,25 +67,17 @@ async function manifestVersion(
  * refusals (directories, path tricks, duplicates, encryption, overlaps, inflation past the
  * declared size). Every attachment the manifest names must be in the archive at its declared
  * size, and the archive holds nothing else. Nothing is ever written to a path taken from it.
- * An archive those rules refuse whose manifest names another version (a version 2 export from
- * a newer server) fails as `IMPORT_VERSION_UNSUPPORTED`.
+ * Call {@link readManifestVersion} first: this applies the version 1 rules only.
  */
-export async function openExport(
-  blobStore: BlobStore,
-  staging: { key: string; byteSize: number },
-  signal?: AbortSignal
-): Promise<OpenedExport> {
+export async function openExport(source: RangeReader, signal?: AbortSignal): Promise<OpenedExport> {
   try {
-    const archive = await openZipArchive(
-      new SegmentedBlobSource(blobStore, [{ key: staging.key, byteSize: staging.byteSize }]),
-      {
-        allowName: (name) => name === 'manifest.json' || V1_ATTACHMENT_ENTRY.test(name),
-        maxEntries: 10_001,
-        maxEntryBytes: MAX_IMPORT_ATTACHMENT_BYTES,
-        maxTotalBytes: MAX_IMPORT_ATTACHMENTS_BYTES + MAX_MANIFEST_BYTES,
-        signal,
-      }
-    );
+    const archive = await openZipArchive(source, {
+      allowName: (name) => name === 'manifest.json' || V1_ATTACHMENT_ENTRY.test(name),
+      maxEntries: 10_001,
+      maxEntryBytes: MAX_IMPORT_ATTACHMENT_BYTES,
+      maxTotalBytes: MAX_IMPORT_ATTACHMENTS_BYTES + MAX_MANIFEST_BYTES,
+      signal,
+    });
     let manifestEntry: ZipEntry | undefined;
     const files = new Map<string, ZipEntry>();
     for await (const entry of archive.entries()) {
@@ -131,10 +103,6 @@ export async function openExport(
     }
     return { archive, manifest, files };
   } catch (error) {
-    if (error instanceof ZipReaderError && LAYOUT_REFUSALS.has(error.code)) {
-      const version = await manifestVersion(blobStore, staging, signal);
-      if (version !== null && version !== 1) throw new ImportFailure('IMPORT_VERSION_UNSUPPORTED');
-    }
     throw asImportFailure(error);
   }
 }

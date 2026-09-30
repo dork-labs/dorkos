@@ -22,6 +22,7 @@ export * from './session/message-acceptance.js';
 export * from './session/session-limits.js';
 export * from './session/session-limit-history.js';
 export * from './session/session-context.js';
+export * from './session/session-started-by.js';
 export * from './workspace.js';
 export * from './auth.js';
 export * from './unclaimed-chats.js';

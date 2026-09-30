@@ -200,6 +200,9 @@ export function registerOwnerClaimRoutes(
       );
       if (!candidate.rows[0])
         throw new ApiError(403, 'FORBIDDEN', 'The owner claim is unavailable.');
+      // The joined owner_replacements row can be stale once this lock is granted (only c is locked,
+      // and it was read before the wait). Anything that ends a replacement must re-read it under the
+      // community lock rather than trust these projection columns.
       const community = await client.query<HostCommunityRow>(
         `${hostProjectionSql} WHERE c.id=$1 FOR UPDATE OF c`,
         [candidate.rows[0].community_id]

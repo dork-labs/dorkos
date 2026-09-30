@@ -102,7 +102,23 @@ After claiming the owner account, replace the bootstrap secret with another rand
 
 Rotate invitation keys using the current and previous key settings described in [the README](README.md#invitations-and-credentials). Changing the authentication secret can invalidate sessions and encrypted sign-in data. Schedule that change and verify password and optional social sign-in afterward.
 
-The default deployment sends no email. Use [account recovery](RECOVERY.md) when a member loses access. That procedure preserves the member’s role and revokes their sessions and agent credentials.
+The server sends no email unless you set up mail (next section), and even then it never sends password resets. Use [account recovery](RECOVERY.md) when a member loses access. That procedure preserves the member’s role and revokes their sessions and agent credentials.
+
+## Mail
+
+Mail is off unless you turn it on. With it off, the server opens no mail connection and sends nothing. To turn it on, point the server at your own mail server with `COMMUNITY_SMTP_URL` and give the sender address in `COMMUNITY_MAIL_FROM` (see [deployment settings](DEPLOYMENT.md#optional-mail)). Restart, and the startup log says `Community mail: on`. It never prints the server or its password. A host program can check with `GET /api/v1/host/capabilities`, which answers `{ "mail": true }`.
+
+The server sends only short, plain-text notices, one at a time, and never keeps the address it sends to: it looks the address up just before each send, so an erased account leaves none behind. A message counts as delivered when your mail server accepts it. That is all the server ever claims; it cannot know whether anyone read it. If your mail server refuses the address for good, the notice fails at once. If it is busy, down, or slow, the notice is tried again, less often each time, for up to 72 hours, and then fails. A notice to an account that was erased, or is waiting to be, fails without being sent. If your mail server takes more than four minutes over one message, the server stops waiting and tries again later; the first try may still have gone through, so once in a while a person gets the same notice twice.
+
+Mail that looks forged is often rejected or filtered as spam, and for notices that matter here a failed notice means a longer wait for everyone. So before turning mail on:
+
+- Use a sender domain you control in `COMMUNITY_MAIL_FROM`.
+- Publish an SPF record for that domain that allows your mail server to send for it.
+- Have your mail server sign with DKIM for that same domain.
+- Publish a DMARC policy for the domain, so the SPF and DKIM results count toward the address people see in the From line.
+- Send a test message to an outside mailbox and check that it arrives in the inbox and shows SPF, DKIM, and DMARC passing.
+
+Then watch for failed notices. The server logs each attempt that does not deliver as `Community notice not delivered`, with its outcome (`retrying` or `failed`) and a reason code, never the address or your mail server's reply: `SMTP_REJECTED` (your mail server or the recipient's refused it), `SMTP_UNAVAILABLE` (busy, down, or not answering), `SMTP_TLS` (the encrypted connection failed, or your mail server did not offer the STARTTLS you required), `SMTP_AUTH` (your mail server refused the user name or password), or `RECIPIENT_UNAVAILABLE` (the account is gone). `SMTP_UNAVAILABLE`, `SMTP_TLS`, and `SMTP_AUTH` are retried for 72 hours before the notice fails, so fixing your settings within that time still delivers it. A run of `SMTP_REJECTED` usually means the sender domain is failing those checks.
 
 ## Host API keys
 
@@ -157,11 +173,11 @@ Members delete their own messages and files, and owners and admins remove other 
 
 ## Taking down illegal content
 
-When you learn that a message, a file, or a community's icon is illegal, or breaks your terms, take it down by its ID. Reports reach you with IDs only (the Report link adds the community and the message), so you never need to read the content to act. A takedown hides it at once: a message shows "This message was removed by the host.", a file leaves its message, an icon disappears. Nobody gets an export window first, and every ready export of that community is deleted in the same step. A community's name, a channel's name, and people's names are not items you can take down one at a time.
+When you learn that a message, a file, or a community's icon is illegal, or breaks your terms, take it down by its ID. Reports reach you with IDs only (the Report link adds the community and the message, and for one file the file too), so you never need to read the content to act. A takedown hides it at once: a message shows "This message was removed by the host.", a file leaves its message, an icon disappears. Nobody gets an export window first, and every ready export of that community is deleted in the same step. A community's name, a channel's name, and people's names are not items you can take down one at a time.
 
-Take something down with `POST /api/v1/host/communities/:id/takedowns` ([the API reference](API.md#takedowns)). Only a host operator, confirming with their password, or a program with a key that has `communities:takedown` can take anything down. Give that permission to few keys. A takedown key can remove content but can never read it: no takedown route returns what was removed. Every takedown writes a host audit row and a row in the community's own audit log.
+Take something down from the community's record on the host page, under **Take down content**, or with `POST /api/v1/host/communities/:id/takedowns` ([the API reference](API.md#takedowns)). The host page warns you when there is no evidence store, and lists each takedown with where its copy stands, a **Try again** for a copy that failed, and a **Release** (with your password) for bytes kept on this server; Release is not offered while the community is under a legal hold. Only a host operator, confirming with their password, or a program with a key that has `communities:takedown` can take anything down. Give that permission to few keys. A takedown key can remove content but can never read it: no takedown route returns what was removed. Every takedown writes a host audit row and a row in the community's own audit log.
 
-Choose the reason that fits: `child_safety`, `illegal_content`, `legal_order`, or `terms_violation`, and add your own case number as the reference if you have one. The owner and the author see the reason as one sentence (for example "It was reported to the host as illegal.") and the reference, unless you send `notify: false`. That is the default for `child_safety`, because telling the uploader can tip off someone under investigation. With it off, nobody is told and the owner's exports leave the audit row out, but the removal message still shows: content cannot be both gone and unexplained. A removed message, file, or icon cannot be put back. A download of a file already in progress stops at its next chunk. If you take down a message its author or an admin already removed, any of its files the cleanup sweep has not deleted yet are held and copied like any other; files already swept are gone.
+Choose the reason that fits: `child_safety`, `illegal_content`, `legal_order`, or `terms_violation`, and add your own case number as the reference if you have one. The owner and admins see the reason as one sentence (for example "It was reported to the host as illegal.") and the reference under **Removed by the host** in the community's settings, and the author sees it once as a banner, unless you send `notify: false`. That is the default for `child_safety`, because telling the uploader can tip off someone under investigation. With it off, nobody is told and the owner's exports leave the audit row out, but the removal message still shows: content cannot be both gone and unexplained. A removed message, file, or icon cannot be put back. A download of a file already in progress stops at its next chunk. If you take down a message its author or an admin already removed, any of its files the cleanup sweep has not deleted yet are held and copied like any other; files already swept are gone.
 
 ### The evidence store
 
@@ -222,6 +238,15 @@ An owner can export the whole community and any member can export their own mess
 - **Erasure.** Erasing a member deletes every finished export in that community, including one being downloaded, which stops within a few seconds.
 
 To return to a release from before background exports, first run `pnpm --filter @dorkos/community exports:purge-v2` with `COMMUNITY_DATABASE_URL` set. It cancels exports in progress and deletes every export made by this release, queuing their files for cleanup, so the older release only sees exports it can read.
+
+## Imports
+
+A host can bring a community in from another server by importing its owner's export (see the [API](API.md#import-an-owner-export)). Exports up to 1 GiB can arrive in one upload; larger ones, up to `COMMUNITY_IMPORT_MAX_BYTES` (1 GiB unless you change it, at most 1 TiB), arrive in numbered parts of at most `COMMUNITY_EXPORT_SEGMENT_BYTES`, and a broken upload resumes from the last part received.
+
+- **Time to upload.** Whoever holds the upload link has `COMMUNITY_IMPORT_UPLOAD_HOURS` (24 hours unless you change it, 1 to 168) from when the import was started. Raise it for very large exports on slow connections.
+- **Disk.** Each part being received is written to the temporary folder and then stored, so it can use up to twice its size there. A server receives at most `COMMUNITY_IMPORT_PART_CONCURRENCY` parts at once (8 unless you change it, 1 to 64) and at most four per import; others are asked to wait a few seconds. Plan for twice that many parts of free temporary space, beside the single uploads `COMMUNITY_IMPORT_UPLOADS` allows.
+- **Storage.** The uploaded parts show in usage as import staging and never count against a community's storage limit. They are deleted once the import is ready, cancelled, or failed.
+- **Restarts.** Checking and restoring run in the background. A server that stops part-way through a restore loses at most one batch of rows or one file, and any server carries on from there about five minutes later.
 
 ## Storage and hosting choices
 

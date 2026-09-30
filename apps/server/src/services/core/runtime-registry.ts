@@ -40,6 +40,7 @@ import {
 } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
+import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
 
 /** Columns read from `session_metadata` for the settings projection. */
@@ -939,6 +940,18 @@ export class RuntimeRegistry {
       moveSessionContext(db, fromId, toId);
     } catch (err) {
       logger.warn('[RuntimeRegistry] could not move a session context reading', {
+        fromId,
+        toId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // Who started the chat moves with it too (spec `flow-multiproject` §7.7):
+    // its first line and its place in an extension's start limits both hang
+    // off the row. Same isolation as the reading above.
+    try {
+      getSessionStartedByStore()?.move(fromId, toId);
+    } catch (err) {
+      logger.warn('[RuntimeRegistry] could not move who started a session', {
         fromId,
         toId,
         err: err instanceof Error ? err.message : String(err),

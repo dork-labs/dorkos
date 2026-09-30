@@ -1,8 +1,10 @@
 /**
- * The two session-origin overlays, applied in the one order that is correct.
+ * The three session-origin overlays, applied in the one order that is correct.
  *
  * Room first, Pulse second — see {@link applyRoomOriginOverlay}'s doc for why
- * that ordering is a product decision rather than an accident. It lived as a
+ * that ordering is a product decision rather than an accident. Who started the
+ * chat comes third (spec `flow-multiproject` §7.7): it sets `startedBy`, a
+ * field of its own, so it runs after the two that decide `origin`. It lived as a
  * hand-repeated pair at every call site until the global session-list stream
  * became a fourth one; a rule stated in four places is a rule three of them can
  * drift from, so it is stated here and nowhere else.
@@ -12,6 +14,11 @@
 import type { Session } from '@dorkos/shared/types';
 import { applyRoomOriginOverlay, type ResolveRoomOrigins } from './room-origin-overlay.js';
 import { applyTaskOriginOverlay, type ResolveTaskOrigins } from './task-origin-overlay.js';
+import {
+  applyStartedByOverlay,
+  type ExtensionNameOf,
+  type ResolveStartedBy,
+} from './started-by-origin-overlay.js';
 
 /**
  * The batched origin lookups, as the composition root wires them.
@@ -24,6 +31,10 @@ export interface SessionOriginResolvers {
   resolveRoomOrigins?: ResolveRoomOrigins | undefined;
   /** Pulse task runs; absent when the Tasks subsystem is off. */
   resolveTaskOrigins?: ResolveTaskOrigins | undefined;
+  /** Who started each chat (`session_started_by`); absent without a database. */
+  resolveStartedBy?: ResolveStartedBy | undefined;
+  /** An extension's manifest name, for "Started by <name>". */
+  extensionNameOf?: ExtensionNameOf | undefined;
 }
 
 /** One overlay in the ordered chain, named so a failure can say which failed. */
@@ -62,6 +73,11 @@ export function sessionOriginOverlaySteps(
       name: 'Pulse task origin',
       apply: (sessions) => applyTaskOriginOverlay(sessions, resolvers.resolveTaskOrigins),
     },
+    {
+      name: 'started by',
+      apply: (sessions) =>
+        applyStartedByOverlay(sessions, resolvers.resolveStartedBy, resolvers.extensionNameOf),
+    },
   ];
 }
 
@@ -79,10 +95,10 @@ export function applySessionOriginOverlays(
 }
 
 /**
- * The resolvers the composition root parks on `app.locals`, as a typed pair.
+ * The resolvers the composition root parks on `app.locals`, typed once.
  *
- * Every session route reads the same two keys and cast them one at a time; the
- * cast is done once here so a route cannot pick up only one of the pair and
+ * Every session route reads the same keys and cast them one at a time; the
+ * cast is done once here so a route cannot pick up only some of them and
  * quietly apply half the rule.
  *
  * @param locals - `req.app.locals`.
@@ -90,9 +106,13 @@ export function applySessionOriginOverlays(
 export function sessionOriginResolvers(locals: {
   resolveRoomOrigins?: unknown;
   resolveTaskOrigins?: unknown;
+  resolveStartedBy?: unknown;
+  extensionNameOf?: unknown;
 }): SessionOriginResolvers {
   return {
     resolveRoomOrigins: locals.resolveRoomOrigins as ResolveRoomOrigins | undefined,
     resolveTaskOrigins: locals.resolveTaskOrigins as ResolveTaskOrigins | undefined,
+    resolveStartedBy: locals.resolveStartedBy as ResolveStartedBy | undefined,
+    extensionNameOf: locals.extensionNameOf as ExtensionNameOf | undefined,
   };
 }

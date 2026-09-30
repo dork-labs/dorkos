@@ -1,0 +1,4001 @@
+{
+  "queryType": {
+    "name": "Queries"
+  },
+  "mutationType": {
+    "name": "Mutations"
+  },
+  "types": [
+    {
+      "kind": "OBJECT",
+      "name": "AddOn",
+      "fields": [
+        {
+          "name": "addOnPlan",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AddOnPlan",
+            "ofType": null
+          }
+        },
+        {
+          "name": "addOnPlanName",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "addOnProvider",
+          "type": {
+            "kind": "OBJECT",
+            "name": "AddOnProvider",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "app",
+          "type": {
+            "kind": "OBJECT",
+            "name": "App",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "apps",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AppConnection",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createdAt",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "environment",
+          "type": {
+            "kind": "SCALAR",
+            "name": "JSON",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "errorMessage",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "hostname",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "metadata",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "JSON",
+            "ofType": null
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "options",
+          "type": {
+            "kind": "SCALAR",
+            "name": "JSON",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "organization",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Organization",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "password",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "primaryRegion",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "privateIp",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "publicUrl",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "readRegions",
+          "args": [],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        },
+        {
+          "name": "ssoLink",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "stats",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "JSON",
+            "ofType": null
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "updatedAt",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "AddOnConnection",
+      "fields": [
+        {
+          "name": "edges",
+          "args": [],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AddOnEdge",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "nodes",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AddOn",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "pageInfo",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "PageInfo",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "totalCount",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          "args": []
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "AddOnProvider",
+      "fields": [
+        {
+          "name": "asyncProvisioning",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "autoProvision",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "beta",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "detectPlatform",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "displayName",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "excludedRegions",
+          "args": [],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "Region",
+                "ofType": null
+              }
+            }
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "internal",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "nameSuffix",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "provisioningInstructions",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "regions",
+          "args": [],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "Region",
+                "ofType": null
+              }
+            }
+          }
+        },
+        {
+          "name": "resourceName",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "selectName",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "selectRegion",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "selectReplicaRegions",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "tosAgreement",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "tosUrl",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "ENUM",
+      "name": "AddOnType",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": [
+        {
+          "name": "redis"
+        },
+        {
+          "name": "upstash_redis"
+        },
+        {
+          "name": "upstash_kafka"
+        },
+        {
+          "name": "upstash_vector"
+        },
+        {
+          "name": "sentry"
+        },
+        {
+          "name": "kubernetes"
+        },
+        {
+          "name": "supabase"
+        },
+        {
+          "name": "tigris"
+        },
+        {
+          "name": "enveloop"
+        },
+        {
+          "name": "wafris"
+        },
+        {
+          "name": "arcjet"
+        },
+        {
+          "name": "fly_mysql"
+        }
+      ]
+    },
+    {
+      "kind": "OBJECT",
+      "name": "App",
+      "fields": [
+        {
+          "name": "addOns",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AddOnConnection",
+              "ofType": null
+            }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "type",
+              "type": {
+                "kind": "ENUM",
+                "name": "AddOnType",
+                "ofType": null
+              }
+            }
+          ]
+        },
+        {
+          "name": "allocation",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "Allocation",
+            "ofType": null
+          }
+        },
+        {
+          "name": "allocations",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Allocation",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "appUrl",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "autoscaling",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AutoscalingConfig",
+            "ofType": null
+          }
+        },
+        {
+          "name": "backupRegions",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Region",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "builds",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "BuildConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "certificate",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AppCertificate",
+            "ofType": null
+          }
+        },
+        {
+          "name": "certificates",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AppCertificateConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "changes",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AppChangeConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "cnameTarget",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "config",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AppConfig",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "createdAt",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "currentLock",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AppLock",
+            "ofType": null
+          }
+        },
+        {
+          "name": "currentPlacement",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "RegionPlacement",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "currentRelease",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "Release",
+            "ofType": null
+          }
+        },
+        {
+          "name": "currentReleaseUnprocessed",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ReleaseUnprocessed",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deployed",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "deploymentSource",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeploymentSource",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deploymentStatus",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeploymentStatus",
+            "ofType": null
+          }
+        },
+        {
+          "name": "egressIpAddresses",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "EgressIPAddressConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "hasDeploymentSource",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "healthChecks",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "CheckStateConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "hostIssues",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "IssueConnection",
+            "ofType": null
+          }
+        },
+        {
+          "name": "hostname",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "image",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "Image",
+            "ofType": null
+          }
+        },
+        {
+          "name": "imageDetails",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ImageVersion",
+            "ofType": null
+          }
+        },
+        {
+          "name": "imageUpgradeAvailable",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        },
+        {
+          "name": "imageVersionTrackingEnabled",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "instrumentsKey",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "internalId",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "internalNumericId",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "ipAddress",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "IPAddress",
+            "ofType": null
+          }
+        },
+        {
+          "name": "ipAddresses",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "IPAddressConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "key",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "latestImageDetails",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ImageVersion",
+            "ofType": null
+          }
+        },
+        {
+          "name": "limitedAccessTokens",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "LimitedAccessTokenConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "machine",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "Machine",
+            "ofType": null
+          }
+        },
+        {
+          "name": "machines",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "MachineConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "network",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "networkId",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int",
+            "ofType": null
+          }
+        },
+        {
+          "name": "organization",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Organization",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "parseConfig",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AppConfig",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "platformVersion",
+          "args": [],
+          "type": {
+            "kind": "ENUM",
+            "name": "PlatformVersionEnum",
+            "ofType": null
+          }
+        },
+        {
+          "name": "processGroups",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "ProcessGroup",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "regions",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Region",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "release",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "Release",
+            "ofType": null
+          }
+        },
+        {
+          "name": "releases",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "ReleaseConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "releasesUnprocessed",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "ReleaseUnprocessedConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "role",
+          "args": [],
+          "type": {
+            "kind": "INTERFACE",
+            "name": "AppRole",
+            "ofType": null
+          }
+        },
+        {
+          "name": "runtime",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "RuntimeType",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "secrets",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Secret",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "services",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Service",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "sharedIpAddress",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "state",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "AppState",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "taskGroupCounts",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "TaskGroupCount",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "usage",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "AppUsage",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "version",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "vmSize",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "VMSize",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "vms",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "VMConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "volume",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "Volume",
+            "ofType": null
+          }
+        },
+        {
+          "name": "volumes",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "VolumeConnection",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "SCALAR",
+      "name": "Boolean",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "INPUT_OBJECT",
+      "name": "CreateAddOnInput",
+      "fields": null,
+      "inputFields": [
+        {
+          "name": "clientMutationId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "appId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "ID",
+            "ofType": null
+          }
+        },
+        {
+          "name": "organizationId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "ID",
+            "ofType": null
+          }
+        },
+        {
+          "name": "type",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "AddOnType",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "planId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "ID",
+            "ofType": null
+          }
+        },
+        {
+          "name": "organizationPlanId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "primaryRegion",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "readRegions",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        },
+        {
+          "name": "options",
+          "type": {
+            "kind": "SCALAR",
+            "name": "JSON",
+            "ofType": null
+          }
+        }
+      ],
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "CreateAddOnPayload",
+      "fields": [
+        {
+          "name": "addOn",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AddOn",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "clientMutationId",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "INPUT_OBJECT",
+      "name": "DeleteAddOnInput",
+      "fields": null,
+      "inputFields": [
+        {
+          "name": "clientMutationId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "addOnId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "ID",
+            "ofType": null
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "provider",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      ],
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "DeleteAddOnPayload",
+      "fields": [
+        {
+          "name": "clientMutationId",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deletedAddOnName",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          },
+          "args": []
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "SCALAR",
+      "name": "ID",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "SCALAR",
+      "name": "Int",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "SCALAR",
+      "name": "JSON",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "Mutations",
+      "fields": [
+        {
+          "name": "addAllowedReplaySourceOrgs",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AddAllowedReplaySourceOrgsPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "addCertificate",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AddCertificatePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "addWireGuardPeer",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AddWireGuardPeerPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "allocateEgressIpAddress",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AllocateEgressIPAddressPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "allocateIpAddress",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AllocateIPAddressPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "attachPostgresCluster",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AttachPostgresClusterPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "cancelBuild",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CancelBuildPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "checkCertificate",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CheckCertificatePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "configureRegions",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ConfigureRegionsPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createAddOn",
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateAddOnPayload",
+            "ofType": null
+          },
+          "args": [
+            {
+              "name": "input",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "INPUT_OBJECT",
+                  "name": "CreateAddOnInput",
+                  "ofType": null
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "createApp",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateAppPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createBuild",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateBuildPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createCheckJob",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateCheckJobPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createCheckJobRun",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateCheckJobRunPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createDoctorReport",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateDoctorReportPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createDoctorUrl",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateDoctorUrlPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createExtensionTosAgreement",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateExtensionTosAgreementPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createLimitedAccessToken",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateLimitedAccessTokenPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createOrganization",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateOrganizationPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createOrganizationInvitation",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateOrganizationInvitationPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createPostgresClusterDatabase",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreatePostgresClusterDatabasePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createPostgresClusterUser",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreatePostgresClusterUserPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createRelease",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateReleasePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createTemplateDeployment",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateTemplateDeploymentPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createThirdPartyConfiguration",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateThirdPartyConfigurationPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createVolume",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateVolumePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createVolumeSnapshot",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "CreateVolumeSnapshotPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteAddOn",
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteAddOnPayload",
+            "ofType": null
+          },
+          "args": [
+            {
+              "name": "input",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "INPUT_OBJECT",
+                  "name": "DeleteAddOnInput",
+                  "ofType": null
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "deleteApp",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteAppPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteCertificate",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteCertificatePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteDeploymentSource",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteDeploymentSourcePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteHealthCheckHandler",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteHealthCheckHandlerPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteLimitedAccessToken",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteLimitedAccessTokenPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteOrganization",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteOrganizationPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteOrganizationInvitation",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteOrganizationInvitationPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteOrganizationMembership",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteOrganizationMembershipPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteRemoteBuilder",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteRemoteBuilderPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteThirdPartyConfiguration",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteThirdPartyConfigurationPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deleteVolume",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeleteVolumePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "deployImage",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DeployImagePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "detachPostgresCluster",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DetachPostgresClusterPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "dummyWireGuardPeer",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "DummyWireGuardPeerPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "enablePostgresConsul",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "EnablePostgresConsulPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "ensureDepotRemoteBuilder",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "EnsureDepotRemoteBuilderPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "ensureMachineRemoteBuilder",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "EnsureMachineRemoteBuilderPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "establishSshKey",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "EstablishSSHKeyPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "extendVolume",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ExtendVolumePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "finishBuild",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "FinishBuildPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "forkVolume",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ForkVolumePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "grantPostgresClusterUserAccess",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "GrantPostgresClusterUserAccessPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "issueCertificate",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "IssueCertificatePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "killMachine",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "KillMachinePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "launchMachine",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "LaunchMachinePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "lockApp",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "LockAppPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "logOut",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "LogOutPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "moveApp",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "MoveAppPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "nomadToMachinesMigration",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "NomadToMachinesMigrationPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "nomadToMachinesMigrationPrep",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "NomadToMachinesMigrationPrepPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "pauseApp",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "PauseAppPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "releaseEgressIpAddress",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ReleaseEgressIPAddressPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "releaseIpAddress",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ReleaseIPAddressPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "removeAllowedReplaySourceOrgs",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "RemoveAllowedReplaySourceOrgsPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "removeMachine",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "RemoveMachinePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "removeWireGuardPeer",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "RemoveWireGuardPeerPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "resetAddOnPassword",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ResetAddOnPasswordPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "restartAllocation",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "RestartAllocationPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "restartApp",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "RestartAppPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "restoreVolumeSnapshot",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "RestoreVolumeSnapshotPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "resumeApp",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ResumeAppPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "revokePostgresClusterUserAccess",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "RevokePostgresClusterUserAccessPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "saveDeploymentSource",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "SaveDeploymentSourcePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "scaleApp",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ScaleAppPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "setAllowAllCrossNetworkReplays",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "SetAllowAllCrossNetworkReplaysPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "setAppsV2DefaultOn",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "SetAppsv2DefaultOnPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "setPagerdutyHandler",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "SetPagerdutyHandlerPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "setPlatformVersion",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "SetPlatformVersionPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "setSecrets",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "SetSecretsPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "setSlackHandler",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "SetSlackHandlerPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "setVmCount",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "SetVMCountPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "setVmSize",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "SetVMSizePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "startBuild",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "StartBuildPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "startMachine",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "StartMachinePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "stopAllocation",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "StopAllocationPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "stopMachine",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "StopMachinePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "unlockApp",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "UnlockAppPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "unsetSecrets",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "UnsetSecretsPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "updateAddOn",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "UpdateAddOnPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "updateAutoscaleConfig",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "UpdateAutoscaleConfigPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "updateOrganizationMembership",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "UpdateOrganizationMembershipPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "updateRelease",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "UpdateReleasePayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "updateRemoteBuilder",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "UpdateRemoteBuilderPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "updateThirdPartyConfiguration",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "UpdateThirdPartyConfigurationPayload",
+            "ofType": null
+          }
+        },
+        {
+          "name": "validateWireGuardPeers",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "ValidateWireGuardPeersPayload",
+            "ofType": null
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "Organization",
+      "fields": [
+        {
+          "name": "activeDiscountName",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "addOnSsoLink",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "addOns",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AddOnConnection",
+              "ofType": null
+            }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "type",
+              "type": {
+                "kind": "ENUM",
+                "name": "AddOnType",
+                "ofType": null
+              }
+            }
+          ]
+        },
+        {
+          "name": "agreedToProviderTos",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          },
+          "args": [
+            {
+              "name": "providerName",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "allowAllCrossNetworkReplays",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "allowedReplaySourceOrgSlugs",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "apps",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AppConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "billable",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "billingStatus",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "BillingStatus",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "creditBalance",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "creditBalanceFormatted",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "extensionSsoLink",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "healthCheckHandlers",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "HealthCheckHandlerConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "healthChecks",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "HealthCheckConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "internalNumericId",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "BigInt",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "invitations",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "OrganizationInvitationConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "isCreditCardSaved",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "limitedAccessTokens",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "LimitedAccessTokenConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "loggedCertificates",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "LoggedCertificateConnection",
+            "ofType": null
+          }
+        },
+        {
+          "name": "members",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "OrganizationMembershipsConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "paidPlan",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "provisionsBetaExtensions",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "rawSlug",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "remoteBuilderApp",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "App",
+            "ofType": null
+          }
+        },
+        {
+          "name": "remoteBuilderImage",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "settings",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "JSON",
+            "ofType": null
+          }
+        },
+        {
+          "name": "slug",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "sshCertificate",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "thirdPartyConfigurations",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "ThirdPartyConfigurationConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "trust",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "OrganizationTrust",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "type",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "OrganizationType",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "viewerRole",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "wireGuardPeer",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "WireGuardPeer",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "wireGuardPeers",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "WireGuardPeerConnection",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "ENUM",
+      "name": "OrganizationType",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": [
+        {
+          "name": "PERSONAL"
+        },
+        {
+          "name": "SHARED"
+        }
+      ]
+    },
+    {
+      "kind": "INTERFACE",
+      "name": "Principal",
+      "fields": [
+        {
+          "name": "avatarUrl",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "createdAt",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "ISO8601DateTime",
+            "ofType": null
+          }
+        },
+        {
+          "name": "email",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "featureFlags",
+          "args": [],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        },
+        {
+          "name": "hasNodeproxyApps",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "SCALAR",
+            "name": "ID",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "lastRegion",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "organizations",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "OrganizationConnection",
+            "ofType": null
+          }
+        },
+        {
+          "name": "personalOrganization",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "Organization",
+            "ofType": null
+          }
+        },
+        {
+          "name": "trust",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "OrganizationTrust",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "twoFactorProtection",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        },
+        {
+          "name": "username",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": [
+        {
+          "name": "Macaroon"
+        },
+        {
+          "name": "User"
+        }
+      ],
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "Queries",
+      "fields": [
+        {
+          "name": "accessTokens",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AccessTokenConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "addOn",
+          "type": {
+            "kind": "OBJECT",
+            "name": "AddOn",
+            "ofType": null
+          },
+          "args": [
+            {
+              "name": "id",
+              "type": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              }
+            },
+            {
+              "name": "name",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "provider",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          ]
+        },
+        {
+          "name": "addOnPlans",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AddOnPlanConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "addOnProvider",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AddOnProvider",
+              "ofType": null
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "addOns",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AddOnConnection",
+              "ofType": null
+            }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "type",
+              "type": {
+                "kind": "ENUM",
+                "name": "AddOnType",
+                "ofType": null
+              }
+            }
+          ]
+        },
+        {
+          "name": "app",
+          "type": {
+            "kind": "OBJECT",
+            "name": "App",
+            "ofType": null
+          },
+          "args": [
+            {
+              "name": "name",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "internalId",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          ]
+        },
+        {
+          "name": "appNameAvailable",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "apps",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AppConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "canPerformBluegreenDeployment",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "certificate",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "AppCertificate",
+            "ofType": null
+          }
+        },
+        {
+          "name": "checkJobs",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "CheckJobConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "checkLocations",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "CheckLocation",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "currentUser",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "User",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "flapsAuthzCheck",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "githubIntegration",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "GithubIntegration",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "herokuIntegration",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "HerokuIntegration",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "ipAddress",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "IPAddress",
+            "ofType": null
+          }
+        },
+        {
+          "name": "latestImageDetails",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "ImageVersion",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "latestImageTag",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "machine",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Machine",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "machines",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "MachineConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "nearestRegion",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Region",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "organization",
+          "type": {
+            "kind": "OBJECT",
+            "name": "Organization",
+            "ofType": null
+          },
+          "args": [
+            {
+              "name": "id",
+              "type": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              }
+            },
+            {
+              "name": "name",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "slug",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          ]
+        },
+        {
+          "name": "organizations",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "OrganizationConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "personalOrganization",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Organization",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "platform",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "FlyPlatform",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "postgresAttachments",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "PostgresClusterAttachmentConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "products",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "Product",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "userOnlyToken",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "validateConfig",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AppConfig",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "viewer",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "INTERFACE",
+              "name": "Principal",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "volume",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "Volume",
+            "ofType": null
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "SCALAR",
+      "name": "String",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "User",
+      "fields": [
+        {
+          "name": "agreedToProviderTos",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          },
+          "args": [
+            {
+              "name": "providerName",
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "avatarUrl",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "createdAt",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "email",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "enablePaidHobby",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "featureFlags",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "hasNodeproxyApps",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "internalNumericId",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "lastRegion",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "organizations",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "OrganizationConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "personalOrganization",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Organization",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "trust",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "OrganizationTrust",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "twoFactorProtection",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "username",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    }
+  ]
+}

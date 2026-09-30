@@ -36,6 +36,11 @@ const ALLOWED: Readonly<Record<string, string>> = {
   // Defines `/session` and its loader redirects to itself with a function of
   // the previous search; it uses `SESSION_ROUTE`, never a literal.
   'apps/client/src/router.tsx': 'the route definition',
+  // The worked example of an extension's "· Watch" (spec `flow-multiproject`
+  // §7.7). An extension bundle reaches the app only through
+  // `@dorkos/extension-api`, so it cannot import either builder; it hands the
+  // documented address to `api.navigate`, as a third-party extension must.
+  'apps/server/src/core-extensions/hello-world/index.ts': 'an extension, outside the app',
 };
 
 /** Source roots that ship. */

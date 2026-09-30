@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  assertReleasedCommunityMigrations,
+  changedCommunityMigrations,
   assertPackedCommitUnchanged,
   communityLiveTarballSidecarPath,
   createCommunityLivePackDirectory,
@@ -211,5 +213,133 @@ describe('live gate pack recipe guards', () => {
   it('refuses when HEAD moved during the build', () => {
     expect(() => assertPackedCommitUnchanged(COMMIT, COMMIT)).not.toThrow();
     expect(() => assertPackedCommitUnchanged(COMMIT, 'b'.repeat(40))).toThrow('HEAD moved');
+  });
+});
+
+// A launcher carries its checkout's migration fingerprint and refuses a release manifest with
+// another, so a pack past its release's migrations could never deploy (DOR-2169).
+describe('live gate pack recipe migration guard', () => {
+  async function repo() {
+    const dir = join(root, 'repo');
+    await mkdir(join(dir, 'apps/community/migrations/meta'), { recursive: true });
+    const run = (args: string[]) =>
+      execFileSync('git', args, {
+        cwd: dir,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 't',
+          GIT_AUTHOR_EMAIL: 't@example.invalid',
+          GIT_COMMITTER_NAME: 't',
+          GIT_COMMITTER_EMAIL: 't@example.invalid',
+        },
+      }).trim();
+    run(['init', '-q', '-b', 'main']);
+    const write = (path: string, text: string) => writeFile(join(dir, path), text);
+    await write('apps/community/migrations/0001_init.sql', 'create table a();');
+    await write('apps/community/migrations/README.md', 'notes');
+    await write('launcher.ts', 'v1');
+    await mkdir(join(dir, 'packages/shared/src'), { recursive: true });
+    await write('packages/shared/src/community-release-manifest.ts', 'export const V = 1;');
+    run(['add', '-A']);
+    run(['commit', '-qm', 'release']);
+    run(['tag', 'v0.92.0']);
+    const commit = async (paths: Record<string, string>) => {
+      for (const [path, text] of Object.entries(paths)) await write(path, text);
+      run(['add', '-A']);
+      run(['commit', '-qm', 'change']);
+    };
+    return { run, commit };
+  }
+
+  it('passes a checkout whose migrations match the tag, even with other changes', async () => {
+    const { run, commit } = await repo();
+    await commit({
+      'launcher.ts': 'v2',
+      // Not a .sql file directly in the directory, so not in the fingerprint.
+      'apps/community/migrations/README.md': 'more notes',
+      'apps/community/migrations/meta/journal.json': '{}',
+      // build.ts reads only the directory itself, so a nested .sql file is not fingerprinted.
+      'apps/community/migrations/meta/snapshot.sql': 'select 1;',
+    });
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([]);
+    expect(() => assertReleasedCommunityMigrations(run, '0.92.0')).not.toThrow();
+  });
+
+  it('refuses, naming each changed migration, when one was added or edited after the tag', async () => {
+    const { run, commit } = await repo();
+    await commit({
+      'apps/community/migrations/0001_init.sql': 'create table a(id int);',
+      'apps/community/migrations/0002_more.sql': 'create table b();',
+    });
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([
+      'apps/community/migrations/0001_init.sql',
+      'apps/community/migrations/0002_more.sql',
+    ]);
+    let message = '';
+    try {
+      assertReleasedCommunityMigrations(run, '0.92.0');
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain(
+      'The files the launcher checks a release against changed since v0.92.0:'
+    );
+    expect(message).toContain('  apps/community/migrations/0002_more.sql');
+    expect(message).toContain('COMMUNITY_RELEASE_INVALID');
+    expect(message).toContain('Pack from v0.92.0 plus only the launcher commits under test');
+    expect(message).toContain('not on main');
+  });
+
+  it('refuses a removed migration too', async () => {
+    const { run } = await repo();
+    run(['rm', '-q', 'apps/community/migrations/0001_init.sql']);
+    run(['commit', '-qm', 'drop']);
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([
+      'apps/community/migrations/0001_init.sql',
+    ]);
+  });
+
+  it('tells the operator to fetch tags when the release tag is missing', async () => {
+    const { run } = await repo();
+    expect(() => assertReleasedCommunityMigrations(run, '0.93.0')).toThrow(
+      'Tag v0.93.0 is not in this checkout. Run `git fetch --tags`, then pack again.'
+    );
+  });
+
+  // The launcher also checks a manifest against its compiled contract (schema version, strict
+  // schema), so a change there can refuse a release too. Any content change counts, fail-safe.
+  it('refuses a change to the release-manifest contract', async () => {
+    const { run, commit } = await repo();
+    await commit({ 'packages/shared/src/community-release-manifest.ts': 'export const V = 2;' });
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([
+      'packages/shared/src/community-release-manifest.ts',
+    ]);
+  });
+
+  // The build reads names and contents, never modes, so a chmod alone changes nothing it checks.
+  it('ignores a mode-only change to a migration', async () => {
+    const { run } = await repo();
+    run(['update-index', '--chmod=+x', 'apps/community/migrations/0001_init.sql']);
+    run(['commit', '-qm', 'chmod']);
+    expect(run(['diff', '--name-only', 'v0.92.0', 'HEAD'])).toBe(
+      'apps/community/migrations/0001_init.sql'
+    );
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([]);
+  });
+
+  it('refuses a renamed migration, which changes its fingerprinted name', async () => {
+    const { run } = await repo();
+    run([
+      'mv',
+      'apps/community/migrations/0001_init.sql',
+      'apps/community/migrations/0001_start.sql',
+    ]);
+    run(['commit', '-qm', 'rename']);
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([
+      'apps/community/migrations/0001_init.sql',
+      'apps/community/migrations/0001_start.sql',
+    ]);
   });
 });

@@ -1,4 +1,5 @@
 import { FieldCard, FieldCardContent } from '@/layers/shared/ui';
+import { CloudEligibilityNote } from '@/layers/features/cloud-link';
 import type { Entitlements } from '@dork-labs/cloud-api';
 import { formatCharge, formatCreditsWithMoney, formatPosition } from '@dork-labs/cloud-api/display';
 import { isReadableDenomination, withCreditUnit } from '../lib/credits';
@@ -129,10 +130,17 @@ export function PlanCard() {
             ones. Stated as MECHANISM — what takes a seat — rather than as a
             price, because what anything costs is announced elsewhere and this
             app does not know it. */}
-        <p className="text-muted-foreground text-xs">
-          Only an agent you give an address takes a seat. Agents that run just on this machine have
-          no address and take none.
-        </p>
+        {/* One block, so the card's row rules keep these two quiet notes
+            together rather than giving each its own row. */}
+        <div className="space-y-2">
+          <p className="text-muted-foreground text-xs">
+            Only an agent you give an address takes a seat. Agents that run just on this machine
+            have no address and take none.
+          </p>
+          {/* Who can buy, on the card that describes the plan, just below the
+              upgrade nudge that suggests another one. */}
+          <CloudEligibilityNote />
+        </div>
       </FieldCardContent>
     </FieldCard>
   );

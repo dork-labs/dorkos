@@ -255,6 +255,13 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
   },
   // CloudUsageShowcases
   {
+    id: 'plan-card',
+    title: 'Plan card',
+    page: 'settings',
+    category: 'Account',
+    keywords: ['plan', 'cloud', 'account', 'seats', 'who can buy', 'eligibility'],
+  },
+  {
     id: 'credits-and-other-charges',
     title: 'Credits and other charges',
     page: 'settings',

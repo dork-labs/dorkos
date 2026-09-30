@@ -75,10 +75,7 @@ const CredentialsEnvelopeSchema = z
   .object({
     data: z
       .object({
-        node: z
-          .object({ id: SafeIdentifierSchema, environment: z.unknown().optional() })
-          .strict()
-          .nullable(),
+        addOn: z.object({ id: SafeIdentifierSchema, environment: z.unknown().optional() }).strict(),
       })
       .strict(),
   })
@@ -86,9 +83,57 @@ const CredentialsEnvelopeSchema = z
 
 const ReadEnvelopeSchema = z
   .object({
-    data: z.object({ node: AddOnSchema.nullable() }).strict(),
+    // Fly's GraphQL has no Relay `node` root field; `addOn(id:)` is the exact-ID read (live gate,
+    // DOR-2169, 2026-09-29: `node(id:)` answered only "Field 'node' doesn't exist on type 'Queries'").
+    // Not nullable: a bare `addOn: null` without Fly's NOT_FOUND error is not proof the bucket is
+    // gone, and treating it as gone once let cleanup skip a bucket that was still billing (DOR-2584
+    // review). Only `AddOnNotFoundEnvelopeSchema` means missing.
+    data: z.object({ addOn: AddOnSchema }).strict(),
   })
   .strict();
+/**
+ * Fly's answer for an add-on id it does not know (live, 2026-09-29): `data.addOn` is null and every
+ * error is a `NOT_FOUND` on the `addOn` path. Only this exact shape means "gone"; any other error,
+ * or a not-found beside other errors, stays an invalid response.
+ */
+const AddOnNotFoundEnvelopeSchema = z
+  .object({
+    data: z.object({ addOn: z.null() }).strict(),
+    errors: z
+      .array(
+        z
+          .object({
+            path: z.tuple([z.literal('addOn')]),
+            extensions: z.object({ code: z.literal('NOT_FOUND') }).passthrough(),
+          })
+          .passthrough()
+      )
+      .min(1),
+  })
+  .strict();
+
+const AppTigrisEnvelopeSchema = z
+  .object({
+    data: z
+      .object({
+        app: z
+          .object({
+            name: SafeIdentifierSchema,
+            addOns: z
+              .object({
+                totalCount: z.number().int().nonnegative(),
+                nodes: z.array(
+                  z.object({ id: SafeIdentifierSchema, name: SafeIdentifierSchema }).strict()
+                ),
+              })
+              .strict(),
+          })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict();
+
 const DeleteEnvelopeSchema = z
   .object({
     data: z
@@ -159,10 +204,24 @@ export const FLY_TIGRIS_CREATE_MUTATION = `
  */
 export const FLY_TIGRIS_CREDENTIALS_QUERY = `
   query DorkosReadTigrisCredentials($id: ID!) {
-    node(id: $id) {
-      ... on AddOn {
-        id
-        environment
+    addOn(id: $id) {
+      id
+      environment
+    }
+  }
+`;
+
+/**
+ * Every Tigris bucket attached to one app, by id and name. The live gate's cleanup uses it to
+ * confirm a bucket Fly reported as not found is really absent before it skips deleting it.
+ */
+export const FLY_APP_TIGRIS_QUERY = `
+  query DorkosListAppTigris($appName: String!) {
+    app(name: $appName) {
+      name
+      addOns(type: tigris, first: 50) {
+        totalCount
+        nodes { id name }
       }
     }
   }
@@ -171,16 +230,14 @@ export const FLY_TIGRIS_CREDENTIALS_QUERY = `
 /** Minimal exact-ID readback used after Tigris creation. */
 export const FLY_TIGRIS_READ_QUERY = `
   query DorkosReadTigris($id: ID!) {
-    node(id: $id) {
-      ... on AddOn {
-        id
-        name
-        status
-        options
-        organization { slug }
-        addOnProvider { name }
-        app { id name }
-      }
+    addOn(id: $id) {
+      id
+      name
+      status
+      options
+      organization { slug }
+      addOnProvider { name }
+      app { id name }
     }
   }
 `;
@@ -389,15 +446,17 @@ export function parseTigrisCredentialsResponse(
   response: unknown,
   expectedId: string
 ): TigrisBucketCredentials | null {
+  if (AddOnNotFoundEnvelopeSchema.safeParse(response).success) {
+    throw new FlyGraphqlContractError('ADD_ON_MISSING');
+  }
   let parsed: z.infer<typeof CredentialsEnvelopeSchema>;
   try {
     parsed = CredentialsEnvelopeSchema.parse(response);
   } catch {
     throw invalidResponse();
   }
-  if (parsed.data.node === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
-  if (parsed.data.node.id !== expectedId) throw new FlyGraphqlContractError('BINDING_MISMATCH');
-  return tigrisCredentialsFromEnvironment(parsed.data.node.environment);
+  if (parsed.data.addOn.id !== expectedId) throw new FlyGraphqlContractError('BINDING_MISMATCH');
+  return tigrisCredentialsFromEnvironment(parsed.data.addOn.environment);
 }
 
 /**
@@ -407,14 +466,39 @@ export function parseTigrisCredentialsResponse(
  * @returns Sanitized add-on identity and binding.
  */
 export function parseTigrisReadResponse(response: unknown): TigrisAddOnIdentity {
+  if (AddOnNotFoundEnvelopeSchema.safeParse(response).success) {
+    throw new FlyGraphqlContractError('ADD_ON_MISSING');
+  }
   let parsed: z.infer<typeof ReadEnvelopeSchema>;
   try {
     parsed = ReadEnvelopeSchema.parse(response);
   } catch {
     throw invalidResponse();
   }
-  if (parsed.data.node === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
-  return sanitizeAddOn(parsed.data.node);
+  return sanitizeAddOn(parsed.data.addOn);
+}
+
+/**
+ * Parse the Tigris buckets attached to one app.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ * @param appName - The app that was asked about.
+ * @returns Every attached bucket's id and name; refuses a partial page or another app's answer.
+ */
+export function parseAppTigrisResponse(
+  response: unknown,
+  appName: string
+): Array<{ id: string; name: string }> {
+  let parsed: z.infer<typeof AppTigrisEnvelopeSchema>;
+  try {
+    parsed = AppTigrisEnvelopeSchema.parse(response);
+  } catch {
+    throw invalidResponse();
+  }
+  const { app } = parsed.data;
+  if (app.name !== appName) throw new FlyGraphqlContractError('BINDING_MISMATCH');
+  if (app.addOns.totalCount !== app.addOns.nodes.length) throw invalidResponse();
+  return app.addOns.nodes.map(({ id, name }) => ({ id, name }));
 }
 
 /** Parse Tigris deletion acknowledgement and bind it to the exact expected name. */

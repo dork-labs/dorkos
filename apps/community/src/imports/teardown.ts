@@ -1,9 +1,12 @@
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from '../data.js';
-import { BLOB_DELETE_TIMEOUT_MS, BLOB_LOCK_TIMEOUT_MS } from '../deletion-worker.js';
 import { releaseCommunityShortNames } from '../host/short-names.js';
 import type { BlobStore } from '../storage/index.js';
-import { cleanupBackoffSql } from '../storage/pending-deletions.js';
+import {
+  BLOB_DELETE_TIMEOUT_MS,
+  BLOB_LOCK_TIMEOUT_MS,
+  cleanupBackoffSql,
+} from '../storage/pending-deletions.js';
 import { MANAGED_BLOB_RESERVATION_TTL_MS } from '../storage/managed-blobs.js';
 
 /** How long a teardown under a host legal hold waits before it looks again. */
@@ -75,6 +78,60 @@ async function lockTarget(
   return job.rowCount ? communityId : null;
 }
 
+/**
+ * The batched teardown's passes, children before parents: every table an import writes, with
+ * messages in two passes, replies first, so no message goes while a reply still points at it (a
+ * reply's parent is always a top-level message). Deleting a message checks its replies through
+ * `entries_parent_ref_idx` and `entries_thread_root_ref_idx`.
+ */
+const TEARDOWN_PASSES: readonly (readonly [string, string])[] = IMPORTED_TABLES.flatMap(
+  (table): (readonly [string, string])[] =>
+    table === 'entries'
+      ? [
+          [table, 'AND parent_entry_id IS NOT NULL'],
+          [table, 'AND parent_entry_id IS NULL'],
+        ]
+      : [[table, '']]
+);
+
+/** Rows one teardown transaction deletes at most, so a large import never holds its lock long. */
+export const TEARDOWN_BATCH_ROWS = 5_000;
+
+/**
+ * Delete the restored rows of an unclaimed import's community a batch at a time, each batch its
+ * own short transaction that locks the target again and checks for a legal hold, children
+ * before parents (and replies before the messages they answer). Returns 'held' under a legal
+ * hold, 'skipped' when the target is not there to tear down, or 'done' when no row is left.
+ */
+async function deleteRestoredRows(
+  pool: Pool,
+  importId: string
+): Promise<'done' | 'held' | 'skipped'> {
+  for (;;) {
+    const step = await transaction(pool, async (client) => {
+      const communityId = await lockTarget(client, importId, true);
+      if (!communityId) return 'skipped' as const;
+      if (await legallyHeld(client, importId, communityId)) return 'held' as const;
+      const community = await client.query<{ lifecycle: string }>(
+        'SELECT lifecycle FROM communities WHERE id=$1',
+        [communityId]
+      );
+      if (community.rows[0]?.lifecycle !== 'pending_owner') return 'done' as const;
+      for (const [table, only] of TEARDOWN_PASSES) {
+        const deleted = await client.query(
+          // content-change: import-teardown
+          `DELETE FROM ${table} WHERE ctid IN (
+             SELECT ctid FROM ${table} WHERE community_id=$1 ${only} LIMIT $2)`,
+          [communityId, TEARDOWN_BATCH_ROWS]
+        );
+        if (deleted.rowCount) return 'more' as const;
+      }
+      return 'done' as const;
+    });
+    if (step !== 'more') return step;
+  }
+}
+
 /** What one teardown pass did. */
 export type TeardownOutcome = 'settled' | 'waiting' | 'skipped';
 
@@ -82,7 +139,8 @@ export type TeardownOutcome = 'settled' | 'waiting' | 'skipped';
  * Remove what a cancelled or failed import left behind, then its unclaimed community: the
  * rows of an abandoned ready import, every file, and finally the community itself.
  *
- * Each pass queues every stored or committed file of the community for deletion and deletes
+ * Restored rows (a ready import the host abandoned, or a version 2 restore that failed part-way)
+ * are deleted first, a batch per transaction. Then each pass queues every stored or committed file of the community for deletion and deletes
  * it, keeping failures as cleanup work the pending-deletion sweep retries. A reservation whose
  * writer may still be running is left alone until its lease runs out. Once the community owns
  * no file at all, it is removed in one transaction and the import is settled; the import row
@@ -94,6 +152,9 @@ export async function teardownImport(
   blobStore: BlobStore,
   importId: string
 ): Promise<TeardownOutcome> {
+  const rows = await deleteRestoredRows(pool, importId);
+  if (rows === 'skipped') return 'skipped';
+  if (rows === 'held') return 'waiting';
   const queued = await transaction(pool, async (client) => {
     const communityId = await lockTarget(client, importId, true);
     if (!communityId) return null;
@@ -107,21 +168,24 @@ export async function teardownImport(
     const unclaimed = community.rows[0]?.lifecycle === 'pending_owner';
     const own = await client.query<{ blob_key: string }>(
       `SELECT blob_key FROM community_import_files WHERE import_id=$1
+       UNION ALL SELECT blob_key FROM community_import_parts WHERE import_id=$1
        UNION ALL SELECT staging_blob_key FROM community_imports
        WHERE id=$1 AND staging_blob_key IS NOT NULL`,
       [importId]
     );
     if (unclaimed) {
-      // A ready import that the host abandoned has restored rows. They go first, children
-      // before parents, so every file below is unreferenced.
+      // Restored rows went in batches above; this catches any written since, children before
+      // parents, so every file below is unreferenced.
       for (const table of IMPORTED_TABLES) {
         // content-change: import-teardown
         await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [communityId]);
       }
     }
-    // Progress rows and the staging reference are what keep these files from the cleanup
-    // sweeps; they go too.
+    // Progress rows, uploaded parts, and the staging reference are what keep these files from
+    // the cleanup sweeps; they go too.
     await client.query('DELETE FROM community_import_files WHERE import_id=$1', [importId]);
+    await client.query('DELETE FROM community_import_parts WHERE import_id=$1', [importId]);
+    await client.query('DELETE FROM community_import_part_uploads WHERE import_id=$1', [importId]);
     await client.query('UPDATE community_imports SET staging_blob_key=NULL WHERE id=$1', [
       importId,
     ]);
@@ -182,12 +246,14 @@ export async function teardownImport(
       );
       continue;
     }
+    // managed_blobs before pending_blob_deletions, the order the pending-deletion sweep locks
+    // them in: the other way round, a sweep picking up this file at the same moment deadlocks.
     await transaction(pool, async (client) => {
-      await client.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [key]);
       await client.query(
         "DELETE FROM managed_blobs WHERE blob_key=$1 AND community_id=$2 AND state='pending_delete'",
         [key, queued.communityId]
       );
+      await client.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [key]);
     });
   }
 

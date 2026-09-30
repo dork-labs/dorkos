@@ -132,8 +132,11 @@ export interface EvidenceFileRow {
 export const EVIDENCE_FILE_COLUMNS = `id,blob_key,display_name,content_type,byte_size,checksum,
   uploaded_at,uploader_member_id,uploader_agent_id`;
 
-/** A held file as the record lists it; `path` is relative to the attempt folder. */
-export function evidenceFile(row: EvidenceFileRow): File {
+/**
+ * A held file as the record lists it; `path` is relative to the attempt folder.
+ * `removedBeforeTakedown` marks a file already taken out of its message before the takedown.
+ */
+export function evidenceFile(row: EvidenceFileRow, removedBeforeTakedown = false): File {
   return {
     id: row.id,
     name: row.display_name,
@@ -144,6 +147,7 @@ export function evidenceFile(row: EvidenceFileRow): File {
     uploaderAgentId: row.uploader_agent_id,
     path: `files/${row.id}`,
     sha256: row.checksum,
+    removedBeforeTakedown,
   };
 }
 

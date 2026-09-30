@@ -24,6 +24,8 @@ import { sweepImportTempDirs } from './imports/upload.js';
 import { configureServerTimeouts } from './http.js';
 import { createEvidenceSink, tidyEvidenceSink } from './takedown/evidence/sink.js';
 import { sweepTakedownEvidence } from './takedown/worker.js';
+import { startMailDelivery } from './mail/worker.js';
+import { pruneNoticeOutbox } from './mail/outbox.js';
 
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
@@ -94,6 +96,7 @@ if (config.oidc)
 configureServerTimeouts(server);
 // A crash while an export was arriving or being restored leaves its temporary folder behind.
 void sweepImportTempDirs(IMPORT_UPLOAD_LEASE_MS * 2).catch(() => undefined);
+let sweepingPendingBlobs = false;
 const cleanup = setInterval(() => {
   void sweepExpiredAttachments(pool, blobStore).catch((error: unknown) => {
     console.error(
@@ -113,12 +116,21 @@ const cleanup = setInterval(() => {
       error instanceof Error ? error.name : 'unknown'
     );
   });
-  void sweepPendingBlobDeletions(pool, blobStore).catch((error: unknown) => {
-    console.error(
-      'Community pending blob cleanup unavailable',
-      error instanceof Error ? error.name : 'unknown'
-    );
-  });
+  // One pending-deletion sweep at a time on this replica: a slow one (a batch of slow storage
+  // deletes) is never joined by the next tick's, which would pick the same files.
+  if (!sweepingPendingBlobs) {
+    sweepingPendingBlobs = true;
+    void sweepPendingBlobDeletions(pool, blobStore)
+      .catch((error: unknown) => {
+        console.error(
+          'Community pending blob cleanup unavailable',
+          error instanceof Error ? error.name : 'unknown'
+        );
+      })
+      .finally(() => {
+        sweepingPendingBlobs = false;
+      });
+  }
   void sweepCommunityDeletions(pool, blobStore, undefined, { shortNameHolds }).catch(
     (error: unknown) => {
       console.error(
@@ -148,6 +160,12 @@ const cleanup = setInterval(() => {
   void pruneErasureRequests(pool).catch((error: unknown) => {
     console.error(
       'Community erasure record cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
+  void pruneNoticeOutbox(pool).catch((error: unknown) => {
+    console.error(
+      'Community notice cleanup unavailable',
       error instanceof Error ? error.name : 'unknown'
     );
   });
@@ -222,8 +240,15 @@ const takedownEvidence = setInterval(() => {
     });
 }, 15_000);
 takedownEvidence.unref();
+// Off unless the host configured SMTP. No feature queues mail yet, so there is nothing to
+// compose; each one that does adds its messages here.
+const mail = startMailDelivery({ config, pool, composers: {} });
 const onSignal = createSignalHandler(
-  createStop({ server, pool, timers: [cleanup, erasures, exports, imports, takedownEvidence] })
+  createStop({
+    server,
+    pool,
+    timers: [cleanup, erasures, exports, imports, takedownEvidence, ...(mail ? [mail] : [])],
+  })
 );
 process.on('SIGINT', onSignal);
 process.on('SIGTERM', onSignal);

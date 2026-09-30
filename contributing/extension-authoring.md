@@ -221,6 +221,27 @@ api.projectSettings.set(projectRoot, value): Promise<void> // JSON, at most 16 K
 - **`projectSettings.set` is the only writer.** Your server half reads them (`ctx.projectSettings`) and has no way to write them, so neither it nor any agent it runs can turn a dial up. It sits behind the person bar, with the residual the bar documents: your own page code can call it too, so it is recorded as written from the extension's page.
 - **A refusal throws** an `Error` carrying the server's sentence and `code` (`not_running`, `already_resolved`, `extension_timeout`).
 
+### Starting work in a new chat
+
+A button should name the outcome ("Sort them", "Set up flow here"), never a command. One click starts the work in a **new** chat; the chat the person is in, and anything they typed there, is left alone. The click is the only confirmation.
+
+```typescript
+const { sessionId } = await api.startWork({
+  project: project.root, // any folder inside the project; the chat runs in its root
+  prompt: 'Sort the new ideas in the tracker.', // sent at once as the first message, at most 20,000
+  title: 'Sorting 12 new ideas in dorkos', // the chat's title, 1 to 80 characters
+  reason: '12 new ideas were waiting to be sorted', // its first line, 1 to 200
+});
+// It never navigates. Turn the row into "Sorting 12 ideas… · Watch" and open the chat on Watch:
+api.navigate(`/session?session=${sessionId}`);
+```
+
+- **What the person sees.** The chat's title is yours, and its first line says "Started by the Flow extension: 12 new ideas were waiting to be sorted". The prompt is folded under "What it was asked ▸", so write the title and reason for the person and the prompt for the agent.
+- **Where it can run.** A folder inside a project that holds a copy of your extension, one your server half reported (`ctx.projects.report`), or one the person works in. Anything else is refused with `not_a_project`.
+- **Limits.** At most 10 starts in a rolling hour and 3 of your chats working at once, counted together across `api.startWork` and `ctx.sessions.start`, and including chats your chats start with `session_start`. Over either one is `start_limit`. The hourly count survives a restart.
+- **Accounts.** A start picks an account the same way any new chat does. When no account may work in the project it is refused with `account_not_allowed_here`; until account rules exist, this cannot happen, but handle it now.
+- **A refusal throws `StartWorkError`** with `code` and a plain `message` you can show as it is. Nothing was started. Match on `err.code` rather than `instanceof`: your bundle carries its own copy of the class. It sits behind the person bar with the residual the bar documents, so the chat is always recorded as started by your extension, click or not.
+
 ### Feature detection
 
 Hosts gain seams over time, and one build of your extension should run on hosts from before and after each one. **Probe for a seam; never compare host versions:**
@@ -233,7 +254,7 @@ if (typeof api.setTabMarker === 'function') api.setTabMarker('flow-tab', 'attent
 const project = 'currentProject' in api.getState() ? api.getState().currentProject : null;
 ```
 
-On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`.
+On the server half, probe `ctx.projects !== undefined` the same way. The inbox seams probe the same way: `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`, and `ctx.inbox !== undefined`. Starting work probes with `typeof api.startWork === 'function'` and `ctx.sessions !== undefined`.
 
 ### Events
 
@@ -852,9 +873,31 @@ An agent that names itself is refused with "Only a person can change Flow's sett
 
 The read side of `api.projectSettings`: `get(projectRoot)` and `onChange(listener)`, called with the project root when a person changes it. There is no setter here on purpose.
 
+#### `ctx.sessions`
+
+Start work in a new chat when your own rules decide it, with no person needed (a "Just do it" setting, say):
+
+```typescript
+if (ctx.sessions !== undefined) {
+  const { sessionId } = await ctx.sessions.start({
+    project: '/Users/kai/dev/dorkos',
+    prompt: 'Sort the new ideas in the tracker.',
+    title: 'Sorting 12 new ideas in dorkos',
+    reason: '12 new ideas were waiting to be sorted',
+  });
+  // Point an inbox row at it: "Sorting 12 ideas… · Watch"
+  await ctx.inbox.resolve('ideas:dorkos', {
+    outcome: 'answered',
+    watch: { sessionId, label: 'Sorting 12 ideas…' },
+  });
+}
+```
+
+The input, the limits, the refusals and the first line are exactly `api.startWork`'s, with one difference: the project must hold a copy of your extension or be one you reported. A `watch` on an inbox row may point only at a chat you started, or one your chats started; any other is dropped.
+
 #### Feature detection
 
-Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `typeof api.answerDecision === 'function'`, `'requireLogin' in api.getState()`.
+Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `ctx.sessions !== undefined`, `typeof api.answerDecision === 'function'`, `typeof api.startWork === 'function'`, `'requireLogin' in api.getState()`.
 
 ### Route Conventions
 

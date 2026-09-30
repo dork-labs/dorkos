@@ -35,7 +35,6 @@ import {
 } from '../imports/upload.js';
 import {
   IMPORT_UPLOAD_LEASE_MS,
-  IMPORT_UPLOAD_WINDOW_MS,
   MAX_IMPORT_ARCHIVE_BYTES,
   importCreator,
   loadImport,
@@ -43,6 +42,7 @@ import {
   type ImportRow,
 } from '../imports/store.js';
 import { HOST_API_KEY_PATTERN, bearerCredential, hashSecret, randomToken } from '../security.js';
+import { registerImportPartRoutes } from '../imports/part-routes.js';
 import {
   discardManagedBlob,
   managedBlobWriteSignal,
@@ -84,12 +84,12 @@ function parseImportId(value: string | undefined): string {
 }
 
 /** The declared size and digest of an upload, checked before a byte of the body is read. */
-function uploadHeaders(c: Context): { bytes: number; sha256: string } {
+function uploadHeaders(c: Context, maxBytes: number): { bytes: number; sha256: string } {
   const length = c.req.header('content-length');
   if (!length || !/^[1-9][0-9]{0,15}$/.test(length))
     throw archiveInvalid('Send the export with its Content-Length.');
   const bytes = Number(length);
-  if (bytes > MAX_IMPORT_ARCHIVE_BYTES)
+  if (bytes > maxBytes)
     throw new ApiError(413, 'IMPORT_TOO_LARGE', 'This export is larger than an import accepts.');
   const sha256 = c.req.header('x-archive-sha256');
   if (!sha256 || !/^[a-f0-9]{64}$/.test(sha256))
@@ -98,22 +98,60 @@ function uploadHeaders(c: Context): { bytes: number; sha256: string } {
 }
 
 /** Who may upload: the import's upload token, or host authority with `communities:import`. */
-type Uploader = { kind: 'token'; tokenHash: string } | { kind: 'host'; actor: HostActor };
+export type Uploader = { kind: 'token'; tokenHash: string } | { kind: 'host'; actor: HostActor };
 
 /**
  * Answer an upload that arrives after the export was already received: the same bytes again
  * are a success (a retry whose first answer was lost), different bytes a conflict.
  */
-function repeatedUpload(row: ImportRow, sha256: string) {
+export function repeatedUpload(row: ImportRow, sha256: string, maxArchiveBytes: number) {
   if (row.archive_sha256 === null)
     throw new ApiError(409, 'STATE_CONFLICT', 'This import is no longer accepting an export.');
   if (row.archive_sha256 !== sha256)
     throw new ApiError(409, 'IDEMPOTENCY_CONFLICT', 'A different export was already uploaded.');
-  return projectImport(row);
+  return projectImport(row, maxArchiveBytes);
 }
 
 /**
- * Register the host's import routes: create, read, upload, commit, and cancel.
+ * Admit an upload request before any of its body is read: the upload token (only for its own
+ * import, and only in its window; a wrong one counts against the caller) or host authority with
+ * `communities:import`. Returns who is uploading and the import as it stands.
+ */
+export async function admitUploader(
+  c: Context,
+  importId: string,
+  deps: {
+    pool: Pool;
+    authority: HostAuthority;
+    now: () => Date;
+    limitTokenMiss: (c: Context) => void;
+  }
+): Promise<{ uploader: Uploader; row: ImportRow }> {
+  const authorization = c.req.header('authorization');
+  const bearer = bearerCredential(authorization);
+  // A bearer that is not a host API key is the import's upload token; anything else goes
+  // through host authority, which accepts a key or a host operator's session.
+  const uploader: Uploader =
+    authorization !== undefined && bearer !== null && !HOST_API_KEY_PATTERN.test(bearer)
+      ? { kind: 'token', tokenHash: hashSecret(bearer) }
+      : { kind: 'host', actor: await deps.authority.require(c, 'communities:import') };
+  const row = await loadImport(deps.pool, importId);
+  if (!row || (uploader.kind === 'token' && row.upload_token_hash !== uploader.tokenHash)) {
+    if (uploader.kind === 'token') {
+      deps.limitTokenMiss(c);
+      throw new ApiError(401, 'UNAUTHENTICATED', 'This upload link is not valid.');
+    }
+    throw new ApiError(404, 'NOT_FOUND', 'Import not found.');
+  }
+  // The token lives only as long as its window, even for a repeat of a finished upload.
+  if (uploader.kind === 'token' && row.upload_expires_at <= deps.now())
+    throw new ApiError(401, 'UNAUTHENTICATED', 'The upload window for this import has closed.');
+  return { uploader, row };
+}
+
+/**
+ * Register the host's import routes: create, read, upload (whole or in parts), commit, and
+ * cancel.
  *
  * An import writes an owner export's content into a brand-new, unclaimed community the host
  * cannot read back through any host route. No route here returns content: a read carries
@@ -131,15 +169,37 @@ export function registerImportRoutes(
     limitTokenMiss: (c: Context) => void;
     /** Uploads this replica receives at once. */
     uploadSlots: UploadSlots;
+    /** Part uploads this replica receives at once. */
+    partSlots: UploadSlots;
     /** How long an upload may go without a byte. Tests shorten it. */
     uploadIdleMs: number;
     /** Free bytes in the temporary folder. Tests replace it. */
     freeTempBytes?: () => Promise<number>;
+    /** Test seams for the part routes. */
+    partHooks?: { beforeCompleteHash?: (importId: string) => Promise<void> };
   }
 ): void {
-  const { pool, blobStore, authority, now, limitTokenMiss, uploadSlots, uploadIdleMs } = deps;
+  const { pool, blobStore, authority, now, uploadSlots, uploadIdleMs } = deps;
   const freeTempBytes = deps.freeTempBytes;
   const { config } = deps;
+  // The single upload stays at most 1 GiB; larger exports come in parts.
+  const singleMaxBytes = Math.min(MAX_IMPORT_ARCHIVE_BYTES, config.imports.maxBytes);
+  const project = (row: ImportRow) => projectImport(row, singleMaxBytes);
+
+  registerImportPartRoutes(app, {
+    pool,
+    config,
+    blobStore,
+    now,
+    admit: (c, importId) => admitUploader(c, importId, deps),
+    parseImportId,
+    partSlots: deps.partSlots,
+    uploadSlots,
+    uploadIdleMs,
+    freeTempBytes,
+    singleMaxBytes,
+    hooks: deps.partHooks,
+  });
   const holds: ShortNameHolds = {
     key: shortNameHoldKey(config.authSecret),
     cooloffDays: config.limits.shortNameCooloffDays,
@@ -186,17 +246,21 @@ export function registerImportRoutes(
       const created = await client.query<ImportRow>(
         `INSERT INTO community_imports(
            community_id,idempotency_key,payload_hash,auto_commit,upload_token_hash,
-           upload_expires_at,created_by_user_id,created_by_api_key_id
-         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+           upload_expires_at,created_by_user_id,created_by_api_key_id,description_given,
+           admission_policy_given
+         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
         [
           communityId,
           body.idempotencyKey,
           hash,
           body.autoCommit ?? false,
           hashSecret(token),
-          new Date(now().getTime() + IMPORT_UPLOAD_WINDOW_MS),
+          new Date(now().getTime() + config.imports.uploadHours * 60 * 60_000),
           actor.kind === 'person' ? actor.userId : null,
           actor.kind === 'api_key' ? actor.keyId : null,
+          // A version 2 export fills in only what the host left out.
+          body.description !== undefined && body.description !== null,
+          body.admissionPolicy !== undefined,
         ]
       );
       await recordHostAudit(client, actor, {
@@ -218,7 +282,7 @@ export function registerImportRoutes(
       c,
       CommunityAdminImportCreateResponseSchema,
       {
-        import: projectImport(result.row),
+        import: project(result.row),
         uploadToken: result.replayed ? null : token,
         replayed: result.replayed,
       },
@@ -230,7 +294,7 @@ export function registerImportRoutes(
     await authority.require(c, 'communities:read');
     const row = await loadImport(pool, parseImportId(c.req.param('id')));
     if (!row) throw new ApiError(404, 'NOT_FOUND', 'Import not found.');
-    return json(c, CommunityAdminImportSchema, projectImport(row));
+    return json(c, CommunityAdminImportSchema, project(row));
   });
 
   app.post('/host/imports/:id/cancel', async (c) => {
@@ -274,7 +338,7 @@ export function registerImportRoutes(
       });
       return cancelled.rows[0];
     });
-    return json(c, CommunityAdminImportSchema, projectImport(row));
+    return json(c, CommunityAdminImportSchema, project(row));
   });
 
   app.post('/host/imports/:id/commit', async (c) => {
@@ -301,37 +365,19 @@ export function registerImportRoutes(
       });
       return committed.rows[0];
     });
-    return json(c, CommunityAdminImportSchema, projectImport(row));
+    return json(c, CommunityAdminImportSchema, project(row));
   });
 
   app.put('/imports/:id/archive', async (c) => {
     const importId = parseImportId(c.req.param('id'));
-    const authorization = c.req.header('authorization');
-    const bearer = bearerCredential(authorization);
-    // A bearer that is not a host API key is the import's upload token; anything else goes
-    // through host authority, which accepts a key or a host operator's session.
-    const uploader: Uploader =
-      authorization !== undefined && bearer !== null && !HOST_API_KEY_PATTERN.test(bearer)
-        ? { kind: 'token', tokenHash: hashSecret(bearer) }
-        : { kind: 'host', actor: await authority.require(c, 'communities:import') };
-    const declared = uploadHeaders(c);
-
-    const admitted = await loadImport(pool, importId);
-    if (
-      !admitted ||
-      (uploader.kind === 'token' && admitted.upload_token_hash !== uploader.tokenHash)
-    ) {
-      if (uploader.kind === 'token') {
-        limitTokenMiss(c);
-        throw new ApiError(401, 'UNAUTHENTICATED', 'This upload link is not valid.');
-      }
-      throw new ApiError(404, 'NOT_FOUND', 'Import not found.');
-    }
-    // The token lives only as long as its window, even for a repeat of a finished upload.
-    if (uploader.kind === 'token' && admitted.upload_expires_at <= now())
-      throw new ApiError(401, 'UNAUTHENTICATED', 'The upload window for this import has closed.');
+    const { uploader, row: admitted } = await admitUploader(c, importId, deps);
+    const declared = uploadHeaders(c, singleMaxBytes);
     if (admitted.state !== 'awaiting_upload')
-      return json(c, CommunityAdminImportSchema, repeatedUpload(admitted, declared.sha256));
+      return json(
+        c,
+        CommunityAdminImportSchema,
+        repeatedUpload(admitted, declared.sha256, singleMaxBytes)
+      );
     if (admitted.upload_expires_at <= now())
       throw new ApiError(401, 'UNAUTHENTICATED', 'The upload window for this import has closed.');
     if (!c.req.raw.body) throw archiveInvalid('Send the export as the request body.');
@@ -423,7 +469,8 @@ export function registerImportRoutes(
       const updated = await client.query<ImportRow>(
         `UPDATE community_imports
          SET state='validating',staging_blob_key=$2,archive_sha256=$3,archive_bytes=$4,
-           archive_received_at=now(),attempts=0,next_attempt_at=now(),updated_at=now()
+           archive_received_at=now(),upload_kind='single',attempts=0,next_attempt_at=now(),
+           updated_at=now()
          WHERE id=$1 RETURNING *`,
         [importId, stored.key, stored.sha256, stored.byteSize]
       );
@@ -444,8 +491,12 @@ export function registerImportRoutes(
     if ('repeat' in outcome && outcome.repeat) {
       // A host upload that raced another one; this copy is not needed either way.
       await discardManagedBlob(pool, blobStore, reservation, stored).catch(() => undefined);
-      return json(c, CommunityAdminImportSchema, repeatedUpload(outcome.repeat, declared.sha256));
+      return json(
+        c,
+        CommunityAdminImportSchema,
+        repeatedUpload(outcome.repeat, declared.sha256, singleMaxBytes)
+      );
     }
-    return json(c, CommunityAdminImportSchema, projectImport(outcome.row!));
+    return json(c, CommunityAdminImportSchema, project(outcome.row!));
   }
 }

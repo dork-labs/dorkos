@@ -67,6 +67,14 @@ Exports are prepared in the background. These settings shape that work; the [ope
 | `COMMUNITY_EXPORT_MAX_HOURS`     | 24 hours |        1 to 168 |
 | `COMMUNITY_EXPORT_CONCURRENCY`   |        1 |          1 to 8 |
 
+Imports take an export from another server. These settings bound them; the [operations guide](OPERATIONS.md#imports) explains the disk they need.
+
+| Setting                             |  Default |          Range |
+| ----------------------------------- | -------: | -------------: |
+| `COMMUNITY_IMPORT_MAX_BYTES`        |    1 GiB | 1 MiB to 1 TiB |
+| `COMMUNITY_IMPORT_UPLOAD_HOURS`     | 24 hours |       1 to 168 |
+| `COMMUNITY_IMPORT_PART_CONCURRENCY` |        8 |        1 to 64 |
+
 ## Optional Google and GitHub sign-in
 
 Password sign-in is always available. To offer Google sign-in, set both `COMMUNITY_GOOGLE_CLIENT_ID` and `COMMUNITY_GOOGLE_CLIENT_SECRET`. To offer GitHub sign-in, set both `COMMUNITY_GITHUB_CLIENT_ID` and `COMMUNITY_GITHUB_CLIENT_SECRET`. The service refuses to start if either pair is incomplete.
@@ -114,6 +122,25 @@ Email and password sign-in always stays on. Someone who joined through single si
 
 To turn single sign-on off, unset the variables. Accounts made through it stay, and can sign in with a password if they added one.
 
+## Optional mail
+
+The Community sends no email unless you set this up. Mail lets it reach a person who no longer opens the community. Set both of these, or neither:
+
+| Setting               | Must be                                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `COMMUNITY_SMTP_URL`  | Your mail server: `smtps://user:password@mail.example.com:465` (encrypted from the start) or `smtp://user:password@mail.example.com:587?starttls=required` (upgraded before sending) |
+| `COMMUNITY_MAIL_FROM` | One sender, such as `notices@example.com` or `Example Community <notices@example.com>`                                                                                               |
+
+The user name and password are optional, and characters such as `@` or `/` in them must be percent-encoded (`%40`, `%2F`). Without a port, `smtps://` uses 465, `smtp://` with `starttls=required` uses 587, and a plain local `smtp://` uses 25. A plain `smtp://` address with no encryption is accepted only for a mail relay on the same machine (`127.0.0.1`, `[::1]`, or `localhost`, which is read as `127.0.0.1`). Such a relay is used as it is, even if it offers STARTTLS. The service refuses to start if only one setting is set, if mail to another machine would travel unencrypted, or if the sender is not exactly one address. Keep `COMMUNITY_SMTP_URL` in your secret store: it holds the password. Before turning mail on, read [mail in the operations guide](OPERATIONS.md#mail), which explains the sender-domain checks that keep notices out of spam folders.
+
+These settings are for replacing the owner of a community whose owner has left, which needs mail: how long the owner has to answer, and how long before a host can ask again. The service checks them at startup. Most hosts can keep the defaults.
+
+| Setting                                               | Default |     Range | What it does                                                                                       |
+| ----------------------------------------------------- | ------: | --------: | -------------------------------------------------------------------------------------------------- |
+| `COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS`             | 14 days |   7 to 90 | How long the owner has to answer, counted from when their mail server accepted the notice          |
+| `COMMUNITY_OWNER_REPLACEMENT_UNREACHABLE_DAYS`        | 30 days | 14 to 180 | The longer wait when the notice may not have reached the owner. Never shorter than the notice days |
+| `COMMUNITY_OWNER_REPLACEMENT_OBJECTION_COOLDOWN_DAYS` | 90 days | 30 to 365 | After an owner says no, how long before the host can ask again                                     |
+
 ## Optional terms, privacy, and report links
 
 If other people sign up on your Community, you can link your own terms, privacy notice, and a way to report abuse. Each link is optional. Leave one unset and nothing shows for it.
@@ -124,7 +151,21 @@ If other people sign up on your Community, you can link your own terms, privacy 
 | `COMMUNITY_PRIVACY_URL`      | An `https://` page                        | Under the sign-in form, and in Settings, Account |
 | `COMMUNITY_REPORT_ABUSE_URL` | An `https://` page or a `mailto:` address | On each message, and in Settings, Account        |
 
-A report from a message opens your page with `?community=<id>&entry=<id>` added, so you can find what was reported. A report from Settings adds only the community. For a `mailto:` address the same IDs go in the email body. The message text, the author's name, and the reporter's name are never added. The service checks each link before it starts and refuses a plain `http://` one. It never contacts your pages itself.
+A report from a message opens your page with `?community=<id>&entry=<id>` added, so you can find what was reported. A report from one file adds `&attachment=<id>` too, so you can take down just that file. A report from Settings adds only the community. For a `mailto:` address the same IDs go in the email body. The message text, the author's name, and the reporter's name are never added. The service checks each link before it starts and refuses a plain `http://` one. It never contacts your pages itself.
+
+## Optional minimum age
+
+You can ask everyone who creates an account to confirm they are old enough. Set `COMMUNITY_MINIMUM_AGE` to a whole number from 13 to 21. Leave it unset and nobody is asked. The service refuses to start with any other value.
+
+When it is set, every sign-up form shows "You must be at least N to join" and a box that says "I am at least N years old." No account is created until the box is ticked. The service checks this itself, not only the page:
+
+- **Email and password.** The box must be ticked before the form sends. A sign-up that arrives without it is refused.
+- **Google, GitHub, and single sign-on.** Those buttons stay off on a sign-up form until the box is ticked. If someone uses one to sign up without ticking it (for example, from the sign-in side of the form), no account is created. They come back to the page with a note asking them to tick the box and try again.
+- **The first owner, and a claimed community.** The first owner's setup and an owner claim link ask the same question.
+
+The page sends the confirmation when the person submits the form or chooses Google, GitHub, or single sign-on, not when they tick the box. It lasts 30 minutes in that browser, long enough to finish signing up through one of those, and it is used up once the account is made, so the next person to sign up in the same browser is asked again. Raising the age asks again, even of someone who confirmed a lower one. People who already have an account are never asked when they sign in, and turning the setting on or off changes nothing for them.
+
+This is a person's own word, not a check of their age. Invitations and owner claims work exactly as before.
 
 ## Optional Render deployment
 

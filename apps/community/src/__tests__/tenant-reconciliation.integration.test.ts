@@ -15,6 +15,7 @@ import {
   reserveManagedBlob,
   type BlobStore,
 } from '../storage/index.js';
+import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for reconciliation tests');
@@ -215,6 +216,40 @@ it('converts legacy pending cleanup into tenant-owned inventory without deleting
     state: 'pending_delete',
     queued: true,
   });
+});
+
+// Purpose (DOR-2333): bytes a takedown holds for its evidence copy are named by no content row
+// and may even have a stale cleanup row left from before the hold. Reconciliation must leave
+// them held, so the sweep never deletes them. Fails if reconciliation marks a held blob
+// `pending_delete`.
+it('never marks bytes held for a takedown for cleanup', async () => {
+  if (!pool) throw new Error('test database is unavailable');
+  const { community } = await seedCommunity();
+  const held = await store.put({
+    source: Readable.from([Buffer.from('held evidence bytes')]),
+    displayName: 'held.txt',
+    maxBytes: 100,
+  });
+  await pool.query(
+    `INSERT INTO managed_blobs(
+       blob_key,community_id,purpose,community_lifecycle_version,state,
+       byte_size,checksum,stored_at,committed_at
+     ) VALUES($1,$2,'attachment',1,'evidence_hold',$3,$4,now(),now())`,
+    [held.key, community, held.byteSize, held.sha256]
+  );
+  await pool.query('INSERT INTO pending_blob_deletions(blob_key) VALUES($1)', [held.key]);
+
+  const result = await reconcileTenantNamespace(pool, store);
+
+  expect(result).toMatchObject({ ready: true, counts: { unexplained: 0 } });
+  expect(
+    (await pool.query('SELECT state FROM managed_blobs WHERE blob_key=$1', [held.key])).rows[0]
+  ).toEqual({ state: 'evidence_hold' });
+  await sweepPendingBlobDeletions(pool, store);
+  await expectStored(held.key, held.byteSize);
+  expect(
+    (await pool.query('SELECT state FROM managed_blobs WHERE blob_key=$1', [held.key])).rows[0]
+  ).toEqual({ state: 'evidence_hold' });
 });
 
 it('leaves a valid-looking but unproven singleton object untouched for manual resolution', async () => {

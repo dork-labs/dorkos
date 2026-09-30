@@ -1,16 +1,12 @@
 import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { z } from 'zod';
+import type { CommunityAdminHostApiKeyScopeSchema } from '@dorkos/shared/community-admin-wire';
 import { describeError, request } from '../api.js';
 import { describeReauthenticationError } from '../account-controls.js';
 import { FocusDialog } from './CommunityAdministration.js';
 
-type Scope =
-  | 'communities:read'
-  | 'communities:write'
-  | 'communities:lifecycle'
-  | 'communities:import'
-  | 'communities:legal_hold'
-  | 'communities:takedown';
+type Scope = z.infer<typeof CommunityAdminHostApiKeyScopeSchema>;
 type HostApiKey = {
   id: string;
   label: string;
@@ -55,6 +51,12 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
     label: 'Take down content',
     detail:
       'Remove one message, file, or icon by its id, for example after a legal report. It never sees what it removes.',
+  },
+  {
+    scope: 'communities:ownership',
+    label: 'Replace owners',
+    detail:
+      'Ask to make someone else a community’s owner when its owner has left, see those requests, cancel them, and send the claim link again. The owner is always told and can say no.',
   },
 ];
 

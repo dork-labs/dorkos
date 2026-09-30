@@ -11,6 +11,7 @@ import {
   PinnedOriginError,
 } from '../../services/communities/remote/pinned-origin.js';
 import { communityRefusal } from '../remote-community-refusal.js';
+import { CommunityDeletedError } from '../../services/communities/remote/remote-community-adapter.js';
 
 const community = 'remote_a' as CommunityRef;
 
@@ -22,6 +23,10 @@ describe('communityRefusal', () => {
     [new PinnedHttpError(404, 'NOT_FOUND'), 404, 'COMMUNITY_NOT_FOUND'],
     [new PinnedHttpError(409, 'STATE_CONFLICT'), 409, 'COMMUNITY_CONFLICT'],
     [new PinnedHttpError(410, 'CURSOR_STALE'), 410, 'COMMUNITY_CURSOR_STALE'],
+    [new PinnedHttpError(410), 410, 'COMMUNITY_CURSOR_STALE'],
+    // DOR-2334: a deleted community is neither a stale cursor nor a missing room.
+    [new PinnedHttpError(410, 'COMMUNITY_DELETED'), 410, 'COMMUNITY_DELETED'],
+    [new CommunityDeletedError(community, 'room-a'), 410, 'COMMUNITY_DELETED'],
     [new PinnedHttpError(413, 'ATTACHMENT_TOO_LARGE'), 413, 'COMMUNITY_TOO_LARGE'],
     [new PinnedHttpError(415, 'UNSUPPORTED_ATTACHMENT_TYPE'), 415, 'COMMUNITY_UNSUPPORTED_FILE'],
     [new PinnedHttpError(423, 'COMMUNITY_ARCHIVED'), 423, 'COMMUNITY_READ_ONLY'],

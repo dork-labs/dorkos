@@ -8,6 +8,7 @@ import {
   type CommunityExportManifestV1,
 } from '@dorkos/shared/community-wire';
 import type { ZodType } from 'zod';
+import { ZipReaderError } from '../archive/zip-reader.js';
 import { sanitizeDisplayName } from '../storage/blob-store.js';
 import type { ImportFailureCode } from './store.js';
 
@@ -83,6 +84,19 @@ export class ImportFailure extends Error {
   }
 }
 
+/**
+ * Turn a zip reader refusal into the import's redacted failure code. Any other error (a
+ * storage read that failed, or an {@link ImportFailure} already) passes through, for the worker
+ * to retry or report.
+ */
+export function asImportFailure(error: unknown): unknown {
+  if (!(error instanceof ZipReaderError)) return error;
+  if (error.code === 'ZIP_TOO_MANY_ENTRIES' || error.code === 'ZIP_TOO_LARGE')
+    return new ImportFailure('IMPORT_TOO_LARGE');
+  if (error.code === 'ZIP_CRC_MISMATCH') return new ImportFailure('IMPORT_CHECKSUM_MISMATCH');
+  return new ImportFailure('IMPORT_ARCHIVE_INVALID');
+}
+
 /** The counts a checked manifest reports; sizes are added from the archive. */
 export interface ManifestCounts {
   channels: number;
@@ -97,14 +111,13 @@ export interface ManifestCounts {
 }
 
 /**
- * Parse `manifest.json` bytes. The version and scope are read before the strict schema, so an
- * export from a later version, or a person's own export, is named as such rather than as a
- * damaged file.
+ * Parse `manifest.json` bytes as a JSON object: strict UTF-8, and no NUL character anywhere
+ * (Postgres text cannot hold one, so one makes the export unusable). Anything else fails as
+ * `IMPORT_ARCHIVE_INVALID`.
  */
-export function parseManifest(bytes: Buffer): CommunityExportManifestV1 {
+export function parseManifestJson(bytes: Buffer): Record<string, unknown> {
   let raw: unknown;
   try {
-    // Postgres text cannot hold a NUL character, so one anywhere makes the export unusable.
     raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes), (_key, value) => {
       if (typeof value === 'string' && value.includes('\u0000')) throw new Error('NUL');
       return value as unknown;
@@ -114,13 +127,26 @@ export function parseManifest(bytes: Buffer): CommunityExportManifestV1 {
   }
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
     throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
+  return raw as Record<string, unknown>;
+}
+
+/**
+ * Parse `manifest.json` bytes. The version and scope are read before the strict schema, so an
+ * export from a later version, or a person's own export, is named as such rather than as a
+ * damaged file.
+ */
+export function parseManifest(bytes: Buffer): CommunityExportManifestV1 {
+  const raw = parseManifestJson(bytes);
   const { version, scope } = raw as { version?: unknown; scope?: unknown };
   if (version !== 1) {
     throw new ImportFailure(
       Number.isInteger(version) ? 'IMPORT_VERSION_UNSUPPORTED' : 'IMPORT_ARCHIVE_INVALID'
     );
   }
-  if (scope === 'personal') throw new ImportFailure('IMPORT_NOT_OWNER_EXPORT');
+  // Any scope but owner (a personal export, a takedown's evidence archive, or one a later
+  // version adds) is refused by name, before the schema, whatever scopes the schema knows.
+  if (typeof scope === 'string' && scope !== 'owner')
+    throw new ImportFailure('IMPORT_NOT_OWNER_EXPORT');
   const parsed = CommunityExportManifestV1Schema.safeParse(raw);
   if (!parsed.success) throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
   return parsed.data;

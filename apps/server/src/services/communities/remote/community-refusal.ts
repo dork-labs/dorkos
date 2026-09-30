@@ -21,6 +21,7 @@ import {
   StaleCommunityCursorError,
 } from '@dorkos/shared/community-adapter';
 import { PinnedHttpError } from './pinned-origin.js';
+import { CommunityDeletedError } from './remote-community-adapter.js';
 
 /** A local answer for one refused Community request. */
 export interface CommunityRefusal {
@@ -47,6 +48,12 @@ const STALE: CommunityRefusal = {
   error: 'This channel changed since it was loaded. Refresh to catch up.',
 };
 
+const DELETED: CommunityRefusal = {
+  status: 410,
+  code: 'COMMUNITY_DELETED',
+  error: 'This community was deleted.',
+};
+
 const REJECTED = 'The community didn’t accept that request.';
 
 /** The caps a Community sets, as `409` codes, in the app's own words. */
@@ -70,6 +77,13 @@ export function communityRefusal(
   error: unknown,
   action?: CommunityRefusalAction
 ): CommunityRefusal | null {
+  // Before "not found" and before any 410: the whole community is gone, which is neither a
+  // missing room nor a stale cursor (DOR-2334).
+  if (
+    error instanceof CommunityDeletedError ||
+    (error instanceof PinnedHttpError && error.remoteCode === 'COMMUNITY_DELETED')
+  )
+    return DELETED;
   if (error instanceof CommunityRoomNotFoundError) return NOT_FOUND;
   if (error instanceof StaleCommunityCursorError) return STALE;
   if (error instanceof CommunityUnsupportedError)

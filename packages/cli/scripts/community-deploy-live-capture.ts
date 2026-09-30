@@ -25,7 +25,7 @@ export class CommunityLiveGateError extends Error {
   constructor(
     readonly step: string,
     readonly recoveryCommand: string | null = null,
-    detail?: string
+    readonly detail?: string
   ) {
     super(`Community live gate failed (${step})${detail ? `: ${detail}` : ''}`);
     this.name = 'CommunityLiveGateError';

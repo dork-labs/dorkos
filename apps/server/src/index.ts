@@ -573,6 +573,16 @@ import {
 } from './services/extensions/inbox/extension-inbox.js';
 import { createExtensionDecisionsRouter } from './routes/extension-decisions.js';
 import {
+  StartWorkService,
+  getStartWorkService,
+  setStartWorkService,
+} from './services/extensions/start-work.js';
+import {
+  SessionStartedByStore,
+  getSessionStartedByStore,
+  setSessionStartedByStore,
+} from './services/session/origin/session-started-by-store.js';
+import {
   MessageQueueStore,
   SessionEventStore,
   StagedContextStore,
@@ -1119,7 +1129,19 @@ async function start() {
   // `flow-multiproject` §7). Before extensions start, so an extension that
   // raises from its `register()` finds it, and so starting one can show its
   // open decisions again and fire a deadline that passed while it was down.
-  setExtensionInbox(new ExtensionInboxService({ db, projects: projectRegistry, dorkHome }));
+  //
+  // A `watch` on a decision may point only at a chat this extension started,
+  // or one started from its chats (§7.3), which the start-work seam wired
+  // below answers.
+  setExtensionInbox(
+    new ExtensionInboxService({
+      db,
+      projects: projectRegistry,
+      dorkHome,
+      watchAllowed: (extensionId, sessionId) =>
+        getStartWorkService()?.startedBy(extensionId, sessionId) ?? false,
+    })
+  );
   getExtensionInbox()?.prune();
 
   // A session's usage limit, kept so a restart or an idle eviction does not
@@ -1201,6 +1223,21 @@ async function start() {
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
+
+  // Who started a chat that no person typed into, and the seam that starts
+  // one for an extension (`api.startWork`, `ctx.sessions.start`, spec
+  // `flow-multiproject` §7.7). Before extensions start, so a `register()` that
+  // starts work finds it; the name lookup reads the manager at call time.
+  const sessionStartedByStore = new SessionStartedByStore(db);
+  setSessionStartedByStore(sessionStartedByStore);
+  setStartWorkService(
+    new StartWorkService({
+      store: sessionStartedByStore,
+      projects: projectRegistry,
+      extensionName: (id) => extensionManager?.get(id)?.manifest.name ?? id,
+      activity: activityService,
+    })
+  );
   // Sharing with every agent that ends as a side effect (a disconnect, a move
   // to a DorkOS account) is recorded too, so every change to it leaves a
   // trace. Set here, before any provider registers, so boot-time changes count.
@@ -4318,6 +4355,13 @@ async function start() {
   }
   app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
     roomStore.resolveRoomOrigins(sessionIds);
+  // Who started a chat (spec `flow-multiproject` §7.7): the third overlay, a
+  // batched read of `session_started_by`, and the extension names its first
+  // line says.
+  app.locals.resolveStartedBy = (sessionIds: string[]) =>
+    getSessionStartedByStore()?.getMany(sessionIds) ?? new Map();
+  app.locals.extensionNameOf = (extensionId: string) =>
+    extensionManager?.get(extensionId)?.manifest.name ?? extensionId;
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
   // Live session upserts carry the flow items a chat works on, exactly as
   // `GET /api/sessions` does, so the first upsert after a list read no longer

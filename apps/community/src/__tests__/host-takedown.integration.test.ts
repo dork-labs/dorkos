@@ -10,8 +10,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   CommunityAdminTakedownListSchema,
   CommunityAdminTakedownResponseSchema,
@@ -24,7 +25,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import { ERASED_ENTRY_TEXT, REMOVED_ENTRY_TEXT } from '../content/tombstones.js';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
-import { eraseMembership } from '../erasure/erasure.js';
+import { eraseAccount, eraseMembership, ErasureError } from '../erasure/erasure.js';
 import {
   FileSystemEvidenceSink,
   S3EvidenceSink,
@@ -60,7 +61,8 @@ import {
   upload,
 } from './member-erasure-fixture.js';
 import { communityDigest, makeScene, requestErasure, type Scene } from './member-erasure-scenes.js';
-import { drainExports, openArchive } from './export-test-helpers.js';
+import { EXPORT_SETTINGS, drainExports, openArchive } from './export-test-helpers.js';
+import { runNextExport } from '../exports/worker.js';
 
 const DAY = 24 * 60 * 60_000;
 const EVIDENCE_ROOT = fileURLToPath(new URL('../../.test-evidence/', import.meta.url));
@@ -719,6 +721,7 @@ describe('an item takedown with an evidence store', () => {
           byteSize: Buffer.byteLength(c.bytes),
           path: `files/${c.attachmentId}`,
           sha256: c.checksum,
+          removedBeforeTakedown: false,
         },
       ],
       icon: null,
@@ -851,8 +854,9 @@ describe('an item takedown with an evidence store', () => {
     const notices = async (cookie: string) =>
       CommunityWireTakedownNoticeListResponseSchema.parse(
         await body(await h.call(`${s.base}/takedowns`, { cookie }), 200, 'notices')
-      ).takedowns.map((notice) => notice.id);
-    expect(await notices(s.p.cookie)).toEqual([t.id]);
+      ).takedowns.map((notice) => ({ id: notice.id, yours: notice.yours }));
+    // The agent's owner is its author for the notice: the banner's `yours` is true for them.
+    expect(await notices(s.p.cookie)).toEqual([{ id: t.id, yours: true }]);
     expect(await notices(s.q.cookie)).toEqual([]);
   });
 
@@ -1278,8 +1282,9 @@ describe('an item takedown with an evidence store', () => {
       reference: 'REF-11',
       createdAt: told.createdAt,
     };
-    expect(await notices(c.s.owner.cookie)).toEqual([expected]);
-    expect(await notices(c.s.p.cookie)).toEqual([expected]);
+    // The owner is told as the owner, the author as the author: only the author's is `yours`.
+    expect(await notices(c.s.owner.cookie)).toEqual([{ ...expected, yours: false }]);
+    expect(await notices(c.s.p.cookie)).toEqual([{ ...expected, yours: true }]);
     expect(await notices(c.s.q.cookie)).toEqual([]);
     // Withheld: nobody is told, but the tombstone still shows.
     expect(
@@ -1608,6 +1613,70 @@ describe('an item takedown with no evidence store', () => {
   });
 });
 
+describe('a former host operator', () => {
+  // Purpose (DOR-2333): a takedown and its release name the person who acted, and those rows
+  // outlive the community. An operator who is later removed keeps their account, so the rows
+  // keep naming them: account erasure refuses them by name before it deletes anything the audit
+  // rows point at. Fails if erasure reaches the account delete, where the kept rows would stop it
+  // with a foreign key error, or if a refusal drops the rows that name them.
+  it('keeps the audit trail naming them, and refuses their account erasure cleanly', async () => {
+    const s = await makeScene(bare, bareOperator.cookie, 'former-operator');
+    await bare.pool.query('INSERT INTO host_operators(user_id) VALUES($1)', [s.q.userId]);
+    const entry = await post(
+      bare,
+      s.communityId,
+      s.channelId,
+      { cookie: s.p.cookie },
+      { text: 'held message', idempotencyKey: 'former-operator' }
+    );
+    const t = await created(
+      await takedown(
+        bare,
+        s.communityId,
+        { cookie: s.q.cookie },
+        { target: { kind: 'entry', entryId: entry.id }, category: 'child_safety' }
+      )
+    );
+    expect(t.evidence.state).toBe('held_on_primary');
+    await body(
+      await hostCall(
+        bare,
+        `/takedowns/${t.id}/release-held`,
+        { cookie: s.q.cookie },
+        {
+          password: TENANCY_PASSWORD,
+        }
+      ),
+      200,
+      'release'
+    );
+    await bare.pool.query('UPDATE host_operators SET revoked_at=now() WHERE user_id=$1', [
+      s.q.userId,
+    ]);
+    await expect(eraseAccount(bare.pool, s.q.userId, { log: () => undefined })).rejects.toThrow(
+      new ErasureError('HOST_OPERATOR')
+    );
+    const kept = await bare.pool.query<{ actor_user_id: string; released_by_user_id: string }>(
+      'SELECT actor_user_id,released_by_user_id FROM community_takedowns WHERE id=$1',
+      [t.id]
+    );
+    expect(kept.rows[0]).toEqual({
+      actor_user_id: s.q.userId,
+      released_by_user_id: s.q.userId,
+    });
+    const audit = await bare.pool.query<{ action: string }>(
+      'SELECT action FROM host_audit_events WHERE actor_user_id=$1 ORDER BY created_at,action',
+      [s.q.userId]
+    );
+    expect(audit.rows.map((row) => row.action)).toEqual(
+      expect.arrayContaining(['takedown.create', 'takedown.release_held'])
+    );
+    expect((await bare.pool.query('SELECT 1 FROM "user" WHERE id=$1', [s.q.userId])).rowCount).toBe(
+      1
+    );
+  });
+});
+
 describe('the deletion gate', () => {
   // Purpose: fails if a community waiting on evidence blocks the deletion worker for every
   // other community, by being claimed and skipped first on every pass.
@@ -1846,7 +1915,12 @@ describe('after review', () => {
       text: REMOVED_ENTRY_TEXT.author,
     });
     expect(record.files).toEqual([
-      expect.objectContaining({ id: c.attachmentId, name: c.fileName, sha256: c.checksum }),
+      expect.objectContaining({
+        id: c.attachmentId,
+        name: c.fileName,
+        sha256: c.checksum,
+        removedBeforeTakedown: true,
+      }),
     ]);
     expect((await evidenceFile(`${folder}files/${c.attachmentId}`)).toString()).toBe(c.bytes);
     await drainCleanup(h);
@@ -1874,6 +1948,63 @@ describe('after review', () => {
       )
     );
     expect(gone.evidence.state).toBe('nothing_to_preserve');
+  });
+
+  // Purpose (DOR-2332): an author who takes one file out of a message that stays, just before a
+  // takedown of that message, must not escape the evidence copy. Fails if only a message that
+  // was itself removed has its removed files held again.
+  it('holds again a file its author took out of a message that stays', async () => {
+    const c = await canary(h, operator.cookie, 'rehold-one');
+    const key = await fileKeyOf(h, c.attachmentId);
+    await expectStatus(
+      await h.call(`${c.s.base}/attachments/${c.attachmentId}`, {
+        method: 'DELETE',
+        cookie: c.s.p.cookie,
+      }),
+      200,
+      'author removes the file'
+    );
+    const kept = await h.pool.query<{ removed_at: Date | null }>(
+      'SELECT removed_at FROM entries WHERE id=$1',
+      [c.entryId]
+    );
+    expect(kept.rows[0].removed_at).toBeNull();
+    expect((await blobState(h, key)).state).toBe('pending_delete');
+    const t = await created(
+      await takedown(
+        h,
+        c.s.communityId,
+        { bearer: keys.takedown.secret },
+        { target: { kind: 'entry', entryId: c.entryId } }
+      )
+    );
+    expect(t.evidence.state).toBe('pending');
+    expect((await blobState(h, key)).state).toBe('evidence_hold');
+    for (const table of ['pending_blob_deletions', 'removed_file_blobs'])
+      expect((await h.pool.query(`SELECT 1 FROM ${table} WHERE blob_key=$1`, [key])).rowCount).toBe(
+        0
+      );
+    await drainCleanup(h);
+    expect((await readdir(storageDirectory(h))).includes(key)).toBe(true);
+    await onlyDue(h, t.id);
+    expect(await copyEvidence(h)).toEqual({ claimed: true, stored: true });
+    const folder = `takedowns/${t.id}/attempt-1/`;
+    const record = CommunityEvidenceRecordV1Schema.parse(
+      JSON.parse((await evidenceFile(`${folder}record.json`)).toString())
+    );
+    // The message still stands, but the file was no longer part of it when it was taken down.
+    expect(record.entry).toMatchObject({ contentAlreadyRemoved: false, text: c.text });
+    expect(record.files).toEqual([
+      expect.objectContaining({
+        id: c.attachmentId,
+        name: c.fileName,
+        sha256: c.checksum,
+        removedBeforeTakedown: true,
+      }),
+    ]);
+    expect((await evidenceFile(`${folder}files/${c.attachmentId}`)).toString()).toBe(c.bytes);
+    await drainCleanup(h);
+    expect((await readdir(storageDirectory(h))).includes(key)).toBe(false);
   });
 
   // Purpose: fails if erasing a member's files and taking down one of them wait on each other in
@@ -2095,5 +2226,183 @@ describe('after review', () => {
     }
     expect(failed).toBe(true);
     expect(received).toBeLessThan(size);
+  });
+
+  /**
+   * Start an icon download that answers its first byte and then waits, run `interrupt` with the
+   * scene, the icon's settings version and PNG bytes, and read the rest. Returns how many bytes
+   * arrived and whether the download failed.
+   */
+  async function iconDownloadInterruptedBy(
+    label: string,
+    interrupt: (s: Scene, settingsVersion: number) => Promise<void>
+  ) {
+    const s = await makeScene(h, operator.cookie, label);
+    const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from(label)]);
+    const settings = await body<{ settingsVersion: number }>(
+      await h.call(`${s.base}/settings`, { cookie: s.owner.cookie }),
+      200,
+      'settings'
+    );
+    const uploaded = await body<{ settingsVersion: number }>(
+      await h.call(`${s.base}/settings/icon`, {
+        method: 'PUT',
+        cookie: s.owner.cookie,
+        headers: { 'if-match': `"${settings.settingsVersion}"` },
+        raw: png,
+      }),
+      200,
+      'icon'
+    );
+    const iconKey = (
+      await h.pool.query<{ icon_blob_key: string }>(
+        'SELECT icon_blob_key FROM communities WHERE id=$1',
+        [s.communityId]
+      )
+    ).rows[0].icon_blob_key;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = h.blobStore.get.bind(h.blobStore);
+    const spy = vi.spyOn(h.blobStore, 'get').mockImplementation(async (key, options) => {
+      const read = await original(key, options);
+      if (key !== iconKey) return read;
+      const chunks: Buffer[] = [];
+      for await (const chunk of read.body as AsyncIterable<Buffer>) chunks.push(chunk);
+      const bytes = Buffer.concat(chunks);
+      return {
+        byteSize: read.byteSize,
+        body: Readable.from(
+          (async function* () {
+            yield bytes.subarray(0, 1);
+            await held;
+            yield bytes.subarray(1);
+          })()
+        ),
+      };
+    });
+    try {
+      const response = await h.call(`${s.base}/icon`, { cookie: s.q.cookie });
+      expect(response.status).toBe(200);
+      const reader = response.body!.getReader();
+      let received = (await reader.read()).value?.length ?? 0;
+      await interrupt(s, uploaded.settingsVersion);
+      release();
+      let failed = false;
+      try {
+        for (;;) {
+          const next = await reader.read();
+          if (next.done) break;
+          received += next.value.length;
+        }
+      } catch {
+        failed = true;
+      }
+      return { received, failed };
+    } finally {
+      release();
+      spy.mockRestore();
+    }
+  }
+
+  // Purpose (DOR-2331): the icon stream stops at the next chunk once the icon is taken down, as
+  // a file does: its bytes stay in storage for the copy, so the stream alone would not end.
+  // Fails if the icon download sends the rest of the icon after the takedown.
+  it('stops an icon download in progress once the icon is taken down', async () => {
+    const outcome = await iconDownloadInterruptedBy('icon-stream', async (s) => {
+      await created(
+        await takedown(
+          h,
+          s.communityId,
+          { bearer: keys.takedown.secret },
+          {
+            target: { kind: 'icon' },
+          }
+        )
+      );
+    });
+    expect(outcome).toEqual({ received: 1, failed: true });
+  });
+
+  // Purpose (DOR-2331): replacing the icon also ends a download of the old one, so the old bytes
+  // are never sent after they stop being the community's. Fails without the per-chunk check.
+  it('stops an icon download in progress once the icon is replaced', async () => {
+    const outcome = await iconDownloadInterruptedBy('icon-replace', async (s, version) => {
+      await expectStatus(
+        await h.call(`${s.base}/settings/icon`, {
+          method: 'PUT',
+          cookie: s.owner.cookie,
+          headers: { 'if-match': `"${version}"` },
+          raw: Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('new icon')]),
+        }),
+        200,
+        'replace icon'
+      );
+    });
+    expect(outcome).toEqual({ received: 1, failed: true });
+  });
+});
+
+describe('an export starting at the same time', () => {
+  // Purpose: DOR-2330. Starting an export and a takedown both lock the content version and the
+  // export's job row. The export took the job first and the version second, the takedown the
+  // other way round (it bumps the version, then restarts every open job), so each could hold
+  // what the other waits for and Postgres aborted one. The held version row queues the takedown
+  // first and the export second.
+  it('lets an export start while a takedown restarts it, without a deadlock', async () => {
+    const c = await canary(h, operator.cookie, 'exportrace');
+    await drainExports(h.pool, h.blobStore);
+    const started = await body<{ export: { id: string } }>(
+      await h.call(`${c.s.base}/owner/export`, {
+        cookie: c.s.owner.cookie,
+        body: { password: TENANCY_PASSWORD },
+      }),
+      202,
+      'owner export'
+    );
+    const failures = vi.spyOn(console, 'error');
+    try {
+      const [takenDown, ran] = await holdingLock(
+        h,
+        'SELECT 1 FROM community_content_versions WHERE community_id=$1 FOR UPDATE',
+        [c.s.communityId],
+        async (release) => {
+          const taking = takedown(
+            h,
+            c.s.communityId,
+            { bearer: keys.takedown.secret },
+            { target: { kind: 'entry', entryId: c.entryId } }
+          );
+          await waitForLockWaiters(h, 1, 'UPDATE community_content_versions');
+          const exporting = runNextExport({
+            pool: h.pool,
+            blobStore: h.blobStore,
+            settings: EXPORT_SETTINGS,
+          });
+          await waitForLockWaiters(
+            h,
+            1,
+            'version::text AS version FROM community_content_versions'
+          );
+          await release();
+          return Promise.all([taking, exporting]);
+        }
+      );
+      expect(takenDown.status).toBe(201);
+      expect(ran).toBe(started.export.id);
+      expect(
+        failures.mock.calls.filter(([message]) => message === 'Community export attempt failed')
+      ).toEqual([]);
+    } finally {
+      failures.mockRestore();
+    }
+    // The takedown sent the job back to the start; it now runs to ready.
+    await drainExports(h.pool, h.blobStore);
+    const state = await h.pool.query<{ state: string }>(
+      'SELECT state FROM export_archives WHERE id=$1',
+      [started.export.id]
+    );
+    expect(state.rows[0].state).toBe('ready');
   });
 });

@@ -6,6 +6,11 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { logger } from '../../../../lib/logger.js';
 import {
+  CommunityRoomNotFoundError,
+  StaleCommunityCursorError,
+} from '@dorkos/shared/community-adapter';
+import { COMMUNITY_SEEMS_GONE_AFTER_MS } from '@dorkos/shared/community-connections';
+import {
   RemoteConnectionAuthorizationError,
   RemoteConnectionStore,
   RemoteConnectionNotFoundError,
@@ -21,6 +26,7 @@ import {
   COMMUNITY_ACCESS_BUDGET_MS,
 } from '../pairing-service.js';
 import {
+  CommunityDeletedError,
   RemoteCommunityAdapter,
   remoteOriginIdempotencyKeyOf,
   remoteThreadReplySeqOf,
@@ -63,6 +69,8 @@ let rejectedPath: string | undefined;
 let hostAccessAnswer: { status: number; body: unknown } | undefined;
 /** What `/me/connection-access` reports: `archived` models a host hold, as installations see it. */
 let accessLifecycle: 'active' | 'archived' = 'active';
+/** Frames the fake live stream sends after its snapshot, before it ends. */
+let eventsTail = '';
 const token = 'private-pairing-bearer-should-never-appear-in-dto';
 const remoteCommunityId = randomUUID();
 const secondRemoteCommunityId = randomUUID();
@@ -342,7 +350,7 @@ beforeAll(async () => {
           entries: [],
           capturedSeq: 0,
           cursor: 'resume-1',
-        })}\n\n`
+        })}\n\n${eventsTail}`
       );
     } else if (req.url === `${qualified}/agents`) {
       send(
@@ -953,6 +961,204 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
 
   // DOR-2334. What the access check treats as "the community is gone", which purges every copy
   // this installation made of it, and what it must not.
+  // DOR-2334 part 2: the Community's `410 COMMUNITY_DELETED`, and a community that only ever
+  // answers "not found".
+  describe('a community that was deleted', () => {
+    const clock = { now: Date.parse('2026-09-29T00:00:00.000Z') };
+    async function connectedAt(owner: string) {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const revokeConnection = vi.fn(async () => undefined);
+      const service = new RemoteCommunityPairingService(store, revokeConnection, undefined, {
+        now: () => clock.now,
+        freshMs: 0,
+      });
+      const started = await service.start(owner, `${origin}/c/${remoteCommunityId}`, 'Deleted');
+      expect((await service.poll(started.connection.ref, owner)).status).toBe('connected');
+      approved = false;
+      return { store, service, revokeConnection, ref: started.connection.ref };
+    }
+    const refuse = (path: string, status: number, code?: string) => {
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = path;
+      rejectedStatus = status;
+      rejectedCode = code;
+    };
+
+    afterEach(() => {
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      rejectedStatus = 403;
+      rejectedCode = undefined;
+      eventsTail = '';
+      clock.now = Date.parse('2026-09-29T00:00:00.000Z');
+    });
+
+    // Purpose: `410 COMMUNITY_DELETED` on the access check is a definite deletion, even never
+    // having seen it pending: recorded as `deleted`, and the copies purged. It fails if a 410 is
+    // read as a stale cursor or an outage.
+    it('records the deletion and purges on 410 COMMUNITY_DELETED', async () => {
+      const { service, revokeConnection, ref } = await connectedAt('gone-owner');
+      refuse(`${qualified}/me/connection-access`, 410, 'COMMUNITY_DELETED');
+
+      const answer = await service.status(ref, 'gone-owner');
+
+      expect(revokeConnection.mock.calls).toEqual([[ref, 'gone-owner']]);
+      expect(answer.access).toMatchObject({
+        state: 'verified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: { lifecycle: 'deleted' },
+      });
+      await service.disconnect(ref, 'gone-owner');
+    });
+
+    // Purpose: a 410 without that code (a stale cursor, an older route) is not a deletion.
+    it('does not treat a 410 without the code as a deletion', async () => {
+      const { service, revokeConnection, ref } = await connectedAt('stale-owner');
+      refuse(`${qualified}/me/connection-access`, 410);
+      const answer = await service.status(ref, 'stale-owner');
+      expect(revokeConnection).not.toHaveBeenCalled();
+      expect(answer.access?.lastKnown?.lifecycle).not.toBe('deleted');
+      await service.disconnect(ref, 'stale-owner');
+    });
+
+    // Purpose (operator's rule: never delete on a guess): a community that only answers
+    // `404 NOT_FOUND` is never purged. After 14 days of it, and not before, it "seems to be gone";
+    // any answer from a community that exists resets the count. It fails if the prompt appears
+    // early, if a 404 purges, or if the first-seen date is not kept.
+    it('says a community seems to be gone only after 14 days of not found, and never purges', async () => {
+      const { service, revokeConnection, ref } = await connectedAt('missing-owner');
+      refuse(`${qualified}/me/connection-access`, 404, 'NOT_FOUND');
+      const firstSeen = new Date(clock.now).toISOString();
+
+      expect((await service.status(ref, 'missing-owner')).seemsGoneSince).toBeUndefined();
+      clock.now += COMMUNITY_SEEMS_GONE_AFTER_MS - 1;
+      expect((await service.status(ref, 'missing-owner')).seemsGoneSince).toBeUndefined();
+      clock.now += 1;
+      expect((await service.status(ref, 'missing-owner')).seemsGoneSince).toBe(firstSeen);
+      expect((await service.list('missing-owner'))[0]?.seemsGoneSince).toBe(firstSeen);
+      expect(revokeConnection).not.toHaveBeenCalled();
+
+      // The Community answers again: the count starts over.
+      rejectedAuthorization = undefined;
+      expect((await service.status(ref, 'missing-owner')).seemsGoneSince).toBeUndefined();
+      refuse(`${qualified}/me/connection-access`, 404, 'NOT_FOUND');
+      clock.now += COMMUNITY_SEEMS_GONE_AFTER_MS - 1;
+      expect((await service.status(ref, 'missing-owner')).seemsGoneSince).toBeUndefined();
+      expect(revokeConnection).not.toHaveBeenCalled();
+      await service.disconnect(ref, 'missing-owner');
+    });
+
+    // Purpose (review 2): a rejected grant (401) is an answer from a community that exists, so it
+    // resets the count — the connection then only needs reconnecting, and its check never runs
+    // again, so a count left behind would offer "Remove local copy" for a live community. So do
+    // other definite answers (a hold's 423). It fails if a 401 leaves the date in place.
+    it.each([
+      ['a rejected grant', 401, undefined],
+      ['a hold', 423, 'COMMUNITY_HELD'],
+    ] as Array<[string, number, string | undefined]>)(
+      'starts the count over on %s',
+      async (_label, status, code) => {
+        const { store, service, ref } = await connectedAt('answered-owner');
+        refuse(`${qualified}/me/connection-access`, 404, 'NOT_FOUND');
+        await service.status(ref, 'answered-owner');
+        expect(await store.notFoundSince(ref, 'answered-owner')).not.toBeNull();
+        refuse(`${qualified}/me/connection-access`, status, code);
+        await service.status(ref, 'answered-owner');
+        expect(await store.notFoundSince(ref, 'answered-owner')).toBeNull();
+        await service.disconnect(ref, 'answered-owner');
+      }
+    );
+
+    // Purpose (review 3): once the deletion is recorded, another request answering
+    // `410 COMMUNITY_DELETED` does not ask the Community again. It fails if every such request
+    // re-runs the access check.
+    it('stops nudging the access check once the deletion is recorded', async () => {
+      const { service, revokeConnection, ref } = await connectedAt('nudged-owner');
+      refuse(`${qualified}/me/connection-access`, 410, 'COMMUNITY_DELETED');
+      const before = accessRequests;
+      await service.communityDeletedSeen(ref, 'nudged-owner');
+      expect(accessRequests).toBe(before + 1);
+      await service.communityDeletedSeen(ref, 'nudged-owner');
+      await service.communityDeletedSeen(ref, 'nudged-owner');
+      expect(accessRequests).toBe(before + 1);
+      expect(revokeConnection).toHaveBeenCalledOnce();
+      await service.disconnect(ref, 'nudged-owner');
+    });
+
+    // Purpose: an outage between the 404s does not reset the count (it proves nothing), and the
+    // explicit removal purges exactly that connection.
+    it('keeps counting through an outage, and removes exactly that connection on request', async () => {
+      const { store, service, revokeConnection, ref } = await connectedAt('outage-owner');
+      refuse(`${qualified}/me/connection-access`, 404, 'NOT_FOUND');
+      await service.status(ref, 'outage-owner');
+      clock.now += COMMUNITY_SEEMS_GONE_AFTER_MS / 2;
+      refuse(`${qualified}/me/connection-access`, 503);
+      await service.status(ref, 'outage-owner');
+      clock.now += COMMUNITY_SEEMS_GONE_AFTER_MS / 2;
+      refuse(`${qualified}/me/connection-access`, 404, 'NOT_FOUND');
+      expect((await service.status(ref, 'outage-owner')).seemsGoneSince).toBeDefined();
+
+      // "Remove local copy" is the disconnect, which purges through the revoke path.
+      await service.disconnect(ref, 'outage-owner');
+      expect(revokeConnection.mock.calls).toEqual([[ref, 'outage-owner']]);
+      expect(await store.list('outage-owner')).toEqual([]);
+      expect(await store.notFoundSince(ref, 'outage-owner')).toBeNull();
+    });
+
+    // Purpose: every route family answers `410 COMMUNITY_DELETED` as "gone", never as a stale
+    // cursor, and each nudges the access check: history, the room read, the roster, agent
+    // removal, and a stream refused at open. A stream the Community closes as `deleted` ends as
+    // access revoked. It fails if any of them still maps the 410 to a stale cursor or throws.
+    it('answers 410 COMMUNITY_DELETED as gone on every route', async () => {
+      const { store, service, ref } = await connectedAt('routes-owner');
+      const deletedSeen = vi.fn();
+      const adapter = new RemoteCommunityAdapter(
+        ref,
+        'routes-owner',
+        store,
+        undefined,
+        undefined,
+        deletedSeen
+      );
+      const channel = `${qualified}/channels/${remoteRoomId}`;
+
+      refuse(`${channel}/entries`, 410, 'COMMUNITY_DELETED');
+      const history = await adapter.listEntries(remoteRoomId).catch((error: unknown) => error);
+      expect(history).toBeInstanceOf(CommunityDeletedError);
+      expect(history).toBeInstanceOf(CommunityRoomNotFoundError);
+      expect(history).not.toBeInstanceOf(StaleCommunityCursorError);
+
+      refuse(channel, 410, 'COMMUNITY_DELETED');
+      await expect(adapter.getRoom(remoteRoomId)).resolves.toBeNull();
+      refuse(`${channel}/members`, 410, 'COMMUNITY_DELETED');
+      await expect(adapter.listMembers(remoteRoomId)).resolves.toEqual([]);
+      refuse(`${qualified}/agents/${remoteAgentId}`, 410, 'COMMUNITY_DELETED');
+      await expect(adapter.revokeAgent(remoteAgentId)).resolves.toBeUndefined();
+
+      refuse(`${channel}/events`, 410, 'COMMUNITY_DELETED');
+      const stream = adapter.subscribeNativeRoom(remoteRoomId)[Symbol.asyncIterator]();
+      await expect(stream.next()).rejects.toBeInstanceOf(CommunityDeletedError);
+
+      expect(deletedSeen).toHaveBeenCalledTimes(5);
+      expect(deletedSeen).toHaveBeenCalledWith(ref, 'routes-owner');
+
+      // A stale cursor without the code still reads as one.
+      refuse(`${channel}/entries`, 410);
+      await expect(adapter.listEntries(remoteRoomId)).rejects.toBeInstanceOf(
+        StaleCommunityCursorError
+      );
+      expect(deletedSeen).toHaveBeenCalledTimes(5);
+
+      rejectedAuthorization = undefined;
+      eventsTail = `data: ${JSON.stringify({ type: 'closed', reason: 'deleted', cursor: 'resume-1' })}\n\n`;
+      const events: RemoteNativeRoomEvent[] = [];
+      for await (const event of adapter.subscribeNativeRoom(remoteRoomId)) events.push(event);
+      expect(events.at(-1)).toEqual({ type: 'room_closed', reason: 'access-revoked' });
+      await service.disconnect(ref, 'routes-owner');
+    });
+  });
+
   describe('a community being deleted', () => {
     async function connectedWith(owner: string) {
       approved = true;

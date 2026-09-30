@@ -24,6 +24,7 @@ import { registerAccountAdvisor, toExtensionAccountUsage } from '../core/usage/a
 import { getAccountUsageStore } from '../core/usage/current-usage-store.js';
 import { recordContinuation } from '../core/usage/session-continuation.js';
 import { createProjectsApi } from '../projects/extension-projects-api.js';
+import { getStartWorkService } from './start-work.js';
 import { projectRegistry } from '../projects/project-registry.js';
 import {
   createInboxApi,
@@ -172,6 +173,7 @@ interface CreateContextDeps {
  * - `inbox`: decisions in the Activity inbox (spec `flow-multiproject` §7)
  * - `requirePerson`: the person bar for the extension's own routes
  * - `projectSettings`: per-project settings only a person writes, read-only here
+ * - `sessions`: start work in a new chat by the extension's own rules (§7.7)
  *
  * @param deps - Extension identity and directory info
  * @returns The context, a function to retrieve scheduled cleanup functions, and
@@ -284,6 +286,21 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     inbox: guardedInbox,
     requirePerson: createRequirePerson(extensionName),
     projectSettings: guardedProjectSettings,
+    sessions: {
+      start: async (input) => {
+        // A given-up instance starts nothing: a chat it started would outlive
+        // it, which is exactly what `dispose` exists to stop.
+        if (disposed) {
+          inert('sessions.start');
+          throw new Error(
+            'This extension was stopped before it finished starting, so it cannot start chats. Reload it to try again.'
+          );
+        }
+        const service = getStartWorkService();
+        if (!service) throw new Error('DorkOS cannot start chats yet. Try again in a moment.');
+        return service.start(extensionId, input, 'ctx');
+      },
+    },
   };
 
   const releaseListeners = () => {

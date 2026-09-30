@@ -120,6 +120,30 @@ export const CommunityAdminImportStateSchema = z.enum([
   'cancelled',
 ]);
 
+/** Why a host asked to replace an owner. Shown to the owner in the product as a fixed sentence. */
+export const CommunityAdminOwnerReplacementReasonSchema = z.enum([
+  'owner_left_group',
+  'owner_unreachable',
+  'other',
+]);
+/**
+ * Where an owner replacement stands. `notifying`, `waiting`, and `claimable` are open; the rest
+ * are closed, and a closed replacement never reopens.
+ */
+export const CommunityAdminOwnerReplacementStateSchema = z.enum([
+  'notifying',
+  'waiting',
+  'claimable',
+  'completed',
+  'objected',
+  'withdrawn',
+  'superseded',
+  'expired',
+]);
+/** The open owner replacement states; a community has at most one replacement in one of them. */
+export const CommunityAdminOwnerReplacementOpenStateSchema =
+  CommunityAdminOwnerReplacementStateSchema.extract(['notifying', 'waiting', 'claimable']);
+
 /** Host-visible metadata without membership or content details. */
 export const CommunityAdminHostProjectionSchema = z.strictObject({
   id,
@@ -150,6 +174,18 @@ export const CommunityAdminHostProjectionSchema = z.strictObject({
   /** The import that made this community, and its state; both null when it was not imported. */
   importId: id.nullable(),
   importState: CommunityAdminImportStateSchema.nullable(),
+  /**
+   * The community's open owner replacement, if one is open. Visible to every host actor; the
+   * details stay behind `communities:ownership`.
+   */
+  ownerReplacement: z
+    .strictObject({
+      replacementId: id,
+      state: CommunityAdminOwnerReplacementOpenStateSchema,
+      /** When the named account may claim; null until the owner's notice resolves. */
+      claimableAfter: timestamp.nullable(),
+    })
+    .nullable(),
   createdAt: timestamp,
 });
 
@@ -340,14 +376,24 @@ export const CommunityAdminHostApiKeyScopeSchema = z.enum([
   /** Place and release a legal hold. `communities:lifecycle` does not imply it. */
   'communities:legal_hold',
   'communities:takedown',
+  /**
+   * Request, list, cancel, and reissue an owner replacement. No other scope implies it, and a
+   * key needs it to read a replacement's details.
+   */
+  'communities:ownership',
 ]);
+/** A key holds each scope at most once, so it can hold at most every scope there is. */
+const hostApiKeyScopes = z
+  .array(CommunityAdminHostApiKeyScopeSchema)
+  .min(1)
+  .max(CommunityAdminHostApiKeyScopeSchema.options.length);
 
 /** Host API key projection. Never carries the secret or its hash. */
 export const CommunityAdminHostApiKeySchema = z.strictObject({
   id,
   label: z.string().trim().min(1).max(80),
   prefix: z.string().regex(/^dkh_[A-Za-z0-9_-]{6}$/),
-  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(6),
+  scopes: hostApiKeyScopes,
   issuedVia: z.enum(['browser', 'command']),
   /** The issuing host operator's display name; null for a key issued by the offline command. */
   issuedByOperator: z.string().min(1).nullable(),
@@ -363,7 +409,7 @@ export const CommunityAdminHostApiKeyListSchema = z.strictObject({
 /** Issue a host API key. Needs a host operator's session and password; a key cannot issue keys. */
 export const CommunityAdminHostApiKeyIssueRequestSchema = z.strictObject({
   label: z.string().trim().min(1).max(80),
-  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(6),
+  scopes: hostApiKeyScopes,
   expiresInDays: z.int().min(1).max(365).nullable(),
   password: z.string().min(1),
 });
@@ -381,6 +427,92 @@ export const CommunityAdminHostApiKeySecretResponseSchema = z.strictObject({
 /** Revocation takes no input; it cannot be undone. */
 export const CommunityAdminHostApiKeyRevokeRequestSchema = z.strictObject({});
 
+/**
+ * The host's own pointer for an owner replacement (a ticket or case number): 1 to 80 letters,
+ * digits, spaces, and `._#-`. No `:` or `/`, so it can never read as a link. Shown to the owner
+ * in the product as quoted plain text; never to admins or members, never in mail or audit.
+ */
+export const COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN = /^[A-Za-z0-9 ._#-]{1,80}$/;
+/**
+ * Ask to make the account named in the request a community's owner. A host person must send
+ * their `password`; a key must not. With single sign-on configured the request must name the
+ * account's subject; without it, it must not.
+ */
+export const CommunityAdminOwnerReplacementRequestSchema = z.strictObject({
+  idempotencyKey: z.string().min(1).max(200),
+  lifecycleVersion: version,
+  reason: CommunityAdminOwnerReplacementReasonSchema,
+  reference: z.string().regex(COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN).nullable(),
+  claimant: z.strictObject({
+    /** The subject this host's OIDC issuer gives the new owner; stored with the issuer. */
+    oidcSubject: z.string().min(1).max(255).nullable(),
+  }),
+  password: z.string().min(1).optional(),
+});
+/**
+ * Host view of one owner replacement. Never a member id, name, email, or the OIDC subject:
+ * `claimantNamed` only says whether the request names an account.
+ */
+export const CommunityAdminOwnerReplacementSchema = z.strictObject({
+  replacementId: id,
+  communityId: id,
+  state: CommunityAdminOwnerReplacementStateSchema,
+  reason: CommunityAdminOwnerReplacementReasonSchema,
+  reference: z.string().regex(COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN).nullable(),
+  claimantNamed: z.boolean(),
+  requestedAt: timestamp,
+  /** A host person's display name, or a key's prefix. */
+  requestedBy: z.strictObject({ kind: z.enum(['person', 'api_key']), label: z.string().min(1) }),
+  /** Whether the owner's mail server took the notice. Accepted never means read. */
+  notice: z.strictObject({
+    state: z.enum(['pending', 'accepted', 'failed']),
+    resolvedAt: timestamp.nullable(),
+    /** Whether the owner's address was marked verified when the notice was sent. */
+    verifiedAddress: z.boolean().nullable(),
+  }),
+  /** Which waiting period applies; null until the notice resolves. */
+  wait: z.enum(['standard', 'long']).nullable(),
+  claimableAfter: timestamp.nullable(),
+  claimExpiresAt: timestamp.nullable(),
+  claimReissuedAt: timestamp.nullable(),
+  endedAt: timestamp.nullable(),
+  /**
+   * On a `withdrawn` replacement: the host cancelled it, suspended the community, or started
+   * deleting it. Null in every other state.
+   */
+  withdrawnBecause: z.enum(['cancelled', 'suspended', 'deletion']).nullable(),
+  /** On an `objected` replacement: when the host may ask again. */
+  cooldownUntil: timestamp.nullable(),
+});
+/**
+ * A new owner replacement and its claim token, returned once with Cache-Control: no-store. On
+ * a replay the token and link are null: they were only ever shown the first time.
+ */
+export const CommunityAdminOwnerReplacementCreateResponseSchema = z.strictObject({
+  replacement: CommunityAdminOwnerReplacementSchema,
+  claimToken: z.string().min(1).nullable(),
+  /** The claim page with the token in the fragment, so it never reaches a server log. */
+  claimUrl: z.url().nullable(),
+  replayed: z.boolean(),
+});
+/** One community's owner replacements, newest first, at most 50. */
+export const CommunityAdminOwnerReplacementListSchema = z.strictObject({
+  replacements: z.array(CommunityAdminOwnerReplacementSchema).max(50),
+});
+/** Cancelling an open owner replacement takes no input. */
+export const CommunityAdminOwnerReplacementCancelRequestSchema = z.strictObject({});
+/** Reissuing an open replacement's claim token takes no input. */
+export const CommunityAdminOwnerReplacementClaimTokenRequestSchema = z.strictObject({});
+/**
+ * A reissued claim token, returned once with Cache-Control: no-store. The old token stops
+ * working, no date moves, and the owner is told.
+ */
+export const CommunityAdminOwnerReplacementClaimTokenSchema = z.strictObject({
+  replacementId: id,
+  claimToken: z.string().min(1),
+  claimUrl: z.url(),
+});
+
 /** Start importing an owner export into a new, unclaimed community. The export arrives separately. */
 export const CommunityAdminImportCreateRequestSchema = z.strictObject({
   idempotencyKey: z.string().min(1).max(200),
@@ -396,7 +528,8 @@ export const CommunityAdminImportCreateRequestSchema = z.strictObject({
 });
 /** What an owner export holds, measured before anything is restored. Counts and sizes only. */
 export const CommunityAdminImportReportSchema = z.strictObject({
-  manifestVersion: z.literal(1),
+  /** The export's format: version 1 (one manifest), or version 2 (any size, in data files). */
+  manifestVersion: z.union([z.literal(1), z.literal(2)]),
   sourceLifecycle: z.enum(['active', 'archived']),
   channels: z.int().nonnegative(),
   entries: z.int().nonnegative(),
@@ -460,6 +593,39 @@ export const CommunityAdminImportCreateResponseSchema = z.strictObject({
 });
 /** Commit and cancel take no input. */
 export const CommunityAdminImportMutationRequestSchema = z.strictObject({});
+
+/** A SHA-256 digest as lowercase hex. */
+const sha256Hex = z.string().regex(/^[a-f0-9]{64}$/);
+/** The most parts one export may be uploaded in. */
+export const COMMUNITY_IMPORT_MAX_PARTS = 10_000;
+
+/** One received part of an export uploaded in parts. */
+export const CommunityAdminImportPartSchema = z.strictObject({
+  partNumber: z.int().min(1).max(COMMUNITY_IMPORT_MAX_PARTS),
+  byteSize: bytes.positive(),
+  sha256: sha256Hex,
+});
+/**
+ * The parts received so far, in part-number order, so an uploader resumes after a crash, and
+ * the limits the rest must keep to.
+ */
+export const CommunityAdminImportPartListSchema = z.strictObject({
+  parts: z.array(CommunityAdminImportPartSchema).max(COMMUNITY_IMPORT_MAX_PARTS),
+  /** The largest one part may be. */
+  maxPartBytes: bytes.positive(),
+  /** The largest whole export this host accepts in parts. */
+  maxArchiveBytes: bytes.positive(),
+});
+/**
+ * Put the uploaded parts together: exactly parts 1 to `parts`, whose bytes in order are
+ * `archiveBytes` long with SHA-256 `archiveSha256`.
+ */
+export const CommunityAdminImportCompleteRequestSchema = z.strictObject({
+  parts: z.int().min(1).max(COMMUNITY_IMPORT_MAX_PARTS),
+  archiveBytes: bytes.positive(),
+  archiveSha256: sha256Hex,
+});
+
 /** Why the host removed something. Shown to the owner and author as one plain sentence. */
 export const CommunityAdminTakedownCategorySchema = z.enum([
   'child_safety',
@@ -582,6 +748,12 @@ const evidenceFile = z.strictObject({
   /** Relative to the attempt folder. */
   path: z.string(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  /**
+   * True for a file its author or an admin had already taken out of the message before the
+   * takedown, kept only because its bytes had not been swept yet. Absent in records written
+   * before this field existed.
+   */
+  removedBeforeTakedown: z.boolean().optional(),
 });
 
 /**
@@ -641,4 +813,15 @@ export const CommunityEvidenceRecordV1Schema = z.strictObject({
     })
     .nullable(),
   notes: z.array(z.string()),
+});
+
+/**
+ * What this host can do beyond the basics, for the host page and host programs. `mail` is true
+ * only when the host has configured its own SMTP server; features that must reach a person who
+ * may no longer open the community refuse to run without it. `oidc` is true when the host's own
+ * single sign-on is configured.
+ */
+export const CommunityAdminHostCapabilitiesSchema = z.strictObject({
+  mail: z.boolean(),
+  oidc: z.boolean(),
 });

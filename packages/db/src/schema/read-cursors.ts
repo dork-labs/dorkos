@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey, check, index } from 'drizzle-orm/sqlite-core';
 
 /**
  * The three kinds of thread a person can have read state in
@@ -113,5 +113,9 @@ export const readCursors = sqliteTable(
     // the marker into the migration file, where `>= ?` is a syntax error the
     // first time the migration runs.
     check('read_cursors_last_read_seq', sql`${table.lastReadSeq} >= ${sql.raw('0')}`),
+    // Everyone's cursor on one thread (`listForThread`), read each time a room
+    // opens. The primary key leads with the person, and every session a person
+    // opens adds a row, so without this each room open read the whole table.
+    index('idx_read_cursors_thread').on(table.threadKind, table.threadId),
   ]
 );

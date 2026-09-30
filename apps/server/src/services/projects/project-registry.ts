@@ -435,6 +435,19 @@ export class ProjectRegistry {
     };
   }
 
+  /**
+   * The root of a named folder, with the boundary applied to both ends, and
+   * nothing recorded: no `reported` row, no reporter, no cap slot. For a caller
+   * that only accepts projects already known (starting work, spec §7.7), where
+   * a refusal must leave no trace.
+   *
+   * @param dir - Any folder.
+   * @returns The canonical root, null (no repository), or `'outside'`.
+   */
+  rootWithin(dir: string): Promise<string | null | 'outside'> {
+    return this.boundedRoot(dir);
+  }
+
   /** The root of a named folder, with the boundary applied to both ends. */
   private async boundedRoot(dir: string): Promise<string | null | 'outside'> {
     let checked: string;

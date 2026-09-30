@@ -49,7 +49,13 @@ import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostTakedownRoutes } from './routes/host-takedowns.js';
 import { registerTakedownNoticeRoutes } from './routes/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
+import {
+  forgetAgeConfirmation,
+  registerMinimumAgeRoutes,
+  requireAgeConfirmation,
+} from './sign-up/minimum-age.js';
 import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
+import { IMPORT_PART_UPLOAD_PATH } from './imports/part-routes.js';
 import { UploadSlots } from './imports/upload.js';
 import { registerHistoryOriginRoute } from './routes/history-origin.js';
 import { createHostAuthority } from './host/authority.js';
@@ -84,6 +90,8 @@ export function createCommunityApp({
     uploadIdleMs?: number;
     /** Free bytes in the temporary folder, as an upload's space check sees them. */
     freeTempBytes?: () => Promise<number>;
+    /** Runs before `complete` hashes an import's parts; tests pause there. */
+    beforeCompleteHash?: (importId: string) => Promise<void>;
     /** Runs inside a takedown after the community row is locked, before the actor recheck. */
     afterTakedownCommunityLock?: () => Promise<void>;
     /** Runs inside a takedown after its target is read for evidence, before it is removed. */
@@ -144,7 +152,9 @@ export function createCommunityApp({
       if (
         (c.req.path.match(/^\/api\/v1\/(?:communities\/[^/]+\/)?channels\/[^/]+\/attachments$/) &&
           c.req.method === 'POST') ||
-        (IMPORT_ARCHIVE_UPLOAD_PATH.test(c.req.path) && c.req.method === 'PUT')
+        ((IMPORT_ARCHIVE_UPLOAD_PATH.test(c.req.path) ||
+          IMPORT_PART_UPLOAD_PATH.test(c.req.path)) &&
+          c.req.method === 'PUT')
       ) {
         await next();
         return;
@@ -202,6 +212,7 @@ export function createCommunityApp({
   });
   app.all('/api/auth/*', (c) => auth.handler(c.req.raw));
 
+  const now = hooks?.now ?? (() => new Date());
   app.post('/api/v1/bootstrap/preflight', async (c) => {
     limitAttempts(`bootstrap:${peer(c)}`, config.limits.bootstrapAttemptsPerMinute);
     const body = await readJson(c, CommunityWireBootstrapPreflightRequestSchema);
@@ -257,6 +268,8 @@ export function createCommunityApp({
     if (!equalSecret(body.secret, config.bootstrapSecret)) {
       throw new ApiError(403, 'FORBIDDEN', 'The owner secret is incorrect.');
     }
+    // The first owner creates an account here too, so a minimum age asks them the same question.
+    requireAgeConfirmation(c.req.header('cookie') ?? null, config, now());
     const passwordHash = await hashPassword(body.password);
     const email = body.email.toLowerCase();
     const result = await transaction(pool, async (client) => {
@@ -337,10 +350,10 @@ export function createCommunityApp({
       };
     });
     c.header('Cache-Control', 'no-store');
+    forgetAgeConfirmation(c, config);
     return json(c, CommunityWireBootstrapCompleteResponseSchema, result, 201);
   });
 
-  const now = hooks?.now ?? (() => new Date());
   const authority = createHostAuthority({
     auth,
     pool,
@@ -349,6 +362,7 @@ export function createCommunityApp({
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
   });
   registerHostLinkRoutes(app, { config });
+  registerMinimumAgeRoutes(app, { config, now });
   const hostApi = new Hono();
   registerHostRoutes(hostApi, { pool, config, blobStore, authority, now });
   registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
@@ -373,8 +387,11 @@ export function createCommunityApp({
     limitTokenMiss: (c) =>
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
     uploadSlots: new UploadSlots(config.limits.importUploads),
+    // A refused part says when to try again: parts are many, and uploaders retry them.
+    partSlots: new UploadSlots(config.imports.partConcurrency, 5),
     uploadIdleMs: hooks?.uploadIdleMs ?? UPLOAD_IDLE_MS,
     freeTempBytes: hooks?.freeTempBytes,
+    partHooks: { beforeCompleteHash: hooks?.beforeCompleteHash },
   });
   registerHostTakedownRoutes(hostApi, {
     pool,
@@ -430,6 +447,7 @@ export function createCommunityApp({
       google: Boolean(config.oauth.google),
       github: Boolean(config.oauth.github),
       oidc: config.oidc ? { label: config.oidc.label } : null,
+      minimumAge: config.minimumAge,
     })
   );
 
