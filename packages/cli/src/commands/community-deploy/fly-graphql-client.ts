@@ -25,6 +25,7 @@ import {
   type TigrisCreateResult,
 } from './fly-graphql-contract.js';
 import { SAFE_PROVIDER_IDENTIFIER_PATTERN } from './provider-identifiers.js';
+import { writeDeadline } from './provider-mutation.js';
 
 const FLY_GRAPHQL_ENDPOINT = 'https://api.fly.io/graphql';
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -265,6 +266,9 @@ export class FlyTigrisGraphqlClient {
     this.signal?.addEventListener('abort', cancel, { once: true });
     if (this.signal?.aborted) cancel();
     let timer: NodeJS.Timeout | undefined;
+    // A cut-off create or delete is an unknown outcome, not a failure, so writes get the shared
+    // write deadline (see PROVIDER_WRITE_TIMEOUT_MS); reads keep the client's own.
+    const timeoutMs = mutating ? writeDeadline(this.timeoutMs) : this.timeoutMs;
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         controller.abort();
@@ -273,7 +277,7 @@ export class FlyTigrisGraphqlClient {
             mutating ? 'CREATION_OUTCOME_UNCERTAIN' : 'PROVIDER_UNAVAILABLE'
           )
         );
-      }, this.timeoutMs);
+      }, timeoutMs);
     });
     const operation = (async () => {
       try {

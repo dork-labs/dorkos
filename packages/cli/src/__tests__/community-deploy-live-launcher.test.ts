@@ -1,13 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CommunityLiveGateError } from '../../scripts/community-deploy-live-capture.js';
 import {
+  COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS,
+  COMMUNITY_LIVE_LAUNCHER_WORST_CASE_MS,
   createLauncherPromptResponder,
   requireTigrisTermsAccepted,
 } from '../../scripts/community-deploy-live-launcher.js';
+import { FLY_DEPLOY_TIMEOUT_MS } from '../commands/community-deploy/fly-mutate.js';
+import { PROVIDER_WRITE_TIMEOUT_MS } from '../commands/community-deploy/provider-mutation.js';
 
 const APP = 'dorkos-gate-0123456789ab';
 const TERMS_PROMPT =
   'Fly requires separate Tigris terms acceptance. Accept them in Fly, then type accept: ';
+
+// DOR-2169: the gate killed a launcher at 12 minutes, shorter than one launcher's own worst case once
+// deploys got ten. The gate's limit is derived from the launcher's deadlines, so it cannot fall
+// behind them again.
+describe('COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS', () => {
+  it('outlasts the longest a first or resumed launcher can spend inside its own deadlines', () => {
+    const health = 2 * 60_000;
+    const firstRun = 5 * PROVIDER_WRITE_TIMEOUT_MS + FLY_DEPLOY_TIMEOUT_MS + health;
+    const resumedRun = PROVIDER_WRITE_TIMEOUT_MS + 2 * FLY_DEPLOY_TIMEOUT_MS + 2 * health;
+    expect(COMMUNITY_LIVE_LAUNCHER_WORST_CASE_MS).toBe(Math.max(firstRun, resumedRun));
+    expect(COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS).toBeGreaterThan(
+      COMMUNITY_LIVE_LAUNCHER_WORST_CASE_MS
+    );
+    expect(COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS).toBeGreaterThan(12 * 60_000);
+  });
+});
 
 describe('requireTigrisTermsAccepted', () => {
   it('refuses at step tigris-terms when the account has not accepted them', async () => {

@@ -3,6 +3,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { FlyGraphqlClientError, FlyTigrisGraphqlClient } from '../fly-graphql-client.js';
+import { PROVIDER_WRITE_TIMEOUT_MS } from '../provider-mutation.js';
 
 const identity = {
   id: 'addon_fixture_01',
@@ -247,6 +248,36 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     });
   });
 
+  // A cut-off create is an unknown outcome the operator must reconcile (DOR-2169), so writes get the
+  // shared write deadline while reads keep the client's own.
+  it('gives writes the write deadline and keeps the short one for reads', async () => {
+    vi.useFakeTimers();
+    try {
+      const slow = (value: unknown) =>
+        new Promise<Response>((resolve) => setTimeout(() => resolve(json(value)), 60_000));
+      const created = { data: { createAddOn: { addOn: identity } } };
+      const request = vi
+        .fn()
+        .mockResolvedValueOnce(json({ data: { viewer: { agreedToProviderTos: true } } }))
+        .mockImplementationOnce(() => slow(created))
+        .mockImplementationOnce(() => slow({ data: { addOn: identity } }));
+      const client = new FlyTigrisGraphqlClient({
+        accessToken: 'token',
+        timeoutMs: 30_000,
+        fetch: request,
+      });
+      const create = client.createTigris(createInput());
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(create).resolves.toMatchObject({ identity: { addOnId: identity.id } });
+      const read = client.readTigris(identity.id);
+      const readFailure = expect(read).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await readFailure;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('classifies transport failure by whether the operation could have created a resource', async () => {
     const request = vi
       .fn()
@@ -290,9 +321,17 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
       code: 'PROVIDER_UNAVAILABLE',
     });
     expect(cancel).toHaveBeenCalledOnce();
-    await expect(client.createTigris(createInput())).rejects.toMatchObject({
-      code: 'CREATION_OUTCOME_UNCERTAIN',
-    });
+    // A create is bounded too, by the longer write deadline (DOR-2169).
+    vi.useFakeTimers();
+    try {
+      const create = expect(client.createTigris(createInput())).rejects.toMatchObject({
+        code: 'CREATION_OUTCOME_UNCERTAIN',
+      });
+      await vi.advanceTimersByTimeAsync(PROVIDER_WRITE_TIMEOUT_MS);
+      await create;
+    } finally {
+      vi.useRealTimers();
+    }
     expect(cancel).toHaveBeenCalledTimes(2);
   });
 
