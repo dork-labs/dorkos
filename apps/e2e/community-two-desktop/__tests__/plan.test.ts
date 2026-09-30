@@ -19,7 +19,8 @@ describe('two-Desktop step plan', () => {
   });
 
   it('runs the remote journey the spec names and gives every skip a reason', () => {
-    // Pins the run list to spec community-launch-acceptance task 1.2.
+    // Pins the run list to spec community-launch-acceptance task 1.2 (5-7 and 9-15b, 17-20, 22,
+    // 23, 25): step 8 is skipped because it needs the second community remote mode never starts.
     expect(REMOTE_RUN_STEPS).toEqual([
       '5',
       '6',

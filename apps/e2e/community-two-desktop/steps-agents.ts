@@ -149,8 +149,11 @@ export async function agentSteps(w: World): Promise<void> {
   // proves the cap. A held live community keeps its own limit, so a remote run
   // enrolls one agent each and leaves the cap alone.
   const proveLimit = mode === 'local';
+  // The name says what was checked: a remote receipt never claims the cap was tested.
   await step(
-    '20 each member chooses their own local agent; the per-member agent limit holds',
+    proveLimit
+      ? '20 each member chooses their own local agent; the per-member agent limit holds'
+      : '20 each member chooses their own local agent (agent limit not tested: the community keeps its own)',
     async () => {
       // B was left at phone width by step 18.
       await resize(b, 1280, 860);

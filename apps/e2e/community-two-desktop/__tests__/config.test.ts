@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -25,12 +25,19 @@ const validHandoff = {
 /** A fake file system holding one handoff file, with the modes a test chooses. */
 function fakeFs(
   body: unknown = validHandoff,
-  o: { fileMode?: number; dirMode?: number; isFile?: boolean } = {}
+  o: { fileMode?: number; dirMode?: number; isFile?: boolean; link?: boolean } = {}
 ): HandoffFs {
   return {
-    lstat: () => ({ isFile: () => o.isFile ?? true, mode: 0o100000 | (o.fileMode ?? 0o600) }),
+    open: () => {
+      if (o.link) throw Object.assign(new Error('ELOOP'), { code: 'ELOOP' });
+      return {
+        isFile: () => o.isFile ?? true,
+        mode: 0o100000 | (o.fileMode ?? 0o600),
+        read: () => (typeof body === 'string' ? body : JSON.stringify(body)),
+        close: () => undefined,
+      };
+    },
     stat: () => ({ isDirectory: () => true, mode: 0o040000 | (o.dirMode ?? 0o700) }),
-    readFile: () => (typeof body === 'string' ? body : JSON.stringify(body)),
   };
 }
 
@@ -81,7 +88,7 @@ describe('two-Desktop acceptance config', () => {
     // Catches a reorder that would open a credential file before the opt-in check.
     const fs = fakeFs();
     let reads = 0;
-    const counting: HandoffFs = { ...fs, lstat: (file) => (reads++, fs.lstat(file)) };
+    const counting: HandoffFs = { ...fs, open: (file) => (reads++, fs.open(file)) };
     expect(() => readRunConfig({ [HANDOFF_VARIABLE]: HANDOFF_PATH }, [], mac, counting)).toThrow(
       /Refusing to run/
     );
@@ -118,6 +125,9 @@ describe('two-Desktop remote mode (the live gate handoff)', () => {
   it('refuses a link or anything else that is not a regular file', () => {
     // Catches a symlink pointing the driver at a file the modes were never checked on.
     expect(() => readRunConfig(env, [], mac, fakeFs(validHandoff, { isFile: false }))).toThrow(
+      /not a regular file/
+    );
+    expect(() => readRunConfig(env, [], mac, fakeFs(validHandoff, { link: true }))).toThrow(
       /not a regular file/
     );
   });
@@ -181,6 +191,11 @@ describe('two-Desktop remote mode (the live gate handoff)', () => {
         chmodSync(file, 0o600);
         chmodSync(dir, 0o755);
         expect(() => readHandoff(file)).toThrow(/must be 0700/);
+        chmodSync(dir, 0o700);
+        // A private link to a private file is still a link: O_NOFOLLOW refuses it.
+        const link = path.join(dir, 'link.json');
+        symlinkSync(file, link);
+        expect(() => readHandoff(link)).toThrow(/not a regular file/);
       } finally {
         chmodSync(dir, 0o700);
         rmSync(dir, { recursive: true, force: true });

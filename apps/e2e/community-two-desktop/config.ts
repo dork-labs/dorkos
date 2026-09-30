@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -76,17 +76,37 @@ export interface RemoteHandoff {
   inviteLink: string;
 }
 
+/** An open handoff file: what it is, read through the same descriptor. */
+export interface OpenedHandoff {
+  isFile(): boolean;
+  mode: number;
+  read(): string;
+  close(): void;
+}
+
 /** The file-system reads {@link readHandoff} makes, injectable for tests. */
 export interface HandoffFs {
-  lstat: (file: string) => { isFile(): boolean; mode: number };
+  /**
+   * Open the file without following a symbolic link at its last component, so
+   * the modes checked and the bytes read belong to one and the same file.
+   * Throws `ELOOP` for a link.
+   */
+  open: (file: string) => OpenedHandoff;
   stat: (file: string) => { isDirectory(): boolean; mode: number };
-  readFile: (file: string) => string;
 }
 
 const realFs: HandoffFs = {
-  lstat: (file) => lstatSync(file),
+  open: (file) => {
+    const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const info = fstatSync(fd);
+    return {
+      isFile: () => info.isFile(),
+      mode: info.mode,
+      read: () => readFileSync(fd, 'utf8'),
+      close: () => closeSync(fd),
+    };
+  },
   stat: (file) => statSync(file),
-  readFile: (file) => readFileSync(file, 'utf8'),
 };
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
@@ -94,7 +114,9 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 /**
  * Read and check the live gate's handoff file. It holds two passwords, so it
  * must be exactly as private as the gate made it: a regular file (not a link)
- * with mode `0600`, in a directory with mode `0700`.
+ * with mode `0600`, in a directory with mode `0700`. The file is opened once
+ * with `O_NOFOLLOW` and checked through that descriptor, so the file whose
+ * modes pass is the file that is read.
  *
  * The origin must be https. The one exception is a loopback origin
  * (`127.0.0.1`, `localhost`, `[::1]`), which is how the driver's own local
@@ -108,26 +130,34 @@ export function readHandoff(file: string, fs: HandoffFs = realFs): RemoteHandoff
   const refuse = (why: string) =>
     new Error(`Refusing ${HANDOFF_VARIABLE}: ${why}. Nothing was started.`);
   if (!path.isAbsolute(file)) throw refuse('the path must be absolute');
-  let entry;
+  let entry: OpenedHandoff;
   try {
-    entry = fs.lstat(file);
-  } catch {
+    entry = fs.open(file);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // O_NOFOLLOW refuses a link at the last component with ELOOP (EMLINK on some BSDs).
+    if (code === 'ELOOP' || code === 'EMLINK') throw refuse(`${file} is not a regular file`);
     throw refuse(`there is no file at ${file}`);
   }
-  if (!entry.isFile()) throw refuse(`${file} is not a regular file`);
-  const fileMode = entry.mode & 0o777;
-  if (fileMode !== 0o600)
-    throw refuse(`${file} has mode ${fileMode.toString(8).padStart(4, '0')}; it must be 0600`);
-  const dir = path.dirname(file);
-  const folder = fs.stat(dir);
-  const dirMode = folder.mode & 0o777;
-  if (!folder.isDirectory() || dirMode !== 0o700)
-    throw refuse(`${dir} has mode ${dirMode.toString(8).padStart(4, '0')}; it must be 0700`);
   let raw: unknown;
   try {
-    raw = JSON.parse(fs.readFile(file));
-  } catch {
-    throw refuse(`${file} is not valid JSON`);
+    if (!entry.isFile()) throw refuse(`${file} is not a regular file`);
+    const fileMode = entry.mode & 0o777;
+    if (fileMode !== 0o600)
+      throw refuse(`${file} has mode ${fileMode.toString(8).padStart(4, '0')}; it must be 0600`);
+    const dir = path.dirname(file);
+    const folder = fs.stat(dir);
+    const dirMode = folder.mode & 0o777;
+    if (!folder.isDirectory() || dirMode !== 0o700)
+      throw refuse(`${dir} has mode ${dirMode.toString(8).padStart(4, '0')}; it must be 0700`);
+    const text = entry.read();
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      throw refuse(`${file} is not valid JSON`);
+    }
+  } finally {
+    entry.close();
   }
   const body = (raw ?? {}) as Record<string, unknown>;
   const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value : null);

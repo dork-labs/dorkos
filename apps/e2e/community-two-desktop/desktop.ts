@@ -48,6 +48,11 @@ export interface LaunchContext {
    * process mid-cleanup; the runner uses this to take the signals back.
    */
   onLaunched: () => void;
+  /**
+   * Applied to every line the app's trails write (network, navigation and
+   * console), so a held community's credentials never reach a log file.
+   */
+  redact: (text: string) => string;
 }
 
 /** The password every person in a local run uses; the accounts are disposable. */
@@ -161,18 +166,20 @@ export async function launchDesktop(
     )
       appendFileSync(
         trail,
-        `${new Date().toISOString()} ${response.request().method()} ${url.pathname}${url.search} ${response.status()}\n`
+        context.redact(
+          `${new Date().toISOString()} ${response.request().method()} ${url.pathname}${url.search} ${response.status()}\n`
+        )
       );
   });
   page.on('framenavigated', (frame) => {
     if (frame === page.mainFrame())
-      appendFileSync(trail, `${new Date().toISOString()} NAV ${frame.url()}\n`);
+      appendFileSync(trail, context.redact(`${new Date().toISOString()} NAV ${frame.url()}\n`));
   });
   page.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning')
       appendFileSync(
         path.join(context.runRoot, `${name}-console.log`),
-        `${new Date().toISOString()} ${message.type()} ${message.text()}\n`
+        context.redact(`${new Date().toISOString()} ${message.type()} ${message.text()}\n`)
       );
   });
   if (!relaunch) {

@@ -163,6 +163,7 @@ async function main() {
         runRoot,
         launched,
         onLaunched: ownSignals,
+        redact,
       },
       infra,
       target,
@@ -193,7 +194,7 @@ async function main() {
         log(`FAIL url ${desktop.name}: ${desktop.page.url()}`);
         writeFileSync(
           path.join(runRoot, `FAIL-${desktop.name}-aria.yml`),
-          await desktop.page.locator('body').ariaSnapshot()
+          redact(await desktop.page.locator('body').ariaSnapshot())
         );
       } catch (shotError) {
         log(`fail-shot error: ${(shotError as Error).message}`);
@@ -244,6 +245,7 @@ async function releaseRemote(): Promise<string[]> {
       ).connections;
     } catch (error) {
       done.push(`${desktop.name}: could not list connections (${(error as Error).message})`);
+      cleanupFailed = true;
       continue;
     }
     for (const { ref } of rows) {
@@ -262,6 +264,7 @@ async function releaseRemote(): Promise<string[]> {
         }
       } catch (error) {
         done.push(`${desktop.name}: agent cleanup on ${ref} failed (${(error as Error).message})`);
+        cleanupFailed = true;
       }
       try {
         const ended = await json<{ remoteRevoked: boolean }>(
@@ -269,10 +272,10 @@ async function releaseRemote(): Promise<string[]> {
           { method: 'DELETE' }
         );
         done.push(`${desktop.name}: disconnected ${ref} (grant revoked: ${ended.remoteRevoked})`);
-        if (!ended.remoteRevoked) process.exitCode = 1;
+        if (!ended.remoteRevoked) cleanupFailed = true;
       } catch (error) {
         done.push(`${desktop.name}: disconnect ${ref} failed (${(error as Error).message})`);
-        process.exitCode = 1;
+        cleanupFailed = true;
       }
     }
   }
@@ -292,18 +295,20 @@ async function releaseRemote(): Promise<string[]> {
       done.push(
         `person-${person}: agent ${remoteMemberId} removed on the community (${response.status()})`
       );
-      if (!ok) process.exitCode = 1;
+      if (!ok) cleanupFailed = true;
     } catch (error) {
       done.push(
         `person-${person}: removing agent ${remoteMemberId} failed (${(error as Error).message})`
       );
-      process.exitCode = 1;
+      cleanupFailed = true;
     }
   }
   return done;
 }
 
 let cleaning: Promise<void> | undefined;
+/** Set by any cleanup step that could not undo what the run made. */
+let cleanupFailed = false;
 let interrupted: NodeJS.Signals | null = null;
 /**
  * Close every app, stop the servers, remove this run's Postgres (or drop only
@@ -325,11 +330,18 @@ function cleanup(): Promise<void> {
       receipt.cleanup = [...remoteCleanup, ...(infra ? await infra.teardown() : [])];
     } catch (cleanupError) {
       receipt.cleanup = [...remoteCleanup, `teardown failed: ${(cleanupError as Error).message}`];
-      process.exitCode = 1;
+      cleanupFailed = true;
     }
     if (!config.keepHomes) rmSync(homeRoot, { recursive: true, force: true });
     // Closing the apps makes the journey fail as it unwinds; the signal is the real reason.
     if (interrupted) receipt.outcome = 'INTERRUPTED';
+    // A journey that passed but left something behind did not pass: say so.
+    if (cleanupFailed) {
+      process.exitCode = 1;
+      receipt.cleanupFailed = true;
+      if (typeof receipt.outcome === 'string' && receipt.outcome.startsWith('PASS'))
+        receipt.outcome = 'FAIL-CLEANUP';
+    }
     writeFileSync(path.join(runRoot, 'receipt.json'), redact(JSON.stringify(receipt, null, 2)));
     log(`receipt: ${path.join(runRoot, 'receipt.json')}`);
     for (const line of [receipt.cleanup].flat()) log(`cleanup: ${String(line)}`);

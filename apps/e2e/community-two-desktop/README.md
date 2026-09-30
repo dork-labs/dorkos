@@ -121,7 +121,8 @@ the handoff's owner and B its member, who is already in. B signs in on the
 live community first, and the script photographs the sign-in page and the
 channel at desktop width and at phone width (390 x 844), before anything is
 typed. Then it runs steps 5-7, 9-15b, 17-20, 22, 23 and 25. Step 20 adds one
-agent each and leaves the community's agent limit alone.
+agent each and leaves the community's agent limit alone, and its name in the
+receipt says the limit was not tested.
 
 Every other step appears in `receipt.json` as `"skipped": "remote-mode"`, with
 the reason:
@@ -143,8 +144,17 @@ connections (which revokes that app's grant on the community), then both apps
 and their temporary homes. It never deletes the community, its channels or the
 two accounts; the gate does that when its hold ends. The receipt records
 `"mode": "remote"` and the community's host name. The passwords, both email
-addresses and the invite are replaced with `[redacted]` in `steps.log` and
-`receipt.json`, and no screenshot is named after any of them.
+addresses and the invite are replaced with `[redacted]` in `steps.log`,
+`receipt.json`, each app's network and console logs, and the `FAIL-*-aria.yml`
+snapshots, and no screenshot is named after any of them. Screenshots are not
+redacted: one can show a person's email address, for example in the app's
+account menu, but never a password (password fields are masked, and the
+sign-in page is photographed before anything is typed). Keep a remote run's
+folder to yourself.
+
+If cleanup cannot undo something it made, the run exits 1, the receipt says
+`"cleanupFailed": true`, and an outcome that would have been `PASS` or
+`PASS-WITH-FINDINGS` becomes `FAIL-CLEANUP`.
 
 To try remote mode without a live community, start a local one with this
 script's own `infra.ts`, make an owner and a member in a browser, and write
