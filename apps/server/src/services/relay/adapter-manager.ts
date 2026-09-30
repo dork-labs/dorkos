@@ -21,6 +21,7 @@ import {
   parseAgentSubject,
   toIdList,
   describeError,
+  TRACE_PRUNE_BATCH,
 } from '@dorkos/relay';
 import type {
   AgentRuntimeLike,
@@ -119,12 +120,14 @@ export interface AdapterEventRecorder {
 /** Deletes the delivery history a removed chat connection left behind (DOR-2604). */
 export interface ConnectionTraceEraser {
   /**
-   * Delete every delivery record and lifecycle event that names the connection.
+   * Delete up to `limit` of the delivery records and lifecycle events that
+   * name the connection.
    *
    * @param adapterId - The removed connection's id.
-   * @returns How many records were deleted.
+   * @param limit - The most records to delete in this call.
+   * @returns How many records were deleted; fewer than `limit` means none are left.
    */
-  deleteConnectionTraces(adapterId: string): number;
+  deleteConnectionTraces(adapterId: string, limit: number): number;
 }
 
 /** Options for {@link AdapterManager.removeAdapter}. */
@@ -1063,7 +1066,7 @@ export class AdapterManager {
       // it, so this path has to exist.
       // Its id may still name records from before its settings broke.
       if (await this.removeUnparsedEntry(id)) {
-        if (options.forgetHistory) this.deleteConnectionHistory(id);
+        if (options.forgetHistory) await this.deleteConnectionHistory(id);
         return;
       }
       throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
@@ -1106,7 +1109,7 @@ export class AdapterManager {
     await this.persistConfigs();
     // Best-effort cleanup of the removed adapter's stored secrets (DOR-280).
     await deleteAdapterSecrets(config, this.secretsCtx);
-    if (options.forgetHistory) this.deleteConnectionHistory(id);
+    if (options.forgetHistory) await this.deleteConnectionHistory(id);
 
     // Auto-delete bindings that belonged to the removed adapter
     const bindingStore = this.bindingSubsystem?.getBindingStore();
@@ -1143,11 +1146,19 @@ export class AdapterManager {
    *
    * @param id - The removed connection's id.
    */
-  private deleteConnectionHistory(id: string): void {
+  private async deleteConnectionHistory(id: string): Promise<void> {
     const eraser = this.deps.traceEraser;
     if (!eraser) return;
     try {
-      const deleted = eraser.deleteConnectionTraces(id);
+      // In batches, yielding between them, so a long history never holds the
+      // event loop (and the relay) for the whole delete.
+      let deleted = 0;
+      for (;;) {
+        const batch = eraser.deleteConnectionTraces(id, TRACE_PRUNE_BATCH);
+        deleted += batch;
+        if (batch < TRACE_PRUNE_BATCH) break;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
       logger.info(
         '[AdapterManager] Deleted %d delivery record(s) for removed adapter %s',
         deleted,

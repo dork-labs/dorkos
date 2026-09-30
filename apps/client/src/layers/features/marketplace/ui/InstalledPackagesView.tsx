@@ -381,8 +381,11 @@ const CONFIRM_WINDOW_MS = 3_000;
  *
  * Uninstall requires a two-click confirmation: the first click opens a
  * 3-second confirm window; a second click within that window fires the
- * mutation with `purge: false` (data is preserved). If the window expires
- * without a second click the row resets silently.
+ * mutation with `purge: false`, which keeps the package's own data. It does
+ * not keep everything: uninstalling a chat-app (adapter) package removes its
+ * connection, and with it that connection's delivery history and chat names
+ * (DOR-2604). If the window expires without a second click the row resets
+ * silently.
  *
  * Renders loading, error, empty, and populated states via shared primitives
  * (`PackageLoadingSkeleton`, `PackageErrorState`, `PackageEmptyState`).

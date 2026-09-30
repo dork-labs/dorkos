@@ -649,7 +649,7 @@ describe('TraceStore', () => {
       span('bare', 'relay.human.telegram.tg');
       store.insertAdapterEvent('tg', 'adapter.connected', 'Connected to relay');
 
-      const deleted = store.deleteConnectionTraces('tg');
+      const deleted = store.deleteConnectionTraces('tg', 1000);
 
       expect(deleted).toBe(6);
       expect(remaining()).toEqual([]);
@@ -667,7 +667,7 @@ describe('TraceStore', () => {
       span('tgx-in', 'relay.human.telegram.tgx.5', { from: 'relay.human.telegram.tgx.bot' });
       store.insertAdapterEvent('tg-2', 'adapter.connected', 'Connected to relay');
 
-      store.deleteConnectionTraces('tg');
+      store.deleteConnectionTraces('tg', 1000);
 
       expect(remaining()).toEqual(expect.arrayContaining(['tg2-in', 'tg2-forwarded', 'tgx-in']));
       expect(remaining()).not.toContain('tg-in');
@@ -681,7 +681,7 @@ describe('TraceStore', () => {
       span('underscore', 'relay.human.slack.a_b.C1', { from: 'relay.human.slack.a_b.bot' });
       span('lookalike', 'relay.human.slack.axb.C1', { from: 'relay.human.slack.axb.bot' });
 
-      store.deleteConnectionTraces('a_b');
+      store.deleteConnectionTraces('a_b', 1000);
 
       expect(remaining()).toEqual(['lookalike']);
     });
@@ -694,8 +694,22 @@ describe('TraceStore', () => {
       span('not-human', 'relay.system.tg.111');
       store.insertAdapterEvent('sl', 'adapter.connected', 'Connected to relay');
 
-      expect(store.deleteConnectionTraces('tg')).toBe(0);
+      expect(store.deleteConnectionTraces('tg', 1000)).toBe(0);
       expect(remaining()).toHaveLength(5);
+    });
+
+    it('deletes at most `limit` rows per call, until none are left', () => {
+      for (let i = 0; i < 7; i++) {
+        span(`m${i}`, `relay.human.telegram.tg.${i}`, { from: 'relay.human.telegram.tg.bot' });
+      }
+      span('keep', 'relay.human.telegram.tg-2.1', { from: 'relay.human.telegram.tg-2.bot' });
+
+      expect(store.deleteConnectionTraces('tg', 3)).toBe(3);
+      expect(remaining()).toHaveLength(5);
+      expect(remaining()).toContain('keep');
+      expect(store.deleteConnectionTraces('tg', 3)).toBe(3);
+      expect(store.deleteConnectionTraces('tg', 3)).toBe(1);
+      expect(remaining()).toEqual(['keep']);
     });
 
     it('deletes an event written before events had their own kind', () => {
@@ -705,7 +719,7 @@ describe('TraceStore', () => {
         eventType: 'adapter.connected',
       });
 
-      store.deleteConnectionTraces('tg');
+      store.deleteConnectionTraces('tg', 1000);
 
       expect(remaining()).toEqual([]);
     });

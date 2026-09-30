@@ -566,8 +566,9 @@ export class TraceStore {
    * Delete one chat connection's delivery records and the chat names they
    * hold, for when a person removes it (DOR-2604).
    *
-   * That is three kinds of row, deleted in one statement, so they go together
-   * or not at all:
+   * That is three kinds of row. At most `limit` of them go per call, so the
+   * caller can delete a long history in batches and yield
+   * between them, the way the retention sweep does (`relay-gc.ts`):
    *
    * - Every span whose subject is the connection's own,
    *   `relay.human.<platform>.<adapterId>` or anything under it: the messages
@@ -584,21 +585,27 @@ export class TraceStore {
    *
    * Agent traffic that never involved this connection stays, and so does the
    * rest of an agent's trace for a forwarded message: only the rows that name
-   * this connection go. So do its approval answers, published as
+   * this connection go. Its approval answers stay too, published as
    * `relay.system.approval-bridge.<platform>.<adapterId>`: they carry no chat
    * and no name.
    *
    * @param adapterId - The removed connection's id.
-   * @returns How many rows were deleted.
+   * @param limit - The most rows to delete in this call.
+   * @returns How many rows were deleted; fewer than `limit` means none are left.
    */
-  deleteConnectionTraces(adapterId: string): number {
+  deleteConnectionTraces(adapterId: string, limit: number): number {
     const from = sql`json_extract(${relayTraces.metadata}, '$.from')`;
     return this.db
       .delete(relayTraces)
       .where(
-        sql`${namesConnection(sql`${relayTraces.subject}`, adapterId)}
-          OR ${namesConnection(from, adapterId)}
-          OR json_extract(${relayTraces.metadata}, '$.adapterId') = ${adapterId}`
+        sql`${relayTraces.id} IN (
+          SELECT ${relayTraces.id} FROM ${relayTraces}
+          WHERE ${namesConnection(sql`${relayTraces.subject}`, adapterId)}
+            OR ${namesConnection(from, adapterId)}
+            OR json_extract(${relayTraces.metadata}, '$.adapterId') = ${adapterId}
+          ORDER BY ${relayTraces.id}
+          LIMIT ${limit}
+        )`
       )
       .run().changes;
   }

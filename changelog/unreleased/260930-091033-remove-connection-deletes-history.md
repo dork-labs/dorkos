@@ -4,6 +4,7 @@ covers:
   - "fix(relay): say only what removal deletes, and clear an unreadable entry's history (DOR-2604)"
   - "fix(relay): forget a connection's history only when a person removes it (DOR-2604)"
   - "fix(marketplace): forget a connection's history when its package is uninstalled (DOR-2604)"
+  - "fix(relay): delete a removed connection's history in batches (DOR-2604)"
 ---
 
 ### Changed

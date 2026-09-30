@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { AdapterManager, AdapterError, normalizeAgentRuntimes } from '../adapter-manager.js';
-import { AdapterRegistry, ClaudeCodeAdapter } from '@dorkos/relay';
+import { AdapterRegistry, ClaudeCodeAdapter, TRACE_PRUNE_BATCH } from '@dorkos/relay';
 import type { AdapterStatus, RelayAdapter, RelayPublisher } from '@dorkos/relay';
 import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import type { AdapterManagerDeps, AdapterMeshCoreLike } from '../adapter-manager.js';
@@ -1706,6 +1706,23 @@ describe('AdapterManager', () => {
         expect(traces.getObservedChats('tg-main-2')).toHaveLength(1);
       });
 
+      it('deletes a long history in batches until none is left', async () => {
+        vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+        // Two full batches, then a short one: the loop must keep going past a full batch.
+        const sizes = [TRACE_PRUNE_BATCH, TRACE_PRUNE_BATCH, 7];
+        const traceEraser = { deleteConnectionTraces: vi.fn(() => sizes.shift() ?? 0) };
+        const withEraser = new AdapterManager(registry, configPath, { ...mockDeps, traceEraser });
+        await initAndStart(withEraser);
+
+        await withEraser.removeAdapter('tg-main', { forgetHistory: true });
+
+        expect(traceEraser.deleteConnectionTraces).toHaveBeenCalledTimes(3);
+        expect(traceEraser.deleteConnectionTraces).toHaveBeenCalledWith(
+          'tg-main',
+          TRACE_PRUNE_BATCH
+        );
+      });
+
       it('still removes the connection when its history cannot be deleted', async () => {
         vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
         const traceEraser = {
@@ -1718,7 +1735,10 @@ describe('AdapterManager', () => {
 
         await withEraser.removeAdapter('tg-main', { forgetHistory: true });
 
-        expect(traceEraser.deleteConnectionTraces).toHaveBeenCalledWith('tg-main');
+        expect(traceEraser.deleteConnectionTraces).toHaveBeenCalledWith(
+          'tg-main',
+          TRACE_PRUNE_BATCH
+        );
         expect(withEraser.listAdapters().find((a) => a.config.id === 'tg-main')).toBeUndefined();
       });
     });
