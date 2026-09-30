@@ -5,7 +5,7 @@ description: Set up a Community on your own Fly, Neon and Tigris accounts with o
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-{/* DRAFT (DOR-2596): unlisted until DOR-2601 publishes it (not in meta.json, linked from nowhere). Each PENDING LIVE EVIDENCE comment names the acceptance row and live run in specs/community-launch-acceptance/ that must pass before its claim ships; remove it only when 04-acceptance.md records PASS for that row. */}
+{/* DRAFT (DOR-2596): not in meta.json and linked from no other page until DOR-2601 publishes it. It is NOT unreachable: once merged, the sitemap (apps/site/src/app/sitemap.ts), llms-full.txt and the site's AI index all list every page from source.getPages(), so this PR stays on hold until DOR-2601. Each PENDING LIVE EVIDENCE comment names the acceptance row and live run in specs/community-launch-acceptance/ that must pass before its claim ships; remove it only when 04-acceptance.md records PASS for that row. */}
 
 # Run your own community
 
@@ -23,7 +23,7 @@ You run one command in your terminal. It shows you everything it plans to create
 
 ## What you need
 
-- **A Mac.** This guide has been tested on macOS with Apple Silicon. Windows and Linux have not been tested.
+- **A Mac.** Setup has been tested on macOS with Apple Silicon. Windows and Linux have not been tested.
 - **A Fly account and a Neon account, each with a payment method.** Setup can add charges to both. See [Fly pricing](https://fly.io/docs/about/pricing/) and [Neon pricing](https://neon.com/pricing) before you start.
 - **Four command-line tools, signed in:**
 
@@ -36,7 +36,7 @@ You run one command in your terminal. It shows you everything it plans to create
 
   DorkOS uses `gh` to download the exact community release and check that DorkOS really published it. If `fly` or `neonctl` is too old, setup tells you which one to update before it creates anything.
 
-{/* PENDING LIVE EVIDENCE (A1, L4): the tool list and the install line come from runs on long-standing accounts; a fresh account following only this page has not run it yet. Add a realistic time estimate from L4. */}
+{/* PENDING LIVE EVIDENCE (A1, L4): the tool list and the install line come from runs on long-standing accounts; a fresh account following only this page has not run it yet. */}
 
 ## Pick your names and places
 
@@ -128,7 +128,7 @@ If you lost the output, list the setups that stopped:
 dorkos community deploy --list-incomplete
 ```
 
-Each line starts with a run ID. Run `dorkos community deploy --resume <run-id>` with that ID and nothing else, and setup prints the full pick-up command again.
+Each line starts with a run ID. If you run `dorkos community deploy --resume <run-id>` with only that ID, setup prints what exists and the full pick-up command, then stops with `--app-name is required`. That is expected: copy the full command it printed and run that.
 
 Setup saves its progress in a small file under your DorkOS data folder (`~/.dork/launches/community/`). That file holds names and IDs, never passwords or keys.
 
@@ -169,7 +169,7 @@ The last screen says your community is running and healthy. It also says **recov
 
 ## Invite the first person
 
-In your community, open **Manage**, then choose **Create invite** under **Invite someone**. Copy the **One-time invite link** and send it privately. A link lasts seven days and lets in one person.
+In your community, open **Manage**, then choose **Create invite** under **Invite someone**. Copy the **One-time invite link** and send it privately. A new link lasts seven days and lets in one person unless an admin changes that.
 
 The person opens the link, chooses **Continue**, then **Create account**, and finishes with **Join community**. The [Communities guide](/docs/guides/communities#start-or-join-a-community) covers invites, minimum ages and more.
 
@@ -201,11 +201,11 @@ Upgrades only move forward. Take and check a backup before every upgrade, becaus
 
 Removing a community deletes its data for good. Take a backup first if you might want it back.
 
-Check each name before you delete it. Then delete the file bucket, the database and the server, in that order:
+Check each name before you delete it. The commands below use the app name for all three. If you set `--bucket-name` or `--project-name` when you ran setup, use those names for the bucket and the database instead. Then delete the file bucket, the database and the server, in that order:
 
 ```sh
 fly storage destroy your-community --app your-community
-neonctl projects list --org-id your-neon-org-id    # find the project ID for your-community
+neonctl projects list --org-id your-neon-org-id    # find the project ID for your-community (or your --project-name)
 neonctl projects delete <project-id>
 fly apps destroy your-community
 ```
