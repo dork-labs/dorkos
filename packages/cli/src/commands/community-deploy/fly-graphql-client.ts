@@ -4,16 +4,21 @@
  * @module commands/community-deploy/fly-graphql-client
  */
 import {
+  FLY_APP_NAME_AVAILABLE_QUERY,
   FLY_APP_PROVENANCE_QUERY,
   FLY_APP_TIGRIS_QUERY,
+  FLY_TIGRIS_BY_NAME_QUERY,
   FLY_TIGRIS_CREATE_MUTATION,
   FLY_TIGRIS_CREDENTIALS_QUERY,
   FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   createTigrisVariables,
+  parseAppNameAvailableResponse,
   parseFlyAppProvenanceResponse,
+  parseTigrisOnAppResponse,
   parseAppTigrisResponse,
+  parseTigrisNameHeldResponse,
   parseTigrisCreateResponse,
   parseTigrisCredentialsResponse,
   parseTigrisDeleteResponse,
@@ -25,6 +30,7 @@ import {
   type TigrisAddOnIdentity,
   type TigrisBucketCredentials,
   type TigrisCreateInput,
+  type TigrisOnApp,
   type TigrisCreateResult,
 } from './fly-graphql-contract.js';
 import { SAFE_PROVIDER_IDENTIFIER_PATTERN } from './provider-identifiers.js';
@@ -231,6 +237,19 @@ export class FlyTigrisGraphqlClient {
   }
 
   /**
+   * Read one app and the Tigris add-ons attached to it, with what the removal proof needs.
+   *
+   * @param appName - Planned app name.
+   * @returns The app and its add-ons, or `null` when Fly reports no app with that name.
+   */
+  async readTigrisOnApp(appName: string): Promise<TigrisOnApp | null> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(FLY_APP_TIGRIS_QUERY, { appName }, parseTigrisOnAppResponse, false);
+  }
+
+  /**
    * Read one bucket's access keys by its exact ID, for a resumed launch that has none in memory.
    *
    * @param addOnId - Provider-issued add-on ID already recorded in the launch journal.
@@ -244,6 +263,40 @@ export class FlyTigrisGraphqlClient {
       FLY_TIGRIS_CREDENTIALS_QUERY,
       { id: addOnId },
       (response) => parseTigrisCredentialsResponse(response, addOnId),
+      false
+    );
+  }
+
+  /**
+   * Read whether Fly would accept a new app with this name now.
+   *
+   * @param appName - Planned app name.
+   */
+  async isAppNameAvailable(appName: string): Promise<boolean> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_APP_NAME_AVAILABLE_QUERY,
+      { name: appName },
+      parseAppNameAvailableResponse,
+      false
+    );
+  }
+
+  /**
+   * Read whether a Tigris bucket name is still held (see `FLY_TIGRIS_BY_NAME_QUERY`).
+   *
+   * @param bucketName - The planned bucket name.
+   */
+  async isTigrisNameHeld(bucketName: string): Promise<boolean> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(bucketName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_TIGRIS_BY_NAME_QUERY,
+      { name: bucketName, provider: 'tigris' },
+      parseTigrisNameHeldResponse,
       false
     );
   }
