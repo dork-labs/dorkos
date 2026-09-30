@@ -181,6 +181,20 @@ function isDeletionPending(error: unknown): boolean {
   );
 }
 
+/** Whether a Community answered that its host took it down: `423 COMMUNITY_TAKEN_DOWN`. */
+function isCommunityTakenDown(error: unknown): boolean {
+  return (
+    error instanceof PinnedHttpError &&
+    error.status === 423 &&
+    error.remoteCode === 'COMMUNITY_TAKEN_DOWN'
+  );
+}
+
+/** Whether a Community answered that its host suspended it: never a reason to purge. */
+function isSuspended(error: unknown): boolean {
+  return error instanceof PinnedHttpError && error.remoteCode === 'COMMUNITY_SUSPENDED';
+}
+
 /** Whether a Community answered `404 NOT_FOUND`: what a finished deletion answers. */
 function isNotFound(error: unknown): boolean {
   return (
@@ -288,13 +302,14 @@ export class RemoteCommunityPairingService {
   }
 
   /**
-   * A request answered `410 COMMUNITY_DELETED`: check this connection's access now, which records
-   * the deletion and purges the copies (DOR-2334). Nothing to do once the deletion is recorded:
-   * every later request of a deleted community answers the same, and each would otherwise ask.
+   * A request answered `410 COMMUNITY_DELETED` or `423 COMMUNITY_TAKEN_DOWN`: check this
+   * connection's access now, which records it and purges the copies (DOR-2334). Nothing to do
+   * once that is recorded: every later request answers the same, and each would otherwise ask.
    */
-  async communityDeletedSeen(ref: CommunityRef, ownerKey: string): Promise<void> {
+  async communityGoneSeen(ref: CommunityRef, ownerKey: string): Promise<void> {
     const record = await this.store.get(ref, ownerKey).catch(() => null);
-    if (!record || record.access?.lastKnown?.lifecycle === 'deleted') return;
+    const lifecycle = record?.access?.lastKnown?.lifecycle;
+    if (!record || lifecycle === 'deleted' || lifecycle === 'taken_down') return;
     await this.status(ref, ownerKey);
   }
 
@@ -309,7 +324,8 @@ export class RemoteCommunityPairingService {
     ownerKey: string
   ): Promise<RemoteConnectionDescriptor> {
     const lifecycle = descriptor.access?.lastKnown?.lifecycle;
-    if (lifecycle === 'deleted' || lifecycle === 'deletion_pending') return descriptor;
+    if (lifecycle === 'deleted' || lifecycle === 'deletion_pending' || lifecycle === 'taken_down')
+      return descriptor;
     const since = await this.store.notFoundSince(descriptor.ref, ownerKey);
     if (!since || this.timing.now() - Date.parse(since) < COMMUNITY_SEEMS_GONE_AFTER_MS)
       return descriptor;
@@ -425,13 +441,36 @@ export class RemoteCommunityPairingService {
       // definite, whatever this installation saw before (DOR-2334).
       if (isCommunityDeleted(error))
         return this.communityGone(ref, ownerKey, record.access, 'deleted');
+      // The host took the whole community down (DOR-2293): definite, and purged at once even
+      // though the host can reverse it for a few days — every grant was revoked with it, so a
+      // reversal answers with a 401, the person reconnects, and the mirrors fill again.
+      if (isCommunityTakenDown(error))
+        return this.communityGone(ref, ownerKey, record.access, 'taken_down');
+      // A reversed takedown leaves the community suspended. Say so, rather than go on showing it
+      // as taken down; a suspension purges nothing. Once the recorded lifecycle is no longer a
+      // gone one, a later takedown or deletion purges afresh (`communityGone`'s `wasGone`).
+      if (isSuspended(error) && record.access?.lastKnown?.lifecycle === 'taken_down') {
+        const suspended = await this.store.updateAccess(ref, ownerKey, {
+          state: 'verified',
+          effective: NO_CAPABILITIES,
+          lastKnown: {
+            lifecycle: 'suspended',
+            capabilities: NO_CAPABILITIES,
+            verifiedAt: new Date(this.timing.now()).toISOString(),
+          },
+        });
+        this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, suspended.access!);
+        return suspended;
+      }
       // A finished deletion removes the community's row, and the Community then answers
       // `404 NOT_FOUND`, which on its own could also be a missing channel. Having seen the
       // deletion pending, it is final (DOR-2334).
       if (
         isNotFound(error) &&
         (record.access?.lastKnown?.lifecycle === 'deletion_pending' ||
-          record.access?.lastKnown?.lifecycle === 'deleted')
+          record.access?.lastKnown?.lifecycle === 'deleted' ||
+          // A takedown is a deletion the host scheduled; a reversal suspends instead.
+          record.access?.lastKnown?.lifecycle === 'taken_down')
       )
         return this.communityGone(ref, ownerKey, record.access, 'deleted');
       // Never a deletion on its own: remembered, so a community that keeps answering this for
@@ -453,7 +492,7 @@ export class RemoteCommunityPairingService {
   }
 
   /**
-   * The Community is being deleted, or its deletion finished (DOR-2334). Everything this
+   * The Community is being deleted, its deletion finished, or its host took it down (DOR-2334). Everything this
    * installation copied from it goes, through the same path a rejected grant takes: streams and
    * queued posts stop, local agents' turns in its rooms halt, their enrollments end, and the
    * mirrored rooms, their entries, files and search rows are purged.
@@ -476,7 +515,7 @@ export class RemoteCommunityPairingService {
     ref: CommunityRef,
     ownerKey: string,
     before: CommunityConnectionAccess | null | undefined,
-    lifecycle: 'deletion_pending' | 'deleted'
+    lifecycle: 'deletion_pending' | 'deleted' | 'taken_down'
   ): Promise<RemoteConnectionDescriptor> {
     const gone = await this.store.updateAccess(ref, ownerKey, {
       state: 'verified',
@@ -491,7 +530,8 @@ export class RemoteCommunityPairingService {
     const key = `${ownerKey}\0${ref}`;
     const wasGone =
       before?.lastKnown?.lifecycle === 'deletion_pending' ||
-      before?.lastKnown?.lifecycle === 'deleted';
+      before?.lastKnown?.lifecycle === 'deleted' ||
+      before?.lastKnown?.lifecycle === 'taken_down';
     if (!(wasGone && this.purgedGone.has(key))) {
       const [purge] = await Promise.allSettled([
         this.onReconnectRequired?.(ref, ownerKey) ?? Promise.resolve(),
