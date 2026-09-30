@@ -11,15 +11,18 @@ import { expect, it } from 'vitest';
 
 const SRC = fileURLToPath(new URL('..', import.meta.url));
 
-/** Each key, what it serialises, and the files (relative to src/) allowed to take it. */
-const REGISTRY: Record<string, { purpose: string; files: RegExp }> = {
-  '77281502': { purpose: 'applying migrations', files: /^migrate\.ts$/ },
+/**
+ * Each key, what it serialises, and exactly the files (relative to src/) that take it. Moving
+ * one of these files, as the routes split will, means updating its entry here.
+ */
+const REGISTRY: Record<string, { purpose: string; files: string[] }> = {
+  '77281502': { purpose: 'applying migrations', files: ['migrate.ts'] },
   '77281503': {
     purpose: 'creating or claiming a community (bootstrap, host create, owner claim, import)',
-    files: /^(app\.ts|routes\/.+\.ts)$/,
+    files: ['app.ts', 'routes/owner-claims.ts', 'routes/imports.ts', 'routes/host.ts'],
   },
-  '77281504': { purpose: 'assigning handles', files: /^handles\.ts$/ },
-  '77281505': { purpose: 'appending to the erasure journal', files: /^erasure\/journal\.ts$/ },
+  '77281504': { purpose: 'assigning handles', files: ['handles.ts'] },
+  '77281505': { purpose: 'appending to the erasure journal', files: ['erasure/journal.ts'] },
 };
 
 function sources(directory: string): string[] {
@@ -30,9 +33,13 @@ function sources(directory: string): string[] {
   });
 }
 
-/** A literal key in a lock call, or a `…_LOCK = <number>` constant handed to one. */
+/**
+ * A number handed to any advisory lock function (`pg_advisory_*`, `pg_try_advisory_*`, lock or
+ * unlock, shared or not), written as a literal or inside a template string (`${77281503}`), or a
+ * `…_LOCK = <number>` constant handed to one.
+ */
 const LOCK_KEY =
-  /pg_advisory(?:_xact)?_lock(?:_shared)?\(\s*(\d+)\s*\)|\b[A-Z_]*LOCK\s*=\s*(\d{5,})\b/g;
+  /pg_(?:try_)?advisory(?:_xact)?_(?:un)?lock(?:_shared)?\(\s*(?:\$\{\s*)?['"`]?(\d+)|\b[A-Z_]*LOCK\s*=\s*['"`]?(\d{5,})\b/g;
 
 // Purpose: fails if a numeric advisory lock key is taken by a file outside its one purpose, or
 // if a key is used that the registry above does not name.
@@ -45,6 +52,10 @@ it('keeps every advisory lock key to one purpose', () => {
   }
   // The scan really sees the call sites, so an empty result cannot pass vacuously.
   expect(new Set(uses.map((use) => use.key))).toEqual(new Set(Object.keys(REGISTRY)));
-  const misplaced = uses.filter((use) => !REGISTRY[use.key]?.files.test(use.file));
+  const misplaced = uses.filter((use) => !REGISTRY[use.key]?.files.includes(use.file));
   expect(misplaced).toEqual([]);
+  // Every listed file still takes its key, so a stale entry cannot hide a move.
+  for (const [key, entry] of Object.entries(REGISTRY))
+    for (const file of entry.files)
+      expect(uses, `${file} takes ${key}`).toContainEqual({ key, file });
 });

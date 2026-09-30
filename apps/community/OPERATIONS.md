@@ -215,7 +215,7 @@ An account that has ever been a host operator cannot be deleted online, because 
 
 Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`, and adds the same line to the **erasure journal** in the database. A restored backup brings back everyone erased since it was taken, and it takes the journal back to the same moment. So keep a copy of the journal **outside the server and outside your backups, for at least as long as you keep backups.**
 
-The server keeps each journal line for `COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS` (400 days unless you change it; at least 30), then deletes it. Set it to your longest backup or point-in-time-recovery retention plus 30 days: a line is needed only while a backup older than it can still be restored.
+The server keeps each journal line for `COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS` (400 days unless you change it; at least 30), then deletes it. Set it to your longest backup or point-in-time-recovery retention plus 30 days: a line is needed only while a backup older than it can still be restored. The most it allows is 3,650 days, so if you keep backups for longer than about ten years, the server's journal cannot cover the oldest of them; keep your own copy's month files for as long as those backups.
 
 Copy the journal on a schedule (every hour is plenty) from a machine that is not the Community server, with a host API key that has only `communities:erasure_journal`. This script needs `curl`, `jq` and `flock` (on Linux, part of util-linux). It adds new lines to one file per month, such as `erasure-journal-2026-09.log`, remembers where it stopped, and deletes month files older than the retention. Keep the key out of the command line and the environment: put it in a curl config file that only the script's user can read (`chmod 600`), containing one line, `header = "Authorization: Bearer dkh_…"`.
 
@@ -250,7 +250,7 @@ done
 find "$journal_dir" -name 'erasure-journal-*.log' -mtime +"$retention_days" -delete
 ```
 
-After a restore, or once the line it stopped at has been deleted, the saved place no longer matches, so the next pull reads the journal from the start again and adds lines the copy already has. That is safe: running an erasure twice changes nothing. Alert when the script fails, the same way you would for a failed backup.
+After a restore, or once the line it stopped at has been deleted, the saved place no longer matches, so the next pull reads the journal from the start again and appends every line the server still has to the current month's file, including lines your copy already has. The duplicates are bounded by what the server keeps, and they are safe: running an erasure twice changes nothing. Alert when the script fails, the same way you would for a failed backup.
 
 You can also set `COMMUNITY_ERASURE_JOURNAL` to a file path, and the server appends every line there too. That file is only useful if it lives on storage that outlasts the server and stays out of your backups; on a host whose disk is replaced at each deploy, such as a Fly Machine without a volume, rely on the pulled copy.
 
