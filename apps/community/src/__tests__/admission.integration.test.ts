@@ -5,7 +5,7 @@ import { serve } from '@hono/node-server';
 import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
-import { sweepExpiredAdmissions } from '../routes/invites.js';
+import { sweepExpiredAdmissions } from '../routes/community/invites.js';
 import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;

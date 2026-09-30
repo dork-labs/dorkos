@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveCommunityMentions } from '../mentions.js';
+import { resolveCommunityMentions } from '../content/mentions.js';
 
 const roster = [
   { id: 'member-ana', handle: 'ana' },

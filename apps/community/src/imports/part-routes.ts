@@ -43,7 +43,7 @@ import {
   type BlobStore,
   type StoredBlob,
 } from '../storage/index.js';
-import type { Uploader } from '../routes/imports.js';
+import type { Uploader } from '../routes/host/imports.js';
 
 /** Part upload routes stream their bodies; the JSON body limit in `app.ts` skips them. */
 export const IMPORT_PART_UPLOAD_PATH = /^\/api\/v1\/imports\/[^/]+\/archive\/parts\/[^/]+$/;

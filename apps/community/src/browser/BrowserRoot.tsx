@@ -2,7 +2,7 @@ import { COMMUNITY_HOST_ADMIN_PATH } from '@dorkos/shared/community-wire';
 import { CommunityApp } from './CommunityApp.js';
 import { CommunityChooser } from './components/CommunityChooser.js';
 import { DeletionRecovery } from './components/DeletionRecovery.js';
-import { HostAdministration } from './components/HostAdministration.js';
+import { HostAdministration } from './components/host/HostAdministration.js';
 import { OwnerClaim } from './components/OwnerClaim.js';
 import { Pairing } from './components/Pairing.js';
 import { OWNER_CLAIM_PATH } from './owner-claim.js';

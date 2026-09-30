@@ -1,0 +1,330 @@
+import { createHash } from 'node:crypto';
+import type { Hono } from 'hono';
+import type { Pool, PoolClient } from 'pg';
+import type { z } from 'zod';
+import {
+  CommunityAdminCreateRequestSchema,
+  CommunityAdminCreateResponseSchema,
+  CommunityAdminHostCapabilitiesSchema,
+  CommunityAdminHostProjectionSchema,
+} from '@dorkos/shared/community-admin-wire';
+import type { CommunityConfig } from '../../config.js';
+import { transaction } from '../../data.js';
+import {
+  assignShortName,
+  releaseCommunityShortNames,
+  shortNameHoldKey,
+  type ShortNameHolds,
+} from '../../host/short-names.js';
+import {
+  createCommunityGated,
+  hostProjectionSql,
+  legalHoldActive,
+  parseHostCommunityId,
+  projectCommunity,
+  type HostCommunityRow,
+} from '../../host/communities.js';
+import {
+  assertHostActor,
+  recordHostAudit,
+  type HostActor,
+  type HostAuthority,
+} from '../../host/authority.js';
+import { ApiError, json, readJson } from '../../http.js';
+import { hashSecret, randomToken } from '../../security.js';
+import type { BlobStore } from '../../storage/index.js';
+
+function payloadHash(body: z.infer<typeof CommunityAdminCreateRequestSchema>): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        name: body.name,
+        description: body.description ?? null,
+        admissionPolicy: body.admissionPolicy ?? 'invite_only',
+        // Only when sent, so receipts written before limits existed still replay.
+        ...(body.limits
+          ? {
+              limits: {
+                maxActiveMembers: body.limits.maxActiveMembers,
+                maxStorageBytes: body.limits.maxStorageBytes,
+              },
+            }
+          : {}),
+        ...(body.shortName ? { shortName: body.shortName } : {}),
+      })
+    )
+    .digest('hex');
+}
+
+async function createPendingCommunity(
+  client: PoolClient,
+  input: {
+    actor: HostActor;
+    /** Read after the creation lock, so a key that expires while this waits is refused. */
+    now: () => Date;
+    body: z.infer<typeof CommunityAdminCreateRequestSchema>;
+    tokenHash: string;
+    expiresAt: Date;
+    reservedNames: ReadonlySet<string>;
+    holds: ShortNameHolds;
+  }
+): Promise<{ row: HostCommunityRow; grantId: string; expiresAt: Date; replayed: boolean }> {
+  await client.query('SELECT pg_advisory_xact_lock(77281503)');
+  await assertHostActor(client, input.actor, input.now());
+  const hash = payloadHash(input.body);
+  const receipt = await client.query<{
+    payload_hash: string;
+    community_id: string;
+    owner_claim_grant_id: string;
+    expires_at: Date;
+  }>(
+    `SELECT r.payload_hash,r.community_id,r.owner_claim_grant_id,g.expires_at
+     FROM community_creation_receipts r
+     JOIN bootstrap_grants g ON g.id=r.owner_claim_grant_id
+     WHERE r.idempotency_key=$1 FOR UPDATE OF r`,
+    [input.body.idempotencyKey]
+  );
+  if (receipt.rows[0]) {
+    if (receipt.rows[0].payload_hash !== hash) {
+      throw new ApiError(409, 'IDEMPOTENCY_CONFLICT', 'That creation key has different inputs.');
+    }
+    const existing = await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
+      receipt.rows[0].community_id,
+    ]);
+    if (!existing.rows[0])
+      throw new ApiError(409, 'STATE_CONFLICT', 'Creation receipt is invalid.');
+    return {
+      row: existing.rows[0],
+      grantId: receipt.rows[0].owner_claim_grant_id,
+      expiresAt: receipt.rows[0].expires_at,
+      replayed: true,
+    };
+  }
+  const community = await client.query<{ id: string }>(
+    `INSERT INTO communities(name,description,admission_policy,lifecycle)
+     VALUES($1,$2,$3,'pending_owner') RETURNING id`,
+    [input.body.name, input.body.description ?? null, input.body.admissionPolicy ?? 'invite_only']
+  );
+  const grant = await client.query<{ id: string }>(
+    `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at)
+     VALUES($1,'owner_claim',$2,$3) RETURNING id`,
+    [input.tokenHash, community.rows[0].id, input.expiresAt]
+  );
+  if (input.body.limits)
+    await client.query(
+      `INSERT INTO community_limits(community_id,max_active_members,max_storage_bytes)
+       VALUES($1,$2,$3)`,
+      [community.rows[0].id, input.body.limits.maxActiveMembers, input.body.limits.maxStorageBytes]
+    );
+  if (input.body.shortName)
+    await assignShortName(client, {
+      communityId: community.rows[0].id,
+      shortName: input.body.shortName,
+      reservedNames: input.reservedNames,
+      holds: input.holds,
+      at: input.now(),
+    });
+  await client.query(
+    `INSERT INTO community_creation_receipts(
+       idempotency_key,operator_user_id,operator_api_key_id,payload_hash,community_id,
+       owner_claim_grant_id
+     ) VALUES($1,$2,$3,$4,$5,$6)`,
+    [
+      input.body.idempotencyKey,
+      input.actor.kind === 'person' ? input.actor.userId : null,
+      input.actor.kind === 'api_key' ? input.actor.keyId : null,
+      hash,
+      community.rows[0].id,
+      grant.rows[0].id,
+    ]
+  );
+  await recordHostAudit(client, input.actor, {
+    action: 'community.create',
+    communityId: community.rows[0].id,
+    nextState: 'pending_owner',
+    changedFields: [
+      'name',
+      'description',
+      'admission_policy',
+      ...(input.body.limits ? ['limits'] : []),
+      ...(input.body.shortName ? ['short_name'] : []),
+    ],
+  });
+  const row = await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
+    community.rows[0].id,
+  ]);
+  return {
+    row: row.rows[0],
+    grantId: grant.rows[0].id,
+    expiresAt: input.expiresAt,
+    replayed: false,
+  };
+}
+
+/**
+ * Register the host plane's community records (list, read, create, abandon, and lifecycle) and
+ * the host's capabilities.
+ */
+export function registerHostRoutes(
+  app: Hono,
+  deps: {
+    pool: Pool;
+    config: CommunityConfig;
+    blobStore: BlobStore;
+    authority: HostAuthority;
+    now: () => Date;
+  }
+): void {
+  const { pool, config, blobStore, authority, now } = deps;
+  const holds: ShortNameHolds = {
+    key: shortNameHoldKey(config.authSecret),
+    cooloffDays: config.limits.shortNameCooloffDays,
+  };
+
+  // Whether this host can send mail and has single sign-on. Booleans only: never the mail
+  // server, the sender, the issuer, or any credential.
+  app.get('/host/capabilities', async (c) => {
+    await authority.require(c, 'communities:read');
+    return json(c, CommunityAdminHostCapabilitiesSchema, {
+      mail: config.mail !== null,
+      oidc: config.oidc !== null,
+    });
+  });
+
+  app.get('/host/communities', async (c) => {
+    const actor = await authority.require(c, 'communities:read');
+    const communities = await pool.query<HostCommunityRow>(
+      `${hostProjectionSql} ORDER BY c.created_at,c.id`
+    );
+    return c.json({
+      communities: communities.rows.map((row) => projectCommunity(row, actor)),
+      // The least notice this host allows before deleting a held community, for its own page.
+      deletionNoticeDays: config.limits.hostDeletionNoticeDays,
+    });
+  });
+
+  app.get('/host/communities/:id', async (c) => {
+    const actor = await authority.require(c, 'communities:read');
+    const communityId = parseHostCommunityId(c.req.param('id'));
+    const community = await pool.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
+      communityId,
+    ]);
+    if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community.rows[0], actor));
+  });
+
+  app.post('/host/communities', async (c) => {
+    const actor = await authority.require(c, 'communities:write');
+    const body = await readJson(c, CommunityAdminCreateRequestSchema);
+    const token = randomToken();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60_000);
+    const result = await createCommunityGated(pool, blobStore, (client: PoolClient) =>
+      createPendingCommunity(client, {
+        actor,
+        now,
+        body,
+        tokenHash: hashSecret(token),
+        expiresAt,
+        reservedNames: config.reservedShortNames,
+        holds,
+      })
+    );
+    c.header('Cache-Control', 'no-store');
+    return json(
+      c,
+      CommunityAdminCreateResponseSchema,
+      {
+        community: projectCommunity(result.row, actor),
+        ownerClaimGrantId: result.grantId,
+        ownerClaimToken: result.replayed ? null : token,
+        expiresAt: result.expiresAt.toISOString(),
+        replayed: result.replayed,
+      },
+      result.replayed ? 200 : 201
+    );
+  });
+
+  app.delete('/host/communities/:id', async (c) => {
+    const actor = await authority.require(c, 'communities:write');
+    const communityId = parseHostCommunityId(c.req.param('id'));
+    const outcome = await transaction(pool, async (client) => {
+      const community = await client.query<{ lifecycle: string; legal_hold_at: Date | null }>(
+        'SELECT lifecycle,legal_hold_at FROM communities WHERE id=$1 FOR UPDATE',
+        [communityId]
+      );
+      await assertHostActor(client, actor, now());
+      if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (community.rows[0].legal_hold_at) throw legalHoldActive();
+      if (community.rows[0].lifecycle !== 'pending_owner') {
+        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community can be abandoned.');
+      }
+      const imported = await client.query<{ id: string; state: string }>(
+        'SELECT id,state FROM community_imports WHERE community_id=$1 FOR UPDATE',
+        [communityId]
+      );
+      if (imported.rows[0]?.state === 'ready') {
+        // Nobody has claimed it, so nobody has ever read it. It holds content, so its rows and
+        // files are removed in the background, with no grace period.
+        await client.query(
+          `UPDATE community_imports SET state='cancelled',settled_at=NULL,next_attempt_at=now(),
+             updated_at=now() WHERE id=$1`,
+          [imported.rows[0].id]
+        );
+        await client.query(
+          `UPDATE bootstrap_grants SET revoked_at=now(),revoked_by=$2,revoked_by_api_key_id=$3
+           WHERE community_id=$1 AND revoked_at IS NULL AND consumed_at IS NULL`,
+          [
+            communityId,
+            actor.kind === 'person' ? actor.userId : null,
+            actor.kind === 'api_key' ? actor.keyId : null,
+          ]
+        );
+        await recordHostAudit(client, actor, {
+          action: 'community.abandon',
+          communityId,
+          priorState: 'pending_owner',
+        });
+        return 'removing' as const;
+      }
+      if (imported.rowCount) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'This community is being imported. Cancel its import instead.'
+        );
+      }
+      const unsafe = await client.query(
+        `SELECT 1 WHERE
+          EXISTS(SELECT 1 FROM members WHERE community_id=$1)
+          OR EXISTS(SELECT 1 FROM channels WHERE community_id=$1)
+          OR EXISTS(SELECT 1 FROM managed_blobs WHERE community_id=$1)
+          OR EXISTS(SELECT 1 FROM bootstrap_grants WHERE community_id=$1 AND revoked_at IS NULL)
+        `,
+        [communityId]
+      );
+      if (unsafe.rowCount) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'Revoke every owner claim and remove unclaimed tenant state first.'
+        );
+      }
+      await client.query('DELETE FROM community_creation_receipts WHERE community_id=$1', [
+        communityId,
+      ]);
+      await client.query('DELETE FROM bootstrap_grants WHERE community_id=$1', [communityId]);
+      // Host-set limits are metadata the host may give an unclaimed community; they go with it.
+      await client.query('DELETE FROM community_limits WHERE community_id=$1', [communityId]);
+      // Nobody ever reached a never-claimed community by its name, so the name is free at once.
+      await releaseCommunityShortNames(client, communityId, { hold: false });
+      await client.query('DELETE FROM communities WHERE id=$1', [communityId]);
+      await recordHostAudit(client, actor, {
+        action: 'community.abandon',
+        communityId,
+        priorState: 'pending_owner',
+      });
+      return 'removed' as const;
+    });
+    return c.body(null, outcome === 'removing' ? 202 : 204);
+  });
+}

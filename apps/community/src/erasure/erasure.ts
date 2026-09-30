@@ -10,8 +10,8 @@ import {
 import { transaction } from '../data.js';
 import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
 import { deleteReadyExports, restartExportJobs } from '../exports/store.js';
-import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../mentions.js';
-import { remove } from '../routes/members.js';
+import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../content/mentions.js';
+import { remove } from '../routes/community/members.js';
 
 /** Hours between a request and the erasure it schedules. A constant, not configuration. */
 export const ERASURE_WINDOW_HOURS = 72;

@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CommunityWireRedactionPageSchema } from '@dorkos/shared/community-wire';
 import { eraseMembership } from '../erasure/erasure.js';
 import { parseErasureJournal, reapplyErasures } from '../erasure/reapply.js';
-import { sweepExpiredPairings } from '../routes/pairings.js';
+import { sweepExpiredPairings } from '../routes/community/pairings.js';
 import {
   bootstrapHost,
   startTenancyHarness,

@@ -10,7 +10,7 @@ const V1_NAME = /^(manifest\.json|attachments\/[0-9a-f-]{36})$/;
 const allowV1 = (name: string) => V1_NAME.test(name);
 const allowAll = () => true;
 
-/** A version 1 export exactly as `routes/exports.ts` writes it: fflate streaming, stored. */
+/** A version 1 export exactly as `routes/community/exports.ts` writes it: fflate streaming, stored. */
 function versionOneArchive(manifest: Uint8Array, files: [string, Uint8Array][]): Buffer {
   const chunks: Uint8Array[] = [];
   const zip = new Zip((error, chunk) => {

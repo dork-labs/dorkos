@@ -672,7 +672,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   // against this public one, which a non-member of B could otherwise read.
   // Two routes gain nothing from it: GET /channels/:id/read-cursor and
   // GET /channels/:id/events answer 404 to any non-member, public or not
-  // (liveChannel in routes/events.ts). What keeps them in their tenant is that
+  // (liveChannel in routes/community/events.ts). What keeps them in their tenant is that
   // membership rows carry tenant foreign keys, so no member of A can ever be a
   // member of a channel in B.
   const createdPublic = await jsonRequest(`${other}/channels`, 'POST', {

@@ -6,7 +6,7 @@ import type { Pool } from 'pg';
 import { sweepErasures } from '../erasure/worker.js';
 import type { ErasureOptions } from '../erasure/erasure.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
-import { sweepExpiredPairings } from '../routes/pairings.js';
+import { sweepExpiredPairings } from '../routes/community/pairings.js';
 import {
   expectStatus,
   pairInstall,

@@ -210,7 +210,7 @@ export async function agentSteps(w: World): Promise<void> {
         await productCheck(
           'An agent past the limit is refused with a reason the person can act on',
           'The Community refuses the enrollment with 429 "Active agent limit reached." ' +
-            '(apps/community/src/routes/agents.ts), but the DorkOS app answers POST ' +
+            '(apps/community/src/routes/community/agents.ts), but the DorkOS app answers POST ' +
             '/api/communities/:ref/agents/:localAgentId/enroll with 502 "Community unavailable." because fail() in ' +
             'apps/server/src/routes/remote-communities.ts maps every unrecognised Community refusal to 502. Repro: run a ' +
             'Community with COMMUNITY_AGENTS_PER_OWNER=1, enroll one local agent from the channel Members panel, then ' +

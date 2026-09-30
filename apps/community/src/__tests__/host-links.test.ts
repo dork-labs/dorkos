@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { CommunityWireHostLinksSchema } from '@dorkos/shared/community-wire';
 import { parseConfig } from '../config.js';
-import { registerHostLinkRoutes } from '../routes/host-links.js';
+import { registerHostLinkRoutes } from '../routes/host/host-links.js';
 
 const base = {
   COMMUNITY_DATABASE_URL: 'postgres://postgres:pass@localhost:5432/community',
