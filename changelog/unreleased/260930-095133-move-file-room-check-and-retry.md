@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(cloud): check free space before sending a move file, and say why a retried move stopped (DOR-2610, DOR-2611)'
+  - 'fix(cloud): keep the move key whenever the refusal says the move may exist (DOR-2611)'
 ---
 
 ### Fixed
