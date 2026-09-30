@@ -84,6 +84,10 @@ export type OwnerExportManifestV2 = CommunityExportManifestV2 & {
   community: CommunityExportManifestV2['community'] & { lifecycle: 'active' | 'archived' };
 };
 
+/**
+ * A type narrowing, never false at run time: the scope check before the schema and the schema's
+ * refines are what enforce it.
+ */
 function isOwnerManifest(manifest: CommunityExportManifestV2): manifest is OwnerExportManifestV2 {
   return (
     manifest.scope === 'owner' &&
