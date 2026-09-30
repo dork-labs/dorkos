@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(relay): delete a removed connection's delivery records and chat names (DOR-2604)"
+  - "fix(relay): say only what removal deletes, and clear an unreadable entry's history (DOR-2604)"
 ---
 
 ### Changed
