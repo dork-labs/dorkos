@@ -71,9 +71,11 @@ export function registerOwnerReplacementRoutes(
     auth: CommunityAuth;
     /** The clock completions are dated and objections are recorded by; tests inject it. */
     now: () => Date;
+    /** How many days the host must wait to ask again after the owner keeps ownership. */
+    objectionCooldownDays: number;
   }
 ): void {
-  const { pool, auth, now } = deps;
+  const { pool, auth, now, objectionCooldownDays } = deps;
 
   app.get('/owner-replacement', async (c) => {
     const member = await noticeReader(c, pool, auth);
@@ -118,6 +120,7 @@ export function registerOwnerReplacementRoutes(
                   lifecycle: row.lifecycle,
                   hasPassword: await accountHasPassword(pool, member.user_id),
                 }),
+                objectionCooldownDays,
               }
             : { role: 'admin', ...shared };
       }

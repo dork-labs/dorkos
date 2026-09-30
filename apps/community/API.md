@@ -187,7 +187,7 @@ The response is `{ lines, nextCursor, hasMore }` with `Cache-Control: no-store`.
 
 ### Replace an owner who has left
 
-These routes are the host's half of replacing a community owner who has left. The owner's and the new owner's routes are below them. The browser pages behind the emailed links, `/keep-ownership` and `/owner-replacement`, are not built yet, so until they are, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE` ("This server can't send the owner's notice yet, so it can't replace an owner."), even on a host with mail set up, and so is sending a claim link again. Without mail the refusal says to set it up. `GET /api/v1/host/capabilities` reports only whether mail is set up. Cancel and list always work.
+These routes are the host's half of replacing a community owner who has left. The owner's and the new owner's routes are below them. The browser pages behind the emailed links, `/keep-ownership` and `/owner-replacement`, are in place, but the owner is not yet told on their DorkOS connection, so until they are, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE` ("This server can't send the owner's notice yet, so it can't replace an owner."), even on a host with mail set up, and so is sending a claim link again. Without mail the refusal says to set it up. `GET /api/v1/host/capabilities` reports only whether mail is set up. Cancel and list always work.
 
 The rest of this section describes what the server does with a request once they are accepted. The notices, the waiting period, the endings, and the owner's and new owner's routes below already work for any request that exists.
 
@@ -221,7 +221,7 @@ A request, a cancel, and a reissue each write one host audit row (`owner_replace
 
 `GET /api/v1/owner-replacement` (on the tenant path too) answers any active member, from a browser session or a connection grant of their own DorkOS installation; an agent's credential is `403`. It answers `Cache-Control: no-store` with `{ open, completed }` (`CommunityWireOwnerReplacementNoticeResponseSchema`):
 
-- The owner, while a request is open: `open` with `role: "owner"`, the request's id, state, reason, dates, and notice state, the host's `reference`, `claimReissuedAt` when the claim link was sent again, and `options`: `keep` (always), `transfer` (only in `active`, with a password), `delete` (with a password), and `needsPassword` when the account has none.
+- The owner, while a request is open: `open` with `role: "owner"`, the request's id, state, reason, dates, and notice state, the host's `reference`, `claimReissuedAt` when the claim link was sent again, and `options`: `keep` (always), `transfer` (only in `active`, with a password), `delete` (with a password), and `needsPassword` when the account has none. `objectionCooldownDays` says how long the host must then wait to ask again, so the confirmation can say so.
 - Admins, while one is open: `open` with `role: "admin"` and the same fields without `reference`, `claimReissuedAt`, or `options`.
 - Everyone, for 7 days after a completion: `completed: { newOwnerDisplayName, completedAt }`.
 - Otherwise both are `null`. No answer names a host operator, a key, a legal hold, or the account named in the request.
@@ -232,7 +232,7 @@ A request, a cancel, and a reissue each write one host audit row (`owner_replace
 
 The notice, the reminder, and the message about a new claim link each carry their own link, `<COMMUNITY_PUBLIC_URL>/keep-ownership#<token>`. It can only keep ownership: it is not a sign-in and reaches nothing else. The server keeps only its hash. Both routes are public, take `{ "token" }`, and answer `Cache-Control: no-store`; neither answers a `GET`, so a mail scanner that opens the link changes nothing.
 
-- `POST /api/v1/owner-replacements/object-preflight` answers a live link (unused, its request open) with `{ communityName, claimableAfter }`.
+- `POST /api/v1/owner-replacements/object-preflight` answers a live link (unused, its request open) with `{ communityName, claimableAfter, objectionCooldownDays }`.
 - `POST /api/v1/owner-replacements/object` keeps ownership, with no sign-in, and answers `{ "outcome": "kept" }`. The request ends as `objected`, exactly as above, and every other link for it stops working. Using any link of a request the owner already kept answers `{ "outcome": "kept" }` again and writes nothing. A link whose request ended any other way answers `{ "outcome": "ended" }`.
 
 A link the server does not know, and on the preflight any link that no longer works, gets one identical `403 FORBIDDEN` ("This link no longer works.").

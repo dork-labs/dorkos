@@ -1,0 +1,8 @@
+---
+covers:
+  - 'feat(community): show the owner replacement in the Community browser app (DOR-2542)'
+---
+
+### Added
+
+- The Community site now has every page for replacing an owner who has left. Hosts get an Owner part on each community's record: ask to replace the owner, see each request's progress in plain words, cancel it, or send the claim link again. The owner sees a banner with Keep ownership and only the choices they really have. Admins see that a request is open. Everyone sees a note for a week after a new owner takes over. The emailed link opens a page with one Keep ownership button and no sign-in, and the new owner's link opens a page that says when they can take over. Asking for a replacement is still refused for now, until the owner is also told in the DorkOS app. It will open up in a later release (DOR-2542)

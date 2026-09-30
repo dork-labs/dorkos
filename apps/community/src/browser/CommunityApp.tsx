@@ -4,6 +4,7 @@ import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission, type AdmissionResume } from './components/Admission.js';
 import { ChannelView } from './components/Channel.js';
 import { HoldBanner } from './components/HoldBanner.js';
+import { OwnerReplacementBanner } from './owner-replacement/OwnerReplacementBanner.js';
 import { Manage } from './components/Manage.js';
 import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
@@ -487,6 +488,11 @@ export function CommunityApp() {
           key={`${community!.id}:${me.member.memberId}`}
           communityId={community!.id}
           memberId={me.member.memberId}
+        />
+        <OwnerReplacementBanner
+          key={`${community!.id}:${me.member.memberId}`}
+          communityId={community!.id}
+          communityName={community!.name}
         />
         {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
         {settings ? (
