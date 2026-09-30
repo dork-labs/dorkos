@@ -36,6 +36,7 @@ import {
 import { prepareCommunityDeletionInventory } from '../../deletion-worker.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
 import { revokeTenantAccess } from '../../host/communities.js';
+import { endOwnerReplacement } from '../../owner-replacement/end.js';
 
 interface SettingsRow {
   id: string;
@@ -623,6 +624,12 @@ export function registerAdministrationRoutes(
                   ARRAY['lifecycle','delete_after'])`,
         [current.id, currentActor.id, current.lifecycle]
       );
+      // Asking to delete the community answers any open request to replace its owner.
+      await endOwnerReplacement(client, {
+        communityId: current.id,
+        ending: { state: 'superseded', ownerMemberId: currentActor.id },
+        now: requestedAt,
+      });
       return {
         community_id: current.id,
         lifecycle: 'deletion_pending',

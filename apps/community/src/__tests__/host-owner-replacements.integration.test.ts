@@ -492,6 +492,38 @@ describe('who may ask (AC-1)', () => {
 });
 
 describe('the owner erasing their account at the same moment', () => {
+  it('lets the real erasure route wait out a request paused after the owner lock, then refuses it', async () => {
+    // Purpose: fails if a request paused after it locked the owner's member row can deadlock
+    // with the owner's account erasure through its real route (account row, then member rows),
+    // or if the erasure slips through and the owner erases themselves mid-request (review
+    // probe P3). The request is paused by holding the host audit table it writes to next.
+    const c = await ownedCommunity(h, operator.h);
+    const outcome = await holdingLock(
+      h,
+      'LOCK TABLE host_audit_events IN EXCLUSIVE MODE',
+      [],
+      async (release, holderPid) => {
+        const pending = request(h, c.communityId, { bearer: keys.ownership.secret });
+        await waitForBlockedBy(h, holderPid, 1);
+        const erasing = h.call('/api/v1/account/erasures', {
+          cookie: c.ownerCookie,
+          body: { kind: 'account', confirmEmail: c.ownerEmail, password: TENANCY_PASSWORD },
+        });
+        // The erasure holds the account and waits on the owner's member row, behind the request.
+        await waitForLockWaiters(h, 2);
+        await release();
+        const [requested, erased] = await Promise.all([pending, erasing]);
+        return { requested: requested.status, erased: erased.status };
+      }
+    );
+    expect(outcome).toEqual({ requested: 201, erased: 409 });
+    expect(await replacementCount(h, c.communityId)).toBe(1);
+    const erasures = await h.pool.query('SELECT 1 FROM erasure_requests WHERE user_id=$1', [
+      await userIdOf(h, c.ownerMemberId),
+    ]);
+    expect(erasures.rowCount).toBe(0);
+  });
+
   it('neither deadlocks with a request nor lets the owner erase their account', async () => {
     // Purpose: fails if the request locks the owner's account row after their member row. An
     // account erasure locks the account and then its member rows, so that order deadlocks

@@ -188,21 +188,9 @@ export function registerHostOwnerReplacementRoutes(
       await lockOpenReplacement(client, actor, ids, at);
       await endOwnerReplacement(client, {
         ...ids,
-        ending: { state: 'withdrawn', cause: 'cancelled' },
-        notifyOwner: true,
+        ending: { state: 'withdrawn', cause: 'cancelled', by: actor },
         now: at,
       });
-      await recordHostAudit(client, actor, {
-        action: 'owner_replacement.cancel',
-        communityId: ids.communityId,
-        nextState: 'withdrawn',
-        changedFields: ['owner_replacement'],
-      });
-      await client.query(
-        `INSERT INTO audit_events(community_id,actor_kind,action,subject_id,next_state)
-         VALUES($1,'host','owner.replacement.withdrawn',$2,'withdrawn')`,
-        [ids.communityId, ids.replacementId]
-      );
       return readHostReplacement(client, ids.communityId, ids.replacementId);
     });
     if (!row) throw new ApiError(404, 'NOT_FOUND', 'Owner replacement not found.');

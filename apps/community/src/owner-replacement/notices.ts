@@ -1,0 +1,188 @@
+import type { Pool } from 'pg';
+import type { CommunityConfig } from '../config.js';
+import { plainTextMail, type ComposedMail } from '../mail/messages.js';
+import type { ClaimedNotice, NoticeComposer, NoticeComposers } from '../mail/worker.js';
+import { accountHasPassword } from '../routes/account/account-password.js';
+import { formatReplacementDate } from './dates.js';
+import { mintObjectToken } from './object-tokens.js';
+import { ownerReplacementOptions } from './options.js';
+import {
+  OPEN_REPLACEMENT_STATES,
+  replacementWait,
+  type OwnerReplacementReason,
+  type OwnerReplacementState,
+} from './records.js';
+
+const DAY_MS = 24 * 60 * 60_000;
+
+type Settings = Pick<CommunityConfig, 'publicUrl' | 'ownerReplacement'>;
+
+/** What every owner-replacement message reads about its request, as of the send. */
+interface NoticeSubject {
+  state: OwnerReplacementState;
+  reason: OwnerReplacementReason;
+  after_objection: boolean;
+  after_withdrawal: boolean;
+  claimable_after: Date | null;
+  community_name: string;
+  lifecycle: string;
+  new_owner_name: string | null;
+}
+
+async function readSubject(pool: Pool, notice: ClaimedNotice): Promise<NoticeSubject | null> {
+  const row = await pool.query<NoticeSubject>(
+    `SELECT r.state,r.reason,r.after_objection,r.after_withdrawal,r.claimable_after,
+       c.name AS community_name,c.lifecycle,m.display_name AS new_owner_name
+     FROM owner_replacements r JOIN communities c ON c.id=r.community_id
+     LEFT JOIN members m ON m.community_id=r.community_id AND m.id=r.new_owner_member_id
+     WHERE r.community_id=$1 AND r.id=$2`,
+    [notice.communityId, notice.subjectId]
+  );
+  return row.rows[0] ?? null;
+}
+
+/** The subject line every message about a request to take over this community carries. */
+function takeoverSubject(community: string): string {
+  return `Someone asked to take over ${community}`;
+}
+
+/**
+ * The earliest date the new owner could take over, as the owner should be told it. Once the
+ * notice has resolved it is the stored date. Before then it is this send's time plus the wait
+ * this notice would get if the mail server takes it now, read with the address's verified flag
+ * as it is now: the stored date is counted from the acceptance, which is never earlier, so the
+ * owner is never told a date sooner than the real one.
+ */
+function earliestDate(subject: NoticeSubject, verified: boolean, now: Date, settings: Settings) {
+  if (subject.claimable_after) return subject.claimable_after;
+  const wait = replacementWait({
+    notice_state: 'accepted',
+    verified_address: verified,
+    after_objection: subject.after_objection,
+    after_withdrawal: subject.after_withdrawal,
+    reason: subject.reason,
+  });
+  const days =
+    wait === 'standard'
+      ? settings.ownerReplacement.noticeDays
+      : settings.ownerReplacement.unreachableDays;
+  return new Date(now.getTime() + days * DAY_MS);
+}
+
+/** The owner's other ways out, only those this owner has now, and the community's address. */
+function optionParagraphs(
+  subject: NoticeSubject,
+  hasPassword: boolean,
+  communityUrl: string
+): string[] {
+  const options = ownerReplacementOptions({ lifecycle: subject.lifecycle, hasPassword });
+  const paragraphs: string[] = [];
+  if (options.transfer)
+    paragraphs.push(
+      `If you can sign in, you can also hand the community to someone yourself from its Settings: ${communityUrl}`
+    );
+  if (options.delete)
+    paragraphs.push('If you can sign in, you can also delete the community from its Settings.');
+  if (options.needsPassword)
+    paragraphs.push('To hand it to someone or delete it, add a password to your account first.');
+  if (!options.transfer) paragraphs.push(`The community: ${communityUrl}`);
+  return paragraphs;
+}
+
+/**
+ * The notice, the reminder, and the claim-reissued message: each carries its own fresh
+ * object-only link, and only while the request is still open. For the notice, the owner's
+ * verified flag is recorded on the request as of this send, since it decides the wait.
+ */
+function composeOpenNotice(settings: Settings, kind: 'notice' | 'reminder' | 'claim_reissued') {
+  const composer: NoticeComposer = async ({ pool, notice, now }) => {
+    const subject = await readSubject(pool, notice);
+    if (!subject || !OPEN_REPLACEMENT_STATES.includes(subject.state)) return null;
+    const account = await pool.query<{ emailVerified: boolean }>(
+      'SELECT "emailVerified" FROM "user" WHERE id=$1',
+      [notice.recipientUserId]
+    );
+    const verified = account.rows[0]?.emailVerified === true;
+    if (kind === 'notice')
+      await pool.query(
+        `UPDATE owner_replacements SET verified_address=$3
+         WHERE community_id=$1 AND id=$2 AND state='notifying'`,
+        [notice.communityId, notice.subjectId, verified]
+      );
+    const date = formatReplacementDate(earliestDate(subject, verified, now, settings));
+    const link = await mintObjectToken(pool, {
+      communityId: notice.communityId,
+      replacementId: notice.subjectId,
+      outboxId: notice.id,
+      publicUrl: settings.publicUrl,
+      now,
+    });
+    const communityUrl = `${settings.publicUrl}/c/${notice.communityId}`;
+    const keep = `To keep ownership, open this link and press Keep ownership. You don't need to sign in: ${link}`;
+    const hasPassword = await accountHasPassword(pool, notice.recipientUserId);
+    const opening =
+      kind === 'claim_reissued'
+        ? [
+            `The host sent the link for the new owner again. Nothing else changed. The earliest date is still ${date}.`,
+          ]
+        : [
+            `The host of ${subject.community_name} has been asked to make someone else its owner.`,
+            kind === 'reminder'
+              ? `If you do nothing, that can happen in 2 days, on or after ${date}.`
+              : `If you do nothing, that can happen on or after ${date}.`,
+          ];
+    return plainTextMail(takeoverSubject(subject.community_name), [
+      ...opening,
+      keep,
+      ...optionParagraphs(subject, hasPassword, communityUrl),
+    ]);
+  };
+  return composer;
+}
+
+/** The message when a request ends without the owner acting: withdrawn or expired. */
+function composeEnded(settings: Settings): NoticeComposer {
+  return async ({ pool, notice }): Promise<ComposedMail | null> => {
+    const subject = await readSubject(pool, notice);
+    if (!subject) return null;
+    const sentence =
+      subject.state === 'withdrawn'
+        ? 'The host withdrew its request. Nothing changed.'
+        : subject.state === 'expired'
+          ? 'The request expired. Nothing changed.'
+          : null;
+    if (!sentence) return null;
+    return plainTextMail(`The request to take over ${subject.community_name} has ended`, [
+      sentence,
+      `The community: ${settings.publicUrl}/c/${notice.communityId}`,
+    ]);
+  };
+}
+
+/** The message to the old owner once the account named in the request took ownership. */
+function composeCompleted(settings: Settings): NoticeComposer {
+  return async ({ pool, notice }): Promise<ComposedMail | null> => {
+    const subject = await readSubject(pool, notice);
+    if (subject?.state !== 'completed' || !subject.new_owner_name) return null;
+    return plainTextMail(`${subject.community_name} has a new owner`, [
+      `${subject.new_owner_name} is now the owner of ${subject.community_name}. You are still a member.`,
+      `The community: ${settings.publicUrl}/c/${notice.communityId}`,
+    ]);
+  };
+}
+
+/**
+ * The composer for every owner-replacement notice kind. Each is minimal on purpose: what is
+ * happening, the date, and how to keep ownership. None carries a claim token, the host's reason
+ * or reference, or anything from inside the community; only the notice, the reminder, and the
+ * claim-reissued message carry an object-only link.
+ */
+export function ownerReplacementComposers(settings: Settings): NoticeComposers {
+  return {
+    'owner_replacement.notice': composeOpenNotice(settings, 'notice'),
+    'owner_replacement.reminder': composeOpenNotice(settings, 'reminder'),
+    'owner_replacement.claim_reissued': composeOpenNotice(settings, 'claim_reissued'),
+    'owner_replacement.ended': composeEnded(settings),
+    'owner_replacement.completed': composeCompleted(settings),
+  };
+}
