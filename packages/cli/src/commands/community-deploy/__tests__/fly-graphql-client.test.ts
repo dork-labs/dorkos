@@ -172,7 +172,19 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
         data: {
           app: {
             name: 'community-fixture-app',
-            addOns: { totalCount: 1, nodes: [{ id: identity.id, name: identity.name }] },
+            network: 'default',
+            organization: { slug: 'fixture-org' },
+            addOns: {
+              totalCount: 1,
+              nodes: [
+                {
+                  id: identity.id,
+                  name: identity.name,
+                  createdAt: '2026-09-23T10:33:12Z',
+                  organization: { slug: 'fixture-org' },
+                },
+              ],
+            },
           },
         },
       })

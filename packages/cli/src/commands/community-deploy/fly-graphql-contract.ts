@@ -139,28 +139,6 @@ const AddOnDeletedEnvelopeSchema = z
   })
   .strict();
 
-const AppTigrisEnvelopeSchema = z
-  .object({
-    data: z
-      .object({
-        app: z
-          .object({
-            name: SafeIdentifierSchema,
-            addOns: z
-              .object({
-                totalCount: z.number().int().nonnegative(),
-                nodes: z.array(
-                  z.object({ id: SafeIdentifierSchema, name: SafeIdentifierSchema }).strict()
-                ),
-              })
-              .strict(),
-          })
-          .strict(),
-      })
-      .strict(),
-  })
-  .strict();
-
 const DeleteEnvelopeSchema = z
   .object({
     data: z
@@ -200,6 +178,50 @@ const AppProvenanceEnvelopeSchema = z
     // Fly answers an unknown app name with `app: null` plus an error entry; its text is never read.
     errors: z.array(z.unknown()).optional(),
   })
+  .strict();
+
+/**
+ * One app and its attached Tigris add-ons (`DorkosListAppTigris`). Both the live gate's cleanup and
+ * the uncertain-create removal read this one answer: the cleanup needs ids and names, and the removal
+ * also the app's own network and organization, so it can re-prove the app a bucket is bound to in
+ * the same read, and each add-on's creation time and organization.
+ */
+const AppTigrisSchema = z
+  .object({
+    name: SafeIdentifierSchema,
+    network: z
+      .string()
+      .max(256)
+      .regex(/^[\x21-\x7e]*$/u)
+      .nullable(),
+    organization: z.object({ slug: SafeIdentifierSchema }).strict(),
+    addOns: z
+      .object({
+        totalCount: z.number().int().nonnegative(),
+        nodes: z.array(
+          z
+            .object({
+              id: SafeIdentifierSchema,
+              // Nullable in Fly's schema. The cleanup refuses a nameless one; the removal reports it.
+              name: SafeIdentifierSchema.nullable(),
+              createdAt: z.iso.datetime({ offset: true }),
+              organization: z.object({ slug: SafeIdentifierSchema }).strict(),
+            })
+            .strict()
+        ),
+      })
+      .strict(),
+  })
+  .strict();
+const AppTigrisEnvelopeSchema = z
+  .object({
+    data: z.object({ app: AppTigrisSchema.nullable() }).strict(),
+    // Fly answers an unknown app name with `app: null` plus an error entry; its text is never read.
+    errors: z.array(z.unknown()).optional(),
+  })
+  .strict();
+const AppNameAvailableEnvelopeSchema = z
+  .object({ data: z.object({ appNameAvailable: z.boolean() }).strict() })
   .strict();
 
 const ExpectedBindingSchema = z
@@ -270,16 +292,20 @@ export const FLY_TIGRIS_CREDENTIALS_QUERY = `
 `;
 
 /**
- * Every Tigris bucket attached to one app, by id and name. The live gate's cleanup uses it to
- * confirm a bucket Fly reported as not found is really absent before it skips deleting it.
+ * Every Tigris bucket attached to one app, with the app's own network and organization. The live
+ * gate's cleanup uses it to confirm a bucket Fly reported as not found is really absent before it
+ * skips deleting it; the uncertain-create removal uses it to find a bucket and re-prove its app in
+ * one read. A bucket Fly has deleted is detached from the app (`app: null`), so it is not listed.
  */
 export const FLY_APP_TIGRIS_QUERY = `
   query DorkosListAppTigris($appName: String!) {
     app(name: $appName) {
       name
+      network
+      organization { slug }
       addOns(type: tigris, first: 50) {
         totalCount
-        nodes { id name }
+        nodes { id name createdAt organization { slug } }
       }
     }
   }
@@ -320,6 +346,27 @@ export const FLY_APP_PROVENANCE_QUERY = `
       certificates { totalCount }
       secrets { name }
     }
+  }
+`;
+
+/**
+ * Whether a Tigris bucket name is still held. Fly soft-deletes a bucket: right after
+ * `deleteAddOn` it renames the record `<name>_deleted_<suffix>` and detaches it from the app, and
+ * a lookup by the old name answers `NOT_FOUND` (live gate, 2026-09-30). Used only after an
+ * uncertain-create removal, before a resumed launch records a new bucket intent under that name.
+ */
+export const FLY_TIGRIS_BY_NAME_QUERY = `
+  query DorkosFindTigrisByName($name: String!, $provider: String!) {
+    addOn(name: $name, provider: $provider) {
+      id
+    }
+  }
+`;
+
+/** Whether Fly would accept a new app with this name now. */
+export const FLY_APP_NAME_AVAILABLE_QUERY = `
+  query DorkosAppNameAvailable($name: String!) {
+    appNameAvailable(name: $name)
   }
 `;
 
@@ -402,6 +449,32 @@ export interface FlyAppProvenance {
   certificateCount: number;
   /** Secret names on the app, without values. */
   secretNames: string[];
+}
+
+/** One Tigris add-on attached to an app, as the service reports it. */
+export interface TigrisAddOnOnApp {
+  /** Add-on ID, the confirmation token for removing it. */
+  id: string;
+  /** Add-on name, when the service reports one. */
+  name: string | null;
+  /** Creation time the service reported. */
+  createdAt: string;
+  /** Owning organization slug. */
+  organizationSlug: string;
+}
+
+/** An app and the Tigris add-ons attached to it, read in one request. */
+export interface TigrisOnApp {
+  /** App name. */
+  name: string;
+  /** Private network name, or `null` when Fly reports none. */
+  network: string | null;
+  /** Owning organization slug. */
+  organizationSlug: string;
+  /** Number of Tigris add-ons the service says the app has. */
+  totalCount: number;
+  /** The add-ons returned; fewer than `totalCount` means the list was cut short. */
+  addOns: TigrisAddOnOnApp[];
 }
 
 /**
@@ -588,27 +661,40 @@ export function parseTigrisReadResponse(response: unknown): TigrisAddOnIdentity 
   return sanitizeAddOn(parsed.data.addOn);
 }
 
-/**
- * Parse the Tigris buckets attached to one app.
- *
- * @param response - Decoded response held in the bounded sensitive sink.
- * @param appName - The app that was asked about.
- * @returns Every attached bucket's id and name; refuses a partial page or another app's answer.
- */
-export function parseAppTigrisResponse(
-  response: unknown,
-  appName: string
-): Array<{ id: string; name: string }> {
+function parseAppTigris(response: unknown): z.infer<typeof AppTigrisSchema> | null {
   let parsed: z.infer<typeof AppTigrisEnvelopeSchema>;
   try {
     parsed = AppTigrisEnvelopeSchema.parse(response);
   } catch {
     throw invalidResponse();
   }
-  const { app } = parsed.data;
+  const app = parsed.data.app;
+  if (app === null) return null;
+  // A found app must arrive without errors; a partial success is never read.
+  if (parsed.errors !== undefined && parsed.errors.length > 0) throw invalidResponse();
+  return app;
+}
+
+/**
+ * Parse the Tigris buckets attached to one app, for the live gate's cleanup.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ * @param appName - The app that was asked about.
+ * @returns Every attached bucket's id and name; refuses a partial page, another app's answer, a
+ *   missing app or a nameless bucket.
+ */
+export function parseAppTigrisResponse(
+  response: unknown,
+  appName: string
+): Array<{ id: string; name: string }> {
+  const app = parseAppTigris(response);
+  if (app === null) throw invalidResponse();
   if (app.name !== appName) throw new FlyGraphqlContractError('BINDING_MISMATCH');
   if (app.addOns.totalCount !== app.addOns.nodes.length) throw invalidResponse();
-  return app.addOns.nodes.map(({ id, name }) => ({ id, name }));
+  return app.addOns.nodes.map(({ id, name }) => {
+    if (name === null) throw invalidResponse();
+    return { id, name };
+  });
 }
 
 /**
@@ -641,6 +727,58 @@ export function parseFlyAppProvenanceResponse(response: unknown): FlyAppProvenan
     certificateCount: app.certificates.totalCount,
     secretNames: app.secrets.map((secret) => secret.name),
   };
+}
+
+/**
+ * Parse one read of an app's Tigris add-ons.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ * @returns The app and its add-ons, or `null` when Fly reports no app with that name.
+ */
+export function parseTigrisOnAppResponse(response: unknown): TigrisOnApp | null {
+  const app = parseAppTigris(response);
+  if (app === null) return null;
+  return {
+    name: app.name,
+    network: app.network,
+    organizationSlug: app.organization.slug,
+    totalCount: app.addOns.totalCount,
+    addOns: app.addOns.nodes.map((node) => ({
+      id: node.id,
+      name: node.name,
+      createdAt: node.createdAt,
+      organizationSlug: node.organization.slug,
+    })),
+  };
+}
+
+const AddOnHeldEnvelopeSchema = z
+  .object({ data: z.object({ addOn: z.object({ id: SafeIdentifierSchema }).strict() }).strict() })
+  .strict();
+
+/**
+ * Parse whether a bucket name is still held: only Fly's exact `NOT_FOUND` answer means free, and a
+ * clean record means held. Anything else is a failed read, never "free".
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ */
+export function parseTigrisNameHeldResponse(response: unknown): boolean {
+  if (AddOnNotFoundEnvelopeSchema.safeParse(response).success) return false;
+  if (AddOnHeldEnvelopeSchema.safeParse(response).success) return true;
+  throw invalidResponse();
+}
+
+/**
+ * Parse whether Fly would accept a new app with a name. Any error entry is a failed read.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ */
+export function parseAppNameAvailableResponse(response: unknown): boolean {
+  try {
+    return AppNameAvailableEnvelopeSchema.parse(response).data.appNameAvailable;
+  } catch {
+    throw invalidResponse();
+  }
 }
 
 /** Parse Tigris deletion acknowledgement and bind it to the exact expected name. */
