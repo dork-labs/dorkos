@@ -12,7 +12,7 @@ import {
 } from '@dorkos/shared/community-deliveries';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { RemoteConnectionStore } from './connection-store.js';
-import { RemoteCommunityPairingService } from './pairing-service.js';
+import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './pairing-service.js';
 import { RemoteCommunityAdapter } from './remote-community-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import { CommunityOutboxStore } from './community-outbox-store.js';
@@ -98,8 +98,34 @@ export function getRemotePairingService(): RemoteCommunityPairingService {
     // Counted just before a deleted or taken-down community's copy is purged (DOR-2575). No
     // database yet means no outbox yet, so nothing can be waiting.
     (communityRef, ownerKey) =>
-      db ? new CommunityOutboxStore(db).undeliveredCount(communityRef, ownerKey) : 0
+      db ? new CommunityOutboxStore(db).undeliveredCount(communityRef, ownerKey) : 0,
+    readRemoteInstallationAgents
   ));
+}
+
+/**
+ * The agents this installation added to one Community for one owner, which disconnecting removes
+ * there (DOR-2603). Read from this installation's own enrollments, so an agent another
+ * installation of the same person added is never among them. Revoked ones are included, marked
+ * inactive: a rejected grant revokes every enrollment here without telling the Community, and a
+ * removal the Community never confirmed leaves its agent active there. No database yet means no
+ * enrollment yet. Each is named as this app knows it, so the person recognises it.
+ *
+ * @param communityRef - The local connection ref.
+ * @param ownerKey - The local owner the connection belongs to.
+ */
+export function readRemoteInstallationAgents(
+  communityRef: CommunityRef,
+  ownerKey: string
+): RemoteInstallationAgent[] {
+  if (!db || !enrollments) return [];
+  return enrollments.allForOwner(communityRef, ownerKey).map((enrollment) => ({
+    localAgentId: enrollment.localAgentId,
+    remoteMemberId: enrollment.remoteMemberId,
+    active: enrollment.state === 'active',
+    displayName:
+      resolveRemoteCommunityLocalAgent(enrollment.localAgentId)?.displayName ?? 'Unnamed agent',
+  }));
 }
 
 /** Bind the trusted Mesh manifest-to-author lookup used by native enrollment and lifecycle code. */

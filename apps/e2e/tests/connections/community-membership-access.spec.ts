@@ -168,7 +168,7 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
         return route.fulfill({ json: { connection: pending, status: 'pending' } });
       if (path === '/api/community-connections/delta' && request.method() === 'DELETE') {
         deltaRemoved = true;
-        return route.fulfill({ json: { remoteRevoked: true } });
+        return route.fulfill({ json: { remoteRevoked: true, agentsNotRemoved: [] } });
       }
       if (path === '/api/community-connections' && request.method() === 'GET') {
         if (!started && !deltaRemoved) return route.fallback();

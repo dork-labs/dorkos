@@ -35,9 +35,9 @@ export interface JourneyContext {
   browserPages: Record<string, Page>;
   /**
    * Every agent this run enrolled on the community, with the person who owns
-   * it, so remote cleanup can remove it even after its app forgot it (step
-   * 25's Disconnect drops the app's side of B's enrollment, not the
-   * Community's).
+   * it, so remote cleanup can remove it on the Community itself even when its
+   * app could not (the Community was unreachable when the app disconnected, or
+   * the run stopped first).
    */
   madeAgents: Array<{ person: 'a' | 'b'; remoteMemberId: string }>;
 }

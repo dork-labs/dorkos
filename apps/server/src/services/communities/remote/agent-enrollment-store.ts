@@ -212,6 +212,32 @@ export class CommunityAgentEnrollmentStore {
       }));
   }
 
+  /**
+   * List every binding, active or revoked, one owner's connection made in one community. A
+   * disconnect reads it: a connection fence revokes every binding locally without touching the
+   * community, so a revoked binding can still be an agent active there.
+   */
+  allForOwner(
+    communityRef: CommunityRef,
+    ownerAuthorId: string
+  ): readonly CommunityAgentEnrollment[] {
+    return this.db
+      .select()
+      .from(communityAgentEnrollments)
+      .where(
+        and(
+          eq(communityAgentEnrollments.communityRef, communityRef),
+          eq(communityAgentEnrollments.ownerAuthorId, ownerAuthorId)
+        )
+      )
+      .all()
+      .map((row) => ({
+        ...row,
+        communityRef: row.communityRef as CommunityRef,
+        state: row.state as CommunityAgentEnrollment['state'],
+      }));
+  }
+
   /** List every active remote binding for one current local Mesh manifest. */
   activeForLocalAgent(localAgentId: string): readonly CommunityAgentEnrollment[] {
     return this.db

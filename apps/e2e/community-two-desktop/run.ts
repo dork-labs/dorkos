@@ -279,9 +279,11 @@ async function releaseRemote(): Promise<string[]> {
       }
     }
   }
-  // An agent can outlive its app's enrollment (step 25's Disconnect drops B's
-  // side of it), so remove each one this run made on the Community itself, as
-  // the person who owns it, through that person's signed-in browser.
+  // A backstop: remove each agent this run made on the Community itself, as the
+  // person who owns it, through that person's signed-in browser. Disconnect
+  // already removes an app's agents (DOR-2603), and so does the app cleanup
+  // above, so this usually answers 404; it matters when the Community could not
+  // be reached at disconnect, or a run stopped before its app could clean up.
   for (const { person, remoteMemberId } of madeAgents) {
     const page = browserPages[person === 'a' ? 'owner' : 'member'];
     try {
