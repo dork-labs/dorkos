@@ -39,6 +39,8 @@ export type {
   DecisionAnswerResult,
   ExtensionDecisionView,
 } from './extension-api.js';
+export type { StartWorkInput } from './start-work.js';
+export { StartWorkError } from './start-work.js';
 export {
   EXTENSION_EVENT_KINDS,
   EXTENSION_EVENT_CATEGORIES,
@@ -65,6 +67,7 @@ export type {
   ExtensionRecord,
   ExtensionRecordPublic,
   ExtensionModule,
+  ExtensionOrigin,
 } from './types.js';
 export type {
   SecretStore,
@@ -96,4 +99,5 @@ export type {
   DecisionWatch,
   RecordedDecisionInput,
   ProjectSettingsReader,
+  SessionsApi,
 } from './server-extension-api.js';

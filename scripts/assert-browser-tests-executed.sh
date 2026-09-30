@@ -260,6 +260,7 @@ REGISTERED_MODULES=(
   'connections/chat-connect-card.ts'
   'connections/event-notifications.ts'
   'connections/owner-management.ts'
+  'connections/session-access.ts'
   'conversation/ask-anywhere.ts'
   'conversation/ask-parks.ts'
   'dashboard-sidebar/now-survives-reload.ts'

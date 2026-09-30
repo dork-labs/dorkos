@@ -206,7 +206,10 @@ function buildDeps(): {
   resolver: { resolve: ReturnType<typeof vi.fn> };
   fetcher: { fetchFromGit: ReturnType<typeof vi.fn> };
   previewBuilder: { build: ReturnType<typeof vi.fn> };
-  pluginFlow: { install: ReturnType<typeof vi.fn> };
+  pluginFlow: {
+    install: ReturnType<typeof vi.fn>;
+    refreshExtensionCopies: ReturnType<typeof vi.fn>;
+  };
   agentFlow: { install: ReturnType<typeof vi.fn> };
   skillPackFlow: { install: ReturnType<typeof vi.fn> };
   adapterFlow: { install: ReturnType<typeof vi.fn> };
@@ -217,7 +220,7 @@ function buildDeps(): {
   const resolver = { resolve: vi.fn() };
   const fetcher = { fetchFromGit: vi.fn(), fetchPackage: vi.fn() };
   const previewBuilder = { build: vi.fn() };
-  const pluginFlow = { install: vi.fn() };
+  const pluginFlow = { install: vi.fn(), refreshExtensionCopies: vi.fn() };
   const agentFlow = { install: vi.fn() };
   const skillPackFlow = { install: vi.fn() };
   const adapterFlow = { install: vi.fn() };

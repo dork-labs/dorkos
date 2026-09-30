@@ -344,6 +344,19 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     await expect(page.getByRole('status')).toHaveText(
       'That community is not available to this account.'
     );
+    // A deleted community's link (its routes answer 410 COMMUNITY_DELETED) comes back the same.
+    const deletedId = randomUUID();
+    await pool.query(
+      `INSERT INTO community_deletion_tombstones(
+         community_id,requested_at,completed_at,outcome,retry_count,expires_at
+       ) VALUES($1,now(),now(),'deleted',0,now()+interval '30 days')`,
+      [deletedId]
+    );
+    await page.goto(`${baseUrl}/c/${deletedId}`);
+    await expect(page).toHaveURL(`${baseUrl}/`);
+    await expect(page.getByRole('status')).toHaveText(
+      'That community is not available to this account.'
+    );
     await pool.query(
       "UPDATE communities SET lifecycle='active',suspended_from_state=NULL,suspended_at=NULL WHERE id=$1",
       [secondId]

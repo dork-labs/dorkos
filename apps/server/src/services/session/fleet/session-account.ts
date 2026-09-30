@@ -44,7 +44,7 @@ export interface SessionBilling {
 
 /** A runtime that can name the folder a session runs and bills on (Claude Code). */
 interface AccountAwareRuntime {
-  accountRootForSession(sessionId: string, projectDir: string): Promise<string>;
+  accountRootForSession(sessionId: string, projectDir: string): Promise<string | null>;
   sessionBillsPerToken?(sessionId: string): Promise<boolean>;
 }
 
@@ -84,7 +84,9 @@ export async function billingAccountFor(
   const launched = runtime.getSessionAccount?.(sessionId);
   if (launched) return { ...billing, root: launched };
   try {
-    return { ...billing, root: await runtime.accountRootForSession(sessionId, projectDir) };
+    const root = await runtime.accountRootForSession(sessionId, projectDir);
+    // `null`: no account may work in the session's project, so nothing bills yet.
+    return root === null ? billing : { ...billing, root };
   } catch {
     return billing;
   }

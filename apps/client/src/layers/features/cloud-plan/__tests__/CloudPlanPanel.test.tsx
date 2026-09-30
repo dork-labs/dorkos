@@ -70,6 +70,16 @@ function linkedTransport(overrides: Partial<Record<string, unknown>> = {}): Tran
   return transport;
 }
 
+/** The line saying who can buy a plan, with its link to the pricing page's answer. */
+async function findEligibilityLine() {
+  const line = await screen.findByText(
+    /Paid plans, and communities that DorkOS hosts for you, are for people in the United States who are 18 or older\./
+  );
+  const link = within(line).getByRole('link', { name: 'Who can buy a plan?' });
+  expect(link).toHaveAttribute('href', 'https://dorkos.ai/pricing#faq');
+  return line;
+}
+
 describe('the plan-aware surfaces', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => cleanup());
@@ -92,6 +102,26 @@ describe('the plan-aware surfaces', () => {
     expect(transport.getCloudOrgs).not.toHaveBeenCalled();
     expect(transport.getCloudSeats).not.toHaveBeenCalled();
     expect(transport.getCloudCredits).not.toHaveBeenCalled();
+  });
+
+  it('says who can buy a plan before anybody links an account to buy one', async () => {
+    renderPanel(createMockTransport());
+    const line = await findEligibilityLine();
+    expect(line.previousElementSibling).toHaveTextContent(
+      /link this instance to a dorkos account above/i
+    );
+  });
+
+  it('says who can buy a plan on the plan card of a linked account', async () => {
+    renderPanel(linkedTransport());
+    const line = await findEligibilityLine();
+    // On the card that names the plan, not somewhere further down the section.
+    const card = screen
+      .getByText(entitlementsFixture.planDisplayName)
+      .closest('[data-slot="field-card"]');
+    expect(card).not.toBeNull();
+    expect(card).toContainElement(line);
+    expect(screen.getAllByText(/18 or older/)).toHaveLength(1);
   });
 
   it('says nothing about linking until the read has settled', async () => {

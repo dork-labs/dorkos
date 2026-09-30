@@ -161,6 +161,7 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
       google: false,
       github: false,
       oidc: { label: 'Example sign-in' },
+      minimumAge: null,
     });
     expect(issuer.requests).toEqual([]);
   });
@@ -621,7 +622,12 @@ describe('OpenID Connect discovery', () => {
     // Purpose: fails if a self-hosted Community without OIDC shows the button or accepts it.
     const app = createCommunityApp({ config: parseConfig(baseEnv), pool });
     const options = await app.request('/api/v1/auth-options');
-    expect(await options.json()).toEqual({ google: false, github: false, oidc: null });
+    expect(await options.json()).toEqual({
+      google: false,
+      github: false,
+      oidc: null,
+      minimumAge: null,
+    });
     const start = await app.request('/api/auth/sign-in/social', {
       method: 'POST',
       headers: { origin: PUBLIC_URL, 'content-type': 'application/json' },

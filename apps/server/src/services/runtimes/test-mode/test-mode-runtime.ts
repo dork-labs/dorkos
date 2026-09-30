@@ -403,8 +403,13 @@ export class TestModeRuntime implements AgentRuntime {
     return [];
   }
 
-  async renameSession(): Promise<void> {
-    // No-op in test mode
+  /**
+   * Set a session's title, as the Claude adapter does in its transcript: the
+   * list, the sidebar and `GET /api/sessions/:id` all read it from now on, and
+   * a later message never replaces it.
+   */
+  async renameSession(sessionId: string, title: string): Promise<void> {
+    this.registry.rename(sessionId, title);
   }
 
   /**

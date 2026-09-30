@@ -9,6 +9,12 @@
  * is the Flow extension's and nothing is spent until the operator opts in. A
  * person's own pick never goes through it.
  *
+ * **Only accounts that may work in the project are ever ranked** (spec
+ * `flow-multiproject` §8.4). The candidates are filtered by the account rules
+ * before anyone ranks them, so the advisor only sees eligible accounts, and
+ * its answer is filtered again. The context's folder is resolved to a project
+ * once per ranking; an empty folder is "no project".
+ *
  * @module services/core/usage/account-ranking
  */
 import {
@@ -27,6 +33,17 @@ import {
   toExtensionAccountUsage,
   validateAdvisorRanking,
 } from './account-advisor.js';
+import type { ProjectRef } from '@dorkos/shared/project-schemas';
+import { configManager } from '../config-manager.js';
+import {
+  accountEligibility,
+  joinNames,
+  NOT_USED_IN_ANY_PROJECT,
+  projectOfFolder,
+  refusalFor,
+  type EligibilityConfigReader,
+  type Ineligible,
+} from './account-eligibility.js';
 import { getAccountUsageStore } from './current-usage-store.js';
 import type { RuntimeAccount } from './runtime-accounts.js';
 
@@ -48,6 +65,8 @@ export interface RankedAccount {
   reason: string;
   /** The advisor's badge, when it gave one. */
   badge?: 'recommended' | 'reserved';
+  /** `true` for an account that may not work in the project ({@link notAllowedAccounts}). */
+  notAllowed?: true;
 }
 
 /** The answer to {@link rankAccounts}. */
@@ -95,13 +114,29 @@ interface Candidate {
   usage: AccountUsage;
 }
 
-/** The routable accounts of one runtime, in registry order, each with its usage. */
-function candidatesOf(runtime: string): Candidate[] {
+/** Whether an account may work in the project (spec `flow-multiproject` §8.2). */
+function mayWorkIn(
+  account: RuntimeAccount,
+  project: ProjectRef | null,
+  config: EligibilityConfigReader = configManager
+): boolean {
+  return accountEligibility(config, account.runtime, account.id, project).eligible;
+}
+
+/**
+ * The routable accounts of one runtime that may work in the project, in
+ * registry order, each with its usage.
+ */
+function candidatesOf(
+  runtime: string,
+  project: ProjectRef | null,
+  config: EligibilityConfigReader = configManager
+): Candidate[] {
   const store = getAccountUsageStore();
   if (!store || !isLedgerRuntime(runtime)) return [];
   return store
     .listAccounts(runtime)
-    .filter((account) => account.routable)
+    .filter((account) => account.routable && mayWorkIn(account, project, config))
     .map((account) => ({ account, usage: store.usageOfAccount(account) }));
 }
 
@@ -158,8 +193,12 @@ function headroom(usage: AccountUsage, key: string): number | null {
  * unless its usage reads `limited`; eligible first by weekly headroom (unknown
  * after known), then 5-hour headroom, then registry order; ineligible after.
  */
-function defaultRanking(ctx: AdvisorContext): AccountRanking {
-  const rows = candidatesOf(ctx.runtime)
+function defaultRanking(
+  ctx: AdvisorContext,
+  project: ProjectRef | null,
+  config: EligibilityConfigReader = configManager
+): AccountRanking {
+  const rows = candidatesOf(ctx.runtime, project, config)
     .filter(({ account }) => account.id !== ctx.excludeAccountId)
     .map(({ account, usage }, order) => {
       const eligible = usage.state !== 'limited';
@@ -206,20 +245,27 @@ function defaultRanking(ctx: AdvisorContext): AccountRanking {
  * @returns The validated ranking, `null` when there is no advisor, or
  *   `'failed'` when it threw, timed out or answered something that is not a ranking.
  */
-async function advisedRanking(ctx: AdvisorContext): Promise<AccountRanking | null | 'failed'> {
+async function advisedRanking(
+  ctx: AdvisorContext,
+  project: ProjectRef | null
+): Promise<AccountRanking | null | 'failed'> {
   if (!hasAccountAdvisor()) return null;
-  const candidates: AccountCandidate[] = candidatesOf(ctx.runtime).map(({ account, usage }) => ({
-    id: account.id,
-    label: account.label,
-    color: account.color,
-    usage: toExtensionAccountUsage(usage),
-  }));
+  const candidates: AccountCandidate[] = candidatesOf(ctx.runtime, project).map(
+    ({ account, usage }) => ({
+      id: account.id,
+      label: account.label,
+      color: account.color,
+      usage: toExtensionAccountUsage(usage),
+    })
+  );
   const answer: AdvisorRanking | undefined = await callAdvisor('rank', candidates, ctx);
   if (answer === undefined) return 'failed';
   // Read the accounts after the answer, so a row is filled from what is true now.
   const byKey = new Map<string, Candidate>();
   for (const runtime of LEDGER_RUNTIMES) {
-    for (const candidate of candidatesOf(runtime)) {
+    // Only eligible accounts are known, so an ineligible id the advisor
+    // returns anyway is dropped with the unknown ones.
+    for (const candidate of candidatesOf(runtime, project)) {
       byKey.set(`${runtime}\u0000${candidate.account.id}`, candidate);
     }
   }
@@ -259,14 +305,82 @@ async function advisedRanking(ctx: AdvisorContext): Promise<AccountRanking | nul
  * @param ctx - What is being decided, and for which runtime.
  */
 export async function rankAccounts(ctx: AdvisorContext): Promise<AccountRanking> {
-  const advised = await advisedRanking(ctx);
-  if (advised === null || advised === 'failed') return defaultRanking(ctx);
+  const project = await projectOfFolder(ctx.cwd);
+  const advised = await advisedRanking(ctx, project);
+  if (advised === null || advised === 'failed') return defaultRanking(ctx, project);
   return advised;
 }
 
 /**
+ * The account ids of one runtime that may work in the project, in core's own
+ * ranking order (weekly headroom, then 5-hour headroom, then registry order;
+ * out-of-usage accounts after). What the launch ladder falls back through when
+ * its automatic choice may not work in the project. Never asks the advisor, so
+ * a launch never waits on an extension. Empty with no usage store.
+ *
+ * @param runtime - The runtime.
+ * @param project - The launch's project, or null for no project.
+ * @param config - Where the rules live: the ladder passes its own reader.
+ */
+export function launchFallbackOrder(
+  runtime: string,
+  project: ProjectRef | null,
+  config: EligibilityConfigReader = configManager
+): string[] {
+  return defaultRanking({ purpose: 'launch', caller: 'person', cwd: '', runtime }, project, config)
+    .accounts.filter((row) => row.runtime === runtime)
+    .map((row) => row.id);
+}
+
+/**
+ * The accounts of one runtime that may NOT work in the folder's project, each
+ * as a ranked row that is not eligible and says why ("Only for client-app").
+ * For pickers that show such an account disabled rather than hiding it
+ * (`GET /api/sessions/:id/continue-options`).
+ *
+ * @param ctx - The same context the ranking was asked with.
+ */
+export async function notAllowedAccounts(ctx: AdvisorContext): Promise<RankedAccount[]> {
+  const store = getAccountUsageStore();
+  if (!store || !isLedgerRuntime(ctx.runtime)) return [];
+  const project = await projectOfFolder(ctx.cwd);
+  return store
+    .listAccounts(ctx.runtime)
+    .filter((account) => account.routable && account.id !== ctx.excludeAccountId)
+    .flatMap((account) => {
+      const verdict = accountEligibility(configManager, account.runtime, account.id, project);
+      if (verdict.eligible) return [];
+      return {
+        runtime: account.runtime,
+        id: account.id,
+        label: account.label,
+        color: account.color,
+        usage: store.usageOfAccount(account),
+        eligible: false,
+        reason: notAllowedReason(verdict, project),
+        notAllowed: true,
+      } satisfies RankedAccount;
+    });
+}
+
+/**
+ * The short line a picker shows beside an account that may not work here:
+ * "Only for client-app", or "Not used in dorkos".
+ *
+ * @param verdict - Why the account may not work here.
+ * @param project - The project, or null.
+ */
+export function notAllowedReason(verdict: Ineligible, project: ProjectRef | null): string {
+  if (verdict.reason === 'project-allowlist') return `Not used in ${verdict.project.name}`;
+  const names = verdict.allowedProjects.map((p) => p.name);
+  if (names.length === 0) return NOT_USED_IN_ANY_PROJECT;
+  return `Only for ${joinNames(names)}`;
+}
+
+/**
  * Whether an agent (`session_start`) or a relay message may launch a session on
- * the account it names. Refused with no advisor registered, refused when the
+ * the account it names. Refused first when the account may not work in the
+ * folder's project, with the plain sentence. Then refused with no advisor registered, refused when the
  * advisor fails, and otherwise allowed only when the advisor's `launch` ranking
  * marks the account eligible (refused with its reason when not).
  *
@@ -275,12 +389,26 @@ export async function rankAccounts(ctx: AdvisorContext): Promise<AccountRanking>
 export async function checkAccountLaunch(
   request: AccountLaunchRequest
 ): Promise<AccountLaunchDecision> {
-  const advised = await advisedRanking({
-    purpose: 'launch',
-    caller: request.caller,
-    cwd: request.cwd,
-    runtime: request.runtime,
-  });
+  // The account rules first, before the advisor is asked: an account that may
+  // not work in this project is refused with the plain sentence whatever the
+  // advisor would say (spec `flow-multiproject` §8.4).
+  const project = await projectOfFolder(request.cwd);
+  const verdict = accountEligibility(configManager, request.runtime, request.accountId, project);
+  if (!verdict.eligible) {
+    return {
+      allowed: false,
+      reason: refusalFor(configManager, request.accountId, project, verdict).message,
+    };
+  }
+  const advised = await advisedRanking(
+    {
+      purpose: 'launch',
+      caller: request.caller,
+      cwd: request.cwd,
+      runtime: request.runtime,
+    },
+    project
+  );
   if (advised === null) return { allowed: false, reason: NO_ADVISOR_REASON };
   if (advised === 'failed') return { allowed: false, reason: ADVISOR_FAILED_REASON };
   const row = advised.accounts.find(

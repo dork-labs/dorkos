@@ -13,6 +13,7 @@ import {
 } from '@dorkos/db';
 import {
   ConnectionIdSchema,
+  connectionWayName,
   type ConnectorManagementReviewAction,
   type ConnectorManagementReviewContext,
 } from '@dorkos/shared/connector-schemas';
@@ -40,7 +41,7 @@ export class ConnectorManagementReviewContextBuilder {
   ): ConnectorManagementReviewContext {
     if (action.kind === 'connect') {
       const provider = this.db
-        .select({ displayName: connectorProviderInstances.displayName })
+        .select({ type: connectorProviderInstances.type })
         .from(connectorProviderInstances)
         .where(eq(connectorProviderInstances.id, action.providerInstanceId))
         .get();
@@ -48,7 +49,7 @@ export class ConnectorManagementReviewContextBuilder {
       return {
         kind: action.kind,
         providerInstanceId: action.providerInstanceId,
-        providerDisplayName: provider.displayName,
+        providerDisplayName: connectionWayName(provider.type),
         toolkit: action.toolkit,
         ...(action.label ? { label: action.label } : {}),
       };
@@ -62,7 +63,7 @@ export class ConnectorManagementReviewContextBuilder {
         status: connections.status,
         enabled: connections.enabled,
         custody: connectorProviderInstances.custody,
-        providerDisplayName: connectorProviderInstances.displayName,
+        providerType: connectorProviderInstances.type,
         providerStatus: connectorProviderInstances.status,
         providerMode: connectorProviderInstances.mode,
         reconciliationStatus: connections.grantReconciliationStatus,
@@ -81,7 +82,7 @@ export class ConnectorManagementReviewContextBuilder {
       toolkit: connection.toolkit,
       status: connection.enabled ? connection.status : ('paused' as const),
       custody: connection.custody,
-      providerDisplayName: connection.providerDisplayName,
+      providerDisplayName: connectionWayName(connection.providerType),
       providerStatus: connection.providerStatus,
       reconciliationStatus: connection.reconciliationStatus,
     };

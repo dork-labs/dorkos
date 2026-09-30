@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The whole DorkOS half of an image, in one pass: a runtime emits an
  * `image_attachment`, and a browser ends up with the bytes.
@@ -89,7 +90,7 @@ import {
 } from '../../services/session/attachments/index.js';
 import { collectTriggeredTurn } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const server = listeningServer(app);
 

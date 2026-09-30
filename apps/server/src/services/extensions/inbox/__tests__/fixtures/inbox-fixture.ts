@@ -2,7 +2,8 @@
  * A server-half fixture that uses every `ctx.inbox` member the way a real
  * extension would (spec `flow-multiproject` §10.3): it raises, updates and
  * resolves a decision, answers actions, makes an offer, asks a question with
- * a near deadline, and records a history-only decision.
+ * a near deadline, records a history-only decision, and starts a chat
+ * (`ctx.sessions.start`, §7.7).
  *
  * `register` has the `ServerExtensionRegister` shape, so the conformance test
  * drives it through the real `createDataProviderContext`.
@@ -101,5 +102,24 @@ export async function raiseAll(ctx: DataProviderContext, deadline: string): Prom
     why: 'They were waiting a day.',
     outcome: 'answered',
     by: { kind: 'rule', label: "your 'Just do it' setting" },
+  });
+}
+
+/**
+ * Start work in a new chat by the fixture's own rule, as flow does when ideas
+ * are waiting (spec §7.7).
+ *
+ * @param ctx - The extension's context.
+ * @param project - Any folder inside the project.
+ */
+export function startSorting(
+  ctx: DataProviderContext,
+  project: string
+): Promise<{ sessionId: string }> {
+  return ctx.sessions.start({
+    project,
+    prompt: 'Sort the new ideas in the tracker into the right stage.',
+    title: 'Sorting 12 new ideas in dorkos',
+    reason: '12 new ideas were waiting to be sorted',
   });
 }

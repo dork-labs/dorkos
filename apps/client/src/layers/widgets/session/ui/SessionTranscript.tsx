@@ -39,6 +39,7 @@ import {
   ChatEmptyState,
   resolveMessageAuthor,
   StagedContextNote,
+  StartedPrompt,
   TypingDots,
   useApprovalAnnouncer,
   useStreamingAnnouncer,
@@ -134,6 +135,13 @@ interface SessionTranscriptProps {
    * one of the three somebody asked for — see `TimelineLandingInput.landOnRow`.
    */
   landOnRow?: () => string | undefined;
+  /**
+   * Fold the first thing the chat was asked under one quiet line ("What it was
+   * asked ▸"). Set when an extension or another chat started it (spec
+   * `flow-multiproject` §7.7): that prompt was written for the agent, and the
+   * chat's first line already says, for the person, why it exists.
+   */
+  foldFirstPrompt?: boolean;
 }
 
 /**
@@ -167,6 +175,7 @@ export function SessionTranscript({
   runtimeLabel,
   allowsDenyReason,
   landOnRow,
+  foldFirstPrompt = false,
 }: SessionTranscriptProps) {
   // How long the transcript was when this mount first had one — the line between
   // history and what arrived since, which decides which rows animate. Latched in
@@ -175,6 +184,17 @@ export function SessionTranscript({
   const historyCount = useRenderSlot<number | null>(null);
   if (historyCount.read() === null && messages.length > 0) historyCount.write(messages.length);
   const lastWidgetFenceIndex = useMemo(() => findLastWidgetFenceIndex(messages), [messages]);
+  // The first message a person would have typed, when it is folded: the first
+  // plain user turn. -1 when nothing is folded.
+  const foldedPromptIndex = useMemo(
+    () =>
+      foldFirstPrompt
+        ? messages.findIndex(
+            (m) => m.role === 'user' && m.messageType === undefined && !m._stagedContext
+          )
+        : -1,
+    [foldFirstPrompt, messages]
+  );
   const birthRecord = useAgentBirthRecord(sessionId);
 
   // Author identity for the gutter (spec `multi-participant-message-list`, D3):
@@ -302,6 +322,9 @@ export function SessionTranscript({
       // SessionMessage so none of that chrome applies to it.
       if (message._stagedContext) return <StagedContextNote content={message.content} />;
 
+      // A started chat's prompt: readable, never the headline.
+      if (messageIndex === foldedPromptIndex) return <StartedPrompt content={message.content} />;
+
       // The session's last message, whoever wrote it. An inline error card
       // offers Retry from here and nowhere else (DOR-1677): Retry re-sends the
       // last USER message, which is the prompt this card is about only while
@@ -352,6 +375,7 @@ export function SessionTranscript({
       listRows,
       messages.length,
       lastWidgetFenceIndex,
+      foldedPromptIndex,
       sessionId,
       historyCount,
       isTextStreaming,

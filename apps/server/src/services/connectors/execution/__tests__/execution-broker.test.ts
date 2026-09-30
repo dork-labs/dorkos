@@ -359,6 +359,57 @@ describe('ConnectorExecutionBroker', () => {
     });
   });
 
+  it('never tells an agent to try again soon when the refusal is not retryable', async () => {
+    db.update(connectorProviderInstances)
+      .set({ mode: 'managed' })
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .run();
+    db.insert(connectorManagedAuthorityOutbox)
+      .values({
+        commandId: 'scope-applied',
+        connectionId: CONNECTION_ID,
+        providerInstanceId: provider.instanceId,
+        executionConfigGeneration: 1,
+        ownerKind: OWNER.kind,
+        ownerId: OWNER.installationId,
+        managedConnectionId: EXTERNAL_REF,
+        scopeKind: 'agent_grants',
+        subjectId: 'agent-a',
+        scopeVersion: 4,
+        requestHash: 'request-a',
+        requestJson: '{}',
+        state: 'applied',
+        safeReason: null,
+        attemptCount: 0,
+        nextAttemptAt: null,
+        leaseOwner: null,
+        leasedUntil: null,
+        createdAt: '2026-09-06T12:00:00.000Z',
+        updatedAt: '2026-09-06T12:00:00.000Z',
+        resolvedAt: '2026-09-06T12:00:00.000Z',
+        compactedAt: null,
+      })
+      .run();
+    // No managed execution context is wired, so the action can't run.
+    broker = new ConnectorExecutionBroker(
+      authorization,
+      new ConnectorUsageStore(db),
+      { revalidate: () => true },
+      () => new Date('2026-09-06T12:00:01.000Z')
+    );
+
+    const response = await execute();
+    // The provider result is not retryable; the words the agent reads agree.
+    expect(response.result).toEqual({
+      status: 'error',
+      code: 'MANAGED_EXECUTION_CONTEXT_UNAVAILABLE',
+      message:
+        'Access to this account through the person’s DorkOS account isn’t ready, so the action didn’t run. Tell the person: they can check it on the Connections page in the DorkOS app.',
+    });
+    expect(JSON.stringify(response.result)).not.toMatch(/try again/i);
+    expect(provider.commands).toEqual([]);
+  });
+
   it('refuses an unbound legacy managed revision before intent instead of guessing by slug', async () => {
     db.update(connectorProviderInstances)
       .set({ mode: 'managed' })
@@ -989,7 +1040,14 @@ describe('ConnectorExecutionBroker', () => {
         },
         destructiveTarget
       )
-    ).rejects.toMatchObject({ payload: { code: 'CONNECTOR_APPROVAL_BINDING_MISMATCH' } });
+    ).rejects.toMatchObject({
+      payload: {
+        code: 'CONNECTOR_APPROVAL_BINDING_MISMATCH',
+        // High risk, never "can't be undone": the class covers forwarding too.
+        error:
+          'This is a high-risk action, so the person must approve this exact action before it runs.',
+      },
+    });
     expect(db.select().from(connectorUsageAttempts).all()).toEqual([]);
   });
 

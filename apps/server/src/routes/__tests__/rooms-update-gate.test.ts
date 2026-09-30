@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `PATCH /api/rooms/:id` — who may rename, describe or put away a room
  * (DOR-608), measured THROUGH THE ROUTE.
@@ -73,7 +74,7 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * One turn at a time per client, over the real HTTP routes (DOR-1088).
  *
@@ -85,7 +86,7 @@ import { SessionLockManager } from '../../services/session/session-lock.js';
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { sessionTurnQueue } from '../../services/session/trigger-turn.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 /** ONE listener for the whole file (DOR-483); see the cross-client suite. */

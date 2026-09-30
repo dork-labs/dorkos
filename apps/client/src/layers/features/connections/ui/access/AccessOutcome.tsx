@@ -26,7 +26,7 @@ export function AccessOutcome({
   );
   const syncCheckFailed = access.syncCheckFailed && (
     <p role="alert" className="text-destructive text-sm">
-      Couldn’t check the current sync status. The access change was not repeated.
+      Couldn’t check whether the change is done. DorkOS didn’t send it again.
     </p>
   );
 
@@ -95,10 +95,10 @@ export function AccessOutcome({
             </p>
             <p className="text-muted-foreground mt-1 text-sm">
               {pendingAdds && pendingRemovals
-                ? 'Removed access is already closed. New access stays unavailable until synchronization finishes.'
+                ? 'Access you removed has already ended. Agents can use the new access once DorkOS finishes updating it.'
                 : pendingRemovals
-                  ? 'Removed access is already closed. The service is still removing access.'
-                  : 'New access is saved but remains unavailable until synchronization finishes.'}
+                  ? 'Access you removed has already ended here. DorkOS is still removing it at the service.'
+                  : 'New access is saved. Agents can use it once DorkOS finishes updating it.'}
             </p>
           </div>
         </div>
@@ -113,7 +113,7 @@ export function AccessOutcome({
           <ShieldAlert className="text-destructive mt-0.5 size-4 shrink-0" aria-hidden />
           <div>
             <p data-testid="connector-access-outcome" role="alert" className="text-sm font-medium">
-              Access sync failed
+              Access didn’t update
             </p>
             <p className="text-muted-foreground mt-1 text-sm">
               {saveOutcome.authoritySync.reason} Agents cannot use this change. Check your account

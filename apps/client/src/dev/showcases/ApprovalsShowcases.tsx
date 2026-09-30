@@ -336,7 +336,7 @@ export function ApprovalCardShowcase() {
             sample({
               approvalId: '01JZ0000000000000000000061',
               capabilityId: 'connectors.execute_destructive',
-              capabilityTitle: "Make a change that can't be undone in a connected app",
+              capabilityTitle: 'Take a high-risk action in a connected app',
               requestedBy: 'DorkBot',
               area: null,
               alwaysOffered: false,
@@ -358,7 +358,7 @@ export function ApprovalCardShowcase() {
             sample({
               approvalId: '01JZ0000000000000000000062',
               capabilityId: 'connectors.execute_destructive',
-              capabilityTitle: "Make a change that can't be undone in a connected app",
+              capabilityTitle: 'Take a high-risk action in a connected app',
               requestedBy: 'DorkBot',
               area: null,
               alwaysOffered: false,

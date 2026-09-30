@@ -10,12 +10,44 @@ import { MANAGED_BLOB_RESERVATION_TTL_MS } from './managed-blobs.js';
  * retries remain eligible forever at the one-hour cap.
  */
 export function cleanupBackoffSql(
-  attemptsColumn: 'attempts' | 'pending_blob_deletions.attempts' | 'cleanup_attempts'
+  attemptsColumn:
+    'attempts' | 'pending_blob_deletions.attempts' | 'cleanup_attempts' | 'evidence_failures'
 ): string {
   return `LEAST(interval '1 hour', interval '1 minute' * power(2, LEAST(${attemptsColumn}, 6)))`;
 }
 
-/** Retry a bounded batch of unreferenced blobs left by failed metadata operations. */
+/**
+ * How long the tenant deletion worker and import teardown wait for the community row lock
+ * before a file deletion counts as failed. The pending-deletion sweep skips a locked row instead.
+ */
+export const BLOB_LOCK_TIMEOUT_MS = 5_000;
+/** How long one storage delete may take while the community row is held. */
+export const BLOB_DELETE_TIMEOUT_MS = 60_000;
+
+/**
+ * Retry a bounded batch of unreferenced blobs left by failed metadata operations.
+ *
+ * A file whose community is under a host legal hold is left alone, however it came to be
+ * queued, and is picked up again once the hold is released. Each file is deleted while its
+ * community row is held `FOR SHARE`, after checking for a hold, as the tenant deletion worker
+ * does: placing a hold takes that row `FOR UPDATE`, so once it commits no further file of that
+ * community is removed here. The community row is taken with `SKIP LOCKED`: a file whose
+ * community someone holds `FOR UPDATE` (placing a hold, an import finishing or being torn down)
+ * is skipped this round, neither waited for nor counted as a failed attempt, so the sweep never
+ * stalls behind it and reaches every other community's files in the same run.
+ *
+ * Accepted trade-off: the community row stays held `FOR SHARE` while the storage delete runs
+ * (at most `BLOB_DELETE_TIMEOUT_MS`), so an admin write to that community waits for it.
+ *
+ * A queue row with no `managed_blobs` row is not hold-checked, because the database cannot name
+ * its community. Only a legacy blob, one stored before the inventory existed, is queued that way
+ * (`queueBlobs` and `releaseHeldBlobs` accept such keys); tenant reconciliation adopts those into
+ * the inventory, after which they are checked like any other file.
+ *
+ * Lock order is community, then `managed_blobs`, then `pending_blob_deletions`; every path that
+ * deletes a queued file's rows takes them in that order (import teardown and
+ * `discardManagedBlob` included).
+ */
 export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore, batchSize = 50) {
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100)
     throw new Error('Invalid pending blob sweep batch size');
@@ -36,6 +68,12 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
                 SELECT 1 FROM community_import_files f WHERE f.blob_key=managed_blobs.blob_key
               ))
      ) candidates
+     -- A held file is not a candidate at all, so held files never fill a batch and starve
+     -- everyone else's. The lock below re-checks, for a hold placed after this read.
+     WHERE NOT EXISTS(
+       SELECT 1 FROM managed_blobs m JOIN communities c ON c.id=m.community_id
+       WHERE m.blob_key=candidates.blob_key AND c.legal_hold_at IS NOT NULL
+     )
      ORDER BY eligible_at,blob_key LIMIT $1`,
     [batchSize, MANAGED_BLOB_RESERVATION_TTL_MS]
   );
@@ -47,6 +85,20 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
     };
     try {
       await transaction(pool, async (client) => {
+        // A file's community never changes, so it is read before the lock. A community row
+        // someone else holds is skipped, not waited for; the storage delete below is bounded, so
+        // one slow file never holds the row, and with it a hold being placed, for long.
+        const owner = await client.query<{ community_id: string }>(
+          'SELECT community_id FROM managed_blobs WHERE blob_key=$1',
+          [candidate.blob_key]
+        );
+        if (owner.rows[0]) {
+          const community = await client.query<{ legal_hold_at: Date | null }>(
+            'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE SKIP LOCKED',
+            [owner.rows[0].community_id]
+          );
+          if (!community.rows[0] || community.rows[0].legal_hold_at) return;
+        }
         const managed = await client.query<{
           state: string;
           lease_expired: boolean;
@@ -81,6 +133,7 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
            UNION ALL SELECT 1 FROM export_segments WHERE blob_key=$1
            UNION ALL SELECT 1 FROM communities WHERE icon_blob_key=$1
            UNION ALL SELECT 1 FROM community_imports WHERE staging_blob_key=$1
+           UNION ALL SELECT 1 FROM community_import_parts WHERE blob_key=$1
            UNION ALL SELECT 1 FROM community_import_files WHERE blob_key=$1 LIMIT 1`,
           [candidate.blob_key]
         );
@@ -113,7 +166,9 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
           );
         }
         try {
-          await blobStore.delete(candidate.blob_key);
+          await blobStore.delete(candidate.blob_key, {
+            signal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
+          });
         } catch (error) {
           await client.query(
             `UPDATE pending_blob_deletions
@@ -143,6 +198,10 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
           "DELETE FROM managed_blobs WHERE blob_key=$1 AND state='pending_delete'",
           [candidate.blob_key]
         );
+        // A removed file's description goes with its bytes.
+        await client.query('DELETE FROM removed_file_blobs WHERE blob_key=$1', [
+          candidate.blob_key,
+        ]);
         attempt.outcome = 'deleted';
       });
     } catch (error) {

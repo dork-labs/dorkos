@@ -28,6 +28,9 @@ import type { BlobStore } from '../storage/index.js';
 const DAY_MS = 24 * 60 * 60_000;
 
 async function lockHostCommunity(client: PoolClient, communityId: string) {
+  // The joined owner_replacements row can be stale once this lock is granted (only c is locked,
+  // and it was read before the wait). Anything that ends a replacement must re-read it under the
+  // community lock rather than trust these projection columns.
   const current = await client.query<HostCommunityRow>(
     `${hostProjectionSql} WHERE c.id=$1 FOR UPDATE OF c`,
     [communityId]

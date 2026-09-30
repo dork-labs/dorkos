@@ -3,7 +3,6 @@
  * task 1.1, AC-1 to AC-10). Real PostgreSQL through the tenancy harness; filesystem storage
  * here, S3 in content-removal.s3.test.ts.
  */
-import { readdir } from 'node:fs/promises';
 import type { PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
@@ -38,7 +37,8 @@ import {
   type Person,
 } from './member-erasure-fixture.js';
 import { communityDigest, makeScene, type Scene } from './member-erasure-scenes.js';
-import { drainExports, openArchive } from './export-test-helpers.js';
+import { EXPORT_SETTINGS, drainExports, openArchive } from './export-test-helpers.js';
+import { runNextExport } from '../exports/worker.js';
 
 let h: TenancyHarness;
 let host: { cookie: string; communityId: string };
@@ -921,6 +921,132 @@ describe('concurrency (AC-8)', { timeout: 120_000 }, () => {
       .rows[0];
     expect(row.text).toBe(ERASED_ENTRY_TEXT);
     expect(row.erased_at).toBeInstanceOf(Date);
+  });
+
+  // Purpose: DOR-2330. An erasure batch locks its entries and then, through its redaction rows'
+  // foreign key, their channel; a removal of one of those entries must never wait on it in a
+  // cycle. The held channel row stops whichever side reaches it first while it holds the entry
+  // (and the content version), and the other side then queues behind that one, in each order.
+  // Not reproduced: that foreign key is checked at commit, so neither side needs the channel
+  // until it holds everything else, and the two meet on the member row (the erased member's own
+  // message) or on the entry (a message that mentions them) first. This stays as a guard.
+  it.each([
+    ['the erased member’s own message', 'erasure first'],
+    ['the erased member’s own message', 'removal first'],
+    ['a message that mentions them', 'erasure first'],
+    ['a message that mentions them', 'removal first'],
+  ] as const)(
+    'lets an erasure batch and a removal of %s share a channel (%s)',
+    async (target, order) => {
+      const s = await scene(order === 'erasure first' ? 'chanE' : 'chanR');
+      const own = target === 'the erased member’s own message';
+      // A person with one plain message and no file, so the tombstone batch is the first to reach
+      // the channel; the scene's own person is mentioned by Quin's message.
+      const erased = own ? await admitPerson(s, 'Rory') : s.p;
+      const entryId = own ? await say(s, { cookie: erased.cookie }, 'mine') : s.qMentionId;
+      const remove = () => removeMessage(s, entryId, { cookie: own ? s.owner.cookie : s.q.cookie });
+      const holder = await h.pool.connect();
+      let removal: Promise<Response> | undefined;
+      try {
+        let held!: () => void;
+        const holding = new Promise<void>((resolve) => (held = resolve));
+        const erasure = eraseMembership(h.pool, s.communityId, erased.memberId, {
+          log: () => undefined,
+          hooks: {
+            // Just before the batch that touches the entry: tombstones for the member's own
+            // message, mentions for someone else's.
+            afterStep: async (step) => {
+              if (step !== (own ? 'exports' : 'tombstones')) return;
+              await holder.query('BEGIN');
+              await holder.query('SELECT 1 FROM channels WHERE id=$1 FOR UPDATE', [s.channelId]);
+              if (order === 'removal first') {
+                removal = remove();
+                await waitForLockWaiters(h, 1, 'COMMIT');
+              }
+              held();
+            },
+          },
+        });
+        await holding;
+        if (order === 'erasure first') {
+          await waitForLockWaiters(h, 1, 'COMMIT');
+          removal = remove();
+        }
+        await waitForLockWaiters(h, 2);
+        await holder.query('COMMIT');
+        const [erasedOutcome, removed] = await Promise.all([erasure, removal!]);
+        expect(erasedOutcome).toBe('erased');
+        expect(removed.status).toBe(200);
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        holder.release();
+      }
+      const row = (await h.pool.query('SELECT text,erased_at FROM entries WHERE id=$1', [entryId]))
+        .rows[0];
+      // Erasure wins over a removal of the member's own message; Quin's removal of their own
+      // message stands, and erasure no longer finds the mention in it.
+      expect(row.text).toBe(own ? ERASED_ENTRY_TEXT : REMOVED_ENTRY_TEXT.author);
+    }
+  );
+
+  // Purpose: DOR-2330. Starting an export and erasure's export step both lock the content
+  // version and the export's job row. The export took the job first and the version second,
+  // erasure the other way round, so each could hold what the other waits for and Postgres
+  // aborted one of them. The held version row queues erasure first and the export second.
+  it('lets an export start while erasure restarts it, without a deadlock', async () => {
+    const s = await scene('exportstart');
+    await drainExports(h.pool, h.blobStore);
+    const created = await body<{ export: { id: string } }>(
+      await h.call(`${s.base}/me/export`, { cookie: s.q.cookie, body: {} }),
+      202,
+      'export'
+    );
+    const failures = vi.spyOn(console, 'error');
+    const holder = await h.pool.connect();
+    try {
+      let held!: () => void;
+      const holding = new Promise<void>((resolve) => (held = resolve));
+      const erasure = eraseMembership(h.pool, s.communityId, s.p.memberId, {
+        log: () => undefined,
+        hooks: {
+          afterStep: async (step) => {
+            if (step !== 'files') return;
+            await holder.query('BEGIN');
+            await holder.query(
+              'SELECT 1 FROM community_content_versions WHERE community_id=$1 FOR UPDATE',
+              [s.communityId]
+            );
+            held();
+          },
+        },
+      });
+      await holding;
+      await waitForLockWaiters(h, 1, 'UPDATE community_content_versions');
+      const exporting = runNextExport({
+        pool: h.pool,
+        blobStore: h.blobStore,
+        settings: EXPORT_SETTINGS,
+      });
+      await waitForLockWaiters(h, 1, 'version::text AS version FROM community_content_versions');
+      await holder.query('COMMIT');
+      const [erasedOutcome, ran] = await Promise.all([erasure, exporting]);
+      expect(erasedOutcome).toBe('erased');
+      expect(ran).toBe(created.export.id);
+      expect(
+        failures.mock.calls.filter(([message]) => message === 'Community export attempt failed')
+      ).toEqual([]);
+    } finally {
+      failures.mockRestore();
+      await holder.query('ROLLBACK').catch(() => undefined);
+      holder.release();
+    }
+    // Erasure sent the job back to the start; it now runs to ready.
+    await drainExports(h.pool, h.blobStore);
+    const state = await h.pool.query<{ state: string }>(
+      'SELECT state FROM export_archives WHERE id=$1',
+      [created.export.id]
+    );
+    expect(state.rows[0].state).toBe('ready');
   });
 
   // Purpose: the removal bumps the content version and writes a redaction row, so an export

@@ -9,6 +9,33 @@
  * launcher the moment the question appears should that check ever be bypassed.
  */
 import { CommunityLiveGateError } from './community-deploy-live-capture.js';
+import { FLY_DEPLOY_TIMEOUT_MS } from '../src/commands/community-deploy/fly-mutate.js';
+import { PROVIDER_WRITE_TIMEOUT_MS } from '../src/commands/community-deploy/provider-mutation.js';
+
+/** How long the launcher's own health check may take after a deploy (`verifyCommunityHealth`). */
+const LAUNCHER_HEALTH_TIMEOUT_MS = 2 * 60_000;
+
+/**
+ * The longest one launcher run may spend on its own deadlines, derived from them so the gate can
+ * never cut off a launcher that is still inside one (DOR-2169: a 12-minute gate limit was shorter
+ * than one launcher's worst case once deploys got ten minutes).
+ *
+ * - First run: three creates (app, project, bucket) and two secret stages (bucket keys, runtime
+ *   secrets) at the write deadline, one deploy, one health check.
+ * - Resumed run: a possible redeploy after an interrupted release, the owner step's secret stage
+ *   and secret deploy, and two health checks.
+ */
+export const COMMUNITY_LIVE_LAUNCHER_WORST_CASE_MS = Math.max(
+  5 * PROVIDER_WRITE_TIMEOUT_MS + FLY_DEPLOY_TIMEOUT_MS + LAUNCHER_HEALTH_TIMEOUT_MS,
+  PROVIDER_WRITE_TIMEOUT_MS + 2 * FLY_DEPLOY_TIMEOUT_MS + 2 * LAUNCHER_HEALTH_TIMEOUT_MS
+);
+
+/**
+ * How long the gate lets one launcher run before it kills it: the launcher's worst case plus ten
+ * minutes for its fast reads, the operator-facing prompts the gate answers, and the owner proof.
+ */
+export const COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS =
+  COMMUNITY_LIVE_LAUNCHER_WORST_CASE_MS + 10 * 60_000;
 
 /** Text of the launcher's Tigris terms question, which only a person may answer. */
 export const TIGRIS_TERMS_PROMPT = 'Tigris terms acceptance';

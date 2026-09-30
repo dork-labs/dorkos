@@ -452,12 +452,14 @@ describe('assertNangoEncryptionKey — the enforced 256-bit-key gate', () => {
 
   it('refuses a missing key with a helpful, secret-free error', () => {
     expect(() => assertNangoEncryptionKey(undefined)).toThrow(NangoEncryptionKeyError);
-    expect(() => assertNangoEncryptionKey('')).toThrow(/NANGO_ENCRYPTION_KEY is not set/);
+    expect(() => assertNangoEncryptionKey('')).toThrow(/Nango server uses, then restart DorkOS\.$/);
   });
 
   it('refuses a key of the wrong length (not 256-bit)', () => {
     const shortKey = Buffer.alloc(16).toString('base64');
-    expect(() => assertNangoEncryptionKey(shortKey)).toThrow(/256-bit/);
+    expect(() => assertNangoEncryptionKey(shortKey)).toThrow(
+      /NANGO_ENCRYPTION_KEY is the wrong length: it has 16 bytes.*then restart DorkOS\.$/
+    );
   });
 });
 

@@ -19,14 +19,18 @@ export type ContinueOptionsList = ContinueOptionsResponse['ranking'];
 
 /**
  * Whether a person may pick a row (decided, Q2). An account that is out is
- * disabled, since nothing can run there. Any other row stays selectable even
- * when the server marks it not eligible (flow's reserved Main): the server
- * never refuses a person's own pick, so the picker does not either.
+ * disabled, since nothing can run there, and so is one the project may not use
+ * (`notAllowed`, spec `flow-multiproject` D7): the account rules bind a
+ * person's own pick too, so the server would refuse it. Any other row stays
+ * selectable even when the server marks it not eligible (flow's reserved
+ * Main), because the server does not refuse that pick.
  *
  * @param row - One account from the server's list.
  */
 export function isSelectable(row: ContinueOptionAccount): boolean {
-  return row.usage.state !== 'limited';
+  // An account the project may not use is shown with its reason and never
+  // picked: the server would refuse it (spec `flow-multiproject` §8.4).
+  return row.notAllowed !== true && row.usage.state !== 'limited';
 }
 
 /**

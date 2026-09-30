@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * @vitest-environment node
  *
@@ -75,7 +76,7 @@ import { peekProjector, disposeProjector } from '../../services/session/session-
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

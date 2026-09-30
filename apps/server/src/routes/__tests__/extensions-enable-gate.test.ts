@@ -110,6 +110,7 @@ function stubPublic(): ExtensionRecordPublic {
     hasServerEntry: true,
     hasDataProxy: false,
     approvedToRun: state.extensions.approvedToRun.includes('my-ext'),
+    shadowedBy: null,
   };
 }
 
@@ -120,6 +121,9 @@ describe('who may turn an extension on or off', () => {
     enable: ReturnType<typeof vi.fn>;
     disable: ReturnType<typeof vi.fn>;
     listPublic: ReturnType<typeof vi.fn>;
+    listShadowedPublic: ReturnType<typeof vi.fn>;
+    requestRefresh: ReturnType<typeof vi.fn>;
+    trustOfferFor: ReturnType<typeof vi.fn>;
     reload: ReturnType<typeof vi.fn>;
     updateCwd: ReturnType<typeof vi.fn>;
   };
@@ -157,6 +161,9 @@ describe('who may turn an extension on or off', () => {
         return { extension: stubPublic(), reloadRequired: true };
       }),
       listPublic: vi.fn().mockReturnValue([]),
+      listShadowedPublic: vi.fn().mockReturnValue([]),
+      requestRefresh: vi.fn(),
+      trustOfferFor: vi.fn().mockReturnValue(null),
       reload: vi.fn().mockResolvedValue([]),
       updateCwd: vi.fn().mockResolvedValue({ added: [], removed: [] }),
     };

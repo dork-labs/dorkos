@@ -4,6 +4,11 @@ import type { Pool } from 'pg';
 import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
 import { accountErasureRunning } from './erasure/guards.js';
+import {
+  AGE_CONFIRMATION_COOKIE,
+  ageConfirmationMessage,
+  ageConfirmed,
+} from './sign-up/minimum-age.js';
 import { communityOidc } from './oidc.js';
 import { hashSecret, readCookie, verifyValue } from './security.js';
 
@@ -13,6 +18,20 @@ export function createCommunityAuth(
   config: CommunityConfig,
   options: { now?: () => Date } = {}
 ) {
+  const now = options.now ?? (() => new Date());
+  /**
+   * With a minimum age set, refuse to create an account unless this browser confirmed it first
+   * (`POST /api/v1/age-confirmation`). A provider callback carries the same cookie, so password,
+   * Google, GitHub and single sign-on sign-ups all meet this one check.
+   */
+  const refuseUnconfirmedAge = (cookieHeader: string | null) => {
+    if (config.minimumAge === null || ageConfirmed(cookieHeader, config, now())) return;
+    // The code lets an OAuth or OIDC callback redirect with `?error=age_confirmation_required`.
+    throw new APIError('FORBIDDEN', {
+      code: 'age_confirmation_required',
+      message: ageConfirmationMessage(config.minimumAge),
+    });
+  };
   const checkAdmission = async (cookieHeader: string | null) => {
     const grant = verifyValue(readCookie(cookieHeader, 'community_bootstrap'), config.authSecret);
     if (grant) {
@@ -104,6 +123,7 @@ export function createCommunityAuth(
               message: 'An invitation or owner grant is required.',
             });
           }
+          refuseUnconfirmedAge(ctx.headers?.get('cookie') ?? null);
         }
       }),
     },
@@ -118,7 +138,20 @@ export function createCommunityAuth(
                 message: 'An invitation or owner grant is required.',
               });
             }
+            refuseUnconfirmedAge(ctx?.headers?.get('cookie') ?? null);
             return { data: user };
+          },
+          // One confirmation makes one account: clear it, so the next person to sign up in this
+          // browser is asked again rather than riding on someone else's tick.
+          after: async (_user, ctx) => {
+            if (config.minimumAge === null || !ctx) return;
+            ctx.setCookie(AGE_CONFIRMATION_COOKIE, '', {
+              path: '/',
+              maxAge: 0,
+              httpOnly: true,
+              sameSite: 'lax',
+              secure: config.publicUrl.startsWith('https:'),
+            });
           },
         },
       },

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `GET /api/system/unattended-autonomy` — the one aggregate the standing banner
  * reads, and the two ways it is allowed to be empty.
@@ -32,7 +33,7 @@ import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import type { UnattendedAutonomyDeps } from '../../services/core/unattended-autonomy/unattended-autonomy.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 
 /** A profile declaring one asking mode and one autonomy mode. */

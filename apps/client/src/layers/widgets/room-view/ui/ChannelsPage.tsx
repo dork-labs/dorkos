@@ -7,6 +7,8 @@ import { RoomHistorySkeleton } from './RoomFlow';
 import { RoomSurface } from './RoomSurface';
 import { RemoteCommunitySurface } from './RemoteCommunitySurface';
 import { CommunityPageHeading } from './CommunityPageHeading';
+import { CommunityGonePanel, communityGoneState } from './CommunityGonePanel';
+import { useCommunityConnections } from '@/layers/entities/community';
 
 /**
  * The `/channels` page — one room's history, addressed by search param.
@@ -57,24 +59,28 @@ function ChannelsPageBody() {
 
   if (community && id)
     return (
-      <RemoteCommunitySurface
-        key={JSON.stringify([community, id])}
-        community={community}
-        roomId={id}
-        threadId={thread}
-        onThread={(rootId) => {
-          void navigate({ to: '/channels', search: { community, id, thread: rootId } });
-        }}
-      />
+      <CommunityGoneGuard community={community}>
+        <RemoteCommunitySurface
+          key={JSON.stringify([community, id])}
+          community={community}
+          roomId={id}
+          threadId={thread}
+          onThread={(rootId) => {
+            void navigate({ to: '/channels', search: { community, id, thread: rootId } });
+          }}
+        />
+      </CommunityGoneGuard>
     );
 
   if (community) {
     return (
-      <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 p-10 text-center text-sm">
-        <MessagesSquare className="text-muted-foreground/50 size-10" aria-hidden />
-        <p className="text-foreground font-medium">No channel selected</p>
-        <p className="max-w-sm">Choose an available channel from this community.</p>
-      </div>
+      <CommunityGoneGuard community={community}>
+        <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 p-10 text-center text-sm">
+          <MessagesSquare className="text-muted-foreground/50 size-10" aria-hidden />
+          <p className="text-foreground font-medium">No channel selected</p>
+          <p className="max-w-sm">Choose an available channel from this community.</p>
+        </div>
+      </CommunityGoneGuard>
     );
   }
 
@@ -114,4 +120,28 @@ function ChannelsPageBody() {
   }
 
   return <RoomSurface roomId={id} threadId={thread} entrySeq={entry} threadRoute="/channels" />;
+}
+
+/**
+ * A Community that is gone, or seems to be, says so in place of rooms that could never load
+ * (DOR-2334). Only the Community branch reads the connection list, so a local room needs nothing
+ * beyond what it always did.
+ */
+function CommunityGoneGuard({
+  community,
+  children,
+}: {
+  community: string;
+  children: React.ReactNode;
+}) {
+  const navigate = useNavigate();
+  const connection = useCommunityConnections().data?.find((item) => item.ref === community);
+  if (connection && communityGoneState(connection))
+    return (
+      <CommunityGonePanel
+        connection={connection}
+        onRemoved={() => void navigate({ to: '/channels', search: {} })}
+      />
+    );
+  return <>{children}</>;
 }

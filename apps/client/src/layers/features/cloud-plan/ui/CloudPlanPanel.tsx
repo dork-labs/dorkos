@@ -1,4 +1,5 @@
 import { Skeleton } from '@/layers/shared/ui';
+import { CloudEligibilityNote } from '@/layers/features/cloud-link';
 import { useCloudPlan } from '../model/use-cloud-plan';
 import { CreditsGauge } from './CreditsGauge';
 import { CreditsSource } from './CreditsSource';
@@ -41,10 +42,14 @@ export function CloudPlanPanel() {
 
   if (!data?.available) {
     return (
-      <p className="text-muted-foreground text-sm">
-        Link this instance to a DorkOS account above to see what it includes, what you have spent,
-        and the seats you hold.
-      </p>
+      <div className="space-y-2">
+        <p className="text-muted-foreground text-sm">
+          Link this instance to a DorkOS account above to see what it includes, what you have spent,
+          and the seats you hold.
+        </p>
+        {/* Said before anybody links in order to buy, not after. */}
+        <CloudEligibilityNote />
+      </div>
     );
   }
 

@@ -38,6 +38,7 @@ import type {
 } from '@dorkos/shared/connector-provider';
 import {
   CONNECTION_READINESS_COPY,
+  WAY_CAPABILITY_COPY,
   type ConnectorCatalogPageRequest,
   type ConnectorOperationPageRequest,
   type ConnectorProviderExecuteCommand,
@@ -82,7 +83,7 @@ export const COMPOSIO_API_KEY_REF = `file:${COMPOSIO_CREDENTIAL_NAME}`;
 
 /** Safe reason returned while a legacy user key awaits explicit project-key migration. */
 export const COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON =
-  'Direct operations require a verified Composio project key. Replace the legacy user key, then reconcile this provider.';
+  WAY_CAPABILITY_COPY.accountKeyCannotRunActions;
 
 /**
  * Wrap a raw Composio `ca_…` handle as a private, provider-scoped
@@ -274,7 +275,7 @@ export class ComposioConnectorProvider implements ConnectorProvider {
           ? { status: 'available' }
           : {
               status: 'unsupported',
-              reason: 'Notifications are not available with this account setup.',
+              reason: WAY_CAPABILITY_COPY.noNotifications,
             },
       },
       features: {},
@@ -319,19 +320,19 @@ export class ComposioConnectorProvider implements ConnectorProvider {
     if (command.operation.providerInstanceId !== this.instanceId) {
       return this._executionError(
         'PROVIDER_INSTANCE_MISMATCH',
-        'The operation belongs to a different connector provider.'
+        'This action belongs to an app connected another way, so it didn’t run.'
       );
     }
     if (!command.operation.toolkitVersion || command.operation.toolkitVersion === 'latest') {
       return this._executionError(
         'INVALID_TOOLKIT_VERSION',
-        'The operation does not have a concrete provider version.'
+        'DorkOS doesn’t know which version of this action to run, so it didn’t run.'
       );
     }
     if (command.operation.retryPolicy !== 'never' || command.upstreamIdempotencyKey !== undefined) {
       return this._executionError(
         'UNSUPPORTED_RETRY_POLICY',
-        'This provider only supports operations that cannot be retried automatically.'
+        'Actions connected this way can’t be retried on their own, so it didn’t run.'
       );
     }
 

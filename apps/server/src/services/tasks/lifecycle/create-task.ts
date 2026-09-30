@@ -55,6 +55,7 @@ import type { TaskRegistrar } from '../task-registrar.js';
 import { raiseStanding } from '../../notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../../notifications/emitters/schedule-park.js';
 import type { NotificationPayload } from '../../notifications/notification-registry.js';
+import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 
 /** The collaborators a create needs. Every one of them is required to get a task right. */
 export interface TaskLifecycleDeps {
@@ -316,6 +317,18 @@ export async function createScheduledTask(
   const home = resolveTaskHome(data.target, deps);
   if (!home.ok) return home;
 
+  // The account rule (spec `flow-multiproject` §8.4, D7): nobody, a person
+  // included, saves a schedule on an account that may not work in the folder
+  // its runs start in. Refused before anything is written, with the sentence.
+  const accountRefusal = await scheduleAccountRefusal({
+    account: data.account,
+    runtime: data.runtime,
+    folder: scheduleRunFolder(home.projectPath),
+  });
+  if (accountRefusal) {
+    return { ok: false, status: 409, error: accountRefusal.message, code: accountRefusal.code };
+  }
+
   // The create door asks the update door's question about the file it is about
   // to write, so it can never make a schedule the person is then refused leave
   // to edit (DOR-1789 review). Under an agent that came from a marketplace
@@ -496,5 +509,10 @@ export async function createScheduledTask(
   // exist: without this the Tasks list shows nothing until the next full refetch.
   broadcastTasksChanged();
 
-  return { ok: true, task: schedule, parked: !trusted, ...(parkPayload && { parkPayload }) };
+  return {
+    ok: true,
+    task: schedule,
+    parked: !trusted,
+    ...(parkPayload && { parkPayload }),
+  };
 }

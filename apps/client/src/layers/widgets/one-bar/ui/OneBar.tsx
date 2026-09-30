@@ -134,7 +134,8 @@ export function BarFixedCluster() {
     // `data-slot` so the ordering invariant (I1) is targetable by name: a test
     // or a browser check asks this element for its children rather than
     // guessing at the header's last div.
-    <div data-slot="bar-fixed-cluster" className="flex shrink-0 items-center gap-2">
+    // 4px gaps below `lg`, like the rest of the header row (DOR-2524).
+    <div data-slot="bar-fixed-cluster" className="flex shrink-0 items-center gap-1 lg:gap-2">
       <CommandPaletteTrigger />
       <InboxBell />
       <RightPanelToggle />

@@ -346,6 +346,13 @@ export const ConnectorProviderStatusSchema = z.object({
   error: z.string().optional(),
   /** Which credential kind the stored key validated as, when the provider reports it. */
   keyKind: ConnectorKeyKindSchema.optional(),
+  /**
+   * When DorkOS checks this key again on its own, while a check is scheduled
+   * or running (a running one reads as now). Absent once it has stopped
+   * trying, so a client showing the error knows to read the status again
+   * and pick up the new line.
+   */
+  recheckAt: z.string().datetime().optional(),
 });
 /** One provider's setup state. See {@link ConnectorProviderStatusSchema}. */
 export type ConnectorProviderStatus = z.infer<typeof ConnectorProviderStatusSchema>;

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * @vitest-environment node
  *
@@ -48,7 +49,7 @@ import { createApp, finalizeApp } from '../../app.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

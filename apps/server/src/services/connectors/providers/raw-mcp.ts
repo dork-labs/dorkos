@@ -26,7 +26,10 @@ import type {
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
-import type { ConnectorProviderExecuteCommand } from '@dorkos/shared/connector-schemas';
+import {
+  WAY_CAPABILITY_COPY,
+  type ConnectorProviderExecuteCommand,
+} from '@dorkos/shared/connector-schemas';
 import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
 import { runProbe, type ProbeOutcome } from '../../mesh/agent-mcp-probe.js';
 
@@ -167,13 +170,13 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
         accounts: { status: 'available' },
         operations: {
           status: 'unsupported',
-          reason: 'Raw MCP has no trustworthy operation schema catalog.',
+          reason: WAY_CAPABILITY_COPY.cannotListActions,
         },
         execution: {
           status: 'unsupported',
-          reason: 'Raw MCP does not expose trusted exact-revision operations to the broker.',
+          reason: WAY_CAPABILITY_COPY.cannotRunActions,
         },
-        triggers: { status: 'unsupported', reason: 'Raw MCP trigger discovery is unavailable.' },
+        triggers: { status: 'unsupported', reason: WAY_CAPABILITY_COPY.noNotifications },
       },
       features: {},
     };
@@ -197,7 +200,7 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
     _signal.throwIfAborted();
     return Promise.resolve({
       status: 'unsupported' as const,
-      reason: 'Raw MCP does not expose a trusted immutable toolkit version.',
+      reason: WAY_CAPABILITY_COPY.cannotListActions,
     });
   }
 
@@ -211,14 +214,14 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
     _request.signal.throwIfAborted();
     return Promise.resolve({
       status: 'unsupported' as const,
-      reason: 'Raw MCP has no trustworthy operation schema catalog.',
+      reason: WAY_CAPABILITY_COPY.cannotListActions,
     });
   }
 
   execute(_command: ConnectorProviderExecuteCommand) {
     return Promise.resolve({
       status: 'unsupported' as const,
-      reason: 'Raw MCP does not expose trusted exact-revision operations to the broker.',
+      reason: WAY_CAPABILITY_COPY.cannotRunActions,
     });
   }
 

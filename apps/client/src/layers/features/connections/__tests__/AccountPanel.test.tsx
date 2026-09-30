@@ -81,7 +81,7 @@ function detail(connection: ConnectorConnectionSummary): ConnectorConnectionDeta
     connection,
     provider: {
       providerInstanceId: 'provider-1' as never,
-      displayName: 'Composio',
+      displayName: 'Your DorkOS account',
       mode: 'managed',
       custody: 'managed',
       payer: 'dorkos_managed',
@@ -428,7 +428,10 @@ describe('AccountPanel', () => {
       summary({
         lifecycle: 'disconnected',
         externalCleanup: 'pending',
-        authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
+        authoritySync: {
+          status: 'failed',
+          reason: 'This computer isn’t linked to your DorkOS account anymore.',
+        },
         readiness: createMockConnectionReadiness({
           state: 'gone',
           reason: 'disconnect_stuck',
@@ -478,7 +481,7 @@ describe('AccountPanel', () => {
 
     await user.click(await screen.findByRole('button', { name: 'More' }));
     const more = screen.getByTestId('app-panel-more');
-    expect(more).toHaveTextContent('Through Composio.');
+    expect(more).toHaveTextContent('Your DorkOS account.');
     await user.click(within(more).getByRole('button', { name: /Disconnect…/ }));
     const confirm = await screen.findByRole('alertdialog', { name: 'Disconnect Gmail?' });
     expect(await within(confirm).findByText('mailroom will lose access.')).toBeInTheDocument();
@@ -546,6 +549,33 @@ describe('AccountPanel', () => {
     await waitFor(() => expect(handlers.onClose).toHaveBeenCalled());
   });
 
+  it.each([
+    [
+      'your own Composio key',
+      'managed' as const,
+      'Any usage charges go to your own Composio account.',
+    ],
+    ['your own Nango server', 'self-host' as const, null],
+  ])('says who pays only when someone does: %s', async (_way, custody, line) => {
+    const user = userEvent.setup();
+    const connection = summary({ mode: 'byo', custody, payer: 'operator_byo' });
+    const base = detail(connection);
+    const transport = transportFor(connection);
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue({
+      ...base,
+      provider: { ...base.provider, mode: 'byo', custody, payer: 'operator_byo' },
+    });
+    renderPanel(transport);
+
+    await user.click(await screen.findByRole('button', { name: 'More' }));
+    const more = screen.getByTestId('app-panel-more');
+    // Never the old line that was false for a server the person runs.
+    expect(more).not.toHaveTextContent('billed to you');
+    expect(more).not.toHaveTextContent('covers its use');
+    if (line) expect(more).toHaveTextContent(line);
+    else expect(more).not.toHaveTextContent(/usage charges/);
+  });
+
   it('keeps Sign in again and who pays for usage under More on a healthy account', async () => {
     const user = userEvent.setup();
     const transport = transportFor(summary());
@@ -556,7 +586,7 @@ describe('AccountPanel', () => {
 
     await user.click(await screen.findByRole('button', { name: 'More' }));
     const more = screen.getByTestId('app-panel-more');
-    expect(more).toHaveTextContent('DorkOS covers service usage.');
+    expect(more).toHaveTextContent('Your DorkOS account covers its use.');
     await user.click(within(more).getByRole('button', { name: /^Sign in again/ }));
     await waitFor(() => expect(handlers.onSignInStarted).toHaveBeenCalledWith('flow-2'));
   });

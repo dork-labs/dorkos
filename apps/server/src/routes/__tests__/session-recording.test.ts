@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * Where a finished browser recording lands, and what it is never allowed to
  * choose (spec `canvas-agent-seat` §3.4).
@@ -35,7 +36,7 @@ import { initBoundary } from '../../lib/boundary.js';
 import { devtoolsCaptureStore } from '../../services/session/index.js';
 import type { RecordingOutcome } from '../../services/session/index.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 
 /** A one-pixel PNG, so the keyframe part sniffs as a real image. */

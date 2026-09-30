@@ -23,8 +23,10 @@ import {
   whileLauncherRuns,
   writePrivateClipboardShim,
 } from './community-deploy-live-capture.js';
+import { inspectCommunityLiveTarball } from './community-deploy-live-tarball.js';
 import {
   describeCommunityLiveGateFailure,
+  describeLauncherExit,
   describeLauncherStop,
   explainCommunityLiveGateFailure,
   PUBLISHED_LAUNCHER_STEP,
@@ -34,6 +36,7 @@ import {
   runCommunityLiveGateCommand as command,
 } from './community-deploy-live-process.js';
 import {
+  COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS,
   createLauncherPromptResponder,
   requireTigrisTermsAccepted,
 } from './community-deploy-live-launcher.js';
@@ -43,10 +46,8 @@ import {
 } from './community-deploy-live-cleanup.js';
 import {
   guardCommunityLiveProvenance,
-  probeCommunityLiveNetworkAfterCleanup,
   probeCommunityLiveProvenance,
   readFlyGraphql,
-  type CommunityLiveNetworkAfterCleanup,
 } from './community-deploy-live-provenance.js';
 import { readFlyApps } from '../src/commands/community-deploy/fly-read.js';
 import { destroyFlyApp } from '../src/commands/community-deploy/fly-mutate.js';
@@ -62,7 +63,8 @@ import {
 } from '../src/commands/community-deploy/tigris-session.js';
 import { runProviderCommand } from '../src/commands/community-deploy/provider-process.js';
 
-const TIMEOUT_MS = 12 * 60_000;
+// Derived from the launcher's own deadlines; see COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS.
+const TIMEOUT_MS = COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS;
 /**
  * How long the gate waits for a secret after the launcher that sends it has exited. A launcher
  * copies a secret before it prompts or exits, so by then the secret is already sent or lost; this
@@ -125,7 +127,16 @@ function runLauncherPty(input: {
       running = false;
       clearTimeout(timeout);
       if (exitCode === 0 || interrupted) resolve();
-      else reject(new CommunityLiveGateError(PUBLISHED_LAUNCHER_STEP));
+      // A launcher that stops before writing a launch record leaves no journal to explain it, so
+      // keep its own last error code (only the code; see describeLauncherExit).
+      else
+        reject(
+          new CommunityLiveGateError(
+            PUBLISHED_LAUNCHER_STEP,
+            null,
+            describeLauncherExit(transcript) ?? undefined
+          )
+        );
     });
   });
   return {
@@ -157,11 +168,35 @@ async function main(): Promise<void> {
   // Likewise the launcher, so a failure elsewhere never leaves its PTY waiting on a prompt.
   let launcher: LauncherRun | null = null;
   const journalDirectory = join(durableHome, 'launches', 'community');
+  // An unreleased tarball is copied into the retained run directory and checked there before any
+  // npm, profile or service call; the only process is a local `tar` read of the copy. Install and
+  // recovery then use that verified copy, never the original path.
+  let tarball: Awaited<ReturnType<typeof inspectCommunityLiveTarball>> | null = null;
+  if (config.source.kind === 'tarball') {
+    try {
+      await mkdir(durableHome, { recursive: true, mode: 0o700 });
+      tarball = await inspectCommunityLiveTarball(
+        config.source.path,
+        join(durableHome, 'package-under-test')
+      );
+    } catch (error) {
+      // Nothing was installed or created anywhere yet; both directories are this run's own.
+      await rm(durableHome, { recursive: true, force: true });
+      await rm(runDirectory, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  // For a tarball this is the package's own version, which is also the Community image and signed
+  // manifest version the launcher deploys; it must already be released.
+  const version = config.source.kind === 'release' ? config.source.version : tarball!.version;
+  const source = tarball
+    ? tarball.receipt
+    : { kind: 'release' as const, released: true as const, version };
   const launchArgs = [
     'community',
     'deploy',
     '--version',
-    config.version,
+    version,
     '--fly-org',
     config.flyOrganization,
     '--fly-region',
@@ -179,22 +214,39 @@ async function main(): Promise<void> {
     return journals.length === 1 ? journals[0]!.slice(0, -'.json'.length) : null;
   };
   const recoveryFor = (runId: string) =>
-    communityLiveGateRecoveryCommand(config.version, launchArgs.slice(2), runId, durableHome);
+    communityLiveGateRecoveryCommand(
+      version,
+      launchArgs.slice(2),
+      runId,
+      durableHome,
+      tarball?.path
+    );
   try {
     // Every profile and network operation occurs after all arms have been checked above.
-    const published = parsePublishedVersion(
-      await command(
-        'npm',
-        ['view', `dorkos@${config.version}`, 'version', '--json'],
-        process.env,
-        'published-version'
-      )
-    );
-    if (published !== config.version) throw new CommunityLiveGateError('exact-published-version');
+    // A published run proves the exact version is on npm first; an unreleased run installs the
+    // tarball it already checked against its sidecar.
+    if (!tarball) {
+      const published = parsePublishedVersion(
+        await command(
+          'npm',
+          ['view', `dorkos@${version}`, 'version', '--json'],
+          process.env,
+          'published-version'
+        )
+      );
+      if (published !== version) throw new CommunityLiveGateError('exact-published-version');
+    }
     const install = join(runDirectory, 'install');
     await command(
       'npm',
-      ['install', '--prefix', install, '--no-audit', '--no-fund', `dorkos@${config.version}`],
+      [
+        'install',
+        '--prefix',
+        install,
+        '--no-audit',
+        '--no-fund',
+        tarball ? tarball.path : `dorkos@${version}`,
+      ],
       process.env,
       'package-install'
     );
@@ -320,6 +372,7 @@ async function main(): Promise<void> {
       credential.use((accessToken) => readFlyGraphql({ accessToken, query, variables }));
     let cleanup;
     let provenance;
+    let tigrisBucketFound: boolean;
     try {
       // What a finished launch shows about its markers, recorded before cleanup removes the
       // resources that carry them. The guard resolves on every path within its deadline, so a
@@ -372,44 +425,53 @@ async function main(): Promise<void> {
             appName: item.appName,
           };
         },
+        listTigrisOnApp: (name) => tigris((client) => client.listTigrisOnApp(name)),
         deleteTigris: async (name) => void (await tigris((client) => client.deleteTigris(name))),
         deleteNeonProject: async (id) => void (await deleteNeonProject(neon, id)),
         destroyFlyApp: async (name) => void (await destroyFlyApp(fly, name)),
       });
+      // The Fly and Neon inventories are re-read below; a storage bucket bills too, so it is
+      // re-read here, while the session is still held. Only Fly's exact not-found answer counts as
+      // gone; a bucket still there fails the gate before cleanup is called finished, so the
+      // recovery command is still printed.
+      tigrisBucketFound = await tigris((client) =>
+        client.readTigris(journal.resources.tigrisBucketId ?? '')
+      ).then(
+        () => true,
+        (error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === 'ADD_ON_MISSING') {
+            return false;
+          }
+          throw error;
+        }
+      );
+      if (tigrisBucketFound) {
+        throw new CommunityLiveGateError(
+          'tigris-after-cleanup',
+          recoveryCommand,
+          'the storage bucket still exists after cleanup'
+        );
+      }
     } finally {
       credential.dispose();
     }
     // Clearing `recoveryCommand` alone would not do: the catch re-finds the journal, which stays on
     // disk until the very end, and would print a recovery command for resources already deleted.
     cleanedUp = true;
-    // Also read-only and never throws; a fresh session, because the one above is disposed.
-    let networkAfterCleanup: CommunityLiveNetworkAfterCleanup;
-    try {
-      const afterCredential = await readFlySessionCredential(fly);
-      try {
-        networkAfterCleanup = await probeCommunityLiveNetworkAfterCleanup(
-          provenance,
-          (query, variables) =>
-            afterCredential.use((accessToken) => readFlyGraphql({ accessToken, query, variables }))
-        );
-      } finally {
-        afterCredential.dispose();
-      }
-    } catch {
-      networkAfterCleanup = { status: 'unknown', reason: 'fly-session' };
-    }
     const after = {
       flyAppIds: (await readFlyApps(fly, config.flyOrganization)).map((item) => item.id),
       neonProjectIds: (await readNeonProjects(neon, config.neonOrganization)).map(
         (item) => item.id
       ),
+      tigrisBucketFound,
     };
     // This receipt is intentionally non-secret and remains only long enough for the gate's caller.
     await mkdir(receiptDirectory, { recursive: true, mode: 0o700 });
     await writeFile(
       receiptPath,
       JSON.stringify({
-        version: config.version,
+        version,
+        source,
         appName,
         budgetUsd: config.budgetUsd,
         before,
@@ -417,13 +479,13 @@ async function main(): Promise<void> {
         cleanup,
         initialBootstrapSecretDigest: initialBootstrapDigest,
         bootstrapSecretDigest: bootstrapDigest,
-        provenance: { ...provenance, networkAfterCleanup },
+        provenance,
         ...proof,
       }) + '\n',
       { mode: 0o600, flag: 'wx' }
     );
     process.stdout.write(
-      `Community live gate passed for ${config.version} at ${appName}; receipt ${receiptPath}\n`
+      `Community live gate passed for ${version}${tarball ? ` (unreleased tarball from ${tarball.receipt.commit.slice(0, 12)})` : ''} at ${appName}; receipt ${receiptPath}\n`
     );
     await rm(durableHome, { recursive: true, force: true });
   } catch (error) {

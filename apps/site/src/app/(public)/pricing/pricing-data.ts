@@ -37,6 +37,14 @@ export const PAID_FROM = formatDay(POSTED_ON, NOTICE_DAYS);
 export const TAX_NOTE =
   'Prices are in US dollars. Sales tax or VAT is added at checkout where it applies.';
 
+/**
+ * Who may buy, or have a community hosted: shown beside the plan cards and answered in the
+ * questions. The free app and running DorkOS yourself stay open to everyone, wherever they live, so
+ * the note says so in the same breath.
+ */
+export const ELIGIBILITY_NOTE =
+  'Paid plans and communities we host for you are for people in the United States who are 18 or older. The free, open-source app is open to everyone, wherever they live, and so is running DorkOS or a community on your own computer or server.';
+
 // ── Credits and money ────────────────────────────────────────────────────────
 //
 // One credit is one US cent. Credit figures are stored as exact numbers and
@@ -156,7 +164,7 @@ export const PLANS: readonly Plan[] = [
       'Unlimited people and agents on your own machines',
       'Use your own AI account',
       'Reach your agents from your phone through a link you set up',
-      'Host one community for up to 50 people, with 1 GB of space',
+      'One community we host for you, for up to 50 people, with 1 GB of space (United States, 18 or older)',
       'Help from the community',
     ],
     note: `Want AI without a plan? From ${PAID_FROM}, buy ${formatCredits(TOP_UP_MIN_CREDITS)} or more credits (${creditsInDollars(TOP_UP_MIN_CREDITS)}) any time.`,

@@ -218,11 +218,15 @@ export function registerEntryRoutes(
           throw new ApiError(409, 'NESTED_THREAD', 'Replies can only belong to a top-level post.');
         rootId = parent.id;
       }
+      // A member belongs to one community, so naming it changes no count; it lets the
+      // (community_id, created_at) index find the last ten minutes instead of reading every
+      // message on the host.
       const quota = await client.query<{ count: string }>(
         `SELECT count(*)::text AS count FROM entries e
          LEFT JOIN agents a ON a.id=e.author_agent_id
-         WHERE (e.author_member_id=$1 OR a.owner_member_id=$1) AND e.created_at>now()-interval '10 minutes'`,
-        [principal.ownerMemberId]
+         WHERE e.community_id=$2 AND (e.author_member_id=$1 OR a.owner_member_id=$1)
+           AND e.created_at>now()-interval '10 minutes'`,
+        [principal.ownerMemberId, principal.community_id]
       );
       if (Number(quota.rows[0].count) >= config.limits.postsPerTenMinutes) {
         throw new ApiError(429, 'RATE_LIMITED', 'Posting limit reached. Try again soon.');

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The eight canvas routes, driven through the REAL app mount (specs
  * `room-canvas` §4 and `canvas-agent-seat` §8).
@@ -65,7 +66,7 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 const ANA_PATH = '/agents/ana';

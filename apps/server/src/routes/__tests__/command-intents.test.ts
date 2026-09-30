@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * Route tests for `POST /api/sessions/:id/command-intents/:intent` (DOR-109
  * task 2.5). Drives the runtime-fulfilled command-intent trigger end to end with
@@ -84,7 +85,7 @@ import {
   disposeProjector,
 } from '../../services/session/session-state-projector.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

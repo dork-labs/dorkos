@@ -14,8 +14,8 @@ import type { LimitPlan, LimitState, SessionLimit } from '@dorkos/shared/schemas
 
 /**
  * The launch origins (`TurnOrigin.kind`) whose sessions may carry their work
- * to another account: a person's own session, one an agent started for them,
- * and one that is itself a carry-over. Every other surface (a room, a
+ * to another account: a person's own session, one an agent or an extension
+ * started for them, and one that is itself a carry-over. Every other surface (a room, a
  * schedule, a binding, an agent DM, a connector event, the test harness) and a
  * session bound before `launch_origin` existed can only wait for the reset.
  * Deny by default: a kind added later is not in this list until someone decides.
@@ -23,6 +23,7 @@ import type { LimitPlan, LimitState, SessionLimit } from '@dorkos/shared/schemas
 export const CARRY_OVER_ORIGINS: ReadonlySet<string> = new Set([
   'interactive',
   'agent-launch',
+  'extension-start',
   'account-handoff',
 ]);
 

@@ -27,6 +27,7 @@ function record(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRecord
     hasServerEntry: false,
     hasDataProxy: false,
     approvedToRun: false,
+    shadowedBy: null,
     ...overrides,
   };
 }

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * Route tests for `/api/rooms`, driven through the REAL app mount rather than a
  * bespoke mini-router, so the `app.use('/api/rooms', …)` wiring and the
@@ -68,7 +69,7 @@ import {
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { initPermissionGate, resetPermissionGate } from '../../services/core/capabilities/index.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

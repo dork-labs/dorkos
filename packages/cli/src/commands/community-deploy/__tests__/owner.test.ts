@@ -127,6 +127,31 @@ describe('Community owner handoff', () => {
     expect(result.state).toBe('complete');
   });
 
+  // DOR-2169: a `fly secrets deploy` cut off at its deadline stops the run as uncertain with the
+  // journal unchanged. The resume replaces the setup secret again, so it stages and deploys the
+  // secrets once more before anything is proved, and only then carries on.
+  it('runs the secrets deploy again on the resume after one was cut off', async () => {
+    const initial = journal({
+      state: 'owner_pending',
+      completedSteps: [...journal().completedSteps, 'owner_pending'],
+    });
+    const test = harness(initial);
+    const deploy = test.dependencies.deploySecrets;
+    vi.mocked(deploy).mockRejectedValueOnce(
+      Object.assign(new Error('cut off'), { code: 'CREATION_OUTCOME_UNCERTAIN' })
+    );
+    await expect(
+      executeCommunityOwnerHandoff(plan, initial, null, test.dependencies)
+    ).rejects.toMatchObject({ code: 'CREATION_OUTCOME_UNCERTAIN' });
+    expect(test.dependencies.verifyRuntimeAndHealth).not.toHaveBeenCalled();
+    expect(test.persisted()).toEqual(initial);
+
+    const result = await executeCommunityOwnerHandoff(plan, initial, null, test.dependencies);
+    expect(deploy).toHaveBeenCalledTimes(3);
+    expect(test.dependencies.verifyRuntimeAndHealth).toHaveBeenCalled();
+    expect(result.state).toBe('complete');
+  });
+
   it('stays owner-pending until both owner and meaningful behavior are confirmed', async () => {
     const test = harness();
     vi.mocked(test.dependencies.waitForOwnerClaim).mockResolvedValue(false);

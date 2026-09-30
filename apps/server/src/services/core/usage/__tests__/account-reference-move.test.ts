@@ -8,11 +8,13 @@ describe('moveAccountReferences', () => {
     const sites = {
       agents: undefined,
       renameScheduleAccount: vi.fn(),
+      renameInProjectAccounts: vi.fn(),
     };
     const renames = [{ from: 'default', to: 'default-2' }];
     expect(await moveAccountReferences(renames, sites)).toBe(false);
     expect(await moveAccountReferences(renames, sites)).toBe(false);
     expect(warn.mock.calls.filter(([m]) => String(m).includes('agent registry'))).toHaveLength(1);
     expect(sites.renameScheduleAccount).not.toHaveBeenCalled();
+    expect(sites.renameInProjectAccounts).not.toHaveBeenCalled();
   });
 });

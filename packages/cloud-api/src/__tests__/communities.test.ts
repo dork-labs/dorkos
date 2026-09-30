@@ -170,6 +170,46 @@ describe('links a person may be sent to', () => {
     ).toBe(false);
   });
 
+  it('reads a move upload with parts, and one without (a service one release behind)', () => {
+    // Purpose: `parts` is additive and optional: an answer without it still parses and offers
+    // only the single upload, and one with it carries both limits as positive integers.
+    const single = fixture('communities/move-start.json').upload as Record<string, unknown>;
+    const parted = fixture('communities/move-start-parts.json').upload as Record<string, unknown>;
+    expect(contract.CommunityMoveUploadSchema.parse(single).parts).toBeUndefined();
+    expect(contract.CommunityMoveUploadSchema.parse(parted).parts).toEqual({
+      partBytes: 268435456,
+      maxBytes: 1099511627776,
+    });
+    for (const parts of [
+      { partBytes: 0, maxBytes: 1 },
+      { partBytes: 1.5, maxBytes: 2 },
+      { partBytes: 1 },
+    ])
+      expect(
+        contract.CommunityMoveUploadSchema.safeParse({ ...single, parts }).success,
+        JSON.stringify(parts)
+      ).toBe(false);
+    expect(contract.COMMUNITY_ARCHIVE_PART_DIGEST_HEADER).toBe('X-Part-SHA256');
+    // The part limit is part of the contract: a part number or count beyond it is refused.
+    const part = {
+      partNumber: contract.COMMUNITY_MOVE_MAX_PARTS,
+      byteSize: 1,
+      sha256: 'a'.repeat(64),
+    };
+    expect(contract.CommunityMovePartSchema.safeParse(part).success).toBe(true);
+    expect(
+      contract.CommunityMovePartSchema.safeParse({ ...part, partNumber: part.partNumber + 1 })
+        .success
+    ).toBe(false);
+    const complete = fixture('communities/move-complete-request.json') as Record<string, unknown>;
+    expect(
+      contract.CommunityMoveCompleteRequestSchema.safeParse({
+        ...complete,
+        parts: contract.COMMUNITY_MOVE_MAX_PARTS + 1,
+      }).success
+    ).toBe(false);
+  });
+
   it('publishes the scheme rule in the JSON Schema too, for a consumer that validates from it', () => {
     const json = JSON.stringify(z.toJSONSchema(contract.ProblemSchema));
     expect(json).toContain('^https:');

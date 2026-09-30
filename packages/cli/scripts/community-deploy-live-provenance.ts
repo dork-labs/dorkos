@@ -11,7 +11,10 @@
  * the gate's own disposable Machine. No probe can fail the gate or hold up its cleanup: each one
  * catches its own failure and records a stable code in its place, never provider text.
  */
-import type { FlyAppProvenance } from '../src/commands/community-deploy/fly-graphql-contract.js';
+import {
+  FLY_APP_PROVENANCE_QUERY,
+  type FlyAppProvenance,
+} from '../src/commands/community-deploy/fly-graphql-contract.js';
 
 const FLY_GRAPHQL_ENDPOINT = 'https://api.fly.io/graphql';
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -21,53 +24,6 @@ const MARKED_ROLE = /^community_[a-f0-9]{32}$/u;
 const SAFE_CODE = /^[A-Za-z0-9_.:-]{1,64}$/u;
 const SAFE_VALUE = /^[A-Za-z0-9][A-Za-z0-9._:+=/-]{0,255}$/u;
 const TIGRIS_SECRET_NAMES = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'] as const;
-
-/**
- * Reads the app's network name, its numeric network id, and the network node of each IP address.
- * A network node id is the only handle a later read can use to ask whether the network outlived
- * its app: Fly's API has no query that lists an organization's private networks.
- */
-export const FLY_GATE_APP_NETWORK_QUERY = `
-  query DorkosGateAppNetwork($name: String!) {
-    app(name: $name) {
-      network
-      networkId
-      ipAddresses { nodes { type network { id name } } }
-    }
-  }
-`;
-
-/** Reads one network node by id, after its app is destroyed. */
-export const FLY_GATE_NETWORK_NODE_QUERY = `
-  query DorkosGateNetworkNode($id: ID!) {
-    node(id: $id) {
-      __typename
-      ... on Network { name }
-    }
-  }
-`;
-
-/**
- * The same selection as the launcher's `DorkosReadAppProvenance`, sent raw so the receipt can show
- * the exact envelope Fly returns for a name no app has.
- */
-export const FLY_GATE_UNKNOWN_APP_QUERY = `
-  query DorkosReadAppProvenance($name: String!) {
-    app(name: $name) {
-      id
-      internalNumericId
-      name
-      network
-      createdAt
-      organization { slug }
-      machines { totalCount }
-      volumes { totalCount }
-      ipAddresses { totalCount }
-      certificates { totalCount }
-      secrets { name }
-    }
-  }
-`;
 
 /** Non-secret journal fields the probes read. */
 export interface CommunityLiveProvenanceJournal {
@@ -130,8 +86,11 @@ export interface GraphqlEnvelopeSummary {
 
 /** What the gate observed about the markers and their surroundings, before cleanup. */
 export interface CommunityLiveProvenanceReceipt {
-  /** Version of this block's shape, so the gate-flip PR can cite fields unambiguously. */
-  schema: 1;
+  /**
+   * Version of this block's shape, so the gate-flip PR can cite fields unambiguously. 2 dropped the
+   * leftover-network probe: Fly's API has no read for a private network once its app is gone.
+   */
+  schema: 2;
   fly: Probe<{
     network: string | null;
     journaledNetwork: string | null;
@@ -139,15 +98,6 @@ export interface CommunityLiveProvenanceReceipt {
     networkMatchesJournal: boolean;
     internalNumericIdPresent: boolean;
     createdAt: string;
-  }>;
-  flyNetworkHandle: Probe<{
-    networkId: number | null;
-    networkNodeIds: string[];
-    /**
-     * Whether `node(id)` resolved the first saved id to this app's network before cleanup. Only
-     * then can a `null` answer after cleanup mean the network is gone.
-     */
-    nodeReadableBeforeCleanup: boolean;
   }>;
   neon: Probe<{
     journaledRole: string | null;
@@ -163,12 +113,6 @@ export interface CommunityLiveProvenanceReceipt {
     envelope: Probe<{ summary: GraphqlEnvelopeSummary }>;
   };
 }
-
-/** Whether the app's private network still exists after cleanup destroyed the app. */
-export type CommunityLiveNetworkAfterCleanup =
-  | { status: 'left-behind'; networkNodeId: string }
-  | { status: 'gone'; networkNodeId: string }
-  | { status: 'unknown'; reason: string; summary?: GraphqlEnvelopeSummary };
 
 /**
  * Where a failure came from, so one code can never mean two things in a receipt: `proc` is a
@@ -328,38 +272,6 @@ export async function readFlyGraphql(input: {
   }
 }
 
-function networkHandle(envelope: unknown, network: string | null) {
-  const app =
-    isRecord(envelope) && isRecord(envelope.data) && isRecord(envelope.data.app)
-      ? envelope.data.app
-      : null;
-  if (!app) {
-    throw liveError('CommunityLiveProbeError', 'APP_NETWORK_UNREADABLE');
-  }
-  const nodes =
-    isRecord(app.ipAddresses) && Array.isArray(app.ipAddresses.nodes) ? app.ipAddresses.nodes : [];
-  const networkNodeIds = new Set<string>();
-  for (const node of nodes) {
-    if (!isRecord(node) || !isRecord(node.network)) continue;
-    const id = safeValue(node.network.id);
-    // Only a node for the app's own network answers the question; any other is noise.
-    if (id && network !== null && node.network.name === network) networkNodeIds.add(id);
-  }
-  return {
-    networkId: Number.isSafeInteger(app.networkId) ? (app.networkId as number) : null,
-    networkNodeIds: [...networkNodeIds].sort(),
-  };
-}
-
-/** The network name a clean `node(id)` answer resolves to, or `null` for anything else. */
-function readNetworkNode(envelope: unknown): string | null {
-  if (summarizeGraphqlEnvelope(envelope, 'node').errorCount > 0) return null;
-  const node = isRecord(envelope) && isRecord(envelope.data) ? envelope.data.node : undefined;
-  return isRecord(node) && node.__typename === 'Network' && typeof node.name === 'string'
-    ? node.name
-    : null;
-}
-
 /**
  * Record, read-only, what a finished launch shows about its markers.
  *
@@ -392,26 +304,6 @@ export async function probeCommunityLiveProvenance(
         };
       })
     : missing('JOURNAL_APP_NAME');
-  const network = fly.ok ? fly.network : null;
-  const flyNetworkHandle = appName
-    ? await probe(async () => {
-        const handle = networkHandle(
-          await dependencies.flyGraphql(FLY_GATE_APP_NETWORK_QUERY, { name: appName }),
-          network
-        );
-        const first = handle.networkNodeIds[0];
-        // Nothing shows that `node(id)` can resolve a Network at all. Ask once while the app still
-        // exists: only an id that answers as this network can make a later `null` mean "gone".
-        const nodeReadableBeforeCleanup =
-          first !== undefined &&
-          network !== null &&
-          readNetworkNode(
-            await dependencies.flyGraphql(FLY_GATE_NETWORK_NODE_QUERY, { id: first })
-          ) === network;
-        return { ...handle, nodeReadableBeforeCleanup };
-      })
-    : missing('JOURNAL_APP_NAME');
-
   const { neonProjectId, neonBranchId, tigrisBucketId, flyAppId } = journal.resources;
   const neonOrganization = journal.recoveryContext?.neonOrganization;
   const neon =
@@ -466,15 +358,14 @@ export async function probeCommunityLiveProvenance(
   }
   const envelope = await probe(async () => ({
     summary: summarizeGraphqlEnvelope(
-      await dependencies.flyGraphql(FLY_GATE_UNKNOWN_APP_QUERY, { name: unknownName }),
+      await dependencies.flyGraphql(FLY_APP_PROVENANCE_QUERY, { name: unknownName }),
       'app'
     ),
   }));
 
   return {
-    schema: 1,
+    schema: 2,
     fly,
-    flyNetworkHandle,
     neon,
     tigrisBinding,
     tigrisSecrets,
@@ -483,57 +374,12 @@ export async function probeCommunityLiveProvenance(
   };
 }
 
-/**
- * After cleanup, ask whether the app's private network outlived it.
- *
- * Fly has no query that lists an organization's networks, so this reads the network node captured
- * before cleanup. Without one, the answer is recorded as unknown with the reason. Never throws.
- *
- * @param before - The receipt recorded before cleanup.
- * @param flyGraphql - One raw, read-only Fly GraphQL request.
- */
-export async function probeCommunityLiveNetworkAfterCleanup(
-  before: CommunityLiveProvenanceReceipt,
-  flyGraphql: CommunityLiveProvenanceDependencies['flyGraphql']
-): Promise<CommunityLiveNetworkAfterCleanup> {
-  if (!before.flyNetworkHandle.ok) {
-    return { status: 'unknown', reason: `network-handle-${before.flyNetworkHandle.code}` };
-  }
-  const networkNodeId = before.flyNetworkHandle.networkNodeIds[0];
-  if (networkNodeId === undefined) return { status: 'unknown', reason: 'no-network-node-id' };
-  if (!before.flyNetworkHandle.nodeReadableBeforeCleanup) {
-    return { status: 'unknown', reason: 'node-unreadable-before-cleanup' };
-  }
-  const network = before.fly.ok ? before.fly.network : null;
-  let envelope: unknown;
-  try {
-    envelope = await flyGraphql(FLY_GATE_NETWORK_NODE_QUERY, { id: networkNodeId });
-  } catch (error) {
-    return { status: 'unknown', reason: `read-${failureCode(error)}` };
-  }
-  const summary = summarizeGraphqlEnvelope(envelope, 'node');
-  const node =
-    isRecord(envelope) && isRecord(envelope.data) ? envelope.data.node : (undefined as unknown);
-  if (summary.errorCount === 0 && node === null) return { status: 'gone', networkNodeId };
-  if (
-    summary.errorCount === 0 &&
-    isRecord(node) &&
-    node.__typename === 'Network' &&
-    network !== null &&
-    node.name === network
-  ) {
-    return { status: 'left-behind', networkNodeId };
-  }
-  return { status: 'unknown', reason: 'unexpected-answer', summary };
-}
-
 /** A receipt in which every probe failed with the same code; used when the run itself failed. */
 export function failedProvenanceReceipt(code: string): CommunityLiveProvenanceReceipt {
   const failed: ProbeFailure = { ok: false, code };
   return {
-    schema: 1,
+    schema: 2,
     fly: failed,
-    flyNetworkHandle: failed,
     neon: failed,
     tigrisBinding: failed,
     tigrisSecrets: failed,

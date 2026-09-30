@@ -1,9 +1,10 @@
 import { Button, Label, Notice, Separator } from '@dork-labs/ui';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUp, MessageCircle, Paperclip, RotateCcw, X } from 'lucide-react';
 import {
   CommunityWireEntryRemoveResponseSchema,
   type CommunityWireEvent,
+  type CommunityWireThreadSummary,
 } from '@dorkos/shared/community-wire';
 import { describeError, RequestError, request, tenantApiPath, upload } from '../api.js';
 import {
@@ -12,6 +13,7 @@ import {
   removalAction,
   type RemovalViewer,
 } from '../entry-removal.js';
+import { threadReplies, threadSummaryBatches } from '../threads/thread-replies.js';
 import type { Agent, Channel as ChannelType, Entry, Member } from '../types.js';
 import { EntryCard } from './EntryCard.js';
 import type { RemovalRequest } from './EntryRemoval.js';
@@ -20,6 +22,7 @@ import { useChannelChanges } from './channel-changes.js';
 type Page = { entries: Entry[]; nextCursor: string | null };
 type MemberDirectoryPage = { members: Member[]; nextCursor: string | null };
 type Post = { entry: Entry; cursor: string };
+type ThreadSummaries = { threads: CommunityWireThreadSummary[] };
 type Props = {
   communityId: string;
   channel: ChannelType;
@@ -31,6 +34,8 @@ type Props = {
   readOnly?: boolean;
   /** Read-only because the host holds the community, not because its owner archived it. */
   held?: boolean;
+  /** When this community's history was imported; channels from before it say so at the top. */
+  importedAt?: string | null;
 };
 function mergeEntries(previous: Entry[], incoming: Entry[]) {
   const byId = new Map(previous.map((entry) => [entry.id, entry]));
@@ -52,6 +57,7 @@ export function ChannelView({
   onMemberStale,
   readOnly = false,
   held = false,
+  importedAt = null,
 }: Props) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [thread, setThread] = useState<Entry | null>(null);
@@ -94,6 +100,49 @@ export function ChannelView({
     begin: beginChanges,
     remember: rememberChange,
   } = useChannelChanges(channel.id, channel.joined, applyChanges);
+  // Reply counts under thread roots: the server's latest count per root, and the replies this tab
+  // has seen since (live, or sent from here). `threadReplies` adds the two without double counting.
+  const [threadCounts, setThreadCounts] = useState<ReadonlyMap<string, CommunityWireThreadSummary>>(
+    new Map()
+  );
+  const [seenReplies, setSeenReplies] = useState<ReadonlyMap<string, Entry>>(new Map());
+  const replyLines = useMemo(
+    () => threadReplies(threadCounts, seenReplies),
+    [threadCounts, seenReplies]
+  );
+  const seeReplies = useCallback((incoming: Entry[]) => {
+    const replies = incoming.filter((entry) => entry.parentEntryId);
+    if (!replies.length) return;
+    setSeenReplies((previous) => {
+      const next = new Map(previous);
+      for (const reply of replies) next.set(reply.id, reply);
+      return next;
+    });
+  }, []);
+  const countThreads = useCallback(
+    async (roots: Entry[]) => {
+      for (const batch of threadSummaryBatches(roots.map((entry) => entry.id))) {
+        let body: ThreadSummaries;
+        try {
+          body = await request<ThreadSummaries>(
+            `/api/v1/channels/${channel.id}/threads?roots=${batch.join(',')}`
+          );
+        } catch {
+          // A server from before reply counts answers 404, and any other failure only leaves the
+          // counts out; the thread itself still opens.
+          return;
+        }
+        if (!body.threads.length) continue;
+        setThreadCounts((previous) => {
+          const next = new Map(previous);
+          for (const summary of body.threads) next.set(summary.rootEntryId, summary);
+          return next;
+        });
+      }
+    },
+    [channel.id]
+  );
+  const entriesRef = useRef<Entry[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   const activeChannelId = useRef(channel.id);
   // A reload can overlap the initial request (or a retry). Only the newest
@@ -104,6 +153,9 @@ export function ChannelView({
   useEffect(() => {
     threadRef.current = thread;
   }, [thread]);
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
   useEffect(() => {
     activeChannelId.current = channel.id;
     return () => {
@@ -127,6 +179,7 @@ export function ChannelView({
         return;
       setEntries((previous) => mergeEntries(previous, asChanged(page.entries)));
       setNextCursor(page.nextCursor);
+      void countThreads(page.entries);
       // Keep a cursor advanced by SSE. Moving it backward would make the next
       // read receipt describe an earlier point than the one already rendered.
       setReadCursor((current) => current ?? page.entries.at(-1)?.cursor ?? null);
@@ -137,7 +190,7 @@ export function ChannelView({
     } finally {
       if (activeChannelId.current === requestedChannelId) setLoading(false);
     }
-  }, [channel.id, asChanged, beginChanges]);
+  }, [channel.id, asChanged, beginChanges, countThreads]);
   useEffect(() => {
     if (channel.joined) void load();
     else setLoading(false);
@@ -153,6 +206,10 @@ export function ChannelView({
           setEntries((previous) =>
             mergeEntries(previous, asChanged(event.entries.filter((entry) => !entry.parentEntryId)))
           );
+          seeReplies(event.entries);
+          // A snapshot follows a reconnect: replies written while the stream was away may be
+          // under roots it does not carry, so read the counts again for every root on screen.
+          void countThreads(entriesRef.current);
           if (event.entries.length) setReadCursor(event.cursor);
         } else if (event.type === 'entry') {
           setLivePaused(false);
@@ -164,6 +221,7 @@ export function ChannelView({
               ? mergeEntries(previous, asChanged([event.entry]))
               : previous
           );
+          seeReplies([event.entry]);
           setReadCursor(event.cursor);
           onChanged();
         } else if (event.type === 'closed' && event.reason === 'archived') {
@@ -202,7 +260,16 @@ export function ChannelView({
       source.close();
       window.clearTimeout(retry);
     };
-  }, [channel.id, channel.joined, onChanged, readOnly, streamAttempt, asChanged]);
+  }, [
+    channel.id,
+    channel.joined,
+    onChanged,
+    readOnly,
+    streamAttempt,
+    asChanged,
+    seeReplies,
+    countThreads,
+  ]);
   useEffect(() => {
     if (!threadId) return;
     let active = true;
@@ -289,6 +356,7 @@ export function ChannelView({
       );
       setEntries((previous) => mergeEntries(asChanged(page.entries), previous));
       setNextCursor(page.nextCursor);
+      void countThreads(page.entries);
     } catch (cause) {
       setError(describeError(cause));
       setErrorAction('reload');
@@ -399,8 +467,10 @@ export function ChannelView({
         attachmentIds,
       };
       const posted = await request<Post>(`/api/v1/channels/${channel.id}/entries`, 'POST', body);
-      if (thread) setReplies((previous) => mergeEntries(previous, [posted.entry]));
-      else setEntries((previous) => mergeEntries(previous, [posted.entry]));
+      if (thread) {
+        setReplies((previous) => mergeEntries(previous, [posted.entry]));
+        seeReplies([posted.entry]);
+      } else setEntries((previous) => mergeEntries(previous, [posted.entry]));
       setText('');
       setFiles([]);
       setPendingKey(null);
@@ -498,6 +568,11 @@ export function ChannelView({
                 </Button>
               </div>
             )}
+            {!nextCursor && importedAt && channel.createdAt <= importedAt && (
+              <p className="small muted text-center" role="note">
+                History imported from another host on {new Date(importedAt).toLocaleDateString()}.
+              </p>
+            )}
             {entries.length === 0 && (
               <div className="pt-12 text-center">
                 <MessageCircle size={30} className="mx-auto mb-3 text-[var(--accent)]" />
@@ -513,6 +588,7 @@ export function ChannelView({
                 controls={controlsFor(entry)}
                 onThread={setThread}
                 threadReadOnly={readOnly}
+                replies={replyLines.get(entry.id)}
               />
             ))}
           </>

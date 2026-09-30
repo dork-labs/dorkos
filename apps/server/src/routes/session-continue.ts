@@ -35,6 +35,7 @@ import {
   waitForReset,
 } from '../services/session/fleet/continue-service.js';
 import { CarryOverError } from '../services/session/fleet/carry-over.js';
+import { AccountNotAllowedError } from '../services/core/usage/account-eligibility.js';
 import { getSessionLimitStore } from '../services/session/fleet/session-limit-store.js';
 import { callerNamedCwd, resolveSessionCwdOrDefault } from '../services/session/index.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
@@ -69,6 +70,10 @@ function requirePersonAndSession(req: Request, res: Response): string | null {
 
 /** Answer a refusal from the service, or a 500 for anything else. */
 function sendContinueError(res: Response, err: unknown, route: string): void {
+  if (err instanceof AccountNotAllowedError) {
+    res.status(409).json(err.toBody());
+    return;
+  }
   if (err instanceof ContinueError || err instanceof CarryOverError) {
     sendError(res, err.status, err.message, err.code);
     return;

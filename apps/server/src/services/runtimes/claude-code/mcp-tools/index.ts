@@ -242,8 +242,15 @@ export function handRegisteredInSessionToolSet(
     ...getCoreTools(deps),
     ...getAccountTools(deps),
     // The caller is the session's identity anchor, so the Activity entry names
-    // the agent that started the session, even from its room worktree.
-    ...getSessionTools(deps, () => (identityPath ? { agentPath: identityPath } : undefined)),
+    // the agent that started the session, even from its room worktree. The
+    // calling chat is what the new one says started it (spec
+    // `flow-multiproject` §7.7), read at call time for the first-turn rekey
+    // reason the task provenance above gives.
+    ...getSessionTools(deps, () => {
+      if (!identityPath) return undefined;
+      const callingSession = session?.sdkSessionId || sessionId;
+      return { agentPath: identityPath, ...(callingSession ? { sessionId: callingSession } : {}) };
+    }),
     ...getTasksTools(deps, resolveTaskProvenance),
     ...getRelayTools(deps, relayIdentity, resolveInboundBudget),
     ...getAdapterTools(deps),

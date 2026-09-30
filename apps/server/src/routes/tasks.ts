@@ -56,6 +56,10 @@ import {
 } from '../services/tasks/schedule-permission-clamp.js';
 import { changesApprovedWork } from '../services/tasks/task-file-update.js';
 import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
+import {
+  scheduleAccountRefusal,
+  scheduleRunFolder,
+} from '../services/tasks/lifecycle/schedule-account-eligibility.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
@@ -373,6 +377,23 @@ export function createTasksRouter(
     // has started (DOR-2384). Refused before the file is touched.
     const accountLocked = refuseStickyAccountChange(store, existing, data);
     if (accountLocked) return res.status(400).json(accountLocked);
+
+    // The account rule (spec `flow-multiproject` §8.4, D7): nobody, a person
+    // included, points a schedule at an account that may not work where its
+    // runs start. Refused before the file is touched, with the plain sentence.
+    const accountRefusal =
+      typeof data.account === 'string'
+        ? await scheduleAccountRefusal({
+            account: data.account,
+            runtime: data.runtime ?? existing.runtime,
+            folder: scheduleRunFolder(
+              existing.agentId ? meshCore?.getProjectPath(existing.agentId) : null
+            ),
+          })
+        : null;
+    if (accountRefusal) {
+      return res.status(409).json(accountRefusal.toBody());
+    }
 
     // The MERGED schedule is what gets registered, so the merged schedule is
     // what has to read: a new cron runs in the task's existing timezone unless

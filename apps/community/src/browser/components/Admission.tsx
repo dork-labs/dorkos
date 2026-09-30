@@ -4,6 +4,7 @@ import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
 import { createAuthClient } from 'better-auth/react';
 import { ArrowRight, KeyRound, UsersRound } from 'lucide-react';
 import { describeError, RequestError, request } from '../api.js';
+import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import {
   describeAdmissionFailure,
   readPendingAdmission,
@@ -21,6 +22,7 @@ import {
 import type { Community } from '../types.js';
 import { HostPolicyLinks } from './HostLinks.js';
 import { returnHere, takeSignInError, useSignInOptions } from '../sign-in-options.js';
+import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
 
 /**
  * What the clean join URL found on the server before this component mounted: a live join
@@ -85,6 +87,7 @@ export function Admission({
   const [communityName, setCommunityName] = useState('');
   const [channelName, setChannelName] = useState('general');
   const [busy, setBusy] = useState(false);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   // A provider round trip that failed returns here with `?error=`; say why once.
   const [error, setError] = useState(() => takeSignInError() ?? '');
   const providers = useSignInOptions();
@@ -94,6 +97,8 @@ export function Admission({
   const resumeOnMount = useRef(resumed?.account ? resumed : null);
   const isOwner = !community && !hostSignIn;
   const pendingAdmission = preview !== null;
+  // A new account must first confirm the host's minimum age, when it set one.
+  const minimumAge = mode === 'signup' ? providers.minimumAge : null;
 
   // Move focus to the new heading on every step change, so keyboard and screen-reader users
   // land on what changed instead of on a control that just disappeared.
@@ -166,10 +171,12 @@ export function Admission({
     await join(pending, context);
   }
 
-  async function social(provider: 'google' | 'github' | 'oidc') {
+  async function social(provider: SignInProvider) {
     setBusy(true);
     setError('');
     try {
+      // The provider's callback creates the account, so the confirmation must be in place first.
+      if (minimumAge !== null) await confirmMinimumAge();
       const result = await authClient.signIn.social({ provider, ...returnHere() });
       if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
     } catch (cause) {
@@ -228,6 +235,7 @@ export function Admission({
     setError('');
     try {
       const path = mode === 'signup' ? '/api/auth/sign-up/email' : '/api/auth/sign-in/email';
+      if (minimumAge !== null) await confirmMinimumAge();
       if (isOwner) {
         await request('/api/v1/bootstrap/complete', 'POST', {
           secret,
@@ -473,6 +481,14 @@ export function Admission({
                 </Field>
               </>
             )}
+            {minimumAge !== null && (
+              <MinimumAgeConfirmation
+                id="minimum-age"
+                minimumAge={minimumAge}
+                confirmed={ageConfirmed}
+                onChange={setAgeConfirmed}
+              />
+            )}
             <Button type="submit" className="w-full" disabled={busy}>
               {busy
                 ? 'Working…'
@@ -485,42 +501,13 @@ export function Admission({
             </Button>
           </form>
         )}
-        {!isOwner &&
-          stage === 'account' &&
-          (providers.google || providers.github || providers.oidc) && (
-            <div className="row mt-4">
-              {providers.google && (
-                <Button
-                  variant="outline"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void social('google')}
-                >
-                  Continue with Google
-                </Button>
-              )}
-              {providers.github && (
-                <Button
-                  variant="outline"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void social('github')}
-                >
-                  Continue with GitHub
-                </Button>
-              )}
-              {providers.oidc && (
-                <Button
-                  variant="outline"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void social('oidc')}
-                >
-                  Continue with {providers.oidc.label}
-                </Button>
-              )}
-            </div>
-          )}
+        {!isOwner && stage === 'account' && (
+          <ProviderButtons
+            providers={providers}
+            disabled={busy || (minimumAge !== null && !ageConfirmed)}
+            onChoose={(provider) => void social(provider)}
+          />
+        )}
         <HostPolicyLinks />
       </main>
     </div>

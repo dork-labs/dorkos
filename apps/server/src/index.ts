@@ -1,3 +1,5 @@
+import { startMainListener } from './services/core/lifecycle/main-listener.js';
+import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import path from 'path';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
@@ -141,6 +143,7 @@ import {
   ConnectorProviderBootstrapper,
   TEST_CONNECTOR_PROVIDER_TYPE,
 } from './services/connectors/bootstrap.js';
+import { LevelFollower } from './services/connectors/resources/level-follower.js';
 import { SignInRefresher } from './services/connectors/resources/sign-in-refresh.js';
 import { SessionConnectorAttachmentStore } from './services/connectors/attachment-store.js';
 import { registerConnectorAgentCleanup } from './services/connectors/agent-access-cleanup.js';
@@ -268,7 +271,8 @@ import { startExtensionApprovalQueue } from './services/extensions/extension-app
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
 import { warnRedundantEnabledEntries } from './services/core-extensions/warn-redundant-enabled.js';
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
-import { createExtensionsRouter } from './routes/extensions.js';
+import { createExtensionsRouter, broadcastExtensionReloaded } from './routes/extensions.js';
+import { knownProjectRootsForExtensions } from './services/projects/extension-scan-roots.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
 import { gitTreeSource } from './services/marketplace/lib/git/git-tree.js';
 import { MarketplaceSourceManager } from './services/marketplace/sources/marketplace-source-manager.js';
@@ -431,6 +435,10 @@ import {
 import { CommunityOutboxRuntime } from './services/communities/remote/community-outbox-runtime.js';
 import { RemoteRoomSubscriptionBridge } from './services/communities/remote/remote-room-subscription-bridge.js';
 import { RemoteRoomSubscriptionRuntime } from './services/communities/remote/remote-room-subscription-runtime.js';
+import {
+  orphanedMirrorSweepDeps,
+  sweepOrphanedMirrors,
+} from './services/communities/remote/orphaned-mirror-sweep.js';
 import { RemoteRedactionSync } from './services/communities/remote/remote-redaction-sync.js';
 import { registerRemoteCommunityUnregisterCascade } from './services/communities/remote/mesh-unregister-cascade.js';
 import { isCurrentLocalMeshAgent } from './services/communities/remote/local-agent-authority.js';
@@ -537,6 +545,8 @@ import { SessionContextStore } from './services/session/fleet/session-context-st
 import { onSessionAccountLaunched } from './services/runtimes/claude-code/accounts/account-usage-feed.js';
 import { probeForReset } from './services/runtimes/claude-code/accounts/account-probe.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
+import { renameAccountInProjectAccounts } from './services/core/usage/account-eligibility-writes.js';
+import { warnMalformedAccountRules } from './services/core/usage/account-eligibility.js';
 import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
 import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
 import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
@@ -562,6 +572,16 @@ import {
   setExtensionInbox,
 } from './services/extensions/inbox/extension-inbox.js';
 import { createExtensionDecisionsRouter } from './routes/extension-decisions.js';
+import {
+  StartWorkService,
+  getStartWorkService,
+  setStartWorkService,
+} from './services/extensions/start-work.js';
+import {
+  SessionStartedByStore,
+  getSessionStartedByStore,
+  setSessionStartedByStore,
+} from './services/session/origin/session-started-by-store.js';
 import {
   MessageQueueStore,
   SessionEventStore,
@@ -782,6 +802,7 @@ let turnEndReprojection: TurnEndReprojection | undefined;
  */
 let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<void>) | undefined;
 // Passive until workspace bootstrap; disposal stays terminal if startup resumes later.
+const mainRequestAdmission = new MainRequestAdmission();
 const workspaceReconcilerLifecycle = new WorkspaceReconcilerLifecycle();
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
@@ -932,6 +953,9 @@ async function start() {
     console.error(`\n${error.message}\n`);
     process.exit(1);
   }
+  // A hand-edited account rule of the wrong shape reads as "no rule" rather than
+  // refusing the file (spec `flow-multiproject` §8.1); say so once.
+  warnMalformedAccountRules(configManager, (message, meta) => logger.warn(message, meta));
   // Credential substrate (ADR-0315): resolves stored credential references to
   // secrets at each runtime's env-injection seam. Must precede any runtime spawn.
   initCredentialProvider(dorkHome);
@@ -1105,7 +1129,19 @@ async function start() {
   // `flow-multiproject` §7). Before extensions start, so an extension that
   // raises from its `register()` finds it, and so starting one can show its
   // open decisions again and fire a deadline that passed while it was down.
-  setExtensionInbox(new ExtensionInboxService({ db, projects: projectRegistry, dorkHome }));
+  //
+  // A `watch` on a decision may point only at a chat this extension started,
+  // or one started from its chats (§7.3), which the start-work seam wired
+  // below answers.
+  setExtensionInbox(
+    new ExtensionInboxService({
+      db,
+      projects: projectRegistry,
+      dorkHome,
+      watchAllowed: (extensionId, sessionId) =>
+        getStartWorkService()?.startedBy(extensionId, sessionId) ?? false,
+    })
+  );
   getExtensionInbox()?.prune();
 
   // A session's usage limit, kept so a restart or an idle eviction does not
@@ -1187,6 +1223,21 @@ async function start() {
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
+
+  // Who started a chat that no person typed into, and the seam that starts
+  // one for an extension (`api.startWork`, `ctx.sessions.start`, spec
+  // `flow-multiproject` §7.7). Before extensions start, so a `register()` that
+  // starts work finds it; the name lookup reads the manager at call time.
+  const sessionStartedByStore = new SessionStartedByStore(db);
+  setSessionStartedByStore(sessionStartedByStore);
+  setStartWorkService(
+    new StartWorkService({
+      store: sessionStartedByStore,
+      projects: projectRegistry,
+      extensionName: (id) => extensionManager?.get(id)?.manifest.name ?? id,
+      activity: activityService,
+    })
+  );
   // Sharing with every agent that ends as a side effect (a disconnect, a move
   // to a DorkOS account) is recorded too, so every change to it leaves a
   // trace. Set here, before any provider registers, so boot-time changes count.
@@ -1537,6 +1588,17 @@ async function start() {
   // Initialize Extension System
   try {
     extensionManager = new ExtensionManager(dorkHome, coreExtensions);
+    // Scan every known project's extensions, not only this folder's, and
+    // re-scan when a project is added, so which copy runs no longer depends on
+    // where the server started (spec `flow-multiproject` §9.2). Only roots core
+    // saw itself: never one only an extension reported (§6.1).
+    extensionManager.followProjects(
+      {
+        roots: (cwd) => knownProjectRootsForExtensions(projectRegistry, dorkHome, cwd),
+        onChange: (listener) => projectRegistry.onChange(listener),
+      },
+      { announce: (ids) => broadcastExtensionReloaded(ids) }
+    );
     const initialCwd = env.DORKOS_DEFAULT_CWD ?? null;
     await extensionManager.initialize(initialCwd);
     // Every extension waiting for a person to let it run asks in the Activity
@@ -2462,6 +2524,17 @@ async function start() {
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
+      // Copies left behind by a connection that no longer exists (DOR-2334).
+      const subscriptions = remoteCommunitySubscriptions;
+      if (remoteCommunityRuntime && subscriptions)
+        void sweepOrphanedMirrors(
+          orphanedMirrorSweepDeps(
+            getRemoteConnectionStore(),
+            remoteCommunityRuntime.mirrors,
+            (communityRef, ownerAuthorId) =>
+              subscriptions.revokeConnection(communityRef, ownerAuthorId)
+          )
+        );
     }
 
     // Settle marketplace installs a crash interrupted inside registered
@@ -2588,6 +2661,8 @@ async function start() {
                 },
               }
             : undefined,
+          renameInProjectAccounts: (from, to) =>
+            renameAccountInProjectAccounts(configManager, from, to),
           renameScheduleAccount: (from, to) =>
             renameScheduleAccount(db, from, to, (schedule) =>
               isPackageOwned(
@@ -3010,6 +3085,7 @@ async function start() {
     }
   };
   const app = createApp({
+    admission: mainRequestAdmission,
     connectorEventIngress: {
       verifier: (id) =>
         connectorRegistry.resolveProviderInstance(id as ConnectorProviderInstanceId)?.events,
@@ -3309,6 +3385,19 @@ async function start() {
         ? { actorType: 'user', actorLabel: 'Your signed-in account' }
         : { actorType: 'user', actorLabel: 'Someone on this computer' },
   });
+  // A level ("Read") follows its app's actions (ADR 260929-071355): every
+  // leveled app is read at least every 12 hours while the server runs, and
+  // right after an update, which may classify actions differently.
+  const connectorLevels = new LevelFollower({
+    reconciliation: connectorReconciliation,
+    appVersion: SERVER_VERSION,
+  });
+  connectorLevels.start();
+  const stopSignInFreshness = stopConnectorFreshness;
+  stopConnectorFreshness = () => {
+    stopSignInFreshness?.();
+    connectorLevels.stop();
+  };
   const connectorUsage = new ConnectorUsageStore(db);
   const recoveredConnectorAttempts = connectorUsage.recoverPending(new Date().toISOString());
   if (recoveredConnectorAttempts > 0) {
@@ -4266,6 +4355,13 @@ async function start() {
   }
   app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
     roomStore.resolveRoomOrigins(sessionIds);
+  // Who started a chat (spec `flow-multiproject` §7.7): the third overlay, a
+  // batched read of `session_started_by`, and the extension names its first
+  // line says.
+  app.locals.resolveStartedBy = (sessionIds: string[]) =>
+    getSessionStartedByStore()?.getMany(sessionIds) ?? new Map();
+  app.locals.extensionNameOf = (extensionId: string) =>
+    extensionManager?.get(extensionId)?.manifest.name ?? extensionId;
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
   // Live session upserts carry the flow items a chat works on, exactly as
   // `GET /api/sessions` does, so the first upsert after a list read no longer
@@ -5522,63 +5618,73 @@ async function start() {
     logger.warn(`[Auth] ${bindCheck.warning}`);
   }
 
-  const server = app.listen(PORT, host, () => {
-    logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
+  const server = startMainListener({
+    admission: mainRequestAdmission,
+    listen: () => app.listen(PORT, host),
+    onListening: (server) => {
+      logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
-    // One upgrade listener for the whole server (ADR 260805-041016): the three
-    // durable event streams plus the embedded terminal's byte channel. A second
-    // `server.on('upgrade')` listener beside this one would not work — every
-    // listener sees every upgrade, and any that does not recognize a path
-    // destroys the socket out from under the one that does.
-    attachUpgradeRouter(server, [...durableStreamRoutes, terminalUpgradeRoute(terminalManager!)]);
-    logger.info('[DorkOS] WebSocket upgrade router attached');
+      // One upgrade listener for the whole server (ADR 260805-041016): the three
+      // durable event streams plus the embedded terminal's byte channel. A second
+      // `server.on('upgrade')` listener beside this one would not work — every
+      // listener sees every upgrade, and any that does not recognize a path
+      // destroys the socket out from under the one that does.
+      attachUpgradeRouter(
+        server,
+        [...durableStreamRoutes, terminalUpgradeRoute(terminalManager!)],
+        mainRequestAdmission
+      );
+      logger.info('[DorkOS] WebSocket upgrade router attached');
 
-    // Fire-and-forget: record startup in the activity feed so the dashboard
-    // shows when the server was last (re)started.
-    activityService.emit({
-      actorType: 'system',
-      actorLabel: 'System',
-      category: 'system',
-      eventType: 'system.started',
-      summary: 'DorkOS started',
-    });
+      // Fire-and-forget: record startup in the activity feed so the dashboard
+      // shows when the server was last (re)started.
+      activityService.emit({
+        actorType: 'system',
+        actorLabel: 'System',
+        category: 'system',
+        eventType: 'system.started',
+        summary: 'DorkOS started',
+      });
 
-    // Register the anonymous daily heartbeat (Tier 1 opt-out; ADR 260713-143958).
-    // `config.telemetry.heartbeat` defaults OFF, and the send folds in the env
-    // kill switch AND the `tier1SendGate` captured at boot (BEFORE the first-run
-    // notice wrote `lastPromptedVersion`), so a first-notice boot sends nothing.
-    // Payload documented at https://dorkos.ai/telemetry (DOR-293).
-    const runtimesConfig = configManager.get('runtimes');
-    const runtimesConfigured = [
-      'claude-code',
-      ...(runtimesConfig.codex.enabled ? ['codex'] : []),
-      ...(runtimesConfig.opencode.enabled ? ['opencode'] : []),
-    ];
-    registerHeartbeat({
-      consent:
-        resolveTelemetryConsent(telemetryConfig?.heartbeat ?? false, telemetryEnv) && tier1SendGate,
-      debug: telemetryDebug,
-      dorkHome,
-      dorkosVersion: SERVER_VERSION,
-      runtimesConfigured,
-      tunnelEnabled: configManager.get('tunnel')?.enabled ?? false,
-      cloudLinked: configManager.get('cloud')?.instanceToken != null,
-      collectCounts: (): HeartbeatCounts => {
-        // Best-effort snapshot; any failure just contributes a zero.
-        let agentCount = 0;
-        try {
-          agentCount = db.select().from(agents).all().length;
-        } catch {
-          /* ignore */
-        }
-        return {
-          agents: agentCount,
-          tasks: taskStore?.getTasks().length ?? 0,
-          relayAdapters: adapterManager?.listAdapters().length ?? 0,
-        };
-      },
-    });
+      // Register the anonymous daily heartbeat (Tier 1 opt-out; ADR 260713-143958).
+      // `config.telemetry.heartbeat` defaults OFF, and the send folds in the env
+      // kill switch AND the `tier1SendGate` captured at boot (BEFORE the first-run
+      // notice wrote `lastPromptedVersion`), so a first-notice boot sends nothing.
+      // Payload documented at https://dorkos.ai/telemetry (DOR-293).
+      const runtimesConfig = configManager.get('runtimes');
+      const runtimesConfigured = [
+        'claude-code',
+        ...(runtimesConfig.codex.enabled ? ['codex'] : []),
+        ...(runtimesConfig.opencode.enabled ? ['opencode'] : []),
+      ];
+      registerHeartbeat({
+        consent:
+          resolveTelemetryConsent(telemetryConfig?.heartbeat ?? false, telemetryEnv) &&
+          tier1SendGate,
+        debug: telemetryDebug,
+        dorkHome,
+        dorkosVersion: SERVER_VERSION,
+        runtimesConfigured,
+        tunnelEnabled: configManager.get('tunnel')?.enabled ?? false,
+        cloudLinked: configManager.get('cloud')?.instanceToken != null,
+        collectCounts: (): HeartbeatCounts => {
+          // Best-effort snapshot; any failure just contributes a zero.
+          let agentCount = 0;
+          try {
+            agentCount = db.select().from(agents).all().length;
+          } catch {
+            /* ignore */
+          }
+          return {
+            agents: agentCount,
+            tasks: taskStore?.getTasks().length ?? 0,
+            relayAdapters: adapterManager?.listAdapters().length ?? 0,
+          };
+        },
+      });
+    },
   });
+  if (!server) return;
 
   // Surface port conflicts with an actionable message instead of a raw EADDRINUSE stack trace
   server.on('error', (err: NodeJS.ErrnoException) => {
@@ -5787,6 +5893,7 @@ async function start() {
 // Ordered teardown of all running services WITHOUT calling process.exit().
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
+  mainRequestAdmission.close();
   await workspaceReconcilerLifecycle.dispose();
   logger.info('[DorkOS] shutting down services');
   stopSessionContinuation?.();
@@ -5940,6 +6047,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 start().catch(async (err) => {
+  mainRequestAdmission.close();
   try {
     await workspaceReconcilerLifecycle.dispose();
   } catch (cleanupError) {

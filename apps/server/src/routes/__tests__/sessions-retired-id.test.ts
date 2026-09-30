@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * A second turn triggered under a session's PRE-REKEY id (DOR-1262).
  *
@@ -82,7 +83,7 @@ import {
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 /** One listener for the whole file — see {@link attachEventStream} (DOR-483). */

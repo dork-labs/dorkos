@@ -335,6 +335,12 @@ export function createPlaygroundTransport(): Transport {
       // showcase injects its folders directly.
       if (prop === 'getFoundClaudeFolders') return async () => ({ folders: [] });
       if (prop === 'dismissFoundClaudeFolder') return async () => undefined;
+      // Account rules (spec `flow-multiproject` §8.6): no projects and no
+      // rules, so every account in the showcases reads as allowed.
+      if (prop === 'getAccountEligibility' || prop === 'setProjectAccounts') {
+        return async () => ({ project: null, allow: null, accounts: [] });
+      }
+      if (prop === 'setAccountOnlyProjects') return async () => ({ onlyProjects: null });
       // Resolve with null — safe for hooks expecting arrays, objects, or primitives
       return async () => null;
     },

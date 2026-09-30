@@ -195,6 +195,61 @@ export const connectionOperationGrants = sqliteTable(
 /** The one subject id every owner-wide `every_agent` grant row carries. */
 export const EVERY_AGENT_GRANT_SUBJECT_ID = 'every_agent';
 
+/**
+ * The access level the owner chose for an agent, or for every agent, on one
+ * connection (ADR 260929-071355). A row here is the owner's intent: "Read"
+ * means every action the app lets agents read, now and as the app changes. The
+ * grant rows in {@link connectionOperationGrants} stay the only thing access is
+ * checked against; they are re-derived from this level and the current catalog
+ * every time the catalog is read, and never cover more than the level's
+ * classes. A subject with grants and no row here holds exact actions, which
+ * stay exactly as chosen.
+ *
+ * Subjects match {@link connectionOperationGrants}: an `every_agent` row carries
+ * {@link EVERY_AGENT_GRANT_SUBJECT_ID} and a null `agent_id`.
+ */
+export const connectionAccessLevels = sqliteTable(
+  'connection_access_levels',
+  {
+    subjectType: text('subject_type', { enum: ['agent', 'every_agent'] }).notNull(),
+    subjectId: text('subject_id').notNull(),
+    /** The one agent a row speaks for; null only on an `every_agent` row. */
+    agentId: text('agent_id'),
+    connectionId: text('connection_id')
+      .notNull()
+      .references(() => connections.id, { onDelete: 'cascade' }),
+    level: text('level', { enum: ['read', 'read-write'] }).notNull(),
+    createdBy: text('created_by').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    /**
+     * The hosted command DorkOS staged on its own to follow the app, while it
+     * is the latest one for this level. Hosted authority refusing THAT command
+     * keeps the level (the next pass sends it again); refusing a change the
+     * owner made ends it. Null once the owner chooses again.
+     */
+    followerCommandId: text('follower_command_id'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.subjectType, table.subjectId, table.connectionId] }),
+    index('connection_access_levels_agent_idx').on(table.agentId),
+    index('connection_access_levels_connection_idx').on(table.connectionId),
+  ]
+);
+
+/**
+ * When DorkOS last followed one connection's levels on its own, and under
+ * which DorkOS version (ADR 260929-071355). A boot inside the follow interval
+ * skips a connection it followed recently, unless DorkOS was updated since:
+ * a new version can classify actions differently.
+ */
+export const connectionLevelFollows = sqliteTable('connection_level_follows', {
+  connectionId: text('connection_id')
+    .primaryKey()
+    .references(() => connections.id, { onDelete: 'cascade' }),
+  followedAt: text('followed_at').notNull(),
+  appVersion: text('app_version').notNull(),
+});
+
 /** Canonical stable replacement for legacy agent account attachments. */
 export const agentConnectionAttachments = sqliteTable(
   'agent_connection_attachments',

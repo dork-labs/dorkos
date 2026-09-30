@@ -2,6 +2,8 @@ import type { Pool } from 'pg';
 import { transaction } from './data.js';
 import { releaseCommunityShortNames, type ShortNameHolds } from './host/short-names.js';
 import { BlobStoreError, reconcileTenantNamespace, type BlobStore } from './storage/index.js';
+import { BLOB_DELETE_TIMEOUT_MS, BLOB_LOCK_TIMEOUT_MS } from './storage/pending-deletions.js';
+import { UNSETTLED_EVIDENCE_SQL } from './takedown/takedowns.js';
 
 const DELETE_BATCH = 25;
 // An expired export whose sweep already deleted its object and its managed-blob row keeps its
@@ -64,11 +66,6 @@ export async function prepareCommunityDeletionInventory(
   return (await countMissingDeletionInventory(pool, communityId)) === 0;
 }
 
-/** How long a file deletion waits for the community row lock before it counts as failed. */
-export const BLOB_LOCK_TIMEOUT_MS = 5_000;
-/** How long one storage delete may take while the community row is held. */
-export const BLOB_DELETE_TIMEOUT_MS = 60_000;
-
 /**
  * Delete one due tenant in bounded, restart-safe object and database phases.
  *
@@ -84,23 +81,32 @@ export async function sweepCommunityDeletions(
   pool: Pool,
   blobStore: BlobStore,
   blobBatchSize = DELETE_BATCH,
-  options: { shortNameHolds?: ShortNameHolds; now?: () => Date } = {}
+  options: {
+    shortNameHolds?: ShortNameHolds;
+    now?: () => Date;
+    /** Test seam: runs after a job is chosen and before its community is locked. */
+    afterCandidate?: (communityId: string) => Promise<void>;
+  } = {}
 ): Promise<{ claimed: number; deletedBlobs: number; completed: number; failed: number }> {
   if (!Number.isInteger(blobBatchSize) || blobBatchSize < 1 || blobBatchSize > 100)
     throw new Error('Invalid community deletion batch size');
   const job = await transaction(pool, async (client) => {
     // A community under a host legal hold is never claimed, so it cannot hold the head of the
     // queue and stall every other deletion (ADR 260924-215422). A hold placed after this read
-    // is caught by the per-blob and final checks below.
+    // is caught by the per-blob and final checks below. Nor is one whose takedown evidence has
+    // not settled: a takedown's preserved material is never destroyed by a deletion racing it,
+    // whoever asked for the deletion.
     const selected = await client.query<{ community_id: string }>(
       `SELECT j.community_id
        FROM community_deletion_jobs j JOIN communities c ON c.id=j.community_id
        WHERE j.delete_after<=now() AND j.next_attempt_at<=now() AND c.legal_hold_at IS NULL
+         AND NOT ${UNSETTLED_EVIDENCE_SQL.replaceAll('$1', 'j.community_id')}
        ORDER BY j.next_attempt_at,j.community_id
        LIMIT 1`
     );
     const candidate = selected.rows[0];
     if (!candidate) return null;
+    await options.afterCandidate?.(candidate.community_id);
     const community = await client.query<{ lifecycle: string; lifecycle_version: number }>(
       'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE SKIP LOCKED',
       [candidate.community_id]
@@ -120,6 +126,12 @@ export async function sweepCommunityDeletions(
     );
     const row = lockedJob.rows[0];
     if (!row) return null;
+    // Rechecked under the community lock. A takedown holds that lock too, and refuses once a
+    // deletion has left `waiting`, so no takedown can start after this claim commits.
+    if (
+      (await client.query(`SELECT 1 WHERE ${UNSETTLED_EVIDENCE_SQL}`, [row.community_id])).rowCount
+    )
+      return null;
     if (
       community.rows[0]?.lifecycle !== 'deletion_pending' ||
       community.rows[0].lifecycle_version !== row.lifecycle_version
@@ -347,12 +359,15 @@ export async function sweepCommunityDeletions(
       'community_handles',
       'export_archives',
       'owner_quota_windows',
+      'owner_replacement_object_tokens',
+      'owner_replacements',
       'invite_uses',
       'pending_admissions',
       'connection_grants',
       'connection_pairings',
       'invites',
       'audit_events',
+      'notice_outbox',
       'agents',
       'channels',
     ]) {
@@ -363,7 +378,13 @@ export async function sweepCommunityDeletions(
       job.community_id,
     ]);
     await client.query('DELETE FROM bootstrap_grants WHERE community_id=$1', [job.community_id]);
-    await client.query('DELETE FROM host_audit_events WHERE community_id=$1', [job.community_id]);
+    // Takedown audit rows stay, with the takedowns themselves: they hold ids and states only,
+    // and they are what shows who removed illegal content, and who let its copy go.
+    await client.query(
+      "DELETE FROM host_audit_events WHERE community_id=$1 AND action NOT LIKE 'takedown.%'",
+      [job.community_id]
+    );
+    await client.query('DELETE FROM removed_file_blobs WHERE community_id=$1', [job.community_id]);
     await client.query(
       `DELETE FROM pending_blob_deletions p USING managed_blobs m
        WHERE p.blob_key=m.blob_key AND m.community_id=$1`,
@@ -395,6 +416,8 @@ export async function sweepCommunityDeletions(
         locked.rows[0].requested_by_host_actor,
       ]
     );
+    // An import that made this community clears its community_id here (ON DELETE SET NULL) and
+    // keeps its finished history; the brief `pending_owner` reset above never commits alone.
     await client.query('DELETE FROM communities WHERE id=$1', [job.community_id]);
     return true;
   });

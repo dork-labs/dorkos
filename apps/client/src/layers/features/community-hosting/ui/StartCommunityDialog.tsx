@@ -7,6 +7,7 @@
 import { useState, type FormEvent } from 'react';
 import type { CloudCommunityAllowance } from '@dorkos/shared/cloud-schemas';
 import { Button } from '@/layers/shared/ui';
+import { CloudEligibilityNote } from '@/layers/features/cloud-link';
 import { allowanceCopy, readWebAddress } from '../model/hosting-copy';
 import { useClaimAndConnect, type ClaimTarget } from '../model/use-claim-and-connect';
 import {
@@ -64,6 +65,8 @@ export function startFormStep(props: StartFormStepProps): HostingStep {
         />
         {allowance && <p className="text-muted-foreground text-sm">{allowance}</p>}
         {props.failure.notice && <HostingNoticeView notice={props.failure.notice} />}
+        {/* Last thing above "Start community", so it is read before the press. */}
+        <CloudEligibilityNote />
       </form>
     ),
     actions: (

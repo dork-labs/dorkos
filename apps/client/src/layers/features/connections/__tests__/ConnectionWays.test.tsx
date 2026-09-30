@@ -106,7 +106,7 @@ describe('ConnectionWays', () => {
     const composio = screen.getByTestId('add-connection-way-composio');
     // Where sign-ins will live is said before any key is pasted.
     expect(composio).toHaveTextContent('in its own secure vault');
-    await user.type(within(composio).getByLabelText('Composio API key'), '  ak_live  ');
+    await user.type(within(composio).getByLabelText('Composio project key'), '  ak_live  ');
     await user.click(within(composio).getByRole('button', { name: 'Save key' }));
     await waitFor(() =>
       expect(transport.putConnectorCredential).toHaveBeenCalledWith('composio', 'ak_live')
@@ -346,19 +346,19 @@ describe('ConnectionWays', () => {
     expect(within(dialog).getByText('Gmail (work)')).toBeInTheDocument();
     expect(within(dialog).getByText('Notion (team)')).toBeInTheDocument();
     // No form until the person agrees.
-    expect(within(row).queryByLabelText('Composio API key')).toBeNull();
+    expect(within(row).queryByLabelText('Composio project key')).toBeNull();
     expect(dialog).toHaveTextContent('Nothing changes until you save the new key.');
     await user.click(within(dialog).getByRole('button', { name: 'Continue to a new key' }));
 
     // Continuing only opens the form: nothing is saved or paused yet.
-    const input = await within(row).findByLabelText('Composio API key');
+    const input = await within(row).findByLabelText('Composio project key');
     expect(transport.putConnectorCredential).not.toHaveBeenCalled();
     await user.type(input, 'ak_new');
     await user.click(within(row).getByRole('button', { name: 'Save key' }));
     await waitFor(() =>
       expect(transport.putConnectorCredential).toHaveBeenCalledWith('composio', 'ak_new')
     );
-    await waitFor(() => expect(within(row).queryByLabelText('Composio API key')).toBeNull());
+    await waitFor(() => expect(within(row).queryByLabelText('Composio project key')).toBeNull());
   });
 
   it('Change key backs out cleanly: keeping the key saves nothing', async () => {
@@ -374,7 +374,7 @@ describe('ConnectionWays', () => {
     const row = await screen.findByTestId('connection-way-composio');
     await user.click(within(row).getByRole('button', { name: 'Change key' }));
     await user.click(await screen.findByRole('button', { name: 'Keep this key' }));
-    expect(within(row).queryByLabelText('Composio API key')).toBeNull();
+    expect(within(row).queryByLabelText('Composio project key')).toBeNull();
     expect(transport.putConnectorCredential).not.toHaveBeenCalled();
   });
 
@@ -391,7 +391,7 @@ describe('ConnectionWays', () => {
     const row = await screen.findByTestId('connection-way-composio');
     await user.click(within(row).getByRole('button', { name: 'Change key' }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(within(row).getByLabelText('Composio API key')).toBeInTheDocument();
+    expect(within(row).getByLabelText('Composio project key')).toBeInTheDocument();
   });
 
   it('on a refused key, counts nothing as stopping: the apps already can’t be used', async () => {

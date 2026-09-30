@@ -595,6 +595,12 @@ export const CONFIG_WRITE_POLICY = {
   // Their answer to a consent question: a caller that could write it could
   // hide the question from them.
   'extensions.dismissedApprovals': 'operator-only',
+  // The code sources a person trusts outright (spec `flow-multiproject` §9.3):
+  // every extension provably from one runs without asking. It decides which
+  // code runs, and trusting a new source is one of the three asks only a
+  // person can answer.
+  'extensions.trustedSources[].source': 'operator-only',
+  'extensions.trustedSources[].trustedAt': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
@@ -716,6 +722,14 @@ export const CONFIG_WRITE_POLICY = {
   // accounts a person is shown as addable, so it stays with the roster it
   // curates: only a person curates it, through the dismiss route.
   'runtimes.claudeCode.dismissedFolders': 'operator-only',
+  // Which projects each Claude account may work in, and which accounts each
+  // project may use (spec `flow-multiproject` §8). They bound where a credential
+  // may be used, so an agent that could write them could move spend onto an
+  // account the person kept out of that project. Written by a person through
+  // the two `PUT /api/runtimes/claude-code/...` routes behind the person bar.
+  'runtimes.claudeCode.accounts[].onlyProjects': 'operator-only',
+  'runtimes.claudeCode.defaultAccountOnlyProjects': 'operator-only',
+  'runtimes.claudeCode.projectAccounts': 'operator-only',
   // The execution defaults for new sessions on each runtime. Writable, and the
   // operator was asked directly: a model and an effort level are a preference
   // about how work runs, on the same footing as `runtimes.default` right above,
@@ -960,6 +974,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.defaultAccountColor',
       'runtimes.claudeCode.dismissedFolders',
+      'runtimes.claudeCode.accounts[].onlyProjects',
+      'runtimes.claudeCode.defaultAccountOnlyProjects',
+      'runtimes.claudeCode.projectAccounts',
     ],
   },
   {
@@ -976,6 +993,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.approvedToRun',
       'extensions.approvedSources',
       'extensions.dismissedApprovals',
+      'extensions.trustedSources[].source',
+      'extensions.trustedSources[].trustedAt',
       'harness.approvedHooks',
       'harness.refusedHooks',
       'runtimes.opencode.binaryPath',

@@ -35,8 +35,22 @@ import { applyConfigPatch } from '../../../core/operator/config-patch.js';
 import {
   describeClaudeCodeAccounts,
   resolveActiveClaudeRoot,
-  resolveLaunchAccountRoot,
+  resolveLaunchAccountRoot as resolveLaunch,
 } from '../claude-config-dir.js';
+
+/**
+ * The ladder's folder for a launch in no project (where no account rule
+ * applies), or the refusal thrown: what this file asserts on.
+ */
+function resolveLaunchAccountRoot(
+  opts: Omit<Parameters<typeof resolveLaunch>[0], 'project'> & {
+    project?: Parameters<typeof resolveLaunch>[0]['project'];
+  }
+): string {
+  const launch = resolveLaunch({ project: null, ...opts });
+  if (!launch.ok) throw launch.error;
+  return launch.root;
+}
 
 /** The account the operator chose, back when the key was called `activeAccount`. */
 const CHOSEN = '/Users/me/.claude2';

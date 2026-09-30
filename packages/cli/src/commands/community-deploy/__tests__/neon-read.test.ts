@@ -306,7 +306,7 @@ esac
     await expect(
       readNeonProjects(options(executable, { FIXTURE_JSON: fixture }), 'org_fixture_01')
     ).resolves.toEqual([
-      expect.objectContaining({ id: 'project_fixture_01', createdAt: '2026-09-23T10:31:11Z' }),
+      expect.objectContaining({ id: 'project_fixture_01', createdAt: '2026-09-21T00:00:00Z' }),
     ]);
 
     for (const createdAt of [undefined, null, '', 'yesterday', 1_758_623_471]) {

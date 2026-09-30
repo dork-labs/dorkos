@@ -99,7 +99,7 @@ export function ReportEntryLink({
   entryId: string;
 }) {
   const { reportAbuseUrl } = useHostLinks();
-  const report = reportAbuseUrl ? reportAbuseHref(reportAbuseUrl, communityId, entryId) : null;
+  const report = reportAbuseUrl ? reportAbuseHref(reportAbuseUrl, communityId, { entryId }) : null;
   if (!report) return null;
   return (
     <HostLink
@@ -111,5 +111,67 @@ export function ReportEntryLink({
     >
       <Flag size={14} aria-hidden="true" /> Report
     </HostLink>
+  );
+}
+
+/**
+ * One file's Report action, beside its download: the report names the file, so the host can take
+ * down just that file. Nothing when the host set no report address.
+ */
+export function ReportFileLink({
+  communityId,
+  entryId,
+  attachmentId,
+  fileName,
+}: {
+  communityId: string;
+  entryId: string;
+  attachmentId: string;
+  fileName: string;
+}) {
+  const { reportAbuseUrl } = useHostLinks();
+  const report = reportAbuseUrl
+    ? reportAbuseHref(reportAbuseUrl, communityId, { entryId, attachmentId })
+    : null;
+  if (!report) return null;
+  return (
+    <HostLink
+      buttonVariant="ghost"
+      buttonSize="icon-md"
+      className="removal-trigger"
+      href={report}
+      label={`Report ${fileName}`}
+    >
+      <Flag size={14} aria-hidden="true" />
+    </HostLink>
+  );
+}
+
+/**
+ * "If you think this is a mistake, contact the host.", linking the host's report address with the
+ * IDs of what was removed. Nothing when the host set no report address.
+ */
+export function ContactHostAboutRemoval({
+  communityId,
+  entryId,
+  attachmentId,
+}: {
+  communityId: string;
+  entryId?: string;
+  attachmentId?: string;
+}) {
+  const { reportAbuseUrl } = useHostLinks();
+  const report = reportAbuseUrl
+    ? reportAbuseHref(reportAbuseUrl, communityId, { entryId, attachmentId })
+    : null;
+  if (!report) return null;
+  return (
+    <p className="small mt-1 mb-0">
+      If you think this is a mistake,{' '}
+      <HostLink href={report} className="inline-flex min-h-6 items-center underline">
+        contact the host
+      </HostLink>
+      .
+    </p>
   );
 }

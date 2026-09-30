@@ -38,6 +38,7 @@ import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
 import { registerHostKeyRoutes } from '../routes/host-keys.js';
 import { registerImportRoutes } from '../routes/imports.js';
 import { UploadSlots } from '../imports/upload.js';
+import { registerHostTakedownRoutes } from '../routes/host-takedowns.js';
 import { createHostAuthority } from '../host/authority.js';
 import { issueHostApiKey } from '../host/key-store.js';
 import { hashSecret, randomToken } from '../security.js';
@@ -546,6 +547,42 @@ async function restoreBaseline(): Promise<void> {
 
 const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('matrix-icon')]);
 
+/** Post one message in A as its owner, for a takedown to name. */
+async function ownerEntry(): Promise<string> {
+  const posted = (await ok(
+    {
+      method: 'POST',
+      path: scoped(`/channels/${moderationChannelId}/entries`),
+      body: { text: 'matrix takedown target', idempotencyKey: randomUUID() },
+    },
+    'owner',
+    201
+  )) as { entry: { id: string } };
+  return posted.entry.id;
+}
+
+/** Take down one of A's messages as the host, and return the takedown's id. */
+async function hostTakedown(
+  category: 'terms_violation' | 'child_safety' = 'terms_violation'
+): Promise<{ id: string }> {
+  const created = (await ok(
+    {
+      method: 'POST',
+      path: `/api/v1/host/communities/${alphaId}/takedowns`,
+      body: {
+        idempotencyKey: randomUUID(),
+        target: { kind: 'entry', entryId: await ownerEntry() },
+        category,
+        reference: null,
+        password,
+      },
+    },
+    'hostOnly',
+    201
+  )) as { takedown: { id: string } };
+  return { id: created.takedown.id };
+}
+
 async function ensureIcon(): Promise<void> {
   const current = await alpha();
   if (current.icon_blob_key) return;
@@ -656,6 +693,7 @@ const actions: Action<unknown>[] = [
           'lifecycleVersion',
           'name',
           'ownerPresent',
+          'ownerReplacement',
           'settingsVersion',
           'shortName',
         ]);
@@ -707,6 +745,7 @@ const actions: Action<unknown>[] = [
         'lifecycleVersion',
         'name',
         'ownerPresent',
+        'ownerReplacement',
         'settingsVersion',
         'shortName',
       ]);
@@ -783,6 +822,85 @@ const actions: Action<unknown>[] = [
     effect: async (_body, _role, { id }) => {
       const key = await pool.query('SELECT revoked_at FROM host_api_keys WHERE id=$1', [id]);
       expect(key.rows[0].revoked_at).not.toBeNull();
+    },
+  }),
+  define<{ entryId: string }>({
+    rule: 'Take down a message: host operator with their password; no community role',
+    route: 'POST /host/communities/:id/takedowns',
+    allowed: HOST_ROLES,
+    status: 201,
+    prepare: async () => ({ entryId: await ownerEntry() }),
+    call: ({ entryId }, secret) => ({
+      method: 'POST',
+      path: `/api/v1/host/communities/${alphaId}/takedowns`,
+      body: {
+        idempotencyKey: randomUUID(),
+        target: { kind: 'entry', entryId },
+        category: 'terms_violation',
+        reference: null,
+        password: secret,
+      },
+    }),
+    effect: async (_body, _role, { entryId }) => {
+      const entry = await pool.query('SELECT removed_by FROM entries WHERE id=$1', [entryId]);
+      expect(entry.rows).toEqual([{ removed_by: 'host' }]);
+    },
+  }),
+  define({
+    rule: 'List takedowns: host operator yes, community roles no',
+    route: 'GET /host/takedowns',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: '/api/v1/host/takedowns' }),
+  }),
+  define<{ id: string }>({
+    rule: 'Read one takedown: host operator yes, community roles no',
+    route: 'GET /host/takedowns/:takedownId',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: () => hostTakedown(),
+    call: ({ id }) => ({ method: 'GET', path: `/api/v1/host/takedowns/${id}` }),
+  }),
+  define<{ id: string }>({
+    rule: 'Reverse a takedown: only the host reaches it, and a removed message cannot come back',
+    route: 'POST /host/takedowns/:takedownId/reverse',
+    allowed: HOST_ROLES,
+    status: 409,
+    prepare: () => hostTakedown(),
+    call: ({ id }, secret) => ({
+      method: 'POST',
+      path: `/api/v1/host/takedowns/${id}/reverse`,
+      body: { lifecycleVersion: 1, password: secret },
+    }),
+  }),
+  define<{ id: string }>({
+    rule: 'Retry an evidence copy: only the host reaches it, and a host with no store is told so',
+    route: 'POST /host/takedowns/:takedownId/evidence/retry',
+    allowed: HOST_ROLES,
+    status: 409,
+    prepare: () => hostTakedown('child_safety'),
+    call: ({ id }) => ({
+      method: 'POST',
+      path: `/api/v1/host/takedowns/${id}/evidence/retry`,
+      body: {},
+    }),
+  }),
+  define<{ id: string }>({
+    rule: 'Release held content: host operator with their password; no community role',
+    route: 'POST /host/takedowns/:takedownId/release-held',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: () => hostTakedown('child_safety'),
+    call: ({ id }, secret) => ({
+      method: 'POST',
+      path: `/api/v1/host/takedowns/${id}/release-held`,
+      body: { password: secret },
+    }),
+    effect: async (_body, _role, { id }) => {
+      const row = await pool.query('SELECT evidence_state FROM community_takedowns WHERE id=$1', [
+        id,
+      ]);
+      expect(row.rows).toEqual([{ evidence_state: 'not_configured' }]);
     },
   }),
   define<{ version: number }>({
@@ -899,6 +1017,49 @@ const actions: Action<unknown>[] = [
     },
   }),
   define<{ importId: string }>({
+    rule: 'Commit a checked import: host operator yes, community roles no',
+    route: 'POST /host/imports/:id/commit',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => {
+      const { importId } = await startImport();
+      // Stand in for the worker: the matrix tests who may commit, not how an export is checked.
+      await pool.query(
+        `UPDATE community_imports SET state='validated',validated_at=now(),
+           archive_sha256=$2,archive_bytes=1,archive_received_at=now(),upload_kind='single',
+           report=$3 WHERE id=$1`,
+        [
+          importId,
+          'a'.repeat(64),
+          JSON.stringify({
+            manifestVersion: 1,
+            sourceLifecycle: 'active',
+            channels: 0,
+            entries: 0,
+            attachments: 0,
+            historicalMembers: 1,
+            historicalAgents: 0,
+            auditEvents: 0,
+            attachmentBytes: 0,
+            countedBytes: 0,
+            fitsStorageLimit: true,
+            shortened: 0,
+          }),
+        ]
+      );
+      return { importId };
+    },
+    call: ({ importId }) => ({
+      method: 'POST',
+      path: `/api/v1/host/imports/${importId}/commit`,
+      body: {},
+    }),
+    effect: async (_body, _role, { importId }) => {
+      const row = await pool.query('SELECT state FROM community_imports WHERE id=$1', [importId]);
+      expect(row.rows).toEqual([{ state: 'restoring' }]);
+    },
+  }),
+  define<{ importId: string }>({
     rule: 'Upload an import export: host operator or the upload token; community roles no',
     route: 'PUT /imports/:id/archive',
     allowed: HOST_ROLES,
@@ -918,6 +1079,90 @@ const actions: Action<unknown>[] = [
     effect: async (_body, _role, { importId }) => {
       const row = await pool.query('SELECT state FROM community_imports WHERE id=$1', [importId]);
       expect(row.rows).toEqual([{ state: 'validating' }]);
+    },
+  }),
+  define<{ importId: string }>({
+    rule: 'Upload one part of an import export: host operator or the upload token; community roles no',
+    route: 'PUT /imports/:id/archive/parts/:partNumber',
+    allowed: HOST_ROLES,
+    status: 200,
+    refused: { agent: 401 },
+    prepare: async () => ({ importId: (await startImport()).importId }),
+    call: ({ importId }) => ({
+      method: 'PUT',
+      path: `/api/v1/imports/${importId}/archive/parts/1`,
+      bytes: IMPORT_ARCHIVE,
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-part-sha256': createHash('sha256').update(IMPORT_ARCHIVE).digest('hex'),
+      },
+    }),
+    effect: async (_body, _role, { importId }) => {
+      const parts = await pool.query(
+        'SELECT part_number FROM community_import_parts WHERE import_id=$1',
+        [importId]
+      );
+      expect(parts.rows).toEqual([{ part_number: 1 }]);
+    },
+  }),
+  define<{ importId: string }>({
+    rule: 'List the parts of an import export received so far: host operator or the upload token',
+    route: 'GET /imports/:id/archive/parts',
+    allowed: HOST_ROLES,
+    status: 200,
+    refused: { agent: 401 },
+    prepare: async () => ({ importId: (await startImport()).importId }),
+    call: ({ importId }) => ({ method: 'GET', path: `/api/v1/imports/${importId}/archive/parts` }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8'))).toMatchObject({ parts: [] });
+    },
+  }),
+  define<{ importId: string }>({
+    rule: 'Put the parts of an import export together: host operator or the upload token',
+    route: 'POST /imports/:id/archive/complete',
+    allowed: HOST_ROLES,
+    status: 200,
+    refused: { agent: 401 },
+    prepare: async () => {
+      const { importId } = await startImport();
+      await ok(
+        {
+          method: 'PUT',
+          path: `/api/v1/imports/${importId}/archive/parts/1`,
+          bytes: IMPORT_ARCHIVE,
+          headers: {
+            'content-type': 'application/octet-stream',
+            'x-part-sha256': createHash('sha256').update(IMPORT_ARCHIVE).digest('hex'),
+          },
+        },
+        'founder'
+      );
+      return { importId };
+    },
+    call: ({ importId }) => ({
+      method: 'POST',
+      path: `/api/v1/imports/${importId}/archive/complete`,
+      body: {
+        parts: 1,
+        archiveBytes: IMPORT_ARCHIVE.length,
+        archiveSha256: createHash('sha256').update(IMPORT_ARCHIVE).digest('hex'),
+      },
+    }),
+    effect: async (_body, _role, { importId }) => {
+      const row = await pool.query('SELECT state,upload_kind FROM community_imports WHERE id=$1', [
+        importId,
+      ]);
+      expect(row.rows).toEqual([{ state: 'validating', upload_kind: 'parts' }]);
+    },
+  }),
+  define({
+    rule: 'Read whether this host has mail and single sign-on: host operator yes, community roles no',
+    route: 'GET /host/capabilities',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: '/api/v1/host/capabilities' }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8'))).toEqual({ mail: false, oidc: false });
     },
   }),
   define({
@@ -1893,6 +2138,7 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /auth-options': 'public sign-in options',
   'GET /host-links': "the host's public terms, privacy and report links",
   'GET /me': "the caller's own membership",
+  'GET /history-origin': "when the caller's own community's history was imported",
   'POST /me/leave': 'the caller leaves; no authority over anyone else',
   'POST /me/export': "the caller's personal export",
   'GET /exports': "lists the caller's own exports only",
@@ -1943,6 +2189,8 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'POST /account/password': 'the caller adds a first password to their own account',
   'GET /owner/erasures':
     'completed self-erasures only; member-erasure.integration.test.ts covers who may read it',
+  'GET /takedowns':
+    "the host's reasons: moderators see every one told, others their own; host-takedown.integration.test.ts",
 };
 
 function refusalStatus(action: Action<unknown>, role: Role): number {
@@ -2129,8 +2377,10 @@ it('classifies every registered route, and puts every host and settings route in
     now,
     limitTokenMiss: () => undefined,
     uploadSlots: new UploadSlots(1),
+    partSlots: new UploadSlots(1, 5),
     uploadIdleMs: 1_000,
   });
+  registerHostTakedownRoutes(modules, { pool, config, authority, now, confirmPassword: unused });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [
     ...new Set(modules.routes.map((route) => `${route.method} ${route.path}`)),

@@ -80,13 +80,7 @@ export {
   type RecommendConnectorDeps,
   type RelayAdapterCatalog,
 } from './routing.js';
-export {
-  custodyDisclosure,
-  disclosureForAccount,
-  MANAGED_CUSTODY_CANONICAL_SENTENCE,
-  type CustodyDisclosureContext,
-  type DisclosableAccount,
-} from './custody-disclosure.js';
+export { custodyDisclosure, MANAGED_CUSTODY_CANONICAL_SENTENCE } from './custody-disclosure.js';
 export {
   SessionConnectorAttachmentStore,
   type SessionConnectorOverride,

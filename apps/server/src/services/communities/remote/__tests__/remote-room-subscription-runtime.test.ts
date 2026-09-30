@@ -590,6 +590,80 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     runtime.stop();
   });
 
+  // DOR-2334. Purpose: a live stream the Community closes with `removed` asks the access route at
+  // once, so a community being deleted is noticed (and its copies purged) without waiting for the
+  // next reconcile or the stream's retry; any other close does not. It fails if the close is
+  // ignored, as it was.
+  it('asks the access route at once when the Community ends a stream’s access', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: agent.mintedForManifestId!,
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const bridge = new RemoteRoomSubscriptionBridge(
+      new RemoteMirrorStore(harness.db, harness.store, harness.authors),
+      harness.service,
+      enrollments,
+      () => agent.id
+    );
+    const room = testRoom();
+    let closeReason: 'access-revoked' | 'archived' = 'archived';
+    let closed = false;
+    const subscribeNativeRoom = vi.fn(() =>
+      (async function* () {
+        yield snapshot(room, [], 0);
+        yield { type: 'replay_complete' as const, capturedSeq: 0 };
+        yield { type: 'room_closed' as const, reason: closeReason };
+        closed = true;
+      })()
+    );
+    const resolveConnectionAccess = vi.fn(async () => VERIFIED_AGENT_ACCESS);
+    const runtime = new RemoteRoomSubscriptionRuntime({
+      bridge,
+      enrollments,
+      resolveConnectionAccess,
+      adapters: () => ({ listRooms: async () => [room], subscribeNativeRoom }),
+      resolveLocalAgentAuthor: () => agent.id,
+      isRoomJoined: () => true,
+      // Far longer than the test: any access check after the reconcile's own is the close's.
+      retryMs: 60_000,
+    });
+    try {
+      runtime.start();
+      await settleUntil(() => closed, 'the archived close is read');
+      const afterArchived = resolveConnectionAccess.mock.calls.length;
+      runtime.stop();
+
+      closeReason = 'access-revoked';
+      closed = false;
+      resolveConnectionAccess.mockClear();
+      const second = new RemoteRoomSubscriptionRuntime({
+        bridge,
+        enrollments,
+        resolveConnectionAccess,
+        adapters: () => ({ listRooms: async () => [room], subscribeNativeRoom }),
+        resolveLocalAgentAuthor: () => agent.id,
+        isRoomJoined: () => true,
+        retryMs: 60_000,
+      });
+      second.start();
+      await settleUntil(() => closed, 'the removed close is read');
+      await vi.waitFor(() =>
+        expect(resolveConnectionAccess.mock.calls.length).toBe(afterArchived + 1)
+      );
+      expect(resolveConnectionAccess).toHaveBeenLastCalledWith(REF, harness.human);
+      second.stop();
+    } finally {
+      runtime.stop();
+    }
+  });
+
   // Purpose (member erasure task 2.1): a subscribed room reads its redaction feed as the
   // enrolled agent after every completed replay and again on the interval, and never before its
   // replay completes. It fails if the sync is not wired, runs as the owner, or stops on the timer.

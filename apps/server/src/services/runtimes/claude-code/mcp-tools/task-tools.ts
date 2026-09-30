@@ -47,6 +47,10 @@ import {
 } from '../../../notifications/emitters/schedule-park.js';
 import { raiseStanding } from '../../../notifications/standing-events.js';
 import { conflictingTimingRequest } from '../../../tasks/timing/effective-timing.js';
+import {
+  scheduleAccountRefusal,
+  scheduleRunFolder,
+} from '../../../tasks/lifecycle/schedule-account-eligibility.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -610,6 +614,20 @@ export function createUpdateScheduleHandler(
     // The same refusal, in the same words, as `PATCH /api/tasks/:id` (DOR-2384).
     const accountLocked = refuseStickyAccountChange(deps.taskStore!, existing, args);
     if (accountLocked) return jsonContent(accountLocked, true);
+
+    // An agent may not point a schedule at an account that may not work in the
+    // folder its runs start in (spec `flow-multiproject` §8.4). Same sentence
+    // as the create path.
+    if (typeof args.account === 'string') {
+      const refusal = await scheduleAccountRefusal({
+        account: args.account,
+        runtime: args.runtime ?? existing.runtime,
+        folder: scheduleRunFolder(
+          existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null
+        ),
+      });
+      if (refusal) return jsonContent({ error: refusal.message, code: refusal.code }, true);
+    }
 
     // The MERGED schedule is what gets written and registered, so the merged
     // schedule is what has to read: a new cron runs in the task's existing

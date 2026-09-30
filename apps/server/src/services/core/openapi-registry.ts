@@ -30,6 +30,7 @@ import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
 import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
+import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
@@ -208,7 +209,10 @@ import {
 import {
   ApproveExtensionRequestSchema,
   DismissExtensionApprovalRequestSchema,
+  ExtensionTrustOfferSchema,
   PendingExtensionApprovalsResponseSchema,
+  TrustedSourceRequestSchema,
+  TrustedSourcesResponseSchema,
 } from '@dorkos/shared/extension-approval-schemas';
 import {
   DeletePushSubscriptionResponseSchema,
@@ -573,6 +577,7 @@ const registry = new OpenAPIRegistry();
 registerConnectorEventOpenApi(registry);
 registerSessionContinueOpenApi(registry);
 registerProjectsOpenApi(registry);
+registerAccountEligibilityOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
@@ -980,7 +985,9 @@ registry.registerPath({
     '`/api/sessions/{id}/queue`; a `409` means the turn was refused for WHERE it would ' +
     "run (`DESK_NOT_OWN`: inside a room's files, or a room's agent outside its own " +
     'folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the ' +
-    "room's files), and nothing was started. The `202` also carries the CANONICAL session id: for a " +
+    "room's files), or because the account the new session would run on may not work in " +
+    "its folder's project (`account_not_allowed_here`, with `project` and `accountId`), " +
+    'and nothing was started. The `202` also carries the CANONICAL session id: for a ' +
     'brand-new session this is the real id assigned during the turn (it differs from ' +
     'the client-supplied id), so the client re-keys its URL and `/events` subscription ' +
     'to it. To avoid missing the turn, a client should be subscribed to `/events` ' +
@@ -1005,7 +1012,9 @@ registry.registerPath({
     409: {
       description:
         'Refused before anything started, for where the turn would run ' +
-        '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`); the body says what to do instead',
+        '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in ' +
+        'this project (`account_not_allowed_here`, whose body also names `project` and ' +
+        '`accountId`); the body says what to do instead',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -4629,7 +4638,10 @@ registry.registerPath({
     'does), and the approval is refused with `stale_approval` unless the copy on disk is still ' +
     'exactly that one, so an old row can never turn on a copy that took its place. Clears any ' +
     '"Not now" for this id. A caller naming itself an agent is refused in every posture, and a ' +
-    'signed-in person is required when login is on. There is no MCP tool for this.',
+    'signed-in person is required when login is on. There is no MCP tool for this. When the ' +
+    'copy provably came from a source the person does not trust yet (DorkOS’s own installer ' +
+    'recorded where it fetched it from), the response carries `trustOffer`: the app shows ' +
+    '"Next time, trust everything from <source>?" once, right after the answer.',
   request: {
     params: z.object({ id: z.string() }),
     body: {
@@ -4638,7 +4650,17 @@ registry.registerPath({
     },
   },
   responses: {
-    200: { description: 'Turned on; the updated extension record' },
+    200: {
+      description: 'Turned on; the updated extension record, and a one-time trust offer if any',
+      content: {
+        'application/json': {
+          schema: z.object({
+            extension: z.record(z.string(), z.unknown()),
+            trustOffer: ExtensionTrustOfferSchema.optional(),
+          }),
+        },
+      },
+    },
     400: {
       description: 'Invalid extension id or body',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -4703,6 +4725,90 @@ registry.registerPath({
       description:
         'The extension ships with DorkOS, or the copy changed since the person saw it ' +
         '(`stale_approval`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+const TRUSTED_SOURCE_BAR_RESPONSES = {
+  400: {
+    description: 'The body does not name a GitHub `owner/repo`',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  401: {
+    description: 'Login is enabled and the caller is not signed in',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  403: {
+    description: 'Refused: an agent or another site cannot change which sources are trusted',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+} as const;
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/extensions/trusted-sources',
+  tags: ['Extensions'],
+  summary: 'List the code sources a person trusts',
+  description:
+    'Every source a person chose to trust outright, in the order they trusted it. An extension ' +
+    'whose copy provably came from one of these (DorkOS’s own installer recorded fetching it ' +
+    'from there) runs without asking first. A copy that only claims a source never counts.',
+  responses: {
+    200: {
+      description: 'The trusted sources',
+      content: { 'application/json': { schema: TrustedSourcesResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/extensions/trusted-sources',
+  tags: ['Extensions'],
+  summary: 'Trust every extension from a source',
+  description:
+    'Answers "Next time, trust everything from <source>?" with yes. Only a source that some ' +
+    'installed copy provably comes from can be trusted. Trusting a new code source is one of ' +
+    'the asks only a person can answer: a caller naming itself an agent is refused in every ' +
+    'posture, and a signed-in person is required when login is on. Only the app’s own screens ' +
+    'call this; there is no MCP tool or extension API for it.',
+  request: {
+    body: { content: { 'application/json': { schema: TrustedSourceRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Trusted (or already trusted); the full list',
+      content: { 'application/json': { schema: TrustedSourcesResponseSchema } },
+    },
+    ...TRUSTED_SOURCE_BAR_RESPONSES,
+    409: {
+      description: 'Nothing installed provably comes from that source (`unproven_source`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/extensions/trusted-sources',
+  tags: ['Extensions'],
+  summary: 'Stop trusting a source',
+  description:
+    'Extensions from the source that are turned on stay on exactly as they are: each gets its ' +
+    'own approval, pinned to that copy. A newer copy or a new extension from the source waits ' +
+    'for a person again. The same person bar as trusting applies.',
+  request: {
+    body: { content: { 'application/json': { schema: TrustedSourceRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'No longer trusted; the remaining list',
+      content: { 'application/json': { schema: TrustedSourcesResponseSchema } },
+    },
+    ...TRUSTED_SOURCE_BAR_RESPONSES,
+    404: {
+      description: 'That source is not trusted',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

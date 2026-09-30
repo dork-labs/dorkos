@@ -23,6 +23,7 @@ import type {
   ConnectorProvider,
   ConnectorRecommendation,
 } from '@dorkos/shared/connector-provider';
+import { connectionWayName, serviceNameFromToolkit } from '@dorkos/shared/connector-schemas';
 import type { ConnectorRegistry, ConnectorWarning } from './registry.js';
 
 /**
@@ -104,7 +105,7 @@ function relayRecommendation(
     target: serviceSlug,
     provider: serviceSlug,
     rank: RANK.relayAdapter,
-    reason: `${name} has a purpose-built two-way adapter in DorkOS — richer than the generic connector.`,
+    reason: `${name} works best as a chat app in DorkOS, so messages go both ways. The person sets it up under Messaging on the Connections page.`,
   };
 }
 
@@ -131,7 +132,7 @@ async function providerRecommendations(
         target: serviceSlug,
         provider: provider.type,
         rank: RANK.rawMcp,
-        reason: `Connect ${serviceSlug} directly to its remote MCP server (single account).`,
+        reason: `${serviceNameFromToolkit(serviceSlug)} can connect straight to its own MCP server, with one account only.`,
         custody,
       });
     } else {
@@ -140,7 +141,7 @@ async function providerRecommendations(
         target: serviceSlug,
         provider: provider.type,
         rank: RANK.gateway,
-        reason: `Connect ${serviceSlug} through the ${provider.type} gateway.`,
+        reason: `${connectionWayName(provider.type)} can connect ${serviceNameFromToolkit(serviceSlug)}.`,
         custody,
       });
     }

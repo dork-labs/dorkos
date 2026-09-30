@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * A second window that opened the session URL WITHOUT the folder (DOR-1444).
  *
@@ -106,7 +107,7 @@ import {
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const server = listeningServer(app);
 

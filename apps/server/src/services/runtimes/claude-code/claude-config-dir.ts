@@ -47,6 +47,17 @@ import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
 import { IMPLICIT_ACCOUNT_ID, isAccountColor } from '@dorkos/shared/account-usage';
 import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
+import type { ProjectRef } from '@dorkos/shared/project-schemas';
+import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import {
+  AccountNotAllowedError,
+  accountEligibility,
+  eligibleAccountIds,
+  projectRefFor,
+  readEligibilityRules,
+  refusalFor,
+} from '../../core/usage/account-eligibility.js';
+import { launchFallbackOrder } from '../../core/usage/account-ranking.js';
 import {
   accountForPath,
   canonicalAccountPath,
@@ -321,27 +332,48 @@ export function machineDefaultClaudeRoot(config: ConfigReader = configManager): 
   return claudeDefaultAccountFolder({ runtimes: { claudeCode } }).path;
 }
 
+/** The answer to {@link resolveLaunchAccountRoot}. */
+export type LaunchAccountResolution =
+  | {
+      ok: true;
+      /** The absolute Claude config directory this launch runs and bills on. */
+      root: string;
+      /** The account that folder is: a registry id, or `default` for Main. */
+      accountId: string;
+    }
+  | { ok: false; error: AccountNotAllowedError };
+
 /**
  * Resolve the Claude root ONE launch runs and bills on, through the full ladder
- * (ADR 260821-205323):
+ * (ADR 260821-205323), keeping to the accounts that may work in the launch's
+ * project (spec `flow-multiproject` §8.4, invariant 6):
  *
  * 1. `hintId` — the account a person picked for this session before sending.
  * 2. `agentAccountId` — the account this agent's manifest pins it to.
  * 3. `runtimes.claudeCode.defaultAccount` — the operator's server-wide default.
- * 4. The environment (`$CLAUDE_CONFIG_DIR`, else `~/.claude`).
+ * 4. The environment (`$CLAUDE_CONFIG_DIR`, else `~/.claude`), which counts as
+ *    Main (`default`) when it is no registered row's folder.
+ *
+ * **A NAMED account that may not work here refuses** (rungs 1-2). Running the
+ * work somewhere else without saying so would be a surprise about money. **An
+ * automatic one skips** (rungs 3-4): the next eligible account in core's
+ * ranking order (weekly headroom, then registry order) runs it instead, and
+ * only when no account may work here is the launch refused. The fallback uses
+ * core's own ranking, never the advisor's, so a launch never waits on an
+ * extension.
  *
  * **`default` is the machine-wide default account** (shared contract rev 6d). An
  * explicit `default` on either rung launches in {@link machineDefaultClaudeRoot},
  * never in the folder the server process inherited;
  * `~/.claude` then reaches the subprocess as an UNSET `CLAUDE_CONFIG_DIR`
  * ({@link claudeConfigDirEnv}). A hand-edited row whose id is `default` never
- * takes the name.
+ * takes the name. Every rung is judged by the account its FOLDER is, so a
+ * registry row that has Main's folder is judged by that row's own rule.
  *
- * **A launch never fails on a bad account reference.** An id that no longer
- * names a registered account — the operator removed it, an agent manifest was
- * hand-edited, a client cached a stale list — logs a warning and falls through
- * to the next rung. The alternative is refusing to run a session over a setting,
- * which is a worse answer than billing the default and saying so.
+ * **An unknown account reference never fails a launch.** An id that no longer
+ * names a registered account (the operator removed it, an agent manifest was
+ * hand-edited, a client cached a stale list) logs a warning and falls through
+ * to the next rung.
  *
  * Call this only where a session's account is not already decided: the result
  * feeds {@link claudeConfigDirEnv}, and once a transcript exists on disk THAT is
@@ -351,17 +383,18 @@ export function machineDefaultClaudeRoot(config: ConfigReader = configManager): 
  * @param opts - The ladder's inputs.
  * @param opts.hintId - Registry id from this send's launch hint, if any.
  * @param opts.agentAccountId - Registry id from the agent's manifest, if any.
+ * @param opts.project - The launch's project, or null for a folder in no project.
  * @param opts.config - Config reader (defaults to the module singleton).
- * @returns The absolute Claude config directory this launch must use.
+ * @returns The folder and account this launch uses, or the refusal.
  */
-export function resolveLaunchAccountRoot(
-  opts: {
-    hintId?: string | undefined;
-    agentAccountId?: string | undefined;
-    config?: ConfigReader;
-  } = {}
-): string {
+export function resolveLaunchAccountRoot(opts: {
+  hintId?: string | undefined;
+  agentAccountId?: string | undefined;
+  project: ProjectRef | null;
+  config?: ConfigReader;
+}): LaunchAccountResolution {
   const config = opts.config ?? configManager;
+  const { project } = opts;
   const { accounts } = readClaudeCodeConfig(config);
 
   for (const [source, id] of [
@@ -376,18 +409,80 @@ export function resolveLaunchAccountRoot(
     // First, so a `default` still reaches a row the '0.87.0' migration renamed
     // from it, while that row keeps its marker (see `findRegisteredAccount`).
     const match = findRegisteredAccount(accounts, id);
-    if (match) return match.path;
-    // Always the machine root itself, never an aliased row's own spelling: a row
-    // reaching `~/.claude` through a symlink is the same account, and only this
-    // spelling lets `claudeConfigDirEnv` unset the variable for it.
-    if (id === IMPLICIT_ACCOUNT_ID) return machineDefaultClaudeRoot(config);
-    logger.warn('[claude-config-dir] account id is not registered; falling through', {
-      source,
-      id,
-    });
+    // Always the machine root itself for `default`, never an aliased row's own
+    // spelling: a row reaching `~/.claude` through a symlink is the same
+    // account, and only this spelling lets `claudeConfigDirEnv` unset the
+    // variable for it.
+    const root = match
+      ? match.path
+      : id === IMPLICIT_ACCOUNT_ID
+        ? machineDefaultClaudeRoot(config)
+        : null;
+    if (root === null) {
+      logger.warn('[claude-config-dir] account id is not registered; falling through', {
+        source,
+        id,
+      });
+      continue;
+    }
+    const accountId = match ? match.id : accountIdForRoot(root, config);
+    const verdict = accountEligibility(config, 'claude-code', accountId, project);
+    if (!verdict.eligible)
+      return { ok: false, error: refusalFor(config, accountId, project, verdict) };
+    return { ok: true, root, accountId };
   }
 
-  return resolveActiveClaudeRoot(config);
+  const root = resolveActiveClaudeRoot(config);
+  const accountId = accountIdForRoot(root, config);
+  if (accountEligibility(config, 'claude-code', accountId, project).eligible) {
+    return { ok: true, root, accountId };
+  }
+  // The automatic choice may not work here: the next eligible account runs it.
+  const candidates = [
+    ...launchFallbackOrder('claude-code', project, config),
+    ...accounts
+      .filter((account) => account.id !== IMPLICIT_ACCOUNT_ID)
+      .map((account) => account.id),
+    IMPLICIT_ACCOUNT_ID,
+  ];
+  const [next] = eligibleAccountIds(config, 'claude-code', [...new Set(candidates)], project);
+  if (next !== undefined) {
+    // `default` is always the machine root itself, as rungs 1-2 spell it, never
+    // a row the `'0.87.0'` rename left carrying the old name.
+    const row = next === IMPLICIT_ACCOUNT_ID ? undefined : findRegisteredAccount(accounts, next);
+    return {
+      ok: true,
+      root: row ? row.path : machineDefaultClaudeRoot(config),
+      accountId: next,
+    };
+  }
+  return {
+    ok: false,
+    error: new AccountNotAllowedError(project, null, { reason: 'none-eligible' }),
+  };
+}
+
+/**
+ * The account a Claude folder is: the routable registry row whose folder it is
+ * (compared canonically, so `~`, a trailing slash or a symlink still match),
+ * else Main (`default`).
+ *
+ * @param root - A Claude config directory.
+ * @param config - Config reader.
+ */
+export function accountIdForRoot(root: string, config: ConfigReader = configManager): string {
+  try {
+    const home = os.homedir();
+    const { accounts } = resolveRuntimeAccounts('claude-code', {
+      config: { runtimes: { claudeCode: config.get('runtimes')?.claudeCode } },
+      home,
+      defaultFolder: (_runtime, raw) => claudeDefaultAccountFolder(raw),
+    });
+    const row = accountForPath(accounts, 'claude-code', root, home);
+    return row && !row.implicit ? row.id : IMPLICIT_ACCOUNT_ID;
+  } catch {
+    return IMPLICIT_ACCOUNT_ID;
+  }
 }
 
 /**
@@ -729,6 +824,37 @@ export function describeClaudeCodeAccounts(
       // really there but holds no `projects/` reports false. Naming it `exists`
       // would read as `fs.existsSync` to any UI and mislabel that case.
       isAccountRoot: isClaudeAccountRoot(account.path),
+      // The projects the account is kept to, named, so Settings can say "Only
+      // for client-app" (spec `flow-multiproject` §8.5).
+      onlyProjects:
+        account.onlyProjects == null
+          ? null
+          : account.onlyProjects.map((root) => projectRefFor(canonicalDirectory(root))),
     })),
+    ...describeAccountRules(config, unavailable),
   };
+}
+
+/**
+ * Main's own project rule and every project's allow list, named, for the
+ * `GET /api/config` block (spec `flow-multiproject` §8.5). Omitted when the
+ * config could not be read.
+ */
+function describeAccountRules(
+  config: ConfigReader,
+  unavailable: boolean
+): Pick<NonNullable<ServerConfig['claudeCode']>, 'defaultAccountOnlyProjects' | 'projectAccounts'> {
+  if (unavailable) return {};
+  try {
+    const rules = readEligibilityRules(config.get('runtimes')?.claudeCode);
+    return {
+      defaultAccountOnlyProjects:
+        rules.defaultOnlyProjects === null ? null : rules.defaultOnlyProjects.map(projectRefFor),
+      projectAccounts: [...rules.projectAllow.entries()]
+        .map(([root, allow]) => ({ project: projectRefFor(root), allow: [...allow] }))
+        .sort((a, b) => a.project.name.localeCompare(b.project.name)),
+    };
+  } catch {
+    return {};
+  }
 }

@@ -46,6 +46,7 @@ import {
 } from '@dorkos/shared/connector-resource-schemas';
 import {
   ConnectorProviderCapabilitySetSchema,
+  connectionWayName,
   type ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
@@ -391,7 +392,7 @@ export class ConnectorOperatorQueryService {
           if (result.status === 'unsupported') {
             warnings.push({
               code: 'catalog_unavailable',
-              message: `${this.providerDisplayName(provider)} cannot list services right now.`,
+              message: `${this.providerDisplayName(provider)} can’t list its apps, so they aren’t shown here.`,
             });
             return;
           }
@@ -443,14 +444,14 @@ export class ConnectorOperatorQueryService {
           if (result.truncated) {
             warnings.push({
               code: 'catalog_truncated',
-              message: `${this.providerDisplayName(provider)} returned more services than DorkOS can list safely.`,
+              message: `${this.providerDisplayName(provider)} has more apps than DorkOS can list, so some aren’t shown.`,
             });
           }
         } catch (error) {
           if (input.signal.aborted) throw error;
           warnings.push({
             code: 'catalog_provider_unavailable',
-            message: `${this.providerDisplayName(provider)} is temporarily unavailable.`,
+            message: `${this.providerDisplayName(provider)} didn’t answer, so its apps aren’t shown. Try again in a moment.`,
           });
         }
       })
@@ -530,7 +531,7 @@ export class ConnectorOperatorQueryService {
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
         custody: connectorProviderInstances.custody,
-        displayName: connectorProviderInstances.displayName,
+        providerType: connectorProviderInstances.type,
         capabilityJson: connectorProviderInstances.capabilityJson,
       })
       .from(connections)
@@ -1097,7 +1098,7 @@ export class ConnectorOperatorQueryService {
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
         custody: connectorProviderInstances.custody,
-        displayName: connectorProviderInstances.displayName,
+        providerType: connectorProviderInstances.type,
         capabilityJson: connectorProviderInstances.capabilityJson,
       })
       .from(connections)
@@ -1179,7 +1180,10 @@ export class ConnectorOperatorQueryService {
   ): Promise<ConnectorUsageCounts> {
     if (row.mode === 'managed') {
       if (!this.managedUsage) {
-        return { status: 'unavailable', reason: 'Managed usage is temporarily unavailable.' };
+        return {
+          status: 'unavailable',
+          reason: 'DorkOS couldn’t read this account’s usage from your DorkOS account.',
+        };
       }
       try {
         const result = await this.managedUsage.listManagedConnectorUsage(
@@ -1198,7 +1202,10 @@ export class ConnectorOperatorQueryService {
             }
           : { status: 'unavailable', reason: result.reason };
       } catch {
-        return { status: 'unavailable', reason: 'Managed usage is temporarily unavailable.' };
+        return {
+          status: 'unavailable',
+          reason: 'DorkOS couldn’t read this account’s usage from your DorkOS account.',
+        };
       }
     }
     try {
@@ -1213,7 +1220,7 @@ export class ConnectorOperatorQueryService {
         attemptCount: attempts.length,
       };
     } catch {
-      return { status: 'unavailable', reason: 'Usage is temporarily unavailable.' };
+      return { status: 'unavailable', reason: 'DorkOS couldn’t read this account’s usage.' };
     }
   }
 
@@ -1275,30 +1282,28 @@ export class ConnectorOperatorQueryService {
     }
     const rejected = rows.find((row) => row.state === 'rejected');
     return rejected
-      ? { status: 'failed', reason: rejected.safeReason ?? 'Managed access could not synchronize.' }
+      ? {
+          status: 'failed',
+          reason: rejected.safeReason ?? 'A change to who can use this account didn’t go through.',
+        }
       : { status: 'ready' };
   }
 
   private providerDisclosure(provider: ConnectorProvider): ConnectorProviderDisclosure {
     const row = this.db
-      .select({
-        displayName: connectorProviderInstances.displayName,
-        mode: connectorProviderInstances.mode,
-      })
+      .select({ mode: connectorProviderInstances.mode })
       .from(connectorProviderInstances)
       .where(eq(connectorProviderInstances.id, provider.instanceId))
       .get();
     const capabilities = provider.getCapabilities();
     return {
       providerInstanceId: provider.instanceId,
-      displayName: row?.displayName ?? provider.type,
+      displayName: connectionWayName(provider.type),
       mode: row?.mode ?? 'byo',
       custody: capabilities.custody,
       payer: row?.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       capabilities: capabilities.capabilities,
-      disclosure: custodyDisclosure(capabilities.custody, {
-        service: row?.displayName ?? provider.type,
-      }),
+      disclosure: custodyDisclosure(capabilities.custody),
     };
   }
 
@@ -1307,23 +1312,21 @@ export class ConnectorOperatorQueryService {
   ): ConnectorProviderDisclosure {
     return {
       providerInstanceId: row.providerInstanceId as ConnectorProviderInstanceId,
-      displayName: row.displayName,
+      displayName: connectionWayName(row.providerType),
       mode: row.mode,
       custody: row.custody,
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       capabilities: ConnectorProviderCapabilitySetSchema.parse(JSON.parse(row.capabilityJson)),
-      disclosure: custodyDisclosure(row.custody, { service: row.displayName }),
+      disclosure: custodyDisclosure(row.custody),
     };
   }
 
+  /**
+   * A way's plain name, worked out from its type every time it is read, so a
+   * name stored by an older version never reaches anyone.
+   */
   private providerDisplayName(provider: ConnectorProvider): string {
-    return (
-      this.db
-        .select({ displayName: connectorProviderInstances.displayName })
-        .from(connectorProviderInstances)
-        .where(eq(connectorProviderInstances.id, provider.instanceId))
-        .get()?.displayName ?? provider.type
-    );
+    return connectionWayName(provider.type);
   }
 
   /** The live every-agent grant on one connection, or null when there is none. */

@@ -170,6 +170,7 @@ describe('UserConfigSchema', () => {
         approvedToRun: [],
         approvedSources: {},
         dismissedApprovals: {},
+        trustedSources: [],
       },
       mcp: {
         enabled: true,
@@ -213,6 +214,8 @@ describe('UserConfigSchema', () => {
           defaultAccount: null,
           accounts: [],
           defaultAccountColor: null,
+          defaultAccountOnlyProjects: null,
+          projectAccounts: {},
           dismissedFolders: [],
           defaultModel: null,
           defaultEffort: null,
@@ -555,6 +558,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         approvedToRun: [],
         approvedSources: {},
         dismissedApprovals: {},
+        trustedSources: [],
       },
       mcp: {
         enabled: true,
@@ -598,6 +602,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
           defaultAccount: null,
           accounts: [],
           defaultAccountColor: null,
+          defaultAccountOnlyProjects: null,
+          projectAccounts: {},
           dismissedFolders: [],
           defaultModel: null,
           defaultEffort: null,
@@ -1029,6 +1035,8 @@ describe('UserConfigSchema runtimes', () => {
         defaultAccount: null,
         accounts: [],
         defaultAccountColor: null,
+        defaultAccountOnlyProjects: null,
+        projectAccounts: {},
         dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
@@ -1066,6 +1074,8 @@ describe('UserConfigSchema runtimes', () => {
         defaultAccount: null,
         accounts: [],
         defaultAccountColor: null,
+        defaultAccountOnlyProjects: null,
+        projectAccounts: {},
         dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
@@ -1260,6 +1270,8 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultAccount: null,
       accounts: [],
       defaultAccountColor: null,
+      defaultAccountOnlyProjects: null,
+      projectAccounts: {},
       dismissedFolders: [],
       defaultModel: null,
       defaultEffort: null,
@@ -1279,6 +1291,8 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultAccount: null,
       accounts: [],
       defaultAccountColor: null,
+      defaultAccountOnlyProjects: null,
+      projectAccounts: {},
       dismissedFolders: [],
       defaultModel: null,
       defaultEffort: null,
@@ -1307,6 +1321,8 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
         { id: 'claude2', path: '/Users/me/.claude2', label: null, color: null },
       ],
       defaultAccountColor: null,
+      defaultAccountOnlyProjects: null,
+      projectAccounts: {},
       dismissedFolders: [],
       defaultModel: null,
       defaultEffort: null,
@@ -1918,6 +1934,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       approvedToRun: [],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     });
   });
 
@@ -1932,6 +1949,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       approvedToRun: [],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     });
   });
 
@@ -1946,6 +1964,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       approvedToRun: [],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     });
   });
 
@@ -1960,6 +1979,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       approvedToRun: [],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     });
   });
 
@@ -1994,6 +2014,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       approvedToRun: ['my-ext'],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     });
   });
 

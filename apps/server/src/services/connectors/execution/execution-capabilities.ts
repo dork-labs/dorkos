@@ -73,7 +73,7 @@ function requireExecutionDeps(deps: CapabilityDeps): ConnectorExecutionCapabilit
 function requirePrincipal(context: CapabilityInvocationContext | CapabilityHandlerContext) {
   if (!context.serverPrincipal) {
     throw new CapabilityToolError({
-      error: 'Connector execution requires an authenticated server principal.',
+      error: 'DorkOS couldn’t tell who is asking, so it didn’t do this.',
       code: 'CONNECTOR_PRINCIPAL_REQUIRED',
     });
   }
@@ -86,7 +86,8 @@ function requireRuntimePrincipal(
   const principal = requirePrincipal(context);
   if (!isServerPrincipal(principal) || principal.claims.kind !== 'runtime') {
     throw new CapabilityToolError({
-      error: 'Connector discovery requires an authenticated runtime principal.',
+      error:
+        'DorkOS couldn’t tell which agent in which chat is asking, so it can’t list connected apps here.',
       code: 'CONNECTOR_PRINCIPAL_REQUIRED',
     });
   }
@@ -138,7 +139,9 @@ const ConnectorGrantedOperationsInputSchema = z
 const EXECUTION_TITLES = {
   read: 'Read from a connected app',
   write: 'Change something in a connected app',
-  destructive: "Make a change that can't be undone in a connected app",
+  // The service marks sending, sharing and unsorted actions destructive too, so
+  // the title promises only that it needs more care.
+  destructive: 'Take a high-risk action in a connected app',
 } as const;
 
 function executionCapability(
@@ -202,7 +205,7 @@ const listGrantedConnections = defineCapability({
   id: 'connectors.list_granted_connections',
   title: 'List granted connections',
   description:
-    'List only the currently executable connections granted to this authenticated runtime turn. ' +
+    'List only the connected accounts you can use right now in this chat turn. ' +
     'Accounts granted to you that cannot be used right now (paused, signed out, waiting on a ' +
     'review, turned off for this chat, or reached through a way that is down or cannot run ' +
     'actions) are listed under unavailable, each with a reason and a note on what the person ' +

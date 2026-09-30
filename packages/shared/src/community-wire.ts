@@ -13,6 +13,9 @@ import { z } from 'zod';
 import {
   CommunityAdminAdmissionPolicySchema,
   CommunityAdminLifecycleSchema,
+  CommunityAdminOwnerReplacementOpenStateSchema,
+  CommunityAdminOwnerReplacementReasonSchema,
+  COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN,
 } from './community-admin-wire.js';
 import { HANDLE_PATTERN } from './handle.js';
 
@@ -40,6 +43,10 @@ export const COMMUNITY_API_V1_ROUTES = {
   bootstrapComplete: '/api/v1/bootstrap/complete',
   ownerClaimPreflight: '/api/v1/owner-claims/preflight',
   ownerClaim: '/api/v1/owner-claims/claim',
+  ownerReplacementObjectPreflight: '/api/v1/owner-replacements/object-preflight',
+  ownerReplacementObject: '/api/v1/owner-replacements/object',
+  ownerReplacementPreflight: '/api/v1/owner-replacements/preflight',
+  ownerReplacementClaim: '/api/v1/owner-replacements/claim',
   hostCommunities: '/api/v1/host/communities',
   hostCommunityLifecycle: '/api/v1/host/communities/:id/lifecycle',
   memberships: '/api/v1/memberships',
@@ -85,6 +92,8 @@ export const COMMUNITY_API_V1_ROUTES = {
   meExport: '/api/v1/me/export',
   meLeave: '/api/v1/me/leave',
   ownerTransfer: '/api/v1/owner/transfer',
+  ownerReplacement: '/api/v1/owner-replacement',
+  ownerReplacementObjection: '/api/v1/owner-replacement/objection',
   ownerExport: '/api/v1/owner/export',
   ownerErasures: '/api/v1/owner/erasures',
   accountFormerMemberships: '/api/v1/account/former-memberships',
@@ -196,6 +205,105 @@ export const CommunityWireOwnerClaimPreflightResponseSchema = z.strictObject({
 /** Redeeming a claim needs no client-supplied community or role. */
 export const CommunityWireOwnerClaimRequestSchema = z.strictObject({});
 
+/**
+ * A one-time owner replacement token (a claim token or an object-only token), read from a URL
+ * fragment. Any non-empty string is accepted here so that every unusable token, malformed or
+ * not, gets the same refusal from the route.
+ */
+const ownerReplacementToken = z.string().min(1).max(512);
+/** What the owner can do about an open replacement right now, from lifecycle and account. */
+export const CommunityWireOwnerReplacementOptionsSchema = z.strictObject({
+  /** Keeping ownership is always possible, with the email link or a signed-in session. */
+  keep: z.literal(true),
+  /** Hand the community to someone: `active` only, with a password. */
+  transfer: z.boolean(),
+  /** Delete the community: with a password. */
+  delete: z.boolean(),
+  /** The account has no password, so transfer and delete wait until it adds one. */
+  needsPassword: z.boolean(),
+});
+const ownerReplacementNoticeFields = {
+  replacementId: id,
+  state: CommunityAdminOwnerReplacementOpenStateSchema,
+  reason: CommunityAdminOwnerReplacementReasonSchema,
+  requestedAt: timestamp,
+  /** Null until the notice resolves. */
+  claimableAfter: timestamp.nullable(),
+  noticeState: z.enum(['pending', 'accepted', 'failed']),
+};
+/** The open replacement as its admins see it: no reference, reissue date, or options. */
+export const CommunityWireOwnerReplacementAdminNoticeSchema = z.strictObject({
+  role: z.literal('admin'),
+  ...ownerReplacementNoticeFields,
+});
+/** The open replacement as the owner sees it, with the host's reference and their options. */
+export const CommunityWireOwnerReplacementOwnerNoticeSchema = z.strictObject({
+  role: z.literal('owner'),
+  ...ownerReplacementNoticeFields,
+  /** The host's own reference, shown as quoted plain text, never as a link. */
+  reference: z.string().regex(COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN).nullable(),
+  claimReissuedAt: timestamp.nullable(),
+  options: CommunityWireOwnerReplacementOptionsSchema,
+});
+/**
+ * `GET /owner-replacement` for one member. The owner and admins see an open request (the owner
+ * with more); every member sees a completion for 7 days. Never names a host operator, a key,
+ * a legal hold, or the claimant.
+ */
+export const CommunityWireOwnerReplacementNoticeResponseSchema = z.strictObject({
+  /** Which view this is follows the reader's `role`. */
+  open: z
+    .discriminatedUnion('role', [
+      CommunityWireOwnerReplacementOwnerNoticeSchema,
+      CommunityWireOwnerReplacementAdminNoticeSchema,
+    ])
+    .nullable(),
+  completed: z
+    .strictObject({ newOwnerDisplayName: z.string().min(1), completedAt: timestamp })
+    .nullable(),
+});
+/** The owner keeps ownership from a signed-in session. No password needed. */
+export const CommunityWireOwnerReplacementObjectionRequestSchema = z.strictObject({
+  replacementId: id,
+});
+/** The object-only link's token, sent from the page; a `GET` never objects. */
+export const CommunityWireOwnerReplacementObjectRequestSchema = z.strictObject({
+  token: ownerReplacementToken,
+});
+/** A live object-only link reveals only the community's name and the earliest claim date. */
+export const CommunityWireOwnerReplacementObjectPreflightResponseSchema = z.strictObject({
+  communityName: z.string().min(1),
+  claimableAfter: timestamp.nullable(),
+});
+/**
+ * The object-only link's answer: `kept` when the request is now objected (including a replay of
+ * the link that objected), `ended` when it closed any other way.
+ */
+export const CommunityWireOwnerReplacementObjectResponseSchema = z.strictObject({
+  outcome: z.enum(['kept', 'ended']),
+});
+/** The claim token is exchanged for a signed, 30-minute, HTTP-only cookie. */
+export const CommunityWireOwnerReplacementPreflightRequestSchema = z.strictObject({
+  token: ownerReplacementToken,
+});
+/** Claim preflight: the community, when it can be claimed, and whether single sign-on is needed. */
+export const CommunityWireOwnerReplacementPreflightResponseSchema = z.strictObject({
+  communityId: id,
+  communityName: z.string().min(1),
+  state: CommunityAdminOwnerReplacementOpenStateSchema,
+  claimableAfter: timestamp.nullable(),
+  claimExpiresAt: timestamp.nullable(),
+  /** The request names an account, so only a sign-in through the host's issuer can claim. */
+  requiresSingleSignOn: z.boolean(),
+});
+/** Taking ownership needs the session and the preflight cookie, nothing else. */
+export const CommunityWireOwnerReplacementClaimRequestSchema = z.strictObject({});
+/** The claimant now owns the community; `memberId` is their membership in it. */
+export const CommunityWireOwnerReplacementClaimResponseSchema = z.strictObject({
+  community: z.strictObject({ id, name: z.string().min(1) }),
+  memberId: id,
+});
+
 /** Human roles. Agent membership is a distinct kind, not an elevated role. */
 export const CommunityWireHumanRoleSchema = z.enum(['owner', 'admin', 'member']);
 /** Public roster row without account details or credential material. */
@@ -234,15 +342,39 @@ export const CommunityWireMemberDirectoryPageSchema = z.strictObject({
   members: z.array(CommunityWireMemberSchema).max(100),
   nextCursor: z.uuid().nullable(),
 });
+/** The lowest minimum age a host may ask people to confirm before they create an account. */
+export const COMMUNITY_MINIMUM_AGE_FLOOR = 13;
+/** The highest minimum age a host may ask for; a larger number is almost surely a typo. */
+export const COMMUNITY_MINIMUM_AGE_CEILING = 21;
 /** Public provider availability, without OAuth IDs, secrets or callback details. */
 export const CommunityWireAuthOptionsSchema = z.strictObject({
   google: z.boolean(),
   github: z.boolean(),
   /** The host's OpenID Connect sign-in and its button text, or `null` when the host set none. */
   oidc: z.strictObject({ label: z.string().trim().min(1).max(40) }).nullable(),
+  /**
+   * The age a person must confirm they have reached before a new account is created, or `null`
+   * when the host set none. Signing in to an existing account never asks.
+   */
+  minimumAge: z
+    .number()
+    .int()
+    .min(COMMUNITY_MINIMUM_AGE_FLOOR)
+    .max(COMMUNITY_MINIMUM_AGE_CEILING)
+    .nullable(),
 });
 /** Public sign-in options: which buttons the sign-in page shows beside email and password. */
 export type CommunityWireAuthOptions = z.infer<typeof CommunityWireAuthOptionsSchema>;
+
+/** A person's confirmation, before a new account is created, that they meet the minimum age. */
+export const CommunityWireAgeConfirmationRequestSchema = z.strictObject({
+  confirmed: z.literal(true),
+});
+/** The confirmation holds until `expiresAt`, long enough for a provider's sign-up round trip. */
+export const CommunityWireAgeConfirmationResponseSchema = z.strictObject({
+  confirmed: z.literal(true),
+  expiresAt: timestamp,
+});
 
 const REPORT_MAILBOX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
@@ -544,7 +676,14 @@ export const CommunityWireEventSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('entry'), entry: CommunityWireEntrySchema, cursor }),
   z.strictObject({
     type: z.literal('closed'),
-    reason: z.enum(['removed', 'archived', 'unavailable']),
+    /**
+     * Why the stream ended. `archived`: the community or channel became read-only. `removed`:
+     * this caller's access ended, including a community that is suspended or whose deletion
+     * was requested. `deleted`: the community's deletion finished while this stream was still
+     * open, which is rare because a deletion request already ends streams as `removed`. Added
+     * later: older DorkOS readers parse this enum strictly, fail on it, and reconnect.
+     */
+    reason: z.enum(['removed', 'archived', 'unavailable', 'deleted']),
     cursor,
   }),
 ]);
@@ -682,7 +821,11 @@ export const CommunityConnectionAccessSchema = z
     effective: CommunityWireGrantCapabilitiesSchema,
     lastKnown: z
       .strictObject({
-        lifecycle: z.enum(['active', 'archived', 'suspended', 'deletion_pending']),
+        /**
+         * `deleted` is never sent by a Community: an installation records it after seeing
+         * `deletion_pending` and then the community's `404` (DOR-2334).
+         */
+        lifecycle: z.enum(['active', 'archived', 'suspended', 'deletion_pending', 'deleted']),
         capabilities: CommunityWireGrantCapabilitiesSchema,
         verifiedAt: timestamp,
       })
@@ -723,12 +866,13 @@ export const CommunityConnectionAccessSchema = z
     }
     if (
       (access.lastKnown?.lifecycle === 'suspended' ||
-        access.lastKnown?.lifecycle === 'deletion_pending') &&
+        access.lastKnown?.lifecycle === 'deletion_pending' ||
+        access.lastKnown?.lifecycle === 'deleted') &&
       Object.values(access.lastKnown.capabilities).some(Boolean)
     ) {
       context.addIssue({
         code: 'custom',
-        message: 'Suspended or deleting access has no effective capabilities.',
+        message: 'Suspended, deleting or deleted access has no effective capabilities.',
       });
     }
   });
@@ -917,7 +1061,7 @@ export const CommunityExportAuditEventRowSchema = z.strictObject({
   id,
   community_id: id,
   actor_member_id: nullableId,
-  actor_kind: z.enum(['member', 'system']),
+  actor_kind: z.enum(['member', 'system', 'host']),
   action: z.string().min(1),
   subject_id: z.string().nullable(),
   prior_state: z.string().nullable(),
@@ -1043,7 +1187,7 @@ export const CommunityExportManifestV1Schema = z.strictObject({
         id: exportId,
         community_id: exportId,
         actor_member_id: exportId.nullable(),
-        actor_kind: z.enum(['member', 'system']),
+        actor_kind: z.enum(['member', 'system', 'host']),
         action: z.string().regex(/^[a-z][a-z0-9_.]{0,79}$/),
         subject_id: z.string().min(1).max(200).nullable(),
         prior_state: z.string().max(64).nullable(),
@@ -1133,6 +1277,15 @@ export const CommunityExportManifestV1Schema = z.strictObject({
 export type CommunityExportManifestV1 = z.infer<typeof CommunityExportManifestV1Schema>;
 
 /**
+ * When this community's history was imported from another host, or null when it was not. A
+ * channel created before this time starts with imported history. Only the same-origin browser
+ * bundle reads it.
+ */
+export const CommunityWireHistoryOriginSchema = z.strictObject({
+  importedAt: timestamp.nullable(),
+});
+
+/**
  * One request to erase a person from one community (`membership`) or from the
  * whole host (`account`). It waits 72 hours in `scheduled`, when the person can
  * still cancel it. Only the same-origin browser bundle parses this object.
@@ -1201,6 +1354,47 @@ export const CommunityWireOwnerErasureListResponseSchema = z.strictObject({
   erasures: z.array(CommunityWireOwnerErasureSchema),
 });
 
+/** Why the host removed something, as the takedown categories name it. */
+export const CommunityWireTakedownCategorySchema = z.enum([
+  'child_safety',
+  'illegal_content',
+  'legal_order',
+  'terms_violation',
+]);
+/** The one plain sentence each takedown category shows the owner and the author. */
+export const COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES: Record<
+  z.infer<typeof CommunityWireTakedownCategorySchema>,
+  string
+> = {
+  child_safety: 'It was removed to protect children.',
+  illegal_content: 'It was reported to the host as illegal.',
+  legal_order: 'The host received a legal order to remove it.',
+  terms_violation: "It broke the host's terms.",
+};
+/**
+ * One thing the host removed from this community, as the owner, an admin, or its author sees
+ * it. Ids, the reason, and when: never what it said.
+ */
+export const CommunityWireTakedownNoticeSchema = z.strictObject({
+  id,
+  targetKind: z.enum(['entry', 'attachment', 'icon']),
+  entryId: id.nullable(),
+  attachmentId: id.nullable(),
+  channelId: id.nullable(),
+  category: CommunityWireTakedownCategorySchema,
+  reference: z.string().nullable(),
+  createdAt: timestamp,
+  /**
+   * Whether the removed content was the caller's own or their agents'. The owner and admins see
+   * every takedown; only these are the author's, which the browser tells them about once.
+   */
+  yours: z.boolean(),
+});
+/** The host's takedowns in this community the caller may see, newest first. */
+export const CommunityWireTakedownNoticeListResponseSchema = z.strictObject({
+  takedowns: z.array(CommunityWireTakedownNoticeSchema),
+});
+
 /** Stable error codes for expected authorization, state and quota refusals. */
 export const CommunityWireErrorCodeSchema = z.enum([
   'REAUTH_REQUIRED',
@@ -1232,6 +1426,18 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'LEGAL_HOLD_ACTIVE',
   'IMPORT_ARCHIVE_INVALID',
   'IMPORT_TOO_LARGE',
+  /**
+   * `410`: the community this path names was permanently deleted. Served for as long as the
+   * Community keeps its content-free deletion record (30 days), then the path answers
+   * `404 NOT_FOUND` like any unknown id. Added later; older readers see an unknown code.
+   */
+  'COMMUNITY_DELETED',
+  /** The host has no mail configured, so it cannot give an owner notice. */
+  'NOTICE_DELIVERY_UNAVAILABLE',
+  /** The community already has an open owner replacement. */
+  'OWNER_REPLACEMENT_OPEN',
+  /** The owner kept ownership recently; the host may ask again after the cooling-off. */
+  'OWNER_REPLACEMENT_COOLDOWN',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

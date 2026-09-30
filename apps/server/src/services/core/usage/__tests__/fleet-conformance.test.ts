@@ -2,7 +2,8 @@
  * Runs the case files of flow's fleet conformance fixture whose functions live
  * in the server: the account list with each runtime's `default`
  * (`accounts.cases`), which ledger files a removed account leaves behind
- * (`prune.cases`) and the `flow-state.json` reader (`flow-run.cases`).
+ * (`prune.cases`), the `flow-state.json` reader (`flow-run.cases`) and which
+ * accounts may work in which projects (`project-eligibility.cases`, 4.2.0).
  *
  * The fixture is vendored in `@dorkos/shared` (`src/__fixtures__/flow-fleet-conformance/`),
  * whose own conformance suite runs the rest and fails when a case file has no
@@ -14,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { LEDGER_RUNTIMES } from '@dorkos/shared/account-usage';
 import { parseFlowRunState } from '../../../session/fleet/flow-run-link.js';
 import { pruneTargets, resolveRuntimeAccounts } from '../runtime-accounts.js';
+import { judgeEligibility, readEligibilityRules } from '../account-eligibility.js';
 
 const FIXTURE_DIR = path.resolve(
   import.meta.dirname,
@@ -76,6 +78,30 @@ const RUNNERS: Record<string, (c: Case) => void> = {
     ).toEqual(expected.remove);
   },
 
+  'project-eligibility.cases.json': ({ input, expected }) => {
+    // The canonical spelling the contract compares roots by: no trailing
+    // slash, then the case's real paths (a folder absent from them is real).
+    const realpaths = (input.realpath ?? {}) as Record<string, string>;
+    const canonical = (dir: string) => {
+      const trimmed = dir.length > 1 ? dir.replace(/\/+$/, '') : dir;
+      return Object.hasOwn(realpaths, trimmed) ? realpaths[trimmed]! : trimmed;
+    };
+    // The project is the main checkout git reports for the folder, as
+    // `resolveProjectRoot` asks it; a folder git does not know is no project.
+    const git = input.git as Record<string, string>;
+    const folder = input.folder as string | null;
+    const root = folder !== null && Object.hasOwn(git, folder) ? canonical(git[folder]!) : null;
+    const config = input.config as { runtimes: { claudeCode: unknown } };
+    const verdict = judgeEligibility(
+      readEligibilityRules(config.runtimes.claudeCode, canonical),
+      input.account as string,
+      root
+    );
+    expect(
+      verdict.eligible ? { eligible: true } : { eligible: false, reason: verdict.reason }
+    ).toEqual(expected);
+  },
+
   'flow-run.cases.json': ({ input, expected }) => {
     const read = (state: unknown) => parseFlowRunState(JSON.stringify(state)) ?? {};
     expect(parseFlowRunState(JSON.stringify(input.state)) !== null).toBe(expected.valid);
@@ -88,6 +114,18 @@ const RUNNERS: Record<string, (c: Case) => void> = {
     // unchanged, unknown fields included.
     expect(read(input.state)).toEqual(input.state);
     expect(read(expected.readBack)).toEqual(expected.readBack);
+    // Contract 4.1.0: a writer stamps `updatedAt` with its own clock
+    // (`input.now`) on the record it writes, and only there, so a reader sees
+    // that time as the record's last update and every other record's own.
+    if (input.now !== undefined && expected.valid === true) {
+      const written = (input.write as { issueId: string }).issueId;
+      const before = input.state as Record<string, { updatedAt?: unknown }>;
+      const after = read(expected.readBack) as Record<string, { updatedAt?: unknown }>;
+      expect(after[written]?.updatedAt).toBe(input.now);
+      for (const [issueId, record] of Object.entries(before)) {
+        if (issueId !== written) expect(after[issueId]?.updatedAt).toBe(record.updatedAt);
+      }
+    }
   },
 };
 

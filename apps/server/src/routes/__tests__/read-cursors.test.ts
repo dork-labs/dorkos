@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `PUT /api/read-cursors/:kind/:id` — the one write path onto read state, and
  * the broadcast that carries it to the operator's other screens
@@ -70,7 +71,7 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 const testServer = listeningServer(app);

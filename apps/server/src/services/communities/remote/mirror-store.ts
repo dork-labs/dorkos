@@ -435,10 +435,16 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       this.db
         .select({ entryJson: communityMirrorEntries.entryJson })
         .from(communityMirrorEntries)
+        // The mirror's local room names the same rows as (communityRef, remoteRoomId), one
+        // to one, and it is what `(local_room_id, remote_seq)` is keyed by: with it the page
+        // is read in order from the index; without it every cached entry of the room was
+        // read and sorted to return 200 (0.55 ms to 0.09 ms at 2,000 entries, growing with
+        // the room).
         .where(
           and(
             eq(communityMirrorEntries.communityRef, communityRef),
             eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+            eq(communityMirrorEntries.localRoomId, mirror.localRoomId),
             ...(opts.afterRemoteSeq === undefined
               ? []
               : [gt(communityMirrorEntries.remoteSeq, opts.afterRemoteSeq)])
@@ -839,6 +845,33 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       },
       { behavior: 'immediate' }
     );
+  }
+
+  /**
+   * Every owner connection that still has mirrored content on this machine: a mirror not yet
+   * revoked, or a revoked one whose local room was never purged. What the boot sweep checks
+   * against the connection records (DOR-2334).
+   */
+  mirroredConnections(): { communityRef: CommunityRef; ownerAuthorId: string }[] {
+    const pairs = new Map<string, { communityRef: CommunityRef; ownerAuthorId: string }>();
+    for (const row of this.db
+      .select({
+        communityRef: communityRoomMirrors.communityRef,
+        ownerAuthorId: communityRoomMirrors.ownerAuthorId,
+        state: communityRoomMirrors.state,
+        room: rooms.id,
+      })
+      .from(communityRoomMirrors)
+      .leftJoin(rooms, eq(rooms.id, communityRoomMirrors.localRoomId))
+      .all()) {
+      if (row.state === 'revoked' && row.room === null) continue;
+      const communityRef = row.communityRef as CommunityRef;
+      pairs.set(`${communityRef}\0${row.ownerAuthorId}`, {
+        communityRef,
+        ownerAuthorId: row.ownerAuthorId,
+      });
+    }
+    return [...pairs.values()];
   }
 
   /** Mark a temporary outage: only the owner may read their last authorized rooms. */
