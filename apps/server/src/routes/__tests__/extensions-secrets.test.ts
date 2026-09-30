@@ -51,6 +51,9 @@ const TEST_CWD = '/tmp/test-project';
 function createMockManager() {
   return {
     listPublic: vi.fn<() => ExtensionRecordPublic[]>().mockReturnValue([]),
+    listShadowedPublic: vi.fn().mockReturnValue([]),
+    requestRefresh: vi.fn(),
+    trustOfferFor: vi.fn().mockReturnValue(null),
     get: vi.fn<(id: string) => ExtensionRecord | undefined>().mockReturnValue(undefined),
     enable:
       vi.fn<

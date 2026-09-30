@@ -108,6 +108,14 @@ describe('credentialed live gate entrypoint', () => {
     expect(cleanup).toBeGreaterThan(0);
     expect(cleanedUp).toBeGreaterThan(cleanup);
     expect(cleanedUp).toBeLessThan(afterRead);
+    // A storage bucket bills too (DOR-2584 review): it is re-read after cleanup, while the Fly
+    // session is still held, and before cleanup is called finished, so a bucket that survived
+    // fails the gate with the recovery command still printed; the receipt records the answer.
+    const tigrisRecheck = main.indexOf('tigrisBucketFound = await tigris(');
+    expect(tigrisRecheck).toBeGreaterThan(cleanup);
+    expect(tigrisRecheck).toBeLessThan(main.indexOf('credential.dispose();', cleanup));
+    expect(tigrisRecheck).toBeLessThan(cleanedUp);
+    expect(main.slice(afterRead, afterRead + 400)).toContain('tigrisBucketFound,');
     expect(main).toMatch(
       /catch \(error\) \{\s*throw await explainCommunityLiveGateFailure\(\s*error,\s*\{ cleanedUp, recoveryCommand \}/u
     );
@@ -117,5 +125,57 @@ describe('credentialed live gate entrypoint', () => {
     expect(main).toMatch(
       /bootstrap = await whileLauncherRuns\(resumed, capture\.next\(TIMEOUT_MS\), \{\s*ms: DELIVERED_CAPTURE_MS,\s*step: 'bootstrap-capture-after-launcher-exit',\s*\}\)/u
     );
+  });
+
+  // An unreleased run must copy its tarball into the retained run directory and check the copy
+  // before any npm, profile or service call, then install and recover from that copy only. A real
+  // run costs money, so this pins the order in main; the check itself is unit-tested beside it.
+  it('checks an unreleased tarball first, installs that file, and records it as not a release', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const inspect = main.indexOf(
+      "tarball = await inspectCommunityLiveTarball(\n        config.source.path,\n        join(durableHome, 'package-under-test')\n      );"
+    );
+    expect(inspect).toBeGreaterThan(0);
+    expect(inspect).toBeLessThan(main.indexOf('await command('));
+    expect(inspect).toBeLessThan(main.indexOf('readFlySessionCredential('));
+    expect(main).toMatch(/if \(!tarball\) \{\s*const published = parsePublishedVersion\(/u);
+    // Installed and recovered from the verified copy the check returned, never the original path.
+    expect(main).toContain('tarball ? tarball.path : `dorkos@${version}`');
+    expect(main).not.toMatch(/config\.source\.path(?![\s\S]{0,80}package-under-test)/u);
+    expect(main).toMatch(/JSON\.stringify\(\{\s*version,\s*source,/u);
+    const recovery = main.slice(main.indexOf('communityLiveGateRecoveryCommand('));
+    expect(recovery.slice(0, recovery.indexOf(';'))).toContain('tarball?.path');
+  });
+
+  // A launcher that exits before writing a launch record leaves no journal, so its own last code is
+  // the only explanation (DOR-2169). A real run costs money, so this pins the wiring; the reading
+  // itself is unit-tested in community-deploy-live-failure.test.ts.
+  it('attaches the launcher last error code when it exits with a failure', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const onExit = source.slice(source.indexOf('terminal.onExit('));
+    expect(onExit.slice(0, onExit.indexOf('});'))).toMatch(
+      /new CommunityLiveGateError\(\s*PUBLISHED_LAUNCHER_STEP,\s*null,\s*describeLauncherExit\(transcript\) \?\? undefined\s*\)/u
+    );
+  });
+
+  // The pack recipe must refuse a checkout past its release's migrations before it spends minutes
+  // building a launcher that could never deploy.
+  it('checks the Community migrations against the release tag before building', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/pack-community-live-tarball.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const guard = main.indexOf('assertReleasedCommunityMigrations(git, packedVersion);');
+    expect(guard).toBeGreaterThan(main.indexOf("requireClean('before packing');"));
+    expect(guard).toBeLessThan(main.indexOf("['--filter', 'dorkos', 'build']"));
+    expect(guard).toBeLessThan(main.indexOf('createCommunityLivePackDirectory('));
   });
 });

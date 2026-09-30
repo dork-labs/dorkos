@@ -248,7 +248,46 @@ test('a host administrator creates a community and its intended owner signs up a
     await expect(
       ownerPage.getByRole('heading', { name: 'You’re the owner of Second Place.' })
     ).toBeVisible();
-    await expect(ownerPage.getByText('Connect this DorkOS installation')).toBeVisible();
+    // The steps are the DorkOS app's own (sidebar switcher, Add community, Connect a
+    // community…), and the page hands over the community's own link, which a host address is not.
+    const connect = ownerPage
+      .locator('[data-slot="notice"]')
+      .filter({ hasText: 'Connect DorkOS to this community' });
+    await expect(connect).toBeVisible();
+    // Named by place, not label: the switcher shows an icon on a phone and whichever name is
+    // selected on a computer.
+    await expect(
+      connect.getByText('In the DorkOS app, open the menu at the top left.', { exact: true })
+    ).toBeVisible();
+    await expect(connect.getByText(/sidebar|team’s name/u)).toHaveCount(0);
+    await expect(connect.getByText('Add community', { exact: true })).toBeVisible();
+    await expect(connect.getByText('Connect a community…', { exact: true })).toBeVisible();
+    await expect(ownerPage.getByText(/Connections, then Messaging/u)).toHaveCount(0);
+    const claimedId = (
+      await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='Second Place'")
+    ).rows[0].id;
+    await expect(ownerPage.getByLabel('This community’s link')).toHaveValue(
+      `${baseUrl}/c/${claimedId}`
+    );
+    await ownerPage.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: (text: string) => {
+            (window as unknown as { copiedLink: string }).copiedLink = text;
+            return Promise.resolve();
+          },
+        },
+      });
+    });
+    await ownerPage.getByRole('button', { name: 'Copy link' }).click();
+    await expect(ownerPage.getByText('Link copied.')).toBeVisible();
+    expect(
+      await ownerPage.evaluate(() => (window as unknown as { copiedLink: string }).copiedLink)
+    ).toBe(`${baseUrl}/c/${claimedId}`);
+    expect(await ownerPage.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+      false
+    );
     await shot(ownerPage, 'claimed');
     expect(await ownerRole('priya@claim.test', 'Second Place')).toEqual({
       role: 'owner',

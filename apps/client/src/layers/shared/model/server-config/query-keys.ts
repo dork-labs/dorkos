@@ -82,4 +82,9 @@ export const accountKeys = {
   limitHistory: (sessionId: string) => [...accountKeys.all, 'limit-history', sessionId] as const,
   /** The Claude account folders found on this computer and not yet registered. */
   found: () => [...accountKeys.all, 'found', 'claude-code'] as const,
+  /** Every Claude account as one folder's project sees it (spec `flow-multiproject` §8.6). */
+  eligibility: (folder: string | null) =>
+    [...accountKeys.all, 'eligibility', 'claude-code', folder ?? ''] as const,
+  /** Every project this machine knows. */
+  projects: () => [...accountKeys.all, 'projects'] as const,
 };

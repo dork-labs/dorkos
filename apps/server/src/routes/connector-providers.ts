@@ -69,7 +69,7 @@ export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDep
     const credentialName = bootstrapper.credentialNameFor(provider);
     if (!credentialName) {
       res.status(400).json({
-        error: 'This service setup option is not available. Choose another option and try again.',
+        error: 'DorkOS doesn’t use a key of this kind. Nothing was saved.',
       });
       return;
     }
@@ -86,7 +86,7 @@ export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDep
       // path must never echo anything derived from the stored secret.
       logger.error(`[Connectors] Provider reload failed after credential save`, { provider });
       res.status(500).json({
-        error: 'The key was saved, but DorkOS could not start this service. Try again.',
+        error: 'The key was saved, but DorkOS couldn’t start using it. Try again.',
       });
     }
   });
@@ -96,7 +96,7 @@ export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDep
     const credentialName = bootstrapper.credentialNameFor(provider);
     if (!credentialName) {
       res.status(400).json({
-        error: 'This service setup option is not available. Choose another option and try again.',
+        error: 'DorkOS doesn’t use a key of this kind. Nothing was removed.',
       });
       return;
     }

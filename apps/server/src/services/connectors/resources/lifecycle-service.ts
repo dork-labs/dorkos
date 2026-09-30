@@ -466,7 +466,8 @@ export class ConnectorLifecycleService {
       return {
         authoritySync: {
           status: 'failed',
-          reason: 'DorkOS cannot sync this connection until this installation is linked.',
+          reason:
+            'This computer isn’t linked to your DorkOS account, so DorkOS can’t update this account at the service yet.',
         },
         applied: false,
         externalCleanup: lifecycle === 'disconnected' ? 'pending' : 'not_required',

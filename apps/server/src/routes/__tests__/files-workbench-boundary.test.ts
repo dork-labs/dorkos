@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
@@ -30,7 +31,7 @@ import { createApp } from '../../app.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { revealInFileManager } from '../../lib/reveal-in-file-manager.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 
 describe('Workbench file routes — real boundary + symlink escapes', () => {

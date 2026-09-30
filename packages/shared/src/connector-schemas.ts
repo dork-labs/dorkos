@@ -152,6 +152,36 @@ export type ConnectorOperationClassification = z.infer<
   typeof ConnectorOperationClassificationSchema
 >;
 
+/**
+ * An access level the owner gives an agent, or every agent, on one account:
+ * `read` is every action the app lets agents read, and `read-write` adds every
+ * action that changes something there. A level is stored as the owner's
+ * intent, not as a snapshot of today's actions, so actions the app adds or
+ * reclassifies join or leave it by class, and it never covers more than its
+ * classes (ADR 260929-071355). No level ever covers a `destructive` action;
+ * that is only ever allowed one action at a time.
+ */
+export const ConnectorAccessLevelSchema = z.enum(['read', 'read-write']);
+/** An access level the owner gives on one account. */
+export type ConnectorAccessLevel = z.infer<typeof ConnectorAccessLevelSchema>;
+
+/**
+ * Whether an access level covers an action of this safety classification:
+ * "Read" is `read` only, "Read and write" adds `write`, and no level covers
+ * `destructive`. The one rule the server grants and follows levels with, and
+ * every screen describing a level reads.
+ *
+ * @param classification - The action's stored safety classification.
+ * @param level - The access level, or `'none'`.
+ */
+export function levelIncludes(
+  classification: ConnectorOperationClassification,
+  level: 'none' | ConnectorAccessLevel
+): boolean {
+  if (level === 'none') return false;
+  return classification === 'read' || (level === 'read-write' && classification === 'write');
+}
+
 /** Provider-acknowledged retry behavior frozen into an operation revision. */
 export const ConnectorRetryPolicySchema = z.enum(['never', 'provider_idempotency_key']);
 /** Provider-acknowledged retry behavior frozen into an operation revision. */
@@ -777,6 +807,203 @@ export const TURN_ON_FOR_THIS_CHAT_COPY: Partial<ConnectionReadinessCopy> = {
   owner: 'Turn it on to let this agent use it here again.',
 };
 
+/**
+ * Why a way can't do something at all, in the words a person or agent reads
+ * wherever the way's abilities are shown (the connect dialog, the access
+ * review, an agent's tool result). Each way's code states its limits with
+ * these lines, never its own.
+ */
+export const WAY_CAPABILITY_COPY = {
+  /** The way signs in to apps but can't run their actions. */
+  cannotRunActions: 'Agents can’t use apps connected this way yet.',
+  /** The way can't say which actions an app offers. */
+  cannotListActions: 'DorkOS can’t list what an app can do when it’s connected this way.',
+  /** The way can't deliver notifications from apps. */
+  noNotifications: 'Notifications aren’t available for apps connected this way.',
+  /** A person's own Composio key is an account key, which can't run actions. */
+  accountKeyCannotRunActions:
+    'This key can sign in to apps but can’t run their actions. Change it to a project key from your Composio dashboard.',
+} as const;
+
+/**
+ * Why a waiting approval or request was cancelled because the access behind
+ * it ended. A person reads it on the approval or request; an agent reads it
+ * as the answer to what it was waiting for.
+ */
+export const ACCESS_ENDED_COPY = {
+  /** The account was disconnected. */
+  connection_removed: 'The account was disconnected, so this was cancelled.',
+  /** The agent was removed. */
+  agent_removed: 'The agent was removed, so this was cancelled.',
+  /** The agent's access to the account was taken away. */
+  agent_connection_removed:
+    'The agent’s access to this account was removed, so this was cancelled.',
+} as const;
+
+/**
+ * What a person reads under one of their own keys when DorkOS's last check of
+ * it failed. The service's own error text goes to the log, never here.
+ */
+export const KEY_CHECK_COPY = {
+  /** The service turned the key down (it answered 401 or 403). */
+  refused: 'The service turned this key down. Check it’s the right key, then save it again.',
+  /** The check failed a way that can pass, and DorkOS has a re-check scheduled. */
+  checkingAgain: 'DorkOS couldn’t check this key just now. It checks again on its own.',
+  /** The check failed and DorkOS has stopped checking on its own. */
+  stoppedChecking:
+    'DorkOS couldn’t check this key and has stopped trying on its own. Save it again to check it now.',
+  /**
+   * Nothing answered at the service's address (a name that doesn't resolve, a
+   * refused connection, a 404 on the base address).
+   *
+   * @param type - The way's type: `'nango'` names the person's own server.
+   * @param recheckScheduled - Whether DorkOS will check it again on its own.
+   */
+  unreachable(type: string, recheckScheduled: boolean): string {
+    const lead =
+      type === 'nango'
+        ? 'DorkOS couldn’t reach your Nango server.'
+        : 'DorkOS couldn’t reach Composio.';
+    if (recheckScheduled) return `${lead} It checks again on its own.`;
+    return type === 'nango'
+      ? `${lead} Check that it’s running and its address is right, then save the key again.`
+      : `${lead} Check your internet connection, then save the key again.`;
+  },
+} as const;
+
+/**
+ * What a person reads when a change to who can use an account can't be sent
+ * because this computer's DorkOS account link is gone.
+ */
+export const LINK_NEEDED_TO_CHANGE_ACCESS_COPY =
+  'DorkOS can’t change who uses this account until this computer is linked to your DorkOS account again. Link it in Settings › Access, then try again.';
+
+/**
+ * What a person reads when a sign-in can't start or doesn't finish. The
+ * server's sign-in flow is the one writer; the connect dialog shows the line.
+ */
+export const SIGN_IN_COPY = {
+  /** The way changed, or stopped answering, while the person was signing in. */
+  wayChanged:
+    'The way DorkOS reaches this app changed or stopped working while you were signing in. Start again.',
+  /** The way isn't set up, or isn't working, so a sign-in can't start. */
+  wayUnavailable:
+    'The way DorkOS reaches this app isn’t set up or isn’t working right now. Check it in Settings › Connections, then try again.',
+  /** The service said the sign-in didn't finish. */
+  failed: 'Sign-in didn’t finish. Try again.',
+} as const;
+
+/** The service behind each way, by the way's type: what its key or server is called. */
+const SERVICE_NAMES: Readonly<Record<string, string>> = {
+  'dorkos-managed': 'DorkOS',
+  composio: 'Composio',
+  nango: 'Nango',
+  mcp: 'MCP',
+  'test-connector': 'Test connector',
+};
+
+/**
+ * How a person knows each way DorkOS reaches apps, by the way's type. Every
+ * surface that names a way (Settings › Connections, "How it's connected", the
+ * connect dialog, the catalog's warnings, an agent's recommendation) reads it
+ * from here, and the server works it out from the stored type when it reads a
+ * way, so a stored raw name never reaches anyone.
+ */
+const WAY_NAMES: Readonly<Record<string, string>> = {
+  'dorkos-managed': 'Your DorkOS account',
+  composio: 'Your Composio key',
+  nango: 'Your Nango server',
+  // Raw MCP talks straight to the app's own server, never one the person runs.
+  mcp: 'The app’s own MCP server',
+  'test-connector': 'Your test key',
+};
+
+/** "Composio" from `composio`; an unknown type is title-cased. */
+function titleCase(type: string): string {
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+/**
+ * The name of the service behind a way, for a key's own label ("Composio
+ * project key", "Nango API key"). An unknown type is title-cased.
+ *
+ * @param type - The way's type, e.g. `'composio'`.
+ */
+export function connectionServiceName(type: string): string {
+  return SERVICE_NAMES[type] ?? titleCase(type);
+}
+
+/**
+ * The plain name of one way DorkOS reaches apps. An unknown type is named as
+ * one of the person's own keys rather than shown as a raw slug.
+ *
+ * @param type - The way's type, e.g. `'composio'` or `'dorkos-managed'`.
+ */
+export function connectionWayName(type: string): string {
+  return WAY_NAMES[type] ?? `Your ${titleCase(type)} key`;
+}
+
+/**
+ * The one line about who pays for an app's use, or `null` when nobody bills
+ * for it: a self-hosted Nango server or an MCP server is the person's own, so
+ * there is no bill to name. Only the DorkOS-account way and a person's own
+ * Composio key have one.
+ *
+ * @param route - The way's payer and where its sign-ins are kept.
+ */
+export function connectionUsageLine(route: {
+  readonly payer: 'operator_byo' | 'dorkos_managed';
+  readonly custody: 'managed' | 'self-host' | 'external';
+}): string | null {
+  if (route.payer === 'dorkos_managed') return 'Your DorkOS account covers its use.';
+  // Composio keeps the sign-in (managed custody) on a person's own key.
+  if (route.custody === 'managed') return 'Any usage charges go to your own Composio account.';
+  return null;
+}
+
+/**
+ * Plain words for what one app action can do, shown in place of its stored
+ * class. `destructive` is "High risk", never "Delete": the service marks
+ * sending, sharing, forwarding and actions it hasn't sorted as destructive
+ * too, so all the words can promise is that it needs more care.
+ */
+export const OPERATION_CLASSIFICATION_LABELS: Readonly<
+  Record<ConnectorOperationClassification, string>
+> = {
+  read: 'Read',
+  write: 'Write',
+  destructive: 'High risk',
+};
+
+/**
+ * What a set of action kinds lets an agent do, in words: `read`,
+ * `read and write`, `read, write and high-risk actions`. Never "delete": the
+ * service marks sending and sharing destructive too. The app and the server's
+ * Activity entries both read it here.
+ *
+ * @param classifications - The kinds of the granted actions.
+ */
+export function connectionAccessWords(
+  classifications: readonly ConnectorOperationClassification[]
+): string {
+  const words = (['read', 'write', 'destructive'] as const)
+    .filter((kind) => classifications.includes(kind))
+    .map((kind) => (kind === 'destructive' ? 'high-risk actions' : kind));
+  if (words.length <= 1) return words[0] ?? '';
+  return `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
+}
+
+/** Plain words for a connected account's sign-in state, shown in place of its stored value. */
+export const CONNECTION_STATUS_LABELS: Readonly<
+  Record<'active' | 'expired' | 'revoked' | 'pending' | 'paused', string>
+> = {
+  active: 'Connected',
+  expired: 'Signed out',
+  revoked: 'Disconnected',
+  pending: 'Signing in',
+  paused: 'Paused',
+};
+
 /** Connection metadata visible to an agent that already holds access. */
 export const AccessibleConnectorConnectionSchema = z
   .object({
@@ -889,11 +1116,17 @@ export type ConnectorReconciliationPreviewRequest = z.infer<
   typeof ConnectorReconciliationPreviewRequestSchema
 >;
 
-/** Complete replacement set for one explicitly named agent. */
+/**
+ * Complete replacement set for one explicitly named agent. With a `level`, the
+ * set is exactly that level's actions in the reviewed catalog, and the agent
+ * keeps the level as the app changes; without one, the set is exact actions
+ * that stay exactly as chosen.
+ */
 export const ConnectorReconciliationGrantSelectionSchema = z
   .object({
     agentId: z.string().min(1),
     operationRevisionIds: z.array(z.string().min(1)),
+    level: ConnectorAccessLevelSchema.optional(),
   })
   .strict();
 /** Complete replacement set for one explicitly named agent. */
@@ -910,6 +1143,8 @@ export type ConnectorReconciliationGrantSelection = z.infer<
 export const ConnectorReconciliationEveryAgentSelectionSchema = z
   .object({
     operationRevisionIds: z.array(z.string().min(1)),
+    /** The level these revisions are, kept as the app changes; absent for exact actions. */
+    level: ConnectorAccessLevelSchema.optional(),
   })
   .strict();
 /** Complete replacement set for the owner-wide "every agent" grant on one connection. */
@@ -927,6 +1162,8 @@ export const ConnectorReconciliationEveryAgentStateSchema = z
   .object({
     available: z.boolean(),
     operationRevisionIds: z.array(z.string().min(1)),
+    /** The level the owner chose for every agent; absent for exact actions or no sharing. */
+    level: ConnectorAccessLevelSchema.optional(),
   })
   .strict();
 /** The every-agent grant as a reconciliation snapshot sees it. */
@@ -965,6 +1202,33 @@ export const ConnectorReconciliationCandidateSchema = AccessibleConnectorOperati
 export type ConnectorReconciliationCandidate = z.infer<
   typeof ConnectorReconciliationCandidateSchema
 >;
+
+/**
+ * The exact revisions an access level covers in one complete snapshot: every
+ * action the app still offers whose class the level includes
+ * ({@link levelIncludes}), sorted. The server grants a level with exactly
+ * this set, and re-derives it every time the catalog is read again, so a
+ * level follows the app and never covers more than its classes.
+ *
+ * @param candidates - The snapshot's operations.
+ * @param level - The access level, or `'none'`.
+ */
+export function accessLevelRevisionIds(
+  candidates: ReadonlyArray<
+    Pick<
+      ConnectorReconciliationCandidate,
+      'operationRevisionId' | 'capabilityClassification' | 'supported'
+    >
+  >,
+  level: 'none' | ConnectorAccessLevel
+): string[] {
+  return candidates
+    .filter(
+      (candidate) => candidate.supported && levelIncludes(candidate.capabilityClassification, level)
+    )
+    .map((candidate) => candidate.operationRevisionId)
+    .sort();
+}
 
 /** Server-owned complete catalog snapshot used for an exact grant decision. */
 export const ConnectorReconciliationPreviewSchema = z
@@ -1029,7 +1293,7 @@ const ConnectionTargetSchema = ReviewActionBaseSchema.extend({
  * compared by class, never by guessed action names. No level covers an
  * action that can't be undone; that is only ever allowed one action at a time.
  */
-export const ConnectorRequestAccessSchema = z.enum(['read', 'read-write']);
+export const ConnectorRequestAccessSchema = ConnectorAccessLevelSchema;
 /** The access an agent asks for, by level. */
 export type ConnectorRequestAccess = z.infer<typeof ConnectorRequestAccessSchema>;
 

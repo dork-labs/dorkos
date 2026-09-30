@@ -1,0 +1,16 @@
+{
+  "parts": [
+    {
+      "partNumber": 1,
+      "byteSize": 268435456,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "partNumber": 2,
+      "byteSize": 268435456,
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "maxPartBytes": 268435456,
+  "maxArchiveBytes": 1099511627776
+}

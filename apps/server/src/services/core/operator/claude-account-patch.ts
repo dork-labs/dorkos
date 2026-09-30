@@ -11,6 +11,7 @@
  *
  * @module services/core/operator/claude-account-patch
  */
+import { z } from 'zod';
 import { ACCOUNT_ID_PATTERN, IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import {
   CLAUDE_ACCOUNTS_SEEN_KEY,
@@ -123,6 +124,61 @@ export function defaultAccountColorRefusal(patch: Record<string, unknown>): stri
   return [
     'runtimes.claudeCode.defaultAccountColor: must be a lowercase #rrggbb color, or null for the default.',
   ];
+}
+
+/** A strict project-root list, as a write must state it: non-empty strings. */
+const StrictRootListSchema = z.array(z.string().min(1)).nullable();
+
+/** A strict per-project account rule map, as a write must state it. */
+const StrictProjectAccountsSchema = z.record(
+  z.string().min(1),
+  z.object({ allow: z.array(z.string().min(1)) }).strict()
+);
+
+/**
+ * Refuse a patch that names an account rule (spec `flow-multiproject` §8.1) in
+ * the wrong shape. The stored config reads a bad shape as "no rule" so a hand
+ * edit never makes the file unloadable, but a WRITE that meant a rule and
+ * stated it wrongly must not be stored as the wider "no rule" in silence: it
+ * is refused with a plain message instead. Checks
+ * `runtimes.claudeCode.defaultAccountOnlyProjects`, `.projectAccounts`, and
+ * each patched row's `accounts[].onlyProjects`, only where the patch names them.
+ *
+ * @param patch - The patch as the caller sent it.
+ * @returns The refusal details, or `null` when every named rule is well formed.
+ */
+export function accountRulesRefusal(patch: Record<string, unknown>): string[] | null {
+  const runtimes = patch.runtimes;
+  if (!isRecord(runtimes)) return null;
+  const claudeCode = runtimes.claudeCode;
+  if (!isRecord(claudeCode)) return null;
+  const details: string[] = [];
+  if (
+    'defaultAccountOnlyProjects' in claudeCode &&
+    !StrictRootListSchema.safeParse(claudeCode.defaultAccountOnlyProjects).success
+  ) {
+    details.push(
+      'runtimes.claudeCode.defaultAccountOnlyProjects: must be a list of project folders, or null for any project.'
+    );
+  }
+  if (
+    'projectAccounts' in claudeCode &&
+    !StrictProjectAccountsSchema.safeParse(claudeCode.projectAccounts).success
+  ) {
+    details.push(
+      'runtimes.claudeCode.projectAccounts: each project folder must map to { "allow": [account ids] }.'
+    );
+  }
+  if (Array.isArray(claudeCode.accounts)) {
+    claudeCode.accounts.forEach((row, index) => {
+      if (!isRecord(row) || !('onlyProjects' in row)) return;
+      if (StrictRootListSchema.safeParse(row.onlyProjects).success) return;
+      details.push(
+        `runtimes.claudeCode.accounts.${index}.onlyProjects: must be a list of project folders, or null for any project.`
+      );
+    });
+  }
+  return details.length > 0 ? details : null;
 }
 
 /**

@@ -190,6 +190,9 @@ export async function checkedAddress(
   };
 }
 
+/** The most of a refused stream's error body read for its code: 16 KB. */
+export const SSE_ERROR_BODY_MAX_BYTES = 16 * 1024;
+
 /** Read only the closed-enum error code from a Community error body; anything else is dropped. */
 function remoteErrorCode(content: Buffer): CommunityWireErrorCode | undefined {
   try {
@@ -340,8 +343,26 @@ export async function* pinnedSse(
         },
         (opened) => {
           if (opened.statusCode !== 200) {
-            opened.resume();
-            reject(new PinnedHttpError(opened.statusCode ?? 502));
+            // Read a bounded error body for its closed-enum code only, as a JSON call does: a
+            // refused stream says why (`410 COMMUNITY_DELETED` is not a stale cursor).
+            const status = opened.statusCode ?? 502;
+            const chunks: Buffer[] = [];
+            let size = 0;
+            opened.on('data', (chunk: Buffer) => {
+              size += chunk.length;
+              if (size <= SSE_ERROR_BODY_MAX_BYTES) {
+                chunks.push(chunk);
+                return;
+              }
+              // No error body is this long: stop reading rather than drain it until the timeout,
+              // and keep no code, since a truncated body proves nothing.
+              opened.destroy();
+              reject(new PinnedHttpError(status));
+            });
+            opened.on('end', () =>
+              reject(new PinnedHttpError(status, remoteErrorCode(Buffer.concat(chunks))))
+            );
+            opened.on('error', () => reject(new PinnedHttpError(status)));
             return;
           }
           resolve(opened);

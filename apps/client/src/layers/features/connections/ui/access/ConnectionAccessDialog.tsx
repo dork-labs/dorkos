@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import {
+  accessLevelRevisionIds,
   actionNameFromSlug,
+  OPERATION_CLASSIFICATION_LABELS,
   type ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
 import { useConnectorConnections } from '@/layers/entities/connectors';
@@ -21,10 +23,10 @@ import {
 } from '@/layers/shared/ui';
 import {
   changedGrantSelections,
-  revisionIdsForAccessLevel,
   selectionsFromPreview,
   type AgentOperationSelections,
 } from '../../lib/reconciliation-selection';
+import { olderVersionIds } from '../../lib/older-versions';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
 import { AccessOutcome } from './AccessOutcome';
 
@@ -126,7 +128,7 @@ export function ConnectionAccessDialog({
           ) : saveOutcome && !saved ? (
             <Button variant="secondary" onClick={access.checkSync} disabled={access.isCheckingSync}>
               <RefreshCw className="size-4" aria-hidden />
-              {access.isCheckingSync ? 'Checking…' : 'Check sync status'}
+              {access.isCheckingSync ? 'Checking…' : 'Check if it’s done'}
             </Button>
           ) : !needsRefresh && preview && !saved ? (
             <Button
@@ -182,26 +184,27 @@ function ReconciliationEditor({
       ) : (
         <div className="space-y-2">
           {preview.agents.map((agent) => {
-            const selected = new Set(selections[agent.agentId] ?? []);
-            const read = revisionIdsForAccessLevel(preview.candidates, 'read');
-            const readWrite = revisionIdsForAccessLevel(preview.candidates, 'read-write');
-            const sorted = [...selected].sort();
-            const same = (candidate: string[]) =>
-              candidate.length === sorted.length &&
-              candidate.every((value, index) => value === sorted[index]);
+            const older = olderVersionIds(preview.candidates);
+            const selection = selections[agent.agentId];
+            const selected = new Set(selection?.operationRevisionIds ?? []);
+            // The level the owner chose, kept as the app changes; ticking
+            // single actions below makes it exact actions instead.
             const level =
-              sorted.length === 0
-                ? 'No access'
-                : same(read)
-                  ? 'Read'
-                  : same(readWrite)
-                    ? 'Read + write'
+              selection?.level === 'read'
+                ? 'Read'
+                : selection?.level === 'read-write'
+                  ? 'Read + write'
+                  : selected.size === 0
+                    ? 'No access'
                     : 'Custom access';
             const advanced = advancedAgentId === agent.agentId;
             const setLevel = (next: 'none' | 'read' | 'read-write') =>
               setSelections({
                 ...selections,
-                [agent.agentId]: revisionIdsForAccessLevel(preview.candidates, next),
+                [agent.agentId]: {
+                  operationRevisionIds: accessLevelRevisionIds(preview.candidates, next),
+                  ...(next !== 'none' && { level: next }),
+                },
               });
 
             return (
@@ -264,7 +267,7 @@ function ReconciliationEditor({
                               else updated.delete(candidate.operationRevisionId);
                               setSelections({
                                 ...selections,
-                                [agent.agentId]: [...updated].sort(),
+                                [agent.agentId]: { operationRevisionIds: [...updated].sort() },
                               });
                             }}
                           />
@@ -276,18 +279,29 @@ function ReconciliationEditor({
                                   preview.connection.toolkit
                                 )}
                               </span>
-                              <Badge size="xs" variant="secondary">
-                                {candidate.capabilityClassification}
+                              <Badge
+                                size="xs"
+                                variant={
+                                  candidate.capabilityClassification === 'destructive'
+                                    ? 'destructive'
+                                    : 'secondary'
+                                }
+                              >
+                                {
+                                  OPERATION_CLASSIFICATION_LABELS[
+                                    candidate.capabilityClassification
+                                  ]
+                                }
                               </Badge>
                               {!candidate.supported && (
                                 <Badge size="xs" variant="outline">
                                   No longer available
                                 </Badge>
                               )}
+                              {older.has(candidate.operationRevisionId) && (
+                                <span className="text-muted-foreground text-xs">Older version</span>
+                              )}
                             </div>
-                            <p className="text-muted-foreground mt-0.5 text-xs">
-                              Version {candidate.toolkitVersion}
-                            </p>
                           </div>
                         </li>
                       );

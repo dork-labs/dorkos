@@ -42,7 +42,10 @@ import type {
   ConnectStart,
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
-import type { ConnectorProviderExecuteCommand } from '@dorkos/shared/connector-schemas';
+import {
+  WAY_CAPABILITY_COPY,
+  type ConnectorProviderExecuteCommand,
+} from '@dorkos/shared/connector-schemas';
 import type { CredentialProvider } from '../../core/credential-provider.js';
 import {
   FetchNangoHttpClient,
@@ -124,16 +127,16 @@ export function toNangoConnectionId(accountId: ConnectorExternalAccountRef): str
 export function assertNangoEncryptionKey(key: string | undefined): void {
   if (!key) {
     throw new NangoEncryptionKeyError(
-      'NANGO_ENCRYPTION_KEY is not set. Self-hosted Nango stores logins unencrypted without it, ' +
-        'so DorkOS will not run the self-host connector. Set a 256-bit base64 key (the same value ' +
-        'your Nango server uses) — see docs/connections/nango.mdx.'
+      'Your Nango server needs its encryption key before DorkOS uses it, or sign-ins would be ' +
+        'stored unencrypted. Set NANGO_ENCRYPTION_KEY where DorkOS runs to the same key your ' +
+        'Nango server uses, then restart DorkOS.'
     );
   }
   const decoded = Buffer.from(key, 'base64');
   if (decoded.length !== REQUIRED_ENCRYPTION_KEY_BYTES) {
     throw new NangoEncryptionKeyError(
-      `NANGO_ENCRYPTION_KEY must be a 256-bit key written in base64 (32 bytes decoded); ` +
-        `the value provided decodes to ${decoded.length} bytes. See docs/connections/nango.mdx.`
+      `NANGO_ENCRYPTION_KEY is the wrong length: it has ${decoded.length} bytes, and it needs ` +
+        `32, written in base64. Use the same key your Nango server uses, then restart DorkOS.`
     );
   }
 }
@@ -261,14 +264,13 @@ export class NangoConnectorProvider implements ConnectorProvider {
         accounts: { status: 'available' },
         operations: {
           status: 'unsupported',
-          reason:
-            'Nango does not provide trusted immutable operation metadata for brokered execution.',
+          reason: WAY_CAPABILITY_COPY.cannotListActions,
         },
         execution: {
           status: 'unsupported',
-          reason: 'Nango execution is unavailable without trusted exact-revision semantics.',
+          reason: WAY_CAPABILITY_COPY.cannotRunActions,
         },
-        triggers: { status: 'unsupported', reason: 'Trigger support is not configured.' },
+        triggers: { status: 'unsupported', reason: WAY_CAPABILITY_COPY.noNotifications },
       },
       features: {},
     };
@@ -292,7 +294,7 @@ export class NangoConnectorProvider implements ConnectorProvider {
     _signal.throwIfAborted();
     return Promise.resolve({
       status: 'unsupported' as const,
-      reason: 'Nango operation version discovery is unavailable.',
+      reason: WAY_CAPABILITY_COPY.cannotListActions,
     });
   }
 
@@ -306,14 +308,14 @@ export class NangoConnectorProvider implements ConnectorProvider {
     _request.signal.throwIfAborted();
     return Promise.resolve({
       status: 'unsupported' as const,
-      reason: 'Nango does not provide trusted immutable operation metadata for brokered execution.',
+      reason: WAY_CAPABILITY_COPY.cannotListActions,
     });
   }
 
   execute(_command: ConnectorProviderExecuteCommand) {
     return Promise.resolve({
       status: 'unsupported' as const,
-      reason: 'Nango execution is unavailable without trusted exact-revision semantics.',
+      reason: WAY_CAPABILITY_COPY.cannotRunActions,
     });
   }
 

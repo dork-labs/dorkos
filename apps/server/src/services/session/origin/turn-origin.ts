@@ -102,6 +102,15 @@ export type TurnOrigin =
    */
   | { readonly kind: 'agent-launch' }
   /**
+   * An extension started work in a new chat (spec `flow-multiproject` §7.7):
+   * a person's click on an outcome button (`api.startWork`), or the
+   * extension's own rules deciding it (`ctx.sessions.start`). Either way the
+   * chat is a new one in the person's own project, doing the person's work, so
+   * it is born with the new-session defaults a person's chat gets: the seam
+   * must not change the permission mode, in either direction.
+   */
+  | { readonly kind: 'extension-start' }
+  /**
    * A limited session's work carried over to a new session on another account
    * (spec `claude-account-fleet` D9), by a person or by the account advisor.
    * The new session's settings row is copied from the source session before
@@ -194,6 +203,13 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // binding it was bridged from.
     case 'room':
       return origin.externalAuthor ? 'none' : 'configured-stop-on-insert';
+    // Work an extension started in a brand-new chat in the person's project.
+    // The id was minted for this start a moment earlier, so there is no row a
+    // person's earlier settings change could have made, and "on insert" is
+    // the honest name for it: the operator's configured stop, the same default
+    // a new chat of their own gets (spec `full-power-defaults`).
+    case 'extension-start':
+      return 'configured-stop-on-insert';
     // Everything below seeds nothing, for two different reasons.
     //
     // A schedule's power is already decided and already stored, on the schedule

@@ -3,12 +3,14 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { FlyGraphqlClientError, FlyTigrisGraphqlClient } from '../fly-graphql-client.js';
+import { PROVIDER_WRITE_TIMEOUT_MS } from '../provider-mutation.js';
 
 const identity = {
   id: 'addon_fixture_01',
   name: 'community-fixture-bucket',
   status: 'ready',
-  options: { public: false },
+  // The shape Fly really answers for a bucket created without options (DOR-2559).
+  options: null,
   organization: { slug: 'fixture-org' },
   addOnProvider: { name: 'tigris' },
   app: { id: 'app_fixture_01', name: 'community-fixture-app' },
@@ -53,14 +55,33 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     const request = vi
       .fn()
       .mockResolvedValueOnce(json({ data: { viewer: { agreedToProviderTos: true } } }))
-      .mockResolvedValueOnce(json({ data: { createAddOn: { addOn: identity } } }))
-      .mockResolvedValueOnce(json({ data: { node: identity } }));
+      .mockResolvedValueOnce(
+        json({
+          data: {
+            createAddOn: {
+              addOn: {
+                ...identity,
+                environment: {
+                  AWS_ACCESS_KEY_ID: 'tid_CANARY',
+                  AWS_SECRET_ACCESS_KEY: 'tsec_CANARY',
+                  BUCKET_NAME: identity.name,
+                },
+              },
+            },
+          },
+        })
+      )
+      .mockResolvedValueOnce(json({ data: { addOn: identity } }));
     const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
 
-    await expect(client.createTigris(createInput())).resolves.toMatchObject({
-      addOnId: identity.id,
-      public: false,
-    });
+    const created = await client.createTigris(createInput());
+    expect(created.identity).toMatchObject({ addOnId: identity.id, public: false });
+    expect(JSON.stringify(created)).not.toContain('CANARY');
+    await expect(created.credentials!.use(async (values) => Object.keys(values))).resolves.toEqual([
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+    ]);
+    expect(String(request.mock.calls[1][1]?.body)).toContain('environment');
     await expect(client.readTigris(identity.id)).resolves.toMatchObject({
       addOnId: identity.id,
       organizationSlug: identity.organization.slug,
@@ -69,6 +90,88 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     expect(createBody.variables.input).toEqual({ ...createInput(), type: 'tigris' });
     expect(JSON.parse(String(request.mock.calls[2][1]?.body)).variables).toEqual({
       id: identity.id,
+    });
+  });
+
+  it("reads a bucket's keys by exact ID and refuses an unsafe ID before any request", async () => {
+    const request = vi.fn().mockResolvedValueOnce(
+      json({
+        data: {
+          addOn: {
+            id: identity.id,
+            environment: { AWS_ACCESS_KEY_ID: 'tid_a', AWS_SECRET_ACCESS_KEY: 'tsec_b' },
+          },
+        },
+      })
+    );
+    const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
+    const credentials = await client.readTigrisCredentials(identity.id);
+    await expect(credentials!.use(async (values) => values.AWS_SECRET_ACCESS_KEY)).resolves.toBe(
+      'tsec_b'
+    );
+    expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({
+      query: expect.stringContaining('DorkosReadTigrisCredentials'),
+      variables: { id: identity.id },
+    });
+    await expect(client.readTigrisCredentials('unsafe/id')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it('reports an id Fly does not know as a missing add-on on both exact-ID reads', async () => {
+    const notFound = {
+      data: { addOn: null },
+      errors: [
+        {
+          message: "Could not find Node with id 'addon_fixture_missing'",
+          path: ['addOn'],
+          extensions: { code: 'NOT_FOUND' },
+        },
+      ],
+    };
+    const client = new FlyTigrisGraphqlClient({
+      accessToken: 'token',
+      fetch: vi.fn().mockResolvedValueOnce(json(notFound)).mockResolvedValueOnce(json(notFound)),
+    });
+    await expect(client.readTigris('addon_fixture_missing')).rejects.toMatchObject({
+      code: 'ADD_ON_MISSING',
+    });
+    await expect(client.readTigrisCredentials('addon_fixture_missing')).rejects.toMatchObject({
+      code: 'ADD_ON_MISSING',
+    });
+  });
+
+  it('lists the storage buckets attached to one app', async () => {
+    const request = vi.fn().mockResolvedValueOnce(
+      json({
+        data: {
+          app: {
+            name: 'community-fixture-app',
+            network: 'default',
+            organization: { slug: 'fixture-org' },
+            addOns: {
+              totalCount: 1,
+              nodes: [
+                {
+                  id: identity.id,
+                  name: identity.name,
+                  createdAt: '2026-09-23T10:33:12Z',
+                  organization: { slug: 'fixture-org' },
+                },
+              ],
+            },
+          },
+        },
+      })
+    );
+    const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
+    await expect(client.listTigrisOnApp('community-fixture-app')).resolves.toEqual([
+      { id: identity.id, name: identity.name },
+    ]);
+    expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({
+      query: expect.stringContaining('DorkosListAppTigris'),
+      variables: { appName: 'community-fixture-app' },
     });
   });
 
@@ -145,15 +248,46 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     const request = vi
       .fn()
       .mockResolvedValueOnce(json({ data: { viewer: null } }))
-      .mockResolvedValueOnce(json({ data: { node: null } }));
+      .mockResolvedValueOnce(json({ data: { addOn: null } }));
     const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
 
     await expect(client.hasAcceptedTerms()).rejects.toMatchObject({
       code: 'TERMS_VIEWER_MISSING',
     });
+    // A bare null without Fly's NOT_FOUND error is not proof the bucket is gone (DOR-2584 review).
     await expect(client.readTigris(identity.id)).rejects.toMatchObject({
-      code: 'ADD_ON_MISSING',
+      code: 'INVALID_RESPONSE',
     });
+  });
+
+  // A cut-off create is an unknown outcome the operator must reconcile (DOR-2169), so writes get the
+  // shared write deadline while reads keep the client's own.
+  it('gives writes the write deadline and keeps the short one for reads', async () => {
+    vi.useFakeTimers();
+    try {
+      const slow = (value: unknown) =>
+        new Promise<Response>((resolve) => setTimeout(() => resolve(json(value)), 60_000));
+      const created = { data: { createAddOn: { addOn: identity } } };
+      const request = vi
+        .fn()
+        .mockResolvedValueOnce(json({ data: { viewer: { agreedToProviderTos: true } } }))
+        .mockImplementationOnce(() => slow(created))
+        .mockImplementationOnce(() => slow({ data: { addOn: identity } }));
+      const client = new FlyTigrisGraphqlClient({
+        accessToken: 'token',
+        timeoutMs: 30_000,
+        fetch: request,
+      });
+      const create = client.createTigris(createInput());
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(create).resolves.toMatchObject({ identity: { addOnId: identity.id } });
+      const read = client.readTigris(identity.id);
+      const readFailure = expect(read).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await readFailure;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('classifies transport failure by whether the operation could have created a resource', async () => {
@@ -199,9 +333,17 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
       code: 'PROVIDER_UNAVAILABLE',
     });
     expect(cancel).toHaveBeenCalledOnce();
-    await expect(client.createTigris(createInput())).rejects.toMatchObject({
-      code: 'CREATION_OUTCOME_UNCERTAIN',
-    });
+    // A create is bounded too, by the longer write deadline (DOR-2169).
+    vi.useFakeTimers();
+    try {
+      const create = expect(client.createTigris(createInput())).rejects.toMatchObject({
+        code: 'CREATION_OUTCOME_UNCERTAIN',
+      });
+      await vi.advanceTimersByTimeAsync(PROVIDER_WRITE_TIMEOUT_MS);
+      await create;
+    } finally {
+      vi.useRealTimers();
+    }
     expect(cancel).toHaveBeenCalledTimes(2);
   });
 

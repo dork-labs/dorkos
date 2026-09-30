@@ -17,6 +17,7 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { PluginPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { atomicMove } from '../lib/atomic-move.js';
+import { installFolderDigest } from '../lib/install-digest.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
@@ -59,6 +60,12 @@ export interface ExtensionManagerLike {
    * recorded for a copy inside that package.
    */
   forgetRunApproval(id: string, installRoot?: string): Promise<void>;
+  /**
+   * Ask for a background re-scan that moves any id whose running copy changed
+   * onto its new copy (spec `flow-multiproject` §9.2). Optional: a manager
+   * without it is only ever told about ids through {@link enable}.
+   */
+  requestRefresh?(): void;
 }
 
 /** Constructor dependencies for {@link PluginInstallFlow}. */
@@ -218,10 +225,27 @@ export class PluginInstallFlow {
   }
 
   /**
+   * Tell the extension system an install finished recording where it came
+   * from. The installer writes the install's sidecar and its project record
+   * only after the plugin is in place, and those two are what prove a copy's
+   * trusted origin (spec `flow-multiproject` §9.1), so a copy that should now
+   * take over from an older one of the same origin is picked up here, not at
+   * the next unrelated re-scan. It runs after the install answers.
+   */
+  refreshExtensionCopies(): void {
+    this.deps.extensionManager.requestRefresh?.();
+  }
+
+  /**
    * Atomically move the staging directory onto the install root, then enable
    * every bundled extension. The atomic move falls back to copy + remove on
    * `EXDEV` (cross-filesystem rename) so installs work when `os.tmpdir()`
    * lives on a different volume than `dorkHome`.
+   *
+   * The whole staged folder is digested first, AFTER the npm step and every
+   * staged write and BEFORE the move: it is the one moment the files are
+   * provably DorkOS's own, and the installer keeps the digest in a project
+   * install's record (spec `flow-multiproject` §9.1).
    */
   private async activate(
     stagingDir: string,
@@ -229,6 +253,7 @@ export class PluginInstallFlow {
     manifest: PluginPackageManifest,
     warnings: string[]
   ): Promise<InstallResult> {
+    const staged = await installFolderDigest(stagingDir);
     await mkdir(path.dirname(installRoot), { recursive: true });
     await atomicMove(stagingDir, installRoot);
 
@@ -247,6 +272,7 @@ export class PluginInstallFlow {
       manifest,
       warnings: [...warnings],
       dependencyWarnings: [...warnings],
+      ...(staged.kind === 'digest' && { installDigest: staged.digest }),
     };
   }
 }

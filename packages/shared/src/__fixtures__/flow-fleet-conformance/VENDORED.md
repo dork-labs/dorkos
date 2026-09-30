@@ -17,6 +17,16 @@ against it in two suites:
   the account list with each runtime's `default`, prune, and the
   `flow-state.json` reader.
 
+## 4.2.0 is proposed here first
+
+`project-eligibility.cases.json`, its README section and `CONTRACT_VERSION`
+4.2.0 were written in this repo as the contract-first proposal for account
+eligibility (spec `flow-multiproject` §8.7, DOR-2526). Every other file is
+still byte-for-byte the marketplace commit `SOURCE.json` names (4.1.0). flow
+adopts these cases upstream in F4 (DOR-2532); the next re-sync from a
+marketplace commit that carries them replaces this proposal and `SOURCE.json`'s
+`proposed` note.
+
 ## Re-syncing
 
 Never edit these files by hand. From the repo root:

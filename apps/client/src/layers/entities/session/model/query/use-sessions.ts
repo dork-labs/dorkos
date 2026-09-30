@@ -5,7 +5,8 @@ import { useSessionId } from '../navigation/use-session-id';
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../../api/query-keys';
 import { sessionListQueryOptions } from '../../api/session-list-query';
-import type { Session, SessionOrigin } from '@dorkos/shared/types';
+import { useSessionDetail } from './use-session-detail';
+import type { Session, SessionOrigin, SessionStartedBy } from '@dorkos/shared/types';
 
 /**
  * Insert an optimistic session into the query cache.
@@ -78,4 +79,39 @@ export function useSessionOrigin(sessionId: string | null | undefined): SessionO
   const { sessions } = useSessions();
   const session = sessionId ? sessions.find((s) => s.id === sessionId) : undefined;
   return { origin: session?.origin, originLabel: session?.originLabel };
+}
+
+/**
+ * Who started a session, when an extension or another chat did (spec
+ * `flow-multiproject` §7.7).
+ *
+ * Read from the session's detail row, the one the chat route already fetches
+ * and the live session stream patches, and from the list while that row is on
+ * its way. The detail row is the one that always answers: the list holds only
+ * the chats of the folder this window has selected. A chat an extension started
+ * runs in its project's root, which is often not that folder. Read-only
+ * (`enabled: false`), for the reason the session header reads its title that
+ * way: this reports on a row another surface owns.
+ *
+ * A chat it was started from is named by the server when it can be, and
+ * otherwise by the title the list holds for it.
+ *
+ * @param sessionId - Session id, or nullish when no session context exists
+ * @returns The starter, or null for a chat a person started.
+ */
+export function useSessionStartedBy(sessionId: string | null | undefined): SessionStartedBy | null {
+  const { sessions } = useSessions();
+  const { data: fromDetail } = useSessionDetail(sessionId ?? null, {
+    enabled: false,
+    select: (session) => session.startedBy ?? null,
+  });
+  // The list answers first when the chat is in the selected folder, so a
+  // started chat's prompt folds from its first frame instead of flashing open
+  // until the detail row lands.
+  const fromList = sessionId ? sessions.find((s) => s.id === sessionId)?.startedBy : undefined;
+  const startedBy = fromDetail ?? fromList ?? null;
+  if (!startedBy) return null;
+  if (startedBy.kind !== 'chat' || startedBy.title !== null) return startedBy;
+  const parent = sessions.find((s) => s.id === startedBy.sessionId);
+  return parent?.title ? { ...startedBy, title: parent.title } : startedBy;
 }

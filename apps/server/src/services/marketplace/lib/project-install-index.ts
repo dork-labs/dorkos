@@ -46,6 +46,24 @@ export interface ProjectInstallRecord {
   commitSha?: string;
   /** The subfolder it was fetched from (`sourceKey.subpath`); absent when unknown. */
   subpath?: string;
+  /**
+   * The GitHub `owner/repo` the installer fetched it from, normalized by
+   * `normalizeTrustedSource` (spec `flow-multiproject` §9.1); absent when there
+   * is none. The only proof of where a project copy came from: the install's
+   * own sidecar lives inside the project, where anyone can commit one. Records
+   * written before this field existed are not backfilled, for that reason.
+   * Absent too when the install was fetched at a ref outside the repository's
+   * own branches and tags (`isTrustableRef`).
+   */
+  source?: string;
+  /**
+   * The digest of the whole install folder as the installer staged it, just
+   * before moving it into place (`installFolderDigest`). A project copy has a
+   * trusted origin only while the folder still hashes to this, so code written
+   * anywhere in the plugin afterwards (an agent, a `git pull`) never inherits
+   * it.
+   */
+  installDigest?: string;
 }
 
 /** On-disk shape of the index. */
@@ -111,6 +129,29 @@ export function recordProjectInstall(
       record,
     ],
     { replaceCorrupt: true }
+  );
+}
+
+/**
+ * Forget the record for one install folder, because its package was
+ * uninstalled. Unconditional, unlike {@link forgetProjectInstalls}: the
+ * uninstall is the proof. Writes nothing when there is no such record.
+ *
+ * @param dorkHome - Resolved DorkOS data directory.
+ * @param installRoot - The install folder whose package was removed.
+ */
+export async function forgetProjectInstall(dorkHome: string, installRoot: string): Promise<void> {
+  const root = path.resolve(installRoot);
+  let installs: ProjectInstallRecord[];
+  try {
+    installs = await readProjectInstalls(dorkHome);
+  } catch {
+    // A corrupt index is moved aside by the next install; nothing to forget.
+    return;
+  }
+  if (!installs.some((record) => path.resolve(record.installRoot) === root)) return;
+  await mutate(dorkHome, async (current) =>
+    current.filter((record) => path.resolve(record.installRoot) !== root)
   );
 }
 
@@ -224,17 +265,22 @@ function parseIndex(raw: string): ProjectInstallRecord[] | null {
   const records: ProjectInstallRecord[] = [];
   for (const item of installs) {
     if (typeof item !== 'object' || item === null) return null;
-    const { projectPath, installRoot, name, commitSha, subpath } = item as Record<string, unknown>;
+    const { projectPath, installRoot, name, commitSha, subpath, source, installDigest } =
+      item as Record<string, unknown>;
     if (typeof projectPath !== 'string' || typeof installRoot !== 'string') return null;
     if (typeof name !== 'string') return null;
     if (commitSha !== undefined && typeof commitSha !== 'string') return null;
     if (subpath !== undefined && typeof subpath !== 'string') return null;
+    if (source !== undefined && typeof source !== 'string') return null;
+    if (installDigest !== undefined && typeof installDigest !== 'string') return null;
     records.push({
       projectPath,
       installRoot,
       name,
       ...(commitSha !== undefined && { commitSha }),
       ...(subpath !== undefined && { subpath }),
+      ...(source !== undefined && { source }),
+      ...(installDigest !== undefined && { installDigest }),
     });
   }
   return records;

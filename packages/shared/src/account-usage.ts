@@ -874,6 +874,11 @@ export interface ContinueOptionAccount {
   badge?: 'recommended' | 'reserved';
   /** The account's runtime, when the server ranks other runtimes too (feature-detected). */
   runtime?: string;
+  /**
+   * `true` when the account may not work in this session's project (spec
+   * `flow-multiproject` §8.4): shown with `reason`, never pickable.
+   */
+  notAllowed?: true;
 }
 
 /** What `GET /api/sessions/:id/continue-options` answers. */

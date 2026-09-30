@@ -358,14 +358,36 @@ export async function waitForLockWaiters(
 }
 
 /**
+ * Wait until at least `count` sessions are waiting on a lock the session `holderPid` holds.
+ * Unlike matching query text, this cannot miss a waiter whose statement is longer than the
+ * part of it Postgres keeps (`track_activity_query_size`).
+ */
+export async function waitForBlockedBy(
+  h: TenancyHarness,
+  holderPid: number,
+  count: number
+): Promise<void> {
+  for (let attempt = 0; attempt < 250; attempt++) {
+    const { rows } = await h.pool.query<{ waiting: number }>(
+      'SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid))',
+      [holderPid]
+    );
+    if (rows[0].waiting >= count) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Fewer than ${count} requests waited on the held lock`);
+}
+
+/**
  * Take a row lock with `sql` in a transaction of its own, run `during` while it
  * is held, and commit when `during` calls `release` (or roll back if it throws).
+ * `during` also gets the holding session's pid, for {@link waitForBlockedBy}.
  */
 export async function holdingLock<T>(
   h: TenancyHarness,
   sql: string,
   params: unknown[],
-  during: (release: () => Promise<void>) => Promise<T>
+  during: (release: () => Promise<void>, holderPid: number) => Promise<T>
 ): Promise<T> {
   const holder = await h.pool.connect();
   let open = false;
@@ -373,11 +395,13 @@ export async function holdingLock<T>(
     await holder.query('BEGIN');
     open = true;
     await holder.query(sql, params);
+    const holderPid = (await holder.query<{ pid: number }>('SELECT pg_backend_pid() AS pid'))
+      .rows[0].pid;
     return await during(async () => {
       if (!open) return;
       open = false;
       await holder.query('COMMIT');
-    });
+    }, holderPid);
   } finally {
     if (open) await holder.query('ROLLBACK');
     holder.release();

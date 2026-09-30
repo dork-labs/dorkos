@@ -7,6 +7,7 @@ import {
   type CommunityWireMembershipSummary,
 } from '@dorkos/shared/community-wire';
 import { describeError, hostRequest, RequestError, request } from '../api.js';
+import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import { rememberCommunity } from '../remembered-community.js';
 import {
   clearOwnerClaimFragment,
@@ -18,12 +19,16 @@ import {
   rememberPendingOwnerClaim,
 } from '../owner-claim.js';
 import { HostPolicyLinks } from './HostLinks.js';
+import { ConnectDorkOS } from '../connect/ConnectDorkOS.js';
+import { communityLink } from '../connect/community-link.js';
 import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
+import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
 
 type Stage =
   'loading' | 'enter' | 'found' | 'account' | 'confirm' | 'claimed' | 'unavailable' | 'taken';
 type Account = { name: string; email: string };
-type Claimed = { id: string; name: string };
+/** The claimed community, and its short address when it has one, for the link to connect it. */
+type Claimed = { id: string; name: string; shortName: string | null };
 type Preflight = { granted: true; communityId: string; expiresAt: string };
 type ClaimResponse = { community: { id: string; name: string }; memberId: string };
 
@@ -45,7 +50,7 @@ async function ownedCommunity(communityId: string): Promise<Claimed | null> {
     const owned = memberships.find(
       (membership) => membership.communityId === communityId && membership.role === 'owner'
     );
-    return owned ? { id: owned.communityId, name: owned.name } : null;
+    return owned ? { id: owned.communityId, name: owned.name, shortName: owned.shortName } : null;
   } catch {
     return null;
   }
@@ -66,9 +71,12 @@ export function OwnerClaim() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   // A provider round trip that failed returns here with `?error=`; say why once.
   const [error, setError] = useState(() => takeSignInError() ?? '');
   const providers = useSignInOptions();
+  // A new account must first confirm the host's minimum age, when it set one.
+  const minimumAge = mode === 'signup' ? providers.minimumAge : null;
   const heading = useRef<HTMLHeadingElement>(null);
   const focusedStage = useRef(stage);
   const resumeOnMount = useRef(stage === 'loading');
@@ -156,7 +164,14 @@ export function OwnerClaim() {
   async function claim(): Promise<string | null> {
     try {
       const result = await request<ClaimResponse>('/api/v1/owner-claims/claim', 'POST', {});
-      complete({ id: result.community.id, name: result.community.name });
+      // The claim answer carries no short address; the account's memberships do. Without them the
+      // community's /c/ link is shown, which connects just as well.
+      const owned = await ownedCommunity(result.community.id);
+      complete({
+        id: result.community.id,
+        name: result.community.name,
+        shortName: owned?.shortName ?? null,
+      });
       return null;
     } catch (cause) {
       // A claim that committed before its response was lost still made this account the owner.
@@ -213,6 +228,7 @@ export function OwnerClaim() {
     setBusy(true);
     setError('');
     try {
+      if (minimumAge !== null) await confirmMinimumAge();
       await request(
         mode === 'signup' ? '/api/auth/sign-up/email' : '/api/auth/sign-in/email',
         'POST',
@@ -236,11 +252,13 @@ export function OwnerClaim() {
     setBusy(false);
   }
 
-  async function social(provider: 'google' | 'github' | 'oidc') {
+  async function social(provider: SignInProvider) {
     setBusy(true);
     setError('');
     try {
       const here = window.location.origin + OWNER_CLAIM_PATH;
+      // The provider's callback creates the account, so the confirmation must be in place first.
+      if (minimumAge !== null) await confirmMinimumAge();
       const result = await authClient.signIn.social({
         provider,
         callbackURL: here,
@@ -403,6 +421,14 @@ export function OwnerClaim() {
                   <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
                 )}
               </div>
+              {minimumAge !== null && (
+                <MinimumAgeConfirmation
+                  id="owner-claim-minimum-age"
+                  minimumAge={minimumAge}
+                  confirmed={ageConfirmed}
+                  onChange={setAgeConfirmed}
+                />
+              )}
               <Button type="submit" variant="default" className="w-full" disabled={busy}>
                 {busy
                   ? 'Working…'
@@ -412,40 +438,11 @@ export function OwnerClaim() {
                 <KeyRound size={16} aria-hidden="true" />
               </Button>
             </form>
-            {(providers.google || providers.github || providers.oidc) && (
-              <div className="row mt-4">
-                {providers.google && (
-                  <Button
-                    variant="outline"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void social('google')}
-                  >
-                    Continue with Google
-                  </Button>
-                )}
-                {providers.github && (
-                  <Button
-                    variant="outline"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void social('github')}
-                  >
-                    Continue with GitHub
-                  </Button>
-                )}
-                {providers.oidc && (
-                  <Button
-                    variant="outline"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void social('oidc')}
-                  >
-                    Continue with {providers.oidc.label}
-                  </Button>
-                )}
-              </div>
-            )}
+            <ProviderButtons
+              providers={providers}
+              disabled={busy || (minimumAge !== null && !ageConfirmed)}
+              onChoose={(provider) => void social(provider)}
+            />
           </>
         )}
         {stage === 'confirm' && (
@@ -491,13 +488,9 @@ export function OwnerClaim() {
             >
               Open community
             </Button>
-            <Notice tone="info" className="mt-4">
-              <strong>Connect this DorkOS installation</strong>
-              <p className="small muted mb-0">
-                In the DorkOS app, open Connections, then Messaging, then Communities. Each
-                installation needs its own approval.
-              </p>
-            </Notice>
+            <ConnectDorkOS
+              link={communityLink(window.location.origin, claimed.id, claimed.shortName)}
+            />
           </>
         )}
         {(stage === 'unavailable' || stage === 'taken') && (

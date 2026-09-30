@@ -160,7 +160,12 @@ const RUNNERS: Record<string, (c: Case) => void> = {
 };
 
 /** Case files the server's conformance suite runs (their functions live there). */
-const RUN_IN_SERVER = ['accounts.cases.json', 'flow-run.cases.json', 'prune.cases.json'];
+const RUN_IN_SERVER = [
+  'accounts.cases.json',
+  'flow-run.cases.json',
+  'project-eligibility.cases.json',
+  'prune.cases.json',
+];
 
 /**
  * Case files that pin flow's own rules, which DorkOS does not implement:

@@ -7,20 +7,25 @@ import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitl
 import usageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-denominated.json' with { type: 'json' };
 import usageWithOtherChargesFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-with-other-charges.json' with { type: 'json' };
 import { TransportProvider } from '@/layers/shared/model';
-import { CreditsGauge } from '@/layers/features/cloud-plan';
+import { CreditsGauge, PlanCard } from '@/layers/features/cloud-plan';
 import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 
 /*
- * The credits card from Settings, drawn from the contract package's own
+ * The plan and credits cards from Settings, drawn from the contract package's own
  * synthetic fixtures, so every name, unit and figure on it is what a service
  * would send and none of it is a real catalog value.
  */
 
-/** A linked account whose usage read answers `usage`, around the real card. */
-function LinkedCard({ usage }: { usage: CloudUsageResponse }) {
+/**
+ * A linked account whose usage read answers `usage`, around the real card.
+ *
+ * @param props.usage - What the usage read answers.
+ * @param props.children - The card to draw; the credits card when omitted.
+ */
+function LinkedCard({ usage, children }: { usage: CloudUsageResponse; children?: ReactNode }) {
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
   );
@@ -47,9 +52,7 @@ function LinkedCard({ usage }: { usage: CloudUsageResponse }) {
   });
   return (
     <QueryClientProvider client={client}>
-      <TransportProvider transport={transport}>
-        <CreditsGauge />
-      </TransportProvider>
+      <TransportProvider transport={transport}>{children ?? <CreditsGauge />}</TransportProvider>
     </QueryClientProvider>
   );
 }
@@ -64,25 +67,39 @@ function State({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** The credits card, with and without charges that are not inference. */
+/** The plan card, then the credits card with and without charges that are not inference. */
 export function CloudUsageShowcases() {
   return (
-    <PlaygroundSection
-      title="Credits and other charges"
-      description="The credits card on a linked DorkOS account. Charges that are not inference, like extra storage, list under Other charges with the service's own name and unit, and are never added to the credits total. With none, the card shows nothing extra."
-    >
-      <ShowcaseDemo responsive>
-        {/* A block, not a grid: a grid column sizes to its widest unwrapped line, and
+    <>
+      <PlaygroundSection
+        title="Plan card"
+        description="The plan card on a linked DorkOS account: the plan's name and every figure as the service sent them, then one quiet line saying who can buy a plan, with a link to the full answer on the pricing page."
+      >
+        <ShowcaseDemo responsive>
+          <LinkedCard usage={{ available: true, usage: usageFixture as never }}>
+            <PlanCard />
+          </LinkedCard>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+      <PlaygroundSection
+        title="Credits and other charges"
+        description="The credits card on a linked DorkOS account. Charges that are not inference, like extra storage, list under Other charges with the service's own name and unit, and are never added to the credits total. With none, the card shows nothing extra."
+      >
+        <ShowcaseDemo responsive>
+          {/* A block, not a grid: a grid column sizes to its widest unwrapped line, and
             the card truncates long names on one line. */}
-        <div className="space-y-6">
-          <State label="With other charges">
-            <LinkedCard usage={{ available: true, usage: usageWithOtherChargesFixture as never }} />
-          </State>
-          <State label="Without (an older service, or nothing to charge)">
-            <LinkedCard usage={{ available: true, usage: usageFixture as never }} />
-          </State>
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
+          <div className="space-y-6">
+            <State label="With other charges">
+              <LinkedCard
+                usage={{ available: true, usage: usageWithOtherChargesFixture as never }}
+              />
+            </State>
+            <State label="Without (an older service, or nothing to charge)">
+              <LinkedCard usage={{ available: true, usage: usageFixture as never }} />
+            </State>
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+    </>
   );
 }

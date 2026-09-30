@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * The wire-boundary kickoff suppression seam (M4, agent-creation-redesign
  * contract item 6): `GET /api/sessions/:id/messages` must never serve the
@@ -91,7 +92,7 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

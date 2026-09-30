@@ -55,6 +55,9 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // the operator's stop was set for, so power comes only from the tool's own
   // clamped mode.
   [{ kind: 'agent-launch' }, 'none'],
+  // An extension started work in a brand-new chat in the person's project:
+  // the new-session default a person's own chat gets, on the row it inserts.
+  [{ kind: 'extension-start' }, 'configured-stop-on-insert'],
   // A limited session's work carried over to another account: the settings
   // row copied from the source session is its power, and the origin adds none.
   [{ kind: 'account-handoff' }, 'none'],

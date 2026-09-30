@@ -113,8 +113,13 @@ import { logger } from '../../../lib/logger.js';
  * this very comment). That pattern matches every MIME type there is, so any
  * list that omits it denies something the default would have allowed,
  * regardless of what else the list contains (DOR-1505).
+ *
+ * `ruled` is for a rule whose default is "no rule": `null` (any project) or an
+ * empty map (no project limits). Any rule a person stated is narrower than none,
+ * so a stored list or a non-empty map is protective as it stands (spec
+ * `flow-multiproject` §8.1: which projects a Claude account may work in).
  */
-export type CarryoverDirection = 'boolean' | 'lower' | 'higher' | 'restricted';
+export type CarryoverDirection = 'boolean' | 'lower' | 'higher' | 'restricted' | 'ruled';
 
 /** One config leaf whose default is permissive, and the direction that protects. */
 export interface ProtectiveCarryover {
@@ -334,6 +339,24 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'Warm agents default ON (spec `full-power-defaults`). Holding a process open between messages costs memory — up to about 1 GB per warm agent — so somebody who turned it off did so to get that memory back, on a machine that presumably needed it. A wipe that handed the default back would take it away again with nothing on screen to say why.',
   },
   {
+    path: 'runtimes.claudeCode.defaultAccountOnlyProjects',
+    direction: 'ruled',
+    reason:
+      'Main (this computer\'s own Claude sign-in) kept to some projects (spec `flow-multiproject` §8). The default is any project, so a wipe that forgot "Main is only for client-app" would silently let it work in personal repos: the DOR-584 class of loss.',
+  },
+  {
+    path: 'runtimes.claudeCode.projectAccounts',
+    direction: 'ruled',
+    reason:
+      "Which accounts each project may use (spec `flow-multiproject` §8). The default is no limits, so a wipe that forgot a project's list would let every account work there again, including one the person kept out on purpose.",
+  },
+  // `runtimes.claudeCode.accounts[].onlyProjects` has no entry, on purpose: a
+  // wipe does not carry the account registry itself (no row, no path), so the
+  // account it limited is no longer one DorkOS can launch on. There is nothing
+  // for the rule to protect until the person registers the account again, and
+  // a row cannot be carried by one leaf without its folder and id. Pinned by
+  // `protected-state.test.ts`.
+  {
     path: 'scheduler.maxConcurrentRuns',
     direction: 'lower',
     reason:
@@ -408,7 +431,7 @@ export interface SalvagedProtections {
    * {@link PROTECTIVE_CARRYOVERS}. Only leaves whose stored value beat the
    * default appear.
    */
-  leaves: Record<string, boolean | number | string | string[]>;
+  leaves: Record<string, boolean | number | string | string[] | Record<string, unknown>>;
   /**
    * Values found on the protective side that could NOT be carried, and why.
    *
@@ -553,7 +576,7 @@ function moreProtective(
   entry: ProtectiveCarryover,
   stored: unknown,
   fresh: unknown
-): boolean | number | string | string[] | undefined {
+): boolean | number | string | string[] | Record<string, unknown> | undefined {
   switch (entry.direction) {
     case 'boolean': {
       if (typeof stored !== 'boolean') return undefined;
@@ -571,6 +594,22 @@ function moreProtective(
       if (typeof stored !== 'number' || !Number.isFinite(stored)) return undefined;
       if (typeof fresh !== 'number') return undefined;
       return stored > fresh ? stored : undefined;
+    }
+    case 'ruled': {
+      // "No rule" is the permissive default, so any stated rule protects: a
+      // list of strings where the fresh value is null, or a non-empty map
+      // where the fresh value is an empty one. The schema check in
+      // `salvageProtectedState` then proves its shape.
+      if (Array.isArray(stored)) {
+        if (fresh !== null || !stored.every((item) => typeof item === 'string')) return undefined;
+        return stored;
+      }
+      if (stored === null || typeof stored !== 'object') return undefined;
+      if (Object.keys(stored).length === 0) return undefined;
+      if (fresh === null || typeof fresh !== 'object' || Object.keys(fresh).length > 0) {
+        return undefined;
+      }
+      return stored as Record<string, unknown>;
     }
     case 'restricted': {
       // See the CarryoverDirection doc: this compares STORED against the fresh

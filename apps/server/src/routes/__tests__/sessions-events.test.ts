@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { FakeAgentRuntime, collectDurableEvents } from '@dorkos/test-utils';
 import type { DurableEventsResult } from '@dorkos/test-utils';
@@ -72,7 +73,7 @@ import { createApp, finalizeApp } from '../../app.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import { validateBoundary, validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
 /** Valid UUID for session ID params (routes validate UUID format). */

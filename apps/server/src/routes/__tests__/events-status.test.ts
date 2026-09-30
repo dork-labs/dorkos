@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * Integration tests for global session-list discovery → unified `/api/events` SSE.
  *
@@ -40,7 +41,7 @@ let server: http.Server;
 let baseUrl: string;
 
 beforeEach(async () => {
-  const app = createApp();
+  const app = createApp({ admission: new MainRequestAdmission() });
   await new Promise<void>((resolve) => {
     server = app.listen(0, () => {
       const addr = server.address();

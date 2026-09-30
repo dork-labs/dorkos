@@ -165,7 +165,13 @@ export function BarTabStrip({
         // still shrinks and still scrolls sideways on a phone rather than
         // guaranteeing every label its own room, and stops at the width where
         // it is still a strip.
-        'flex min-w-28 flex-initial self-stretch',
+        //
+        // **A lower floor on a phone** (`min-w-20`, 80px: the widest single
+        // tab label there plus the start of its fade). The 112px floor was set
+        // for a 768px window; at 390px it made the strip the one item that
+        // would not yield, so the bell showing a number pushed the rest of the
+        // bar past its own box on Home and Team (DOR-2524).
+        'flex min-w-20 flex-initial self-stretch md:min-w-28',
         className
       )}
     >

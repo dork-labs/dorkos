@@ -586,11 +586,16 @@ describe('community outbox', () => {
       outbox
     );
     await expect(delivery.deliver(item, () => true)).resolves.toMatchObject({ kind: 'retry' });
-    for (const code of ['COMMUNITY_ARCHIVED', 'COMMUNITY_DELETION_PENDING'] as const) {
+    for (const [status, code] of [
+      [423, 'COMMUNITY_ARCHIVED'],
+      [423, 'COMMUNITY_DELETION_PENDING'],
+      // DOR-2334: a deleted community will never take the post.
+      [410, 'COMMUNITY_DELETED'],
+    ] as const) {
       const refused = new CommunityAdapterOutboxDelivery(
         () => ({
           post: vi.fn(async () => {
-            throw new PinnedHttpError(423, code);
+            throw new PinnedHttpError(status, code);
           }),
           uploadAttachment: vi.fn(),
         }),

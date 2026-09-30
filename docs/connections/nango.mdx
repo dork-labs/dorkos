@@ -39,7 +39,7 @@ Create a 32-byte key in base64:
 openssl rand -base64 32
 ```
 
-Set the same value as `NANGO_ENCRYPTION_KEY` on the Nango server and in the DorkOS server environment. DorkOS checks that it decodes to exactly 32 bytes. It refuses to start this route when the value is missing or malformed.
+Set the same value as `NANGO_ENCRYPTION_KEY` on the Nango server and in the DorkOS server environment. DorkOS checks that it decodes to exactly 32 bytes. It refuses to start this route when the value is missing or malformed. DorkOS reads it when it starts, so restart DorkOS after you set or change it.
 
 </Step>
 

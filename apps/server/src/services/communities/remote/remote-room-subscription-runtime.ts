@@ -515,6 +515,11 @@ export class RemoteRoomSubscriptionRuntime {
                   receivedSnapshot = true;
                   observation.snapshotComplete = true;
                 },
+                accessEnded: () => {
+                  void this.deps
+                    .resolveConnectionAccess(desired.room.communityRef, desired.room.ownerAuthorId)
+                    .catch(() => null);
+                },
                 replayComplete: () => {
                   observation.replayComplete = true;
                   // Everything up to the replay boundary is cached now, so this is the moment a
@@ -549,7 +554,11 @@ export class RemoteRoomSubscriptionRuntime {
 
   private async *classifyFrames(
     events: AsyncIterable<RemoteNativeRoomEvent>,
-    completion: { snapshotComplete: () => void; replayComplete: () => void },
+    completion: {
+      snapshotComplete: () => void;
+      replayComplete: () => void;
+      accessEnded: () => void;
+    },
     reconnect: { reconnect: boolean; wasActiveBeforeDisconnect: boolean }
   ): AsyncGenerator<RemoteSubscriptionFrame> {
     let sawSnapshot = false;
@@ -576,6 +585,14 @@ export class RemoteRoomSubscriptionRuntime {
         yield { type: 'replay', entries: [] };
         // The next pull occurs after all entries through the captured watermark are cached.
         completion.replayComplete();
+        continue;
+      }
+      if (event.type === 'room_closed') {
+        // The Community ended this reader's access (`removed`): a revoked grant, a lost
+        // membership, a suspension, or a community being deleted. Ask the access route now rather
+        // than at the next reconcile, so a deletion is noticed at once and its copies purged
+        // (DOR-2334). The pairing service decides what the answer means; this only asks.
+        if (event.reason === 'access-revoked') completion.accessEnded();
         continue;
       }
       if (event.type !== 'entry' || !sawSnapshot || watermark === undefined) continue;

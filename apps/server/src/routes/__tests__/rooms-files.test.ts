@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `GET /api/rooms/:id/files` and `/files/content` — who may read a room's own
  * files, and what they get (spec `project-rooms` §3.9).
@@ -99,7 +100,7 @@ import { AttachmentRowStore } from '../../services/rooms/attachments/attachment-
 
 const execFileAsync = promisify(execFile);
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

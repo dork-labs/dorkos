@@ -45,6 +45,12 @@ import type {
 } from '../../core/auth/cloud-link-client.js';
 import { logger } from '../../../lib/logger.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import {
+  endAgentAccessLevels,
+  endConnectionAccessLevels,
+  endEveryAgentAccessLevels,
+  isFollowerCommand,
+} from '../execution/access-levels.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type {
   ConnectorManagedLifecyclePort,
@@ -225,7 +231,7 @@ function orderedSelection(input: {
   if (input.revisions.length !== input.operationRevisionIds.length) {
     throw new ManagedAuthoritySyncError(
       'connection_unavailable',
-      'The managed action selection changed. Refresh and try again.'
+      'The chosen actions changed. Refresh and try again.'
     );
   }
   const byIdentity = new Map<string, OrderedRevision>();
@@ -235,7 +241,7 @@ function orderedSelection(input: {
   if (byIdentity.size !== input.revisions.length) {
     throw new ManagedAuthoritySyncError(
       'connection_unavailable',
-      'The managed action selection contains duplicate actions.'
+      'The same action was chosen twice.'
     );
   }
   return [...byIdentity.values()].sort((a, b) =>
@@ -693,6 +699,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .set({ revokedAt: now })
       .where(eq(connectionOperationGrants.connectionId, connectionId))
       .run();
+    endConnectionAccessLevels(tx, [connectionId]);
     tx.update(connectorEventSubscriptions)
       .set({
         enabled: false,
@@ -734,6 +741,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         revisions: [],
         operationRevisionIds: [],
       });
+      endAgentAccessLevels(tx, input.agentId, input.connectionId);
       tx.delete(agentConnectionAttachments)
         .where(
           and(
@@ -1323,7 +1331,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     ) {
       throw new ManagedAuthoritySyncError(
         'connection_unavailable',
-        'The managed connection changed. Refresh and try again.'
+        'This account changed. Refresh and try again.'
       );
     }
 
@@ -1457,7 +1465,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     if (!row) {
       throw new ManagedAuthoritySyncError(
         'connection_unavailable',
-        'The managed authority command is no longer available.'
+        'This change is no longer waiting to be sent.'
       );
     }
     const command = ManagedConnectorAuthorityCommandSchema.parse(JSON.parse(row.requestJson));
@@ -1597,6 +1605,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         )
         .run();
       const committed = updated.changes === 1;
+      if (committed && state === 'rejected') this.endRefusedLevel(tx, row);
       if (committed && current && rejectionCode === 'connection_unavailable') {
         this.closeGoneAccount(tx, row, command, now);
       }
@@ -1678,7 +1687,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
             ? pendingSync(safeReason, nextAttemptAt)
             : {
                 status: 'failed',
-                reason: safeReason ?? 'A newer connection change replaced this request.',
+                reason: safeReason ?? 'A newer change to this account replaced this one.',
               },
       applied: state === 'applied',
       externalCleanup:
@@ -1702,27 +1711,40 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       failure.code === 'unauthorized';
     const safeReason = this.failureReason(failure);
     const nextAttemptAt = terminal ? null : this.nextAttempt(row, now);
-    const updated = this.options.db
-      .update(connectorManagedAuthorityOutbox)
-      .set({
-        state: terminal ? 'rejected' : 'pending',
-        safeReason,
-        rejectionCode: terminal ? failure.code : null,
-        attemptCount: row.attemptCount + 1,
-        nextAttemptAt,
-        leaseOwner: null,
-        leasedUntil: null,
-        updatedAt: now,
-        resolvedAt: terminal ? now : null,
-      })
-      .where(
-        and(
-          eq(connectorManagedAuthorityOutbox.commandId, row.commandId),
-          eq(connectorManagedAuthorityOutbox.state, 'pending'),
-          eq(connectorManagedAuthorityOutbox.leaseOwner, leaseOwner)
+    const updated = this.options.db.transaction((tx) => {
+      const result = tx
+        .update(connectorManagedAuthorityOutbox)
+        .set({
+          state: terminal ? 'rejected' : 'pending',
+          safeReason,
+          rejectionCode: terminal ? failure.code : null,
+          attemptCount: row.attemptCount + 1,
+          nextAttemptAt,
+          leaseOwner: null,
+          leasedUntil: null,
+          updatedAt: now,
+          resolvedAt: terminal ? now : null,
+        })
+        .where(
+          and(
+            eq(connectorManagedAuthorityOutbox.commandId, row.commandId),
+            eq(connectorManagedAuthorityOutbox.state, 'pending'),
+            eq(connectorManagedAuthorityOutbox.leaseOwner, leaseOwner)
+          )
         )
-      )
-      .run();
+        .run();
+      // A local `unauthorized` is this computer's link to the DorkOS account
+      // lapsing, not the service refusing the change: the level stays.
+      if (
+        terminal &&
+        failure.code !== 'unauthorized' &&
+        result.changes === 1 &&
+        this.isCurrent(tx, row)
+      ) {
+        this.endRefusedLevel(tx, row);
+      }
+      return result;
+    });
     if (updated.changes === 1) this.logUnsettled(row, failure, nextAttemptAt, 'warn');
     if (terminal) this.failureLog.delete(row.commandId);
     return {
@@ -1779,6 +1801,32 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         context
       );
     }
+  }
+
+  /**
+   * End the access level an owner's grant command the service refused for
+   * good was carrying (ADR 260929-071355). The refused widening never opened,
+   * so the level would promise access the agent does not have; ending it
+   * shows what the agent really holds, and choosing the level again sends it
+   * again. A command DorkOS staged on its own to follow the app is not the
+   * owner's choice: its level stays, and the next pass sends it again.
+   */
+  private endRefusedLevel(
+    tx: ConnectorDbTransaction,
+    row: typeof connectorManagedAuthorityOutbox.$inferSelect
+  ): void {
+    if (row.scopeKind !== 'agent_grants' && row.scopeKind !== 'every_agent_grants') return;
+    const subject =
+      row.scopeKind === 'agent_grants'
+        ? { kind: 'agent' as const, agentId: row.subjectId }
+        : { kind: 'every_agent' as const };
+    if (
+      isFollowerCommand(tx, { connectionId: row.connectionId, subject, commandId: row.commandId })
+    ) {
+      return;
+    }
+    if (subject.kind === 'agent') endAgentAccessLevels(tx, subject.agentId, row.connectionId);
+    else endEveryAgentAccessLevels(tx, [row.connectionId]);
   }
 
   private isCurrent(
@@ -1991,25 +2039,25 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   private rejectionReason(code?: ManagedAuthorityRejectionCode): string {
     switch (code) {
       case 'permission_upgrade_required':
-        return 'Relink this instance to enable managed connections.';
+        return 'Your DorkOS account link needs updating. Link this computer again in Settings › Access.';
       case 'revision_unavailable':
         return 'One or more selected actions are no longer available.';
       case 'scope_conflict':
-        return 'A newer connection change replaced this request.';
+        return 'A newer change to this account replaced this one.';
       case 'connection_unavailable':
       default:
-        return 'The managed connection is no longer available.';
+        return 'Your DorkOS account no longer has this connection.';
     }
   }
 
   private failureReason(failure: DeliveryFailure): string {
     switch (failure.code) {
       case 'permission_upgrade_required':
-        return 'Relink this instance to enable managed connections.';
+        return 'Your DorkOS account link needs updating. Link this computer again in Settings › Access.';
       case 'unauthorized':
-        return 'This instance is no longer linked.';
+        return 'This computer isn’t linked to your DorkOS account anymore.';
       case 'conflict':
-        return 'The hosted service refused a conflicting authority command.';
+        return 'DorkOS’s servers turned this change down because it clashed with another change.';
       case 'network_error':
         return 'Couldn’t reach DorkOS’s servers.';
       case 'timeout':

@@ -7,17 +7,22 @@ import { describe, expect, it } from 'vitest';
 import {
   FLY_APP_NAME_AVAILABLE_QUERY,
   FLY_APP_PROVENANCE_QUERY,
-  FLY_TIGRIS_ON_APP_QUERY,
+  FLY_APP_TIGRIS_QUERY,
+  FLY_TIGRIS_BY_NAME_QUERY,
   FLY_TIGRIS_CREATE_MUTATION,
+  FLY_TIGRIS_CREDENTIALS_QUERY,
   FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   FlyGraphqlContractError,
   createTigrisVariables,
   parseAppNameAvailableResponse,
+  parseAppTigrisResponse,
+  parseTigrisNameHeldResponse,
   parseFlyAppProvenanceResponse,
   parseTigrisOnAppResponse,
   parseTigrisCreateResponse,
+  parseTigrisCredentialsResponse,
   parseTigrisDeleteResponse,
   parseTigrisReadResponse,
   parseTigrisTermsResponse,
@@ -45,8 +50,11 @@ async function fixture(name: string): Promise<unknown> {
 describe('Fly Tigris GraphQL contract', () => {
   it('parses only the trusted fields from pinned sanitized fixtures', async () => {
     expect(parseTigrisTermsResponse(await fixture('tigris-terms.json'))).toBe(true);
-    const created = parseTigrisCreateResponse(await fixture('tigris-create.json'));
+    const { identity: created, credentials } = parseTigrisCreateResponse(
+      await fixture('tigris-create.json')
+    );
     const read = parseTigrisReadResponse(await fixture('tigris-read.json'));
+    expect(credentials).toBeNull();
     expect(created).toEqual({
       ...expectedBinding,
       status: 'ready',
@@ -64,7 +72,6 @@ describe('Fly Tigris GraphQL contract', () => {
       ['name'],
       ['status'],
       ['options'],
-      ['options', 'public'],
       ['organization'],
       ['organization', 'slug'],
       ['addOnProvider'],
@@ -83,15 +90,169 @@ describe('Fly Tigris GraphQL contract', () => {
     }
   });
 
+  // Fly stores no options for a bucket created without them and answers `options: null`
+  // (DOR-2559, live gate on dorkos@0.92.0). That is a private bucket; only an explicit
+  // `public: true` is public, and a present `options` without a boolean `public` still fails.
+  it('reads null options as private and anything else only by an explicit boolean', async () => {
+    const read = await fixture('tigris-read.json');
+    expect(objectAt(read, 'data', 'addOn').options).toBeNull();
+    expect(verifyTigrisBinding(parseTigrisReadResponse(read), expectedBinding).public).toBe(false);
+    for (const [options, outcome] of [
+      [{ public: false }, 'private'],
+      [{ public: false, accelerate: false }, 'private'],
+      [{ public: true }, 'PUBLIC_BUCKET'],
+      [{}, 'INVALID_RESPONSE'],
+      [{ public: 'false' }, 'INVALID_RESPONSE'],
+      ['{"public":false}', 'INVALID_RESPONSE'],
+    ] as const) {
+      const source = await fixture('tigris-read.json');
+      objectAt(source, 'data', 'addOn').options = options;
+      const check = () => verifyTigrisBinding(parseTigrisReadResponse(source), expectedBinding);
+      if (outcome === 'private') expect(check().public, JSON.stringify(options)).toBe(false);
+      else
+        expect(check, JSON.stringify(options)).toThrowError(
+          expect.objectContaining({ code: outcome })
+        );
+    }
+    const missing = await fixture('tigris-read.json');
+    delete objectAt(missing, 'data', 'addOn').options;
+    expect(() => parseTigrisReadResponse(missing)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
+    );
+  });
+
+  // Fly sets no keys on the app; flyctl copies them from the create answer's `environment`
+  // (`setSecretsFromExtension`). The launcher keeps them only in a redacting wrapper.
+  it('takes the two access keys from the create answer and never exposes them', async () => {
+    const source = await fixture('tigris-create.json');
+    objectAt(source, 'data', 'createAddOn', 'addOn').environment = {
+      AWS_ACCESS_KEY_ID: 'tid_CANARY_ACCESS',
+      AWS_SECRET_ACCESS_KEY: 'tsec_CANARY_SECRET',
+      AWS_ENDPOINT_URL_S3: 'https://fly.storage.tigris.dev',
+      AWS_REGION: 'auto',
+      BUCKET_NAME: 'community-fixture-bucket',
+    };
+    const { identity, credentials } = parseTigrisCreateResponse(source);
+    expect(JSON.stringify(identity)).not.toContain('CANARY');
+    expect(String(credentials)).not.toContain('CANARY');
+    expect(JSON.stringify({ credentials })).not.toContain('CANARY');
+    await expect(credentials!.use(async (values) => ({ ...values }))).resolves.toEqual({
+      AWS_ACCESS_KEY_ID: 'tid_CANARY_ACCESS',
+      AWS_SECRET_ACCESS_KEY: 'tsec_CANARY_SECRET',
+    });
+    credentials!.dispose();
+    await expect(credentials!.use(async () => true)).rejects.toThrow(FlyGraphqlContractError);
+  });
+
+  it('keeps a created bucket certain when its environment is missing or malformed', async () => {
+    for (const environment of [
+      null,
+      {},
+      { AWS_ACCESS_KEY_ID: 'tid_only' },
+      { AWS_ACCESS_KEY_ID: 'tid_x', AWS_SECRET_ACCESS_KEY: 'line\nbreak' },
+      'AWS_ACCESS_KEY_ID=tid_x',
+    ]) {
+      const source = await fixture('tigris-create.json');
+      objectAt(source, 'data', 'createAddOn', 'addOn').environment = environment;
+      const result = parseTigrisCreateResponse(source);
+      expect(result.identity.addOnId, JSON.stringify(environment)).toBe('addon_fixture_01');
+      expect(result.credentials, JSON.stringify(environment)).toBeNull();
+    }
+  });
+
+  it("reads a bucket's keys by exact ID for a resumed launch, or reports none", async () => {
+    const found = parseTigrisCredentialsResponse(
+      {
+        data: {
+          addOn: {
+            id: 'addon_fixture_01',
+            environment: { AWS_ACCESS_KEY_ID: 'tid_a', AWS_SECRET_ACCESS_KEY: 'tsec_b' },
+          },
+        },
+      },
+      'addon_fixture_01'
+    );
+    await expect(found!.use(async (values) => values.AWS_ACCESS_KEY_ID)).resolves.toBe('tid_a');
+    expect(
+      parseTigrisCredentialsResponse(
+        { data: { addOn: { id: 'addon_fixture_01', environment: null } } },
+        'addon_fixture_01'
+      )
+    ).toBeNull();
+    // Only Fly's exact NOT_FOUND answer means missing; a bare null proves nothing.
+    expect(() =>
+      parseTigrisCredentialsResponse({ data: { addOn: null } }, 'addon_fixture_01')
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_RESPONSE' }));
+    expect(() =>
+      parseTigrisCredentialsResponse(
+        { data: { addOn: { id: 'addon_other', environment: null } } },
+        'addon_fixture_01'
+      )
+    ).toThrowError(expect.objectContaining({ code: 'BINDING_MISMATCH' }));
+    expect(FLY_TIGRIS_CREDENTIALS_QUERY).toContain('environment');
+    expect(FLY_TIGRIS_READ_QUERY).not.toContain('environment');
+  });
+
+  // Fly's real answer for an add-on id it does not know (DOR-2584, captured live and sanitized).
+  // Cleanup of a bucket that is already gone depends on reading this as "missing", not "invalid".
+  it("reads Fly's exact not-found answer as a missing add-on, and nothing looser", async () => {
+    const notFound = await fixture('tigris-read-not-found.json');
+    expect(() => parseTigrisReadResponse(notFound)).toThrowError(
+      expect.objectContaining({ code: 'ADD_ON_MISSING' })
+    );
+    expect(() => parseTigrisCredentialsResponse(notFound, 'addon_fixture_missing')).toThrowError(
+      expect.objectContaining({ code: 'ADD_ON_MISSING' })
+    );
+    const variants: Array<[string, (value: Record<string, unknown>) => void]> = [
+      [
+        'another error beside it',
+        (value) => {
+          (value.errors as unknown[]).push({ message: 'x', extensions: { code: 'INTERNAL' } });
+        },
+      ],
+      [
+        'a different error code',
+        (value) => {
+          objectAt(value, 'errors', '0', 'extensions').code = 'UNAUTHORIZED';
+        },
+      ],
+      [
+        'a different path',
+        (value) => {
+          objectAt(value, 'errors', '0').path = ['app'];
+        },
+      ],
+      [
+        'an add-on beside the error',
+        (value) => {
+          objectAt(value, 'data').addOn = { id: 'addon_fixture_01' };
+        },
+      ],
+      [
+        'no errors at all',
+        (value) => {
+          value.errors = [];
+        },
+      ],
+    ];
+    for (const [label, change] of variants) {
+      const source = (await fixture('tigris-read-not-found.json')) as Record<string, unknown>;
+      change(source);
+      expect(() => parseTigrisReadResponse(source), label).toThrowError(
+        expect.objectContaining({ code: 'INVALID_RESPONSE' })
+      );
+    }
+  });
+
   it('rejects changed types, control characters, excluded fields, and GraphQL errors safely', async () => {
     const wrongType = await fixture('tigris-read.json');
-    objectAt(wrongType, 'data', 'node', 'options').public = 'false';
+    objectAt(wrongType, 'data', 'addOn').options = { public: 'false' };
     expect(() => parseTigrisReadResponse(wrongType)).toThrowError(
       expect.objectContaining({ code: 'INVALID_RESPONSE' })
     );
 
     const control = await fixture('tigris-read.json');
-    objectAt(control, 'data', 'node', 'app').name = 'app\u001b[31m';
+    objectAt(control, 'data', 'addOn', 'app').name = 'app\u001b[31m';
     expect(() => parseTigrisReadResponse(control)).toThrowError(
       expect.objectContaining({ code: 'INVALID_RESPONSE' })
     );
@@ -119,8 +280,51 @@ describe('Fly Tigris GraphQL contract', () => {
     expect(() => parseTigrisTermsResponse({ data: { viewer: null } })).toThrowError(
       expect.objectContaining({ code: 'TERMS_VIEWER_MISSING' })
     );
-    expect(() => parseTigrisReadResponse({ data: { node: null } })).toThrowError(
-      expect.objectContaining({ code: 'ADD_ON_MISSING' })
+    // A bare `addOn: null` without Fly's NOT_FOUND error once let the gate's cleanup skip a bucket
+    // that was still billing (DOR-2584 review); it is an invalid answer, not a missing add-on.
+    expect(() => parseTigrisReadResponse({ data: { addOn: null } })).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
+    );
+  });
+
+  it("lists an app's buckets only from a complete answer about that app", () => {
+    const answer = (name: string, totalCount: number, nodes: unknown[]) => ({
+      data: {
+        app: {
+          name,
+          network: 'default',
+          organization: { slug: 'org' },
+          addOns: { totalCount, nodes },
+        },
+      },
+    });
+    const node = (id: string, name: string | null) => ({
+      id,
+      name,
+      createdAt: '2026-09-23T10:33:12Z',
+      organization: { slug: 'org' },
+    });
+    const bucket = { id: 'addon_fixture_01', name: 'community-fixture-bucket' };
+    expect(
+      parseAppTigrisResponse(answer('app-a', 1, [node(bucket.id, bucket.name)]), 'app-a')
+    ).toEqual([bucket]);
+    // A nameless bucket is refused here (cleanup matches by name) but reported by the removal read.
+    expect(() =>
+      parseAppTigrisResponse(answer('app-a', 1, [node('addon_x', null)]), 'app-a')
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_RESPONSE' }));
+    expect(parseTigrisOnAppResponse(answer('app-a', 1, [node('addon_x', null)]))?.addOns).toEqual([
+      { id: 'addon_x', name: null, createdAt: '2026-09-23T10:33:12Z', organizationSlug: 'org' },
+    ]);
+    expect(parseAppTigrisResponse(answer('app-a', 0, []), 'app-a')).toEqual([]);
+    expect(() => parseAppTigrisResponse(answer('app-b', 0, []), 'app-a')).toThrowError(
+      expect.objectContaining({ code: 'BINDING_MISMATCH' })
+    );
+    // A partial page could hide the very bucket cleanup is looking for.
+    expect(() =>
+      parseAppTigrisResponse(answer('app-a', 2, [node(bucket.id, bucket.name)]), 'app-a')
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_RESPONSE' }));
+    expect(() => parseAppTigrisResponse({ data: { app: null } }, 'app-a')).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
     );
   });
 
@@ -138,12 +342,12 @@ describe('Fly Tigris GraphQL contract', () => {
 
   it('rejects public access and every wrong provider binding', async () => {
     const source = await fixture('tigris-read.json');
-    objectAt(source, 'data', 'node', 'options').public = true;
+    objectAt(source, 'data', 'addOn').options = { public: true };
     expect(() =>
       verifyTigrisBinding(parseTigrisReadResponse(source), expectedBinding)
     ).toThrowError(expect.objectContaining({ code: 'PUBLIC_BUCKET' }));
 
-    const identity = parseTigrisCreateResponse(await fixture('tigris-create.json'));
+    const { identity } = parseTigrisCreateResponse(await fixture('tigris-create.json'));
     for (const key of Object.keys(expectedBinding) as (keyof typeof expectedBinding)[]) {
       expect(
         () => verifyTigrisBinding(identity, { ...expectedBinding, [key]: 'wrong' }),
@@ -160,7 +364,11 @@ describe('Fly Tigris GraphQL contract', () => {
 
   it('pins minimal operations and creates variables without a public option', async () => {
     expect(FLY_TIGRIS_TERMS_QUERY).toContain('agreedToProviderTos');
-    expect(FLY_TIGRIS_READ_QUERY).toContain('node(id: $id)');
+    // Fly has no Relay `node` root field; the live API rejects `node(id:)` outright (DOR-2169).
+    expect(FLY_TIGRIS_READ_QUERY).toContain('addOn(id: $id)');
+    expect(FLY_TIGRIS_CREDENTIALS_QUERY).toContain('addOn(id: $id)');
+    for (const query of [FLY_TIGRIS_READ_QUERY, FLY_TIGRIS_CREDENTIALS_QUERY])
+      expect(query).not.toMatch(/\bnode\s*\(/u);
     expect(FLY_TIGRIS_CREATE_MUTATION).toContain('createAddOn(input: $input)');
     expect(FLY_TIGRIS_DELETE_MUTATION).toContain('deletedAddOnName');
     expect(
@@ -172,11 +380,18 @@ describe('Fly Tigris GraphQL contract', () => {
         'community-fixture-bucket'
       )
     ).toThrowError(expect.objectContaining({ code: 'BINDING_MISMATCH' }));
-    for (const document of [FLY_TIGRIS_CREATE_MUTATION, FLY_TIGRIS_READ_QUERY]) {
-      expect(document).not.toMatch(
-        /\b(password|environment|ssoLink|errorMessage|metadata|publicUrl)\b/u
-      );
-    }
+    expect(FLY_TIGRIS_READ_QUERY).not.toMatch(
+      /\b(password|environment|ssoLink|errorMessage|metadata|publicUrl)\b/u
+    );
+    // The create answer is the one place Fly hands out the bucket's keys (as flyctl reads them),
+    // so `environment` is the only sensitive field it selects.
+    expect(FLY_TIGRIS_CREATE_MUTATION).toMatch(/\benvironment\b/u);
+    expect(FLY_TIGRIS_CREATE_MUTATION).not.toMatch(
+      /\b(password|ssoLink|errorMessage|metadata|publicUrl)\b/u
+    );
+    expect(FLY_TIGRIS_CREDENTIALS_QUERY.replace(/\s+/gu, ' ')).toContain(
+      'addOn(id: $id) { id environment }'
+    );
     expect(
       createTigrisVariables({
         clientMutationId: 'run_01',
@@ -316,7 +531,6 @@ describe('Fly app provenance GraphQL contract', () => {
 describe('Fly Tigris-on-app and name GraphQL contracts', () => {
   it('parses the app, its network and its Tigris add-ons from the pinned fixture', async () => {
     expect(parseTigrisOnAppResponse(await fixture('tigris-on-app.json'))).toEqual({
-      internalNumericId: '4817203',
       name: 'community-fixture-app',
       network: 'dorkos-7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a',
       organizationSlug: 'fixture-org',
@@ -339,7 +553,6 @@ describe('Fly Tigris-on-app and name GraphQL contracts', () => {
   it('rejects every missing or renamed field the Tigris binding proof reads', async () => {
     const source = await fixture('tigris-on-app.json');
     const paths = [
-      ['internalNumericId'],
       ['name'],
       ['network'],
       ['organization', 'slug'],
@@ -377,11 +590,41 @@ describe('Fly Tigris-on-app and name GraphQL contracts', () => {
   });
 
   it('pins minimal reads that never select secret material', () => {
-    expect(FLY_TIGRIS_ON_APP_QUERY).toContain('query DorkosFindTigrisOnApp($name: String!)');
-    expect(FLY_TIGRIS_ON_APP_QUERY).toContain('addOns(type: tigris)');
+    expect(FLY_APP_TIGRIS_QUERY).toContain('query DorkosListAppTigris($appName: String!)');
+    expect(FLY_APP_TIGRIS_QUERY).toContain('addOns(type: tigris, first: 50)');
     expect(FLY_APP_NAME_AVAILABLE_QUERY).toContain('appNameAvailable(name: $name)');
-    for (const query of [FLY_TIGRIS_ON_APP_QUERY, FLY_APP_NAME_AVAILABLE_QUERY]) {
+    for (const query of [FLY_APP_TIGRIS_QUERY, FLY_APP_NAME_AVAILABLE_QUERY]) {
       expect(query).not.toMatch(/\b(password|environment|ssoLink|metadata|value|digest)\b/u);
     }
+  });
+});
+
+describe('Fly Tigris name lookup contract', () => {
+  // After deleteAddOn Fly renames the bucket, so the old name answers NOT_FOUND (live, 2026-09-30).
+  it('reads only the exact not-found answer as free and a clean record as held', () => {
+    const notFound = {
+      data: { addOn: null },
+      errors: [{ message: 'x', path: ['addOn'], extensions: { code: 'NOT_FOUND' } }],
+    };
+    expect(parseTigrisNameHeldResponse(notFound)).toBe(false);
+    expect(parseTigrisNameHeldResponse({ data: { addOn: { id: 'addon_1' } } })).toBe(true);
+    for (const bad of [
+      { data: { addOn: null } },
+      { data: { addOn: null }, errors: [{ path: ['addOn'], extensions: { code: 'INTERNAL' } }] },
+      { data: { addOn: { id: 'addon_1' } }, errors: [{ message: 'x' }] },
+      { data: null },
+    ]) {
+      expect(() => parseTigrisNameHeldResponse(bad), JSON.stringify(bad)).toThrow(
+        FlyGraphqlContractError
+      );
+    }
+  });
+
+  it('pins a lookup by name that selects only the id', () => {
+    expect(FLY_TIGRIS_BY_NAME_QUERY).toContain(
+      'query DorkosFindTigrisByName($name: String!, $provider: String!)'
+    );
+    expect(FLY_TIGRIS_BY_NAME_QUERY).toContain('addOn(name: $name, provider: $provider)');
+    expect(FLY_TIGRIS_BY_NAME_QUERY).not.toMatch(/\b(environment|password|options|metadata)\b/u);
   });
 });

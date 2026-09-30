@@ -6,7 +6,7 @@ import { cn } from '@/layers/shared/lib';
 export interface ApprovalServiceActionProps {
   /** The connected-app action, as the server described it. */
   action: ApprovalServiceActionValue;
-  /** Whether the action can't be undone, which the card then says in words. */
+  /** Whether the service marks the action high risk, which the card then says in words. */
   destructive: boolean;
   className?: string;
 }
@@ -22,7 +22,7 @@ function cutLine(count: number): string {
 
 /**
  * What a connected-app action would do: the app and account it runs on, its
- * arguments, and — when it can't be undone — a plain line saying so
+ * arguments, and — when the service marks it high risk — a plain line saying so
  * (DOR-2504). The card's heading above names the action itself.
  *
  * Everything here arrives already in words. The app, account and action come
@@ -130,7 +130,7 @@ export function ApprovalServiceAction({
       )}
       {destructive && (
         <p data-slot="approval-irreversible" className="text-destructive mt-1.5 text-xs">
-          {`Once this runs, it can't be undone in ${action.serviceName}.`}
+          {`This is a high-risk action in ${action.serviceName}. Check what it does before you allow it.`}
         </p>
       )}
     </div>

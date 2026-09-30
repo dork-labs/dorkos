@@ -137,6 +137,8 @@ function fakeConfig(claudeCode: Partial<UserConfig['runtimes']['claudeCode']> = 
       defaultAccount: null,
       accounts: [],
       defaultAccountColor: null,
+      defaultAccountOnlyProjects: null,
+      projectAccounts: {},
       dismissedFolders: [],
       defaultModel: null,
       defaultEffort: null,

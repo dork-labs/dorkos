@@ -16,7 +16,7 @@ import {
 
 const CEILING = 3;
 const COMMUNITY_NAME = 'Guard Owner Community';
-/** A well-formed key id; the password is checked before the key is looked up. */
+/** A well-formed id; the password is checked before the key, entry, or takedown is looked up. */
 const ANY_KEY_ID = '00000000-0000-4000-8000-000000000000';
 
 let h: TenancyHarness;
@@ -114,6 +114,39 @@ const ROUTES: GuardedRoute[] = [
       h.call('/api/v1/host/api-keys', {
         cookie,
         body: { label: 'Guessing', scopes: ['communities:read'], expiresInDays: 30, password },
+      }),
+  },
+  {
+    route: 'POST /host/communities/:id/takedowns',
+    actor: 'operator',
+    call: (cookie, password) =>
+      h.call(`/api/v1/host/communities/${communityId}/takedowns`, {
+        cookie,
+        body: {
+          idempotencyKey: `guess-${password}`,
+          target: { kind: 'entry', entryId: ANY_KEY_ID },
+          category: 'terms_violation',
+          reference: null,
+          password,
+        },
+      }),
+  },
+  {
+    route: 'POST /host/takedowns/:takedownId/reverse',
+    actor: 'operator',
+    call: (cookie, password) =>
+      h.call(`/api/v1/host/takedowns/${ANY_KEY_ID}/reverse`, {
+        cookie,
+        body: { lifecycleVersion: 1, password },
+      }),
+  },
+  {
+    route: 'POST /host/takedowns/:takedownId/release-held',
+    actor: 'operator',
+    call: (cookie, password) =>
+      h.call(`/api/v1/host/takedowns/${ANY_KEY_ID}/release-held`, {
+        cookie,
+        body: { password },
       }),
   },
   {

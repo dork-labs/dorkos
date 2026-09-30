@@ -37,11 +37,23 @@ import {
 import {
   EXTENSION_NOT_APPROVED_CODE,
   approvedSourceOf,
+  isApprovedByDigest,
+  isApprovedByOrigin,
+  isApprovedByPath,
   isApprovedCopy,
+  isFromTrustedSource,
   mayRunExtensionCode,
 } from './extension-load-policy.js';
 
 import { logger } from '../../lib/logger.js';
+import { collectSnapshots, ensureSnapshot } from './extension-snapshots.js';
+import { installRootOf } from './extension-trusted-origin.js';
+
+/**
+ * How long discovery waits for a burst of project changes to settle before it
+ * re-scans (spec `flow-multiproject` §9.2).
+ */
+const PROJECT_RESCAN_DEBOUNCE_MS = 2_000;
 
 /**
  * Why {@link ExtensionManager.dismissApproval} refused, when it did.
@@ -143,13 +155,45 @@ export class ExtensionManager {
    * `extension-approval-queue.ts`.
    */
   private changeListeners = new Set<() => void>();
+  /**
+   * Copies a newer copy of the same trusted origin shadows (spec
+   * `flow-multiproject` §9.2). Listed by `GET /api/extensions` with
+   * `shadowedBy`, and nowhere else: they never compile or run.
+   */
+  private shadowed: ExtensionRecord[] = [];
+  /** The tail of the scan queue: scans run one at a time, in order. */
+  private scans: Promise<void> = Promise.resolve();
+  /**
+   * The known project roots discovery scans besides the working directory, or
+   * null before the composition root wires the project registry in.
+   */
+  private projectRoots: ((cwd: string | null) => Promise<readonly string[]>) | null = null;
+  /** Tells connected clients which extensions changed under them. */
+  private announceReloaded: ((ids: string[]) => void) | null = null;
 
-  constructor(dorkHome: string, coreExtensions: CoreExtensionInfo[] = []) {
+  /**
+   * Build the extension system rooted at one DorkOS data directory.
+   *
+   * @param dorkHome - DorkOS's data directory.
+   * @param coreExtensions - Tier metadata for the bundled core extensions.
+   * @param options.registerTimeoutMs - How long a server `register()` may take
+   *   (default `REGISTER_TIMEOUT_MS` in `extension-server-lifecycle.ts`); tests
+   *   shorten it.
+   */
+  constructor(
+    dorkHome: string,
+    coreExtensions: CoreExtensionInfo[] = [],
+    options: { registerTimeoutMs?: number } = {}
+  ) {
     this.dorkHome = dorkHome;
     this.coreExtensions = new Map(coreExtensions.map((info) => [info.id, info]));
     this.discovery = new ExtensionDiscovery(dorkHome);
     this.compiler = new ExtensionCompiler(dorkHome);
-    this.serverLifecycle = new ExtensionServerLifecycle(dorkHome, this.compiler);
+    this.serverLifecycle = new ExtensionServerLifecycle(
+      dorkHome,
+      this.compiler,
+      options.registerTimeoutMs
+    );
   }
 
   /**
@@ -177,7 +221,8 @@ export class ExtensionManager {
   async initialize(cwd: string | null): Promise<void> {
     this.currentCwd = cwd;
     await this.compiler.cleanStaleCache();
-    await this.reload();
+    // Nothing runs yet, so there is nothing to switch: scan, then start below.
+    await this.enqueue(() => this.rescan());
 
     for (const record of this.extensions.values()) {
       if (this.needsServer(record)) {
@@ -194,22 +239,234 @@ export class ExtensionManager {
         }
       }
     }
+    await this.collectUnusedSnapshots();
   }
 
-  /** Re-scan filesystem and recompile changed extensions. */
+  /**
+   * Re-scan every root, recompile, and move every id whose running copy
+   * changed onto its new copy (see {@link switchCopies}). Every re-scan goes
+   * through here — `POST /api/extensions/reload`, `reload_extensions`, a
+   * working-directory change, a new project, an install — so a copy that was
+   * replaced never keeps its old server code running.
+   *
+   * @returns The public records after the scan.
+   */
   async reload(): Promise<ExtensionRecordPublic[]> {
+    await this.enqueue(() => this.switchCopies());
+    return this.listPublic();
+  }
+
+  /**
+   * Ask for a {@link reload} without waiting for it: the scan reads every
+   * known project, so a request handler answers first and clients learn what
+   * changed from the `extension_reloaded` broadcast. Scans run one at a time.
+   */
+  requestRefresh(): void {
+    void this.enqueue(() => this.switchCopies()).catch((err) => {
+      logger.warn('[Extensions] A background re-scan failed', err);
+    });
+  }
+
+  /** Resolves once every scan asked for so far has finished. */
+  whenIdle(): Promise<void> {
+    return this.scans.then(
+      () => undefined,
+      () => undefined
+    );
+  }
+
+  /** Run `job` after every scan queued before it, one at a time. */
+  private enqueue<T>(job: () => Promise<T>): Promise<T> {
+    const next = this.scans.then(job, job);
+    this.scans = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  }
+
+  /** The scan itself: discover, record, bind old approvals, compile. */
+  private async rescan(): Promise<void> {
     const config = configManager.get('extensions');
-    const records = await this.discovery.discover(this.currentCwd, config, this.coreExtensions);
+    const projects = await this.readProjectRoots();
+    const discovered = await this.discovery.discover(
+      this.currentCwd,
+      config,
+      this.coreExtensions,
+      projects
+    );
+    const records = discovered.filter((rec) => !rec.shadowedBy);
+    this.shadowed = discovered.filter((rec) => !!rec.shadowedBy);
 
     this.extensions.clear();
     for (const rec of records) {
       this.extensions.set(rec.id, rec);
     }
     this.bindUnsourcedApprovals(records);
+    await this.placeSnapshots(records);
 
     await this.compileEnabled();
     this.emitChanged();
-    return this.listPublic();
+  }
+
+  /**
+   * Point every project copy that runs by its trusted origin — not by the
+   * person's approval of that folder — or by a yes pinned to its exact files,
+   * at a verified snapshot of its plugin
+   * (`extension-snapshots.ts`), so what it runs, at load and at runtime, can
+   * no longer be changed from inside the project. A copy whose snapshot cannot
+   * be made (its files changed since the scan) loses its origin instead of
+   * running from the project.
+   *
+   * @param records - The copies this scan chose.
+   */
+  private async placeSnapshots(records: readonly ExtensionRecord[]): Promise<void> {
+    const approvals = configManager.get('extensions');
+    for (const record of records) {
+      if (record.scope !== 'local' || !record.sourcePlugin || !record.pinnedDigest) continue;
+      // A yes pinned to these exact files runs them from the snapshot too.
+      const pinned = isApprovedByDigest(record, approvals);
+      const byOrigin =
+        !!record.trustedOrigin &&
+        !isApprovedByPath(record, approvals) &&
+        (isApprovedByOrigin(record, approvals) || isFromTrustedSource(record, approvals));
+      if (!pinned && !byOrigin) continue;
+      const installRoot = installRootOf(record.path);
+      const root = await ensureSnapshot(this.dorkHome, installRoot, record.pinnedDigest);
+      if (root) {
+        record.runPath = path.join(root, path.relative(installRoot, record.path));
+      } else {
+        // Its files changed since the scan: nothing here may run, by origin or
+        // by a yes pinned to the files it had.
+        record.trustedOrigin = undefined;
+        record.pinnedDigest = undefined;
+        record.currentDigest = undefined;
+        record.originProblem = 'changed';
+      }
+    }
+  }
+
+  /** Remove every snapshot no current copy runs from. Best-effort. */
+  private async collectUnusedSnapshots(): Promise<void> {
+    const inUse = new Set<string>();
+    for (const record of this.extensions.values()) {
+      if (record.runPath) inUse.add(path.resolve(installRootOf(record.runPath)));
+    }
+    try {
+      await collectSnapshots(this.dorkHome, inUse);
+    } catch (err) {
+      logger.warn('[Extensions] Could not clear unused extension snapshots', err);
+    }
+  }
+
+  /**
+   * Scan every known project too, and re-scan when the set of projects
+   * changes (spec `flow-multiproject` §9.2). Called once by the composition
+   * root, before {@link initialize}.
+   *
+   * The re-scan is debounced (a burst of new folders is one pass) and runs off
+   * the request path. When the copy that runs for an id changes — a newer copy
+   * of the same trusted origin appeared in another project, or the newest one
+   * was deleted — its server half is restarted on the new copy and clients are
+   * told, with nothing for anyone to click.
+   *
+   * @param source.roots - The known project roots to scan, given the working
+   *   directory. Only roots core has seen itself; never ones only an extension
+   *   reported (§6.1).
+   * @param source.onChange - Subscribe to changes in that set.
+   * @param options.debounceMs - How long to wait for a burst to settle.
+   * @param options.announce - Tell connected clients which ids changed.
+   * @returns Stops following project changes.
+   */
+  followProjects(
+    source: {
+      roots: (cwd: string | null) => Promise<readonly string[]>;
+      onChange: (listener: () => void) => () => void;
+    },
+    options: { debounceMs?: number; announce?: (ids: string[]) => void } = {}
+  ): () => void {
+    this.projectRoots = source.roots;
+    if (options.announce) this.announceReloaded = options.announce;
+    const debounceMs = options.debounceMs ?? PROJECT_RESCAN_DEBOUNCE_MS;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = source.onChange(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        this.requestRefresh();
+      }, debounceMs);
+      timer.unref?.();
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
+  }
+
+  /** The known project roots, or none when the registry is not wired or fails. */
+  private async readProjectRoots(): Promise<readonly string[]> {
+    if (!this.projectRoots) return [];
+    try {
+      return await this.projectRoots(this.currentCwd);
+    } catch (err) {
+      logger.warn('[Extensions] Could not read the known projects; scanning only this folder', err);
+      return [];
+    }
+  }
+
+  /**
+   * Re-scan, then move every id whose running copy changed onto its new copy:
+   * restart its server half there, and tell connected clients. An id that may
+   * now run for the first time (its source was just trusted) starts too, and
+   * one that may no longer run stops.
+   *
+   * @returns The ids whose copy, or whose right to run, changed.
+   */
+  private async switchCopies(): Promise<string[]> {
+    const before = new Map(
+      [...this.extensions.values()].map((rec) => [
+        rec.id,
+        {
+          path: path.resolve(rec.path),
+          runPath: rec.runPath ?? null,
+          runs: mayRunExtensionCode(rec, configManager.get('extensions')),
+        },
+      ])
+    );
+    await this.rescan();
+    const approvals = configManager.get('extensions');
+    const changed: string[] = [];
+    for (const rec of this.extensions.values()) {
+      const prior = before.get(rec.id);
+      const runs = mayRunExtensionCode(rec, approvals);
+      const switched =
+        !prior ||
+        prior.path !== path.resolve(rec.path) ||
+        prior.runPath !== (rec.runPath ?? null) ||
+        prior.runs !== runs;
+      if (!switched) continue;
+      changed.push(rec.id);
+      if (prior) await this.serverLifecycle.shutdown(rec.id);
+      if (runs && this.needsServer(rec)) {
+        const result = await this.serverLifecycle.initialize(rec.id, rec);
+        if (!result.ok) {
+          logger.warn(
+            `[Extensions] Server init on the new copy of ${rec.id} failed: ${result.error}`
+          );
+        }
+      }
+    }
+    for (const id of before.keys()) {
+      if (!this.extensions.has(id)) {
+        changed.push(id);
+        await this.serverLifecycle.shutdown(id);
+      }
+    }
+    // Only now, with every server half on its current copy, can a snapshot the
+    // old copies ran from go.
+    await this.collectUnusedSnapshots();
+    if (changed.length > 0) this.announceReloaded?.(changed);
+    return changed;
   }
 
   /**
@@ -342,6 +599,110 @@ export class ExtensionManager {
   listPublic(): ExtensionRecordPublic[] {
     const approvals = configManager.get('extensions');
     return Array.from(this.extensions.values()).map((record) => toPublic(record, approvals));
+  }
+
+  /**
+   * The copies a newer copy of the same trusted origin shadows, as public
+   * records with `shadowedBy` set (spec `flow-multiproject` §9.2). Only
+   * `GET /api/extensions` lists them, after the copies that run.
+   */
+  listShadowedPublic(): ExtensionRecordPublic[] {
+    const approvals = configManager.get('extensions');
+    return this.shadowed.map((record) => toPublic(record, approvals));
+  }
+
+  /**
+   * Trust every extension that provably comes from `source` (spec
+   * `flow-multiproject` §9.3): copies whose trusted origin names it run from
+   * now on without asking. Only the person-bar route may call this.
+   *
+   * @param source - A normalized `owner/repo`.
+   * @returns `added` when it was not trusted before, `already` otherwise, or
+   *   `unproven` when no copy DorkOS can see provably comes from it: trust is
+   *   granted once per PROVEN source (invariant 15).
+   */
+  async trustSource(source: string): Promise<'added' | 'already' | 'unproven'> {
+    const known = [...this.extensions.values(), ...this.shadowed].some(
+      (rec) => rec.trustedOrigin?.source === source
+    );
+    const before = configManager.get('extensions');
+    const trusted = before.trustedSources ?? [];
+    if (trusted.some((entry) => entry.source === source)) return 'already';
+    if (!known) return 'unproven';
+    configManager.set('extensions', {
+      ...before,
+      trustedSources: [...trusted, { source, trustedAt: new Date().toISOString() }],
+    });
+    logConfigWrite('trusting a code source', 'extensions', before, configManager.get('extensions'));
+    // Copies from it may run now; the scan that starts them runs after this
+    // answer, and clients hear from the `extension_reloaded` broadcast.
+    this.emitChanged();
+    this.requestRefresh();
+    return 'added';
+  }
+
+  /**
+   * Stop trusting `source` (spec `flow-multiproject` §9.3). Extensions from it
+   * that are turned ON stay on, exactly as they are: each copy that runs today
+   * only because of this source is given its own approval, pinned to that copy
+   * (its folder and plugin, never the origin) and, for a project copy, to its
+   * files' digest, so it keeps running from its verified snapshot and any
+   * change asks again. Nothing the person is using stops. Everything else from the source — a turned-off extension, a newer
+   * copy, a new extension — asks again. Only the person-bar route may call this.
+   *
+   * @param source - A normalized `owner/repo`.
+   * @returns Whether the source was trusted.
+   */
+  async untrustSource(source: string): Promise<boolean> {
+    const before = configManager.get('extensions');
+    const trusted = before.trustedSources ?? [];
+    if (!trusted.some((entry) => entry.source === source)) return false;
+    const approvedToRun = [...before.approvedToRun];
+    const approvedSources = { ...(before.approvedSources ?? {}) };
+    for (const rec of this.extensions.values()) {
+      if (rec.origin !== 'user' || rec.trustedOrigin?.source !== source) continue;
+      if (isApprovedCopy(rec, before)) continue;
+      if (!isEnabled(rec.id, before, this.coreExtensions)) continue;
+      if (!approvedToRun.includes(rec.id)) approvedToRun.push(rec.id);
+      // Pinned to this copy's files alone: no origin, so a newer copy from the
+      // source does not ride on it, and its digest, so it keeps running from
+      // the verified snapshot of exactly those files and any change asks again.
+      const { origin: _origin, ...pinned } = approvedSourceOf(rec);
+      approvedSources[rec.id] = rec.currentDigest
+        ? { ...pinned, digest: rec.currentDigest }
+        : pinned;
+    }
+    configManager.set('extensions', {
+      ...before,
+      approvedToRun,
+      approvedSources,
+      trustedSources: trusted.filter((entry) => entry.source !== source),
+    });
+    logConfigWrite(
+      'no longer trusting a code source',
+      'extensions',
+      before,
+      configManager.get('extensions')
+    );
+    this.emitChanged();
+    this.requestRefresh();
+    return true;
+  }
+
+  /**
+   * Where the copy that runs for `id` provably came from, when that source is
+   * not trusted yet: the one-time "Next time, trust everything from …?"
+   * offer after a person turns it on (spec `flow-multiproject` §9.3, V9).
+   *
+   * @param id - The extension just approved.
+   * @returns The `owner/repo` to offer, or null when there is nothing to offer.
+   */
+  trustOfferFor(id: string): string | null {
+    const record = this.extensions.get(id);
+    const source = record?.trustedOrigin?.source;
+    if (!record || record.origin !== 'user' || !source) return null;
+    const trusted = configManager.get('extensions').trustedSources ?? [];
+    return trusted.some((entry) => entry.source === source) ? null : source;
   }
 
   /**
@@ -488,6 +849,11 @@ export class ExtensionManager {
     // plugin beside the id, replacing whatever copy an earlier approval named.
     const extensions = configManager.get('extensions');
     const source = approvedSourceOf(record);
+    // A copy whose plugin changed after DorkOS installed it is approved as its
+    // files are now, and every compile holds it to exactly those files.
+    if (record.originProblem === 'changed' && record.currentDigest) {
+      record.pinnedDigest = record.currentDigest;
+    }
     const dismissed = extensions.dismissedApprovals ?? {};
     if (!isApprovedCopy(record, extensions) || dismissed[id]) {
       // A "Not now" for this id is answered by the approval, so it goes too
@@ -513,6 +879,10 @@ export class ExtensionManager {
         configManager.get('extensions')
       );
     }
+
+    // A yes to these exact files runs them from their verified snapshot,
+    // from the first start on.
+    await this.placeSnapshots([record]);
 
     if (this.needsServer(record)) {
       const result = await this.serverLifecycle.initialize(id, record);
@@ -650,6 +1020,34 @@ export class ExtensionManager {
     const extensions = configManager.get('extensions');
     const sources = extensions.approvedSources ?? {};
     const recorded = sources[id];
+    // The approval was given to a trusted origin (§9.1), and another copy of
+    // that origin stays installed elsewhere: the person's decision is about the
+    // origin, so it moves to that copy instead of being lost with this one.
+    const heir =
+      installRoot && recorded?.origin && isPathWithin(recorded.path, installRoot)
+        ? [...this.extensions.values(), ...this.shadowed].find(
+            (rec) =>
+              rec.id === id &&
+              !isPathWithin(rec.path, installRoot) &&
+              rec.trustedOrigin?.plugin === recorded.origin?.plugin &&
+              rec.trustedOrigin?.source === recorded.origin?.source
+          )
+        : undefined;
+    if (heir) {
+      configManager.set('extensions', {
+        ...extensions,
+        approvedSources: { ...sources, [id]: approvedSourceOf(heir) },
+      });
+      logConfigWrite(
+        'moving an extension approval to another copy from the same source',
+        'extensions',
+        extensions,
+        configManager.get('extensions')
+      );
+      await this.serverLifecycle.shutdown(id);
+      this.emitChanged();
+      return;
+    }
     if (installRoot && recorded && !isPathWithin(recorded.path, installRoot)) {
       logger.info(
         `[Extensions] Kept the run approval for ${id}: it is for the copy at ${recorded.path}, ` +

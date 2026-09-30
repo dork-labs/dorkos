@@ -271,7 +271,6 @@ describe('Tigris removal probe', () => {
     appName: 'community-acme',
   };
   const onApp = (addOns: Array<{ id: string }>, totalCount = addOns.length) => ({
-    internalNumericId: '4817203',
     name: 'community-acme',
     network: 'dorkos-x',
     organizationSlug: 'acme',
@@ -282,6 +281,13 @@ describe('Tigris removal probe', () => {
       createdAt: '2026-09-23T10:33:12Z',
       organizationSlug: 'acme',
     })),
+  });
+
+  // Fly soft-deletes: the deleted record is renamed and detached from the app (app: null), so the
+  // app's own list no longer carries it, and the removal reads that as gone (live gate, 2026-09-30).
+  it('reads a bucket Fly soft-deleted, and so detached from the app, as gone', async () => {
+    mocks.readTigrisOnApp.mockResolvedValue(onApp([{ id: 'addon-other' }]));
+    await expect(probes('tigris').isGone(target)).resolves.toBe(true);
   });
 
   it('cannot read absence without the app or with a list cut short', async () => {

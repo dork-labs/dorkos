@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectorAppAction } from '@dorkos/shared/connector-resource-schemas';
-import type { ConnectorOperationClassification } from '@dorkos/shared/connector-schemas';
+import {
+  accessLevelRevisionIds,
+  type ConnectorOperationClassification,
+} from '@dorkos/shared/connector-schemas';
 import {
   actionBuckets,
   actionKind,
@@ -9,7 +12,6 @@ import {
   offersReadWrite,
   plainActionName,
 } from '../lib/app-actions';
-import { revisionIdsForAccessLevel } from '../lib/reconciliation-selection';
 
 function action(
   operationSlug: string,
@@ -101,7 +103,7 @@ describe('actionBuckets', () => {
     for (const level of ['read', 'read-write'] as const) {
       const buckets = actionBuckets(GMAIL, level);
       const shown = [...buckets.look, ...buckets.change].map((a) => a.operationSlug).sort();
-      expect(shown).toEqual(revisionIdsForAccessLevel(candidates, level));
+      expect(shown).toEqual(accessLevelRevisionIds(candidates, level));
     }
   });
 });

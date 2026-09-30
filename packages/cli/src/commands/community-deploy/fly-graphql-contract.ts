@@ -23,7 +23,11 @@ const AddOnSchema = z
     id: SafeIdentifierSchema,
     name: SafeIdentifierSchema,
     status: SafeStatusSchema,
-    options: z.object({ public: z.boolean() }).passthrough(),
+    // Fly stores no options for a bucket created without them (as this launcher creates it) and
+    // answers `options: null` (DOR-2559; `AddOn.options: JSON` is nullable in Fly's schema). That
+    // is Fly's private default. The key must still be present, and a present `public` must be a
+    // boolean, so only an explicit `public: true` reads as public.
+    options: z.object({ public: z.boolean() }).passthrough().nullable(),
     organization: z.object({ slug: SafeIdentifierSchema }).strict(),
     addOnProvider: z.object({ name: SafeIdentifierSchema }).strict(),
     app: z.object({ id: SafeIdentifierSchema, name: SafeIdentifierSchema }).strict(),
@@ -40,17 +44,74 @@ const TermsEnvelopeSchema = z
   })
   .strict();
 
+/**
+ * The create answer also carries the bucket's `environment`, which holds its access keys. It is
+ * accepted here as opaque data and handed only to `tigrisCredentialsFromEnvironment`; the identity
+ * never includes it.
+ */
 const CreateEnvelopeSchema = z
   .object({
-    data: z.object({ createAddOn: z.object({ addOn: AddOnSchema }).strict() }).strict(),
+    data: z
+      .object({
+        createAddOn: z
+          .object({ addOn: AddOnSchema.extend({ environment: z.unknown().optional() }) })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict();
+
+/** Printable, single-line key text; anything else is treated as no key at all. */
+const TigrisKeyValueSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .regex(/^[\x21-\x7e]+$/u);
+const TigrisEnvironmentSchema = z
+  .object({ AWS_ACCESS_KEY_ID: TigrisKeyValueSchema, AWS_SECRET_ACCESS_KEY: TigrisKeyValueSchema })
+  .passthrough();
+
+const CredentialsEnvelopeSchema = z
+  .object({
+    data: z
+      .object({
+        addOn: z.object({ id: SafeIdentifierSchema, environment: z.unknown().optional() }).strict(),
+      })
+      .strict(),
   })
   .strict();
 
 const ReadEnvelopeSchema = z
   .object({
-    data: z.object({ node: AddOnSchema.nullable() }).strict(),
+    // Fly's GraphQL has no Relay `node` root field; `addOn(id:)` is the exact-ID read (live gate,
+    // DOR-2169, 2026-09-29: `node(id:)` answered only "Field 'node' doesn't exist on type 'Queries'").
+    // Not nullable: a bare `addOn: null` without Fly's NOT_FOUND error is not proof the bucket is
+    // gone, and treating it as gone once let cleanup skip a bucket that was still billing (DOR-2584
+    // review). Only `AddOnNotFoundEnvelopeSchema` means missing.
+    data: z.object({ addOn: AddOnSchema }).strict(),
   })
   .strict();
+/**
+ * Fly's answer for an add-on id it does not know (live, 2026-09-29): `data.addOn` is null and every
+ * error is a `NOT_FOUND` on the `addOn` path. Only this exact shape means "gone"; any other error,
+ * or a not-found beside other errors, stays an invalid response.
+ */
+const AddOnNotFoundEnvelopeSchema = z
+  .object({
+    data: z.object({ addOn: z.null() }).strict(),
+    errors: z
+      .array(
+        z
+          .object({
+            path: z.tuple([z.literal('addOn')]),
+            extensions: z.object({ code: z.literal('NOT_FOUND') }).passthrough(),
+          })
+          .passthrough()
+      )
+      .min(1),
+  })
+  .strict();
+
 const DeleteEnvelopeSchema = z
   .object({
     data: z
@@ -92,9 +153,14 @@ const AppProvenanceEnvelopeSchema = z
   })
   .strict();
 
-const TigrisOnAppSchema = z
+/**
+ * One app and its attached Tigris add-ons (`DorkosListAppTigris`). Both the live gate's cleanup and
+ * the uncertain-create removal read this one answer: the cleanup needs ids and names, and the removal
+ * also the app's own network and organization, so it can re-prove the app a bucket is bound to in
+ * the same read, and each add-on's creation time and organization.
+ */
+const AppTigrisSchema = z
   .object({
-    internalNumericId: z.number().int().nonnegative(),
     name: SafeIdentifierSchema,
     network: z
       .string()
@@ -109,6 +175,7 @@ const TigrisOnAppSchema = z
           z
             .object({
               id: SafeIdentifierSchema,
+              // Nullable in Fly's schema. The cleanup refuses a nameless one; the removal reports it.
               name: SafeIdentifierSchema.nullable(),
               createdAt: z.iso.datetime({ offset: true }),
               organization: z.object({ slug: SafeIdentifierSchema }).strict(),
@@ -119,9 +186,10 @@ const TigrisOnAppSchema = z
       .strict(),
   })
   .strict();
-const TigrisOnAppEnvelopeSchema = z
+const AppTigrisEnvelopeSchema = z
   .object({
-    data: z.object({ app: TigrisOnAppSchema.nullable() }).strict(),
+    data: z.object({ app: AppTigrisSchema.nullable() }).strict(),
+    // Fly answers an unknown app name with `app: null` plus an error entry; its text is never read.
     errors: z.array(z.unknown()).optional(),
   })
   .strict();
@@ -172,6 +240,7 @@ export const FLY_TIGRIS_CREATE_MUTATION = `
         name
         status
         options
+        environment
         organization { slug }
         addOnProvider { name }
         app { id name }
@@ -180,19 +249,52 @@ export const FLY_TIGRIS_CREATE_MUTATION = `
   }
 `;
 
+/**
+ * Exact-ID read of the bucket's access keys, used only when resuming a launch that stopped after
+ * Fly created the bucket but before its keys reached the app. flyctl itself reads `environment`
+ * only from the create answer, so Fly may return nothing here; the caller then stops instead of
+ * guessing.
+ */
+export const FLY_TIGRIS_CREDENTIALS_QUERY = `
+  query DorkosReadTigrisCredentials($id: ID!) {
+    addOn(id: $id) {
+      id
+      environment
+    }
+  }
+`;
+
+/**
+ * Every Tigris bucket attached to one app, with the app's own network and organization. The live
+ * gate's cleanup uses it to confirm a bucket Fly reported as not found is really absent before it
+ * skips deleting it; the uncertain-create removal uses it to find a bucket and re-prove its app in
+ * one read. A bucket Fly has deleted is detached from the app (`app: null`), so it is not listed.
+ */
+export const FLY_APP_TIGRIS_QUERY = `
+  query DorkosListAppTigris($appName: String!) {
+    app(name: $appName) {
+      name
+      network
+      organization { slug }
+      addOns(type: tigris, first: 50) {
+        totalCount
+        nodes { id name createdAt organization { slug } }
+      }
+    }
+  }
+`;
+
 /** Minimal exact-ID readback used after Tigris creation. */
 export const FLY_TIGRIS_READ_QUERY = `
   query DorkosReadTigris($id: ID!) {
-    node(id: $id) {
-      ... on AddOn {
-        id
-        name
-        status
-        options
-        organization { slug }
-        addOnProvider { name }
-        app { id name }
-      }
+    addOn(id: $id) {
+      id
+      name
+      status
+      options
+      organization { slug }
+      addOnProvider { name }
+      app { id name }
     }
   }
 `;
@@ -221,20 +323,15 @@ export const FLY_APP_PROVENANCE_QUERY = `
 `;
 
 /**
- * Minimal read of the Tigris add-ons on one app, with the app's own network so a removal can
- * re-prove the app the bucket is bound to in the same readback.
+ * Whether a Tigris bucket name is still held. Fly soft-deletes a bucket: right after
+ * `deleteAddOn` it renames the record `<name>_deleted_<suffix>` and detaches it from the app, and
+ * a lookup by the old name answers `NOT_FOUND` (live gate, 2026-09-30). Used only after an
+ * uncertain-create removal, before a resumed launch records a new bucket intent under that name.
  */
-export const FLY_TIGRIS_ON_APP_QUERY = `
-  query DorkosFindTigrisOnApp($name: String!) {
-    app(name: $name) {
-      internalNumericId
-      name
-      network
-      organization { slug }
-      addOns(type: tigris) {
-        totalCount
-        nodes { id name createdAt organization { slug } }
-      }
+export const FLY_TIGRIS_BY_NAME_QUERY = `
+  query DorkosFindTigrisByName($name: String!, $provider: String!) {
+    addOn(name: $name, provider: $provider) {
+      id
     }
   }
 `;
@@ -341,8 +438,6 @@ export interface TigrisAddOnOnApp {
 
 /** An app and the Tigris add-ons attached to it, read in one request. */
 export interface TigrisOnApp {
-  /** Numeric app ID. */
-  internalNumericId: string;
   /** App name. */
   name: string;
   /** Private network name, or `null` when Fly reports none. */
@@ -353,6 +448,78 @@ export interface TigrisOnApp {
   totalCount: number;
   /** The add-ons returned; fewer than `totalCount` means the list was cut short. */
   addOns: TigrisAddOnOnApp[];
+}
+
+/**
+ * A bucket's two access keys, held only in memory. flyctl sets these on the app itself from the
+ * add-on's `environment` (`setSecretsFromExtension`); Fly's servers do not, so the launcher does.
+ */
+export class TigrisBucketCredentials {
+  #values: { AWS_ACCESS_KEY_ID: string; AWS_SECRET_ACCESS_KEY: string } | undefined;
+
+  /**
+   * Wrap validated keys without exposing them as object data.
+   *
+   * @param accessKeyId - The bucket's access key id.
+   * @param secretAccessKey - The bucket's secret access key.
+   */
+  constructor(accessKeyId: string, secretAccessKey: string) {
+    this.#values = { AWS_ACCESS_KEY_ID: accessKeyId, AWS_SECRET_ACCESS_KEY: secretAccessKey };
+  }
+
+  /**
+   * Use the keys, by their app secret names, inside one bounded callback.
+   *
+   * @param consumer - The secret-staging call.
+   * @returns The consumer result.
+   */
+  async use<T>(consumer: (values: Readonly<Record<string, string>>) => Promise<T>): Promise<T> {
+    if (!this.#values) throw new FlyGraphqlContractError('INVALID_RESPONSE');
+    return consumer(this.#values);
+  }
+
+  /** Drop this wrapper's reference to the keys. */
+  dispose(): void {
+    this.#values = undefined;
+  }
+
+  /** Return a safe marker for string interpolation. */
+  toString(): string {
+    return '[REDACTED Tigris bucket credentials]';
+  }
+
+  /** Return a safe marker for JSON serialization. */
+  toJSON(): string {
+    return '[REDACTED Tigris bucket credentials]';
+  }
+}
+
+/** A created bucket's identity, plus its keys when Fly sent them. */
+export interface TigrisCreateResult {
+  /** Sanitized, non-secret identity. */
+  identity: TigrisAddOnIdentity;
+  /** The bucket's access keys, or null when the answer carried none usable. */
+  credentials: TigrisBucketCredentials | null;
+}
+
+/**
+ * Pick the two access keys out of an add-on `environment`, ignoring every other entry.
+ *
+ * Never throws: a missing or malformed environment is reported as no keys, so it cannot turn a
+ * created bucket into an uncertain creation, and no key text can reach an error.
+ *
+ * @param environment - The add-on's `environment` JSON as Fly returned it.
+ * @returns Redacting credentials, or null.
+ */
+export function tigrisCredentialsFromEnvironment(
+  environment: unknown
+): TigrisBucketCredentials | null {
+  const parsed = TigrisEnvironmentSchema.safeParse(environment);
+  if (!parsed.success) return null;
+  return new TigrisBucketCredentials(
+    parsed.data.AWS_ACCESS_KEY_ID,
+    parsed.data.AWS_SECRET_ACCESS_KEY
+  );
 }
 
 /** Expected Tigris identity and binding selected in the immutable plan. */
@@ -380,7 +547,7 @@ function sanitizeAddOn(value: unknown): TigrisAddOnIdentity {
     providerName: addOn.addOnProvider.name,
     appId: addOn.app.id,
     appName: addOn.app.name,
-    public: addOn.options.public,
+    public: addOn.options?.public ?? false,
   };
 }
 
@@ -402,19 +569,47 @@ export function parseTigrisTermsResponse(response: unknown): boolean {
 }
 
 /**
- * Parse a Tigris creation response into its non-secret identity.
+ * Parse a Tigris creation response into its non-secret identity and its access keys.
  *
  * @param response - Decoded response held in the bounded sensitive sink.
- * @returns Sanitized add-on identity and binding.
+ * @returns Sanitized add-on identity and binding, plus redacting credentials when present.
  */
-export function parseTigrisCreateResponse(response: unknown): TigrisAddOnIdentity {
+export function parseTigrisCreateResponse(response: unknown): TigrisCreateResult {
   let parsed: z.infer<typeof CreateEnvelopeSchema>;
   try {
     parsed = CreateEnvelopeSchema.parse(response);
   } catch {
     throw invalidResponse();
   }
-  return sanitizeAddOn(parsed.data.createAddOn.addOn);
+  const { environment, ...addOn } = parsed.data.createAddOn.addOn;
+  return {
+    identity: sanitizeAddOn(addOn),
+    credentials: tigrisCredentialsFromEnvironment(environment),
+  };
+}
+
+/**
+ * Parse an exact-ID read of a bucket's access keys.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ * @param expectedId - The add-on ID that was asked for.
+ * @returns Redacting credentials, or null when Fly returned none usable.
+ */
+export function parseTigrisCredentialsResponse(
+  response: unknown,
+  expectedId: string
+): TigrisBucketCredentials | null {
+  if (AddOnNotFoundEnvelopeSchema.safeParse(response).success) {
+    throw new FlyGraphqlContractError('ADD_ON_MISSING');
+  }
+  let parsed: z.infer<typeof CredentialsEnvelopeSchema>;
+  try {
+    parsed = CredentialsEnvelopeSchema.parse(response);
+  } catch {
+    throw invalidResponse();
+  }
+  if (parsed.data.addOn.id !== expectedId) throw new FlyGraphqlContractError('BINDING_MISMATCH');
+  return tigrisCredentialsFromEnvironment(parsed.data.addOn.environment);
 }
 
 /**
@@ -424,14 +619,52 @@ export function parseTigrisCreateResponse(response: unknown): TigrisAddOnIdentit
  * @returns Sanitized add-on identity and binding.
  */
 export function parseTigrisReadResponse(response: unknown): TigrisAddOnIdentity {
+  if (AddOnNotFoundEnvelopeSchema.safeParse(response).success) {
+    throw new FlyGraphqlContractError('ADD_ON_MISSING');
+  }
   let parsed: z.infer<typeof ReadEnvelopeSchema>;
   try {
     parsed = ReadEnvelopeSchema.parse(response);
   } catch {
     throw invalidResponse();
   }
-  if (parsed.data.node === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
-  return sanitizeAddOn(parsed.data.node);
+  return sanitizeAddOn(parsed.data.addOn);
+}
+
+function parseAppTigris(response: unknown): z.infer<typeof AppTigrisSchema> | null {
+  let parsed: z.infer<typeof AppTigrisEnvelopeSchema>;
+  try {
+    parsed = AppTigrisEnvelopeSchema.parse(response);
+  } catch {
+    throw invalidResponse();
+  }
+  const app = parsed.data.app;
+  if (app === null) return null;
+  // A found app must arrive without errors; a partial success is never read.
+  if (parsed.errors !== undefined && parsed.errors.length > 0) throw invalidResponse();
+  return app;
+}
+
+/**
+ * Parse the Tigris buckets attached to one app, for the live gate's cleanup.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ * @param appName - The app that was asked about.
+ * @returns Every attached bucket's id and name; refuses a partial page, another app's answer, a
+ *   missing app or a nameless bucket.
+ */
+export function parseAppTigrisResponse(
+  response: unknown,
+  appName: string
+): Array<{ id: string; name: string }> {
+  const app = parseAppTigris(response);
+  if (app === null) throw invalidResponse();
+  if (app.name !== appName) throw new FlyGraphqlContractError('BINDING_MISMATCH');
+  if (app.addOns.totalCount !== app.addOns.nodes.length) throw invalidResponse();
+  return app.addOns.nodes.map(({ id, name }) => {
+    if (name === null) throw invalidResponse();
+    return { id, name };
+  });
 }
 
 /**
@@ -473,17 +706,9 @@ export function parseFlyAppProvenanceResponse(response: unknown): FlyAppProvenan
  * @returns The app and its add-ons, or `null` when Fly reports no app with that name.
  */
 export function parseTigrisOnAppResponse(response: unknown): TigrisOnApp | null {
-  let parsed: z.infer<typeof TigrisOnAppEnvelopeSchema>;
-  try {
-    parsed = TigrisOnAppEnvelopeSchema.parse(response);
-  } catch {
-    throw invalidResponse();
-  }
-  const app = parsed.data.app;
+  const app = parseAppTigris(response);
   if (app === null) return null;
-  if (parsed.errors !== undefined && parsed.errors.length > 0) throw invalidResponse();
   return {
-    internalNumericId: String(app.internalNumericId),
     name: app.name,
     network: app.network,
     organizationSlug: app.organization.slug,
@@ -495,6 +720,22 @@ export function parseTigrisOnAppResponse(response: unknown): TigrisOnApp | null 
       organizationSlug: node.organization.slug,
     })),
   };
+}
+
+const AddOnHeldEnvelopeSchema = z
+  .object({ data: z.object({ addOn: z.object({ id: SafeIdentifierSchema }).strict() }).strict() })
+  .strict();
+
+/**
+ * Parse whether a bucket name is still held: only Fly's exact `NOT_FOUND` answer means free, and a
+ * clean record means held. Anything else is a failed read, never "free".
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ */
+export function parseTigrisNameHeldResponse(response: unknown): boolean {
+  if (AddOnNotFoundEnvelopeSchema.safeParse(response).success) return false;
+  if (AddOnHeldEnvelopeSchema.safeParse(response).success) return true;
+  throw invalidResponse();
 }
 
 /**

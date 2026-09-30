@@ -10,6 +10,7 @@ import {
   runMigrations,
   type Db,
 } from '@dorkos/db';
+import { KEY_CHECK_COPY } from '@dorkos/shared/connector-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
   ConnectorExternalAccountRef,
@@ -39,7 +40,7 @@ import {
 import { NANGO_SECRET_KEY_REF } from '../providers/nango.js';
 import { ManagedCloudConnectorProvider } from '../providers/managed/managed-cloud.js';
 import { ManagedConnectorCloudError } from '../../core/auth/cloud-link-client.js';
-import type { NangoHttpClient } from '../providers/nango-client.js';
+import { NangoApiError, type NangoHttpClient } from '../providers/nango-client.js';
 import type { RawMcpServerDescriptor } from '../providers/raw-mcp.js';
 import { ConnectorOperatorQueryService } from '../resources/operator-query-service.js';
 
@@ -660,7 +661,7 @@ describe('ConnectorProviderBootstrapper', () => {
     it('a key that fails the connection check never registers — the founder-401 case', async () => {
       // The exact first-contact failure (DOR-703): a stored key the credential
       // gate accepts, that Composio 401s on every call. "Registered" must mean
-      // "actually answers", and the API's own message must reach the status.
+      // "actually answers", and the person reads one plain line about the key.
       secrets.set(COMPOSIO_API_KEY_REF, 'uak-wrong-kind-of-key');
       const bootstrapper = makeBootstrapper({
         composioProbeError: new ComposioApiError(
@@ -671,8 +672,9 @@ describe('ConnectorProviderBootstrapper', () => {
 
       const status = await bootstrapper.reload('composio');
       expect(status).toMatchObject({ type: 'composio', configured: true, registered: false });
-      expect(status.error).toMatch(/401/);
-      expect(status.error).toMatch(/valid API key/);
+      // The service's own text goes to the log; the person reads one plain line.
+      expect(status.error).toBe(KEY_CHECK_COPY.refused);
+      expect(status.error).not.toMatch(/401|uak/);
       // Unregistered: the toolkit aggregation never even asks it.
       expect(registry.resolveProvider('composio')).toBeUndefined();
     });
@@ -1507,6 +1509,116 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(instanceStatus(composioInstance)).toBe('unavailable');
     });
 
+    it('says it checks again only while a check is scheduled, and what to do once it stops', async () => {
+      vi.useFakeTimers();
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      const client = scriptedComposioClient(() =>
+        Promise.reject(new ComposioApiError(503, 'Service unavailable'))
+      );
+      const bootstrapper = makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+      const composioError = async () =>
+        (await bootstrapper.listStatuses()).find((s) => s.type === 'composio')?.error;
+
+      const composioStatus = async () =>
+        (await bootstrapper.listStatuses()).find((s) => s.type === 'composio');
+      expect(await composioError()).toBe(KEY_CHECK_COPY.checkingAgain);
+      // The next check's time rides along, so the app knows to read again.
+      expect((await composioStatus())?.recheckAt).toEqual(expect.any(String));
+      for (const delay of WAY_RECHECK_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+
+      // Every automatic check is spent: nothing is scheduled, so it never
+      // claims DorkOS will check again, and there is no next check to wait for.
+      expect(await composioError()).toBe(KEY_CHECK_COPY.stoppedChecking);
+      expect((await composioStatus())?.recheckAt).toBeUndefined();
+    });
+
+    it('keeps saying it is checking while an automatic check is running, then settles', async () => {
+      vi.useFakeTimers();
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      // The first listing fails; later ones wait until the test answers them.
+      let answer: ((ok: boolean) => void) | undefined;
+      const client = scriptedComposioClient(() =>
+        client.listings === 1
+          ? Promise.reject(new ComposioApiError(503, 'Service unavailable'))
+          : new Promise((resolve, reject) => {
+              answer = (ok) =>
+                ok ? resolve([]) : reject(new ComposioApiError(503, 'Service unavailable'));
+            })
+      );
+      const bootstrapper = makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+      const composio = async () =>
+        (await bootstrapper.listStatuses()).find((s) => s.type === 'composio');
+
+      // Each automatic check that fires is read mid-probe: still failing, still checking.
+      for (const delay of WAY_RECHECK_DELAYS_MS.slice(0, 2)) {
+        await vi.advanceTimersByTimeAsync(delay);
+        const during = await composio();
+        expect(during?.error).toBe(KEY_CHECK_COPY.checkingAgain);
+        expect(during?.recheckAt).toEqual(expect.any(String));
+        answer!(false);
+        await vi.advanceTimersByTimeAsync(0);
+      }
+
+      // The next check succeeds: nothing left to say and nothing to wait for.
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS[2]);
+      expect((await composio())?.recheckAt).toEqual(expect.any(String));
+      answer!(true);
+      await vi.advanceTimersByTimeAsync(0);
+      const after = await composio();
+      expect(after?.error).toBeUndefined();
+      expect(after?.recheckAt).toBeUndefined();
+    });
+
+    it('reads a 404 as a wrong address only for the Nango server the person points at', async () => {
+      vi.useFakeTimers();
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      secrets.set(NANGO_SECRET_KEY_REF, 'sk-nango-test');
+      const client = scriptedComposioClient(() =>
+        Promise.reject(new ComposioApiError(404, 'Not found'))
+      );
+      const bootstrapper = makeBootstrapper({
+        composioClient: client,
+        nangoEnv: () => ({ baseUrl: 'http://localhost:3003', encryptionKey: VALID_ENCRYPTION_KEY }),
+        nangoClient: {
+          ...fakeNangoClient(),
+          listConnections: () => Promise.reject(new NangoApiError(404, 'Not found')),
+        },
+      });
+      await bootstrapper.registerBootProviders();
+      const statuses = await bootstrapper.listStatuses();
+
+      expect(statuses.find((s) => s.type === 'nango')?.error).toBe(
+        'DorkOS couldn’t reach your Nango server. It checks again on its own.'
+      );
+      // Composio's own 404 is its answer, not a wrong address.
+      expect(statuses.find((s) => s.type === 'composio')?.error).toBe(KEY_CHECK_COPY.checkingAgain);
+    });
+
+    it('says plainly when nothing answered at the service address', async () => {
+      vi.useFakeTimers();
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      const client = scriptedComposioClient(() =>
+        Promise.reject(
+          Object.assign(new TypeError('fetch failed'), { cause: { code: 'ENOTFOUND' } })
+        )
+      );
+      const bootstrapper = makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+      const composioError = async () =>
+        (await bootstrapper.listStatuses()).find((s) => s.type === 'composio')?.error;
+
+      expect(await composioError()).toBe(
+        'DorkOS couldn’t reach Composio. It checks again on its own.'
+      );
+      for (const delay of WAY_RECHECK_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+      expect(await composioError()).toBe(
+        'DorkOS couldn’t reach Composio. Check your internet connection, then save the key again.'
+      );
+      expect(await composioError()).not.toMatch(/fetch failed|ENOTFOUND/);
+    });
+
     it('checks a way that failed for a passing reason again by itself, waiting longer each time, until it answers', async () => {
       vi.useFakeTimers();
       secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
@@ -1520,7 +1632,7 @@ describe('ConnectorProviderBootstrapper', () => {
 
       await bootstrapper.registerBootProviders();
       expect(client.listings).toBe(1);
-      expect((await bootstrapper.reload('composio')).error).toMatch(/unavailable/);
+      expect((await bootstrapper.reload('composio')).error).toBe(KEY_CHECK_COPY.checkingAgain);
       expect(client.listings).toBe(2);
 
       // First wait: 30 seconds. Still down, so the next wait doubles.
@@ -1613,7 +1725,7 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(instanceStatus(composioInstance)).toBe('unavailable');
       expect((await bootstrapper.listStatuses()).find((s) => s.type === 'composio')).toMatchObject({
         registered: false,
-        error: 'Composio request timed out',
+        error: KEY_CHECK_COPY.checkingAgain,
       });
       // An outage is not a sign-in that ended.
       expect(signIn(gmail)).toBe('active');

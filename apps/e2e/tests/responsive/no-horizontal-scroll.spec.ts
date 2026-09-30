@@ -313,26 +313,67 @@ async function reportRemoteAccessOn(page: Page): Promise<void> {
   });
 }
 
-/** One case: a route, and for Home the team size its bar is shown. */
+/**
+ * Serve the Activity inbox's unread count as `count`, so the header's bell
+ * shows a number whatever the server holds.
+ *
+ * **Why the bell is forced.** A bell with a number is wider than a bare bell,
+ * and every header shares its row with it. That width used to depend on test
+ * order: an inbox spec that left one unread row behind turned the bell into
+ * "1", and the phone header then overflowed on every route whose bar has no
+ * slack (DOR-2524). Seeding the count here makes the widest bell a case of its
+ * own rather than an accident of which spec ran first.
+ *
+ * @param page - The page to serve it to.
+ * @param count - The unread count the bell shows (capped at "9+").
+ */
+async function forceBellCount(page: Page, count: number): Promise<void> {
+  await page.route('**/api/notifications*', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    const body = (await response.json()) as Record<string, unknown>;
+    await route.fulfill({ response, json: { ...body, unreadCount: count } });
+  });
+}
+
+/** The bell counts each bell case is judged at: one, and the capped "9+". */
+const BELL_COUNTS = [1, 12] as const;
+
+/** The routes whose bars have the least slack, where a wider bell first shows. */
+const BELL_ROUTES = ['/', '/tasks', '/team'] as const;
+
+/** One case: a route, for Home the team size its bar is shown, and a bell count. */
 interface RouteCase {
   route: (typeof ROUTES)[number];
   roster?: (typeof HOME_ROSTERS)[number];
+  bell?: (typeof BELL_COUNTS)[number];
 }
 
 /** Every route once, except Home, which is judged once per {@link HOME_ROSTERS} entry. */
-const CASES: RouteCase[] = ROUTES.flatMap((route): RouteCase[] =>
+const BASE_CASES: RouteCase[] = ROUTES.flatMap((route): RouteCase[] =>
   route === '/' ? HOME_ROSTERS.map((roster) => ({ route, roster })) : [{ route }]
 );
+
+/** The tightest bars again, with the bell showing each of {@link BELL_COUNTS}. */
+const CASES: RouteCase[] = [
+  ...BASE_CASES,
+  ...BASE_CASES.filter((c) => (BELL_ROUTES as readonly string[]).includes(c.route)).flatMap((c) =>
+    BELL_COUNTS.map((bell) => ({ ...c, bell }))
+  ),
+];
 
 for (const { name, viewport } of WIDTHS) {
   test.describe(`Responsive — nothing escapes its container at ${viewport.width}px @smoke`, () => {
     test.use({ viewport });
 
-    for (const { route, roster } of CASES) {
+    for (const { route, roster, bell } of CASES) {
       // See reportRemoteAccessOn for why the phone cases leave it off (DOR-2350).
       const remoteAccessOn = roster !== undefined && name === 'tablet';
       const remoteSuffix = remoteAccessOn ? ' and remote access on' : '';
-      const suffix = roster === undefined ? '' : ` with ${roster} on the team${remoteSuffix}`;
+      const bellSuffix =
+        bell === undefined ? '' : ` and the bell showing ${bell > 9 ? '9+' : bell}`;
+      const suffix =
+        (roster === undefined ? '' : ` with ${roster} on the team${remoteSuffix}`) + bellSuffix;
       test(`${route} contains its own content on a ${name}${suffix}`, async ({
         page,
         basePage,
@@ -342,6 +383,7 @@ for (const { name, viewport } of WIDTHS) {
           await forceTeamRoster(page, (await teamRoomApi.teamRoom()).id, roster);
         }
         if (remoteAccessOn) await reportRemoteAccessOn(page);
+        if (bell !== undefined) await forceBellCount(page, bell);
         await basePage.goto(route);
         await basePage.waitForAppReady();
         // The shell mounting is not the route having anything in it — an API
@@ -353,6 +395,12 @@ for (const { name, viewport } of WIDTHS) {
           // matching the request would measure whatever #team really holds and
           // report it as the width this case is named for.
           await expect(page.getByTestId('bar-members-chip')).toHaveText(String(roster));
+        }
+        if (bell !== undefined) {
+          // Proof the count reached the bell, so the case measures the wider bell.
+          await expect(page.getByTestId('inbox-bell')).toContainText(
+            bell > 9 ? '9+' : String(bell)
+          );
         }
         if (remoteAccessOn) {
           // And that the remote-access button is really taking its share of

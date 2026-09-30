@@ -2,6 +2,7 @@ import { cpSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '../../fixtures';
+import { leaveNoUnreadRows } from './inbox-hygiene';
 
 /**
  * An installed extension waiting to run asks in the Activity inbox, and one
@@ -18,10 +19,12 @@ import { test, expect } from '../../fixtures';
  * Installed here rather than in global setup: a waiting extension shows in the
  * bell on every page, and no other spec should have to reason about it. The
  * plugin is removed again afterwards. While it is installed it can only touch
- * specs on this same leg (the cockpit leg, `chromium`), and none of those
- * asserts the bell's count: the ones that do (`tests/conversation/*`,
- * `tests/permissions/*`, `tests/connections/*`) run on the test-mode legs,
- * which have their own data directories. It also never enters Pulse's "Needs
+ * specs on this same leg (the cockpit leg, `chromium`). None of those asserts
+ * the bell's count (the ones that do, `tests/conversation/*`,
+ * `tests/permissions/*`, `tests/connections/*`, run on the test-mode legs,
+ * which have their own data directories), but a bell showing a number is
+ * wider, and the responsive sweep on this leg measures the header: so the
+ * spec leaves nothing unread behind. It also never enters Pulse's "Needs
  * attention", which does not count extensions waiting to be turned on.
  *
  * The fixture carries the install sidecar the marketplace installer writes, so
@@ -56,6 +59,9 @@ test.describe('An extension waiting to run asks in the inbox', () => {
   });
 
   test.afterAll(async ({ request }) => {
+    // Nothing of this spec's may stay unread: an unread row widens the bell
+    // for every spec after this one on the leg (DOR-2524).
+    await leaveNoUnreadRows(request, (row) => row.kind === 'extension.approval');
     await request.post(`/api/extensions/${EXT_ID}/disable`, { data: {} });
     if (pluginDir) rmSync(pluginDir, { recursive: true, force: true });
     await request.post('/api/extensions/reload', { data: {} });

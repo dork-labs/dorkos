@@ -147,6 +147,7 @@ function stubPublic(approvedToRun: boolean): ExtensionRecordPublic {
     hasServerEntry: true,
     hasDataProxy: false,
     approvedToRun,
+    shadowedBy: null,
   };
 }
 
@@ -157,6 +158,9 @@ describe('POST /api/extensions/:id/approve', () => {
     approveToRun: ReturnType<typeof vi.fn>;
     revokeRunApproval: ReturnType<typeof vi.fn>;
     listPublic: ReturnType<typeof vi.fn>;
+    listShadowedPublic: ReturnType<typeof vi.fn>;
+    requestRefresh: ReturnType<typeof vi.fn>;
+    trustOfferFor: ReturnType<typeof vi.fn>;
     readBundle: ReturnType<typeof vi.fn>;
   };
   /** Stands in for `sessionGate`'s resolved user, when login is on. */
@@ -179,6 +183,9 @@ describe('POST /api/extensions/:id/approve', () => {
       }),
       revokeRunApproval: vi.fn().mockResolvedValue(stubPublic(false)),
       listPublic: vi.fn().mockReturnValue([]),
+      listShadowedPublic: vi.fn().mockReturnValue([]),
+      requestRefresh: vi.fn(),
+      trustOfferFor: vi.fn().mockReturnValue(null),
       readBundle: vi.fn().mockImplementation(async (id: string) =>
         // Mirrors the real `ExtensionManager.readBundle` gate: an extension a
         // person has not approved has no bundle to serve.
@@ -516,7 +523,13 @@ describe('GET /api/extensions/:id/bundle', () => {
    * pins is that the route honours it rather than falling back to something else.
    */
   let app: express.Application;
-  let manager: { readBundle: ReturnType<typeof vi.fn>; listPublic: ReturnType<typeof vi.fn> };
+  let manager: {
+    readBundle: ReturnType<typeof vi.fn>;
+    listPublic: ReturnType<typeof vi.fn>;
+    listShadowedPublic: ReturnType<typeof vi.fn>;
+    requestRefresh: ReturnType<typeof vi.fn>;
+    trustOfferFor: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -529,6 +542,9 @@ describe('GET /api/extensions/:id/bundle', () => {
           state.extensions.approvedToRun.includes(id) ? 'export function activate() {}' : null
         ),
       listPublic: vi.fn().mockReturnValue([]),
+      listShadowedPublic: vi.fn().mockReturnValue([]),
+      requestRefresh: vi.fn(),
+      trustOfferFor: vi.fn().mockReturnValue(null),
     };
 
     app = express();

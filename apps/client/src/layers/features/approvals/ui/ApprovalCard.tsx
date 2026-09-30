@@ -149,7 +149,7 @@ export interface ApprovalCardProps {
  * When the server describes the action (`serviceAction`: a Gmail deletion, a
  * Slack post), the heading is the action in plain words, and under it sit the
  * app's logo and the account, the arguments as label and value, and, when it
- * can't be undone, one line saying so (DOR-2504). That block takes the
+ * the service marks high risk, one line saying so (DOR-2504). That block takes the
  * summary's place: the summary says the same thing in one sentence for the
  * surfaces that have no card.
  */
@@ -246,7 +246,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             >
               {heading}
             </span>
-            {/* A connected-app action that can't be undone says so once, in a
+            {/* A connected-app action the service marks high risk says so once, in a
                 sentence naming the app (`ApprovalServiceAction`), so the badge
                 would only repeat it. */}
             {!(approval.serviceAction && approval.tier === 'destructive') && (

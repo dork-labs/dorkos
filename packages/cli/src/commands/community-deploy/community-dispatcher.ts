@@ -14,7 +14,10 @@ import {
   readDefaultCommunityPreflight,
   createDefaultCommunityCreationDependencies,
 } from './runtime/default-services.js';
-import { createDefaultCommunityDeployDependencies } from './runtime/default-deploy.js';
+import {
+  createDefaultCommunityDeployDependencies,
+  resolveCommunityPlatformDigest,
+} from './runtime/default-deploy.js';
 import {
   assertOwnerHandoffPrerequisites,
   confirmOwnerClipboardWrite,
@@ -144,13 +147,29 @@ export function formatCommunityRecovery(journal: LaunchJournal): string {
       : null,
   ].filter((row): row is string => row !== null);
   const pending = journal.pendingIntent;
-  const reconciliation = pending
-    ? pending.provider === 'fly'
-      ? `Unresolved Fly creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: fly apps list --org ${pending.organizationId} --json\nConsole: https://fly.io/dashboard/${pending.organizationId}`
-      : pending.provider === 'neon'
-        ? `Unresolved Neon creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: neonctl projects list --org-id ${pending.organizationId} --output json\nConsole: https://console.neon.tech`
-        : `Unresolved Tigris creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: fly storage list --org ${pending.organizationId}\nConsole: https://fly.io/dashboard/${pending.organizationId}`
-    : null;
+  const tigrisKeysMissing =
+    pending?.provider === 'tigris' &&
+    journal.resources.tigrisBucketId !== undefined &&
+    journal.lastSafeError?.code === 'MISSING_TIGRIS_SECRETS';
+  const reconciliation = tigrisKeysMissing
+    ? selection
+      ? [
+          `Tigris bucket ${selection.bucketName} exists, but its access keys are not on app ${selection.appName}, and Fly would not return them again. Keep this bucket; setup must not create another.`,
+          `1. Open the bucket's Tigris console: fly storage dashboard ${selection.bucketName} --app ${selection.appName}`,
+          `2. Create an access key there with read and write access to ${selection.bucketName}.`,
+          `3. Run: fly secrets import --app ${selection.appName} --stage`,
+          '   then type two lines, AWS_ACCESS_KEY_ID=<key id> and AWS_SECRET_ACCESS_KEY=<secret>, and press Ctrl-D.',
+          '   (Typing them keeps the secret out of your shell history.)',
+          '4. Resume with the command below.',
+        ].join('\n')
+      : `Tigris bucket ${journal.resources.tigrisBucketId} exists, but its access keys are not on the app. Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY with fly secrets import --stage, then resume.`
+    : pending
+      ? pending.provider === 'fly'
+        ? `Unresolved Fly creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: fly apps list --org ${pending.organizationId} --json\nConsole: https://fly.io/dashboard/${pending.organizationId}`
+        : pending.provider === 'neon'
+          ? `Unresolved Neon creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: neonctl projects list --org-id ${pending.organizationId} --output json\nConsole: https://console.neon.tech`
+          : `Unresolved Tigris creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: fly storage list --org ${pending.organizationId}\nConsole: https://fly.io/dashboard/${pending.organizationId}`
+      : null;
   const command = resumeCommand(journal);
   // Shape A: the create may have worked but its id was never recorded, so `--resume` cannot
   // check it. Only then can the removal command help.
@@ -343,6 +362,8 @@ export async function runCommunityDispatcher(
     graphqlTimeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
     signal: cancellation.signal,
   };
+  // The attested release, kept so the deploy can use the platform digests its manifest carries.
+  let verifiedRelease: CompatibleCommunityRelease | null = null;
   const trusted: TrustedReleaseIdentity = {
     repository: 'dork-labs/dorkos',
     workflowRef: '.github/workflows/publish-community.yml',
@@ -377,6 +398,7 @@ export async function runCommunityDispatcher(
             releaseSource,
             context.parseRelease
           ).then(async (release) => {
+            verifiedRelease = release;
             await assertCommunityCliVersions(serviceOptions.fly, serviceOptions.neon, {
               fly: release.minimumFlyctlVersion,
               neon: release.minimumNeonCliVersion,
@@ -394,6 +416,14 @@ export async function runCommunityDispatcher(
             signal: cancellation.signal,
           }),
         execute: async (result) => {
+          // The digest Fly will report for the running image (DOR-2586), settled once per process.
+          let settledPlatformDigest: Promise<string> | undefined;
+          const platformDigest = () =>
+            (settledPlatformDigest ??= resolveCommunityPlatformDigest({
+              release: verifiedRelease,
+              plan: result.plan,
+              options: serviceOptions,
+            }));
           if (parsed.values.resume) {
             const existing = resumeJournal!;
             assertCommunityLaunchPlanUnchanged(existing, result.plan);
@@ -452,6 +482,7 @@ export async function runCommunityDispatcher(
               latestJournal: () => latest!,
               persist,
               now: () => new Date().toISOString(),
+              resolvePlatformDigest: platformDigest,
             })
           );
           latest = deployed.journal;
@@ -467,6 +498,7 @@ export async function runCommunityDispatcher(
               persist,
               now: () => new Date().toISOString(),
               signal: cancellation.signal,
+              platformDigest: async () => latest?.imagePlatformDigest ?? platformDigest(),
             })
           );
           process.stdout.write(

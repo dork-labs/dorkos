@@ -3,7 +3,8 @@ import { mkdtemp, open, readdir, rm, stat, statfs } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Pool } from 'pg';
-import { ApiError } from '../http.js';
+import { transaction } from '../data.js';
+import { ApiError, RateLimited } from '../http.js';
 import { IMPORT_TEMP_PREFIXES, IMPORT_UPLOAD_LEASE_MS } from './store.js';
 
 const ZIP_LOCAL_HEADER = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
@@ -32,7 +33,13 @@ export interface ReceivedArchive {
 export async function receiveArchive(
   body: ReadableStream<Uint8Array>,
   declared: { bytes: number; sha256: string },
-  options: { signal: AbortSignal; idleMs: number; onProgress: () => Promise<void> }
+  options: {
+    signal: AbortSignal;
+    idleMs: number;
+    onProgress: () => Promise<void>;
+    /** Whether the bytes must start a zip archive. A part other than the first starts anywhere. */
+    zip?: boolean;
+  }
 ): Promise<ReceivedArchive> {
   const directory = await mkdtemp(join(tmpdir(), IMPORT_TEMP_PREFIXES[0]));
   const path = join(directory, 'archive.zip');
@@ -86,7 +93,8 @@ export async function receiveArchive(
       throw archiveInvalid('The export is shorter than its declared size.');
     if (hash.digest('hex') !== declared.sha256)
       throw archiveInvalid('The export does not match its declared SHA-256.');
-    if (!head.equals(ZIP_LOCAL_HEADER)) throw archiveInvalid('The file is not a zip archive.');
+    if (options.zip !== false && !head.equals(ZIP_LOCAL_HEADER))
+      throw archiveInvalid('The file is not a zip archive.');
     kept = true;
     return { directory, path };
   } finally {
@@ -103,7 +111,11 @@ export class UploadSlots {
   private used = 0;
   private reserved = 0;
 
-  constructor(private readonly limit: number) {}
+  constructor(
+    private readonly limit: number,
+    /** When set, a refusal says when to try again, as `Retry-After`. */
+    private readonly retryAfterSeconds?: number
+  ) {}
 
   /** Temporary bytes the uploads now in flight may still need. */
   get reservedBytes(): number {
@@ -115,8 +127,12 @@ export class UploadSlots {
    * with `429` before the body is read.
    */
   take(bytes: number): () => void {
-    if (this.used >= this.limit)
-      throw new ApiError(429, 'RATE_LIMITED', 'Too many exports are uploading. Try again soon.');
+    if (this.used >= this.limit) {
+      const message = 'Too many exports are uploading. Try again soon.';
+      throw this.retryAfterSeconds === undefined
+        ? new ApiError(429, 'RATE_LIMITED', message)
+        : new RateLimited(message, this.retryAfterSeconds);
+    }
     this.used++;
     this.reserved += bytes * 2;
     let released = false;
@@ -151,20 +167,45 @@ async function freeTempBytes(): Promise<number> {
  * Take the import's upload lease, so only one upload of it is received at a time on any
  * replica. A second upload is refused with `409` before its body is read. The lease is short
  * and renewed while bytes arrive, so a request that died frees it within minutes.
+ *
+ * The same lease guards putting uploaded parts together (`complete`), and part uploads wait
+ * for it: a single upload is refused once any part has arrived, and neither a single upload nor
+ * `complete` runs while a part is still arriving.
  */
-export async function acquireUploadLease(pool: Pool, importId: string): Promise<string> {
-  const leased = await pool.query<{ upload_lease_token: string }>(
-    `UPDATE community_imports
-     SET upload_lease_token=gen_random_uuid(),
-       upload_lease_until=now() + ($2 * interval '1 millisecond')
-     WHERE id=$1 AND state='awaiting_upload'
-       AND (upload_lease_until IS NULL OR upload_lease_until<now())
-     RETURNING upload_lease_token`,
-    [importId, IMPORT_UPLOAD_LEASE_MS]
-  );
-  if (!leased.rows[0])
-    throw new ApiError(409, 'STATE_CONFLICT', 'This export is already being uploaded.');
-  return leased.rows[0].upload_lease_token;
+export async function acquireUploadLease(
+  pool: Pool,
+  importId: string,
+  purpose: 'single' | 'complete' = 'single'
+): Promise<string> {
+  return transaction(pool, async (client) => {
+    // The import row first, the order a part upload takes it in, so each sees the other.
+    const held = await client.query<{ state: string; leased: boolean }>(
+      `SELECT state,COALESCE(upload_lease_until>=now(),false) AS leased
+       FROM community_imports WHERE id=$1 FOR UPDATE`,
+      [importId]
+    );
+    const row = held.rows[0];
+    if (!row || row.state !== 'awaiting_upload' || row.leased)
+      throw new ApiError(409, 'STATE_CONFLICT', 'This export is already being uploaded.');
+    const busy = await client.query<{ parts: number; arriving: number }>(
+      `SELECT (SELECT count(*)::int FROM community_import_parts WHERE import_id=$1) AS parts,
+              (SELECT count(*)::int FROM community_import_part_uploads
+               WHERE import_id=$1 AND lease_until>now()) AS arriving`,
+      [importId]
+    );
+    if (busy.rows[0].arriving > 0)
+      throw new ApiError(409, 'STATE_CONFLICT', 'Parts of this export are still arriving.');
+    if (purpose === 'single' && busy.rows[0].parts > 0)
+      throw new ApiError(409, 'STATE_CONFLICT', 'This export is being uploaded in parts.');
+    const leased = await client.query<{ upload_lease_token: string }>(
+      `UPDATE community_imports
+       SET upload_lease_token=gen_random_uuid(),
+         upload_lease_until=now() + ($2 * interval '1 millisecond')
+       WHERE id=$1 RETURNING upload_lease_token`,
+      [importId, IMPORT_UPLOAD_LEASE_MS]
+    );
+    return leased.rows[0].upload_lease_token;
+  });
 }
 
 /** Extend an upload lease this request holds; false when it no longer holds it. */

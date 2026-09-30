@@ -9,7 +9,7 @@ import {
   ExternalLabelSchema,
   parseExternalJson,
 } from './provider-contract.js';
-import { ProviderMutationError, runProviderMutation } from './provider-mutation.js';
+import { ProviderMutationError, runProviderMutation, writeDeadline } from './provider-mutation.js';
 import type { NeonProject, NeonReadOptions } from './neon-read.js';
 
 const NeonProjectSchema = z
@@ -49,6 +49,7 @@ export async function createNeonProject(
   const version = parseInput(z.number().int().min(14).max(19), input.postgresVersion);
   const { project } = await runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: [
       'projects',
       'create',
@@ -98,6 +99,7 @@ export async function deleteNeonProject(
   const project = parseInput(ExternalIdentifierSchema, projectId);
   return runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: ['projects', 'delete', project, '--output', 'json'],
     parse: () => ({ operation: 'delete' as const, projectId: project }),
   });

@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
@@ -35,7 +36,7 @@ import { tunnelManager } from '../../services/core/tunnel-manager.js';
 
 let root: string;
 let outside: string;
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 
 beforeAll(async () => {

@@ -1,7 +1,7 @@
 import { ShieldAlert } from 'lucide-react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import {
-  everyAgentCanDelete,
+  everyAgentHoldsHighRisk,
   everyAgentCanWrite,
   type CardAccessLevel,
 } from '../../lib/access-card-selection';
@@ -34,7 +34,7 @@ export function EveryAgentWarning({
       {everyAgentWriteWarning(
         preview.connection.toolkit,
         serviceName,
-        everyAgentCanDelete(preview, level)
+        everyAgentHoldsHighRisk(preview, level)
       )}
     </p>
   );

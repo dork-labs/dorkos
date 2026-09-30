@@ -19,8 +19,11 @@ import {
   AlertDialogTitle,
   Button,
 } from '@/layers/shared/ui';
-import { keyWayName } from '../lib/connection-ways';
-import { providerName } from '../lib/presentation';
+import {
+  connectionServiceName,
+  connectionWayName,
+  WAY_CAPABILITY_COPY,
+} from '@dorkos/shared/connector-schemas';
 import { ConnectionKeyForm } from './ConnectionKeyForm';
 import { WayRow, type WayStatus } from './WayRow';
 
@@ -48,7 +51,7 @@ function keyStatus(status: ConnectorProviderStatus, canRunActions: boolean): Way
 function keyScope(type: string): string {
   if (type === 'composio') return 'Composio project';
   if (type === 'nango') return 'Nango environment';
-  return `${providerName(type)} account`;
+  return `${connectionServiceName(type)} account`;
 }
 
 /** Which confirmation, if any, is open. */
@@ -84,7 +87,7 @@ export function KeyWayRow({
   const [changing, setChanging] = useState(false);
   const [confirming, setConfirming] = useState<Confirming>(null);
   const remove = useDeleteConnectorCredential();
-  const name = providerName(status.type);
+  const name = connectionServiceName(status.type);
   const kind = status.configured ? keyKindLine(status.keyKind) : null;
   const detail = [`${appCount(apps.length)} connected`, kind].filter(Boolean).join(' · ');
   const { stopping, idle } = splitByImpact(apps);
@@ -98,7 +101,7 @@ export function KeyWayRow({
   return (
     <WayRow
       testId={`connection-way-${status.type}`}
-      name={keyWayName(status.type)}
+      name={connectionWayName(status.type)}
       detail={detail}
       status={keyStatus(status, canRunActions)}
       usedForNewApps={usedForNewApps}
@@ -132,8 +135,8 @@ export function KeyWayRow({
       {status.registered && !canRunActions && (
         <p className="text-muted-foreground text-xs">
           {way?.keyCanFix
-            ? 'Agents can’t act through an account key. Change it to a project key from your Composio dashboard.'
-            : 'Agents can’t act in apps connected this way yet.'}
+            ? WAY_CAPABILITY_COPY.accountKeyCannotRunActions
+            : WAY_CAPABILITY_COPY.cannotRunActions}
         </p>
       )}
       {!status.configured && apps.length > 0 && (

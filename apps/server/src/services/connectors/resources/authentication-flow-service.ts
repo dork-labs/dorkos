@@ -24,7 +24,10 @@ import type {
   ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-provider';
 import { ProviderConnectedAccountSchema } from '@dorkos/shared/connector-provider';
-import { CONNECTOR_AUTHENTICATION_FLOW_TTL_MS } from '@dorkos/shared/connector-schemas';
+import {
+  CONNECTOR_AUTHENTICATION_FLOW_TTL_MS,
+  SIGN_IN_COPY,
+} from '@dorkos/shared/connector-schemas';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import { connectorAuthenticationRequestHash } from './authentication-flow-request.js';
@@ -201,12 +204,7 @@ export class ConnectorAuthenticationFlowService {
       row.providerInstanceId as ConnectorProviderInstanceId
     );
     if (!provider || !this.sameProviderGeneration(provider, row.executionConfigGeneration)) {
-      this.finishPending(
-        row.id,
-        'failed',
-        now,
-        'This service setup changed while you were signing in. Start again.'
-      );
+      this.finishPending(row.id, 'failed', now, SIGN_IN_COPY.wayChanged);
       return this.toPublic(this.ownedFlow(owner, flowId)!);
     }
 
@@ -239,20 +237,14 @@ export class ConnectorAuthenticationFlowService {
         row.id,
         'failed',
         afterPoll,
-        'This service setup changed while you were signing in. Start again.',
+        SIGN_IN_COPY.wayChanged,
         polledProviderFlowId
       );
       return this.toPublic(this.ownedFlow(owner, flowId)!);
     }
     if (result.status === 'pending') return this.toPublic(row);
     if (result.status === 'failed' || !result.account) {
-      this.finishPending(
-        row.id,
-        'failed',
-        afterPoll,
-        'The service could not complete sign-in. Try again.',
-        polledProviderFlowId
-      );
+      this.finishPending(row.id, 'failed', afterPoll, SIGN_IN_COPY.failed, polledProviderFlowId);
       return this.toPublic(this.ownedFlow(owner, flowId)!);
     }
 
@@ -267,7 +259,7 @@ export class ConnectorAuthenticationFlowService {
         row.id,
         'failed',
         afterPoll,
-        'This sign-in request belongs to a different service setup. Start again from Connections.',
+        'This sign-in belongs to a different way of reaching the app. Start again from Connections.',
         polledProviderFlowId
       );
       return this.toPublic(this.ownedFlow(owner, flowId)!);
@@ -465,10 +457,7 @@ export class ConnectorAuthenticationFlowService {
 
     const provider = this.ownedProvider(owner, input.providerInstanceId);
     if (!provider) {
-      throw new ConnectorAuthenticationFlowError(
-        'provider_not_found',
-        'This service setup option is not available. Choose another option and try again.'
-      );
+      throw new ConnectorAuthenticationFlowError('provider_not_found', SIGN_IN_COPY.wayUnavailable);
     }
     const authentication = provider.getCapabilities().capabilities.authentication;
     if (authentication.status !== 'available') {
@@ -479,10 +468,7 @@ export class ConnectorAuthenticationFlowService {
     }
     const generation = this.registry.providerExecutionConfigGeneration(provider);
     if (generation === undefined) {
-      throw new ConnectorAuthenticationFlowError(
-        'provider_not_found',
-        'This service setup option is not available. Choose another option and try again.'
-      );
+      throw new ConnectorAuthenticationFlowError('provider_not_found', SIGN_IN_COPY.wayUnavailable);
     }
 
     const now = this.now();
@@ -543,12 +529,7 @@ export class ConnectorAuthenticationFlowService {
         this.ownedProvider(owner, input.providerInstanceId) !== provider ||
         !this.sameProviderGeneration(provider, generation)
       ) {
-        this.finishStarting(
-          flowId,
-          'start_unknown',
-          afterStart,
-          'This service setup changed while you were signing in. Start again.'
-        );
+        this.finishStarting(flowId, 'start_unknown', afterStart, SIGN_IN_COPY.wayChanged);
       } else {
         this.db
           .update(connectorAuthenticationFlows)
@@ -700,12 +681,7 @@ export class ConnectorAuthenticationFlowService {
           row.providerInstanceId as ConnectorProviderInstanceId
         );
         if (!provider || !this.sameProviderGeneration(provider, row.executionConfigGeneration)) {
-          this.finishPending(
-            row.id,
-            'failed',
-            now,
-            'This service setup changed while you were signing in. Start again.'
-          );
+          this.finishPending(row.id, 'failed', now, SIGN_IN_COPY.wayChanged);
           row = this.ownedFlow(owner, flowId)!;
         }
       }

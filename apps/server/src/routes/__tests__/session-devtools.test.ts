@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
 // Config/tunnel are stubbed so createApp builds without a live server, and the
@@ -17,7 +18,7 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { devtoolsCaptureStore } from '../../services/session/index.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
 
 function ingest(body: unknown, id = crypto.randomUUID()) {

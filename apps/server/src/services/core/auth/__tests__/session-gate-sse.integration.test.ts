@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 /**
  * @vitest-environment node
  *
@@ -124,7 +125,7 @@ describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () =>
     db = createDb(path.join(tmpDir, 'gate-sse.db'));
     runMigrations(db);
     initAuth(db, tmpDir);
-    app = createApp();
+    app = createApp({ admission: new MainRequestAdmission() });
     finalizeApp(app);
 
     // Owner + a real session cookie (auth off during setup so sign-up is clean).

@@ -1,7 +1,13 @@
 import type { ComponentPropsWithRef, ReactNode } from 'react';
-import { AlertTriangle, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { Button, Spinner } from '@/layers/shared/ui';
+import {
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  Spinner,
+} from '@/layers/shared/ui';
 
 /** One titled section of an app's side panel ("Who answers", "Recently", "Try it"). */
 export function PanelSection({
@@ -52,6 +58,7 @@ export function PanelFix({
   onAction,
   pending = false,
   secondary,
+  technicalDetail,
 }: {
   /** What is wrong, plainly ("Signed out. Agents can't use Notion."). */
   message: string;
@@ -65,6 +72,12 @@ export function PanelFix({
   pending?: boolean;
   /** A second, quieter choice beside the fix. */
   secondary?: ReactNode;
+  /**
+   * The raw error behind the problem, written for developers. Kept out of the
+   * message and shown only under a collapsed "Details", like a failed turn's
+   * notice, so a person who needs it for a bug report can still find it.
+   */
+  technicalDetail?: string;
 }) {
   return (
     <div
@@ -94,6 +107,22 @@ export function PanelFix({
           )}
           {secondary}
         </div>
+      )}
+      {technicalDetail && (
+        <Collapsible>
+          <CollapsibleTrigger className="group/details text-status-warning-fg/80 hover:text-status-warning-fg focus-ring flex items-center gap-1 rounded text-xs">
+            <ChevronDown
+              className="size-3 -rotate-90 transition-transform group-data-[state=open]/details:rotate-0"
+              aria-hidden
+            />
+            Details
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <pre className="bg-muted/50 mt-1 max-h-40 overflow-auto rounded p-2 text-xs whitespace-pre-wrap">
+              {technicalDetail}
+            </pre>
+          </CollapsibleContent>
+        </Collapsible>
       )}
     </div>
   );

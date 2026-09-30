@@ -775,13 +775,25 @@ function retryGuidance(
 }
 
 /**
+ * A connected-app action in the destructive tier. The app's service puts
+ * sending, forwarding and sharing in that class too, so these are only ever
+ * called high risk: "cannot be undone" would not be true of them.
+ */
+function isConnectedAppAction(capabilityId: string): boolean {
+  return capabilityId.startsWith('connectors.execute_');
+}
+
+/**
  * Why a call needs a person, by tier: a destructive call because it cannot be
- * undone, an `act` call because its permission is set to Ask.
+ * undone (a connected-app action because it is high risk), an `act` call
+ * because its permission is set to Ask.
  *
  * @param tier - The action's tier.
+ * @param capabilityId - The action's capability id.
  */
-function needsApprovalClause(tier: CapabilityTier): string {
-  return tier === 'destructive' ? 'cannot be undone' : 'is set to ask a person first';
+function needsApprovalClause(tier: CapabilityTier, capabilityId: string): string {
+  if (tier !== 'destructive') return 'is set to ask a person first';
+  return isConnectedAppAction(capabilityId) ? 'is high risk' : 'cannot be undone';
 }
 
 /** The plain sentence explaining why a gated call is waiting. */
@@ -789,6 +801,7 @@ function approvalMessage(
   reason: ApprovalRequiredReason,
   title: string,
   tier: CapabilityTier,
+  capabilityId: string,
   blocked = false
 ): string {
   switch (reason) {
@@ -797,7 +810,7 @@ function approvalMessage(
         return `"${title}" is blocked for this agent, so DorkOS has asked the person whether to allow it this time.`;
       }
       return tier === 'destructive'
-        ? `"${title}" cannot be undone, so a person has to approve it first. DorkOS has asked them.`
+        ? `"${title}" ${needsApprovalClause(tier, capabilityId)}, so a person has to approve it first. DorkOS has asked them.`
         : `"${title}" is set to ask a person first. DorkOS has asked them.`;
     case 'awaiting_decision':
       return `"${title}" is still waiting on a person. Present the same token again once they have answered.`;
@@ -997,7 +1010,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     const payload = denied(
       action,
       'enforcement_unavailable',
-      `"${action.title}" ${needsApprovalClause(tier)} and DorkOS cannot ask anyone to approve it right now, so it was refused.`,
+      `"${action.title}" ${needsApprovalClause(tier, action.id)} and DorkOS cannot ask anyone to approve it right now, so it was refused.`,
       { approvable: false }
     );
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
@@ -1037,7 +1050,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     });
     return refuse(
       'input_not_bindable',
-      `"${action.title}" ${needsApprovalClause(tier)}, and DorkOS cannot describe this exact call well enough ` +
+      `"${action.title}" ${needsApprovalClause(tier, action.id)}, and DorkOS cannot describe this exact call well enough ` +
         `to ask anyone about it, so it was refused.`
     );
   }
@@ -1056,7 +1069,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     const payload = denied(
       action,
       'enforcement_unavailable',
-      `"${action.title}" ${needsApprovalClause(tier)} and DorkOS could not record an approval request for it, so it was refused.`,
+      `"${action.title}" ${needsApprovalClause(tier, action.id)} and DorkOS could not record an approval request for it, so it was refused.`,
       { approvable: false }
     );
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
@@ -1139,7 +1152,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       approvalToken: ticket.token,
       expiresAt: ticket.expiresAt,
       reason,
-      message: approvalMessage(reason, action.title, tier, blockedAsk),
+      message: approvalMessage(reason, action.title, tier, action.id, blockedAsk),
       retry: retryGuidance(retryChannel, interactive),
     };
     audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });
@@ -1180,7 +1193,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         approvalToken,
         expiresAt: result.expiresAt,
         reason: 'awaiting_decision',
-        message: approvalMessage('awaiting_decision', action.title, tier),
+        message: approvalMessage('awaiting_decision', action.title, tier, action.id),
         retry: retryGuidance(retryChannel, interactive),
       };
       audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });

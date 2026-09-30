@@ -471,7 +471,10 @@ describe('deriveConnectionReadiness truth table', () => {
         externalCleanup: 'pending',
         mode: 'managed',
         toolkit: 'gmail',
-        authoritySync: { status: 'failed', reason: 'This instance is no longer linked.' },
+        authoritySync: {
+          status: 'failed',
+          reason: 'This computer isn’t linked to your DorkOS account anymore.',
+        },
         way: down('dorkos_account_unlinked'),
       })
     );

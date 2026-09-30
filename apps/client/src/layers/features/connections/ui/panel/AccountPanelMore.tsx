@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { ConnectorConnectionDetail } from '@dorkos/shared/connector-resource-schemas';
+import { connectionUsageLine } from '@dorkos/shared/connector-schemas';
 import {
   useConnectorDisconnectImpact,
   useDisconnectConnectorConnection,
@@ -57,6 +58,7 @@ export function AccountPanelMore({
   onClose: () => void;
 }) {
   const { connection, provider } = detail;
+  const usageLine = connectionUsageLine({ payer: connection.payer, custody: provider.custody });
   const connectionId = connection.connectionId;
   const pause = usePauseConnectorConnection();
   const resume = useResumeConnectorConnection();
@@ -152,13 +154,9 @@ export function AccountPanelMore({
         <div className="px-2 py-2">
           <p className="text-sm font-medium">How it’s connected</p>
           <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
-            Through {provider.displayName}. {provider.disclosure}
+            {provider.displayName}. {provider.disclosure}
           </p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            {connection.payer === 'dorkos_managed'
-              ? 'DorkOS covers service usage.'
-              : 'Service usage is billed to you.'}
-          </p>
+          {usageLine && <p className="text-muted-foreground mt-1 text-xs">{usageLine}</p>}
         </div>
 
         {!disconnected && (

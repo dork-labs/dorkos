@@ -3,6 +3,7 @@ import { cpSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '../../fixtures';
+import { expectNoOpenDecisions, leaveNoUnreadRows } from './inbox-hygiene';
 
 /**
  * An extension asks a person something in the Activity inbox, and answering
@@ -29,6 +30,9 @@ const ALPHA = path.join(PROJECTS_ROOT, `alpha-${RUN}`);
 const BETA = path.join(PROJECTS_ROOT, `beta-${RUN}`);
 
 let extensionDir: string | undefined;
+
+/** The ids of the decisions this run raised: its history rows carry them. */
+const raisedIds: string[] = [];
 
 test.describe('An extension asks in the inbox', () => {
   test.beforeAll(async ({ request }) => {
@@ -58,14 +62,20 @@ test.describe('An extension asks in the inbox', () => {
         data: { key, title, project, projectLabel },
       });
       expect(raised.ok(), await raised.text()).toBe(true);
+      raisedIds.push(((await raised.json()) as { id: string }).id);
     }
   });
 
   test.afterAll(async ({ request }) => {
     // Leave the leg as it was found: nothing waiting, nothing approved, off.
     for (const key of ['ship-alpha', 'ship-beta']) {
-      await request.post(`/api/ext/${EXT_ID}/resolve`, { data: { key } });
+      const resolved = await request.post(`/api/ext/${EXT_ID}/resolve`, { data: { key } });
+      expect(resolved.ok(), `withdraw ${key}: ${await resolved.text()}`).toBe(true);
     }
+    // Withdrawn is not gone: each decision leaves a history row, unread, and
+    // an unread row widens the bell for every spec after this one.
+    await expectNoOpenDecisions(request, EXT_ID);
+    await leaveNoUnreadRows(request, (row) => raisedIds.includes(row.subject.id));
     await request.post(`/api/extensions/${EXT_ID}/revoke`, { data: {} });
     await request.post(`/api/extensions/${EXT_ID}/disable`, { data: {} });
     if (extensionDir) rmSync(extensionDir, { recursive: true, force: true });

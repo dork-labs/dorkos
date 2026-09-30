@@ -97,7 +97,7 @@ export type {
   ConnectorSessionEffectiveAccess,
 } from '@dorkos/shared/connector-resource-schemas';
 
-export { accessLevelWords, serviceName } from './lib/access-copy';
+export { serviceName } from './lib/access-copy';
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
 export { ServiceMark } from './ui/ServiceMark';
 export { serviceLogo, type ServiceLogo } from './lib/service-logo';

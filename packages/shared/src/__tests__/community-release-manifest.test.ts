@@ -66,6 +66,63 @@ describe('CommunityReleaseManifestSchema', () => {
     ).toThrow('missing required platform linux/arm64');
   });
 
+  // DOR-2586: a host reports the platform manifest it pulled, not the index. Newer manifests carry
+  // each platform's own digest; older ones (0.92.0) do not, and must still parse.
+  it('carries optional per-platform digests and still parses manifests without them', () => {
+    const amd64 = `sha256:${'c'.repeat(64)}`;
+    const arm64 = `sha256:${'d'.repeat(64)}`;
+    const withDigests = {
+      ...valid,
+      image: {
+        ...valid.image,
+        platforms: [
+          { os: 'linux', architecture: 'amd64', digest: amd64 },
+          { os: 'linux', architecture: 'arm64', digest: arm64 },
+        ],
+      },
+    };
+    expect(parseCompatibleCommunityReleaseManifest(withDigests, requirements)).toEqual(withDigests);
+    expect(parseCompatibleCommunityReleaseManifest(valid, requirements)).toEqual(valid);
+    for (const platforms of [
+      [
+        { os: 'linux', architecture: 'amd64', digest: amd64 },
+        { os: 'linux', architecture: 'arm64', digest: amd64 },
+      ],
+      [
+        { os: 'linux', architecture: 'amd64', digest: valid.image.digest },
+        { os: 'linux', architecture: 'arm64' },
+      ],
+      [
+        { os: 'linux', architecture: 'amd64', digest: 'sha256:short' },
+        { os: 'linux', architecture: 'arm64' },
+      ],
+    ]) {
+      expect(() =>
+        parseCompatibleCommunityReleaseManifest(
+          { ...valid, image: { ...valid.image, platforms } },
+          requirements
+        )
+      ).toThrow();
+    }
+    expect(
+      createCommunityReleaseManifest({
+        dorkosVersion: '0.76.0',
+        digest: valid.image.digest,
+        platforms: [
+          { os: 'linux', architecture: 'arm64', digest: arm64 },
+          { os: 'linux', architecture: 'amd64', digest: amd64 },
+        ],
+        migrationCompatibilityId,
+        workflowRef: 'dork-labs/dorkos/.github/workflows/publish-community.yml@refs/tags/v0.76.0',
+        minimumFlyctlVersion: '0.4.104',
+        minimumNeonCliVersion: '5.0.0',
+      }).image.platforms
+    ).toEqual([
+      { os: 'linux', architecture: 'amd64', digest: amd64 },
+      { os: 'linux', architecture: 'arm64', digest: arm64 },
+    ]);
+  });
+
   it('accepts one immutable multi-platform digest', () => {
     expect(parseCompatibleCommunityReleaseManifest(valid, requirements)).toEqual(valid);
   });

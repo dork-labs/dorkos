@@ -81,13 +81,23 @@ jobs:
       - name: Determine the base to diff against
         id: base
         run: |
+          # The checkout above is already full history (fetch-depth: 0). Never pass
+          # --depth to a fetch here: a shallow fetch into a full clone writes
+          # .git/shallow and cuts the base branch's history at that depth. A PR
+          # branched from further back than the cut then walks past it, and
+          # `--since <merge-base>` counts every commit behind the cut as the PR's own
+          # (DOR-2238's #2064, 271 commits behind main, was charged 2278 commits).
           if [[ "${{ github.event_name }}" == "merge_group" ]]; then
             # The queue branch is built ON base_sha, so it IS the merge base.
             base="${{ github.event.merge_group.base_sha }}"
-            git fetch --no-tags origin "$base" || git fetch --no-tags --depth=200 origin
+            git fetch --no-tags origin "$base" || git fetch --no-tags origin
           else
-            git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+            git fetch --no-tags origin "${{ github.base_ref }}"
             base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          fi
+          if [[ -f "$(git rev-parse --git-dir)/shallow" ]]; then
+            echo "::error::The history is shallow, so the range since the merge base cannot be trusted."
+            exit 1
           fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
           echo "base: $base"
@@ -207,12 +217,13 @@ jobs:
       - name: Determine the base to diff against
         id: base
         run: |
+          # Full history, no --depth: see the same step in fragment-present.
           if [[ "${{ github.event_name }}" == "merge_group" ]]; then
             # The queue branch is built ON base_sha, so it IS the merge base.
             base="${{ github.event.merge_group.base_sha }}"
-            git fetch --no-tags origin "$base" || git fetch --no-tags --depth=200 origin
+            git fetch --no-tags origin "$base" || git fetch --no-tags origin
           else
-            git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+            git fetch --no-tags origin "${{ github.base_ref }}"
             base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
           fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"

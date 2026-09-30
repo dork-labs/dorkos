@@ -7,7 +7,50 @@
       "region_id": "aws-us-east-2",
       "host": "ep-example-123.us-east-2.aws.neon.tech",
       "type": "read_write",
-      "current_state": "active"
+      "current_state": "active",
+      "hosts": {
+        "read_write_host": "fixture",
+        "read_write_pooled_host": "fixture"
+      },
+      "slug": "fixture",
+      "branch_slug": "fixture",
+      "project_slug": "fixture",
+      "autoscaling_limit_min_cu": 0,
+      "autoscaling_limit_max_cu": 0,
+      "group": {
+        "size": {
+          "min": 0,
+          "max": 0
+        },
+        "allow_readable_secondaries": false,
+        "computes": [
+          {
+            "binding_id": "fixture",
+            "current_state": "fixture",
+            "role": "fixture",
+            "compute_host": "fixture",
+            "compute_pooled_host": "fixture",
+            "created_at": "2026-09-21T00:00:00Z",
+            "updated_at": "2026-09-21T00:00:00Z",
+            "started_at": "2026-09-21T00:00:00Z"
+          }
+        ]
+      },
+      "settings": {
+        "pg_settings": {}
+      },
+      "pooler_enabled": false,
+      "pooler_mode": "fixture",
+      "disabled": false,
+      "last_active": "2026-09-21T00:00:00Z",
+      "creation_source": "fixture",
+      "created_at": "2026-09-21T00:00:00Z",
+      "updated_at": "2026-09-21T00:00:00Z",
+      "started_at": "2026-09-21T00:00:00Z",
+      "proxy_host": "fixture",
+      "suspend_timeout_seconds": 0,
+      "provisioner": "fixture",
+      "compute_release_version": "fixture"
     }
   ]
 }

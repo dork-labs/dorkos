@@ -19,7 +19,8 @@ import {
   QueryErrorState,
   Skeleton,
 } from '@/layers/shared/ui';
-import { groupAppsByWay, keyWayName } from '../lib/connection-ways';
+import { connectionWayName } from '@dorkos/shared/connector-schemas';
+import { groupAppsByWay } from '../lib/connection-ways';
 import { KeyEntry } from './KeyEntry';
 import { KeyWayRow } from './KeyWayRow';
 import { WayRow, type WayStatus } from './WayRow';
@@ -297,7 +298,7 @@ function AddWays({
           data-testid={`add-connection-way-${status.type}`}
           className="space-y-2 px-4 py-3"
         >
-          <p className="text-sm font-medium">{keyWayName(status.type)}</p>
+          <p className="text-sm font-medium">{connectionWayName(status.type)}</p>
           <KeyEntry status={status} />
         </li>
       ))}

@@ -6,8 +6,10 @@
 import {
   FLY_APP_NAME_AVAILABLE_QUERY,
   FLY_APP_PROVENANCE_QUERY,
-  FLY_TIGRIS_ON_APP_QUERY,
+  FLY_APP_TIGRIS_QUERY,
+  FLY_TIGRIS_BY_NAME_QUERY,
   FLY_TIGRIS_CREATE_MUTATION,
+  FLY_TIGRIS_CREDENTIALS_QUERY,
   FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
@@ -15,7 +17,10 @@ import {
   parseAppNameAvailableResponse,
   parseFlyAppProvenanceResponse,
   parseTigrisOnAppResponse,
+  parseAppTigrisResponse,
+  parseTigrisNameHeldResponse,
   parseTigrisCreateResponse,
+  parseTigrisCredentialsResponse,
   parseTigrisDeleteResponse,
   parseTigrisReadResponse,
   parseTigrisTermsResponse,
@@ -23,10 +28,13 @@ import {
   type FlyAppProvenance,
   type FlyGraphqlContractErrorCode,
   type TigrisAddOnIdentity,
+  type TigrisBucketCredentials,
   type TigrisCreateInput,
   type TigrisOnApp,
+  type TigrisCreateResult,
 } from './fly-graphql-contract.js';
 import { SAFE_PROVIDER_IDENTIFIER_PATTERN } from './provider-identifiers.js';
+import { writeDeadline } from './provider-mutation.js';
 
 const FLY_GRAPHQL_ENDPOINT = 'https://api.fly.io/graphql';
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -187,8 +195,9 @@ export class FlyTigrisGraphqlClient {
    * the mutation. The caller must inspect by provider-issued provenance and must not retry blindly.
    *
    * @param input - Validated creation identity selected by the consented plan.
+   * @returns The bucket's identity, and its access keys when Fly sent them (in memory only).
    */
-  async createTigris(input: TigrisCreateInput): Promise<TigrisAddOnIdentity> {
+  async createTigris(input: TigrisCreateInput): Promise<TigrisCreateResult> {
     let variables: ReturnType<typeof createTigrisVariables>;
     try {
       variables = createTigrisVariables(input);
@@ -228,7 +237,7 @@ export class FlyTigrisGraphqlClient {
   }
 
   /**
-   * Read one app and the Tigris add-ons attached to it.
+   * Read one app and the Tigris add-ons attached to it, with what the removal proof needs.
    *
    * @param appName - Planned app name.
    * @returns The app and its add-ons, or `null` when Fly reports no app with that name.
@@ -237,10 +246,23 @@ export class FlyTigrisGraphqlClient {
     if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
       throw new FlyGraphqlClientError('INVALID_RESPONSE');
     }
+    return this.request(FLY_APP_TIGRIS_QUERY, { appName }, parseTigrisOnAppResponse, false);
+  }
+
+  /**
+   * Read one bucket's access keys by its exact ID, for a resumed launch that has none in memory.
+   *
+   * @param addOnId - Provider-issued add-on ID already recorded in the launch journal.
+   * @returns Redacting credentials, or null when Fly returned none.
+   */
+  async readTigrisCredentials(addOnId: string): Promise<TigrisBucketCredentials | null> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(addOnId)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
     return this.request(
-      FLY_TIGRIS_ON_APP_QUERY,
-      { name: appName },
-      parseTigrisOnAppResponse,
+      FLY_TIGRIS_CREDENTIALS_QUERY,
+      { id: addOnId },
+      (response) => parseTigrisCredentialsResponse(response, addOnId),
       false
     );
   }
@@ -258,6 +280,41 @@ export class FlyTigrisGraphqlClient {
       FLY_APP_NAME_AVAILABLE_QUERY,
       { name: appName },
       parseAppNameAvailableResponse,
+      false
+    );
+  }
+
+  /**
+   * Read whether a Tigris bucket name is still held (see `FLY_TIGRIS_BY_NAME_QUERY`).
+   *
+   * @param bucketName - The planned bucket name.
+   */
+  async isTigrisNameHeld(bucketName: string): Promise<boolean> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(bucketName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_TIGRIS_BY_NAME_QUERY,
+      { name: bucketName, provider: 'tigris' },
+      parseTigrisNameHeldResponse,
+      false
+    );
+  }
+
+  /**
+   * List every Tigris bucket attached to one app, by id and name.
+   *
+   * @param appName - The exact app name.
+   * @returns The attached buckets; an empty list means the app has none.
+   */
+  async listTigrisOnApp(appName: string): Promise<Array<{ id: string; name: string }>> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_APP_TIGRIS_QUERY,
+      { appName },
+      (response) => parseAppTigrisResponse(response, appName),
       false
     );
   }
@@ -286,6 +343,9 @@ export class FlyTigrisGraphqlClient {
     this.signal?.addEventListener('abort', cancel, { once: true });
     if (this.signal?.aborted) cancel();
     let timer: NodeJS.Timeout | undefined;
+    // A cut-off create or delete is an unknown outcome, not a failure, so writes get the shared
+    // write deadline (see PROVIDER_WRITE_TIMEOUT_MS); reads keep the client's own.
+    const timeoutMs = mutating ? writeDeadline(this.timeoutMs) : this.timeoutMs;
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         controller.abort();
@@ -294,7 +354,7 @@ export class FlyTigrisGraphqlClient {
             mutating ? 'CREATION_OUTCOME_UNCERTAIN' : 'PROVIDER_UNAVAILABLE'
           )
         );
-      }, this.timeoutMs);
+      }, timeoutMs);
     });
     const operation = (async () => {
       try {

@@ -1,4 +1,5 @@
 import type { ConnectorManagementReviewItem } from '@dorkos/shared/connector-schemas';
+import { serviceName } from '@/layers/entities/connectors';
 
 /** A durable management review's dialog title and approve button label. */
 export function presentManagementReview(review: ConnectorManagementReviewItem): {
@@ -15,7 +16,7 @@ export function presentManagementReview(review: ConnectorManagementReviewItem): 
   switch (context.kind) {
     case 'connect':
       return {
-        title: `Connect ${context.label ?? context.toolkit}`,
+        title: `Connect ${serviceName(context.toolkit)}${context.label ? ` (${context.label})` : ''}`,
         approveLabel: 'Approve and continue',
       };
     case 'edit':

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { strFromU8, unzipSync, Zip, ZipPassThrough } from 'fflate';
+import { strFromU8, unzipSync, Zip, ZipDeflate, ZipPassThrough } from 'fflate';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
 import { runHostKeyCommand } from '../host-keys.js';
 import type { HostApiKeyScope } from '../host/authority.js';
@@ -28,13 +28,15 @@ export async function issueKey(h: TenancyHarness, scopes: HostApiKeyScope[]): Pr
 
 /**
  * Write a version 1 export archive exactly as the version 1 exporter does: `manifest.json`
- * first, then each file under its archive path, every entry stored without compression.
+ * first, then each file under its archive path, every entry stored without compression
+ * unless `deflate` compresses the files.
  * `entries` overrides the default layout, for archives that break the rules on purpose.
  */
 export function buildArchive(
   manifest: unknown,
   files: ReadonlyMap<string, Uint8Array> = new Map(),
-  entries?: readonly [string, Uint8Array][]
+  entries?: readonly [string, Uint8Array][],
+  options: { deflate?: boolean } = {}
 ): Buffer {
   const layout: [string, Uint8Array][] = entries
     ? [...entries]
@@ -48,7 +50,8 @@ export function buildArchive(
     chunks.push(chunk);
   });
   for (const [name, bytes] of layout) {
-    const file = new ZipPassThrough(name);
+    const file =
+      options.deflate && name !== 'manifest.json' ? new ZipDeflate(name) : new ZipPassThrough(name);
     zip.add(file);
     file.push(bytes, true);
   }
@@ -144,8 +147,35 @@ export function uploadArchive(
 }
 
 /**
+ * Wait until the server holds (`held`) or has given back the upload lease of an import.
+ *
+ * The lease is the server's own record that an upload is in flight, so it is the signal a
+ * test waits on instead of a guessed sleep: a dropped connection frees it only once the server
+ * notices the drop, and a busy machine can take far longer to notice than an idle one. The
+ * deadline stays well under the lease's two-minute expiry, so a lease the server never gave
+ * back still fails the wait rather than lapsing into a pass.
+ */
+export async function waitForUploadLease(
+  h: TenancyHarness,
+  importId: string,
+  held: boolean
+): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const { rows } = await h.pool.query<{ held: boolean }>(
+      'SELECT upload_lease_token IS NOT NULL AS held FROM community_imports WHERE id=$1',
+      [importId]
+    );
+    if (rows[0]?.held === held) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`The upload lease of ${importId} was never ${held ? 'taken' : 'given back'}`);
+}
+
+/**
  * Send an upload's headers and only the first `sentBytes` of its body, then drop the
- * connection, as a person whose network fails part-way does.
+ * connection, as a person whose network fails part-way does. Returns once the server has
+ * taken the upload's lease and given it back, so the drop has been fully handled.
  */
 export async function droppedUpload(
   h: TenancyHarness,
@@ -173,9 +203,10 @@ export async function droppedUpload(
     ].join('\r\n')
   );
   socket.write(archive.subarray(0, sentBytes));
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  // Drop only once the server is receiving the body, so this is a drop part-way through.
+  await waitForUploadLease(h, importId, true);
   socket.destroy();
-  await new Promise((resolve) => setTimeout(resolve, 200));
+  await waitForUploadLease(h, importId, false);
 }
 
 /** Read one import as the host sees it. */
@@ -204,14 +235,14 @@ export function versionOneExport(): Buffer {
 
 /**
  * Make a real owner export of a community on this server (version 2, prepared by the export
- * worker), download it, and open it.
+ * worker) and download the whole archive.
  */
-export async function ownerExport(
+export async function ownerExportArchive(
   h: TenancyHarness,
   communityId: string,
   ownerCookie: string,
   password: string
-): Promise<OpenedArchive> {
+): Promise<Buffer> {
   const base = `/api/v1/communities/${communityId}`;
   const requested = await h.call(`${base}/owner/export`, {
     cookie: ownerCookie,
@@ -225,7 +256,17 @@ export async function ownerExport(
     200,
     'download export'
   );
-  return openArchive(Buffer.from(await download.arrayBuffer()));
+  return Buffer.from(await download.arrayBuffer());
+}
+
+/** Make a real owner export of a community on this server, download it, and open it. */
+export async function ownerExport(
+  h: TenancyHarness,
+  communityId: string,
+  ownerCookie: string,
+  password: string
+): Promise<OpenedArchive> {
+  return openArchive(await ownerExportArchive(h, communityId, ownerCookie, password));
 }
 
 /**

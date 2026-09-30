@@ -241,7 +241,10 @@ describe('BarTabStrip — overflow at a narrow width', () => {
     await screen.findByTestId('page');
 
     const wrapper = strip().parentElement;
-    expect(wrapper).toHaveClass('min-w-28');
+    // 112px from `md` up, where the floor was measured; 80px on a phone, where
+    // the header row has less to give (DOR-2524).
+    expect(wrapper).toHaveClass('md:min-w-28');
+    expect(wrapper).toHaveClass('min-w-20');
     expect(wrapper).not.toHaveClass('min-w-0');
   });
 

@@ -1,7 +1,7 @@
 /**
- * OpenAPI entries for extension decisions and per-project settings (spec
- * `flow-multiproject` §7.3, §7.8, §7.10), projected from the same schemas the
- * routes parse and answer with.
+ * OpenAPI entries for extension decisions, per-project settings and starting
+ * work in a new chat (spec `flow-multiproject` §7.3, §7.7, §7.8, §7.10),
+ * projected from the same schemas the routes parse and answer with.
  *
  * @module services/extensions/extension-decisions-openapi
  */
@@ -17,6 +17,9 @@ import {
   ProjectSettingsQuerySchema,
   ProjectSettingsResponseSchema,
   PutProjectSettingsRequestSchema,
+  StartWorkErrorResponseSchema,
+  StartWorkRequestSchema,
+  StartWorkResponseSchema,
 } from '@dorkos/shared/extension-decision-schemas';
 import { ErrorResponseSchema } from '@dorkos/shared/schemas';
 
@@ -186,6 +189,36 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       403: error('Not a person'),
       404: error('No such extension, or it is not set up in that project'),
       413: error('The value is larger than 16 KiB'),
+    },
+  });
+
+  const refused = (description: string) => ({
+    description,
+    content: json(StartWorkErrorResponseSchema),
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/extensions/{id}/start-work',
+    tags: ['Extensions'],
+    summary: 'Start work in a new chat for an extension',
+    description:
+      'What an extension’s outcome button calls (`api.startWork`). Starts one NEW chat in the ' +
+      'project’s root on the default runtime: the prompt is sent at once as its first message, ' +
+      'the title is set, and the chat says "Started by the <extension> extension: <reason>" as its first ' +
+      'line. The current chat is never touched and nothing navigates. The project must hold a ' +
+      'copy of the extension, have been reported by it, or be one the person works in. At most ' +
+      '10 starts per rolling hour and 3 running chats per extension, counted with the chats its ' +
+      'chats started; the hourly count survives a restart. Recorded as started by the ' +
+      `extension, whether or not a person clicked. ${PERSON_BAR}`,
+    request: { params: extensionIdParam, body: { content: json(StartWorkRequestSchema) } },
+    responses: {
+      200: { description: 'Started', content: json(StartWorkResponseSchema) },
+      400: error('The body breaks a length rule'),
+      403: error('Not a person'),
+      404: refused('No such extension (plain error), or `not_a_project`'),
+      409: refused('The extension is turned off (plain error), or `account_not_allowed_here`'),
+      429: refused('`start_limit`: too many starts this hour, or too many chats working'),
     },
   });
 }

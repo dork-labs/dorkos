@@ -375,8 +375,10 @@ function unavailableServiceMessage(
   directory: ConnectorServiceDirectory,
   catalogTool: string
 ): string {
-  const quoted = JSON.stringify(serviceSlug);
   const listed = directory.services.find((service) => service.serviceSlug === serviceSlug);
+  // The agent reads the app's name; the raw id is repeated only where the id
+  // itself is the problem (no service has it), since that is what it must fix.
+  const app = listed?.displayName ?? serviceNameFromToolkit(serviceSlug);
   if (listed && !listed.requestable && listed.unavailableBecause === 'messaging_only') {
     return (
       `${listed.displayName} connects through Messaging, not an account, so an agent cannot ` +
@@ -385,18 +387,18 @@ function unavailableServiceMessage(
   }
   // A chat-only app does not depend on the catalog; anything else missing a
   // route may be missing it because of the outage itself.
-  if (directory.warnings.length > 0) return partialCatalogMessage(quoted);
+  if (directory.warnings.length > 0) return partialCatalogMessage(app);
   // Nothing reached: an id beyond the popular apps cannot be checked until a
   // way works, so the refusal names that way's fix instead of "no such id".
   if (
     directory.reachProblem !== 'app_not_reached' &&
     !directory.services.some((service) => service.requestable && service.reached)
   ) {
-    return unreachedDirectoryMessage(quoted, directory.reachProblem);
+    return unreachedDirectoryMessage(app, directory.reachProblem);
   }
   const suggestions = suggestServices(serviceSlug, directory);
   return [
-    `DorkOS has no service with the id ${quoted}. Service ids are exact, lowercase names.`,
+    `DorkOS has no service with the id ${JSON.stringify(serviceSlug)}. Service ids are exact, lowercase names.`,
     ...(suggestions.length > 0 ? [`Close matches: ${suggestions.join(', ')}.`] : []),
     `Search the services by name with ${catalogTool} (for example {"query":"mail"}), then ask ` +
       'again with the exact serviceSlug of an entry in its services list.',
@@ -404,41 +406,41 @@ function unavailableServiceMessage(
 }
 
 /** The refusal while part of the service list failed to load: a retry, not a verdict. */
-function partialCatalogMessage(quoted: string): string {
+function partialCatalogMessage(app: string): string {
   return (
-    `DorkOS could not load the full list of services just now, so ${quoted} could not be ` +
+    `DorkOS could not load the full list of services just now, so ${app} could not be ` +
     'checked. Try again in a moment.'
   );
 }
 
 /** The refusal for an id no way can check, by what stands in the way. */
 function unreachedDirectoryMessage(
-  quoted: string,
+  app: string,
   problem: Exclude<AppReachProblem, 'app_not_reached'>
 ): string {
   switch (problem) {
     case 'way_not_answering':
-      return partialCatalogMessage(quoted);
+      return partialCatalogMessage(app);
     case 'dorkos_account_unlinked':
       return (
-        `DorkOS cannot check ${quoted} right now: the person's DorkOS account isn't linked ` +
+        `DorkOS cannot check ${app} right now: the person's DorkOS account isn't linked ` +
         'anymore. They can link it again in Settings › Access in the DorkOS app, or add their ' +
         'own key in Settings › Connections; then ask again.'
       );
     case 'dorkos_account_unavailable':
       return (
-        `DorkOS cannot check ${quoted} right now: the person's DorkOS account is linked but ` +
+        `DorkOS cannot check ${app} right now: the person's DorkOS account is linked but ` +
         'cannot reach apps. Try again later.'
       );
     case 'own_key_unavailable':
       return (
-        `DorkOS cannot check ${quoted} right now: the person's own key for reaching apps ` +
+        `DorkOS cannot check ${app} right now: the person's own key for reaching apps ` +
         "isn't set up or didn't answer when DorkOS last checked it. Ask them to fix it in " +
         'Settings › Connections in the DorkOS app, then ask again.'
       );
     case 'nothing_set_up':
       return (
-        `DorkOS is not set up to reach apps yet, so it cannot check ${quoted}; only the popular ` +
+        `DorkOS is not set up to reach apps yet, so it cannot check ${app}; only the popular ` +
         'apps it lists can be requested now. Ask the person to open Connections in the DorkOS ' +
         'app and connect an app there; the first app they connect also sets up how DorkOS ' +
         "reaches apps. Then ask again. Signing in to a service's command-line tool in a shell " +
@@ -763,7 +765,7 @@ export class ConnectorAgentRequestService {
         row.request,
         row.review,
         'target_deleted',
-        'Request target removed'
+        'The account or agent this request was for is gone.'
       );
       if (!removed) {
         throw new ConnectorAgentRequestError(
@@ -788,7 +790,7 @@ export class ConnectorAgentRequestService {
     ) {
       throw new ConnectorAgentRequestError(
         'selection_invalid',
-        'Authentication already started with a different service setup.'
+        'Signing in already started for this request another way. Finish or close that sign-in first.'
       );
     }
     const flow = await authentication.start(owner, {
@@ -803,7 +805,7 @@ export class ConnectorAgentRequestService {
     ) {
       throw new ConnectorAgentRequestError(
         'selection_invalid',
-        'That authentication flow does not belong to this service request.'
+        'That sign-in belongs to a different request.'
       );
     }
     const selected = this.options.db
@@ -824,7 +826,7 @@ export class ConnectorAgentRequestService {
     if (selected !== 1) {
       throw new ConnectorAgentRequestError(
         'request_already_resolved',
-        'This service request changed before authentication could start.'
+        'This request changed before signing in could start.'
       );
     }
     return flow;
@@ -851,7 +853,7 @@ export class ConnectorAgentRequestService {
     ) {
       throw new ConnectorAgentRequestError(
         'selection_invalid',
-        'That authentication flow does not belong to this service request.'
+        'That sign-in belongs to a different request.'
       );
     }
     if (!(await this.options.authority.revalidateOrigin(this.originFor(row.request, row.review)))) {
@@ -859,7 +861,7 @@ export class ConnectorAgentRequestService {
         row.request,
         row.review,
         'target_deleted',
-        'Request target removed'
+        'The account or agent this request was for is gone.'
       );
       if (!removed) {
         throw new ConnectorAgentRequestError(
@@ -881,7 +883,7 @@ export class ConnectorAgentRequestService {
     ) {
       throw new ConnectorAgentRequestError(
         'selection_invalid',
-        'That authentication flow does not belong to this service request.'
+        'That sign-in belongs to a different request.'
       );
     }
     if (state.state === 'failed' || state.state === 'expired' || state.state === 'start_unknown') {
@@ -891,7 +893,7 @@ export class ConnectorAgentRequestService {
           current.request,
           current.review,
           'authentication_failed',
-          'Account authentication failed'
+          'Signing in didn’t finish.'
         );
         if (failed) this.notifyResolved(requestId);
       }
@@ -938,7 +940,7 @@ export class ConnectorAgentRequestService {
         row.request,
         row.review,
         'target_deleted',
-        'Request target removed'
+        'The account or agent this request was for is gone.'
       );
       if (!removed) {
         throw new ConnectorAgentRequestError(
@@ -1360,13 +1362,13 @@ export class ConnectorAgentRequestService {
     if (!isServerPrincipal(principal) || principal.claims.kind !== 'runtime') {
       throw new ConnectorAgentRequestError(
         'principal_required',
-        'Service requests require an authenticated runtime turn.'
+        'Only an agent answering in a chat can ask for access.'
       );
     }
     if (!(await this.options.runtimePrincipals.revalidatePrincipal(principal))) {
       throw new ConnectorAgentRequestError(
         'authority_expired',
-        'This runtime turn is no longer authorized. Start a new turn and try again.'
+        'This turn can’t ask for access anymore. Start a new turn and try again.'
       );
     }
     return principal.claims;
@@ -1430,7 +1432,7 @@ export class ConnectorAgentRequestService {
     if (!this.options.authentication) {
       throw new ConnectorAgentRequestError(
         'service_unavailable',
-        'Account authentication is unavailable right now.'
+        'Signing in isn’t available right now.'
       );
     }
     return this.options.authentication;
@@ -1638,7 +1640,7 @@ export class ConnectorAgentRequestService {
     ) {
       throw new ConnectorAgentRequestError(
         'request_not_found',
-        'This service request has incomplete authority records.'
+        'DorkOS can’t tell which chat and agent this request came from, so it can’t be answered.'
       );
     }
     return {
@@ -1952,7 +1954,7 @@ export class ConnectorAgentRequestService {
       row.request,
       row.review,
       'authentication_failed',
-      'Account authentication failed'
+      'Signing in didn’t finish.'
     );
     if (resolved) this.notifyResolved(row.request.id);
     return resolved;
@@ -2052,7 +2054,7 @@ export class ConnectorAgentRequestSourceAdapter implements PrivateSessionMessage
     if (changed !== 1) {
       throw new ConnectorAgentRequestError(
         'request_already_resolved',
-        'This request resume claim is no longer current.'
+        'This request was already picked up.'
       );
     }
     return {
@@ -2089,8 +2091,8 @@ export class ConnectorAgentRequestSourceAdapter implements PrivateSessionMessage
     // agent acts on them straight away, in the turn this message starts.
     const content =
       row.outcome === 'granted'
-        ? `${note} Use connection ${row.resolvedConnectionId} with only these operation ` +
-          `revision IDs: ${parseStringArray(row.resolvedOperationRevisionIdsJson).join(', ')}.`
+        ? `${note} Use connection ${row.resolvedConnectionId} with only these actions ` +
+          `(operationRevisionId): ${parseStringArray(row.resolvedOperationRevisionIdsJson).join(', ')}.`
         : note;
     return {
       sourceKind: this.kind,

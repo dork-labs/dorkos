@@ -152,7 +152,7 @@ describe('legacy connector application migration', () => {
     expect(result).toEqual({
       status: 'migration_failed',
       error:
-        'Connector data could not be upgraded. Connector changes are unavailable; restart DorkOS to retry.',
+        'DorkOS couldn’t upgrade its saved connections. Changes to connections are off until you restart DorkOS.',
     });
     expect(JSON.stringify(result)).not.toMatch(/SQLITE|connector_application_migrations/i);
     db.$client.close();
@@ -201,7 +201,7 @@ describe('legacy connector application migration', () => {
     expect(failed).toEqual({
       status: 'migration_failed',
       error:
-        'Connector data could not be upgraded. Connector changes are unavailable; restart DorkOS to retry.',
+        'DorkOS couldn’t upgrade its saved connections. Changes to connections are off until you restart DorkOS.',
     });
     expect(JSON.stringify(failed)).not.toContain('composio:personal');
     expect(rows(db.$client, 'connected_accounts')).toEqual(legacyBefore.accounts);

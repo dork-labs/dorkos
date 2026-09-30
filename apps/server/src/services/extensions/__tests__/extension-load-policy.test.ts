@@ -24,6 +24,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import {
   approvedSourceOf,
+  isApprovedCopy,
+  isFromTrustedSource,
   mayRunExtensionCode,
   describeExtensionLoadRefusal,
   EXTENSION_NOT_APPROVED_CODE,
@@ -692,5 +694,68 @@ describe('the refusal code is stable', () => {
     // Pinned because it is a machine-readable contract: the routes send it in
     // `code`, and changing it silently would break any caller matching on it.
     expect(EXTENSION_NOT_APPROVED_CODE).toBe('extension_not_approved_to_run');
+  });
+});
+
+describe('approval by trusted origin, and trusted sources (spec flow-multiproject §9)', () => {
+  const ORIGIN = { plugin: 'flow', source: 'dork-labs/marketplace' };
+  const approvedA = {
+    approvedToRun: ['flow'],
+    approvedSources: {
+      flow: {
+        path: '/work/a/.dork/plugins/flow/.dork/extensions/flow',
+        plugin: 'flow',
+        origin: ORIGIN,
+      },
+    },
+  };
+  const copyB = {
+    id: 'flow',
+    origin: 'user' as const,
+    path: '/work/b/.dork/plugins/flow/.dork/extensions/flow',
+    sourcePlugin: 'flow',
+  };
+
+  it('approves another copy that provably shares the approved origin', () => {
+    expect(isApprovedCopy({ ...copyB, trustedOrigin: ORIGIN }, approvedA)).toBe(true);
+  });
+
+  it('does not approve a copy with no trusted origin, or another one', () => {
+    expect(isApprovedCopy(copyB, approvedA)).toBe(false);
+    expect(
+      isApprovedCopy({ ...copyB, trustedOrigin: { ...ORIGIN, source: 'someone/else' } }, approvedA)
+    ).toBe(false);
+    expect(
+      isApprovedCopy({ ...copyB, trustedOrigin: { ...ORIGIN, plugin: 'other' } }, approvedA)
+    ).toBe(false);
+  });
+
+  it('never approves by origin an id that is not approved', () => {
+    expect(
+      isApprovedCopy({ ...copyB, trustedOrigin: ORIGIN }, { ...approvedA, approvedToRun: [] })
+    ).toBe(false);
+  });
+
+  it('records the origin when the approved copy has one', () => {
+    expect(approvedSourceOf({ ...copyB, trustedOrigin: ORIGIN })).toEqual({
+      path: copyB.path,
+      plugin: 'flow',
+      origin: ORIGIN,
+    });
+    expect(approvedSourceOf(copyB)).not.toHaveProperty('origin');
+  });
+
+  it('lets a copy from a trusted source run, and nothing that only claims one', () => {
+    const trusting = {
+      approvedToRun: [],
+      approvedSources: {},
+      trustedSources: [{ source: ORIGIN.source, trustedAt: '2026-09-29T00:00:00.000Z' }],
+    };
+    expect(isFromTrustedSource({ trustedOrigin: ORIGIN }, trusting)).toBe(true);
+    expect(mayRunExtensionCode({ ...copyB, trustedOrigin: ORIGIN }, trusting)).toBe(true);
+    expect(mayRunExtensionCode(copyB, trusting)).toBe(false);
+    expect(
+      mayRunExtensionCode({ ...copyB, trustedOrigin: ORIGIN }, { ...trusting, trustedSources: [] })
+    ).toBe(false);
   });
 });

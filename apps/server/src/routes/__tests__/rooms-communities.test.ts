@@ -1,3 +1,4 @@
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * @vitest-environment node
  *
@@ -67,7 +68,7 @@ import { setReadCursorService } from '../../services/core/read-cursor-service.js
 import { communityRegistry } from '../../services/communities/index.js';
 import { resetAgentIdentityService } from '../../services/core/agent-identity/agent-identity-service.js';
 
-const app = createApp();
+const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 const testServer = listeningServer(app);
 

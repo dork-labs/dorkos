@@ -32,6 +32,7 @@ import { configManager } from '../config-manager.js';
 import { env } from '../../../env.js';
 import { authorizeStreamUpgrade, type StreamUpgradeLocals } from './stream-upgrade-auth.js';
 import { logger } from '../../../lib/logger.js';
+import type { MainRequestAdmission } from '../lifecycle/main-request-admission.js';
 
 /** What a route is given to decide on an upgrade, before any socket is bound. */
 export interface UpgradeAttempt {
@@ -107,8 +108,8 @@ export interface UpgradeRoute {
   /**
    * Authorize the claimed upgrade. Every credential check a route needs lives
    * here, because none of Express's ran (see the module doc). Returning a
-   * refusal is how a route answers 401/403/404 — throwing is a bug and closes
-   * the socket with no status.
+   * refusal is how a route answers 401/403/404 — throwing is a bug and returns
+   * an HTTP 500 while running (terminal admission takes precedence).
    */
   authorize(attempt: UpgradeAttempt): UpgradeDecision | Promise<UpgradeDecision>;
 }
@@ -134,7 +135,7 @@ const UPGRADE_ORIGIN_POLICY: BrowserOriginPolicy = {
  *
  * WebSocket handshakes are NOT subject to CORS: a page on any origin can open a
  * socket to any host its user can reach, and the browser attaches that host's
- * cookies. `Origin` is the only thing separating a cockpit tab from a page that
+ * cookies. `Origin` is the only thing separating an app tab from a page that
  * DNS-rebound onto this port. The policy itself — and why it is not a bare
  * allowlist — lives in {@link isTrustedBrowserOrigin}, the one origin policy
  * the CORS delegate and the `/mcp` mounts read too.
@@ -204,16 +205,25 @@ function refuse(socket: Duplex, status: number, message: string): void {
 /**
  * Attach the one `upgrade` listener this server has, serving `routes` in order.
  *
- * An upgrade no route claims is destroyed silently: it is not addressed to us,
- * and answering it would only tell a scanner what is here.
+ * While running, an upgrade no route claims is destroyed silently. Terminal
+ * admission refuses every new upgrade with a generic HTTP 503 before routing.
  *
  * @param server - The HTTP server to attach to.
  * @param routes - The claimants, in precedence order.
+ * @param admission - The same main-listener gate used by Express.
  */
-export function attachUpgradeRouter(server: Server, routes: readonly UpgradeRoute[]): void {
+export function attachUpgradeRouter(
+  server: Server,
+  routes: readonly UpgradeRoute[],
+  admission: MainRequestAdmission
+): void {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    if (admission.isClosed) {
+      refuse(socket, 503, 'Service Unavailable');
+      return;
+    }
     // `req.url` is origin-form (`/api/...`); the base only satisfies the parser
     // and is never read.
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -257,6 +267,9 @@ export function attachUpgradeRouter(server: Server, routes: readonly UpgradeRout
         let locals: StreamUpgradeLocals = {};
         if (claimed.route.credential === 'required') {
           const auth = await authorizeStreamUpgrade(req.headers);
+          if (admission.isClosed) {
+            return { ok: false, status: 503, message: 'Service Unavailable' };
+          }
           if (!auth.ok) return { ...auth, deliver };
           locals = auth.locals;
         }
@@ -277,10 +290,17 @@ export function attachUpgradeRouter(server: Server, routes: readonly UpgradeRout
           route: claimed.route.name,
           error: err instanceof Error ? err.message : String(err),
         });
-        refuse(socket, 500, 'Internal Server Error');
+        if (admission.isClosed) refuse(socket, 503, 'Service Unavailable');
+        else refuse(socket, 500, 'Internal Server Error');
         return;
       }
 
+      // Authorization may have yielded. Refusals that use a close frame also
+      // acquire a WebSocket, so this fence precedes both acceptance branches.
+      if (admission.isClosed) {
+        refuse(socket, 503, 'Service Unavailable');
+        return;
+      }
       if (!decision.ok && (decision.deliver ?? 'handshake') === 'handshake') {
         refuse(socket, decision.status, decision.message);
         return;

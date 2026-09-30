@@ -57,6 +57,37 @@ const CommunityNavigationRefSchema = z
   .regex(/^[0-9A-Za-z][0-9A-Za-z_-]*$/, 'A community ref must be path-safe');
 
 /**
+ * Where a copy of an extension came from, when this machine can prove it (spec
+ * `flow-multiproject` §9.1): the plugin that carries it, and the `owner/repo`
+ * DorkOS's own installer recorded fetching that plugin from (lowercased, e.g.
+ * `dork-labs/marketplace`). Never read from a file inside a project.
+ */
+export const ExtensionOriginSchema = z.object({
+  /** The plugin folder that carries the extension. */
+  plugin: z.string().min(1),
+  /** The normalized `owner/repo` the plugin was installed from. */
+  source: z.string().min(1),
+});
+
+/** Where a copy of an extension provably came from. */
+export type ExtensionOrigin = z.infer<typeof ExtensionOriginSchema>;
+
+/**
+ * One code source a person trusts (spec `flow-multiproject` §9.3): every
+ * extension DorkOS installs from it runs without asking first. Only a person
+ * can add one, once per source, and only a source DorkOS's installer proved.
+ */
+export const ExtensionTrustedSourceSchema = z.object({
+  /** The normalized `owner/repo`, e.g. `dork-labs/marketplace`. */
+  source: z.string().min(1),
+  /** When the person trusted it. ISO 8601. */
+  trustedAt: z.string(),
+});
+
+/** One code source a person trusts. */
+export type ExtensionTrustedSource = z.infer<typeof ExtensionTrustedSourceSchema>;
+
+/**
  * The one copy of an extension a person approved to run code (DOR-2383).
  *
  * An approval is about code, and an id is only a name: two copies of an
@@ -74,6 +105,22 @@ export const ExtensionApprovedSourceSchema = z.object({
    * inside one; absent for an extension installed directly.
    */
   plugin: z.string().min(1).optional(),
+  /**
+   * Where the approved copy came from, when this machine can prove it (spec
+   * `flow-multiproject` §9.1): the carrying plugin and the `owner/repo` DorkOS's
+   * own installer recorded fetching it from. Present only when the approved
+   * copy had such a trusted origin. Another copy with the same trusted origin
+   * counts as approved too, so the same plugin installed into several projects
+   * asks once. A file inside a project can never supply this: it is read only
+   * from DorkOS's own install records.
+   */
+  origin: ExtensionOriginSchema.optional(),
+  /**
+   * For a copy whose plugin files changed after DorkOS installed it: the
+   * whole plugin folder's digest the person said yes to. Any further change
+   * asks again, because a path alone no longer says what is there.
+   */
+  digest: z.string().min(1).optional(),
 });
 
 /** The one copy of an extension a person approved to run code. */
@@ -1121,6 +1168,63 @@ export const RawMcpServerConfigSchema = z.object({
 export type RawMcpServerConfig = z.infer<typeof RawMcpServerConfigSchema>;
 
 /**
+ * A list of project roots: absolute, canonical paths of git main checkouts
+ * (spec `flow-multiproject` §8.1). Roots contain dots (`/Users/x/client.app`),
+ * so a writer never addresses one through a dotted config key path; it reads
+ * the whole `runtimes.claudeCode` block, changes it and writes it back.
+ */
+const ProjectRootListSchema = z.array(z.string().min(1));
+
+/**
+ * A stored project-root rule, read tolerantly: a hand edit of the wrong shape
+ * (`"client-app"`, a number) reads as `null`, "any project", and blank or
+ * non-string entries are dropped, so a bad edit never makes the config
+ * unloadable (`readProjectRootList`, the reader every launch uses, agrees).
+ */
+const TolerantProjectRootListSchema = z.preprocess(
+  (raw) => readProjectRootList(raw),
+  ProjectRootListSchema.nullable()
+);
+
+/**
+ * One project's rule for which Claude accounts may work in it
+ * (`runtimes.claudeCode.projectAccounts[root]`, spec `flow-multiproject` §8.1).
+ * `allow` lists account ids, `default` (Main) included. A project with no entry
+ * allows every account its own rule allows.
+ */
+export const ProjectAccountsRuleSchema = z.object({
+  /** The account ids that may work in this project. */
+  allow: z.array(z.string().min(1)),
+});
+
+/** One project's account rule. See {@link ProjectAccountsRuleSchema}. */
+export type ProjectAccountsRule = z.infer<typeof ProjectAccountsRuleSchema>;
+
+/**
+ * `runtimes.claudeCode.projectAccounts`, read tolerantly: an entry without an
+ * `allow` list reads as no rule (dropped), blank or non-string ids in a list
+ * are dropped, and a value that is not an object reads as `{}`. The reader
+ * every launch uses (`readEligibilityRules`) applies the same rules, so a hand
+ * edit never makes the config unloadable and never means two things.
+ */
+const TolerantProjectAccountsSchema = z.preprocess(
+  (raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out: Record<string, { allow: string[] }> = {};
+    for (const [root, rule] of Object.entries(raw as Record<string, unknown>)) {
+      if (root.length === 0 || !rule || typeof rule !== 'object') continue;
+      const allow = (rule as { allow?: unknown }).allow;
+      if (!Array.isArray(allow)) continue;
+      out[root] = {
+        allow: allow.filter((id): id is string => typeof id === 'string' && id.length > 0),
+      };
+    }
+    return out;
+  },
+  z.record(z.string().min(1), ProjectAccountsRuleSchema)
+);
+
+/**
  * One Claude Code account DorkOS knows about — a Claude config directory holding
  * its own `projects/` transcripts and its own sign-in
  * (`runtimes.claudeCode.accounts`, spec `claude-code-accounts` D1).
@@ -1165,6 +1269,20 @@ export const ClaudeCodeAccountSchema = z.object({
    * `#rrggbb` reads as `null` rather than failing the whole config.
    */
   color: z.string().regex(ACCOUNT_COLOR_PATTERN).nullable().default(null).catch(null),
+  /**
+   * The projects this account may work in, as canonical project roots (git
+   * main checkouts), or `null` for any project (spec `flow-multiproject` §8,
+   * N6). A list never includes "no project": an account kept to client-app
+   * does not run in a folder that is in no repository. Written only by a
+   * person, through `PUT /api/runtimes/claude-code/accounts/:id/only-projects`.
+   *
+   * Optional rather than defaulted, and absent reads exactly as `null`: a row
+   * is a shared contract with flow (readers ignore fields they do not know,
+   * writers keep them), so rows written by an older flow or by hand carry no
+   * such field, and every reader (`readProjectRootList`) treats that as "any
+   * project". The `'0.93.0'` migration still writes `null` onto stored rows.
+   */
+  onlyProjects: TolerantProjectRootListSchema.optional(),
 });
 
 /** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
@@ -1522,6 +1640,19 @@ export type ReadClaudeAccount = ClaudeCodeAccount & {
 };
 
 /**
+ * A stored project-root list as a reader sees it: the non-empty strings of an
+ * array, or `null` (any project) for anything that is not an array. A reader
+ * never fails over a hand-edited rule; the launch path reads raw JSON.
+ *
+ * @param raw - A stored `onlyProjects` or `defaultAccountOnlyProjects` value.
+ * @returns The roots, or `null` for "any project".
+ */
+export function readProjectRootList(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw.filter((root): root is string => typeof root === 'string' && root.length > 0);
+}
+
+/**
  * The Claude account settings as every READER should see them, healed.
  *
  * The launch ladder, the `GET /api/config` block and the root-set scan all read
@@ -1622,6 +1753,9 @@ export function readClaudeAccountSettings(
       label: typeof row.label === 'string' ? row.label : null,
       color: resolveAccountColor(colorIsDefault ? null : (stored as string), accounts.length),
       colorIsDefault,
+      // Absent (a row written before the rule existed, or by an older flow)
+      // reads as `null`, any project: today's behaviour.
+      onlyProjects: readProjectRootList(row.onlyProjects),
     });
   }
   return { defaultAccount, accounts, warnings };
@@ -1838,6 +1972,22 @@ export const ClaudeCodeSettingsSchema = z.object({
    * folder: that row's own color wins. See {@link DefaultAccountColorSchema}.
    */
   defaultAccountColor: DefaultAccountColorSchema.default(null).catch(null),
+  /**
+   * The projects Main (this computer's own sign-in, id `default`) may work in,
+   * as canonical project roots, or `null` for any project. Main has no
+   * registry row to carry `onlyProjects`, so its rule lives here, the same
+   * pattern as `defaultAccountColor` (spec `flow-multiproject` §8.1).
+   */
+  defaultAccountOnlyProjects: TolerantProjectRootListSchema.default(null),
+  /**
+   * Per-project account rules, keyed by canonical project root: which
+   * accounts may work in that project (spec `flow-multiproject` §8.1, N6). A
+   * project with no entry allows every account. An account works in a project
+   * only when both its own rule and the project's allow it. Written only by a
+   * person, through `PUT /api/runtimes/claude-code/project-accounts`, which
+   * rewrites the whole object: the keys are paths and contain dots.
+   */
+  projectAccounts: TolerantProjectAccountsSchema.default({}),
   /**
    * Account folders a person dismissed from Settings' "Found on this
    * computer" list, so they stay hidden across restarts (spec
@@ -2718,6 +2868,16 @@ export const UserConfigSchema = z.object({
       dismissedApprovals: z
         .record(z.string(), ExtensionDismissedApprovalSchema)
         .default(() => ({})),
+      /**
+       * The code sources a person trusts (spec `flow-multiproject` §9.3): an
+       * extension whose copy provably came from one of these runs without an
+       * approval row. Keyed on a trusted origin's `owner/repo`, so a clone
+       * that merely claims a source is never covered.
+       *
+       * `operator-only`: it decides which code runs. Trusting a new source is
+       * one of the three asks only a person can answer.
+       */
+      trustedSources: z.array(ExtensionTrustedSourceSchema).default(() => []),
     })
     .default(() => ({
       enabled: [],
@@ -2725,6 +2885,7 @@ export const UserConfigSchema = z.object({
       approvedToRun: [],
       approvedSources: {},
       dismissedApprovals: {},
+      trustedSources: [],
     })),
   mcp: z
     .object({
@@ -3037,6 +3198,8 @@ export const UserConfigSchema = z.object({
         defaultAccount: null,
         accounts: [],
         defaultAccountColor: null,
+        defaultAccountOnlyProjects: null,
+        projectAccounts: {},
         dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
@@ -3125,6 +3288,8 @@ export const UserConfigSchema = z.object({
         defaultAccount: null,
         accounts: [],
         defaultAccountColor: null,
+        defaultAccountOnlyProjects: null,
+        projectAccounts: {},
         dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,

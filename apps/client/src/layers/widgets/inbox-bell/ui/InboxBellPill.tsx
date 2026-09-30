@@ -52,7 +52,7 @@ export interface InboxBellPillProps extends ComponentProps<typeof motion.button>
   count?: number;
   /** The accessible name — the count and what clicking does, spelled out. */
   label: string;
-  /** The word beside the number, hidden below `sm` where only the mark fits. */
+  /** The word beside the number, hidden below `lg` where only the mark and its badge fit. */
   text: string;
 }
 
@@ -96,7 +96,14 @@ export function InboxBellPill({
       whileTap={{ scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 500, damping: 32 }}
       className={cn(
-        'focus-visible:ring-ring/60 flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2',
+        // **A 28px square below `lg`, whatever the number.** On a phone and a
+        // tablet the pill is the same square as the header's other controls,
+        // and the number rides its corner as a badge. A pill that grew with its
+        // count ("9+ unread") spent 23 to 70px of a row that has none to give:
+        // with one unread row the bar beside it painted past its own box on
+        // Home, Tasks and Team (DOR-2524). From `lg` up the number and its word
+        // sit inline again, where the row has room for them.
+        'focus-visible:ring-ring/60 relative flex h-6 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-colors outline-none focus-visible:ring-2 lg:w-auto lg:justify-start lg:gap-1 lg:px-1.5',
         tone === 'waiting'
           ? 'bg-status-warning-bg text-status-warning-fg border-status-warning-border/60 hover:border-status-warning-border hover:bg-status-warning-border/25 active:bg-status-warning-border/40'
           : 'text-muted-foreground border-border/60 hover:border-border hover:bg-muted active:bg-muted/70',
@@ -106,9 +113,24 @@ export function InboxBellPill({
     >
       <Glyph aria-hidden className="size-3.5 shrink-0" />
       {count !== undefined && (
-        <span className="tabular-nums">{count > DISPLAY_CAP ? `${DISPLAY_CAP}+` : count}</span>
+        <span
+          data-slot="inbox-bell-count"
+          className={cn(
+            'tabular-nums',
+            // The corner badge, below `lg`: out of flow, so the number never
+            // widens the control. Solid in the pill's own ink, so it reads as
+            // the same signal at a glance.
+            'absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none',
+            tone === 'waiting'
+              ? 'bg-status-warning-fg text-background'
+              : 'bg-foreground text-background',
+            'lg:static lg:h-auto lg:min-w-0 lg:rounded-none lg:bg-transparent lg:px-0 lg:text-xs lg:leading-normal lg:text-inherit'
+          )}
+        >
+          {count > DISPLAY_CAP ? `${DISPLAY_CAP}+` : count}
+        </span>
       )}
-      <span className="hidden sm:inline">{text}</span>
+      <span className="hidden lg:inline">{text}</span>
     </motion.button>
   );
 }
