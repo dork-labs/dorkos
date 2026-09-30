@@ -7,9 +7,10 @@
  * release's `ImageRef`, the one linux/amd64 manifest inside it, never the index (live gate on
  * 0.92.0, DOR-2586). So a deploy is proven against that manifest's digest.
  *
- * The release manifest names only the index, so the index is read anonymously from ghcr.io, and
- * trusted only because it is content-addressed: its bytes must hash to exactly the attested index
- * digest, so the manifest list read is the one the attestation covers.
+ * Newer release manifests carry each platform's digest themselves, covered by the manifest's own
+ * attestation. For manifests without them (0.92.0 and earlier) the index is read anonymously from
+ * ghcr.io, and trusted only because it is content-addressed: its bytes must hash to exactly the
+ * attested index digest, so the manifest list read is the one the attestation covers.
  *
  * @module commands/community-deploy/runtime/image-platform
  */

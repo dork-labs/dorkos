@@ -215,15 +215,58 @@ describe('resolveCommunityPlatformDigest', () => {
     neon: { executable: 'neonctl', env: {}, timeoutMs: 1_000 },
     graphqlTimeoutMs: 1_000,
   };
-  it('reads the attested index from the registry for the plan it deploys', async () => {
-    const fetch = registry(await realIndex());
+  const release = (platforms: Array<{ os: string; architecture: string; digest?: string }>) => ({
+    dorkosVersion: '0.92.0',
+    image: { repository: REPOSITORY, digest: INDEX_DIGEST, platforms },
+    provenance: { repository: 'dork-labs/dorkos', workflowRef: 'x' },
+    configSchemaVersion: 1,
+    migrationCompatibilityId: `sha256:${'b'.repeat(64)}`,
+    minimumFlyctlVersion: '0.4.104',
+    minimumNeonCliVersion: '5.0.0',
+  });
+
+  it('uses the digest a newer attested manifest carries, without reading the registry', async () => {
+    const fetch = vi.fn();
     await expect(
       resolveCommunityPlatformDigest({
+        release: release([
+          { os: 'linux', architecture: 'amd64', digest: AMD64_DIGEST },
+          { os: 'linux', architecture: 'arm64', digest: `sha256:${'d'.repeat(64)}` },
+        ]),
         plan,
         options,
         fetch: fetch as unknown as typeof globalThis.fetch,
       })
     ).resolves.toBe(AMD64_DIGEST);
-    expect(String(fetch.mock.calls[1]![0])).toContain(`/manifests/${INDEX_DIGEST}`);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('reads the registry for a 0.92.0 manifest, which carries no platform digests', async () => {
+    const fetch = registry(await realIndex());
+    await expect(
+      resolveCommunityPlatformDigest({
+        release: release([
+          { os: 'linux', architecture: 'amd64' },
+          { os: 'linux', architecture: 'arm64' },
+        ]),
+        plan,
+        options,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+      })
+    ).resolves.toBe(AMD64_DIGEST);
+  });
+
+  it('refuses a release whose index is not the one the plan deploys', async () => {
+    await expect(
+      resolveCommunityPlatformDigest({
+        release: {
+          ...release([]),
+          image: { repository: REPOSITORY, digest: `sha256:${'0'.repeat(64)}`, platforms: [] },
+        },
+        plan,
+        options,
+        fetch: vi.fn() as unknown as typeof globalThis.fetch,
+      })
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 });

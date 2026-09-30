@@ -269,6 +269,8 @@ export async function runCommunityDispatcher(
     graphqlTimeoutMs: 30_000,
     signal: cancellation.signal,
   };
+  // The attested release, kept so the deploy can use the platform digests its manifest carries.
+  let verifiedRelease: CompatibleCommunityRelease | null = null;
   const trusted: TrustedReleaseIdentity = {
     repository: 'dork-labs/dorkos',
     workflowRef: '.github/workflows/publish-community.yml',
@@ -303,6 +305,7 @@ export async function runCommunityDispatcher(
             releaseSource,
             context.parseRelease
           ).then(async (release) => {
+            verifiedRelease = release;
             await assertCommunityCliVersions(serviceOptions.fly, serviceOptions.neon, {
               fly: release.minimumFlyctlVersion,
               neon: release.minimumNeonCliVersion,
@@ -324,6 +327,7 @@ export async function runCommunityDispatcher(
           let settledPlatformDigest: Promise<string> | undefined;
           const platformDigest = () =>
             (settledPlatformDigest ??= resolveCommunityPlatformDigest({
+              release: verifiedRelease,
               plan: result.plan,
               options: serviceOptions,
             }));
