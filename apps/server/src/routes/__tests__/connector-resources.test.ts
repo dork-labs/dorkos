@@ -11,6 +11,7 @@ import { ConnectorAppActionsError } from '../../services/connectors/resources/ap
 import { ConnectorOperatorQueryError } from '../../services/connectors/resources/operator-query-service.js';
 import { ConnectorSessionAccessError } from '../../services/connectors/resources/session-access-service.js';
 import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
+import { logger } from '../../lib/logger.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
@@ -217,9 +218,17 @@ describe('connector resource routes', () => {
       throw new Error('private upstream detail');
     });
 
+    const logged = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     await api().get('/api/connectors/connections').expect(500, {
       error: 'DorkOS could not complete this connection request. Try again.',
     });
+    // The failure the body hides is the one the log must name, once.
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(logged).toHaveBeenCalledWith(
+      '[Connectors] Connection request failed',
+      expect.objectContaining({ error: expect.stringContaining('private upstream detail') })
+    );
+    logged.mockRestore();
   });
 
   it('asks the services whether sign-ins still hold before the owner reads the list or a panel', async () => {
