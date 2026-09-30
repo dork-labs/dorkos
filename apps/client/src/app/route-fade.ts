@@ -46,9 +46,9 @@ export interface RoutedPageMatch {
  * key: every one of its mount effects ran again (a room composer took the
  * caret, streams resubscribed), the fade played on the page on its way out,
  * and the new page then swapped in under the same key with no fade at all.
- * Measured on a phone-width switch from a Community back to Home, dev and
+ * Measured on a phone-width switch from a Community back to Home, in dev and
  * production builds alike: the Community's composer mounted a second time
- * about 10-50ms after the address changed, and was gone 20-125ms later. The
+ * 7-47ms after the address changed and was replaced 27-126ms after that. The
  * matches change in the same commit as the outlet, so a key read from them
  * changes exactly when the page does.
  *
