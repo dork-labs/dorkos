@@ -15,7 +15,7 @@
  */
 
 /**
- * Longest display name a span keeps. The name is set by whoever is on the
+ * Longest display name a span keeps, in code points. The name is set by whoever is on the
  * other end of the chat, so it is bounded before it reaches a durable row, the
  * same bound the unclaimed-chat store uses.
  */
@@ -35,7 +35,12 @@ function displayString(record: Record<string, unknown>, key: string): string | u
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  return trimmed.length > MAX_CHAT_NAME_LENGTH ? trimmed.slice(0, MAX_CHAT_NAME_LENGTH) : trimmed;
+  // Cut by code point, not UTF-16 unit, so an emoji or other astral character
+  // at the boundary is dropped whole instead of split into a lone surrogate.
+  const codePoints = Array.from(trimmed);
+  return codePoints.length > MAX_CHAT_NAME_LENGTH
+    ? codePoints.slice(0, MAX_CHAT_NAME_LENGTH).join('')
+    : trimmed;
 }
 
 /**

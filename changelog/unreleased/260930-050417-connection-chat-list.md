@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(relay): list the chats a connection has carried (DOR-2590)'
+  - 'fix(relay): name observed chats and leave no-text events out of the count (DOR-2590)'
+  - 'fix(relay): cut observed chat names by code point and fold the seeded fragment (DOR-2590)'
 ---
 
 ### Fixed

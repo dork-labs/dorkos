@@ -55,6 +55,15 @@ describe('chatSpanFields', () => {
     expect(fields.chatName).toHaveLength(200);
   });
 
+  it('cuts a long name by code point, never splitting an emoji', () => {
+    // 199 letters then emoji: a UTF-16 slice at 200 would keep half the pair.
+    const name = 'A'.repeat(199) + '😀😀';
+    const fields = chatSpanFields(BOT, { content: 'x', senderName: name });
+    expect(fields.chatName).toBe('A'.repeat(199) + '😀');
+    expect(Array.from(fields.chatName!)).toHaveLength(200);
+    expect(fields.chatName).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
   it('records nothing for a publish that did not come from a chat connection', () => {
     expect(
       chatSpanFields('agent:session-1', { content: '', senderName: 'Agent', channelType: 'dm' })
