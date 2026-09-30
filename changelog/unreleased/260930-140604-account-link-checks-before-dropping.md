@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): check the account link before dropping it after one refused request (DOR-2620)'
+  - 'fix(server): cool down the link check and say "refused", not "unlinked" (DOR-2620)'
 ---
 
 ### Fixed

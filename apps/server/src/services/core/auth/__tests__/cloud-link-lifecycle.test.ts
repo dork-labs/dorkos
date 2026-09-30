@@ -457,23 +457,27 @@ describe('CloudLinkManager key check after a refused call', () => {
   afterEach(() => {
     for (const manager of managers) manager.stop();
     managers.length = 0;
+    vi.useRealTimers();
   });
 
   /** A linked manager whose managed routes answer 401 and whose heartbeat answers `onHeartbeat`. */
-  function refusedRoutes(onHeartbeat: () => Promise<Response>) {
+  function refusedRoutes(
+    onHeartbeat: (init?: RequestInit) => Promise<Response>,
+    now: () => number = Date.now
+  ) {
     const config = memoryConfig('good-key');
     const heartbeats: RequestInit[] = [];
     const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
       const path = new URL(url).pathname;
       if (path.endsWith('/instances/heartbeat')) {
         heartbeats.push(init ?? {});
-        return onHeartbeat();
+        return onHeartbeat(init);
       }
       if (path.includes('/instances/connectors/')) return response(401);
       throw new Error(`Unexpected request: ${path}`);
     });
     const sync = vi.fn();
-    const manager = new CloudLinkManager({ config, fetchImpl, sleep: noSleep });
+    const manager = new CloudLinkManager({ config, fetchImpl, sleep: noSleep, now });
     manager.setManagedProviderSync(sync);
     managers.push(manager);
     return { config, manager, heartbeats, sync };
@@ -495,10 +499,16 @@ describe('CloudLinkManager key check after a refused call', () => {
             ? manager.submitConnectorAuthorityCommand(command)
             : manager.readConnectorAuthorityCommand(command.commandId);
 
-      // The refused call's own error still reaches its caller, unchanged.
+      // The call still fails, but as one refused request: never "unlinked"
+      // while the link is fine. The route's own refusal is kept as the cause.
       const error = await request.catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(ManagedConnectorCloudError);
-      expect(error).toMatchObject({ code: 'unauthorized', status: 401 });
+      expect(error).toMatchObject({
+        code: 'request_failed',
+        status: 401,
+        message: 'DorkOS’s servers turned the request down.',
+        cause: expect.objectContaining({ code: 'unauthorized', status: 401 }),
+      });
 
       expect(heartbeats).toHaveLength(1);
       expect(bearer(heartbeats[0])).toBe('good-key');
@@ -541,14 +551,73 @@ describe('CloudLinkManager key check after a refused call', () => {
     reply.resolve(heartbeat('still-linked'));
 
     for (const failure of await Promise.all(failures)) {
-      expect(failure).toMatchObject({ code: 'unauthorized' });
+      expect(failure).toMatchObject({ code: 'request_failed', status: 401 });
+    }
+    expect(heartbeats).toHaveLength(1);
+    expect(config.getToken()).toBe('good-key');
+  });
+
+  it('lets a check that kept the key answer later refusals for five minutes', async () => {
+    const start = Date.parse('2026-09-30T12:00:00Z');
+    let clock = start;
+    const { config, manager, heartbeats } = refusedRoutes(
+      async () => heartbeat('still-linked'),
+      () => clock
+    );
+
+    // One refusal after another, as a recovery pass or the event pull makes,
+    // up to the last moment of the cooldown.
+    for (const at of [0, 60_000, 120_000, 240_000, 299_999]) {
+      clock = start + at;
+      await expect(usage(manager)).rejects.toMatchObject({ code: 'request_failed' });
     }
     expect(heartbeats).toHaveLength(1);
     expect(config.getToken()).toBe('good-key');
 
-    // A refusal after that check settled asks again.
-    await expect(usage(manager)).rejects.toMatchObject({ code: 'unauthorized' });
+    // Once the cooldown is over, the next refusal asks again.
+    clock = start + 300_000;
+    await expect(usage(manager)).rejects.toMatchObject({ code: 'request_failed' });
     expect(heartbeats).toHaveLength(2);
+  });
+
+  it('still unlinks on a heartbeat 401 inside the cooldown', async () => {
+    let answer = heartbeat('still-linked');
+    const { config, manager } = refusedRoutes(async () => answer);
+    await expect(usage(manager)).rejects.toMatchObject({ code: 'request_failed' });
+
+    answer = response(401);
+    await manager.initOnStartup();
+
+    expect(config.getToken()).toBeNull();
+    expect(config.getPreviousLinkProof()).toBe(linkProofForKey('good-key'));
+    expect(manager.getStatus().state).toBe('unlinked');
+    await expect(usage(manager)).rejects.toMatchObject({
+      code: 'unauthorized',
+      name: 'ManagedConnectorLinkRequiredError',
+    });
+  });
+
+  it('releases the refused call when the heartbeat hangs past its bound', async () => {
+    vi.useFakeTimers();
+    const { config, manager, heartbeats } = refusedRoutes(
+      (init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        })
+    );
+    let settled = false;
+    const failure = usage(manager)
+      .catch((error: unknown) => error)
+      .finally(() => {
+        settled = true;
+      });
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(heartbeats).toHaveLength(1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(failure).resolves.toMatchObject({ code: 'request_failed', status: 401 });
+    expect(config.getToken()).toBe('good-key');
   });
 
   it.each([
@@ -563,11 +632,9 @@ describe('CloudLinkManager key check after a refused call', () => {
   ] as const)('keeps the key when the heartbeat fails with %s', async (_label, onHeartbeat) => {
     const { config, manager, heartbeats } = refusedRoutes(onHeartbeat);
 
-    await expect(usage(manager)).rejects.toMatchObject({ code: 'unauthorized' });
+    await expect(usage(manager)).rejects.toMatchObject({ code: 'request_failed', status: 401 });
 
     expect(heartbeats).toHaveLength(1);
-    // The check is bounded, so a hung heartbeat cannot hold the refused call.
-    expect(heartbeats[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(config.getToken()).toBe('good-key');
     expect(config.getPreviousLinkProof()).toBeNull();
     expect(manager.getSummary().linked).toBe(true);
@@ -605,7 +672,7 @@ describe('CloudLinkManager key check after a refused call', () => {
     managers.push(manager);
 
     await manager.startLink();
-    await expect(usage(manager)).rejects.toMatchObject({ code: 'unauthorized' });
+    await expect(usage(manager)).rejects.toMatchObject({ code: 'request_failed' });
 
     expect(config.getToken()).toBe('old-key');
     expect(manager.getStatus().state).toBe('pending');
