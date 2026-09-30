@@ -125,11 +125,16 @@ export const UNLINKED_REASON = 'This instance was unlinked';
 /** The link-flow state the client UI reads. */
 export type CloudLinkState = 'idle' | 'pending' | 'linked' | 'expired' | 'denied' | 'unlinked';
 
+/** How a relink that did not replace the held key ended; the computer stayed linked. */
+export type CloudRelinkOutcome = 'denied' | 'expired' | 'failed';
+
 /** The `GET /api/cloud/link/status` shape. */
 export interface CloudLinkStatus {
   state: CloudLinkState;
   accountLabel?: string;
   lastHeartbeatAt?: string;
+  /** Present while linked after a relink ended without replacing the key. */
+  relinkOutcome?: CloudRelinkOutcome;
 }
 
 /** The `GET /api/cloud/status` settled-summary shape. */
@@ -258,6 +263,7 @@ export class CloudLinkManager {
   private configPort: CloudConfigPort | undefined;
 
   private state: CloudLinkState = 'idle';
+  private relinkOutcome: CloudRelinkOutcome | undefined;
   private lastHeartbeatAt: string | undefined;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   private pollController: AbortController | undefined;
@@ -314,6 +320,7 @@ export class CloudLinkManager {
   async startLink(): Promise<StartLinkResult> {
     const generation = this.advanceGeneration();
     this.cancelPoll();
+    this.relinkOutcome = undefined;
     const baseUrl = resolveCloudBaseUrl();
     // Resolve the analytics-merge opt-in HERE, at link time: the descriptor built
     // now is what the cloud persists and reads to alias this install's anonymous
@@ -387,15 +394,45 @@ export class CloudLinkManager {
         await this.heartbeat(baseUrl, descriptor, result.accessToken, generation);
         if (this.ownsContext(context)) this.startHeartbeatSchedule();
       } else {
-        this.setState(result.status === 'denied' ? 'denied' : 'expired');
+        this.settleUnfinished(result.status === 'denied' ? 'denied' : 'expired');
       }
     } catch (err) {
       this.settlePoll(signal);
       if (!signal.aborted && generation === this.linkGeneration) {
         logger.warn('[CloudLink] Device-link poll failed', logError(err));
-        this.setState('idle');
+        this.settleUnfinished('failed');
       }
     }
+  }
+
+  /**
+   * A link flow ended without a new key. A computer that still holds its key
+   * never stopped being linked, so it goes straight back to `linked` with a
+   * note saying how the relink ended, instead of reading as broken until the
+   * next heartbeat. With no key, the flow's own end state stands.
+   */
+  private settleUnfinished(outcome: CloudRelinkOutcome): void {
+    if (this.config.getToken()) {
+      this.relinkOutcome = outcome;
+      this.setState('linked');
+      return;
+    }
+    this.setState(outcome === 'failed' ? 'idle' : outcome);
+  }
+
+  /**
+   * Stop a link flow in progress, or dismiss the note a finished relink left.
+   * Advancing the generation means an approval already on its way is dropped
+   * rather than saved. Returns to `linked` while a key is held, else `idle`.
+   */
+  cancelLink(): CloudLinkStatus {
+    if (this.pollController) {
+      this.advanceGeneration();
+      this.cancelPoll();
+    }
+    this.relinkOutcome = undefined;
+    this.setState(this.config.getToken() ? 'linked' : 'idle');
+    return this.getStatus();
   }
 
   /** A settled poll no longer counts as a pending re-link (see {@link markUnlinked}). */
@@ -430,6 +467,7 @@ export class CloudLinkManager {
     this.stopHeartbeatSchedule();
     this.clearKeepingProof();
     this.lastHeartbeatAt = undefined;
+    this.relinkOutcome = undefined;
     this.setState('idle');
     const reconciliation = this.notifyManagedProviderSync();
     const revocation = token
@@ -450,6 +488,9 @@ export class CloudLinkManager {
       state: this.state,
       ...(accountLabel ? { accountLabel } : {}),
       ...(this.lastHeartbeatAt ? { lastHeartbeatAt: this.lastHeartbeatAt } : {}),
+      ...(this.state === 'linked' && this.relinkOutcome
+        ? { relinkOutcome: this.relinkOutcome }
+        : {}),
     };
   }
 
@@ -941,6 +982,7 @@ export class CloudLinkManager {
     this.stopHeartbeatSchedule();
     this.clearKeepingProof();
     this.lastHeartbeatAt = undefined;
+    this.relinkOutcome = undefined;
     this.setState(relinkPending ? 'pending' : 'unlinked');
     void this.notifyManagedProviderSync();
     logger.warn(

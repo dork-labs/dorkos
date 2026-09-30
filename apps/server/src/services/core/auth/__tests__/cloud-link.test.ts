@@ -543,6 +543,132 @@ describe('CloudLinkManager', () => {
     });
   });
 
+  describe('a relink that does not finish while this computer is still linked', () => {
+    const HELD = {
+      instanceToken: 'dork_inst_held',
+      instanceName: 'kai-mbp',
+      linkedAccountLabel: 'Kai',
+      previousLinkProof: null,
+    };
+
+    it.each([
+      ['denied', { status: 400, body: { error: 'access_denied' } }],
+      ['expired', { status: 400, body: { error: 'expired_token' } }],
+      ['failed', { status: 500, body: {} }],
+    ] as const)('goes straight back to linked when the relink ends %s', async (outcome, step) => {
+      configManager.set('cloud', HELD);
+      vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      manager = new CloudLinkManager({
+        fetchImpl: routerFetch({ code: () => CODES, token: () => step }),
+        sleep: noSleep,
+        resolveTelemetryInstanceId: async () => undefined,
+      });
+      await manager.startLink();
+      expect(manager.getStatus().state).toBe('pending');
+      await manager.pendingLink;
+      expect(manager.getStatus()).toMatchObject({ state: 'linked', relinkOutcome: outcome });
+      expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_held');
+    });
+
+    it('still ends denied or expired on a computer with no link to keep', async () => {
+      manager = new CloudLinkManager({
+        fetchImpl: routerFetch({
+          code: () => CODES,
+          token: () => ({ status: 400, body: { error: 'access_denied' } }),
+        }),
+        sleep: noSleep,
+        resolveTelemetryInstanceId: async () => undefined,
+      });
+      await manager.startLink();
+      await manager.pendingLink;
+      expect(manager.getStatus().state).toBe('denied');
+      expect(manager.getStatus().relinkOutcome).toBeUndefined();
+    });
+
+    it('cancels a pending relink back to linked, and clears the note', async () => {
+      configManager.set('cloud', HELD);
+      manager = new CloudLinkManager({
+        fetchImpl: routerFetch({
+          code: () => CODES,
+          token: () => ({ status: 400, body: { error: 'expired_token' } }),
+        }),
+        sleep: noSleep,
+        resolveTelemetryInstanceId: async () => undefined,
+      });
+      await manager.startLink();
+      await manager.pendingLink;
+      expect(manager.getStatus().relinkOutcome).toBe('expired');
+      manager.cancelLink();
+      expect(manager.getStatus().state).toBe('linked');
+      expect(manager.getStatus().relinkOutcome).toBeUndefined();
+    });
+
+    /** A cloud whose approval arrives only when the test says so. */
+    function approvalOnCue() {
+      let approve!: () => void;
+      const approval = new Promise<void>((resolve) => {
+        approve = resolve;
+      });
+      const fetchImpl = vi.fn(async (url: string) => {
+        const p = new URL(url).pathname;
+        if (p.endsWith('/device/code')) return new Response(JSON.stringify(CODES.body));
+        if (p.endsWith('/device/token')) {
+          await approval;
+          return new Response(JSON.stringify({ access_token: 'dork_inst_late' }));
+        }
+        if (p.endsWith('/instances/heartbeat')) {
+          return new Response(
+            JSON.stringify({ ok: true, instanceId: 'i', lastSeenAt: '2026-09-30T00:00:00Z' })
+          );
+        }
+        throw new Error(`unexpected request: ${p}`);
+      });
+      const polling = () =>
+        vi.waitFor(() =>
+          expect(fetchImpl.mock.calls.some((c) => String(c[0]).endsWith('/device/token'))).toBe(
+            true
+          )
+        );
+      return { fetchImpl, approve, polling };
+    }
+
+    it('cancels a first link back to idle, and a late approval saves nothing', async () => {
+      const { fetchImpl, approve, polling } = approvalOnCue();
+      manager = new CloudLinkManager({
+        fetchImpl,
+        sleep: noSleep,
+        resolveTelemetryInstanceId: async () => undefined,
+      });
+      await manager.startLink();
+      const poll = manager.pendingLink;
+      await polling();
+      manager.cancelLink();
+      expect(manager.getStatus().state).toBe('idle');
+      approve();
+      await poll;
+      expect(manager.getStatus().state).toBe('idle');
+      expect(configManager.getDot('cloud.instanceToken')).toBeNull();
+    });
+
+    it('never lets an approval that lands after a cancel replace the held key', async () => {
+      configManager.set('cloud', HELD);
+      const { fetchImpl, approve, polling } = approvalOnCue();
+      manager = new CloudLinkManager({
+        fetchImpl,
+        sleep: noSleep,
+        resolveTelemetryInstanceId: async () => undefined,
+      });
+      await manager.startLink();
+      const poll = manager.pendingLink;
+      await polling();
+      manager.cancelLink();
+      approve();
+      await poll;
+      expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_held');
+      expect(manager.getStatus().state).toBe('linked');
+    });
+  });
+
   it('names the cloud code and status when managed provider registration fails', async () => {
     configManager.set('cloud', {
       instanceToken: 'linked-key',

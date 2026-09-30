@@ -79,6 +79,15 @@ router.get('/link/status', (_req, res) => {
   res.json(getCloudLinkManager().getStatus());
 });
 
+/**
+ * POST /api/cloud/link/cancel — stop a link flow in progress, or dismiss the
+ * note a finished relink left. Answers the state it settled in: `linked` while
+ * this computer still holds its key, else `idle`.
+ */
+router.post('/link/cancel', (_req, res) => {
+  res.json(getCloudLinkManager().cancelLink());
+});
+
 /** POST /api/cloud/unlink — withdraw locally before best-effort server-side revoke. */
 router.post('/unlink', async (_req, res) => {
   try {
