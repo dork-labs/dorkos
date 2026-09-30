@@ -7,6 +7,7 @@ import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import type { AdapterManagerDeps, AdapterMeshCoreLike } from '../adapter-manager.js';
 import { BridgeStore } from '../chat-bridge/bridge-store.js';
 import { RoomStore } from '../../rooms/room-store.js';
+import { TraceStore } from '../trace-store.js';
 
 // Mock fs/promises
 vi.mock('node:fs/promises', () => ({
@@ -15,6 +16,8 @@ vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn().mockResolvedValue(undefined),
   rename: vi.fn().mockResolvedValue(undefined),
   chmod: vi.fn().mockResolvedValue(undefined),
+  // A failed atomic write removes its temp file.
+  rm: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock chokidar
@@ -1605,6 +1608,77 @@ describe('AdapterManager', () => {
       expect(mockBindingStore.delete).toHaveBeenCalledWith('b2');
       // Should NOT delete the binding for wh-github
       expect(mockBindingStore.delete).not.toHaveBeenCalledWith('b3');
+    });
+
+    describe('delivery history (DOR-2604)', () => {
+      /** A real trace store holding one chat on `tg-main` and one on `tg-main-2`. */
+      function seededTraceStore(): TraceStore {
+        const traces = new TraceStore(createTestDb());
+        for (const adapterId of ['tg-main', 'tg-main-2']) {
+          traces.insertSpan({
+            messageId: `in-${adapterId}`,
+            traceId: `in-${adapterId}`,
+            subject: `relay.human.telegram.${adapterId}.111`,
+            status: 'delivered',
+            metadata: { from: `relay.human.telegram.${adapterId}.bot`, chatName: 'Ada' },
+          });
+          traces.insertAdapterEvent(adapterId, 'adapter.connected', 'Connected to relay');
+        }
+        return traces;
+      }
+
+      it("deletes the removed connection's chats, names and events, and no one else's", async () => {
+        vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+        const traces = seededTraceStore();
+        const withTraces = new AdapterManager(registry, configPath, {
+          ...mockDeps,
+          traceEraser: traces,
+        });
+        await initAndStart(withTraces);
+
+        await withTraces.removeAdapter('tg-main');
+
+        expect(traces.getObservedChats('tg-main')).toEqual([]);
+        expect(traces.getAdapterEvents('tg-main')).toEqual([]);
+        expect(traces.getSpanByMessageId('in-tg-main')).toBeNull();
+        // `tg-main-2` starts with `tg-main` and is a different connection.
+        expect(traces.getObservedChats('tg-main-2')).toEqual([
+          expect.objectContaining({ chatId: '111', displayName: 'Ada' }),
+        ]);
+        expect(traces.getAdapterEvents('tg-main-2')).toHaveLength(1);
+      });
+
+      it('keeps the history when the removal could not be saved', async () => {
+        vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+        const traces = seededTraceStore();
+        const withTraces = new AdapterManager(registry, configPath, {
+          ...mockDeps,
+          traceEraser: traces,
+        });
+        await initAndStart(withTraces);
+        vi.mocked(writeFile).mockRejectedValueOnce(new Error('disk full'));
+
+        await expect(withTraces.removeAdapter('tg-main')).rejects.toThrow('disk full');
+
+        expect(traces.getObservedChats('tg-main')).toHaveLength(1);
+        expect(traces.getAdapterEvents('tg-main')).toHaveLength(1);
+      });
+
+      it('still removes the connection when its history cannot be deleted', async () => {
+        vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+        const traceEraser = {
+          deleteConnectionTraces: vi.fn(() => {
+            throw new Error('database is locked');
+          }),
+        };
+        const withEraser = new AdapterManager(registry, configPath, { ...mockDeps, traceEraser });
+        await initAndStart(withEraser);
+
+        await withEraser.removeAdapter('tg-main');
+
+        expect(traceEraser.deleteConnectionTraces).toHaveBeenCalledWith('tg-main');
+        expect(withEraser.listAdapters().find((a) => a.config.id === 'tg-main')).toBeUndefined();
+      });
     });
 
     it('does not affect bindings for other adapters on removal', async () => {

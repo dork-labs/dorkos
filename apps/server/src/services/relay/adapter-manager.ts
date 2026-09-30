@@ -116,6 +116,17 @@ export interface AdapterEventRecorder {
   insertAdapterEvent(adapterId: string, eventType: string, message: string): void;
 }
 
+/** Deletes the delivery history a removed chat connection left behind (DOR-2604). */
+export interface ConnectionTraceEraser {
+  /**
+   * Delete every delivery record and lifecycle event that names the connection.
+   *
+   * @param adapterId - The removed connection's id.
+   * @returns How many records were deleted.
+   */
+  deleteConnectionTraces(adapterId: string): number;
+}
+
 /** Minimal ActivityService interface for fire-and-forget event emission. */
 export interface ActivityEmitter {
   emit(event: {
@@ -171,6 +182,12 @@ export interface AdapterManagerDeps {
   meshCore?: AdapterMeshCoreLike;
   /** Optional recorder for adapter lifecycle events */
   eventRecorder?: AdapterEventRecorder;
+  /**
+   * Deletes a removed connection's delivery records, chat names and lifecycle
+   * events. Optional so a manager built without a trace store still removes
+   * connections; there is then nothing to delete.
+   */
+  traceEraser?: ConnectionTraceEraser;
   /** Optional activity service for feed instrumentation */
   activityService?: ActivityEmitter;
   /**
@@ -1069,6 +1086,7 @@ export class AdapterManager {
     await this.persistConfigs();
     // Best-effort cleanup of the removed adapter's stored secrets (DOR-280).
     await deleteAdapterSecrets(config, this.secretsCtx);
+    this.deleteConnectionHistory(id);
 
     // Auto-delete bindings that belonged to the removed adapter
     const bindingStore = this.bindingSubsystem?.getBindingStore();
@@ -1089,6 +1107,35 @@ export class AdapterManager {
           id
         );
       }
+    }
+  }
+
+  /**
+   * Delete what the delivery log holds about a removed connection: its chats'
+   * messages, their names, and its connect and error events (DOR-2604).
+   *
+   * Runs only once the removal is saved, so a removal that fails part way
+   * leaves the history of a connection that still exists. A failure here is logged, not
+   * thrown: the connection is already gone, and the delivery records still age
+   * out with the rest after the retention window (`relay-gc.ts`).
+   *
+   * @param id - The removed connection's id.
+   */
+  private deleteConnectionHistory(id: string): void {
+    const eraser = this.deps.traceEraser;
+    if (!eraser) return;
+    try {
+      const deleted = eraser.deleteConnectionTraces(id);
+      logger.info(
+        '[AdapterManager] Deleted %d delivery record(s) for removed adapter %s',
+        deleted,
+        id
+      );
+    } catch (err) {
+      logger.warn('[AdapterManager] could not delete delivery records for removed adapter', {
+        adapterId: id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

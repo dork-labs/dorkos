@@ -2837,6 +2837,7 @@ async function start() {
         relayCore,
         meshCore, // meshCore is now available
         eventRecorder: traceStore,
+        traceEraser: traceStore,
         activityService,
         // The claim feed for unbound inbound chats (connection-scoping spec
         // §Part 3). Constructed here (rather than up front with the connector

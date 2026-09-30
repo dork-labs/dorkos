@@ -616,6 +616,101 @@ describe('TraceStore', () => {
     });
   });
 
+  describe('deleteConnectionTraces (DOR-2604)', () => {
+    /** Insert a delivery span and return its message id. */
+    function span(messageId: string, subject: string, metadata: Record<string, unknown> = {}) {
+      store.insertSpan({ messageId, traceId: messageId, subject, status: 'delivered', metadata });
+      return messageId;
+    }
+
+    /** Message ids still stored. */
+    function remaining(): string[] {
+      return db
+        .all<{ message_id: string }>(sql`SELECT message_id FROM relay_traces ORDER BY message_id`)
+        .map((r) => r.message_id);
+    }
+
+    it("deletes a removed connection's chats, their names and its events", () => {
+      span('dm-in', 'relay.human.telegram.tg.111', {
+        from: 'relay.human.telegram.tg.bot',
+        chatName: 'Ada',
+      });
+      span('group-in', 'relay.human.telegram.tg.group.-100', {
+        from: 'relay.human.telegram.tg.bot',
+        chatName: 'Launch crew',
+      });
+      span('reply', 'relay.human.telegram.tg.111', { from: 'relay.agent.session-1' });
+      // The chat's message forwarded to an agent keeps the chat's name and the
+      // connection as its sender, under the agent's subject.
+      span('forwarded', 'relay.agent.session-1', {
+        from: 'relay.human.telegram.tg.bot',
+        chatName: 'Ada',
+      });
+      span('bare', 'relay.human.telegram.tg');
+      store.insertAdapterEvent('tg', 'adapter.connected', 'Connected to relay');
+
+      const deleted = store.deleteConnectionTraces('tg');
+
+      expect(deleted).toBe(6);
+      expect(remaining()).toEqual([]);
+      expect(store.getObservedChats('tg')).toEqual([]);
+      expect(store.getAdapterEvents('tg')).toEqual([]);
+    });
+
+    it('leaves a connection whose id only starts with the removed one', () => {
+      span('tg-in', 'relay.human.telegram.tg.111', { from: 'relay.human.telegram.tg.bot' });
+      span('tg2-in', 'relay.human.telegram.tg-2.111', {
+        from: 'relay.human.telegram.tg-2.bot',
+        chatName: 'Grace',
+      });
+      span('tg2-forwarded', 'relay.agent.session-2', { from: 'relay.human.telegram.tg-2.bot' });
+      span('tgx-in', 'relay.human.telegram.tgx.5', { from: 'relay.human.telegram.tgx.bot' });
+      store.insertAdapterEvent('tg-2', 'adapter.connected', 'Connected to relay');
+
+      store.deleteConnectionTraces('tg');
+
+      expect(remaining()).toEqual(expect.arrayContaining(['tg2-in', 'tg2-forwarded', 'tgx-in']));
+      expect(remaining()).not.toContain('tg-in');
+      expect(store.getObservedChats('tg-2')).toEqual([
+        expect.objectContaining({ chatId: '111', displayName: 'Grace' }),
+      ]);
+      expect(store.getAdapterEvents('tg-2')).toHaveLength(1);
+    });
+
+    it('reads the id segment literally, never as a LIKE pattern', () => {
+      span('underscore', 'relay.human.slack.a_b.C1', { from: 'relay.human.slack.a_b.bot' });
+      span('lookalike', 'relay.human.slack.axb.C1', { from: 'relay.human.slack.axb.bot' });
+
+      store.deleteConnectionTraces('a_b');
+
+      expect(remaining()).toEqual(['lookalike']);
+    });
+
+    it("keeps agent traffic and other connections' rows", () => {
+      span('agent', 'relay.agent.session-1', { from: 'relay.agent.session-2' });
+      span('slack', 'relay.human.slack.sl.C1', { from: 'relay.human.slack.sl.bot' });
+      // The id appearing in another segment does not make the row this connection's.
+      span('other-segment', 'relay.human.slack.sl.tg', { from: 'relay.human.slack.sl.bot' });
+      span('not-human', 'relay.system.tg.111');
+      store.insertAdapterEvent('sl', 'adapter.connected', 'Connected to relay');
+
+      expect(store.deleteConnectionTraces('tg')).toBe(0);
+      expect(remaining()).toHaveLength(5);
+    });
+
+    it('deletes an event written before events had their own kind', () => {
+      // Stored as a delivery, but named by `metadata.adapterId` like any event.
+      span('legacy-event', 'adapter.connected', {
+        adapterId: 'tg',
+        eventType: 'adapter.connected',
+      });
+
+      store.deleteConnectionTraces('tg');
+
+      expect(remaining()).toEqual([]);
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Anti-regression: ISO 8601 timestamps (not INTEGER Unix ms)
   // -------------------------------------------------------------------------

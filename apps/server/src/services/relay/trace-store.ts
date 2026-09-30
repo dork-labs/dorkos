@@ -16,6 +16,7 @@ import {
   relayTraces,
   hasPercentileSupport,
   type Db,
+  type SQL,
 } from '@dorkos/db';
 import { encodeTime, ulid } from 'ulidx';
 import type {
@@ -97,6 +98,33 @@ const TRACE_STATUSES = new Set<TraceSpanStatus>([
   'timeout',
   'no_subscriber',
 ]);
+
+/** `relay.human.`, the start of every subject a chat connection owns. */
+const HUMAN_SUBJECT_PREFIX = 'relay.human.';
+
+/**
+ * SQL that is true when `column` is `relay.human.<platform>.<adapterId>` or a
+ * subject under it — the same reading {@link parseHumanSubject} gives a subject.
+ *
+ * Written with `substr`/`instr` rather than `LIKE`, whose `_` and `%` wildcards
+ * an id may contain, and matched on the whole id segment so `tg` never matches
+ * `tg-2`.
+ *
+ * @param column - A subject-shaped text expression.
+ * @param adapterId - The connection id to match.
+ */
+function namesConnection(column: SQL, adapterId: string): SQL {
+  const start = HUMAN_SUBJECT_PREFIX.length + 1;
+  // Everything after `relay.human.`: `<platform>.<adapterId>[.…]`.
+  const rest = sql`substr(${column}, ${start})`;
+  const platformEnd = sql`instr(${rest}, '.')`;
+  // Everything after the platform segment: `<adapterId>[.…]`.
+  const afterPlatform = sql`substr(${column}, ${start} + ${platformEnd})`;
+  return sql`(substr(${column}, 1, ${HUMAN_SUBJECT_PREFIX.length}) = ${HUMAN_SUBJECT_PREFIX}
+    AND ${platformEnd} > 1
+    AND (${afterPlatform} = ${adapterId}
+      OR substr(${afterPlatform}, 1, ${adapterId.length + 1}) = ${`${adapterId}.`}))`;
+}
 
 /**
  * Persistent trace storage for Relay message delivery tracking.
@@ -530,6 +558,45 @@ export class TraceStore {
           )
           WHERE newest > ${ADAPTER_EVENTS_KEPT}
         )`
+      )
+      .run().changes;
+  }
+
+  /**
+   * Delete everything this store holds about one chat connection, for when a
+   * person removes it (DOR-2604).
+   *
+   * That is three kinds of row, deleted in one statement, so they go together
+   * or not at all:
+   *
+   * - Every span whose subject is the connection's own,
+   *   `relay.human.<platform>.<adapterId>` or anything under it: the messages
+   *   its chats sent, the agent's replies to them, and the chat names those
+   *   spans carry.
+   * - Every span the connection itself published, whatever the subject. When a
+   *   chat's message is forwarded to an agent, the forwarded span keeps the
+   *   connection as its sender and keeps the chat's name too.
+   * - Its lifecycle events, the rows naming it in `metadata.adapterId`.
+   *
+   * A connection is matched by its whole id segment, never a prefix of it, so
+   * removing `tg` leaves `tg-2` alone. The platform segment is not checked:
+   * adapter ids are unique across every platform.
+   *
+   * Agent traffic that never involved this connection stays, and so does the
+   * rest of an agent's trace for a forwarded message: only the rows that name
+   * this connection go.
+   *
+   * @param adapterId - The removed connection's id.
+   * @returns How many rows were deleted.
+   */
+  deleteConnectionTraces(adapterId: string): number {
+    const from = sql`json_extract(${relayTraces.metadata}, '$.from')`;
+    return this.db
+      .delete(relayTraces)
+      .where(
+        sql`${namesConnection(sql`${relayTraces.subject}`, adapterId)}
+          OR ${namesConnection(from, adapterId)}
+          OR json_extract(${relayTraces.metadata}, '$.adapterId') = ${adapterId}`
       )
       .run().changes;
   }
