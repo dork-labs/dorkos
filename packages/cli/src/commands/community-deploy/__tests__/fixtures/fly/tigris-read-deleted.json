@@ -1,0 +1,13 @@
+{
+  "data": {
+    "addOn": {
+      "id": "addon_fixture_01",
+      "name": "community-fixture-bucket_deleted_Cllkq5qk",
+      "status": "deleted",
+      "options": null,
+      "addOnProvider": { "name": "tigris" },
+      "app": null,
+      "organization": { "slug": "fixture-org" }
+    }
+  }
+}
