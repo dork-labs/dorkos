@@ -1,0 +1,6 @@
+{
+  "data": { "app": null },
+  "errors": [
+    { "message": "Could not find App", "path": ["app"], "extensions": { "code": "NOT_FOUND" } }
+  ]
+}

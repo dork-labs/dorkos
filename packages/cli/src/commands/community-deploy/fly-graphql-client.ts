@@ -4,6 +4,7 @@
  * @module commands/community-deploy/fly-graphql-client
  */
 import {
+  FLY_APP_PROVENANCE_QUERY,
   FLY_APP_TIGRIS_QUERY,
   FLY_TIGRIS_CREATE_MUTATION,
   FLY_TIGRIS_CREDENTIALS_QUERY,
@@ -11,6 +12,7 @@ import {
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   createTigrisVariables,
+  parseFlyAppProvenanceResponse,
   parseAppTigrisResponse,
   parseTigrisCreateResponse,
   parseTigrisCredentialsResponse,
@@ -18,6 +20,7 @@ import {
   parseTigrisReadResponse,
   parseTigrisTermsResponse,
   FlyGraphqlContractError,
+  type FlyAppProvenance,
   type FlyGraphqlContractErrorCode,
   type TigrisAddOnIdentity,
   type TigrisBucketCredentials,
@@ -124,7 +127,10 @@ async function readBounded(
   }
 }
 
-/** In-memory Fly GraphQL client restricted to the launcher's pinned Tigris operations. */
+/**
+ * In-memory Fly GraphQL client restricted to the launcher's pinned operations: the Tigris add-on
+ * lifecycle and the read of one app's provenance.
+ */
 export class FlyTigrisGraphqlClient {
   private readonly accessToken: string;
   private readonly timeoutMs: number;
@@ -204,6 +210,24 @@ export class FlyTigrisGraphqlClient {
       throw new FlyGraphqlClientError('INVALID_RESPONSE');
     }
     return this.request(FLY_TIGRIS_READ_QUERY, { id: addOnId }, parseTigrisReadResponse, false);
+  }
+
+  /**
+   * Read one app's provenance by its exact name.
+   *
+   * @param appName - Planned app name.
+   * @returns The app's provenance, or `null` when Fly reports no app with that name.
+   */
+  async readAppProvenance(appName: string): Promise<FlyAppProvenance | null> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_APP_PROVENANCE_QUERY,
+      { name: appName },
+      parseFlyAppProvenanceResponse,
+      false
+    );
   }
 
   /**

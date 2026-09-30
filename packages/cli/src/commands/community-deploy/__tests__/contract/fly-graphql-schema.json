@@ -57,7 +57,6 @@
         },
         {
           "name": "createdAt",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -66,7 +65,8 @@
               "name": "ISO8601DateTime",
               "ofType": null
             }
-          }
+          },
+          "args": []
         },
         {
           "name": "environment",
@@ -730,7 +730,6 @@
         },
         {
           "name": "certificates",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -739,7 +738,57 @@
               "name": "AppCertificateConnection",
               "ofType": null
             }
-          }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "filter",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "id",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          ]
         },
         {
           "name": "changes",
@@ -778,7 +827,6 @@
         },
         {
           "name": "createdAt",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -787,7 +835,8 @@
               "name": "ISO8601DateTime",
               "ofType": null
             }
-          }
+          },
+          "args": []
         },
         {
           "name": "currentLock",
@@ -1002,7 +1051,6 @@
         },
         {
           "name": "internalNumericId",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -1011,7 +1059,8 @@
               "name": "Int",
               "ofType": null
             }
-          }
+          },
+          "args": []
         },
         {
           "name": "ipAddress",
@@ -1024,7 +1073,6 @@
         },
         {
           "name": "ipAddresses",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -1033,7 +1081,41 @@
               "name": "IPAddressConnection",
               "ofType": null
             }
-          }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          ]
         },
         {
           "name": "key",
@@ -1081,7 +1163,6 @@
         },
         {
           "name": "machines",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -1090,7 +1171,57 @@
               "name": "MachineConnection",
               "ofType": null
             }
-          }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "version",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "active",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              }
+            }
+          ]
         },
         {
           "name": "name",
@@ -1107,12 +1238,12 @@
         },
         {
           "name": "network",
-          "args": [],
           "type": {
             "kind": "SCALAR",
             "name": "String",
             "ofType": null
-          }
+          },
+          "args": []
         },
         {
           "name": "networkId",
@@ -1259,7 +1390,6 @@
         },
         {
           "name": "secrets",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -1276,7 +1406,8 @@
                 }
               }
             }
-          }
+          },
+          "args": []
         },
         {
           "name": "services",
@@ -1426,7 +1557,6 @@
         },
         {
           "name": "volumes",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -1435,9 +1565,426 @@
               "name": "VolumeConnection",
               "ofType": null
             }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          ]
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "AppCertificate",
+      "fields": [
+        {
+          "name": "acmeAlpnConfigured",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "acmeDnsConfigured",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "certificateAuthority",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "certificateRequestedAt",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "ISO8601DateTime",
+            "ofType": null
+          }
+        },
+        {
+          "name": "check",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "clientStatus",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "configured",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "createdAt",
+          "type": {
+            "kind": "SCALAR",
+            "name": "ISO8601DateTime",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "dnsProvider",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "dnsValidationHostname",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "dnsValidationInstructions",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "dnsValidationTarget",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "domain",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "hostname",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "isAcmeAlpnConfigured",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "isAcmeDnsConfigured",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "isAcmeHttpConfigured",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "isApex",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "isConfigured",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "isWildcard",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "issued",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "CertificateConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "rateLimitedUntil",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "ISO8601DateTime",
+            "ofType": null
+          }
+        },
+        {
+          "name": "source",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "validationErrors",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "OBJECT",
+                  "name": "AppCertificateValidationError",
+                  "ofType": null
+                }
+              }
+            }
           }
         }
       ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "AppCertificateConnection",
+      "fields": [
+        {
+          "name": "edges",
+          "args": [],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AppCertificateEdge",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "nodes",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "AppCertificate",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "pageInfo",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "PageInfo",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "totalCount",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          "args": []
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "SCALAR",
+      "name": "BigInt",
+      "fields": null,
       "inputFields": null,
       "possibleTypes": null,
       "enumValues": null
@@ -1667,9 +2214,426 @@
       "enumValues": null
     },
     {
+      "kind": "OBJECT",
+      "name": "IPAddress",
+      "fields": [
+        {
+          "name": "address",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "createdAt",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "network",
+          "type": {
+            "kind": "OBJECT",
+            "name": "Network",
+            "ofType": null
+          },
+          "args": []
+        },
+        {
+          "name": "region",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "serviceName",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "type",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "IPAddressType",
+              "ofType": null
+            }
+          },
+          "args": []
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "IPAddressConnection",
+      "fields": [
+        {
+          "name": "edges",
+          "args": [],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "IPAddressEdge",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "nodes",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "IPAddress",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "pageInfo",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "PageInfo",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "totalCount",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          "args": []
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "ENUM",
+      "name": "IPAddressType",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": [
+        {
+          "name": "v4"
+        },
+        {
+          "name": "v6"
+        },
+        {
+          "name": "private_v6"
+        },
+        {
+          "name": "shared_v4"
+        }
+      ]
+    },
+    {
+      "kind": "SCALAR",
+      "name": "ISO8601DateTime",
+      "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
       "kind": "SCALAR",
       "name": "JSON",
       "fields": null,
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "Machine",
+      "fields": [
+        {
+          "name": "app",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "App",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "config",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "JSON",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "createdAt",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "egressIpAddresses",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "EgressIPAddressConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "events",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "MachineEventConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "host",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Host",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "instanceId",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "ips",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "MachineIPConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "region",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "state",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "updatedAt",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "MachineConnection",
+      "fields": [
+        {
+          "name": "edges",
+          "args": [],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "MachineEdge",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "nodes",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Machine",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "pageInfo",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "PageInfo",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "totalCount",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          "args": []
+        }
+      ],
       "inputFields": null,
       "possibleTypes": null,
       "enumValues": null
@@ -2548,6 +3512,80 @@
     },
     {
       "kind": "OBJECT",
+      "name": "Network",
+      "fields": [
+        {
+          "name": "createdAt",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "organization",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Organization",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "updatedAt",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
       "name": "Organization",
       "fields": [
         {
@@ -2797,7 +3835,6 @@
         },
         {
           "name": "internalNumericId",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -2806,7 +3843,8 @@
               "name": "BigInt",
               "ofType": null
             }
-          }
+          },
+          "args": []
         },
         {
           "name": "invitations",
@@ -3091,12 +4129,12 @@
         },
         {
           "name": "createdAt",
-          "args": [],
           "type": {
             "kind": "SCALAR",
             "name": "ISO8601DateTime",
             "ofType": null
-          }
+          },
+          "args": []
         },
         {
           "name": "email",
@@ -3579,7 +4617,6 @@
         },
         {
           "name": "machines",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -3588,7 +4625,65 @@
               "name": "MachineConnection",
               "ofType": null
             }
-          }
+          },
+          "args": [
+            {
+              "name": "after",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "before",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "first",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "last",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            {
+              "name": "appId",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "state",
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            },
+            {
+              "name": "version",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          ]
         },
         {
           "name": "nearestRegion",
@@ -3764,6 +4859,76 @@
       "enumValues": null
     },
     {
+      "kind": "OBJECT",
+      "name": "Secret",
+      "fields": [
+        {
+          "name": "createdAt",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "digest",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "user",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "User",
+            "ofType": null
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
       "kind": "SCALAR",
       "name": "String",
       "fields": null,
@@ -3816,7 +4981,6 @@
         },
         {
           "name": "createdAt",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -3825,7 +4989,8 @@
               "name": "ISO8601DateTime",
               "ofType": null
             }
-          }
+          },
+          "args": []
         },
         {
           "name": "email",
@@ -3902,7 +5067,6 @@
         },
         {
           "name": "internalNumericId",
-          "args": [],
           "type": {
             "kind": "NON_NULL",
             "name": null,
@@ -3911,7 +5075,8 @@
               "name": "Int",
               "ofType": null
             }
-          }
+          },
+          "args": []
         },
         {
           "name": "lastRegion",
@@ -3991,6 +5156,281 @@
             "name": "String",
             "ofType": null
           }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "Volume",
+      "fields": [
+        {
+          "name": "app",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "App",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "attachedAllocation",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "Allocation",
+            "ofType": null
+          }
+        },
+        {
+          "name": "attachedAllocationId",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "attachedMachine",
+          "args": [],
+          "type": {
+            "kind": "OBJECT",
+            "name": "Machine",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createdAt",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ISO8601DateTime",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "encrypted",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "host",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Host",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "internalId",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "region",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "sizeGb",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "snapshotRetentionDays",
+          "args": [],
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int",
+            "ofType": null
+          }
+        },
+        {
+          "name": "snapshots",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "VolumeSnapshotConnection",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "state",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "usedBytes",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "BigInt",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "inputFields": null,
+      "possibleTypes": null,
+      "enumValues": null
+    },
+    {
+      "kind": "OBJECT",
+      "name": "VolumeConnection",
+      "fields": [
+        {
+          "name": "edges",
+          "args": [],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "VolumeEdge",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "nodes",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Volume",
+              "ofType": null
+            }
+          },
+          "args": []
+        },
+        {
+          "name": "pageInfo",
+          "args": [],
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "PageInfo",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "name": "totalCount",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          "args": []
         }
       ],
       "inputFields": null,

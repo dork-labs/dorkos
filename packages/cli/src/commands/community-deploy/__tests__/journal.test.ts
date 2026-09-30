@@ -231,6 +231,84 @@ describe('Community launch journal', () => {
     );
   });
 
+  // Journals written before provenance markers shipped carry none of the new fields, and some
+  // stopped mid-create with an intent that has no marker. Both must still load so they can resume.
+  it('loads a journal written before provenance markers from disk', async () => {
+    const directory = await root();
+    const runId = randomUUID();
+    const filePath = launchJournalPath(directory, runId);
+    await mkdir(join(directory, 'launches', 'community'), { recursive: true });
+    const legacy = {
+      ...journal(runId, 3),
+      state: 'uncertain',
+      pendingIntent: { provider: 'fly', organizationId: 'dork-labs', resourceName: 'community-a' },
+      resources: {},
+      lastSafeError: { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' },
+    };
+    await writeFile(filePath, `${JSON.stringify(legacy, null, 2)}\n`, { mode: 0o600 });
+
+    const loaded = await readLaunchJournal(filePath);
+    expect(loaded).toEqual(legacy);
+    expect(loaded?.pendingIntent?.provenanceMarker).toBeUndefined();
+    expect(loaded?.provenance).toBeUndefined();
+  });
+
+  it('round-trips an intent marker, its request time, read-back provenance and removals', async () => {
+    const directory = await root();
+    const runId = randomUUID();
+    const filePath = launchJournalPath(directory, runId);
+    const marked: LaunchJournal = {
+      ...journal(runId),
+      pendingIntent: {
+        provider: 'neon',
+        organizationId: 'org-dorian',
+        resourceName: 'community-a',
+        provenanceMarker: '7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a',
+        requestedAt: '2026-09-23T10:31:03.000Z',
+      },
+      provenance: { flyNetwork: 'dorkos-0123456789abcdef0123456789abcdef' },
+      removals: [
+        {
+          provider: 'tigris',
+          token: 'addon_removed_01',
+          resourceName: 'community-a',
+          proof: 'binding',
+          priorSecretDigests: {
+            AWS_ACCESS_KEY_ID: 'old-access',
+            AWS_SECRET_ACCESS_KEY: 'old-secret',
+          },
+          requestedAt: '2026-09-23T10:40:00.000Z',
+          removedAt: '2026-09-23T10:41:00.000Z',
+        },
+      ],
+    };
+    await initializeLaunchJournal(filePath, marked);
+    await expect(readLaunchJournal(filePath)).resolves.toEqual(marked);
+  });
+
+  it('accepts only 32 lowercase hex characters as a provenance marker', async () => {
+    const directory = await root();
+    for (const provenanceMarker of [
+      '7F3E0B9C4D2A41E8A6C5B3F1D0E9C21A',
+      'abc',
+      `${'a'.repeat(31)}-`,
+    ]) {
+      const runId = randomUUID();
+      await expect(
+        initializeLaunchJournal(launchJournalPath(directory, runId), {
+          ...journal(runId),
+          pendingIntent: {
+            provider: 'fly',
+            organizationId: 'dork-labs',
+            resourceName: 'community-a',
+            provenanceMarker,
+          },
+        }),
+        provenanceMarker
+      ).rejects.toThrow();
+    }
+  });
+
   it('rejects unknown and secret-shaped fields instead of serializing them', async () => {
     const dorkHome = await root();
     const runId = randomUUID();
