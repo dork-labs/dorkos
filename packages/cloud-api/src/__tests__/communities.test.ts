@@ -170,6 +170,28 @@ describe('links a person may be sent to', () => {
     ).toBe(false);
   });
 
+  it('reads a move upload with parts, and one without (a service one release behind)', () => {
+    // Purpose: `parts` is additive and optional: an answer without it still parses and offers
+    // only the single upload, and one with it carries both limits as positive integers.
+    const single = fixture('communities/move-start.json').upload as Record<string, unknown>;
+    const parted = fixture('communities/move-start-parts.json').upload as Record<string, unknown>;
+    expect(contract.CommunityMoveUploadSchema.parse(single).parts).toBeUndefined();
+    expect(contract.CommunityMoveUploadSchema.parse(parted).parts).toEqual({
+      partBytes: 268435456,
+      maxBytes: 1099511627776,
+    });
+    for (const parts of [
+      { partBytes: 0, maxBytes: 1 },
+      { partBytes: 1.5, maxBytes: 2 },
+      { partBytes: 1 },
+    ])
+      expect(
+        contract.CommunityMoveUploadSchema.safeParse({ ...single, parts }).success,
+        JSON.stringify(parts)
+      ).toBe(false);
+    expect(contract.COMMUNITY_ARCHIVE_PART_DIGEST_HEADER).toBe('X-Part-SHA256');
+  });
+
   it('publishes the scheme rule in the JSON Schema too, for a consumer that validates from it', () => {
     const json = JSON.stringify(z.toJSONSchema(contract.ProblemSchema));
     expect(json).toContain('^https:');

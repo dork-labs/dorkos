@@ -667,6 +667,12 @@ export type CommunityMoveStartRequest = z.infer<typeof CommunityMoveStartRequest
 export const COMMUNITY_ARCHIVE_DIGEST_HEADER = 'X-Archive-SHA256' as const;
 
 /**
+ * The header that carries one part's digest on a parted upload, as lower-case hex. The
+ * Community server refuses a part whose bytes do not match it.
+ */
+export const COMMUNITY_ARCHIVE_PART_DIGEST_HEADER = 'X-Part-SHA256' as const;
+
+/**
  * Where to send the export file.
  *
  * Send the file's exact bytes with `PUT` to `url`, with `token` as a bearer
@@ -686,6 +692,31 @@ export const COMMUNITY_ARCHIVE_DIGEST_HEADER = 'X-Archive-SHA256' as const;
  * - `401`: the upload window has closed. The move is then `failed` with
  *   `upload_expired`, and the app starts a new move. A failed move frees its
  *   short name at once, so the new move can use the same one.
+ *
+ * When `parts` is present, the Community server also accepts the file in
+ * numbered parts, so a large file can go up in pieces and a broken connection
+ * costs one piece rather than the whole file. The app may then send a file of
+ * up to `parts.maxBytes`:
+ *
+ * - `PUT ${url}/parts/{n}` for each part, numbered up from one, every part at
+ *   most `parts.partBytes` (the last may be shorter), with `Content-Length`,
+ *   the part's own digest in {@link COMMUNITY_ARCHIVE_PART_DIGEST_HEADER}, and
+ *   `token` as a bearer credential. It answers a
+ *   {@link CommunityMovePartSchema}. Sending a part again with the same digest
+ *   is a success that writes nothing; different bytes replace it.
+ * - `GET ${url}/parts` answers a {@link CommunityMovePartListSchema}: the parts
+ *   received so far, so an app that restarts sends only the ones missing.
+ * - `POST ${url}/complete` with a {@link CommunityMoveCompleteRequestSchema}
+ *   puts the parts together in order. If the whole file does not match the
+ *   declared size and digest, every part is discarded
+ *   (`400 IMPORT_ARCHIVE_INVALID`), the move stays `awaiting_upload`, and the
+ *   token is usable again until `expiresAt`. Success spends the token and
+ *   answers as a single upload does. While a large file is still being
+ *   checked, `complete` may answer `202` with a `Retry-After` header; ask again
+ *   until it answers `200` or an error.
+ *
+ * `maxBytes` keeps meaning the largest file a single `PUT` accepts. Without
+ * `parts`, only the single `PUT` is available.
  */
 export const CommunityMoveUploadSchema = z
   .object({
@@ -696,11 +727,60 @@ export const CommunityMoveUploadSchema = z
     }),
     expiresAt: TimestampSchema.describe('When the upload window closes.'),
     maxBytes: z.number().int().positive().describe('The largest file the upload accepts.'),
+    parts: z
+      .object({
+        partBytes: z.number().int().positive().describe('The largest part the upload accepts.'),
+        maxBytes: z.number().int().positive().describe('The largest file a parted upload accepts.'),
+      })
+      .optional()
+      .describe('Present when the Community server accepts the file in parts.'),
   })
   .describe('Where and how to send the export file. The token is returned once.');
 
 /** Where and how to send the export file. */
 export type CommunityMoveUpload = z.infer<typeof CommunityMoveUploadSchema>;
+
+const sha256Hex = z.string().regex(/^[a-f0-9]{64}$/, 'must be a lower-case hex SHA-256 digest');
+
+/** One part of a parted upload the Community server has received. */
+export const CommunityMovePartSchema = z
+  .object({
+    partNumber: z.number().int().positive().describe('The part`s number, counting up from one.'),
+    byteSize: z.number().int().positive().describe('The part`s size, in bytes.'),
+    sha256: sha256Hex.describe('The part`s SHA-256, as lower-case hex.'),
+  })
+  .describe('One part the Community server has received.');
+
+/** One part the Community server has received. */
+export type CommunityMovePart = z.infer<typeof CommunityMovePartSchema>;
+
+/** What `GET ${url}/parts` answers on a parted upload. */
+export const CommunityMovePartListSchema = z
+  .object({
+    parts: z.array(CommunityMovePartSchema).describe('The parts received, in part order.'),
+    maxPartBytes: z.number().int().positive().describe('The largest part the upload accepts.'),
+    maxArchiveBytes: z
+      .number()
+      .int()
+      .positive()
+      .describe('The largest file a parted upload accepts.'),
+  })
+  .describe('The parts of a parted upload received so far.');
+
+/** The parts of a parted upload received so far. */
+export type CommunityMovePartList = z.infer<typeof CommunityMovePartListSchema>;
+
+/** The body of `POST ${url}/complete` on a parted upload. */
+export const CommunityMoveCompleteRequestSchema = z
+  .object({
+    parts: z.number().int().positive().describe('How many parts make up the file.'),
+    archiveBytes: z.number().int().positive().describe('The size of the whole file, in bytes.'),
+    archiveSha256: sha256Hex.describe('The SHA-256 of the whole file, as lower-case hex.'),
+  })
+  .describe('Put the uploaded parts together into the declared file.');
+
+/** Put the uploaded parts together into the declared file. */
+export type CommunityMoveCompleteRequest = z.infer<typeof CommunityMoveCompleteRequestSchema>;
 
 /**
  * The started move.
