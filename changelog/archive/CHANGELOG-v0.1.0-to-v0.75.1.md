@@ -1,7 +1,17 @@
-# Changelog archive: v0.1.0 – v0.75.0
+# Changelog archive: v0.1.0 – v0.75.1
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.75.1] - 2026-09-14
+
+> DorkOS 0.75.1 is a one-fix patch: the desktop app no longer reloads itself after you change pages or open a web page on a canvas.
+
+### Fixed
+
+- Desktop: the app no longer reloads its own window about ten seconds after you move to another page, or every ten seconds while a web page is open on a canvas. Each of those reloads threw away anything you had typed and not yet sent (#1860, DOR-2041)
+- Give markdown documents cleaner spacing, aligned lists, and readable tables and code in both light and dark mode.
+- Keep open documents in step with the app's colors when you switch themes.
 
 ## [0.75.0] - 2026-09-14
 
@@ -5689,6 +5699,7 @@ See [changelog/README.md](../README.md) for the fragment workflow.
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
+[0.75.1]: https://github.com/dork-labs/dorkos/compare/v0.75.0...v0.75.1
 [0.75.0]: https://github.com/dork-labs/dorkos/compare/v0.74.0...v0.75.0
 [0.74.0]: https://github.com/dork-labs/dorkos/compare/v0.73.0...v0.74.0
 [0.62.0]: https://github.com/dork-labs/dorkos/compare/v0.61.0...v0.62.0

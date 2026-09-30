@@ -1,7 +1,7 @@
 ---
 id: 260929-012845
 title: The Community server sends mail only when a host configures SMTP, through a durable outbox that stores no address
-status: proposed
+status: accepted
 created: 2026-09-28
 spec: community-owner-replacement
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed (from spec `community-owner-replacement`, DOR-2252).
+Accepted (from spec `community-owner-replacement`, DOR-2252). Shipped in DOR-2537 (#2322): `apps/community/src/mail/`, `notice_outbox`, and the SMTP settings in `apps/community/src/config.ts`.
 
 ## Context
 

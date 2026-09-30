@@ -1,9 +1,19 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.75.0), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.75.1), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.75.1] - 2026-09-14
+
+> DorkOS 0.75.1 is a one-fix patch: the desktop app no longer reloads itself after you change pages or open a web page on a canvas.
+
+### Fixed
+
+- Desktop: the app no longer reloads its own window about ten seconds after you move to another page, or every ten seconds while a web page is open on a canvas. Each of those reloads threw away anything you had typed and not yet sent (#1860, DOR-2041)
+- Give markdown documents cleaner spacing, aligned lists, and readable tables and code in both light and dark mode.
+- Keep open documents in step with the app's colors when you switch themes.
 
 ## [0.75.0] - 2026-09-14
 

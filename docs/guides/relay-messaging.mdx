@@ -334,7 +334,7 @@ curl -X POST http://localhost:4242/api/relay/adapters/reload
 
 ## Message tracing
 
-Every message gets a trace that follows it from publish to delivery. Look one up by its ID:
+Every message gets a trace that follows it from publish to delivery. A trace is kept for eight days, then removed along with its message (see [Relay](/docs/concepts/relay)). Look one up by its ID:
 
 ```bash
 curl http://localhost:4242/api/relay/messages/{messageId}/trace
