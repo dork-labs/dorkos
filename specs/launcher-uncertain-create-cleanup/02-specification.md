@@ -112,7 +112,7 @@ The markers are **not secret**. They show up as a Fly network name and a Postgre
 ```ts
 // packages/cli/src/commands/community-deploy/provenance-gate.ts
 /** Services whose marker round trip a live-gate receipt has shown. Flip only in a PR that cites the receipt. */
-export const PROVENANCE_ROUND_TRIP_PROVED = { fly: false, neon: false } as const;
+export const PROVENANCE_ROUND_TRIP_PROVED = { fly: false, neon: false } as const; // as first committed; flipped in phase 4
 ```
 
 - While a flag is `false`, that service's verdict is always `unproved`, with the reason "DorkOS has not yet confirmed this proof with Fly (or Neon)". Tigris depends on the Fly flag.

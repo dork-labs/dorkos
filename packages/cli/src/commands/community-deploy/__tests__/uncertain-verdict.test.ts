@@ -37,8 +37,9 @@ describe('uncertain removal verdicts', () => {
     });
   });
 
-  it('never proves anything while the committed gate is closed', () => {
-    expect(PROVENANCE_ROUND_TRIP_PROVED).toEqual({ fly: false, neon: false });
+  // The committed gate is open for Fly and Neon (receipt dorkos-gate-376b14cf0957); Tigris follows Fly.
+  it('proves every service with the committed gate', () => {
+    expect(PROVENANCE_ROUND_TRIP_PROVED).toEqual({ fly: true, neon: true });
     for (const [journal, result] of [
       [shapeA('fly'), found.fly()],
       [shapeA('neon'), found.neon()],
@@ -46,9 +47,20 @@ describe('uncertain removal verdicts', () => {
     ] as const) {
       // No gate passed: the committed constant applies.
       expect(evaluateUncertainResource(journal, journal.pendingIntent!, result)).toMatchObject({
-        verdict: 'unproved',
-        reason: 'not-confirmed',
+        verdict: 'proved',
       });
+    }
+  });
+
+  it('never proves a service whose gate is closed', () => {
+    for (const [journal, result, gate] of [
+      [shapeA('fly'), found.fly(), { fly: false, neon: true }],
+      [shapeA('neon'), found.neon(), { fly: true, neon: false }],
+      [shapeA('tigris'), found.tigris(), { fly: false, neon: true }],
+    ] as const) {
+      expect(
+        evaluateUncertainResource(journal, journal.pendingIntent!, result, { gate })
+      ).toMatchObject({ verdict: 'unproved', reason: 'not-confirmed' });
     }
   });
 

@@ -134,16 +134,14 @@ async function run(
 }
 
 describe('--remove-uncertain command', () => {
-  it('only checks, with the committed gate, and names what is still unconfirmed', async () => {
+  it('removes a proved app with the committed gate and the right --confirm', async () => {
     await initializeLaunchJournal(path, journal());
     const probe = markedApp();
     const { code, text } = await run(probe, { confirm: '4817203' });
     expect(code).toBe(0);
-    expect(text).toContain('DorkOS will not remove anything for this run');
-    expect(text).toContain('not yet confirmed this proof with Fly');
-    expect(text).toContain('fly apps destroy community-acme');
-    expect(probe.remove).not.toHaveBeenCalled();
-    expect((await readLaunchJournal(path))?.revision).toBe(0);
+    expect(text).toContain('Removed Fly app community-acme (internal id 4817203)');
+    expect(probe.remove).toHaveBeenCalledOnce();
+    expect(await readLaunchJournal(path)).toMatchObject({ pendingIntent: null, state: 'planned' });
   });
 });
 
@@ -224,17 +222,12 @@ describe('--remove-uncertain output', () => {
   });
 });
 
-describe('--remove-uncertain with the gate open', () => {
-  // The committed gate is closed; these override it through the module the command imports.
+describe('--remove-uncertain with the committed gate', () => {
   beforeEach(() => {
     vi.resetModules();
   });
 
   it('shows the proof, and without a terminal or --confirm only prints the exact command', async () => {
-    vi.doMock('../provenance/provenance-gate.js', async (importOriginal) => ({
-      ...(await importOriginal<typeof import('../provenance/provenance-gate.js')>()),
-      PROVENANCE_ROUND_TRIP_PROVED: { fly: true, neon: true },
-    }));
     const { runRemoveUncertainCommand: runOpen } = await import('../provenance/removal-command.js');
     await initializeLaunchJournal(path, journal());
     const probe = markedApp();
@@ -260,14 +253,9 @@ describe('--remove-uncertain with the gate open', () => {
     expect(text).toContain('dorkos-7f3e…c21a');
     expect(text).toContain(`--remove-uncertain ${RUN_ID} --confirm 4817203`);
     expect(probe.remove).not.toHaveBeenCalled();
-    vi.doUnmock('../provenance/provenance-gate.js');
   });
 
   it('removes after the internal id is typed at the prompt, and keeps it on Enter', async () => {
-    vi.doMock('../provenance/provenance-gate.js', async (importOriginal) => ({
-      ...(await importOriginal<typeof import('../provenance/provenance-gate.js')>()),
-      PROVENANCE_ROUND_TRIP_PROVED: { fly: true, neon: true },
-    }));
     const { runRemoveUncertainCommand: runOpen } = await import('../provenance/removal-command.js');
     await initializeLaunchJournal(path, journal());
     const drive = async (answer: string) => {
@@ -301,6 +289,43 @@ describe('--remove-uncertain with the gate open', () => {
     expect(removed.probe.remove).toHaveBeenCalledTimes(1);
     expect(removed.text).toContain('Removed Fly app community-acme (internal id 4817203)');
     expect(removed.text).toContain('Continue with: RESUME');
+  });
+});
+
+// A service whose gate is closed is only ever checked, however the operator confirms.
+describe('--remove-uncertain with a gate still closed', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('only checks, and names what is still unconfirmed', async () => {
+    vi.doMock('../provenance/provenance-gate.js', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('../provenance/provenance-gate.js')>()),
+      PROVENANCE_ROUND_TRIP_PROVED: { fly: false, neon: true },
+    }));
+    const { runRemoveUncertainCommand: runClosed } =
+      await import('../provenance/removal-command.js');
+    await initializeLaunchJournal(path, journal());
+    const probe = markedApp();
+    const streams = terminal(false);
+    const code = await runClosed({
+      runId: RUN_ID,
+      journalPath: path,
+      confirmToken: '4817203',
+      serviceOptions: () => {
+        throw new Error('unused');
+      },
+      input: streams.input,
+      output: streams.output,
+      resumeCommand: () => null,
+      recovery: () => '',
+      probeFor: () => probe,
+      signals: new EventEmitter() as unknown as Pick<NodeJS.Process, 'once' | 'removeListener'>,
+    });
+    expect(code).toBe(0);
+    expect(streams.text()).toContain('not yet confirmed this proof with Fly');
+    expect(probe.remove).not.toHaveBeenCalled();
+    expect((await readLaunchJournal(path))?.revision).toBe(0);
     vi.doUnmock('../provenance/provenance-gate.js');
   });
 });

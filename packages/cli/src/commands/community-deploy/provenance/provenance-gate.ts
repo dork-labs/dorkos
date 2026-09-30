@@ -18,8 +18,15 @@ import { randomBytes } from 'node:crypto';
  * created a resource. There is deliberately no environment variable or CLI flag that overrides it:
  * callers take it as an injected dependency with this value as the default, so only unit tests can
  * substitute another value and a packaged CLI always uses the committed one.
+ *
+ * Both flags were flipped on the live-gate receipt `dorkos-gate-376b14cf0957` (2026-09-30, an
+ * unreleased tarball packed from commit f0e98fef on `live/dor-2238-marker-pack`): Fly kept the
+ * requested `dorkos-<marker>` network and reported it back unchanged, Neon kept the
+ * `community_<marker>` role on the project's default branch, and `fly ssh console` worked on the
+ * custom network. Tigris follows the Fly flag, and that receipt also showed the bucket bound to the
+ * journaled app.
  */
-export const PROVENANCE_ROUND_TRIP_PROVED = { fly: false, neon: false } as const;
+export const PROVENANCE_ROUND_TRIP_PROVED = { fly: true, neon: true } as const;
 
 /** Margin either side of the create window, for clock skew between this machine and a service. */
 const CREATE_WINDOW_MARGIN_MS = 2 * 60 * 1000;

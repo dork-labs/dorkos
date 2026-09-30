@@ -8,10 +8,10 @@ import {
 } from '../provenance/provenance-gate.js';
 
 describe('Community launch provenance', () => {
-  // No service's marker may count as proof until a live receipt shows the round trip; flipping a
-  // flag belongs in its own PR that cites that receipt.
-  it('commits the round-trip gate closed for every service', () => {
-    expect(PROVENANCE_ROUND_TRIP_PROVED).toEqual({ fly: false, neon: false });
+  // A service's marker counts as proof only once a live receipt shows the round trip. Both flags
+  // were flipped in their own PR citing receipt dorkos-gate-376b14cf0957 (DOR-2238, phase 4).
+  it('commits the round-trip gate open for Fly and Neon, as the live receipt showed', () => {
+    expect(PROVENANCE_ROUND_TRIP_PROVED).toEqual({ fly: true, neon: true });
   });
 
   it('creates fresh 128-bit markers that stay valid network and role names', () => {
