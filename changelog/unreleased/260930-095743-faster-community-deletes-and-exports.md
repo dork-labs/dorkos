@@ -1,6 +1,7 @@
 ---
 covers:
   - 'perf(community): check each tenant reference once, and bound watermark and roster reads (DOR-2571, DOR-2572)'
+  - "fix(community): cap 0027's lock waits and guard the bounded queries' call sites (DOR-2571, DOR-2572)"
 ---
 
 ### Changed
