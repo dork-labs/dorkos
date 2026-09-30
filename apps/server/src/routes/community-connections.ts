@@ -14,6 +14,7 @@ import {
   CommunityConnectionStatusResponseSchema,
   CommunityConnectionPollResponseSchema,
   CommunityConnectionDescriptorSchema,
+  CommunityDisconnectImpactSchema,
   CommunityDisconnectResponseSchema,
   type CommunityConnectionDescriptor,
   describeCommunityRetryWait,
@@ -374,6 +375,26 @@ export function createCommunityConnectionsRouter(
     try {
       await connectionService.cancel(ref.data, owner);
       res.status(204).end();
+    } catch (error) {
+      failure(res, error);
+    }
+  });
+  // What Disconnect would remove, read from this install's own records so the confirmation can
+  // name the agents even while the Community cannot be reached.
+  router.get('/:ref/disconnect-impact', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    if (!owner) return;
+    const ref = CommunityRefSchema.safeParse(req.params.ref);
+    if (!ref.success) {
+      res.status(404).json({ error: 'Community connection not found.' });
+      return;
+    }
+    try {
+      res.json(
+        CommunityDisconnectImpactSchema.parse(
+          await connectionService.disconnectImpact(ref.data, owner)
+        )
+      );
     } catch (error) {
       failure(res, error);
     }

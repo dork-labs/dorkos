@@ -23,7 +23,10 @@ import {
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
 import {
-  unconfirmedDisconnectMessage,
+  disconnectAgentsLine,
+  disconnectOutcome,
+  unknownDisconnectAgentsLine,
+  useCommunityDisconnectImpact,
   useEndCommunityConnection,
 } from '@/layers/entities/community';
 
@@ -130,7 +133,10 @@ export interface DisconnectCommunityDialogProps {
  * Confirm, then disconnect this installation from one Community.
  *
  * Only this installation's connection ends. The person stays a member of the
- * Community, and every other Community and this DorkOS keep their state.
+ * Community, and every other Community and this DorkOS keep their state. The
+ * agents this installation added to the Community are removed there, so the
+ * confirmation names them first, and the result names any that could not be
+ * removed so the person can finish on the Community's own site.
  */
 export function DisconnectCommunityDialog({
   connection,
@@ -138,17 +144,29 @@ export function DisconnectCommunityDialog({
   onDisconnected,
 }: DisconnectCommunityDialogProps) {
   const end = useEndCommunityConnection();
+  const impact = useCommunityDisconnectImpact(connection);
   const [shown, setShown] = useState(connection);
   if (connection !== null && connection !== shown) setShown(connection);
   const label = shown?.label ?? 'this community';
+  // A request still waiting for approval never added an agent, so there is nothing to check.
+  const agents = shown?.status === 'pending' ? [] : impact.data?.agents;
+  // Wait only while a read is actually running. A read that failed, or never started, must not
+  // hold Disconnect back: the server removes the agents either way, so say that instead.
+  const checking = agents === undefined && impact.fetchStatus === 'fetching';
+  const agentsLine = agents
+    ? disconnectAgentsLine(label, agents)
+    : checking
+      ? null
+      : unknownDisconnectAgentsLine(label);
 
   function confirm() {
     if (!connection) return;
     end.mutate(connection, {
-      onSuccess: ({ remoteRevoked }) => {
+      onSuccess: (result) => {
         onOpenChange(false);
-        if (remoteRevoked) toast.success(`${connection.label} is disconnected.`);
-        else toast.warning(unconfirmedDisconnectMessage(connection.label));
+        const outcome = disconnectOutcome(connection.label, result);
+        if (outcome.tone === 'success') toast.success(outcome.message);
+        else toast.warning(outcome.message, { duration: 15_000 });
         onDisconnected(connection);
       },
     });
@@ -165,11 +183,28 @@ export function DisconnectCommunityDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Disconnect this DorkOS from {label}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Its channels leave this app, and your agents stop answering there. You stay a member of{' '}
-            {label}, and you can connect again later.
+          <AlertDialogDescription asChild>
+            <div className="space-y-2">
+              <p>
+                Its channels leave this app. You stay a member of {label}, and you can connect again
+                later.
+              </p>
+              {agentsLine && <p className="text-foreground">{agentsLine}</p>}
+              {checking && <p>Checking for agents you added from here…</p>}
+            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {impact.isError && agents === undefined && !checking && (
+          <div
+            role="alert"
+            className="flex flex-col items-start gap-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+          >
+            <p className="text-destructive">Couldn’t check which of your agents are on {label}.</p>
+            <Button size="sm" variant="outline" onClick={() => void impact.refetch()}>
+              Check again
+            </Button>
+          </div>
+        )}
         {end.isError && (
           <p role="alert" className="text-destructive text-sm">
             Couldn’t disconnect. Check that DorkOS is running, then try again.
@@ -177,7 +212,7 @@ export function DisconnectCommunityDialog({
         )}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={end.isPending}>Keep connected</AlertDialogCancel>
-          <Button variant="destructive" disabled={end.isPending} onClick={confirm}>
+          <Button variant="destructive" disabled={end.isPending || checking} onClick={confirm}>
             {end.isPending ? 'Disconnecting…' : 'Disconnect'}
           </Button>
         </AlertDialogFooter>

@@ -90,24 +90,15 @@ export function eraseCommunityOwnerState(queryClient: QueryClient): void {
 }
 
 /**
- * What to tell the person when this installation is disconnected but the
- * Community could not be reached to end its access there.
- *
- * @param label - The Community's name.
- */
-export function unconfirmedDisconnectMessage(label: string): string {
-  return `${label} is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on ${label}.`;
-}
-
-/**
  * Disconnect this installation from one Community, or cancel a pending
  * approval, and erase that Community's local state once the server confirms.
  *
  * Only this installation's connection ends. The person's account and
  * membership in the Community stay; leaving the Community is a separate action
- * on its own host. The mutation resolves with whether the Community confirmed
- * this installation's access is gone there, so the caller can say when it
- * could not be reached.
+ * on its own host; the agents this installation added there are removed. The
+ * mutation resolves with whether the Community confirmed this installation's
+ * access is gone there and which agents it could not remove, so the caller can
+ * say what is left to finish.
  */
 export function useEndCommunityConnection() {
   const transport = useTransport();
@@ -120,7 +111,8 @@ export function useEndCommunityConnection() {
         epoch: current.epoch,
         ownerKey: current.ownerKey,
       };
-      let result: CommunityDisconnectResponse = { remoteRevoked: true };
+      // A pending request never received a grant, so nothing was left on the Community.
+      let result: CommunityDisconnectResponse = { remoteRevoked: true, agentsNotRemoved: [] };
       if (connection.status === 'pending')
         await transport.cancelCommunityConnection(connection.ref);
       else result = await transport.disconnectCommunity(connection.ref);

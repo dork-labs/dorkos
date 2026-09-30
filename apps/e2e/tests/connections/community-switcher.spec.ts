@@ -98,6 +98,9 @@ function navigationState(ownerKey: string) {
  * restores: a write's real reply, landing in the query cache, used to race
  * the timeline and land it at the end instead of the remembered row.
  */
+/** An agent this app added to Alpha. */
+const scout = { localAgentId: 'scout', displayName: 'Scout' };
+
 async function mockCommunitySwitcher(page: Page, overrides: Record<string, unknown> = {}) {
   await page.route('**/api/community-connections**', async (route) => {
     const method = route.request().method();
@@ -119,6 +122,11 @@ async function mockCommunitySwitcher(page: Page, overrides: Record<string, unkno
     }
     if (path === '/api/community-connections/navigation/alpha/destination') {
       await route.fulfill({ json: { destination } });
+      return;
+    }
+    // The agents this app added to Alpha, which Disconnect removes there.
+    if (path === '/api/community-connections/alpha/disconnect-impact') {
+      await route.fulfill({ json: { agents: [scout] } });
       return;
     }
     await route.continue();
@@ -309,8 +317,8 @@ test('Disconnecting asks first, then removes only that Community and leaves it',
     if (route.request().method() !== 'DELETE') return route.fallback();
     disconnected = true;
     // The local server removed its copy but could not reach Alpha to end the
-    // grant there, so the person is told how to finish.
-    await route.fulfill({ json: { remoteRevoked: false } });
+    // grant there or remove Scout, so the person is told how to finish.
+    await route.fulfill({ json: { remoteRevoked: false, agentsNotRemoved: [scout] } });
   });
   // Once the server has dropped the connection, it stops listing it.
   await page.route('**/api/community-connections', async (route) => {
@@ -323,6 +331,10 @@ test('Disconnecting asks first, then removes only that Community and leaves it',
   const confirm = page.getByRole('alertdialog', { name: 'Disconnect this DorkOS from Alpha?' });
   await expect(confirm).toBeVisible();
   await expect(confirm).toContainText('You stay a member of Alpha');
+  // Disconnect removes the agents this app added there, and says so first (DOR-2603).
+  await expect(confirm).toContainText(
+    'The agent you added from here, Scout, will be removed from Alpha.'
+  );
   await confirm.getByRole('button', { name: 'Keep connected' }).click();
   await expect(confirm).toBeHidden();
   expect(disconnected).toBe(false);
@@ -335,7 +347,7 @@ test('Disconnecting asks first, then removes only that Community and leaves it',
   expect(disconnected).toBe(true);
   await expect(
     page.getByText(
-      'Alpha is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on Alpha.',
+      'Alpha is disconnected here, but it couldn’t be reached. To finish on Alpha, remove Scout under Agents, and disconnect this DorkOS under Connected installations.',
       { exact: true }
     )
   ).toBeVisible();

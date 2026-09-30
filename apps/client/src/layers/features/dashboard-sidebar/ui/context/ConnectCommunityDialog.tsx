@@ -25,8 +25,11 @@ import {
 import {
   communityKeys,
   communityOwnerAddress,
-  unconfirmedDisconnectMessage,
+  disconnectAgentsLine,
+  disconnectOutcome,
+  unknownDisconnectAgentsLine,
   useCommunityApprovalCheck,
+  useCommunityDisconnectImpact,
   useCommunityApprovalStore,
   useCommunityConnections,
   useConfirmedCommunityAuthority,
@@ -380,6 +383,10 @@ function ConnectCommunityBody({
     },
   });
   const end = useEndCommunityConnection();
+  // Disconnecting a connection that needs reconnecting still removes the agents it added.
+  const impact = useCommunityDisconnectImpact(
+    connection?.status === 'reconnect-required' ? connection : null
+  );
 
   // A failed start hands focus back to the address, where the fix (or the retry) begins. The
   // field was disabled while the start ran, so focus is moved once it is enabled again.
@@ -396,14 +403,16 @@ function ConnectCommunityBody({
 
   function endConnection(ending: CommunityConnectionDescriptor) {
     end.mutate(ending, {
-      onSuccess: ({ remoteRevoked }) => {
+      onSuccess: (result) => {
         if (ending.status === 'pending') onCancelled(ending.label);
-        else
+        else {
+          const outcome = disconnectOutcome(ending.label, result);
           onEnded(
-            remoteRevoked
+            outcome.tone === 'success'
               ? `${ending.label} is disconnected. Connect again to continue.`
-              : unconfirmedDisconnectMessage(ending.label)
+              : outcome.message
           );
+        }
       },
       // Ending can erase local proof even when the Community cannot answer.
       onSettled: () => {
@@ -496,7 +505,14 @@ function ConnectCommunityBody({
     <p className="text-muted-foreground text-xs break-all">{connection.pinnedOrigin}</p>
   );
 
-  if (connection.status === 'reconnect-required')
+  if (connection.status === 'reconnect-required') {
+    // Wait only while a read is running; a failed one says what Disconnect still does.
+    const checking = !impact.data && impact.fetchStatus === 'fetching';
+    const agentsLine = impact.data
+      ? disconnectAgentsLine(connection.label, impact.data.agents)
+      : checking
+        ? null
+        : unknownDisconnectAgentsLine(connection.label);
     return (
       <>
         <ResponsiveDialogHeader>
@@ -508,6 +524,20 @@ function ConnectCommunityBody({
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-3 py-4">
           {origin}
+          {agentsLine && <p className="text-sm">{agentsLine}</p>}
+          {impact.isError && !impact.data && !checking && (
+            <div
+              role="alert"
+              className="flex flex-col items-start gap-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+            >
+              <p className="text-destructive">
+                Couldn’t check which of your agents are on {connection.label}.
+              </p>
+              <Button size="sm" variant="outline" onClick={() => void impact.refetch()}>
+                Check again
+              </Button>
+            </div>
+          )}
           {end.isError && (
             <p role="alert" className="text-destructive text-sm">
               Couldn’t disconnect. Check that DorkOS is running, then try again.
@@ -518,12 +548,13 @@ function ConnectCommunityBody({
           <Button type="button" variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button disabled={end.isPending} onClick={() => endConnection(connection)}>
+          <Button disabled={end.isPending || checking} onClick={() => endConnection(connection)}>
             {end.isPending ? 'Disconnecting…' : 'Disconnect'}
           </Button>
         </ResponsiveDialogFooter>
       </>
     );
+  }
 
   // Pending. (A connected one closes the dialog before it is drawn for long.)
   return (

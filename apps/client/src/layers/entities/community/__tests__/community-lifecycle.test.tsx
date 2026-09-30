@@ -3,7 +3,10 @@ import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-libr
 import type { PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockTransport } from '@dorkos/test-utils';
-import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
+import type {
+  CommunityConnectionDescriptor,
+  CommunityDisconnectResponse,
+} from '@dorkos/shared/community-connections';
 import {
   RemoteCommunityRoomSchema,
   type RemoteCommunityRoom,
@@ -229,7 +232,9 @@ describe('useEndCommunityConnection', () => {
   }
 
   it('disconnects a connected Community and then erases it', async () => {
-    const disconnectCommunity = vi.fn().mockResolvedValue({ remoteRevoked: true });
+    const disconnectCommunity = vi
+      .fn()
+      .mockResolvedValue({ remoteRevoked: true, agentsNotRemoved: [] });
     const cancelCommunityConnection = vi.fn().mockResolvedValue(undefined);
     const transport = createMockTransport({ disconnectCommunity, cancelCommunityConnection });
     client.setQueryData(communityKeys.connections(authority), [connection('a'), connection('b')]);
@@ -238,14 +243,16 @@ describe('useEndCommunityConnection', () => {
 
     const outcome = await act(() => hook.result.current.mutateAsync(connection('a')));
 
-    expect(outcome).toEqual({ remoteRevoked: true });
+    expect(outcome).toEqual({ remoteRevoked: true, agentsNotRemoved: [] });
     expect(disconnectCommunity).toHaveBeenCalledWith('a');
     expect(cancelCommunityConnection).not.toHaveBeenCalled();
     expect(getCommunityConnectionGeneration('a')).toBe(before + 1);
   });
 
   it('still erases local state and reports it when the Community could not be told', async () => {
-    const disconnectCommunity = vi.fn().mockResolvedValue({ remoteRevoked: false });
+    const disconnectCommunity = vi
+      .fn()
+      .mockResolvedValue({ remoteRevoked: false, agentsNotRemoved: [] });
     const transport = createMockTransport({ disconnectCommunity });
     client.setQueryData(communityKeys.connections(authority), [connection('a'), connection('b')]);
     client.setQueryData([...communityKeys.remote(authority, 'a'), 'rooms'], ['A private']);
@@ -253,7 +260,7 @@ describe('useEndCommunityConnection', () => {
 
     const outcome = await act(() => hook.result.current.mutateAsync(connection('a')));
 
-    expect(outcome).toEqual({ remoteRevoked: false });
+    expect(outcome).toEqual({ remoteRevoked: false, agentsNotRemoved: [] });
     expect(client.getQueryData([...communityKeys.remote(authority, 'a'), 'rooms'])).toBeUndefined();
     expect(
       client
@@ -273,7 +280,7 @@ describe('useEndCommunityConnection', () => {
   });
 
   it('keeps the Community and its content when the server does not confirm', async () => {
-    const failure = deferred<{ remoteRevoked: boolean }>();
+    const failure = deferred<CommunityDisconnectResponse>();
     const disconnectCommunity = vi.fn(() => failure.promise);
     const transport = createMockTransport({ disconnectCommunity });
     client.setQueryData([...communityKeys.remote(authority, 'a'), 'rooms'], ['A private']);

@@ -317,6 +317,51 @@ describe('local connection route authority and public projection', () => {
     ).toBe(403);
   });
 
+  // DOR-2603. Purpose: the Disconnect confirmation names the agents it will remove, read for
+  // the local owner only. Fails if another caller can read them or the route stops answering.
+  it('says which agents Disconnect would remove, only to the local owner', async () => {
+    expect(
+      (
+        await request(server)
+          .get(`/api/community-connections/${ref}/disconnect-impact`)
+          .set('x-test-author', 'author-b')
+      ).status
+    ).toBe(403);
+    // Still waiting for approval: no grant yet, so no agent was added through it.
+    const pending = await request(server)
+      .get(`/api/community-connections/${ref}/disconnect-impact`)
+      .set('x-test-author', 'author-a');
+    expect(pending.status).toBe(200);
+    expect(pending.body).toEqual({ agents: [] });
+    expect(
+      (
+        await request(server)
+          .get('/api/community-connections/remote_unknown/disconnect-impact')
+          .set('x-test-author', 'author-a')
+      ).status
+    ).toBe(404);
+
+    const impactDirectory = await mkdtemp(join(tmpdir(), 'impact-'));
+    const impactService = new RemoteCommunityPairingService(
+      new RemoteConnectionStore(impactDirectory)
+    );
+    const agents = [{ localAgentId: 'scout-local', displayName: 'Scout' }];
+    const read = vi.spyOn(impactService, 'disconnectImpact').mockResolvedValue({ agents });
+    const impactApp = express();
+    impactApp.use('/api/community-connections', createCommunityConnectionsRouter(impactService));
+    const impactServer = impactApp.listen(0, '127.0.0.1');
+    await once(impactServer, 'listening');
+    const answered = await request(impactServer)
+      .get(`/api/community-connections/${ref}/disconnect-impact`)
+      .set('x-test-author', 'author-a');
+    expect(answered.status).toBe(200);
+    expect(answered.body).toEqual({ agents });
+    expect(read).toHaveBeenCalledWith(ref, 'author-a');
+    impactServer.closeAllConnections();
+    await new Promise<void>((resolve) => impactServer.close(() => resolve()));
+    await rm(impactDirectory, { recursive: true, force: true });
+  });
+
   it('disconnects only when the trusted caller is the local owner', async () => {
     expect(
       (
@@ -330,7 +375,7 @@ describe('local connection route authority and public projection', () => {
       .set('x-test-author', 'author-a');
     expect(disconnected.status).toBe(200);
     // A pending request never received a grant, so nothing is left on the Community.
-    expect(disconnected.body).toEqual({ remoteRevoked: true });
+    expect(disconnected.body).toEqual({ remoteRevoked: true, agentsNotRemoved: [] });
     expect(
       (await request(server).get('/api/community-connections').set('x-test-author', 'author-a'))
         .body.connections
@@ -593,7 +638,7 @@ describe('attention within a budget, with last confirmed counts as the fallback'
     );
     vi.spyOn(service, 'disconnect').mockImplementation(async (target) => {
       listed = listed.filter((item) => item.ref !== target);
-      return { remoteRevoked: true };
+      return { remoteRevoked: true, agentsNotRemoved: [] };
     });
     const testApp = express();
     testApp.use(

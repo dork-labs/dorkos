@@ -138,11 +138,23 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   };
 });
 const mockEndConnection = vi.fn();
+/** What the Disconnect confirmation reads about the agents it would remove. */
+let mockDisconnectImpact: {
+  data?: { agents: { localAgentId: string; displayName: string | null }[] };
+  isError: boolean;
+  fetchStatus: 'fetching' | 'idle';
+  refetch: () => void;
+} = { data: { agents: [] }, isError: false, fetchStatus: 'idle', refetch: () => {} };
 vi.mock('@/layers/entities/community', async (importOriginal) => ({
-  // The real wording, so the warning below is checked against what people see.
-  unconfirmedDisconnectMessage: (
+  // The real wording, so the confirmation and warnings below are checked against what people see.
+  disconnectAgentsLine: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .disconnectAgentsLine,
+  disconnectOutcome: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .disconnectOutcome,
+  unknownDisconnectAgentsLine: (
     await importOriginal<typeof import('@/layers/entities/community')>()
-  ).unconfirmedDisconnectMessage,
+  ).unknownDisconnectAgentsLine,
+  useCommunityDisconnectImpact: () => mockDisconnectImpact,
   useCommunityConnections: () => ({ data: mockConnections }),
   useCommunityNavigation: () => ({ data: { ownerKey: 'owner-a', order: mockCommunityOrder } }),
   useMoveCommunityNavigation: () => ({ mutate: mockMoveCommunityNavigation }),
@@ -192,6 +204,12 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  mockDisconnectImpact = {
+    data: { agents: [] },
+    isError: false,
+    fetchStatus: 'idle',
+    refetch: vi.fn(),
+  };
   vi.clearAllMocks();
   mockSelf = { id: 'me', displayName: 'Dorian', isSelf: true };
   mockConfig = { version: '0.58.0', latestVersion: null, isDevMode: false };
@@ -1292,7 +1310,9 @@ describe('the context switcher’s lifecycle actions', () => {
       expect.anything()
     );
     // The server confirmed: route away from the Community that is gone.
-    act(() => mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: true }));
+    act(() =>
+      mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: true, agentsNotRemoved: [] })
+    );
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/', replace: true });
     expect(toast.success).toHaveBeenCalledWith('Alpha is disconnected.');
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
@@ -1303,11 +1323,172 @@ describe('the context switcher’s lifecycle actions', () => {
     const manage = await openManageAlpha();
     fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
-    act(() => mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: false }));
+    act(() =>
+      mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: false, agentsNotRemoved: [] })
+    );
     expect(toast.warning).toHaveBeenCalledWith(
-      'Alpha is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on Alpha.'
+      'Alpha is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on Alpha.',
+      expect.anything()
     );
     expect(toast.success).not.toHaveBeenCalledWith('Alpha is disconnected.');
+  });
+
+  // DOR-2603. Purpose: Disconnect removes the agents this app added to the Community, so the
+  // confirmation must say so and name them, and the result must name any left behind. Fails if the
+  // confirmation hides the agents, lets Disconnect run before it knows them, or a left-behind agent
+  // goes unmentioned.
+  it('names the agents Disconnect will remove before the person confirms', async () => {
+    mockConnections = [alpha()];
+    mockDisconnectImpact = {
+      data: {
+        agents: [
+          { localAgentId: 'scout', displayName: 'Scout' },
+          { localAgentId: 'echo', displayName: 'Echo' },
+        ],
+      },
+      isError: false,
+      fetchStatus: 'idle',
+      refetch: vi.fn(),
+    };
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    const confirm = await screen.findByRole('alertdialog', {
+      name: 'Disconnect this DorkOS from Alpha?',
+    });
+    expect(confirm).toHaveAccessibleDescription(
+      expect.stringContaining(
+        'The 2 agents you added from here will be removed from Alpha: Scout and Echo.'
+      )
+    );
+    expect(confirm).toHaveTextContent('You stay a member of Alpha');
+  });
+
+  it('names a single agent, and waits to know the agents before it can disconnect', async () => {
+    mockConnections = [alpha()];
+    mockDisconnectImpact = {
+      data: undefined,
+      isError: false,
+      fetchStatus: 'fetching',
+      refetch: vi.fn(),
+    };
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    const confirm = await screen.findByRole('alertdialog');
+    expect(confirm).toHaveTextContent('Checking for agents you added from here…');
+    expect(within(confirm).getByRole('button', { name: 'Disconnect' })).toBeDisabled();
+    cleanup();
+
+    mockDisconnectImpact = {
+      data: { agents: [{ localAgentId: 'scout', displayName: 'Scout' }] },
+      isError: false,
+      fetchStatus: 'idle',
+      refetch: vi.fn(),
+    };
+    const again = await openManageAlpha();
+    fireEvent.click(within(again).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    const single = await screen.findByRole('alertdialog');
+    expect(single).toHaveTextContent(
+      'The agent you added from here, Scout, will be removed from Alpha.'
+    );
+    expect(within(single).getByRole('button', { name: 'Disconnect' })).toBeEnabled();
+  });
+
+  it('says so when it cannot check the agents, and still lets the person disconnect', async () => {
+    mockConnections = [alpha()];
+    const refetch = vi.fn();
+    mockDisconnectImpact = { data: undefined, isError: true, fetchStatus: 'idle', refetch };
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    const confirm = await screen.findByRole('alertdialog');
+    expect(within(confirm).getByRole('alert')).toHaveTextContent(
+      'Couldn’t check which of your agents are on Alpha.'
+    );
+    // Disconnect removes them either way, so the confirmation says that much.
+    expect(confirm).toHaveTextContent('Any agents you added from here will be removed from Alpha.');
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Check again' }));
+    expect(refetch).toHaveBeenCalled();
+    expect(within(confirm).getByRole('button', { name: 'Disconnect' })).toBeEnabled();
+  });
+
+  it('never waits on a check that has not started', async () => {
+    mockConnections = [alpha()];
+    mockDisconnectImpact = {
+      data: undefined,
+      isError: false,
+      fetchStatus: 'idle',
+      refetch: vi.fn(),
+    };
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    const confirm = await screen.findByRole('alertdialog');
+    expect(confirm).not.toHaveTextContent('Checking for agents');
+    expect(confirm).toHaveTextContent('Any agents you added from here will be removed from Alpha.');
+    expect(within(confirm).getByRole('button', { name: 'Disconnect' })).toBeEnabled();
+  });
+
+  it('names the agents it could not remove when the Community could not be reached', async () => {
+    mockConnections = [alpha()];
+    mockDisconnectImpact = {
+      data: { agents: [{ localAgentId: 'scout', displayName: 'Scout' }] },
+      isError: false,
+      fetchStatus: 'idle',
+      refetch: vi.fn(),
+    };
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    act(() =>
+      mockEndConnection.mock.calls[0]![1].onSuccess({
+        remoteRevoked: false,
+        agentsNotRemoved: [{ localAgentId: 'scout', displayName: 'Scout' }],
+      })
+    );
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Alpha is disconnected here, but it couldn’t be reached. To finish on Alpha, remove Scout under Agents, and disconnect this DorkOS under Connected installations.',
+      expect.anything()
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('counts agents this app no longer has instead of repeating a placeholder', async () => {
+    mockConnections = [alpha()];
+    mockDisconnectImpact = {
+      data: {
+        agents: [
+          { localAgentId: 'scout', displayName: 'Scout' },
+          { localAgentId: 'gone-1', displayName: null },
+          { localAgentId: 'gone-2', displayName: null },
+        ],
+      },
+      isError: false,
+      fetchStatus: 'idle',
+      refetch: vi.fn(),
+    };
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'The 3 agents you added from here will be removed from Alpha: Scout and 2 unnamed agents.'
+    );
+  });
+
+  it('names an agent the Community would not remove even though the rest went', async () => {
+    mockConnections = [alpha()];
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    act(() =>
+      mockEndConnection.mock.calls[0]![1].onSuccess({
+        remoteRevoked: true,
+        agentsNotRemoved: [
+          { localAgentId: 'scout', displayName: 'Scout' },
+          { localAgentId: 'echo', displayName: 'Echo' },
+        ],
+      })
+    );
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Alpha is disconnected, but Scout and Echo couldn’t be removed from it. To finish, remove them under Agents on Alpha.',
+      expect.anything()
+    );
   });
 
   it('stays put after disconnecting a Community that was not on screen', async () => {
@@ -1316,7 +1497,9 @@ describe('the context switcher’s lifecycle actions', () => {
     const manage = await openManageAlpha();
     fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
-    act(() => mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: true }));
+    act(() =>
+      mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: true, agentsNotRemoved: [] })
+    );
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 

@@ -64,6 +64,8 @@ export const communityKeys = {
     [...communityKeys.owner(authority), ref, 'approval'] as const,
   remote: (authority: ConfirmedCommunityAuthority, ref: string) =>
     [...communityKeys.owner(authority), ref] as const,
+  disconnectImpact: (authority: ConfirmedCommunityAuthority, ref: string) =>
+    [...communityKeys.remote(authority, ref), 'disconnect-impact'] as const,
   content: (authority: CommunityContentAuthority, ref: string) =>
     [
       ...communityKeys.remote(authority, ref),

@@ -90,6 +90,10 @@ const requests: Array<{ path: string; body: Record<string, string> }> = [];
 const revocations: Array<{ path: string; authorization: string | undefined }> = [];
 /** How the fake Community answers a self-revocation: a status, or drop the socket. */
 let revocationAnswer: number | 'hang-up' = 204;
+/** Every agent removal the fake Community received, with the bearer that sent it. */
+const agentRemovals: Array<{ memberId: string; authorization: string | undefined }> = [];
+/** How the fake Community answers removing one agent, by member id: default 204. */
+const agentRemovalAnswers = new Map<string, number | 'hang-up' | 'bare-404'>();
 /** How the fake Community answers a reply-count read: counts, or 404 like a server from before the route. */
 let threadsAnswer: 'counts' | 404 = 'counts';
 /** When set, the fake Community holds every access re-check until this settles. */
@@ -154,6 +158,34 @@ beforeAll(async () => {
       send(
         rejectedCode ? { code: rejectedCode, message: 'Refused.' } : { error: 'Grant rejected' },
         rejectedStatus
+      );
+      return;
+    }
+    const agentRemoval =
+      req.method === 'DELETE' && req.url?.startsWith(`${qualified}/agents/`)
+        ? decodeURIComponent(req.url.slice(`${qualified}/agents/`.length))
+        : null;
+    if (agentRemoval) {
+      agentRemovals.push({ memberId: agentRemoval, authorization: req.headers.authorization });
+      const answer = agentRemovalAnswers.get(agentRemoval) ?? 204;
+      if (answer === 'hang-up') {
+        req.socket.destroy();
+        return;
+      }
+      if (answer === 204) {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+      // A 404 from something in front of the Community, not the Community's own answer.
+      if (answer === 'bare-404') {
+        res.statusCode = 404;
+        res.end('Not Found');
+        return;
+      }
+      send(
+        { code: answer === 404 ? 'NOT_FOUND' : 'INTERNAL', message: 'untrusted remote text' },
+        answer
       );
       return;
     }
@@ -1692,6 +1724,281 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     });
   });
 
+  // DOR-2603. Purpose: an agent this installation added must not stay active on the Community
+  // after its only controller disconnects. These fail if disconnect stops removing the agents,
+  // removes them after the grant that allows it is gone, touches an agent it did not add, or
+  // hides one it could not remove.
+  describe('disconnect removes the agents this installation added', () => {
+    const scout = {
+      localAgentId: 'scout-local',
+      remoteMemberId: randomUUID(),
+      displayName: 'Scout',
+      active: true,
+    };
+    const echo = {
+      localAgentId: 'echo-local',
+      remoteMemberId: randomUUID(),
+      displayName: 'Echo',
+      active: true,
+    };
+    /** An agent removed here earlier, whose removal the Community may never have heard. */
+    const relay = {
+      localAgentId: 'relay-local',
+      remoteMemberId: randomUUID(),
+      displayName: 'Relay',
+      active: false,
+    };
+    const view = (agent: typeof scout) => ({
+      localAgentId: agent.localAgentId,
+      displayName: agent.displayName,
+    });
+
+    async function connectedWith(owner: string, agents: (typeof scout)[]) {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const reader = vi.fn((_ref: string, ownerKey: string) => (ownerKey === owner ? agents : []));
+      const service = new RemoteCommunityPairingService(
+        store,
+        undefined,
+        undefined,
+        {},
+        undefined,
+        reader
+      );
+      const started = await service.start(owner, origin, 'Agents install');
+      expect((await service.poll(started.connection.ref, owner)).status).toBe('connected');
+      approved = false;
+      revocations.length = 0;
+      agentRemovals.length = 0;
+      return { store, service, reader, ref: started.connection.ref };
+    }
+
+    async function expectLocalCopyGone(store: RemoteConnectionStore, ref: string, owner: string) {
+      expect(await store.list(owner)).toEqual([]);
+      expect(
+        await new EncryptedFileCredentialStore(directory).get(`community:${ref}:personal`)
+      ).toBeNull();
+    }
+
+    afterEach(() => {
+      revocationAnswer = 204;
+      revocations.length = 0;
+      agentRemovals.length = 0;
+      agentRemovalAnswers.clear();
+    });
+
+    it('removes each agent with its own bearer before revoking the grant', async () => {
+      const { store, service, reader, ref } = await connectedWith('agents-owner', [scout, echo]);
+      const before = requests.length;
+      expect(await service.disconnect(ref, 'agents-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(reader).toHaveBeenCalledWith(ref, 'agents-owner');
+      expect(agentRemovals).toEqual(
+        expect.arrayContaining([
+          { memberId: scout.remoteMemberId, authorization: `Bearer ${token}` },
+          { memberId: echo.remoteMemberId, authorization: `Bearer ${token}` },
+        ])
+      );
+      expect(agentRemovals).toHaveLength(2);
+      // Order: every agent removal reached the Community before the grant was revoked.
+      const paths = requests.slice(before).map((request) => request.path);
+      const revokedAt = paths.indexOf(`${qualified}/me/connection`);
+      expect(revokedAt).toBeGreaterThan(
+        paths.indexOf(`${qualified}/agents/${scout.remoteMemberId}`)
+      );
+      expect(revokedAt).toBeGreaterThan(
+        paths.indexOf(`${qualified}/agents/${echo.remoteMemberId}`)
+      );
+      // Only the agents this installation added: it never lists the member's agents there.
+      expect(paths.filter((path) => path === `${qualified}/agents`)).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'agents-owner');
+    });
+
+    it('names only the agent the Community would not remove, and still disconnects', async () => {
+      const { store, service, ref } = await connectedWith('partial-owner', [scout, echo]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 500);
+      expect(await service.disconnect(ref, 'partial-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout)],
+      });
+      expect(revocations).toHaveLength(1);
+      await expectLocalCopyGone(store, ref, 'partial-owner');
+    });
+
+    it('names every agent when the Community cannot be reached, and still disconnects', async () => {
+      const { store, service, ref } = await connectedWith('offline-owner', [scout, echo]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 'hang-up');
+      agentRemovalAnswers.set(echo.remoteMemberId, 'hang-up');
+      revocationAnswer = 'hang-up';
+      expect(await service.disconnect(ref, 'offline-owner')).toEqual({
+        remoteRevoked: false,
+        agentsNotRemoved: [view(scout), view(echo)],
+      });
+      // Nothing reached the Community, so the revoke is not tried only to wait out another timeout.
+      expect(revocations).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'offline-owner');
+    });
+
+    it('still revokes the grant when the Community answered any agent removal', async () => {
+      const { service, ref } = await connectedWith('answered-agent-owner', [scout, echo]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 'hang-up');
+      agentRemovalAnswers.set(echo.remoteMemberId, 500);
+      expect(await service.disconnect(ref, 'answered-agent-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout), view(echo)],
+      });
+      expect(revocations).toHaveLength(1);
+    });
+
+    it('does not count a 404 the Community did not send as removed', async () => {
+      const { service, ref } = await connectedWith('bare-404-owner', [scout]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 'bare-404');
+      expect(await service.disconnect(ref, 'bare-404-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout)],
+      });
+    });
+
+    // An agent revoked here may since have been enrolled again, under the same local id, by
+    // another installation of the same person; the Community would remove that live agent too.
+    it('never sends a removal for an agent revoked here earlier, nor names it', async () => {
+      const { service, ref } = await connectedWith('earlier-owner', [scout, relay]);
+      expect(await service.disconnectImpact(ref, 'earlier-owner')).toEqual({
+        agents: [view(scout)],
+      });
+      expect(await service.disconnect(ref, 'earlier-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(agentRemovals.map((removal) => removal.memberId)).toEqual([scout.remoteMemberId]);
+    });
+
+    it('names a fenced connection’s agents without removing them, even with a bearer', async () => {
+      const fenced = [{ ...scout, active: false }];
+      const { store, service, ref } = await connectedWith('fenced-bearer-owner', fenced);
+      const file = join(directory, 'communities', 'remote', 'connections.json');
+      const records = JSON.parse(await readFile(file, 'utf8')) as Array<{
+        ref: string;
+        status: string;
+      }>;
+      records.find((record) => record.ref === ref)!.status = 'reconnect-required';
+      await writeFile(file, JSON.stringify(records));
+      expect(await service.disconnect(ref, 'fenced-bearer-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout)],
+      });
+      expect(agentRemovals).toEqual([]);
+      expect(revocations).toHaveLength(1);
+      await expectLocalCopyGone(store, ref, 'fenced-bearer-owner');
+    });
+
+    // The reconnect dialog's path: a rejected grant revoked every enrollment here without telling
+    // the Community, and dropped the bearer, so nothing can be removed from here.
+    it('names the agents a rejected grant revoked here, since the Community still has them', async () => {
+      const fenced = [
+        { ...scout, active: false },
+        { ...relay, active: false },
+      ];
+      const { store, service, ref } = await connectedWith('fenced-owner', fenced);
+      await store.requireReconnect(ref, 'fenced-owner');
+      expect(await service.disconnectImpact(ref, 'fenced-owner')).toEqual({
+        agents: [view(scout), view(relay)],
+      });
+      expect(await service.disconnect(ref, 'fenced-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout), view(relay)],
+      });
+      expect(agentRemovals).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'fenced-owner');
+    });
+
+    it('counts an agent the Community no longer has as removed', async () => {
+      const { service, ref } = await connectedWith('already-gone-owner', [scout]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 404);
+      expect(await service.disconnect(ref, 'already-gone-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+    });
+
+    it('names every agent when no bearer is left to remove them', async () => {
+      const { store, service, ref } = await connectedWith('no-bearer-owner', [scout]);
+      await store.requireReconnect(ref, 'no-bearer-owner');
+      expect(await service.disconnect(ref, 'no-bearer-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout)],
+      });
+      expect(agentRemovals).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'no-bearer-owner');
+    });
+
+    it('still disconnects when the agents cannot be read', async () => {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const service = new RemoteCommunityPairingService(
+        store,
+        undefined,
+        undefined,
+        {},
+        undefined,
+        () => {
+          throw new Error('database closed');
+        }
+      );
+      const started = await service.start('unreadable-owner', origin, 'Agents install');
+      expect((await service.poll(started.connection.ref, 'unreadable-owner')).status).toBe(
+        'connected'
+      );
+      approved = false;
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      expect(await service.disconnect(started.connection.ref, 'unreadable-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+      await expectLocalCopyGone(store, started.connection.ref, 'unreadable-owner');
+    });
+
+    it('says which agents disconnecting would remove without asking the Community', async () => {
+      const { service, ref } = await connectedWith('impact-owner', [scout, echo]);
+      const before = requests.length;
+      expect(await service.disconnectImpact(ref, 'impact-owner')).toEqual({
+        agents: [view(scout), view(echo)],
+      });
+      expect(requests.length).toBe(before);
+      await service.disconnect(ref, 'impact-owner');
+      await expect(service.disconnectImpact(ref, 'impact-owner')).rejects.toBeInstanceOf(
+        RemoteConnectionNotFoundError
+      );
+    });
+
+    it('reads no agents for a request still waiting for approval', async () => {
+      const store = new RemoteConnectionStore(directory);
+      const reader = vi.fn(() => [scout]);
+      const service = new RemoteCommunityPairingService(
+        store,
+        undefined,
+        undefined,
+        {},
+        undefined,
+        reader
+      );
+      const started = await service.start('pending-agents-owner', origin, 'Agents install');
+      expect(
+        await service.disconnectImpact(started.connection.ref, 'pending-agents-owner')
+      ).toEqual({ agents: [] });
+      expect(await service.disconnect(started.connection.ref, 'pending-agents-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(reader).not.toHaveBeenCalled();
+      expect(agentRemovals).toEqual([]);
+    });
+  });
+
   describe('disconnect revokes the grant on the Community', () => {
     async function connected(owner: string) {
       approved = true;
@@ -1746,6 +2053,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
       await expect(failing.disconnect(again.connection.ref, 'purging-owner')).resolves.toEqual({
         remoteRevoked: true,
+        agentsNotRemoved: [],
       });
       warn.mockRestore();
       await expectLocalCopyGone(store, again.connection.ref, 'purging-owner');
@@ -1753,7 +2061,10 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
 
     it('revokes with its own bearer at the qualified path before deleting the local copy', async () => {
       const { store, service, ref } = await connected('disconnect-owner');
-      expect(await service.disconnect(ref, 'disconnect-owner')).toEqual({ remoteRevoked: true });
+      expect(await service.disconnect(ref, 'disconnect-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
       expect(revocations).toEqual([
         { path: `${qualified}/me/connection`, authorization: `Bearer ${token}` },
       ]);
@@ -1765,6 +2076,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       revocationAnswer = 401;
       expect(await service.disconnect(ref, 'already-revoked-owner')).toEqual({
         remoteRevoked: true,
+        agentsNotRemoved: [],
       });
       expect(revocations).toHaveLength(1);
       await expectLocalCopyGone(store, ref, 'already-revoked-owner');
@@ -1782,6 +2094,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
         revocationAnswer = answer;
         expect(await service.disconnect(ref, 'unreachable-owner')).toEqual({
           remoteRevoked: false,
+          agentsNotRemoved: [],
         });
         expect(revocations).toHaveLength(1);
         await expectLocalCopyGone(store, ref, 'unreachable-owner');
@@ -1818,7 +2131,10 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       }>;
       records.find((record) => record.ref === ref)!.status = 'reconnect-required';
       await writeFile(file, JSON.stringify(records));
-      expect(await service.disconnect(ref, 'reconnect-owner')).toEqual({ remoteRevoked: true });
+      expect(await service.disconnect(ref, 'reconnect-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
       expect(revocations).toEqual([
         { path: `${qualified}/me/connection`, authorization: `Bearer ${token}` },
       ]);
@@ -1837,6 +2153,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       revocationAnswer = 'hang-up';
       expect(await service.disconnect(ref, 'reconnect-offline-owner')).toEqual({
         remoteRevoked: false,
+        agentsNotRemoved: [],
       });
       expect(revocations).toHaveLength(1);
       await expectLocalCopyGone(store, ref, 'reconnect-offline-owner');
@@ -1847,6 +2164,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await store.requireReconnect(ref, 'dropped-bearer-owner');
       expect(await service.disconnect(ref, 'dropped-bearer-owner')).toEqual({
         remoteRevoked: true,
+        agentsNotRemoved: [],
       });
       expect(revocations).toEqual([]);
       await expectLocalCopyGone(store, ref, 'dropped-bearer-owner');
@@ -1855,7 +2173,10 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     it('reports a connected record that lost its bearer as unconfirmed', async () => {
       const { store, service, ref } = await connected('lost-bearer-owner');
       await new EncryptedFileCredentialStore(directory).delete(`community:${ref}:personal`);
-      expect(await service.disconnect(ref, 'lost-bearer-owner')).toEqual({ remoteRevoked: false });
+      expect(await service.disconnect(ref, 'lost-bearer-owner')).toEqual({
+        remoteRevoked: false,
+        agentsNotRemoved: [],
+      });
       expect(revocations).toEqual([]);
       await expectLocalCopyGone(store, ref, 'lost-bearer-owner');
     });
@@ -1868,6 +2189,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       revocations.length = 0;
       expect(await service.disconnect(started.connection.ref, 'pending-disconnect-owner')).toEqual({
         remoteRevoked: true,
+        agentsNotRemoved: [],
       });
       expect(revocations).toEqual([]);
       expect(await store.list('pending-disconnect-owner')).toEqual([]);

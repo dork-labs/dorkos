@@ -581,13 +581,45 @@ describe('ConnectCommunityDialog', () => {
         .fn()
         .mockResolvedValueOnce([reconnectRequired])
         .mockResolvedValue([]),
-      disconnectCommunity: vi.fn().mockResolvedValue({ remoteRevoked: false }),
+      disconnectCommunity: vi
+        .fn()
+        .mockResolvedValue({ remoteRevoked: false, agentsNotRemoved: [] }),
     });
     mount(transport, { ref: reconnectRequired.ref });
     await user.click(await screen.findByRole('button', { name: 'Disconnect' }));
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(
         'Community A is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on Community A.'
+      )
+    );
+  });
+
+  // DOR-2603. Purpose: disconnecting a connection that needs reconnecting still removes the agents
+  // it added, so the dialog names them first and the result names any left on the Community.
+  it('names the agents it removes, and any the Community could not be told to remove', async () => {
+    const user = userEvent.setup();
+    const scout = { localAgentId: 'scout', displayName: 'Scout' };
+    const transport = createMockTransport({
+      listCommunityConnections: vi
+        .fn()
+        .mockResolvedValueOnce([reconnectRequired])
+        .mockResolvedValue([]),
+      getCommunityDisconnectImpact: vi.fn().mockResolvedValue({ agents: [scout] }),
+      disconnectCommunity: vi
+        .fn()
+        .mockResolvedValue({ remoteRevoked: true, agentsNotRemoved: [scout] }),
+    });
+    mount(transport, { ref: reconnectRequired.ref });
+    expect(
+      await screen.findByText(
+        'The agent you added from here, Scout, will be removed from Community A.'
+      )
+    ).toBeVisible();
+    expect(transport.getCommunityDisconnectImpact).toHaveBeenCalledWith(reconnectRequired.ref);
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Community A is disconnected, but Scout couldn’t be removed from it. To finish, remove it under Agents on Community A.'
       )
     );
   });

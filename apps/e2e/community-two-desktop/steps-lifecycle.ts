@@ -129,6 +129,11 @@ export async function lifecycleSteps(w: World): Promise<void> {
     );
   const memberCanRead = async (page: Page) =>
     (await page.context().request.get(`${communityOrigin}/api/v1/channels`)).status();
+  /** The member ids of a person's agents still active on the Community. */
+  const activeAgents = (page: Page) =>
+    readAs<{ agents: Array<{ memberId: string; active: boolean }> }>(page, '/api/v1/agents').then(
+      (body) => body?.agents.filter((agent) => agent.active).map((agent) => agent.memberId) ?? null
+    );
 
   await step(
     '25 Disconnect from the switcher’s Manage menu ends only this app’s connection; B stays a member',
@@ -139,6 +144,15 @@ export async function lifecycleSteps(w: World): Promise<void> {
         grantsBefore?.includes('Desktop B'),
         `Desktop B holds a grant before disconnecting (${JSON.stringify(grantsBefore)})`
       );
+      // The agents Desktop B added and still runs there, which Disconnect removes (DOR-2603).
+      const bAgents = (
+        await json<{ agents: Array<{ remoteMemberId: string; displayName: string }> }>(
+          `${b.origin}/api/communities/${refB}/agents`
+        )
+      ).agents;
+      // Step 20 enrolled one; without it the removal check below would prove nothing.
+      if (runs('20'))
+        assert(bAgents.length > 0, 'Desktop B runs an agent on the community before disconnecting');
       await openGeneral(b, refB);
       await openManageMenu(b, COMMUNITY);
       await b.page.waitForTimeout(300);
@@ -149,6 +163,17 @@ export async function lifecycleSteps(w: World): Promise<void> {
       });
       await expect(confirm).toBeVisible();
       await expect(confirm).toContainText(`You stay a member of ${COMMUNITY}`);
+      // The confirmation says how many agents it will remove before B decides.
+      if (bAgents.length === 1)
+        await expect(confirm).toContainText(
+          new RegExp(
+            `The agent you added from here, .+, will be removed from ${escapeRegExp(COMMUNITY)}\\.`
+          )
+        );
+      else if (bAgents.length > 1)
+        await expect(confirm).toContainText(
+          `The ${bAgents.length} agents you added from here will be removed from ${COMMUNITY}:`
+        );
       const dialogShot = await shot(b.page, '25b-desktop-b-disconnect-confirm');
       await confirm.getByRole('button', { name: 'Disconnect', exact: true }).click();
       await expect(confirm).toBeHidden({ timeout: 30_000 });
@@ -175,6 +200,23 @@ export async function lifecycleSteps(w: World): Promise<void> {
             .toBe(false);
         }
       );
+      await productCheck(
+        'Disconnect removes the agents this installation added to the Community',
+        'DOR-2603: an agent left active after the only app that runs it disconnects is access nobody ' +
+          'holds. Repro: add a local agent to a Community from the app, choose Manage <community> > ' +
+          'Disconnect… > Disconnect, then open the Community’s Settings > Agents (or GET /api/v1/agents): ' +
+          'the agent is still listed and active.',
+        async () => {
+          const removed = bAgents.map((agent) => agent.remoteMemberId);
+          await expect
+            .poll(
+              async () =>
+                (await activeAgents(member))?.filter((id) => removed.includes(id)) ?? null,
+              { timeout: 20_000 }
+            )
+            .toEqual([]);
+        }
+      );
       // A is untouched.
       await openGeneral(a, refA);
       const stillA = `A is unaffected by B's disconnect ${stamp}`;
@@ -190,6 +232,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
         after,
         grantsBefore,
         grantsAfterDisconnect: remaining,
+        agentsRemovedByDisconnect: bAgents.map((agent) => agent.remoteMemberId),
         reconnectedRef: refB,
       };
     }

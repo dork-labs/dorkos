@@ -5,9 +5,13 @@
  * @module services/communities/remote/pairing-service
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { COMMUNITY_SEEMS_GONE_AFTER_MS } from '@dorkos/shared/community-connections';
+import {
+  COMMUNITY_SEEMS_GONE_AFTER_MS,
+  type CommunityDisconnectImpact,
+  type CommunityInstallationAgent,
+} from '@dorkos/shared/community-connections';
 import { logger } from '../../../lib/logger.js';
-import { isCommunityDeleted } from './remote-community-adapter.js';
+import { isCommunityDeleted, isCommunityTakenDown } from './remote-community-adapter.js';
 import { CommunityRefSchema, type CommunityRef } from '@dorkos/shared/community-adapter';
 import {
   COMMUNITY_API_V1_ROUTES,
@@ -37,6 +41,35 @@ import {
   PinnedOriginError,
 } from './pinned-origin.js';
 
+/** One agent this installation added to a Community, as disconnecting sees it. */
+export interface RemoteInstallationAgent {
+  /** The local agent's manifest id. */
+  localAgentId: string;
+  /** The agent's member id on the Community, which removing it there names. */
+  remoteMemberId: string;
+  /** The agent's name in this app, or `null` when this app no longer has the agent. */
+  displayName: string | null;
+  /**
+   * Whether this installation still runs it. An inactive one was revoked here,
+   * by a rejected grant or an earlier removal, and may still be active on the
+   * Community if the Community was never told.
+   */
+  active: boolean;
+}
+
+/**
+ * Read the agents one owner's installation added to one Community, active or
+ * revoked here, from local records only. Only these are ever named or removed.
+ * One limit: the Community keys an agent by its owner and local agent id, and
+ * two installations of the same person can share a local id (it is committed
+ * with the agent), so removing an agent active here also removes it for the
+ * other installation if that one enrolled the same id.
+ */
+export type RemoteInstallationAgentsReader = (
+  communityRef: CommunityRef,
+  ownerKey: string
+) => readonly RemoteInstallationAgent[];
+
 /** What disconnecting told the Community. */
 export interface RemoteDisconnectResult {
   /**
@@ -44,6 +77,11 @@ export interface RemoteDisconnectResult {
    * when there was no grant to end. False when it could not be told.
    */
   remoteRevoked: boolean;
+  /**
+   * This installation's agents the Community could not be told to remove. They
+   * are still active there until the person removes them on the Community.
+   */
+  agentsNotRemoved: CommunityInstallationAgent[];
 }
 
 /** A pending pairing with an approval page on the accepted community origin. */
@@ -189,15 +227,6 @@ function isDeletionPending(error: unknown): boolean {
   );
 }
 
-/** Whether a Community answered that its host took it down: `423 COMMUNITY_TAKEN_DOWN`. */
-function isCommunityTakenDown(error: unknown): boolean {
-  return (
-    error instanceof PinnedHttpError &&
-    error.status === 423 &&
-    error.remoteCode === 'COMMUNITY_TAKEN_DOWN'
-  );
-}
-
 /** Whether a Community answered that its host suspended it: never a reason to purge. */
 function isSuspended(error: unknown): boolean {
   return error instanceof PinnedHttpError && error.remoteCode === 'COMMUNITY_SUSPENDED';
@@ -237,6 +266,8 @@ export class RemoteCommunityPairingService {
    * @param timing - The access re-check budget, freshness window and clock.
    * @param countUndelivered - How many of one owner's agent posts to one community never
    *   arrived, read just before a deleted or taken-down community's copy is purged (DOR-2575).
+   * @param installationAgents - The agents this installation added to one community, which
+   *   disconnecting removes there first (DOR-2603).
    */
   constructor(
     private readonly store: RemoteConnectionStore,
@@ -249,7 +280,8 @@ export class RemoteCommunityPairingService {
       ownerKey: string
     ) => void,
     timing: Partial<RemoteAccessTiming> = {},
-    private readonly countUndelivered?: (communityRef: CommunityRef, ownerKey: string) => number
+    private readonly countUndelivered?: (communityRef: CommunityRef, ownerKey: string) => number,
+    private readonly installationAgents?: RemoteInstallationAgentsReader
   ) {
     this.timing = {
       budgetMs: COMMUNITY_ACCESS_BUDGET_MS,
@@ -786,15 +818,38 @@ export class RemoteCommunityPairingService {
   }
 
   /**
-   * Disconnect this installation: revoke its grant on the Community, then
-   * remove this owner's local credentials and cache.
+   * Say what disconnecting would take off the Community: the agents this
+   * installation added there. Read from local records only, so the person
+   * learns it before confirming even when the Community cannot be reached.
+   *
+   * @param ref - Local connection ref.
+   * @param ownerKey - The local owner the connection belongs to.
+   */
+  async disconnectImpact(ref: CommunityRef, ownerKey: string): Promise<CommunityDisconnectImpact> {
+    const record = await this.store.get(ref, ownerKey);
+    // A pending request never received a grant, so no agent was added through it.
+    if (record.status === 'pending') return { agents: [] };
+    return {
+      agents: this.readInstallationAgents(ref, ownerKey)
+        .filter((agent) => namedOnDisconnect(agent, record.status))
+        .map(installationAgentView),
+    };
+  }
+
+  /**
+   * Disconnect this installation: remove the agents it added to the Community,
+   * revoke its grant there, then remove this owner's local credentials and
+   * cache.
    *
    * The Community is told first, with the installation's own bearer, because
-   * after the local copy is gone nothing could prove which grant to end. The
-   * local copy is removed whatever the Community answers: the person asked to
+   * after the local copy is gone nothing could prove which grant to end or
+   * which agents to remove. An agent left active after the only installation
+   * that runs it disconnects is a grant nobody holds any more, so each one is
+   * removed before the grant is revoked, while the bearer still may. The local
+   * copy is removed whatever the Community answers: the person asked to
    * disconnect, and an unreachable Community must not keep a credential here.
-   * The result says whether the Community confirmed the grant is gone, so the
-   * person can be told when it could not be reached.
+   * The result says whether the Community confirmed the grant is gone and
+   * names each agent it could not remove, so the person can finish there.
    *
    * @param ref - Local connection ref.
    * @param ownerKey - The local owner the connection belongs to.
@@ -803,12 +858,30 @@ export class RemoteCommunityPairingService {
     this.enter(ref);
     try {
       const record = await this.store.get(ref, ownerKey);
+      const agents = record.status === 'pending' ? [] : this.readInstallationAgents(ref, ownerKey);
       // Revoke whenever a bearer is still stored, reconnect-required included:
       // a grant the Community refused for a missing scope can still be live
       // there, and the revoke is idempotent. A pending request never received
       // a grant, so it has no bearer and makes no call. Revocation never
       // throws, so the local copy is always removed below.
       const bearer = await this.store.storedPersonalToken(ref, ownerKey);
+      // Agents first: removing one needs the grant that is about to be revoked. Only an agent still
+      // active here is removed. A row revoked here is never sent: the Community names an agent by
+      // its local id, which another installation of the same person can share and re-enroll, so
+      // removing a row this app already let go could remove that installation's live agent. The
+      // ones the person still counts as theirs are named when they stay (see namedOnDisconnect).
+      // Without a bearer none can be removed from here, so all of those are named.
+      const named = agents.filter((agent) => namedOnDisconnect(agent, record.status));
+      const removal = bearer
+        ? await this.removeInstallationAgents(
+            bearer,
+            record,
+            agents.filter((agent) => agent.active)
+          )
+        : { removed: new Set<RemoteInstallationAgent>(), unreachable: false };
+      const agentsNotRemoved = named
+        .filter((agent) => !removal.removed.has(agent))
+        .map(installationAgentView);
       // A connected record that lost its bearer cannot confirm anything, so it
       // reports unconfirmed rather than claiming the grant is gone.
       //
@@ -818,8 +891,13 @@ export class RemoteCommunityPairingService {
       // for a missing scope could in theory still be live there. It is rare,
       // because grants are approved with fixed scopes, and reporting false
       // here would warn on every ordinary revocation.
+      //
+      // When every agent removal could not even reach the Community, the revoke would only wait
+      // out the same timeout again, so it is reported unconfirmed without a call.
       const remoteRevoked = bearer
-        ? await this.revokeRemoteGrant(bearer, record)
+        ? removal.unreachable
+          ? false
+          : await this.revokeRemoteGrant(bearer, record)
         : record.status !== 'connected';
       // Everything copied through this connection goes with it (DOR-2334): the same path a
       // rejected grant takes stops its streams and agents' turns and purges its mirrored rooms,
@@ -835,10 +913,82 @@ export class RemoteCommunityPairingService {
       await this.store.disconnect(ref, ownerKey);
       await this.store.clearNotFound(ref, ownerKey).catch(() => undefined);
       await this.store.clearUndeliveredWhenGone(ref, ownerKey).catch(() => undefined);
-      return { remoteRevoked };
+      return { remoteRevoked, agentsNotRemoved };
     } finally {
       this.forgetChecks(ref, ownerKey);
       this.busy.delete(ref);
+    }
+  }
+
+  /**
+   * The agents this installation added to one Community. A failed read is
+   * logged and reads as none, so it can never stop a disconnect.
+   */
+  private readInstallationAgents(
+    ref: CommunityRef,
+    ownerKey: string
+  ): readonly RemoteInstallationAgent[] {
+    try {
+      return this.installationAgents?.(ref, ownerKey) ?? [];
+    } catch (error) {
+      logger.warn('[communities] could not read the agents this install added to a community', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Remove each agent from the Community with the installation's own bearer,
+   * one request per agent so one failure never keeps the others, all at once
+   * so an unreachable Community costs one timeout rather than one per agent.
+   *
+   * @returns The agents the Community removed, and whether every request
+   *   failed without reaching it, so the caller can skip the grant revoke.
+   */
+  private async removeInstallationAgents(
+    bearer: string,
+    record: { pinnedOrigin: string; remoteCommunityId: string },
+    agents: readonly RemoteInstallationAgent[]
+  ): Promise<{ removed: Set<RemoteInstallationAgent>; unreachable: boolean }> {
+    const outcomes = await Promise.all(
+      agents.map((agent) => this.removeRemoteAgent(bearer, record, agent.remoteMemberId))
+    );
+    return {
+      removed: new Set(agents.filter((_, index) => outcomes[index] === 'removed')),
+      unreachable: outcomes.length > 0 && outcomes.every((outcome) => outcome === 'unreachable'),
+    };
+  }
+
+  private async removeRemoteAgent(
+    bearer: string,
+    record: { pinnedOrigin: string; remoteCommunityId: string },
+    remoteMemberId: string
+  ): Promise<'removed' | 'kept' | 'unreachable'> {
+    try {
+      await pinnedJson(
+        parseCommunityOrigin(record.pinnedOrigin),
+        communityApiPath(
+          record.remoteCommunityId,
+          `${COMMUNITY_API_V1_ROUTES.agents}/${encodeURIComponent(remoteMemberId)}`
+        ),
+        undefined,
+        undefined,
+        { method: 'DELETE', authorization: bearer, accept: [200, 204] }
+      );
+      return 'removed';
+    } catch (error) {
+      // The Community's own 404: the agent is already gone there (a bare 404 from
+      // something in between proves nothing). A deleted or taken-down community
+      // holds no agent that can act. Anything else (unreachable, refused, a
+      // rejected bearer) leaves the agent active, so the person is told. No HTTP
+      // answer at all means the Community was not reached.
+      if (!(error instanceof PinnedHttpError)) return 'unreachable';
+      return (error.status === 404 && error.remoteCode === 'NOT_FOUND') ||
+        isCommunityDeleted(error) ||
+        isCommunityTakenDown(error)
+        ? 'removed'
+        : 'kept';
     }
   }
 
@@ -866,4 +1016,23 @@ export class RemoteCommunityPairingService {
       return error instanceof PinnedHttpError && error.status === 401;
     }
   }
+}
+
+/**
+ * Whether the person is told about this agent when disconnecting. An agent this installation
+ * still runs always is. Once a rejected grant has fenced the connection (`reconnect-required`),
+ * every agent was revoked here by that fence, not by the person, so all are theirs to hear about,
+ * though none is removed from here (see disconnect). On a live connection a revoked one was
+ * removed on purpose earlier, and is left alone.
+ */
+function namedOnDisconnect(
+  agent: RemoteInstallationAgent,
+  status: 'pending' | 'connected' | 'reconnect-required'
+): boolean {
+  return agent.active || status === 'reconnect-required';
+}
+
+/** The browser-safe view of one installation agent: never its member id on the Community. */
+function installationAgentView(agent: RemoteInstallationAgent): CommunityInstallationAgent {
+  return { localAgentId: agent.localAgentId, displayName: agent.displayName };
 }

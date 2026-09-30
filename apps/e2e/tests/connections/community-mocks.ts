@@ -227,6 +227,11 @@ export async function mockCommunities(
       if (ownerKey) await route.fulfill({ json: navigationState(ownerKey) }).catch(() => {});
       return;
     }
+    // No mocked Community holds an agent this app added, so Disconnect removes none.
+    if (/^\/api\/community-connections\/[^/]+\/disconnect-impact$/.test(path)) {
+      await route.fulfill({ json: { agents: [] } });
+      return;
+    }
     await route.fallback();
   });
 
