@@ -8,7 +8,7 @@ import {
   Unplug,
   X,
 } from 'lucide-react';
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,7 +41,7 @@ import {
   useCopyFeedback,
   useRenderSlot,
 } from '@/layers/shared/lib';
-import { useNow } from '@/layers/shared/model';
+import { SETTINGS_RELINK_SECTION, useNow, useSettingsDeepLink } from '@/layers/shared/model';
 import { useCloudLink, type CloudLinkView } from '../model/use-cloud-link';
 import { msUntilExpiry, spokenExpiry, visibleExpiry } from '../lib/code-expiry';
 
@@ -56,6 +56,7 @@ import { msUntilExpiry, spokenExpiry, visibleExpiry } from '../lib/code-expiry';
  */
 export function CloudLinkPanel() {
   const { view, start, unlink, starting, unlinking, startError } = useCloudLink();
+  useRelinkRequest(view, start);
 
   return (
     <div className="space-y-4">
@@ -84,6 +85,29 @@ export function CloudLinkPanel() {
   );
 }
 
+/**
+ * Start linking again when Settings was opened to do that (from a "Link my
+ * DorkOS account again" button elsewhere), so one click gets a person to a
+ * fresh link code. Acts once the panel knows its state, never while a code is
+ * already showing, and settles the section back to `account` so the request is
+ * spent.
+ */
+function useRelinkRequest(view: CloudLinkView, start: () => Promise<void>): void {
+  const { section, setSection } = useSettingsDeepLink();
+  const handled = useRef(false);
+  const requested = section === SETTINGS_RELINK_SECTION;
+  useEffect(() => {
+    if (!requested) {
+      handled.current = false;
+      return;
+    }
+    if (handled.current || view.kind === 'loading') return;
+    handled.current = true;
+    setSection('account');
+    if (view.kind !== 'pending') void start();
+  }, [requested, view.kind, start, setSection]);
+}
+
 interface BodyProps {
   view: CloudLinkView;
   start: () => Promise<void>;
@@ -105,7 +129,16 @@ function CloudLinkBody({ view, start, unlink, starting, unlinking, startError }:
       // any error left over from the last one.
       return <PendingState key={view.userCode} view={view} />;
     case 'linked':
-      return <LinkedState view={view} unlink={unlink} unlinking={unlinking} />;
+      return (
+        <LinkedState
+          view={view}
+          start={start}
+          starting={starting}
+          startError={startError}
+          unlink={unlink}
+          unlinking={unlinking}
+        />
+      );
     case 'expired':
       return (
         <RecoveryState
@@ -327,13 +360,23 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
   );
 }
 
-/** Linked — show the account, last sync, and the unlink action. */
+/**
+ * Linked — show the account, last sync, and the two actions. Linking again
+ * keeps this computer linked until the new link is approved, and is how a link
+ * that needs updating picks up the update.
+ */
 function LinkedState({
   view,
+  start,
+  starting,
+  startError,
   unlink,
   unlinking,
 }: {
   view: Extract<CloudLinkView, { kind: 'linked' }>;
+  start: () => Promise<void>;
+  starting: boolean;
+  startError: string | null;
   unlink: () => Promise<void>;
   unlinking: boolean;
 }) {
@@ -357,21 +400,32 @@ function LinkedState({
           )}
         </div>
 
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={unlinking}
-              aria-label="Unlink this instance"
-            >
-              <Unplug className={cn('mr-1.5 size-3.5', unlinking && 'animate-pulse')} />
-              {unlinking ? 'Unlinking…' : 'Unlink'}
-            </Button>
-          </AlertDialogTrigger>
-          <UnlinkConfirm unlink={unlink} />
-        </AlertDialog>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" size="sm" onClick={() => void start()} disabled={starting}>
+            {starting ? <Spinner className="mr-1.5" /> : <RefreshCw className="mr-1.5 size-3.5" />}
+            Link again
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={unlinking}
+                aria-label="Unlink this instance"
+              >
+                <Unplug className={cn('mr-1.5 size-3.5', unlinking && 'animate-pulse')} />
+                {unlinking ? 'Unlinking…' : 'Unlink'}
+              </Button>
+            </AlertDialogTrigger>
+            <UnlinkConfirm unlink={unlink} />
+          </AlertDialog>
+        </div>
       </div>
+      {startError && (
+        <p role="alert" className="text-destructive text-sm">
+          {startError}
+        </p>
+      )}
     </div>
   );
 }

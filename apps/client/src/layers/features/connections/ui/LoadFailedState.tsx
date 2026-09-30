@@ -1,5 +1,5 @@
 import { cloudFailure } from '@/layers/entities/connectors';
-import { useSettingsDeepLink } from '@/layers/shared/model';
+import { SETTINGS_RELINK_SECTION, useSettingsDeepLink } from '@/layers/shared/model';
 import { Button, QueryErrorState } from '@/layers/shared/ui';
 
 /** Props for {@link LoadFailedState}. */
@@ -30,7 +30,11 @@ export function LoadFailedState({ error, title, description, ...retry }: LoadFai
         {...retry}
       />
       {failure?.action === 'relink' && (
-        <Button variant="outline" size="sm" onClick={() => settings.open('access', 'account')}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => settings.open('access', SETTINGS_RELINK_SECTION)}
+        >
           Link my DorkOS account again
         </Button>
       )}

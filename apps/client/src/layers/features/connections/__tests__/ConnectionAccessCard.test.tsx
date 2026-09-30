@@ -8,7 +8,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import { SETTINGS_RELINK_SECTION, TransportProvider } from '@/layers/shared/model';
 import {
   ConnectionAccessCard,
   type ConnectionAccessCardProps,
@@ -762,7 +762,7 @@ describe('ConnectionAccessCard — a DorkOS account problem', () => {
       if (relink) {
         expect(button).toBeInTheDocument();
         await userEvent.setup().click(button!);
-        expect(openSettings).toHaveBeenCalledWith('access', 'account');
+        expect(openSettings).toHaveBeenCalledWith('access', SETTINGS_RELINK_SECTION);
       } else {
         expect(button).not.toBeInTheDocument();
       }
