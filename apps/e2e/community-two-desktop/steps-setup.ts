@@ -6,11 +6,14 @@ import {
   PASSWORD,
   composer,
   connectDesktop,
+  connections,
+  escapeRegExp,
   feed,
   json,
   launchDesktop,
   type Desktop,
 } from './desktop.js';
+import { runsStep, type StepId } from './plan.js';
 import {
   type JourneyContext,
   COMMUNITY,
@@ -26,6 +29,10 @@ import {
  * the real approval hand-off, and both see the same #general. Also builds the
  * helpers every later stage shares.
  *
+ * In remote mode the live gate already did steps 1-3 and there is no second
+ * Community, so 1-4 and 8 are skipped: B signs in on the live origin instead
+ * (photographed at desktop and phone width), and both apps connect to it.
+ *
  * @module community-two-desktop/steps-setup
  */
 
@@ -35,10 +42,19 @@ import {
  * @param ctx - Browser, apps, infrastructure and the step recorder.
  */
 export async function setupSteps(ctx: JourneyContext): Promise<World> {
-  const { browser, step, shot, findings, proof, isolation } = ctx;
+  const { browser, step, skip, shot, findings, target } = ctx;
+  const mode = target.mode;
+  const runs = (id: StepId) => runsStep(mode, id);
   const runRoot = ctx.launch.runRoot;
-  const communityOrigin = proof.origin;
-  const isolationOrigin = isolation.origin;
+  const communityOrigin = mode === 'local' ? target.proof.origin : target.handoff.origin;
+  const isolationOrigin = mode === 'local' ? target.isolation.origin : null;
+  const signIn =
+    mode === 'local'
+      ? {
+          a: { email: 'desktop-a@example.test', password: PASSWORD },
+          b: { email: 'desktop-b@example.test', password: PASSWORD },
+        }
+      : { a: target.handoff.owner, b: target.handoff.member };
   const stamp = Date.now().toString(36);
   const MSG_A = `Hello from packaged Desktop A ${stamp}`;
   const MSG_B = `Hello from packaged Desktop B ${stamp}`;
@@ -50,13 +66,14 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
 
   const ownerContext = await browser.newContext();
   const memberContext = await browser.newContext();
-  const isolationContext = await browser.newContext();
+  const isolationContext = mode === 'local' ? await browser.newContext() : null;
   let owner = await ownerContext.newPage();
   const member = await memberContext.newPage();
-  const isolationOwner = await isolationContext.newPage();
+  const isolationOwner = isolationContext ? await isolationContext.newPage() : null;
   // Removing a member and leaving both confirm with a native dialog; a person says yes.
-  for (const page of [member, isolationOwner]) page.on('dialog', (d) => void d.accept());
-  Object.assign(ctx.browserPages, { owner, member, isolationOwner });
+  for (const page of [member, isolationOwner]) page?.on('dialog', (d) => void d.accept());
+  Object.assign(ctx.browserPages, { owner, member });
+  if (isolationOwner) ctx.browserPages.isolationOwner = isolationOwner;
 
   async function bootstrap(
     page: Page,
@@ -75,17 +92,6 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
     await expect(page.getByRole('button', { name: 'general', exact: true })).toBeVisible();
   }
 
-  await step('1 owner bootstraps the self-hosted Community in a browser', async () => {
-    await bootstrap(owner, {
-      origin: communityOrigin,
-      secret: proof.bootstrapSecret,
-      person: 'Desktop A',
-      email: 'desktop-a@example.test',
-      community: COMMUNITY,
-    });
-    return { screenshot: await shot(owner, '01-owner-bootstrapped') };
-  });
-
   async function createInvite(page: Page): Promise<string> {
     // From the channel view, open Manage; a settings link already shows the form.
     if (!(await page.locator('#invite-channel').isVisible()))
@@ -97,44 +103,68 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
     return link;
   }
 
-  const invite = await step('2 owner creates a one-time invite to #general', async () => {
-    const link = await createInvite(owner);
-    await shot(owner, '02-owner-invite');
-    return link;
-  });
-  const communityId = /\/c\/([0-9a-f-]{36})\/join/.exec(invite)?.[1];
-  assert(communityId, 'the invite names its community');
-
-  await step('3 member joins via invite → "You’re in …" → Open community', async () => {
-    await member.goto(invite);
-    await member.getByRole('button', { name: 'Continue', exact: true }).click();
-    await member
-      .getByRole('button', { name: 'Create an account on this host', exact: true })
-      .click();
-    await member.getByLabel('Your name').fill('Desktop B');
-    await member.getByLabel('Email', { exact: true }).fill('desktop-b@example.test');
-    await member.getByLabel('Password', { exact: true }).fill(PASSWORD);
-    await member.getByRole('button', { name: 'Join community', exact: true }).click();
-    await expect(member.getByRole('heading', { name: `You’re in ${COMMUNITY}.` })).toBeVisible();
-    const confirmation = await shot(member, '03a-member-youre-in');
-    await member.getByRole('button', { name: 'Open community', exact: true }).click();
-    await expect(member.getByLabel(/Message #general/i)).toBeVisible();
-    return { confirmation, opened: await shot(member, '03b-member-open-community') };
-  });
-
-  await step(
-    '4 a separate Isolation Community is bootstrapped (only Desktop A will join)',
-    async () => {
-      await bootstrap(isolationOwner, {
-        origin: isolationOrigin,
-        secret: isolation.bootstrapSecret,
-        person: 'Desktop A elsewhere',
-        email: 'desktop-a-isolation@example.test',
-        community: ISOLATION,
+  let communityId: string;
+  if (target.mode === 'local') {
+    const { proof, isolation } = target;
+    await step('1 owner bootstraps the self-hosted Community in a browser', async () => {
+      await bootstrap(owner, {
+        origin: communityOrigin,
+        secret: proof.bootstrapSecret,
+        person: 'Desktop A',
+        email: signIn.a.email,
+        community: COMMUNITY,
       });
-    }
-  );
+      return { screenshot: await shot(owner, '01-owner-bootstrapped') };
+    });
 
+    const invite = await step('2 owner creates a one-time invite to #general', async () => {
+      const link = await createInvite(owner);
+      await shot(owner, '02-owner-invite');
+      return link;
+    });
+    const fromInvite = /\/c\/([0-9a-f-]{36})\/join/.exec(invite)?.[1];
+    assert(fromInvite, 'the invite names its community');
+    communityId = fromInvite;
+
+    await step('3 member joins via invite → "You’re in …" → Open community', async () => {
+      await member.goto(invite);
+      await member.getByRole('button', { name: 'Continue', exact: true }).click();
+      await member
+        .getByRole('button', { name: 'Create an account on this host', exact: true })
+        .click();
+      await member.getByLabel('Your name').fill('Desktop B');
+      await member.getByLabel('Email', { exact: true }).fill(signIn.b.email);
+      await member.getByLabel('Password', { exact: true }).fill(PASSWORD);
+      await member.getByRole('button', { name: 'Join community', exact: true }).click();
+      await expect(member.getByRole('heading', { name: `You’re in ${COMMUNITY}.` })).toBeVisible();
+      const confirmation = await shot(member, '03a-member-youre-in');
+      await member.getByRole('button', { name: 'Open community', exact: true }).click();
+      await expect(member.getByLabel(/Message #general/i)).toBeVisible();
+      return { confirmation, opened: await shot(member, '03b-member-open-community') };
+    });
+
+    await step(
+      '4 a separate Isolation Community is bootstrapped (only Desktop A will join)',
+      async () => {
+        await bootstrap(isolationOwner!, {
+          origin: isolationOrigin!,
+          secret: isolation.bootstrapSecret,
+          person: 'Desktop A elsewhere',
+          email: 'desktop-a-isolation@example.test',
+          community: ISOLATION,
+        });
+      }
+    );
+  } else {
+    communityId = target.handoff.communityId;
+    for (const id of ['1', '2', '3', '4'] as const) skip(id);
+    // B is already a member; signing B in here is what makes step 7 a
+    // signed-in approval. The sign-in page is photographed before anything is typed.
+    ctx.receipt.liveOrigin = await step(
+      'remote: B signs in on the live community (desktop and phone width)',
+      () => signInOnLiveOrigin(ctx, member, communityOrigin, communityId, signIn.b)
+    );
+  }
   const [a, b] = await step(
     '5 two packaged Desktops boot isolated (own HOME, userData, server)',
     async () => {
@@ -156,38 +186,56 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
   owner = await ownerContext.newPage();
   owner.on('dialog', (d) => void d.accept());
   ctx.browserPages.owner = owner;
+  // A remote run learns the community's name from the connection itself.
+  const knownName = mode === 'local' ? COMMUNITY : null;
   const refA = await step(
     '6 Desktop A connects (signed-out approval, owner signs in to approve)',
-    () =>
-      connectDesktop(a, owner, communityOrigin, COMMUNITY, 'Desktop A', 'desktop-a@example.test')
+    () => connectDesktop(a, owner, communityOrigin, knownName, 'Desktop A', signIn.a)
   );
   await shot(a.page, '06-desktop-a-connected');
+  const connectionA = (await connections(a)).find((c) => c.ref === refA);
+  assert(connectionA, 'A lists its new connection');
+  const communityName = connectionA.label;
+  if (mode === 'remote')
+    assert.equal(
+      connectionA.remoteCommunityId,
+      communityId,
+      'A connected to the handoff’s community'
+    );
   const refB = await step('7 Desktop B connects (member approves from signed-in browser)', () =>
-    connectDesktop(b, member, communityOrigin, COMMUNITY, 'Desktop B', null)
+    connectDesktop(b, member, communityOrigin, communityName, 'Desktop B', null)
   );
   await shot(b.page, '07-desktop-b-connected');
-  const refIso = await step('8 Desktop A also connects the Isolation Community', () =>
-    connectDesktop(a, isolationOwner, isolationOrigin, ISOLATION, 'Desktop A', null)
-  );
+  let refIso: string | null = null;
+  if (runs('8'))
+    refIso = await step('8 Desktop A also connects the Isolation Community', () =>
+      connectDesktop(a, isolationOwner!, isolationOrigin!, ISOLATION, 'Desktop A', null)
+    );
+  else skip('8');
   ctx.receipt.refs = { refA, refB, refIso };
 
   const room = await step(
-    '9 both Desktops see the same #general through their own connection',
+    '9 both Desktops see the same shared channel through their own connection',
     async () => {
       const roomsA = await json<{ rooms: Room[] }>(`${a.origin}/api/communities/${refA}/rooms`);
       const roomsB = await json<{ rooms: Room[] }>(`${b.origin}/api/communities/${refB}/rooms`);
-      const general = roomsA.rooms.find((x) => x.title.toLowerCase() === 'general');
-      assert(general, 'general visible to A');
+      const shared =
+        target.mode === 'local'
+          ? roomsA.rooms.find((x) => x.title.toLowerCase() === 'general')
+          : roomsA.rooms.find((x) => x.roomId === target.handoff.channelId);
+      assert(shared, 'the shared channel is visible to A');
       assert(
-        roomsB.rooms.some((x) => x.roomId === general.roomId),
-        'same general visible to B'
+        roomsB.rooms.some((x) => x.roomId === shared.roomId),
+        'the same channel is visible to B'
       );
-      return general;
+      return shared;
     }
   );
+  const channelComposer = (local: Desktop) =>
+    composer(local, new RegExp(`Message ${escapeRegExp(room.title)}`));
   const openGeneral = async (local: Desktop, ref: string) => {
     await local.page.goto(`${local.origin}/channels?community=${ref}&id=${room.roomId}`);
-    await expect(composer(local, /Message general/)).toBeVisible({ timeout: 30_000 });
+    await expect(channelComposer(local)).toBeVisible({ timeout: 30_000 });
   };
   /**
    * Bring the newest messages into view: a reopened channel may land on a
@@ -253,8 +301,10 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
 
   const communityRoomIds = [room.roomId];
   const noLocalLookups = async () => {
-    const iso = await json<{ rooms: Room[] }>(`${a.origin}/api/communities/${refIso}/rooms`);
-    const ids = [...communityRoomIds, ...iso.rooms.map((r) => r.roomId)];
+    const iso = refIso
+      ? (await json<{ rooms: Room[] }>(`${a.origin}/api/communities/${refIso}/rooms`)).rooms
+      : [];
+    const ids = [...communityRoomIds, ...iso.map((r) => r.roomId)];
     const result: Record<string, unknown> = {};
     for (const local of [a, b]) {
       const file = path.join(runRoot, `${local.name}-network.log`);
@@ -295,7 +345,10 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
   }
   return {
     ctx,
+    mode,
+    runs,
     step,
+    skip,
     shot,
     findings,
     a,
@@ -304,6 +357,7 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
     member,
     isolationOwner,
     communityOrigin,
+    communityName,
     isolationOrigin,
     communityId,
     refA,
@@ -320,6 +374,7 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
     ISOLATED_MSG,
     fillers: [],
     communityRoomIds,
+    channelComposer,
     openGeneral,
     seeNewest,
     scrollUpAndRemember,
@@ -328,4 +383,73 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
     createInvite,
     productCheck,
   };
+}
+
+/**
+ * Sign B in on the live community the way a person would, photographing the
+ * sign-in page and the channel view at desktop width (1280 x 860) and at phone
+ * width (390 x 844). The sign-in page is shot before anything is typed, so no
+ * credential reaches a screenshot.
+ *
+ * @param ctx - The runner's context, for screenshots.
+ * @param member - B's browser page.
+ * @param origin - The community's origin.
+ * @param communityId - The community B belongs to.
+ * @param account - B's account on it.
+ */
+async function signInOnLiveOrigin(
+  ctx: JourneyContext,
+  member: Page,
+  origin: string,
+  communityId: string,
+  account: { email: string; password: string }
+) {
+  const entry = `${origin}/c/${communityId}`;
+  const phone = await member.context().newPage();
+  await phone.setViewportSize({ width: 390, height: 844 });
+  await member.setViewportSize({ width: 1280, height: 860 });
+  const signInButton = (page: Page) => page.getByRole('button', { name: 'Sign in', exact: true });
+  const evidence: Record<string, string | boolean> = {};
+  for (const [page, width] of [
+    [member, 'desktop'],
+    [phone, 'phone'],
+  ] as const) {
+    await page.goto(entry);
+    await expect(signInButton(page)).toBeVisible({ timeout: 30_000 });
+    evidence[`signIn-${width}`] = await ctx.shot(page, `remote-sign-in-${width}`);
+    evidence[`signIn-${width}-overflows`] = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth
+    );
+  }
+  await member.getByLabel('Email', { exact: true }).fill(account.email);
+  await member.getByLabel('Password', { exact: true }).fill(account.password);
+  await signInButton(member).click();
+  const channelBox = (page: Page) => page.getByLabel(/^Message #/i).first();
+  /** The channel, shown once its messages have loaded. */
+  const channelReady = async (page: Page) => {
+    await expect(channelBox(page)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('Loading messages…')).toHaveCount(0, { timeout: 30_000 });
+  };
+  await channelReady(member);
+  evidence['channel-desktop'] = await ctx.shot(member, 'remote-channel-desktop');
+  // Same browser, same session: the phone-width page opens signed in.
+  await phone.goto(entry);
+  await channelReady(phone);
+  evidence['channel-phone'] = await ctx.shot(phone, 'remote-channel-phone');
+  evidence['channel-phone-overflows'] = await phone.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth
+  );
+  await phone.close();
+  // Nothing sideways at phone width, on either page.
+  assert.equal(
+    evidence['signIn-phone-overflows'],
+    false,
+    'the sign-in page scrolls sideways at 390 px'
+  );
+  assert.equal(
+    evidence['channel-phone-overflows'],
+    false,
+    'the channel view scrolls sideways at 390 px'
+  );
+  return evidence;
 }

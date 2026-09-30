@@ -42,7 +42,7 @@ import { AdapterError, type AdapterManager } from '../services/relay/adapter-man
 import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js';
 import { BindingConflictError, type BindingUpdate } from '../services/relay/binding-store.js';
 import { RoomError } from '../services/rooms/room-errors.js';
-import type { TraceStore } from '../services/relay/trace-store.js';
+import { ADAPTER_EVENTS_KEPT, type TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 
@@ -331,8 +331,10 @@ export function createAdapterRouter(
     if (!traceStore) return res.status(404).json({ error: 'Tracing not available' });
     const { id } = _req.params;
     const limitParam = parseInt(_req.query.limit as string);
-    // Validate limit bounds (1-500) to prevent DoS
-    const limit = Number.isNaN(limitParam) ? 100 : Math.min(Math.max(limitParam, 1), 500);
+    // Bounded to what the store keeps per adapter (the Relay sweep drops the rest).
+    const limit = Number.isNaN(limitParam)
+      ? 100
+      : Math.min(Math.max(limitParam, 1), ADAPTER_EVENTS_KEPT);
     const events = traceStore.getAdapterEvents(id, limit);
     return res.json({ events });
   });

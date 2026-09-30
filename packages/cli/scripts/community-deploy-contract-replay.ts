@@ -57,6 +57,10 @@ import {
 } from '../src/commands/community-deploy/fly-read.js';
 import { FlyTigrisGraphqlClient } from '../src/commands/community-deploy/fly-graphql-client.js';
 import {
+  createProvenanceMarker,
+  flyProvenanceNetwork,
+} from '../src/commands/community-deploy/provenance/provenance-gate.js';
+import {
   readNeonBranches,
   readNeonBranchTopology,
   readNeonEndpoints,
@@ -429,11 +433,39 @@ async function main(): Promise<void> {
     process.once('SIGTERM', onSignal);
     try {
       attempted = true;
-      await replay('fly apps create --json --yes', 'fly-mutate.ts createFlyApp', async () => {
-        await createFlyApp(fly, appName, flyOrg);
-        created = true;
-        return appName;
-      });
+      // Created the way the launcher creates it: on its own private network carrying a marker.
+      const network = flyProvenanceNetwork(createProvenanceMarker());
+      const readProvenance = async (name: string) => {
+        const session = await readFlySessionCredential(fly);
+        try {
+          return await session.use((token) =>
+            new FlyTigrisGraphqlClient({ accessToken: token }).readAppProvenance(name)
+          );
+        } finally {
+          session.dispose();
+        }
+      };
+      await replay(
+        'fly apps create --network --json --yes',
+        'fly-mutate.ts createFlyApp',
+        async () => {
+          await createFlyApp(fly, appName, flyOrg, network, readProvenance);
+          created = true;
+          return appName;
+        }
+      );
+      if (created) {
+        // The marker round trip: Fly keeps the requested network name and reports it back.
+        await replay(
+          'GraphQL DorkosReadAppProvenance',
+          'fly-graphql-client.ts readAppProvenance',
+          async () => {
+            const app = await readProvenance(appName);
+            if (!app || app.network !== network) throw new Error('network not read back');
+            return 'network read back exactly';
+          }
+        );
+      }
       if (created) {
         await replay(
           'fly machine list; releases; ips list',

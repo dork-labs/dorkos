@@ -591,6 +591,7 @@ describe('community outbox', () => {
       [423, 'COMMUNITY_DELETION_PENDING'],
       // DOR-2334: a deleted community will never take the post.
       [410, 'COMMUNITY_DELETED'],
+      [423, 'COMMUNITY_TAKEN_DOWN'],
     ] as const) {
       const refused = new CommunityAdapterOutboxDelivery(
         () => ({

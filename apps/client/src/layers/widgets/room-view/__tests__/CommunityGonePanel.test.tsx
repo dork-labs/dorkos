@@ -53,6 +53,29 @@ function mount(connection: CommunityConnectionDescriptor) {
 }
 
 describe('CommunityGonePanel', () => {
+  // DOR-2334 review: a community recorded as taken down that later answers with a rejected
+  // grant (the host reversed the takedown and lifted it) is not gone: reconnecting is the way on,
+  // so the panel steps aside. It fails if the page keeps saying "taken down" with no way back.
+  it('steps aside for a connection that needs reconnecting', () => {
+    const takenDown: CommunityConnectionDescriptor = {
+      ...base,
+      status: 'reconnect-required',
+      access: {
+        state: 'reconnect-required',
+        effective: base.access!.effective,
+        lastKnown: {
+          lifecycle: 'taken_down',
+          capabilities: base.access!.effective,
+          verifiedAt: '2026-09-29T00:00:00.000Z',
+        },
+      },
+    };
+    expect(communityGoneState(takenDown)).toBeNull();
+    expect(
+      communityGoneState({ ...takenDown, seemsGoneSince: '2026-09-01T00:00:00.000Z' })
+    ).toBeNull();
+  });
+
   it('knows which case a connection is in', () => {
     expect(communityGoneState(base)).toBeNull();
     expect(communityGoneState({ ...base, seemsGoneSince: '2026-09-01T00:00:00.000Z' })).toBe(
@@ -113,6 +136,25 @@ describe('CommunityGonePanel', () => {
     );
     await waitFor(() => expect(transport.disconnectCommunity).toHaveBeenCalledWith('alpha'));
     await waitFor(() => expect(onRemoved).toHaveBeenCalledOnce());
+  });
+
+  // DOR-2334: a community its host took down says so, not "deleted".
+  it('says plainly when the host took the community down', () => {
+    mount({
+      ...base,
+      access: {
+        state: 'verified',
+        effective: base.access!.effective,
+        lastKnown: {
+          lifecycle: 'taken_down',
+          capabilities: base.access!.effective,
+          verifiedAt: '2026-09-29T00:00:00.000Z',
+        },
+      },
+    });
+    expect(screen.getByText('The host took this community down')).toBeInTheDocument();
+    expect(screen.getByText(/The host of Alpha took it down/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove from DorkOS' })).toBeInTheDocument();
   });
 
   it('says plainly when the community was deleted', () => {

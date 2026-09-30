@@ -17,7 +17,7 @@ import {
   trigger,
   type Desktop,
 } from './desktop.js';
-import { COMMUNITY, PRIVATE_CHANNEL, type Entry, type Room, type World } from './world.js';
+import { PRIVATE_CHANNEL, type Entry, type Room, type World } from './world.js';
 
 /**
  * Steps 20-23: each member enrolls their own local agent under the
@@ -36,7 +36,10 @@ import { COMMUNITY, PRIVATE_CHANNEL, type Entry, type Room, type World } from '.
 export async function agentSteps(w: World): Promise<void> {
   const {
     ctx,
+    mode,
+    runs,
     step,
+    skip,
     shot,
     findings,
     a,
@@ -44,6 +47,7 @@ export async function agentSteps(w: World): Promise<void> {
     owner,
     communityOrigin,
     communityId,
+    communityName: COMMUNITY,
     refA,
     room,
     stamp,
@@ -141,17 +145,24 @@ export async function agentSteps(w: World): Promise<void> {
   // name the Community shows once the agent is enrolled.
   let aAgent: { id: string; name: string; display?: string } | undefined;
   let bAgent: { id: string; name: string; display?: string } | undefined;
+  // A local run caps each member at one agent (COMMUNITY_AGENTS_PER_OWNER=1) and
+  // proves the cap. A held live community keeps its own limit, so a remote run
+  // enrolls one agent each and leaves the cap alone.
+  const proveLimit = mode === 'local';
+  // The name says what was checked: a remote receipt never claims the cap was tested.
   await step(
-    '20 each member chooses their own local agent; the per-member agent limit holds',
+    proveLimit
+      ? '20 each member chooses their own local agent; the per-member agent limit holds'
+      : '20 each member chooses their own local agent (agent limit not tested: the community keeps its own)',
     async () => {
       // B was left at phone width by step 18.
       await resize(b, 1280, 860);
       aAgent = await registerAgent(a, 'A Helper');
       bAgent = await registerAgent(b, 'B Helper');
-      const bSpare = await registerAgent(b, 'B Spare');
-      const evidence: Record<string, unknown> = {};
+      const bSpare = proveLimit ? await registerAgent(b, 'B Spare') : null;
+      const evidence: Record<string, unknown> = { limitProved: proveLimit };
       for (const [local, ref, agent, handle, others] of [
-        [a, refA, aAgent, 'a-helper', [bAgent.name, bSpare.name]],
+        [a, refA, aAgent, 'a-helper', [bAgent.name, ...(bSpare ? [bSpare.name] : [])]],
         [b, refB, bAgent, 'b-helper', [aAgent.name]],
       ] as const) {
         await openAgents(local, ref, room.roomId);
@@ -174,6 +185,10 @@ export async function agentSteps(w: World): Promise<void> {
           )
           .toBeTruthy();
         agent.display = enrolled!.displayName;
+        ctx.madeAgents.push({
+          person: local === a ? 'a' : 'b',
+          remoteMemberId: enrolled!.remoteMemberId,
+        });
         await agentsPanel(local);
         await expect(agentsRegion(local)).toContainText(`${agent.display} · owned by`, {
           timeout: 30_000,
@@ -184,26 +199,33 @@ export async function agentSteps(w: World): Promise<void> {
           screenshot: await shot(local.page, `20a-${local.name}-agent-enrolled`),
         };
       }
-      // The Community runs with one active agent per member: B's second agent is refused, visibly.
-      const status = await enrollInUi(b, refB, bSpare, 'b-spare');
-      assert(status >= 400, `a second agent past the limit is refused (got ${status})`);
-      const alert = agentsRegion(b).getByRole('alert');
-      await expect(alert).toBeVisible({ timeout: 15_000 });
-      await alert.scrollIntoViewIfNeeded();
-      const refusal = (await alert.innerText()).trim();
-      await productCheck(
-        'An agent past the limit is refused with a reason the person can act on',
-        'The Community refuses the enrollment with 429 "Active agent limit reached." ' +
-          '(apps/community/src/routes/agents.ts), but the DorkOS app answers POST ' +
-          '/api/communities/:ref/agents/:localAgentId/enroll with 502 "Community unavailable." because fail() in ' +
-          'apps/server/src/routes/remote-communities.ts maps every unrecognised Community refusal to 502. Repro: run a ' +
-          'Community with COMMUNITY_AGENTS_PER_OWNER=1, enroll one local agent from the channel Members panel, then ' +
-          'add a second: the panel says "Community unavailable." while the Community is up.',
-        async () => {
-          assert(status < 500, `enroll refusal is a ${status}`);
-          assert(!/unavailable/i.test(refusal), `the panel says "${refusal}"`);
-        }
-      );
+      if (bSpare) {
+        // The Community runs with one active agent per member: B's second agent is refused, visibly.
+        const status = await enrollInUi(b, refB, bSpare, 'b-spare');
+        assert(status >= 400, `a second agent past the limit is refused (got ${status})`);
+        const alert = agentsRegion(b).getByRole('alert');
+        await expect(alert).toBeVisible({ timeout: 15_000 });
+        await alert.scrollIntoViewIfNeeded();
+        const refusal = (await alert.innerText()).trim();
+        await productCheck(
+          'An agent past the limit is refused with a reason the person can act on',
+          'The Community refuses the enrollment with 429 "Active agent limit reached." ' +
+            '(apps/community/src/routes/agents.ts), but the DorkOS app answers POST ' +
+            '/api/communities/:ref/agents/:localAgentId/enroll with 502 "Community unavailable." because fail() in ' +
+            'apps/server/src/routes/remote-communities.ts maps every unrecognised Community refusal to 502. Repro: run a ' +
+            'Community with COMMUNITY_AGENTS_PER_OWNER=1, enroll one local agent from the channel Members panel, then ' +
+            'add a second: the panel says "Community unavailable." while the Community is up.',
+          async () => {
+            assert(status < 500, `enroll refusal is a ${status}`);
+            assert(!/unavailable/i.test(refusal), `the panel says "${refusal}"`);
+          }
+        );
+        Object.assign(evidence, {
+          limitStatus: status,
+          refusal,
+          limitShot: await shot(b.page, '20b-desktop-b-agent-limit-refused'),
+        });
+      }
       const bActive = (await enrollments(b, refB)).agents.filter((x) => x.active);
       assert.deepEqual(
         bActive.map((x) => x.localAgentId),
@@ -216,73 +238,72 @@ export async function agentSteps(w: World): Promise<void> {
         [aAgent.id],
         'A’s limit is A’s own'
       );
-      return {
-        ...evidence,
-        limitStatus: status,
-        refusal,
-        limitShot: await shot(b.page, '20b-desktop-b-agent-limit-refused'),
-      };
+      return evidence;
     }
   );
 
-  await step('21 a private channel admits only its members and their agents', async () => {
-    await owner.goto(`${communityOrigin}/c/${communityId}/settings/community`);
-    await owner.locator('#channel-new-name').fill(PRIVATE_CHANNEL);
-    await owner.locator('#channel-visibility').selectOption('private');
-    await owner.getByRole('button', { name: 'Create channel', exact: true }).click();
-    await expect(owner.getByRole('status')).toContainText('Channel created.');
-    let found: Room | undefined;
-    await expect
-      .poll(
-        async () => {
-          found = (
-            await json<{ rooms: Room[] }>(`${a.origin}/api/communities/${refA}/rooms`)
-          ).rooms.find((x) => x.title === PRIVATE_CHANNEL);
-          return Boolean(found);
-        },
-        { timeout: 30_000 }
-      )
-      .toBe(true);
-    const priv = found!;
-    communityRoomIds.push(priv.roomId);
-    // A, a member of the private channel, adds A's agent there from A's app.
-    await openAgents(a, refA, priv.roomId);
-    await joinChannelInUi(a, refA, priv.roomId, aAgent!);
-    const aShot = await shot(a.page, '21a-desktop-a-private-channel-agent-joined');
-    // B is not a member: the channel is absent from B's app, unreadable, and B's agent cannot be put there.
-    const bRooms = await json<{ rooms: Room[] }>(`${b.origin}/api/communities/${refB}/rooms`);
-    assert(
-      !bRooms.rooms.some((x) => x.roomId === priv.roomId || x.title === PRIVATE_CHANNEL),
-      'B does not see the private channel'
-    );
-    const read = await fetch(`${b.origin}/api/communities/${refB}/rooms/${priv.roomId}/entries`);
-    assert(!read.ok, `B can read the private channel (${read.status})`);
-    const put = await fetch(
-      `${b.origin}/api/communities/${refB}/rooms/${priv.roomId}/agents/${encodeURIComponent(bAgent!.id)}/membership`,
-      { method: 'POST' }
-    );
-    assert(!put.ok, `B's agent was admitted to a private channel B is not in (${put.status})`);
-    findings.push({
-      check: 'A non-member’s private-channel request is refused as a refusal, not as an outage',
-      readStatus: read.status,
-      agentJoinStatus: put.status,
-      pass: read.status < 500 && put.status < 500,
+  if (!runs('21')) skip('21');
+  else
+    await step('21 a private channel admits only its members and their agents', async () => {
+      await owner.goto(`${communityOrigin}/c/${communityId}/settings/community`);
+      await owner.locator('#channel-new-name').fill(PRIVATE_CHANNEL);
+      await owner.locator('#channel-visibility').selectOption('private');
+      await owner.getByRole('button', { name: 'Create channel', exact: true }).click();
+      await expect(owner.getByRole('status')).toContainText('Channel created.');
+      let found: Room | undefined;
+      await expect
+        .poll(
+          async () => {
+            found = (
+              await json<{ rooms: Room[] }>(`${a.origin}/api/communities/${refA}/rooms`)
+            ).rooms.find((x) => x.title === PRIVATE_CHANNEL);
+            return Boolean(found);
+          },
+          { timeout: 30_000 }
+        )
+        .toBe(true);
+      const priv = found!;
+      communityRoomIds.push(priv.roomId);
+      // A, a member of the private channel, adds A's agent there from A's app.
+      await openAgents(a, refA, priv.roomId);
+      await joinChannelInUi(a, refA, priv.roomId, aAgent!);
+      const aShot = await shot(a.page, '21a-desktop-a-private-channel-agent-joined');
+      // B is not a member: the channel is absent from B's app, unreadable, and B's agent cannot be put there.
+      const bRooms = await json<{ rooms: Room[] }>(`${b.origin}/api/communities/${refB}/rooms`);
+      assert(
+        !bRooms.rooms.some((x) => x.roomId === priv.roomId || x.title === PRIVATE_CHANNEL),
+        'B does not see the private channel'
+      );
+      const read = await fetch(`${b.origin}/api/communities/${refB}/rooms/${priv.roomId}/entries`);
+      assert(!read.ok, `B can read the private channel (${read.status})`);
+      const put = await fetch(
+        `${b.origin}/api/communities/${refB}/rooms/${priv.roomId}/agents/${encodeURIComponent(bAgent!.id)}/membership`,
+        { method: 'POST' }
+      );
+      assert(!put.ok, `B's agent was admitted to a private channel B is not in (${put.status})`);
+      findings.push({
+        check: 'A non-member’s private-channel request is refused as a refusal, not as an outage',
+        readStatus: read.status,
+        agentJoinStatus: put.status,
+        pass: read.status < 500 && put.status < 500,
+      });
+      await openAgents(b, refB, room.roomId);
+      await expect(b.page.locator('body')).not.toContainText(PRIVATE_CHANNEL);
+      const bEnroll = (await enrollments(b, refB)).agents.find(
+        (x) => x.localAgentId === bAgent!.id
+      );
+      assert(
+        bEnroll && !bEnroll.roomIds.includes(priv.roomId),
+        'B’s agent holds no private-channel membership'
+      );
+      return {
+        roomId: priv.roomId,
+        bReadStatus: read.status,
+        bAgentJoinStatus: put.status,
+        aShot,
+        bShot: await shot(b.page, '21b-desktop-b-no-private-channel'),
+      };
     });
-    await openAgents(b, refB, room.roomId);
-    await expect(b.page.locator('body')).not.toContainText(PRIVATE_CHANNEL);
-    const bEnroll = (await enrollments(b, refB)).agents.find((x) => x.localAgentId === bAgent!.id);
-    assert(
-      bEnroll && !bEnroll.roomIds.includes(priv.roomId),
-      'B’s agent holds no private-channel membership'
-    );
-    return {
-      roomId: priv.roomId,
-      bReadStatus: read.status,
-      bAgentJoinStatus: put.status,
-      aShot,
-      bShot: await shot(b.page, '21b-desktop-b-no-private-channel'),
-    };
-  });
 
   await step('22 A mentions B’s agent; B’s app answers with the scripted test reply', async () => {
     // Wait for B's agent to finish subscribing to #general before addressing it.

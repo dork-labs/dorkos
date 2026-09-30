@@ -213,8 +213,11 @@ function deliveryFailure(error: unknown, signal: AbortSignal): CommunityDelivery
     // Say why in the person's words (a hold is not an archive), never the remote's own text.
     return { kind: 'permanent', reason: communityRefusal(error)?.error ?? error.message };
   }
-  // A deleted community will never take the post (DOR-2334).
-  if (error instanceof PinnedHttpError && error.remoteCode === 'COMMUNITY_DELETED')
+  // A deleted or taken-down community will never take the post (DOR-2334).
+  if (
+    error instanceof PinnedHttpError &&
+    (error.remoteCode === 'COMMUNITY_DELETED' || error.remoteCode === 'COMMUNITY_TAKEN_DOWN')
+  )
     return { kind: 'permanent', reason: communityRefusal(error)?.error ?? error.message };
   const message = error instanceof Error ? error.message : 'remote delivery failed';
   const status =

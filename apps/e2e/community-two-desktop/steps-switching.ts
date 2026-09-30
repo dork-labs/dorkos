@@ -19,7 +19,7 @@ import {
   timeline,
   trigger,
 } from './desktop.js';
-import { COMMUNITY, ISOLATION, type Entry, type Room, type World } from './world.js';
+import { ISOLATION, type Entry, type Room, type World } from './world.js';
 
 /**
  * Steps 10-19: moving between this DorkOS and the Communities with the
@@ -38,13 +38,17 @@ import { COMMUNITY, ISOLATION, type Entry, type Room, type World } from './world
 export async function switchingSteps(w: World): Promise<void> {
   const {
     ctx,
+    runs,
     step,
+    skip,
     shot,
     findings,
     a,
     b,
     refA,
     refIso,
+    communityName: COMMUNITY,
+    channelComposer,
     room,
     stamp,
     MSG_A,
@@ -70,7 +74,7 @@ export async function switchingSteps(w: World): Promise<void> {
         const before = await trigger(local).getAttribute('aria-label');
         await openSwitcher(local);
         await expect(destinations(local).filter({ hasText: COMMUNITY })).toBeVisible();
-        if (local === b)
+        if (local === b && refIso)
           await expect(
             destinations(local).filter({ hasText: ISOLATION }),
             'B never joined Isolation'
@@ -85,12 +89,12 @@ export async function switchingSteps(w: World): Promise<void> {
         await expect(local.page).toHaveURL(new RegExp(`id=${escapeRegExp(room.roomId)}`), {
           timeout: 30_000,
         });
-        await expect(composer(local, /Message general/)).toBeVisible({ timeout: 30_000 });
+        await expect(channelComposer(local)).toBeVisible({ timeout: 30_000 });
         // The tab names the channel ("general", drawn with a # glyph), never the generic "Channels".
         const activeTab = local.page
           .getByRole('tablist', { name: 'Open tabs' })
           .getByRole('tab', { selected: true });
-        await expect(activeTab).toHaveAccessibleName('general', { timeout: 30_000 });
+        await expect(activeTab).toHaveAccessibleName(room.title, { timeout: 30_000 });
         await expect(activeTab).not.toContainText('Channels');
         evidence[local.name] = { triggerBefore: before, url: local.page.url(), menu, landed };
       }
@@ -98,7 +102,7 @@ export async function switchingSteps(w: World): Promise<void> {
     }
   );
 
-  await step('11 both people post in #general and each sees the other live', async () => {
+  await step('11 both people post in the channel and each sees the other live', async () => {
     for (const [sender, receiver, message] of [
       [a, b, MSG_A],
       [b, a, MSG_B],
@@ -195,7 +199,7 @@ export async function switchingSteps(w: World): Promise<void> {
   );
 
   await step(
-    '15 A switches back to the community and reopens #general at its last-read position',
+    '15 A switches back to the community and reopens the channel at its last-read position',
     async () => {
       await switchTo(a, COMMUNITY);
       await expect(a.page).toHaveURL(
@@ -279,55 +283,59 @@ export async function switchingSteps(w: World): Promise<void> {
     }
   );
 
-  await step(
-    '16 A switches to Isolation Proof, posts there; nothing crosses to Desktop Proof or B',
-    async () => {
-      await switchTo(a, ISOLATION);
-      await expect(a.page).toHaveURL(new RegExp(`community=${escapeRegExp(refIso)}`), {
-        timeout: 30_000,
-      });
-      await expect(trigger(a)).toHaveAttribute('aria-label', `${ISOLATION} menu`);
-      const isoRooms = await json<{ rooms: Room[] }>(`${a.origin}/api/communities/${refIso}/rooms`);
-      const isoGeneral = isoRooms.rooms.find((x) => x.title.toLowerCase() === 'general');
-      assert(
-        isoGeneral && isoGeneral.roomId !== room.roomId,
-        'isolation general is a different room'
-      );
-      if (!a.page.url().includes(`id=${encodeURIComponent(isoGeneral.roomId)}`))
-        await a.page.goto(`${a.origin}/channels?community=${refIso}&id=${isoGeneral.roomId}`);
-      await expect(composer(a, /Message general/)).toBeVisible({ timeout: 30_000 });
-      await expect(a.page.getByText('No messages here yet.')).toBeVisible({ timeout: 30_000 });
-      for (const text of [MSG_A, MSG_B, ATTACH_TEXT])
-        await expect(a.page.locator('main, body').first()).not.toContainText(text);
-      await send(composer(a), ISOLATED_MSG);
-      await expect(feed(a)).toContainText(ISOLATED_MSG, { timeout: 30_000 });
-      const isoShot = await shot(a.page, '16a-desktop-a-isolation');
-      await switchTo(a, COMMUNITY);
-      await expect(feed(a)).toBeVisible();
-      // Back on the remembered mid-history row (15b), so read what is rendered there.
-      await expect(feed(a)).toContainText(new RegExp(`History filler \\d\\d ${stamp}`));
-      await expect(feed(a)).not.toContainText(ISOLATED_MSG);
-      await expect(feed(b)).not.toContainText(ISOLATED_MSG);
-      const bEntries = JSON.stringify(
-        await json(`${b.origin}/api/communities/${refB}/rooms/${room.roomId}/entries`)
-      );
-      const aEntries = JSON.stringify(
-        await json(`${a.origin}/api/communities/${refA}/rooms/${room.roomId}/entries`)
-      );
-      assert(
-        !bEntries.includes(ISOLATED_MSG) && !aEntries.includes(ISOLATED_MSG),
-        'isolation text leaked'
-      );
-      assert.equal((await connections(b)).length, 1, 'B holds only its own connection');
-      const foreign = await fetch(`${b.origin}/api/communities/${refIso}/rooms`);
-      assert(!foreign.ok, `B can read A's isolation ref (${foreign.status})`);
-      return {
-        isoShot,
-        backShot: await shot(a.page, '16b-desktop-a-back-in-proof'),
-        foreignStatus: foreign.status,
-      };
-    }
-  );
+  if (!runs('16') || !refIso) skip('16');
+  else
+    await step(
+      '16 A switches to Isolation Proof, posts there; nothing crosses to Desktop Proof or B',
+      async () => {
+        await switchTo(a, ISOLATION);
+        await expect(a.page).toHaveURL(new RegExp(`community=${escapeRegExp(refIso)}`), {
+          timeout: 30_000,
+        });
+        await expect(trigger(a)).toHaveAttribute('aria-label', `${ISOLATION} menu`);
+        const isoRooms = await json<{ rooms: Room[] }>(
+          `${a.origin}/api/communities/${refIso}/rooms`
+        );
+        const isoGeneral = isoRooms.rooms.find((x) => x.title.toLowerCase() === 'general');
+        assert(
+          isoGeneral && isoGeneral.roomId !== room.roomId,
+          'isolation general is a different room'
+        );
+        if (!a.page.url().includes(`id=${encodeURIComponent(isoGeneral.roomId)}`))
+          await a.page.goto(`${a.origin}/channels?community=${refIso}&id=${isoGeneral.roomId}`);
+        await expect(composer(a, /Message general/)).toBeVisible({ timeout: 30_000 });
+        await expect(a.page.getByText('No messages here yet.')).toBeVisible({ timeout: 30_000 });
+        for (const text of [MSG_A, MSG_B, ATTACH_TEXT])
+          await expect(a.page.locator('main, body').first()).not.toContainText(text);
+        await send(composer(a), ISOLATED_MSG);
+        await expect(feed(a)).toContainText(ISOLATED_MSG, { timeout: 30_000 });
+        const isoShot = await shot(a.page, '16a-desktop-a-isolation');
+        await switchTo(a, COMMUNITY);
+        await expect(feed(a)).toBeVisible();
+        // Back on the remembered mid-history row (15b), so read what is rendered there.
+        await expect(feed(a)).toContainText(new RegExp(`History filler \\d\\d ${stamp}`));
+        await expect(feed(a)).not.toContainText(ISOLATED_MSG);
+        await expect(feed(b)).not.toContainText(ISOLATED_MSG);
+        const bEntries = JSON.stringify(
+          await json(`${b.origin}/api/communities/${refB}/rooms/${room.roomId}/entries`)
+        );
+        const aEntries = JSON.stringify(
+          await json(`${a.origin}/api/communities/${refA}/rooms/${room.roomId}/entries`)
+        );
+        assert(
+          !bEntries.includes(ISOLATED_MSG) && !aEntries.includes(ISOLATED_MSG),
+          'isolation text leaked'
+        );
+        assert.equal((await connections(b)).length, 1, 'B holds only its own connection');
+        const foreign = await fetch(`${b.origin}/api/communities/${refIso}/rooms`);
+        assert(!foreign.ok, `B can read A's isolation ref (${foreign.status})`);
+        return {
+          isoShot,
+          backShot: await shot(a.page, '16b-desktop-a-back-in-proof'),
+          foreignStatus: foreign.status,
+        };
+      }
+    );
 
   await step('17 keyboard: ⌘⇧K opens the switcher on A, arrows + Enter move context', async () => {
     await trigger(a).focus();
@@ -355,17 +363,17 @@ export async function switchingSteps(w: World): Promise<void> {
     // Spec (community-switcher-navigation §Desktop): "Opening focuses the selected row."
     assert.match(
       keyboardOpenFocus ?? '',
-      /^menuitemradio: Desktop Proof/,
+      new RegExp(`^menuitemradio: ${escapeRegExp(COMMUNITY)}`),
       `⌘⇧K focused ${keyboardOpenFocus}`
     );
     assert.match(
       pointerOpenFocus ?? '',
-      /^menuitemradio: Desktop Proof/,
+      new RegExp(`^menuitemradio: ${escapeRegExp(COMMUNITY)}`),
       `click focused ${pointerOpenFocus}`
     );
     assert.equal(escapeRestored, true, 'Escape restores focus to the trigger');
     findings.push({
-      check: 'Opening the switcher focuses the selected row (Desktop Proof)',
+      check: `Opening the switcher focuses the selected row (${COMMUNITY})`,
       keyboardOpenFocus,
       pointerOpenFocus,
       escapeRestoredFocusToTrigger: escapeRestored,

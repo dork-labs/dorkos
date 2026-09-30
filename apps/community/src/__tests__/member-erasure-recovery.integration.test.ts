@@ -480,7 +480,7 @@ describe('pairings', () => {
     ).toBe(0);
   });
 
-  it('sweeps pairings that expired over an hour ago unused, and keeps the rest', async () => {
+  it('sweeps pairings that expired over an hour ago, used or not, and keeps the rest', async () => {
     const s = await scene('sweep');
     const stale = await startPairing(h, s.communityId, 'stale install');
     const recent = await startPairing(h, s.communityId, 'recent install');
@@ -498,20 +498,37 @@ describe('pairings', () => {
       [[stale, recent]]
     );
     expect(left.rows.map((row) => row.id)).toEqual([recent]);
-    // The consumed pairing behind the grant stays however old it is.
+    // An exchanged request goes too once its hour has passed (DOR-2574); the connection it
+    // made is the grant, which the sweep never touches.
+    const grantsBefore = await h.pool.query(
+      'SELECT id FROM connection_grants WHERE community_id=$1 ORDER BY id',
+      [s.communityId]
+    );
+    expect(grantsBefore.rowCount).toBeGreaterThan(0);
     await h.pool.query(
-      `UPDATE connection_pairings SET expires_at=now()-interval '2 days' WHERE community_id=$1 AND consumed_at IS NOT NULL`,
+      `UPDATE connection_pairings SET expires_at=now()-interval '59 minutes' WHERE community_id=$1 AND consumed_at IS NOT NULL`,
       [s.communityId]
     );
     await sweepExpiredPairings(h.pool);
+    const consumed = () =>
+      h.pool.query(
+        'SELECT 1 FROM connection_pairings WHERE community_id=$1 AND consumed_at IS NOT NULL',
+        [s.communityId]
+      );
+    expect((await consumed()).rowCount).toBe(1);
+    await h.pool.query(
+      `UPDATE connection_pairings SET expires_at=now()-interval '61 minutes' WHERE community_id=$1 AND consumed_at IS NOT NULL`,
+      [s.communityId]
+    );
+    await sweepExpiredPairings(h.pool);
+    expect((await consumed()).rowCount).toBe(0);
     expect(
       (
-        await h.pool.query(
-          'SELECT 1 FROM connection_pairings WHERE community_id=$1 AND consumed_at IS NOT NULL',
-          [s.communityId]
-        )
-      ).rowCount
-    ).toBe(1);
+        await h.pool.query('SELECT id FROM connection_grants WHERE community_id=$1 ORDER BY id', [
+          s.communityId,
+        ])
+      ).rows
+    ).toEqual(grantsBefore.rows);
   });
 });
 
