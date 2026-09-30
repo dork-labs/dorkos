@@ -205,6 +205,7 @@ import type {
   CloudCommunityClaimLinkResponse,
   CloudCommunityKeepResponse,
   CloudCommunityMovePollResponse,
+  CloudCommunityMoveRoomResponse,
   CloudCommunityMoveResponse,
   CloudCommunityMoveStartInput,
   CloudCommunityNameCheckResponse,
@@ -2987,6 +2988,17 @@ export interface Transport
    * @param communityId - The community to reopen.
    */
   restoreHostedCommunity(communityId: string): Promise<CloudCommunityRestoreResponse>;
+  /**
+   * Ask whether an export of this size fits on the computer running DorkOS,
+   * before sending it. Advisory: starting the move checks again.
+   *
+   * @param bytes - The export's size in bytes.
+   * @param signal - Stops asking.
+   */
+  checkHostedCommunityMoveRoom(
+    bytes: number,
+    signal?: AbortSignal
+  ): Promise<CloudCommunityMoveRoomResponse>;
   /**
    * Start moving a community in from an owner export. The file goes to the
    * local server, which sends it on to the new community's server itself.

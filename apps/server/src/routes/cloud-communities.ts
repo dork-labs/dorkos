@@ -30,17 +30,19 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { CommunityShortNameSchema, type CommunityMove } from '@dork-labs/cloud-api';
-import type {
-  CloudCommunityClaimLinkResponse,
-  CloudCommunityKeepResponse,
-  CloudCommunityMove,
-  CloudCommunityMovePollResponse,
-  CloudCommunityMoveResponse,
-  CloudCommunityNameCheckResponse,
-  CloudCommunityRefusal,
-  CloudCommunityRestoreResponse,
-  CloudCommunityStartResponse,
-  CloudHostedCommunitiesResponse,
+import {
+  CLOUD_ACCOUNT_UNREACHABLE_MESSAGE,
+  type CloudCommunityClaimLinkResponse,
+  type CloudCommunityKeepResponse,
+  type CloudCommunityMove,
+  type CloudCommunityMovePollResponse,
+  type CloudCommunityMoveResponse,
+  type CloudCommunityMoveRoomResponse,
+  type CloudCommunityNameCheckResponse,
+  type CloudCommunityRefusal,
+  type CloudCommunityRestoreResponse,
+  type CloudCommunityStartResponse,
+  type CloudHostedCommunitiesResponse,
 } from '@dorkos/shared/cloud-schemas';
 import {
   cancelMove,
@@ -54,6 +56,7 @@ import {
   takeClaimLink,
 } from '../services/core/cloud/hosted-communities.js';
 import {
+  checkRoom,
   communityMoveUploads,
   discardStagedArchive,
   hostLimitBytes,
@@ -64,8 +67,11 @@ import {
 import { isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
 import { logger, logError } from '../lib/logger.js';
 
-/** What a person reads when the hosting service could not be reached. */
-const UNREACHABLE = 'Couldn’t reach your DorkOS account. Try again.';
+/**
+ * What a person reads when the hosting service could not be reached. The app
+ * reads a refused move start with these words as "the move may exist".
+ */
+const UNREACHABLE = CLOUD_ACCOUNT_UNREACHABLE_MESSAGE;
 
 /** What a person reads when this DorkOS is not linked to an account. */
 const NOT_LINKED = 'This DorkOS is not linked to a DorkOS account.';
@@ -102,6 +108,22 @@ const MoveQuerySchema = z.object({
   name: NameSchema,
   shortName: CommunityShortNameSchema.optional(),
 });
+
+/** The query `GET /moves/room` takes: the export's size in bytes. */
+const RoomQuerySchema = z.object({
+  bytes: z
+    .string()
+    .regex(/^\d+$/)
+    .transform(Number)
+    .refine((bytes) => Number.isSafeInteger(bytes)),
+});
+
+/**
+ * What a person reads when they start again with the same file and name as a
+ * move that was already cancelled (the start that cancelled it said why).
+ */
+const MOVE_ALREADY_CANCELLED =
+  'That move was already cancelled, so nothing was sent on to the new host. Press Start moving to begin a new one.';
 
 /**
  * A size in the units a person's own computer shows (powers of 1000, as
@@ -306,6 +328,29 @@ export function createCloudCommunitiesRouter(
   });
 
   /**
+   * GET /moves/room?bytes= — whether an export of this size fits on this
+   * computer, asked before the browser sends it. The same check `POST /moves`
+   * makes as the file arrives, and like it, nothing is held back: that check
+   * runs again. Answers 200 either way, with the same plain refusal.
+   */
+  router.get('/moves/room', async (req, res) => {
+    if (!isCloudLinked())
+      return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
+    const query = RoomQuerySchema.safeParse(req.query);
+    if (!query.success) return res.status(400).json({ error: 'That isn’t a file size.' });
+    try {
+      await checkRoom(query.data.bytes);
+    } catch (error) {
+      if (!(error instanceof StagingError)) throw error;
+      return res.json({
+        ok: false,
+        message: stagingRefusal(error).message,
+      } satisfies CloudCommunityRefusal);
+    }
+    return res.json({ ok: true } satisfies CloudCommunityMoveRoomResponse);
+  });
+
+  /**
    * POST /moves?idempotencyKey=&name=&shortName= — start a move with the
    * export as the body. Answers once the file is here and the move exists; the
    * upload to the Community server then runs on its own.
@@ -384,6 +429,16 @@ export function createCloudCommunitiesRouter(
       return res.status(413).json({
         ok: false,
         message: `This export is too large for the new host. It is ${describeBytes(staged.bytes, 'up')}, and the most the host takes is ${describeBytes(limit, 'down')}.`,
+      } satisfies CloudCommunityRefusal);
+    }
+    if (started.upload === null && started.move.state === 'cancelled') {
+      // A replay of a move that was cancelled, most often by the refusal just
+      // above on an earlier try. Answering `ok` would show the person a
+      // cancelled move in place of a reason, so say what happened.
+      await discardStagedArchive(staged);
+      return res.status(409).json({
+        ok: false,
+        message: MOVE_ALREADY_CANCELLED,
       } satisfies CloudCommunityRefusal);
     }
     if (started.upload !== null) {

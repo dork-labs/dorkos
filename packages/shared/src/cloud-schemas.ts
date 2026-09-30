@@ -176,6 +176,14 @@ export interface CloudCreditsStatus {
 // ---------------------------------------------------------------------------
 
 /**
+ * What a person reads when a hosted-community write never heard back from the
+ * account. The local server answers with it; the app reads it on a refused
+ * move start as "the move may exist", and keeps its key so starting again
+ * picks that move up instead of making a second one.
+ */
+export const CLOUD_ACCOUNT_UNREACHABLE_MESSAGE = 'Couldn’t reach your DorkOS account. Try again.';
+
+/**
  * A refusal from a hosted-community write.
  *
  * `problem` is the service's own envelope, rendered in its own words with its
@@ -276,6 +284,13 @@ export type CloudCommunityRestoreResponse =
 /** A move write (start, cancel, send again) — the move as it now stands. */
 export type CloudCommunityMoveResponse =
   { ok: true; move: CloudCommunityMove } | CloudCommunityRefusal;
+
+/**
+ * `GET /api/cloud/communities/moves/room?bytes=` — whether an export of that
+ * size fits on this computer, asked before it is sent. Advisory: sending the
+ * file checks again, and nothing is held back for it in between.
+ */
+export type CloudCommunityMoveRoomResponse = { ok: true } | CloudCommunityRefusal;
 
 /** `GET /api/cloud/communities/moves/:moveId` — one move, read from the service every time. */
 export type CloudCommunityMovePollResponse =

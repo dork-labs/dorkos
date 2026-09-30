@@ -13,9 +13,11 @@
  */
 import { useCallback, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  CloudCommunityMove,
-  CloudCommunityMovePollResponse,
+import {
+  CLOUD_ACCOUNT_UNREACHABLE_MESSAGE,
+  type CloudCommunityMove,
+  type CloudCommunityMovePollResponse,
+  type CloudCommunityRefusal,
 } from '@dorkos/shared/cloud-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { hostedCommunityKeys } from './hosted-communities';
@@ -77,6 +79,23 @@ export function moveStepOf(move: CloudCommunityMove): MoveStep {
     default:
       return { kind: 'unrecognised', move };
   }
+}
+
+/**
+ * Whether a refused start may still have made a move.
+ *
+ * Only when the account could not be reached: the service may have made the
+ * move before its answer was lost, and starting again with the same key picks
+ * that move up instead of making a second one. (The local server also answers
+ * this way for any other error it could not describe, so the key is kept then
+ * too, which is the safe side.) Every other refusal (the service's own
+ * problem, or this DorkOS's about the file) comes before a move exists, or
+ * after this DorkOS cancelled it.
+ *
+ * @param refusal - What the start answered.
+ */
+function mayHaveStartedAMove(refusal: CloudCommunityRefusal): boolean {
+  return 'message' in refusal && refusal.message === CLOUD_ACCOUNT_UNREACHABLE_MESSAGE;
 }
 
 /** A move the dialog can still act on (not failed, cancelled or unknown). */
@@ -151,21 +170,34 @@ export function useMoveCommunity(resumeMoveId: string | null): MoveCommunity {
     };
     const serial = JSON.stringify(body);
     if (key.current?.body !== serial) key.current = { body: serial, key: crypto.randomUUID() };
+    const idempotencyKey = key.current.key;
     const controller = new AbortController();
     abort.current = controller;
     setFailure({ field: null, notice: null });
     setSending({ loaded: 0, total: input.file.size });
     try {
-      const answer = await transport.startHostedCommunityMove(
-        input.file,
-        {
-          idempotencyKey: key.current.key,
-          name: body.name,
-          ...(input.shortName ? { shortName: input.shortName } : {}),
-        },
-        (progress) => setSending(progress),
-        controller.signal
-      );
+      // Ask first whether the file fits on this computer: over the tunnel, a
+      // large file can take hours to send just to hear it doesn't.
+      const room = await transport.checkHostedCommunityMoveRoom(input.file.size, controller.signal);
+      if (controller.signal.aborted) return;
+      const answer = room.ok
+        ? await transport.startHostedCommunityMove(
+            input.file,
+            {
+              idempotencyKey,
+              name: body.name,
+              ...(input.shortName ? { shortName: input.shortName } : {}),
+            },
+            (progress) => setSending(progress),
+            controller.signal
+          )
+        : room;
+      // The key is only for picking up a move this start may have made without
+      // hearing back. Once the move is here the dialog follows it by id, and a
+      // refusal left no move to pick up, so either way the next Start makes a
+      // fresh move and hears the real reason, rather than replaying one that
+      // was cancelled or failed (DOR-2611).
+      if (answer.ok || !mayHaveStartedAMove(answer)) key.current = null;
       if (answer.ok) {
         seed(answer.move);
         setMoveId(answer.move.moveId);
@@ -178,8 +210,13 @@ export function useMoveCommunity(resumeMoveId: string | null): MoveCommunity {
         setFailure({ field: null, notice: noticeOf(answer) });
       }
     } catch {
-      // A cancel the person asked for is not a failure worth a sentence.
-      if (!controller.signal.aborted) setFailure({ field: null, notice: UNREACHABLE_NOTICE });
+      // A cancel the person asked for is not a failure worth a sentence. It
+      // also leaves no move: the local server cancels one whose browser left.
+      // (Only a cancel in the instant after the server answered could leave
+      // one, and the account's list still shows it.) A stall or a broken
+      // connection keeps the key, since the move may exist.
+      if (controller.signal.aborted) key.current = null;
+      else setFailure({ field: null, notice: UNREACHABLE_NOTICE });
     } finally {
       abort.current = null;
       setSending(null);

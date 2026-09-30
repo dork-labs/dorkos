@@ -15,6 +15,7 @@ import type {
   CloudCommunityClaimLinkResponse,
   CloudCommunityKeepResponse,
   CloudCommunityMovePollResponse,
+  CloudCommunityMoveRoomResponse,
   CloudCommunityMoveResponse,
   CloudCommunityMoveStartInput,
   CloudCommunityNameCheckResponse,
@@ -33,7 +34,7 @@ import type {
   CloudUsageResponse,
   StartLinkResult,
 } from '@dorkos/shared/cloud-schemas';
-import { fetchJSON } from './http-client';
+import { buildQueryString, fetchJSON } from './http-client';
 import { startHostedCommunityMoveOverHttp } from './community-move-methods';
 
 /**
@@ -162,6 +163,17 @@ export function createCloudMethods(baseUrl: string) {
         baseUrl,
         `/cloud/communities/${encodeURIComponent(communityId)}/restore`,
         { method: 'POST' }
+      );
+    },
+
+    checkHostedCommunityMoveRoom(
+      bytes: number,
+      signal?: AbortSignal
+    ): Promise<CloudCommunityMoveRoomResponse> {
+      return fetchJSON<CloudCommunityMoveRoomResponse>(
+        baseUrl,
+        `/cloud/communities/moves/room${buildQueryString({ bytes })}`,
+        { signal }
       );
     },
 

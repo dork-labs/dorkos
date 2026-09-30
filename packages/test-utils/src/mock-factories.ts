@@ -1399,6 +1399,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getHostedCommunityClaimLink: vi.fn(),
     keepHostedCommunity: vi.fn(),
     restoreHostedCommunity: vi.fn(),
+    // The room check defaults to "fits", so a test about the move itself need not stub it.
+    checkHostedCommunityMoveRoom: vi.fn().mockResolvedValue({ ok: true }),
     startHostedCommunityMove: vi.fn(),
     getHostedCommunityMove: vi.fn().mockResolvedValue({ available: false }),
     cancelHostedCommunityMove: vi.fn(),

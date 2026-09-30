@@ -15,6 +15,7 @@ import { PassThrough, Readable } from 'node:stream';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { COMMUNITY_MOVE_MAX_PARTS } from '@dork-labs/cloud-api';
 import {
+  checkRoom,
   CommunityMoveUploads,
   discardStagedArchive,
   hostLimitBytes,
@@ -252,6 +253,52 @@ describe('stageArchive', () => {
     );
     expect(shorter).toMatchObject({ reason: 'size_mismatch' });
     expect(newDirs(before)).toEqual([]);
+  });
+});
+
+describe('checkRoom', () => {
+  // Purpose (DOR-2610): the browser asks this before sending a byte, so it must
+  // give the same answer the upload would, with the same numbers. Fails if the
+  // boundary or the headroom differs from stageArchive's.
+  it('refuses a size the disk has no room for, at the same boundary as staging', async () => {
+    const needed = 100 + MOVE_STAGING_HEADROOM_BYTES;
+    await expect(checkRoom(100, diskWith(needed - 1))).rejects.toMatchObject({
+      reason: 'no_room',
+      space: { neededBytes: needed, freeBytes: needed - 1 },
+    });
+    await expect(checkRoom(100, diskWith(needed))).resolves.toBeUndefined();
+    await expect(checkRoom(0, roomy)).rejects.toMatchObject({ reason: 'empty' });
+    await expect(checkRoom(100, diskWith(Number.NaN))).rejects.toMatchObject({
+      reason: 'space_unknown',
+    });
+  });
+
+  // Purpose (DOR-2610): asking first promises nothing, so the upload that
+  // follows is not counted twice. Fails if checkRoom holds the bytes: staging
+  // on a disk with room for exactly one copy would then be refused.
+  it('holds nothing back for the upload that follows', async () => {
+    const bytes = Buffer.from('an owner export');
+    const disk = diskWith(bytes.length + MOVE_STAGING_HEADROOM_BYTES);
+    await checkRoom(bytes.length, disk);
+    await checkRoom(bytes.length, disk);
+    const staged = await stageArchive(Readable.from([bytes]), bytes.length, disk);
+    await discardStagedArchive(staged);
+  });
+
+  // Purpose (DOR-2610): an export already arriving has claimed its bytes, so a
+  // second one asked about now must not count them as free. Fails if checkRoom
+  // ignores what staging still has to write.
+  it('counts the bytes an export already arriving has yet to write', async () => {
+    const declared = 100;
+    const disk = diskWith(declared + MOVE_STAGING_HEADROOM_BYTES + declared / 2);
+    const first = new PassThrough();
+    const firstStaged = stageArchive(first, declared, disk);
+    first.write(Buffer.alloc(10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect(checkRoom(declared, disk)).rejects.toMatchObject({ reason: 'no_room' });
+    first.end(Buffer.alloc(declared - 10));
+    await discardStagedArchive(await firstStaged);
+    await expect(checkRoom(declared, disk)).resolves.toBeUndefined();
   });
 });
 

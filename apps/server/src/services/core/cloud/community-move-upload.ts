@@ -34,9 +34,11 @@
  * the move starts, and the route checks it again before a byte leaves for the
  * host. The host's limit is only known once the move exists, and a move
  * cannot start until the file is measured, so that check comes after staging.
- * A refusal for room writes nothing, but the browser still sends the whole
- * file before it reads the answer: quick on this machine, slow over the
- * tunnel.
+ * A refusal for room writes nothing. The browser asks first
+ * ({@link checkRoom}, from the file's size) so a file that won't fit is
+ * refused before it is sent: over the tunnel from a phone, sending it would
+ * take a long time just to hear no. The check while the file arrives stays,
+ * because free space can change in between.
  *
  * @module services/core/cloud/community-move-upload
  */
@@ -165,9 +167,72 @@ export class StagingError extends Error {
 }
 
 /**
+ * Check that an export of `declaredBytes` fits, and when `reserve` is set,
+ * promise its bytes to it in the same step.
+ *
+ * The check and the promise happen with no await between them, so two
+ * exports checked at the same moment can never both count the same free
+ * space. The free space itself is read just before, so bytes another export
+ * writes in that moment are counted twice (on the disk and in its promise):
+ * a slight overcount on the safe side, well inside the headroom.
+ *
+ * @param declaredBytes - The size of the export.
+ * @param readFreeSpace - Reads the disk's free space.
+ * @param reserve - Whether to hold the bytes for an export about to be copied.
+ * @returns Where to stage it, and the bytes still to arrive (held only when `reserve` is set).
+ * @throws {StagingError} When the export is empty, does not fit, or its room cannot be checked.
+ */
+async function claimRoom(
+  declaredBytes: number,
+  readFreeSpace: FreeSpaceReader,
+  reserve: boolean
+): Promise<{ root: string; promise: { remaining: number } }> {
+  const root = stagingRoot;
+  if (root === null) throw new Error('Move staging is not set up yet.');
+  if (declaredBytes === 0) throw new StagingError('empty');
+
+  let free: number;
+  try {
+    free = await readFreeSpace(root);
+  } catch (error) {
+    logger.warn('[Cloud] Could not read the free space for a community export', logError(error));
+    throw new StagingError('space_unknown');
+  }
+  if (!Number.isFinite(free)) throw new StagingError('space_unknown');
+  let promised = 0;
+  for (const other of stillArriving) promised += other.remaining;
+  const neededBytes = declaredBytes + MOVE_STAGING_HEADROOM_BYTES;
+  const freeBytes = Math.max(0, free - promised);
+  if (freeBytes < neededBytes) throw new StagingError('no_room', { neededBytes, freeBytes });
+  const promise = { remaining: declaredBytes };
+  if (reserve) stillArriving.add(promise);
+  return { root, promise };
+}
+
+/**
+ * Check, before any of it is sent, whether an export of this size would fit.
+ *
+ * The same check {@link stageArchive} makes, so the browser can ask it first
+ * and refuse a file that won't fit before the upload starts, instead of after
+ * the whole file has crossed a slow link. It holds nothing back: the bytes are
+ * promised only when the export itself arrives, and that checks again, so
+ * asking first never counts the same export twice.
+ *
+ * @param declaredBytes - The size of the export, in bytes.
+ * @param readFreeSpace - Reads the disk's free space; tests replace it.
+ * @throws {StagingError} When the export is empty, does not fit, or its room cannot be checked.
+ */
+export async function checkRoom(
+  declaredBytes: number,
+  readFreeSpace: FreeSpaceReader = freeSpace
+): Promise<void> {
+  await claimRoom(declaredBytes, readFreeSpace, false);
+}
+
+/**
  * Copy an incoming export to a private temp file, measuring it as it arrives.
  *
- * Checks for room first: the declared size plus
+ * Checks for room first ({@link checkRoom}): the declared size plus
  * {@link MOVE_STAGING_HEADROOM_BYTES} must fit in the disk's free space, less
  * what other exports still arriving will take. A file that cannot fit, or
  * whose room cannot be checked, is refused before a byte is read or written.
@@ -186,27 +251,8 @@ export async function stageArchive(
   declaredBytes: number | null,
   readFreeSpace: FreeSpaceReader = freeSpace
 ): Promise<StagedArchive> {
-  const root = stagingRoot;
-  if (root === null) throw new Error('Move staging is not set up yet.');
   if (declaredBytes === null) throw new StagingError('size_unknown');
-  if (declaredBytes === 0) throw new StagingError('empty');
-
-  let free: number;
-  try {
-    free = await readFreeSpace(root);
-  } catch (error) {
-    logger.warn('[Cloud] Could not read the free space for a community export', logError(error));
-    throw new StagingError('space_unknown');
-  }
-  if (!Number.isFinite(free)) throw new StagingError('space_unknown');
-  let promised = 0;
-  for (const other of stillArriving) promised += other.remaining;
-  const neededBytes = declaredBytes + MOVE_STAGING_HEADROOM_BYTES;
-  const freeBytes = Math.max(0, free - promised);
-  if (freeBytes < neededBytes) throw new StagingError('no_room', { neededBytes, freeBytes });
-
-  const promise = { remaining: declaredBytes };
-  stillArriving.add(promise);
+  const { root, promise } = await claimRoom(declaredBytes, readFreeSpace, true);
   try {
     const dir = await mkdtemp(path.join(root, 'move-'));
     const filePath = path.join(dir, 'export.zip');
