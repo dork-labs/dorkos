@@ -263,6 +263,65 @@ export function verifyFlyDeployment(
   return inventory;
 }
 
+/**
+ * Whether an app that failed its runtime proof is exactly what a cut-off deploy leaves behind, and
+ * so safe to deploy again: one started Machine already running the expected image, and a latest
+ * release for that same image that Fly did not mark `complete` (`interrupted` or `failed`).
+ *
+ * The live gate hit this when `fly deploy` was stopped at its deadline while the Machine came up
+ * (DOR-2169). Anything else (another image, no Machine or several, a stopped Machine, or a
+ * `complete` release whose Machine is unhealthy or has no address) is not ours to overwrite: it may
+ * be an operator's own deploy or an app that crashes on start, and deploying again on every resume
+ * would hide either.
+ *
+ * @param inventory - The app's current runtime.
+ * @param expectedRepository - The pinned image repository.
+ * @param expectedDigest - The digest Fly reports for the pinned image.
+ * @returns True only for an interrupted deploy of the pinned image.
+ */
+export function isInterruptedFlyDeployment(
+  inventory: FlyRuntimeInventory,
+  expectedRepository: string,
+  expectedDigest: string
+): boolean {
+  const latestRelease = inventory.releases.reduce<
+    FlyRuntimeInventory['releases'][number] | undefined
+  >(
+    (latest, release) => (!latest || release.version > latest.version ? release : latest),
+    undefined
+  );
+  const machine = inventory.machines[0];
+  return (
+    inventory.machines.length === 1 &&
+    machine?.state === 'started' &&
+    machine.imageRepository === expectedRepository &&
+    machine.imageDigest === expectedDigest &&
+    latestRelease !== undefined &&
+    latestRelease.status !== 'complete' &&
+    latestRelease.imageRef === `${expectedRepository}@${expectedDigest}`
+  );
+}
+
+/**
+ * The app runs something setup cannot prove it deployed and will not overwrite. The message says
+ * what to look at; it names only the app, never provider output.
+ */
+export class UnprovenFlyRuntimeError extends ProviderMutationError {
+  /**
+   * Create the refusal for one app.
+   *
+   * @param appName - The Fly app setup created.
+   */
+  constructor(appName: string) {
+    super('INVALID_RESPONSE');
+    this.name = 'UnprovenFlyRuntimeError';
+    this.message =
+      `Fly app ${appName} is not running the release setup deployed, and setup will not overwrite it. ` +
+      `Check it with \`fly status --app ${appName}\` and \`fly releases --app ${appName}\`, ` +
+      'fix or remove what is running, then resume.';
+  }
+}
+
 /** Prove the current app already runs one healthy exact-digest deployment. */
 export function verifyExistingFlyDeployment(
   inventory: FlyRuntimeInventory,

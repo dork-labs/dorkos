@@ -6,6 +6,7 @@
 import {
   deployFlyImage,
   stageFlySecrets,
+  isInterruptedFlyDeployment,
   verifyExistingFlyDeployment,
   verifyFlyDeployment,
 } from '../fly-mutate.js';
@@ -75,6 +76,8 @@ export function createDefaultCommunityDeployDependencies(input: {
       }),
     verifyNewRuntime: (inventory, previous) =>
       verifyFlyDeployment(inventory, previous, COMMUNITY_IMAGE_REPOSITORY, input.plan.imageDigest),
+    isInterruptedDeploy: (inventory) =>
+      isInterruptedFlyDeployment(inventory, COMMUNITY_IMAGE_REPOSITORY, input.plan.imageDigest),
     verifyExistingRuntime: (inventory) =>
       verifyExistingFlyDeployment(inventory, COMMUNITY_IMAGE_REPOSITORY, input.plan.imageDigest),
     verifyHealth: (origin) =>

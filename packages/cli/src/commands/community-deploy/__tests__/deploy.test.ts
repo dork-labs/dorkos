@@ -4,6 +4,7 @@ import { LaunchJournalSchema, type LaunchJournal } from '../journal.js';
 import { createLaunchPlan } from '../plan.js';
 import type { FlySecretInventoryItem } from '../tigris-session.js';
 import { ProviderMutationError } from '../provider-mutation.js';
+import { ProviderCommandError } from '../provider-process.js';
 
 const plan = createLaunchPlan({
   dorkosVersion: '0.76.0',
@@ -114,6 +115,7 @@ function harness(initial = journal()) {
       );
     }),
     verifyNewRuntime: vi.fn((value) => value),
+    isInterruptedDeploy: vi.fn(() => false),
     verifyExistingRuntime: vi.fn((value) => value),
     verifyHealth: vi.fn(),
     now: () => '2026-09-21T00:00:01.000Z',
@@ -182,8 +184,8 @@ describe('Community deploy phase', () => {
 
   // DOR-2169 live gate: `fly deploy` was cut off while the Machine came up. Fly marked the release
   // `interrupted` with the secrets applied, so the "already deployed" proof can never pass again.
-  // A resume deploys the same pinned image once more and proves that new release in full.
-  it('redeploys on resume when applied secrets have no complete release behind them', async () => {
+  // Only that exact state is deployed again; anything else stops for the operator.
+  it('redeploys on resume only for an interrupted deploy of the pinned image', async () => {
     const secretDigests = Object.fromEntries(
       ['DATABASE', 'AUTH', 'INVITE', 'BOOTSTRAP'].map((part, index) => [
         `COMMUNITY_${part}${part === 'DATABASE' ? '_URL' : '_SECRET'}`,
@@ -222,7 +224,9 @@ describe('Community deploy phase', () => {
     vi.mocked(test.dependencies.verifyExistingRuntime).mockImplementation(() => {
       throw new ProviderMutationError('INVALID_RESPONSE');
     });
+    vi.mocked(test.dependencies.isInterruptedDeploy).mockReturnValue(true);
     const result = await executeCommunityDeployPhase(plan, staged, test.dependencies);
+    expect(test.dependencies.isInterruptedDeploy).toHaveBeenCalledWith(interrupted);
     expect(test.dependencies.deploy).toHaveBeenCalledOnce();
     expect(test.dependencies.deploy).toHaveBeenCalledWith(plan.imageDigest);
     expect(test.dependencies.verifyNewRuntime).toHaveBeenCalledWith(
@@ -231,17 +235,34 @@ describe('Community deploy phase', () => {
     );
     expect(result.journal.state).toBe('healthy');
 
-    // Anything but a failed proof, such as Fly being unreachable, still stops without deploying.
-    const unreachable = harness(staged);
-    applied(unreachable);
-    vi.mocked(unreachable.dependencies.readRuntime).mockReset().mockResolvedValue(interrupted);
-    vi.mocked(unreachable.dependencies.verifyExistingRuntime).mockImplementation(() => {
-      throw new ProviderMutationError('PROVIDER_UNAVAILABLE');
+    // Any other failed proof (another image, no Machine or several, a stopped or unhealthy one)
+    // is not setup's to overwrite: it stops with an error that says what to check.
+    const foreign = harness(staged);
+    applied(foreign);
+    vi.mocked(foreign.dependencies.readRuntime).mockReset().mockResolvedValue(interrupted);
+    vi.mocked(foreign.dependencies.verifyExistingRuntime).mockImplementation(() => {
+      throw new ProviderMutationError('INVALID_RESPONSE');
     });
     await expect(
-      executeCommunityDeployPhase(plan, staged, unreachable.dependencies)
-    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
-    expect(unreachable.dependencies.deploy).not.toHaveBeenCalled();
+      executeCommunityDeployPhase(plan, staged, foreign.dependencies)
+    ).rejects.toMatchObject({
+      name: 'UnprovenFlyRuntimeError',
+      code: 'INVALID_RESPONSE',
+      message: expect.stringContaining('fly releases --app dorkos-community-test'),
+    });
+    expect(foreign.dependencies.deploy).not.toHaveBeenCalled();
+
+    // A runtime setup could not read at all is never deployed over.
+    const unreadable = harness(staged);
+    applied(unreadable);
+    vi.mocked(unreadable.dependencies.readRuntime)
+      .mockReset()
+      .mockRejectedValue(new ProviderCommandError('TIMEOUT'));
+    await expect(
+      executeCommunityDeployPhase(plan, staged, unreadable.dependencies)
+    ).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(unreadable.dependencies.deploy).not.toHaveBeenCalled();
+    expect(unreadable.dependencies.isInterruptedDeploy).not.toHaveBeenCalled();
   });
 
   it('adopts one fully staged secret set after a crash before journaling', async () => {

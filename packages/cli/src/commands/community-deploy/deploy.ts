@@ -9,6 +9,7 @@ import type { LaunchPlan } from './plan.js';
 import type { FlyRuntimeInventory } from './fly-read.js';
 import type { FlySecretInventoryItem } from './tigris-session.js';
 import { ProviderMutationError } from './provider-mutation.js';
+import { UnprovenFlyRuntimeError } from './fly-mutate.js';
 
 /** Runtime secret names owned by the Community launcher. */
 export const COMMUNITY_RUNTIME_SECRET_NAMES = [
@@ -82,6 +83,8 @@ export interface CommunityDeployPhaseDependencies {
     inventory: FlyRuntimeInventory,
     previous: FlyRuntimeInventory['releases']
   ): FlyRuntimeInventory;
+  /** Whether an unproven runtime is a cut-off deploy of the pinned image (see fly-mutate). */
+  isInterruptedDeploy(inventory: FlyRuntimeInventory): boolean;
   /** Verify an already completed deployment during resume. */
   verifyExistingRuntime(inventory: FlyRuntimeInventory): FlyRuntimeInventory;
   /** Verify the public health endpoint independently of Fly checks. */
@@ -264,16 +267,20 @@ export async function executeCommunityDeployPhase(
       const deployed = exactSecretDigests(existingSecrets, 'Deployed');
       if (!sameDigests(deployed, expectedDigests))
         throw new ProviderMutationError('INVALID_RESPONSE');
+      // A failed read stops here: nothing is deployed on a runtime setup could not see.
+      const runtime = await dependencies.readRuntime();
       try {
-        inventory = dependencies.verifyExistingRuntime(await dependencies.readRuntime());
+        inventory = dependencies.verifyExistingRuntime(runtime);
       } catch (error) {
-        // The secrets are applied but no complete release proves the runtime. That is what a
-        // deploy cut off part way leaves behind: Fly marks its release `interrupted` even when
-        // the Machine came up (live gate, DOR-2169). Stopping here would stop every resume, so the
-        // same pinned image is deployed again and the new release is proved in full, exactly as a
-        // first deploy is. Anything but a failed proof still stops.
         if (!(error instanceof ProviderMutationError) || error.code !== 'INVALID_RESPONSE') {
           throw error;
+        }
+        // A deploy cut off part way leaves the secrets applied, the pinned image running, and a
+        // release Fly marked `interrupted` (live gate, DOR-2169), which can never pass this proof.
+        // Only that is deployed again, and the new release is proved in full like a first deploy.
+        // Anything else is not setup's to overwrite, so it stops and says what to check.
+        if (!dependencies.isInterruptedDeploy(runtime)) {
+          throw new UnprovenFlyRuntimeError(plan.fly.appName);
         }
         inventory = await deployAndVerify();
       }
