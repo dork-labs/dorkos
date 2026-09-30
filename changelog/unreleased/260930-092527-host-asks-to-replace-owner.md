@@ -6,6 +6,7 @@ covers:
   - 'fix(community): keep owner replacements refused until the owner can answer (DOR-2540 review)'
   - "fix(community): never count an owner's waiting period shorter than their notice promised (DOR-2540 review)"
   - 'fix(community): repeat the promised date when a claim link is sent again before the notice resolves (DOR-2540 review)'
+  - 'fix(community): name one date in every owner-replacement email (DOR-2540 review)'
 ---
 
 ### Added

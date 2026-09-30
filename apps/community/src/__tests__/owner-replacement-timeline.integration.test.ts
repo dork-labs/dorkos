@@ -196,6 +196,15 @@ function mailsTo(email: string): Mail[] {
     .map((message) => decode(message.raw));
 }
 
+/** The date an owner-replacement email names, as written in it. */
+function dateIn(text: string): string | null {
+  return (
+    /(?:on or after|is still) ((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), [^.]*\(UTC\))\./u.exec(
+      text
+    )?.[1] ?? null
+  );
+}
+
 function objectToken(mail: Mail): string | null {
   return /\/keep-ownership#([A-Za-z0-9_-]+)/u.exec(mail.text)?.[1] ?? null;
 }
@@ -1202,10 +1211,12 @@ describe('review probes (R1, R2)', () => {
     await send(clock());
     await tick(clock());
     const stored = (await row(id)).claimable_after as Date;
-    const again = mailsTo(c.ownerEmail).find((mail) =>
-      mail.text.includes('The host sent the link for the new owner again.')
-    )!;
+    const [notice, again] = mailsTo(c.ownerEmail);
+    expect(again.text).toContain('The host sent the link for the new owner again.');
     expect(again.text).toContain(`The earliest date is still ${formatReplacementDate(stored)}.`);
+    // Both emails name one date: the reissue repeats the notice's, not a day counted from now.
+    expect(dateIn(notice.text)).toBe(formatReplacementDate(stored));
+    expect(dateIn(again.text)).toBe(dateIn(notice.text));
   });
 
   it('keeps the longer date a lost first send promised after the address is confirmed', async () => {
@@ -1225,6 +1236,109 @@ describe('review probes (R1, R2)', () => {
     const stored = (await row(id)).claimable_after as Date;
     expect(mailsTo(c.ownerEmail)).toHaveLength(2);
     expect(first.text).toContain(`on or after ${formatReplacementDate(stored)}.`);
+  });
+});
+
+describe('one date in every email (R3, R4)', () => {
+  it('names the long date a claim link promised first, after the address is confirmed', async () => {
+    // Purpose: fails if the notice names its own short date when a claim link sent before it,
+    // while the address was unconfirmed, already promised the long one (review probe R3).
+    await send(advance(MINUTE));
+    const c = await ownedCommunity(h, operator, { verified: false });
+    const created = await requestReplacement(c);
+    const id = created.replacement.replacementId;
+    await expectStatus(
+      await h.call(
+        `/api/v1/host/communities/${c.communityId}/owner-replacements/${id}/claim-token`,
+        {
+          bearer: ownership,
+          body: {},
+        }
+      ),
+      200,
+      'reissue'
+    );
+    // The claim link's email goes first: the notice waits two hours.
+    await h.pool.query(
+      `UPDATE notice_outbox SET next_attempt_at=$2
+       WHERE subject_id=$1 AND kind='owner_replacement.notice'`,
+      [id, new Date(clockMs + 2 * HOUR)]
+    );
+    await send(advance(MINUTE));
+    await h.pool.query('UPDATE "user" SET "emailVerified"=true WHERE id=$1', [c.ownerUserId]);
+    await send(advance(3 * HOUR));
+    await tick(clock());
+    const stored = (await row(id)).claimable_after as Date;
+    const mails = mailsTo(c.ownerEmail);
+    expect(mails).toHaveLength(2);
+    for (const mail of mails) expect(dateIn(mail.text)).toBe(formatReplacementDate(stored));
+  });
+
+  it('keeps the wait the notice decided when a claim link is sent before it resolves', async () => {
+    // Purpose: fails if a claim-reissued email records the address's verified flag, so an
+    // address confirmed after the notice turns the notice's long wait into the short one.
+    await send(advance(MINUTE));
+    const c = await ownedCommunity(h, operator, { verified: false });
+    const created = await requestReplacement(c);
+    const id = created.replacement.replacementId;
+    await send(advance(MINUTE));
+    await h.pool.query('UPDATE "user" SET "emailVerified"=true WHERE id=$1', [c.ownerUserId]);
+    await expectStatus(
+      await h.call(
+        `/api/v1/host/communities/${c.communityId}/owner-replacements/${id}/claim-token`,
+        {
+          bearer: ownership,
+          body: {},
+        }
+      ),
+      200,
+      'reissue'
+    );
+    await send(advance(MINUTE));
+    expect((await row(id)).state).toBe('notifying');
+    await tick(clock());
+    const listed = await h.call(`/api/v1/host/communities/${c.communityId}/owner-replacements`, {
+      bearer: ownership,
+    });
+    const { replacements } = (await listed.json()) as {
+      replacements: { replacementId: string; wait: string; notice: { verifiedAddress: boolean } }[];
+    };
+    expect(replacements.find((entry) => entry.replacementId === id)).toMatchObject({
+      wait: 'long',
+      notice: { verifiedAddress: false },
+    });
+  });
+
+  it('repeats the stored date after the notice resolved, and records nothing', async () => {
+    // Purpose: fails if a claim link sent after the notice resolved names a new date or moves
+    // the promise (review probe R4).
+    await send(advance(MINUTE));
+    const c = await ownedCommunity();
+    const created = await requestReplacement(c);
+    const id = created.replacement.replacementId;
+    await send(advance(MINUTE));
+    await tick(clock());
+    const before = await row(id);
+    advance(5 * DAY);
+    await expectStatus(
+      await h.call(
+        `/api/v1/host/communities/${c.communityId}/owner-replacements/${id}/claim-token`,
+        {
+          bearer: ownership,
+          body: {},
+        }
+      ),
+      200,
+      'reissue'
+    );
+    await send(clock());
+    const after = await row(id);
+    const again = mailsTo(c.ownerEmail)[1];
+    expect(again.text).toContain(
+      `The earliest date is still ${formatReplacementDate(before.claimable_after as Date)}.`
+    );
+    expect(after.notice_promised_at).toEqual(before.notice_promised_at);
+    expect(after.claimable_after).toEqual(before.claimable_after);
   });
 });
 

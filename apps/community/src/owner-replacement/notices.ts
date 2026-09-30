@@ -122,12 +122,17 @@ function composeOpenNotice(settings: Settings, kind: 'notice' | 'reminder' | 'cl
       [notice.recipientUserId]
     );
     const verified = account.rows[0]?.emailVerified === true;
-    // A claim link sent again says "the earliest date is still …": before the notice resolves
-    // that is the date the owner was already promised, never a new one counted from now.
-    const earliest =
-      kind === 'claim_reissued' && !subject.claimable_after && subject.notice_promised_at
-        ? subject.notice_promised_at
-        : earliestDate(subject, verified, now, settings);
+    // Before the notice resolves, every email names one date. A claim link sent again says
+    // "the earliest date is still …", so it repeats the date already promised. The notice names
+    // its own counted date, but never one earlier than an email already promised (a claim link
+    // sent first, while the address was still unconfirmed, may have promised the long wait).
+    const counted = earliestDate(subject, verified, now, settings);
+    const promised = subject.claimable_after ? null : subject.notice_promised_at;
+    const earliest = !promised
+      ? counted
+      : kind === 'claim_reissued'
+        ? promised
+        : new Date(Math.max(counted.getTime(), promised.getTime()));
     // While the notice has not resolved, every message records the latest date it promised:
     // the stored date may never be earlier. Only the notice records the address's verified
     // flag, since that is what decides the wait.
