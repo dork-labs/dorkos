@@ -45,7 +45,7 @@ export interface OwnerReplacementRequest {
  * The idempotency hash of a request: everything the host chose, never the password. Keyed with
  * the community, the requesting actor, and the key, so the same key elsewhere is its own request.
  */
-export function replacementPayloadHash(input: {
+function replacementPayloadHash(input: {
   lifecycleVersion: number;
   reason: OwnerReplacementReason;
   reference: string | null;

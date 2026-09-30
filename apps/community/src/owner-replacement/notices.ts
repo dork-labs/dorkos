@@ -13,7 +13,22 @@ import {
   type OwnerReplacementState,
 } from './records.js';
 
-const DAY_MS = 24 * 60 * 60_000;
+const HOUR_MS = 60 * 60_000;
+const DAY_MS = 24 * HOUR_MS;
+/**
+ * A reminder sent this close to the date, or closer, drops "in 2 days": it is queued 48 hours
+ * before, but a busy mail server can hold it for a day or more.
+ */
+const REMINDER_IN_TWO_DAYS_MS = 36 * HOUR_MS;
+
+/** The reminder's "when" sentence, true however late the reminder is sent. */
+function reminderWhen(earliest: Date, date: string, now: Date): string {
+  const left = earliest.getTime() - now.getTime();
+  if (left >= REMINDER_IN_TWO_DAYS_MS)
+    return `If you do nothing, that can happen in 2 days, on or after ${date}.`;
+  if (left > 0) return `If you do nothing, that can happen on or after ${date}.`;
+  return 'If you do nothing, that can happen at any time now.';
+}
 
 type Settings = Pick<CommunityConfig, 'publicUrl' | 'ownerReplacement'>;
 
@@ -50,8 +65,8 @@ function takeoverSubject(community: string): string {
  * The earliest date the new owner could take over, as the owner should be told it. Once the
  * notice has resolved it is the stored date. Before then it is this send's time plus the wait
  * this notice would get if the mail server takes it now, read with the address's verified flag
- * as it is now: the stored date is counted from the acceptance, which is never earlier, so the
- * owner is never told a date sooner than the real one.
+ * as it is now. The stored date is counted from the acceptance, which is never earlier than
+ * this send, so the owner is told a date no later than the real one: "on or after" stays true.
  */
 function earliestDate(subject: NoticeSubject, verified: boolean, now: Date, settings: Settings) {
   if (subject.claimable_after) return subject.claimable_after;
@@ -109,7 +124,8 @@ function composeOpenNotice(settings: Settings, kind: 'notice' | 'reminder' | 'cl
          WHERE community_id=$1 AND id=$2 AND state='notifying'`,
         [notice.communityId, notice.subjectId, verified]
       );
-    const date = formatReplacementDate(earliestDate(subject, verified, now, settings));
+    const earliest = earliestDate(subject, verified, now, settings);
+    const date = formatReplacementDate(earliest);
     const link = await mintObjectToken(pool, {
       communityId: notice.communityId,
       replacementId: notice.subjectId,
@@ -128,7 +144,7 @@ function composeOpenNotice(settings: Settings, kind: 'notice' | 'reminder' | 'cl
         : [
             `The host of ${subject.community_name} has been asked to make someone else its owner.`,
             kind === 'reminder'
-              ? `If you do nothing, that can happen in 2 days, on or after ${date}.`
+              ? reminderWhen(earliest, date, now)
               : `If you do nothing, that can happen on or after ${date}.`,
           ];
     return plainTextMail(takeoverSubject(subject.community_name), [

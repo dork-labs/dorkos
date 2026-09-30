@@ -297,6 +297,7 @@ beforeAll(async () => {
     now: clock,
     env: SMTP_ENV,
     noticeComposers: STUB_COMPOSERS,
+    ownerReplacementOpen: true,
   });
   sso = await startTenancyHarness('owner_replace_sso', {
     env: {
@@ -306,9 +307,13 @@ beforeAll(async () => {
       COMMUNITY_OIDC_CLIENT_SECRET: 'community-client-secret',
     },
     noticeComposers: STUB_COMPOSERS,
+    ownerReplacementOpen: true,
   });
   bare = await startTenancyHarness('owner_replace_bare');
-  mailOnly = await startTenancyHarness('owner_replace_mailonly', { env: SMTP_ENV });
+  mailOnly = await startTenancyHarness('owner_replace_mailonly', {
+    env: SMTP_ENV,
+    ownerReplacementOpen: true,
+  });
   operator.h = (await bootstrapHost(h, 'Hana Host', 'hana@host.test')).cookie;
   operator.sso = (await bootstrapHost(sso, 'Sora Host', 'sora@host.test')).cookie;
   operator.bare = (await bootstrapHost(bare, 'Bo Host', 'bo@host.test')).cookie;

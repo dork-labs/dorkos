@@ -187,9 +187,9 @@ The response is `{ lines, nextCursor, hasMore }` with `Cache-Control: no-store`.
 
 ### Replace an owner who has left
 
-A host can ask to make someone else the owner of a community whose owner has left. The server emails the owner, waits, reminds them, and then opens a 14-day window for the account named in the request, closing the request when that window ends. Two parts are not built yet: the owner's way to keep ownership (the email already carries its link, but that page and its routes are not served yet) and the new owner's claim. Until they are, no request can complete, and each one ends as `expired` unless the host cancels it first.
+These routes are the host's half of replacing a community owner who has left. The owner's half is not built yet: the page behind the "Keep ownership" link in the owner's email, the owner's other ways to say no, and the new owner's claim. Until the owner can answer, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE` ("This server can't send the owner's notice yet, so it can't replace an owner."), even on a host with mail set up, and so is sending a claim link again. Without mail the refusal says to set it up. `GET /api/v1/host/capabilities` reports only whether mail is set up. Cancel and list always work.
 
-A request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE` while the server cannot send the owner's notice: when mail is not set up, or when this server's mail worker cannot write that kind of notice. `GET /api/v1/host/capabilities` reports only whether mail is set up. Cancel and list always work.
+The rest of this section describes what the server does with a request once they are accepted. The notices, the waiting period, and the endings below already run for any request that exists.
 
 The host never learns who is in the community: every request, response, and error here carries IDs, states, dates, the reason, and the host's own reference, never a member's name, handle, email, or ID.
 

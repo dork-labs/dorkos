@@ -90,7 +90,14 @@ export function registerMemberRoutes(
     pool,
     auth,
     confirmPassword,
-  }: { pool: Pool; auth: CommunityAuth; confirmPassword: ConfirmPassword }
+    now,
+  }: {
+    pool: Pool;
+    auth: CommunityAuth;
+    confirmPassword: ConfirmPassword;
+    /** The clock the owner-replacement ending is dated by; tests inject it. */
+    now: () => Date;
+  }
 ) {
   app.get('/me', async (c) => {
     const actor = await requireMember(c, auth, pool);
@@ -230,7 +237,7 @@ export function registerMemberRoutes(
       await endOwnerReplacement(client, {
         communityId: actor.community_id,
         ending: { state: 'superseded', ownerMemberId: current.id },
-        now: new Date(),
+        now: now(),
       });
       return updated.rows[0].lifecycle_version;
     });

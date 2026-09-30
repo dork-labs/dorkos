@@ -16,6 +16,7 @@ import { createSmtpTransport, type SmtpTimeouts } from '../mail/transport.js';
 import { deliverNextNotice, type NoticeAttempt, type NoticeComposers } from '../mail/worker.js';
 import { endOwnerReplacement } from '../owner-replacement/end.js';
 import { ownerReplacementComposers } from '../owner-replacement/notices.js';
+import { formatReplacementDate } from '../owner-replacement/dates.js';
 import { mintObjectToken, objectWithToken } from '../owner-replacement/object-tokens.js';
 import { advanceOwnerReplacements } from '../owner-replacement/worker.js';
 import { hashSecret } from '../security.js';
@@ -52,6 +53,10 @@ const DAY_NAME =
 let h: TenancyHarness;
 /** A host whose worker can write every notice but the claim-reissued one. */
 let partial: TenancyHarness;
+/** A host with every composer, as main.ts has, but owner replacements not yet switched on. */
+let closed: TenancyHarness;
+let closedOperator = '';
+let closedOwnership = '';
 let smtp: SmtpFake;
 let clockMs = Date.now();
 const clock = () => new Date(clockMs);
@@ -257,14 +262,22 @@ beforeAll(async () => {
     COMMUNITY_MAIL_FROM: 'notices@community.test',
     COMMUNITY_PUBLIC_URL: PUBLIC_URL,
   };
-  h = await startTenancyHarness('owner_timeline', { now: clock, env, noticeComposers: COMPOSERS });
+  h = await startTenancyHarness('owner_timeline', {
+    now: clock,
+    env,
+    noticeComposers: COMPOSERS,
+    ownerReplacementOpen: true,
+  });
+  closed = await startTenancyHarness('owner_timeline_closed', { env, noticeComposers: COMPOSERS });
   const { 'owner_replacement.claim_reissued': _missing, ...withoutReissue } = COMPOSERS;
   partial = await startTenancyHarness('owner_timeline_partial', {
     env,
     noticeComposers: withoutReissue,
+    ownerReplacementOpen: true,
   });
   operator = (await bootstrapHost(h, 'Tia Host', 'tia@host.test')).cookie;
   partialOperator = (await bootstrapHost(partial, 'Pat Host', 'pat@host.test')).cookie;
+  closedOperator = (await bootstrapHost(closed, 'Cy Host', 'cy@host.test')).cookie;
   const issue = async (harness: TenancyHarness, cookie: string) => {
     const issued = await harness.call('/api/v1/host/api-keys', {
       cookie,
@@ -280,11 +293,13 @@ beforeAll(async () => {
   };
   ownership = await issue(h, operator);
   partialOwnership = await issue(partial, partialOperator);
+  closedOwnership = await issue(closed, closedOperator);
 }, 120_000);
 
 afterAll(async () => {
   await h?.close();
   await partial?.close();
+  await closed?.close();
   await smtp?.close();
 });
 
@@ -1052,6 +1067,93 @@ describe('object-only links through a lost reply (AC-19)', () => {
     ]);
     // The owner acted, so they are not told their own answer.
     expect(await queued(id)).toEqual(['owner_replacement.notice']);
+  });
+});
+
+describe('owner replacements not yet switched on', () => {
+  it('refuses a request on a host with every composer until main.ts turns them on', async () => {
+    // Purpose: fails if the request gate opens as soon as the notices can be written, before
+    // the owner's "Keep ownership" link leads anywhere (tasks 2.4 and 3.1). The other hosts in
+    // this file prove the harness can turn it on.
+    const c = await ownedCommunity(closed, closedOperator);
+    const refused = await closed.call(
+      `/api/v1/host/communities/${c.communityId}/owner-replacements`,
+      {
+        bearer: closedOwnership,
+        body: {
+          idempotencyKey: `closed-${++counter}`,
+          lifecycleVersion: await lifecycleVersion(c.communityId, closed),
+          reason: 'owner_unreachable',
+          reference: null,
+          claimant: { oidcSubject: null },
+        },
+      }
+    );
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({
+      code: 'NOTICE_DELIVERY_UNAVAILABLE',
+      message: "This server can't send the owner's notice yet, so it can't replace an owner.",
+    });
+    const written = await closed.pool.query(
+      'SELECT 1 FROM owner_replacements UNION ALL SELECT 1 FROM notice_outbox'
+    );
+    expect(written.rowCount).toBe(0);
+  });
+});
+
+describe('review probes (Q1, Q2)', () => {
+  it('queues one reminder when three ticks run at once', async () => {
+    // Purpose: fails if the reminder step trusts the row it found due instead of re-checking
+    // `reminder_queued_at` under the community lock, so concurrent replicas each queue one.
+    const c = await ownedCommunity();
+    const created = await requestReplacement(c);
+    const id = created.replacement.replacementId;
+    const accepted = advance(MINUTE);
+    await send(accepted);
+    await tick(accepted);
+    const claimableAfter = (await row(id)).claimable_after as Date;
+    clockMs = claimableAfter.getTime() - 47 * HOUR;
+    await Promise.all([tick(clock()), tick(clock()), tick(clock())]);
+    expect(await queued(id)).toEqual(['owner_replacement.notice', 'owner_replacement.reminder']);
+  });
+
+  it('tells the owner, in the notice, exactly the date that is then stored', async () => {
+    // Purpose: fails if the notice promises a date later than the stored one (the new owner
+    // could then take over before the date the owner was told) or earlier by a day or more.
+    const c = await ownedCommunity();
+    const created = await requestReplacement(c);
+    const id = created.replacement.replacementId;
+    const sentAt = advance(HOUR);
+    await send(sentAt);
+    await tick(sentAt);
+    const stored = (await row(id)).claimable_after as Date;
+    const [notice] = mailsTo(c.ownerEmail);
+    expect(notice.text).toContain(`on or after ${formatReplacementDate(stored)}.`);
+  });
+});
+
+describe('the reminder, sent late', () => {
+  it.each([
+    [47, 'If you do nothing, that can happen in 2 days, on or after'],
+    [20, 'If you do nothing, that can happen on or after'],
+    [-3, 'If you do nothing, that can happen at any time now.'],
+  ])('%i hours before the date says only what is still true', async (hoursLeft, sentence) => {
+    // Purpose: fails if a reminder a busy mail server held back still says "in 2 days".
+    const c = await ownedCommunity();
+    const created = await requestReplacement(c);
+    const id = created.replacement.replacementId;
+    await send(advance(MINUTE));
+    await tick(clock());
+    const claimableAfter = (await row(id)).claimable_after as Date;
+    clockMs = claimableAfter.getTime() - 47 * HOUR;
+    await tick(clock());
+    expect(await queued(id)).toContain('owner_replacement.reminder');
+    // The mail server held the reminder until now.
+    clockMs = claimableAfter.getTime() - hoursLeft * HOUR;
+    await send(clock());
+    const reminder = mailsTo(c.ownerEmail)[1];
+    expect(reminder.text).toContain(sentence);
+    if (hoursLeft < 36) expect(reminder.text).not.toContain('in 2 days');
   });
 });
 

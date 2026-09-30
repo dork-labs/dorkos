@@ -163,7 +163,9 @@ A suspended community can be put on hold directly. It goes from suspended to on 
 
 Sometimes the person who owns a community leaves, and nobody can manage it any more. If they can still sign in, ask them to hand it over themselves from the community's Settings.
 
-Otherwise, you can ask to replace them (`POST /api/v1/host/communities/:id/owner-replacements`, see [the API](API.md#replace-an-owner-who-has-left)). The server emails the owner, waits at least 7 days (30 whenever the notice could not be delivered, the address was never confirmed by a sign-in service, the owner kept ownership before, or the reason is that the owner left the group), reminds them 2 days before the end, and then gives the new owner 14 days before the request expires. Two parts are not built yet: the page behind the owner's "Keep ownership" link, and the new owner's claim. Until they are, no request can complete, and each one expires unless you cancel it.
+This server has the host's side of replacing an owner (`POST /api/v1/host/communities/:id/owner-replacements`, see [the API](API.md#replace-an-owner-who-has-left)), but not yet the owner's side: the page behind the "Keep ownership" link in their email, and the new owner's claim. Until the owner can answer, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE`, even with mail set up. Nothing changes for any community.
+
+Once requests open, the server emails the owner, waits at least 7 days (30 whenever the notice could not be delivered, the address was never confirmed by a sign-in service, the owner kept ownership before, or the reason is that the owner left the group), reminds them 2 days before the end, and then gives the new owner 14 days before the request expires. What you can prepare now:
 
 - **Mail.** Requests need it, because the owner must be told outside the community they may have left (see [Mail](#mail)).
 - **Who can ask.** A host API key with `communities:ownership`, or a host operator with their password. An operator who signs in only through single sign-on has no password to confirm, so they use a key with that permission instead.

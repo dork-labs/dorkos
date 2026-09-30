@@ -8,11 +8,11 @@ import { currentOwnerAccount, replacementWait, type OwnerReplacementRow } from '
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
 /** How long the named account has to take ownership once the wait ends. */
-export const OWNER_REPLACEMENT_CLAIM_DAYS = 14;
+const OWNER_REPLACEMENT_CLAIM_DAYS = 14;
 /** The reminder goes this long before the new owner could take over. */
-export const OWNER_REPLACEMENT_REMINDER_MS = 48 * HOUR_MS;
+const OWNER_REPLACEMENT_REMINDER_MS = 48 * HOUR_MS;
 /** How often the timeline looks for replacements with something due. */
-export const OWNER_REPLACEMENT_POLL_MS = 60_000;
+const OWNER_REPLACEMENT_POLL_MS = 60_000;
 /** At most this many replacements move per tick, so one tick never runs unbounded. */
 const PER_TICK = 50;
 
