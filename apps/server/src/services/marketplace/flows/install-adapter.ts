@@ -16,6 +16,7 @@ import path from 'node:path';
 import type { AdapterPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
+import type { AdapterConfig } from '@dorkos/relay';
 import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
@@ -178,6 +179,10 @@ async function activateAdapterPackage(stagingPath: string, installPath: string):
  * person's own connection saved under the id while `addAdapter` was awaiting
  * points nowhere near it, so it is never mistaken for the install's.
  *
+ * An entry that already matches this install (a reinstall of the same
+ * package) is kept and `addAdapter` is skipped, so the reinstall succeeds
+ * and the connection keeps its secrets and links to agents.
+ *
  * @internal
  */
 async function registerAdapterWithCompensation(
@@ -187,15 +192,27 @@ async function registerAdapterWithCompensation(
   logger: Logger
 ): Promise<void> {
   const pluginPath = path.join(installPath, '.dork', 'adapters', manifest.adapterType);
-  const existedBefore = adapterManager.getAdapter(manifest.name) !== undefined;
+  /** Whether an entry is the one this install registers: same type, same plugin path. */
+  const isThisInstalls = (entry: AdapterConfig | undefined): boolean =>
+    entry?.type === manifest.adapterType &&
+    (entry.config as { pluginPath?: unknown } | undefined)?.pluginPath === pluginPath;
+
+  const before = adapterManager.getAdapter(manifest.name)?.config;
+  // A reinstall of a package already registered here: the entry is this
+  // package's own, pointing at the path the new copy just landed on. Adding it
+  // again would be refused as a duplicate, and removing it first would delete
+  // its secrets and links to agents, so it is kept as it is.
+  if (isThisInstalls(before)) {
+    logger.info('[marketplace/install-adapter] already registered, keeping it', {
+      name: manifest.name,
+    });
+    return;
+  }
   try {
     await adapterManager.addAdapter(manifest.adapterType, manifest.name, { pluginPath });
   } catch (err) {
-    const after = adapterManager.getAdapter(manifest.name)?.config;
     const createdByThisInstall =
-      !existedBefore &&
-      after?.type === manifest.adapterType &&
-      (after.config as { pluginPath?: unknown } | undefined)?.pluginPath === pluginPath;
+      before === undefined && isThisInstalls(adapterManager.getAdapter(manifest.name)?.config);
     logger.warn('[marketplace/install-adapter] addAdapter failed', {
       name: manifest.name,
       error: err instanceof Error ? err.message : String(err),

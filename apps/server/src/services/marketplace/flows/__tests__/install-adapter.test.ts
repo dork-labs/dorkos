@@ -193,6 +193,44 @@ describe('AdapterInstallFlow', () => {
     expect(saved.has(manifest.name)).toBe(true);
   });
 
+  it('keeps the connection and its secrets when the same package is installed again', async () => {
+    const manifest = buildManifest('reinstalled');
+    const packagePath = await writeAdapterPackage(sourceRoot, manifest);
+    const pluginPath = path.join(dorkHome, 'plugins', manifest.name, '.dork', 'adapters', 'slack');
+    // Registered by the earlier install of this package, with its secret set since.
+    const saved = new Map<string, SavedEntry>([
+      [manifest.name, { type: 'slack', config: { pluginPath, botToken: 'kept' } }],
+    ]);
+    const adapterManager = buildAdapterManagerMock({ saved });
+    const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
+
+    const result = await flow.install(packagePath, manifest, {});
+
+    expect(result.ok).toBe(true);
+    expect(adapterManager.addAdapter).not.toHaveBeenCalled();
+    expect(adapterManager.removeAdapter).not.toHaveBeenCalled();
+    expect(saved.get(manifest.name)).toEqual({
+      type: 'slack',
+      config: { pluginPath, botToken: 'kept' },
+    });
+  });
+
+  it('still refuses a same-name connection of another type or path', async () => {
+    const manifest = buildManifest('lookalike');
+    const packagePath = await writeAdapterPackage(sourceRoot, manifest);
+    const saved = new Map<string, SavedEntry>([
+      [manifest.name, { type: 'slack', config: { pluginPath: '/somewhere/else' } }],
+    ]);
+    const adapterManager = buildAdapterManagerMock({ saved });
+    const flow = new AdapterInstallFlow({ dorkHome, adapterManager, logger: buildLogger() });
+
+    await expect(flow.install(packagePath, manifest, {})).rejects.toThrow('already exists');
+
+    expect(adapterManager.addAdapter).toHaveBeenCalledTimes(1);
+    expect(adapterManager.removeAdapter).not.toHaveBeenCalled();
+    expect(saved.get(manifest.name)?.config).toEqual({ pluginPath: '/somewhere/else' });
+  });
+
   it("never removes a person's connection saved under the id while the install was registering", async () => {
     const manifest = buildManifest('raced-name');
     const packagePath = await writeAdapterPackage(sourceRoot, manifest);

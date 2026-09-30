@@ -383,6 +383,42 @@ describe('marketplace install pipeline — integration', () => {
     expect(spies.adapterRemove).not.toHaveBeenCalled();
   });
 
+  it('reinstalls an installed adapter package, keeping its connection and secrets', async () => {
+    const { installer, spies } = buildInstallerForTests(dorkHome);
+    const installRoot = path.join(dorkHome, 'plugins', 'valid-adapter');
+    // The first install registers the entry; the manager then holds it, with
+    // a secret the person set afterwards.
+    const ours = {
+      config: {
+        id: 'valid-adapter',
+        type: 'slack',
+        enabled: true,
+        config: {
+          pluginPath: path.join(installRoot, '.dork', 'adapters', 'slack'),
+          botToken: '***',
+        },
+      },
+      status: { id: 'valid-adapter', type: 'slack', displayName: 'Slack' },
+    };
+    await installer.install({ name: fixturePath('valid-adapter') });
+    spies.adapterAdd.mockClear();
+    spies.adapterList.mockReturnValue([ours]);
+    spies.adapterGet.mockImplementation((id: string) => (id === ours.config.id ? ours : undefined));
+    spies.adapterAdd.mockImplementation(async (_type: string, id: string) => {
+      throw new AdapterError(`Adapter with ID '${id}' already exists`, 'DUPLICATE_ID', id);
+    });
+
+    // The preview blocks nothing: the package is installed at its own path.
+    const preview = await installer.preview({ name: fixturePath('valid-adapter') });
+    expect(preview.preview.conflicts.filter((c) => c.level === 'error')).toEqual([]);
+
+    const result = await installer.install({ name: fixturePath('valid-adapter') });
+
+    expect(result.ok).toBe(true);
+    expect(spies.adapterAdd).not.toHaveBeenCalled();
+    expect(spies.adapterRemove).not.toHaveBeenCalled();
+  });
+
   it('warns (but still installs globally) when an adapter install request carries a projectPath (DOR-1776)', async () => {
     // Adapters are global-only (the relay's `relay-adapters.json` registry has
     // no per-project dimension). A caller that requests a project-scoped install
