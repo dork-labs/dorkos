@@ -15,6 +15,7 @@ import { RemoteConnectionStore } from './connection-store.js';
 import { RemoteCommunityPairingService } from './pairing-service.js';
 import { RemoteCommunityAdapter } from './remote-community-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
+import { CommunityOutboxStore } from './community-outbox-store.js';
 import type { CommunityOutboxProjection } from './community-outbox-projection.js';
 import type {
   CommunityOutboxRetryInput,
@@ -92,7 +93,12 @@ export function getRemotePairingService(): RemoteCommunityPairingService {
     getRemoteConnectionStore(),
     (communityRef, ownerKey) =>
       getRemoteCommunityLifecycle().revokeConnection(communityRef, ownerKey),
-    () => getRemoteCommunityLifecycle().refreshSubscriptions()
+    () => getRemoteCommunityLifecycle().refreshSubscriptions(),
+    {},
+    // Counted just before a deleted or taken-down community's copy is purged (DOR-2575). No
+    // database yet means no outbox yet, so nothing can be waiting.
+    (communityRef, ownerKey) =>
+      db ? new CommunityOutboxStore(db).undeliveredCount(communityRef, ownerKey) : 0
   ));
 }
 
@@ -239,11 +245,11 @@ export function getRemoteCommunityAdapter(
       getRemoteCommunityEnrollmentStore(),
       (communityRef, ownerKey) =>
         getRemoteCommunityLifecycle().revokeConnection(communityRef, ownerKey),
-      // A request answered `410 COMMUNITY_DELETED`: check access now, which records the
-      // deletion and purges the copies (DOR-2334).
+      // A request answered `410 COMMUNITY_DELETED` or `423 COMMUNITY_TAKEN_DOWN`: check access
+      // now, which records it and purges the copies (DOR-2334).
       (communityRef, ownerKey) => {
         void getRemotePairingService()
-          .communityDeletedSeen(communityRef, ownerKey)
+          .communityGoneSeen(communityRef, ownerKey)
           .catch(() => undefined);
       }
     );

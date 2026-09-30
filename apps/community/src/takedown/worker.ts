@@ -3,7 +3,8 @@ import type { Pool } from 'pg';
 import { CommunityEvidenceRecordV1Schema } from '@dorkos/shared/community-admin-wire';
 import { releaseHeldBlobs } from '../content-removal.js';
 import { transaction } from '../data.js';
-import { serializeEvidenceRecord } from './evidence/record.js';
+import { serializeEvidenceRecord, type EvidenceRecord } from './evidence/record.js';
+import { dropEvidenceExport, queueEvidenceExport } from './evidence-export.js';
 import { EvidenceSinkError, evidenceAttemptFolder, type EvidenceSink } from './evidence/sink.js';
 import { recordHostAudit } from '../host/authority.js';
 import { BlobStoreError, type BlobStore } from '../storage/index.js';
@@ -59,20 +60,25 @@ export async function copyDueTakedownEvidence(
     const due = await client.query<{
       id: string;
       community_id: string;
+      target_kind: string;
+      evidence_export_id: string | null;
       evidence_attempts: number;
       lease_until: Date;
     }>(
       // The attempt number is taken with the claim, so two workers never share a folder. The
       // lease is in whole milliseconds, so the value read back into JavaScript matches the row.
+      // A whole community's copy is not due while its evidence export is still being built.
       `UPDATE community_takedowns SET evidence_attempts=evidence_attempts+1,
          lease_until=date_trunc('milliseconds',now())+${LEASE}
        WHERE id=(
-         SELECT id FROM community_takedowns
-         WHERE evidence_state IN ('pending','retrying') AND next_attempt_at<=now()
-           AND (lease_until IS NULL OR lease_until<=now())
-         ORDER BY next_attempt_at,id LIMIT 1 FOR UPDATE SKIP LOCKED
+         SELECT t.id FROM community_takedowns t
+         WHERE t.evidence_state IN ('pending','retrying') AND t.next_attempt_at<=now()
+           AND (t.lease_until IS NULL OR t.lease_until<=now())
+           AND NOT EXISTS (SELECT 1 FROM export_archives e
+             WHERE e.id=t.evidence_export_id AND e.state IN ('queued','building'))
+         ORDER BY t.next_attempt_at,t.id LIMIT 1 FOR UPDATE SKIP LOCKED
        )
-       RETURNING id,community_id,evidence_attempts,lease_until`
+       RETURNING id,community_id,target_kind,evidence_export_id,evidence_attempts,lease_until`
     );
     const row = due.rows[0];
     if (!row) return null;
@@ -85,10 +91,14 @@ export async function copyDueTakedownEvidence(
   if (!claim) return { claimed: false, stored: false };
   const attempt = claim.evidence_attempts;
   const folder = evidenceAttemptFolder(claim.id, attempt);
+  const community = claim.target_kind === 'community';
   let recordSha256: string;
   try {
     if (!claim.staged) throw new EvidenceSinkError('EVIDENCE_WRITE_FAILED');
     const record = CommunityEvidenceRecordV1Schema.parse(claim.staged.record);
+    if (community) {
+      record.archive = await copyEvidenceArchive(pool, blobStore, sink, claim, folder);
+    }
     const held = [
       ...record.files.map((file) => ({
         path: file.path,
@@ -124,15 +134,27 @@ export async function copyDueTakedownEvidence(
     await transaction(pool, async (client) => {
       // Only the attempt that still holds the lease records its failure: a copy released or
       // retried meanwhile is left as its new owner set it.
-      await client.query(
+      const recorded = await client.query<{ evidence_state: string }>(
         `UPDATE community_takedowns SET
            evidence_failures=evidence_failures+1,last_error_class=$2,lease_until=NULL,
            evidence_state=CASE WHEN evidence_failures+1>=$3 THEN 'failed' ELSE 'retrying' END,
            next_attempt_at=CASE WHEN evidence_failures+1>=$3 THEN NULL
              ELSE now()+${cleanupBackoffSql('evidence_failures')} END
-         WHERE id=$1 AND evidence_state IN ('pending','retrying') AND lease_until=$4`,
+         WHERE id=$1 AND evidence_state IN ('pending','retrying') AND lease_until=$4
+         RETURNING evidence_state`,
         [claim.id, code, EVIDENCE_MAX_FAILURES, claim.lease_until]
       );
+      // An evidence export that failed cannot be copied: while tries remain, a new one is
+      // built. One that is ready stays, and the next attempt copies it again.
+      if (
+        community &&
+        code === 'EVIDENCE_EXPORT_FAILED' &&
+        recorded.rows[0]?.evidence_state === 'retrying'
+      ) {
+        const takedown = { id: claim.id, communityId: claim.community_id };
+        await dropEvidenceExport(client, takedown, new Date());
+        await queueEvidenceExport(client, takedown);
+      }
     });
     (options.warn ?? ((line: string) => console.warn(line)))(
       JSON.stringify({
@@ -157,6 +179,13 @@ export async function copyDueTakedownEvidence(
       [claim.id]
     );
     await releaseHeldBlobs(client, claim.community_id, staged.rows[0]?.blob_keys ?? []);
+    // The evidence export has done its job: its copy is in the store, and its segments go.
+    if (community)
+      await dropEvidenceExport(
+        client,
+        { id: claim.id, communityId: claim.community_id },
+        new Date()
+      );
     await client.query(
       `UPDATE community_takedowns SET evidence_state='stored',evidence_location=$2,
          evidence_record_sha256=$3,evidence_failures=0,
@@ -178,6 +207,66 @@ export async function copyDueTakedownEvidence(
     return true;
   });
   return { claimed: true, stored };
+}
+
+/**
+ * Copy a whole-community takedown's finished evidence export into the attempt folder, one
+ * segment at a time, in order, each checked against the SHA-256 its blob was stored with.
+ *
+ * @returns The record's `archive`: the segments as written, and how to read them.
+ * @throws EvidenceSinkError `EVIDENCE_EXPORT_FAILED` when the export failed, was cancelled, is
+ *   gone, or is missing a segment or a segment's blob: the caller then builds a new one.
+ */
+async function copyEvidenceArchive(
+  pool: Pool,
+  blobStore: BlobStore,
+  sink: EvidenceSink,
+  claim: { community_id: string; evidence_export_id: string | null },
+  folder: string
+): Promise<NonNullable<EvidenceRecord['archive']>> {
+  const exported = await pool.query<{ state: string }>(
+    `SELECT state FROM export_archives
+     WHERE id=$1 AND community_id=$2 AND scope='evidence'`,
+    [claim.evidence_export_id, claim.community_id]
+  );
+  if (exported.rows[0]?.state !== 'ready') throw new EvidenceSinkError('EVIDENCE_EXPORT_FAILED');
+  // Every segment, with its blob's checksum if the blob is still committed. A segment whose
+  // blob row is gone, or a gap in the numbering, means the archive is incomplete: copying the
+  // rest would store a copy that looks whole and is not.
+  const segments = await pool.query<{
+    segment_no: number;
+    blob_key: string;
+    byte_size: string;
+    checksum: string | null;
+  }>(
+    `SELECT s.segment_no,s.blob_key,s.byte_size::text,m.checksum FROM export_segments s
+     LEFT JOIN managed_blobs m ON m.blob_key=s.blob_key AND m.community_id=s.community_id
+       AND m.state='committed'
+     WHERE s.export_id=$1 AND s.community_id=$2 ORDER BY s.segment_no`,
+    [claim.evidence_export_id, claim.community_id]
+  );
+  if (segments.rows.some((segment, index) => segment.segment_no !== index + 1 || !segment.checksum))
+    throw new EvidenceSinkError('EVIDENCE_EXPORT_FAILED');
+  const written: NonNullable<EvidenceRecord['archive']>['segments'] = [];
+  for (const [index, segment] of segments.rows.entries()) {
+    const path = `archive.zip.${String(index + 1).padStart(6, '0')}`;
+    const byteSize = Number(segment.byte_size);
+    const read = await blobStore.get(segment.blob_key);
+    try {
+      await sink.put(`${folder}${path}`, read.body, { sha256: segment.checksum!, byteSize });
+    } finally {
+      read.body.destroy();
+    }
+    written.push({ path, byteSize, sha256: segment.checksum! });
+  }
+  if (!written.length) throw new EvidenceSinkError('EVIDENCE_EXPORT_FAILED');
+  return {
+    format: 'zip64',
+    manifestVersion: 2,
+    segments: written,
+    byteSize: written.reduce((sum, segment) => sum + segment.byteSize, 0),
+    note: 'Concatenate the segments in order to get one .zip file.',
+  };
 }
 
 /**

@@ -155,11 +155,19 @@ export class RemoteCommunityNameNotFoundError extends Error {
   }
 }
 
-/** The host refused a short-name lookup because this server asked too often. */
-export class RemoteCommunityLookupRateLimitedError extends Error {
-  constructor() {
-    super('The community host is limiting short-name lookups');
-    this.name = 'RemoteCommunityLookupRateLimitedError';
+/**
+ * The host refused a short-name lookup or a pairing start because this server asked too often.
+ * Both are limited per caller, so the address itself may be fine.
+ */
+export class RemoteCommunityRateLimitedError extends Error {
+  /**
+   * Record the host's refusal, with its own wait when it named one.
+   *
+   * @param retryAfterSeconds - How long the host asked this server to wait, when it said.
+   */
+  constructor(readonly retryAfterSeconds?: number) {
+    super('The community host is limiting requests from this server');
+    this.name = 'RemoteCommunityRateLimitedError';
   }
 }
 
@@ -179,6 +187,20 @@ function isDeletionPending(error: unknown): boolean {
     error.status === 423 &&
     error.remoteCode === 'COMMUNITY_DELETION_PENDING'
   );
+}
+
+/** Whether a Community answered that its host took it down: `423 COMMUNITY_TAKEN_DOWN`. */
+function isCommunityTakenDown(error: unknown): boolean {
+  return (
+    error instanceof PinnedHttpError &&
+    error.status === 423 &&
+    error.remoteCode === 'COMMUNITY_TAKEN_DOWN'
+  );
+}
+
+/** Whether a Community answered that its host suspended it: never a reason to purge. */
+function isSuspended(error: unknown): boolean {
+  return error instanceof PinnedHttpError && error.remoteCode === 'COMMUNITY_SUSPENDED';
 }
 
 /** Whether a Community answered `404 NOT_FOUND`: what a finished deletion answers. */
@@ -211,6 +233,10 @@ export class RemoteCommunityPairingService {
    * @param onReconnectRequired - Revokes and purges everything derived from one owner's
    *   connection: called when the grant is rejected, when the Community is being deleted, and
    *   when the owner disconnects.
+   * @param onAccessAuthorityChanged - Told when a connection's effective access changes.
+   * @param timing - The access re-check budget, freshness window and clock.
+   * @param countUndelivered - How many of one owner's agent posts to one community never
+   *   arrived, read just before a deleted or taken-down community's copy is purged (DOR-2575).
    */
   constructor(
     private readonly store: RemoteConnectionStore,
@@ -222,7 +248,8 @@ export class RemoteCommunityPairingService {
       communityRef: CommunityRef,
       ownerKey: string
     ) => void,
-    timing: Partial<RemoteAccessTiming> = {}
+    timing: Partial<RemoteAccessTiming> = {},
+    private readonly countUndelivered?: (communityRef: CommunityRef, ownerKey: string) => number
   ) {
     this.timing = {
       budgetMs: COMMUNITY_ACCESS_BUDGET_MS,
@@ -288,13 +315,14 @@ export class RemoteCommunityPairingService {
   }
 
   /**
-   * A request answered `410 COMMUNITY_DELETED`: check this connection's access now, which records
-   * the deletion and purges the copies (DOR-2334). Nothing to do once the deletion is recorded:
-   * every later request of a deleted community answers the same, and each would otherwise ask.
+   * A request answered `410 COMMUNITY_DELETED` or `423 COMMUNITY_TAKEN_DOWN`: check this
+   * connection's access now, which records it and purges the copies (DOR-2334). Nothing to do
+   * once that is recorded: every later request answers the same, and each would otherwise ask.
    */
-  async communityDeletedSeen(ref: CommunityRef, ownerKey: string): Promise<void> {
+  async communityGoneSeen(ref: CommunityRef, ownerKey: string): Promise<void> {
     const record = await this.store.get(ref, ownerKey).catch(() => null);
-    if (!record || record.access?.lastKnown?.lifecycle === 'deleted') return;
+    const lifecycle = record?.access?.lastKnown?.lifecycle;
+    if (!record || lifecycle === 'deleted' || lifecycle === 'taken_down') return;
     await this.status(ref, ownerKey);
   }
 
@@ -309,7 +337,13 @@ export class RemoteCommunityPairingService {
     ownerKey: string
   ): Promise<RemoteConnectionDescriptor> {
     const lifecycle = descriptor.access?.lastKnown?.lifecycle;
-    if (lifecycle === 'deleted' || lifecycle === 'deletion_pending') return descriptor;
+    if (lifecycle === 'deleted' || lifecycle === 'deletion_pending' || lifecycle === 'taken_down') {
+      // What its agents had not delivered when it went, so the app can say so (DOR-2575).
+      const undelivered = await this.store.undeliveredWhenGone(descriptor.ref, ownerKey);
+      return undelivered > 0
+        ? { ...descriptor, undeliveredAgentMessages: undelivered }
+        : descriptor;
+    }
     const since = await this.store.notFoundSince(descriptor.ref, ownerKey);
     if (!since || this.timing.now() - Date.parse(since) < COMMUNITY_SEEMS_GONE_AFTER_MS)
       return descriptor;
@@ -425,13 +459,36 @@ export class RemoteCommunityPairingService {
       // definite, whatever this installation saw before (DOR-2334).
       if (isCommunityDeleted(error))
         return this.communityGone(ref, ownerKey, record.access, 'deleted');
+      // The host took the whole community down (DOR-2293): definite, and purged at once even
+      // though the host can reverse it for a few days — every grant was revoked with it, so a
+      // reversal answers with a 401, the person reconnects, and the mirrors fill again.
+      if (isCommunityTakenDown(error))
+        return this.communityGone(ref, ownerKey, record.access, 'taken_down');
+      // A reversed takedown leaves the community suspended. Say so, rather than go on showing it
+      // as taken down; a suspension purges nothing. Once the recorded lifecycle is no longer a
+      // gone one, a later takedown or deletion purges afresh (`communityGone`'s `wasGone`).
+      if (isSuspended(error) && record.access?.lastKnown?.lifecycle === 'taken_down') {
+        const suspended = await this.store.updateAccess(ref, ownerKey, {
+          state: 'verified',
+          effective: NO_CAPABILITIES,
+          lastKnown: {
+            lifecycle: 'suspended',
+            capabilities: NO_CAPABILITIES,
+            verifiedAt: new Date(this.timing.now()).toISOString(),
+          },
+        });
+        this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, suspended.access!);
+        return suspended;
+      }
       // A finished deletion removes the community's row, and the Community then answers
       // `404 NOT_FOUND`, which on its own could also be a missing channel. Having seen the
       // deletion pending, it is final (DOR-2334).
       if (
         isNotFound(error) &&
         (record.access?.lastKnown?.lifecycle === 'deletion_pending' ||
-          record.access?.lastKnown?.lifecycle === 'deleted')
+          record.access?.lastKnown?.lifecycle === 'deleted' ||
+          // A takedown is a deletion the host scheduled; a reversal suspends instead.
+          record.access?.lastKnown?.lifecycle === 'taken_down')
       )
         return this.communityGone(ref, ownerKey, record.access, 'deleted');
       // Never a deletion on its own: remembered, so a community that keeps answering this for
@@ -447,18 +504,21 @@ export class RemoteCommunityPairingService {
       return unavailable;
     }
     await this.store.clearNotFound(ref, ownerKey);
+    // Live again (a reversed takedown the person reconnected to): nothing it once said went
+    // undelivered is still news.
+    await this.store.clearUndeliveredWhenGone(ref, ownerKey);
     const verified = await this.store.updateAccess(ref, ownerKey, access, await hostOperator);
     this.notifyAccessAuthorityChanged(ref, ownerKey, record.access, verified.access!);
     return verified;
   }
 
   /**
-   * The Community is being deleted, or its deletion finished (DOR-2334). Everything this
+   * The Community is being deleted, its deletion finished, or its host took it down (DOR-2334). Everything this
    * installation copied from it goes, through the same path a rejected grant takes: streams and
    * queued posts stop, local agents' turns in its rooms halt, their enrollments end, and the
    * mirrored rooms, their entries, files and search rows are purged.
    *
-   * The no-access state is recorded FIRST, so whatever happens to the purge, nothing here goes on
+   * The no-access state is recorded before the purge (after only the undelivered count), so whatever happens to the purge, nothing here goes on
    * treating the community as live; the purge runs after, and a failed one is logged and tried
    * again on the next check, never thrown into the connection list. A purge that succeeded is
    * not repeated while the state lasts: every check of a pending deletion would otherwise purge
@@ -476,8 +536,31 @@ export class RemoteCommunityPairingService {
     ref: CommunityRef,
     ownerKey: string,
     before: CommunityConnectionAccess | null | undefined,
-    lifecycle: 'deletion_pending' | 'deleted'
+    lifecycle: 'deletion_pending' | 'deleted' | 'taken_down'
   ): Promise<RemoteConnectionDescriptor> {
+    const key = `${ownerKey}\0${ref}`;
+    const wasGone =
+      before?.lastKnown?.lifecycle === 'deletion_pending' ||
+      before?.lastKnown?.lifecycle === 'deleted' ||
+      before?.lastKnown?.lifecycle === 'taken_down';
+    // Count what its agents never delivered, and keep the count, before anything records the
+    // community as gone (DOR-2575): once that is saved no later check takes the count again, so
+    // a crash between the two must leave the count behind, never the lifecycle alone. Only on
+    // the way in: a later check, or a retried purge, would find those posts already stopped and
+    // count none. A count that cannot be kept never holds up the rest.
+    if (!wasGone) {
+      try {
+        await this.store.recordUndeliveredWhenGone(
+          ref,
+          ownerKey,
+          this.countUndelivered?.(ref, ownerKey) ?? 0
+        );
+      } catch (error) {
+        logger.warn('[communities] could not count what a deleted community never received', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     const gone = await this.store.updateAccess(ref, ownerKey, {
       state: 'verified',
       effective: NO_CAPABILITIES,
@@ -488,10 +571,6 @@ export class RemoteCommunityPairingService {
       },
     });
     this.notifyAccessAuthorityChanged(ref, ownerKey, before, gone.access!);
-    const key = `${ownerKey}\0${ref}`;
-    const wasGone =
-      before?.lastKnown?.lifecycle === 'deletion_pending' ||
-      before?.lastKnown?.lifecycle === 'deleted';
     if (!(wasGone && this.purgedGone.has(key))) {
       const [purge] = await Promise.allSettled([
         this.onReconnectRequired?.(ref, ownerKey) ?? Promise.resolve(),
@@ -544,7 +623,13 @@ export class RemoteCommunityPairingService {
         }
       );
     } catch (error) {
-      if (!target.communityId && error instanceof PinnedHttpError && error.status === 404)
+      if (!(error instanceof PinnedHttpError)) throw error;
+      // The host limits pairing starts per caller, as it does name lookups: the address is fine.
+      if (error.status === 429) throw new RemoteCommunityRateLimitedError(error.retryAfterSeconds);
+      // A server built before tenant-qualified routes has no such route, so its 404 carries no
+      // code. A coded 404 (NOT_FOUND) is today's server saying the community is gone, which an
+      // upgrade would not fix.
+      if (!target.communityId && error.status === 404 && error.remoteCode === undefined)
         throw new RemoteCommunityUpgradeRequiredError();
       throw error;
     }
@@ -594,7 +679,7 @@ export class RemoteCommunityPairingService {
       if (error instanceof PinnedHttpError && error.status === 404)
         throw new RemoteCommunityNameNotFoundError();
       if (error instanceof PinnedHttpError && error.status === 429)
-        throw new RemoteCommunityLookupRateLimitedError();
+        throw new RemoteCommunityRateLimitedError(error.retryAfterSeconds);
       throw error;
     }
     const parsed = CommunityWireShortNameLookupSchema.safeParse(answer);
@@ -749,6 +834,7 @@ export class RemoteCommunityPairingService {
       }
       await this.store.disconnect(ref, ownerKey);
       await this.store.clearNotFound(ref, ownerKey).catch(() => undefined);
+      await this.store.clearUndeliveredWhenGone(ref, ownerKey).catch(() => undefined);
       return { remoteRevoked };
     } finally {
       this.forgetChecks(ref, ownerKey);

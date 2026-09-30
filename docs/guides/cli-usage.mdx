@@ -237,6 +237,8 @@ dorkos community deploy --list-incomplete   # Setups that stopped and can be res
 dorkos community deploy ... --resume <run-id>   # Pick one back up with the same choices
 ```
 
+It uses your saved `fly` and `neonctl` sign-ins. If you export `FLY_API_TOKEN` (or `FLY_ACCESS_TOKEN`) or `NEON_API_KEY` first, it uses that token instead, tells you so, and never writes it down. Setup creates a new Fly app and a new Neon project, so each token has to be allowed to do that: a Fly organization token, not a deploy token, and a Neon organization key, not a project key. Setup has not yet been tested end to end with a limited Fly token; `fly auth login` is the tested path. The guide linked below has the details.
+
 The step-by-step guide, including the manual recipe, is [`apps/community/FLY.md`](https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md).
 
 #### Agent files

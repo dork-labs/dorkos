@@ -70,6 +70,13 @@ export const CommunityConnectionDescriptorSchema = z
      * missing community and a misconfigured host look the same from here.
      */
     seemsGoneSince: z.iso.datetime().optional(),
+    /**
+     * How many of this owner's agent posts never arrived when the Community was found deleted or
+     * taken down: still waiting, or failed, counted just before DorkOS removed its copy
+     * (DOR-2575). Present only on a deleted, deleting or taken-down community, and only when
+     * there were some; the app says so, since the rooms those posts belonged to are gone.
+     */
+    undeliveredAgentMessages: z.number().int().positive().optional(),
   })
   .superRefine((connection, context) => {
     if (
@@ -188,4 +195,21 @@ export interface CommunityConnectionTransport {
   ): Promise<CommunityNavigationState>;
   /** Return a remembered destination only when the owner can still read its room. */
   resolveCommunityNavigation(ref: string): Promise<CommunityNavigationDestination | null>;
+}
+
+/**
+ * Say how long to wait before trying a Community again, from the wait it named in `Retry-After`.
+ *
+ * Whole seconds under a minute, rounded-up minutes past it, and "a minute" when no usable wait
+ * was given. The server's `COMMUNITY_RATE_LIMITED` text and the connect dialog both use it, so
+ * the two never disagree.
+ *
+ * @param seconds - The wait in whole seconds, or anything else when none is known.
+ * @returns A phrase to follow "Wait", such as "17 seconds" or "2 minutes".
+ */
+export function describeCommunityRetryWait(seconds: unknown): string {
+  if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds < 1) return 'a minute';
+  if (seconds < 60) return seconds === 1 ? '1 second' : `${seconds} seconds`;
+  const minutes = Math.ceil(seconds / 60);
+  return minutes === 1 ? 'a minute' : `${minutes} minutes`;
 }

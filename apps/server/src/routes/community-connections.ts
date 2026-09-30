@@ -16,6 +16,7 @@ import {
   CommunityConnectionDescriptorSchema,
   CommunityDisconnectResponseSchema,
   type CommunityConnectionDescriptor,
+  describeCommunityRetryWait,
 } from '@dorkos/shared/community-connections';
 import {
   CommunityNavigationMoveRequestSchema,
@@ -36,7 +37,7 @@ import {
 import {
   RemoteCommunityPairingService,
   RemotePairingBusyError,
-  RemoteCommunityLookupRateLimitedError,
+  RemoteCommunityRateLimitedError,
   RemoteCommunityNameNotFoundError,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
@@ -101,17 +102,21 @@ function failure(res: Response, error: unknown): void {
   } else if (error instanceof RemoteCommunityNameNotFoundError) {
     res.status(404).json({
       code: 'COMMUNITY_NAME_NOT_FOUND',
-      error: 'No community at this address. Check the link and try again.',
+      error: 'No community uses that short address on this host. Check the spelling.',
     });
-  } else if (error instanceof RemoteCommunityLookupRateLimitedError) {
+  } else if (error instanceof RemoteCommunityRateLimitedError) {
+    // The host's own wait, passed on so the person is told how long, not left to guess.
+    const { retryAfterSeconds } = error;
+    if (retryAfterSeconds !== undefined) res.set('Retry-After', String(retryAfterSeconds));
     res.status(429).json({
-      code: 'COMMUNITY_LOOKUP_RATE_LIMITED',
-      error: 'Too many lookups — try again in a minute.',
+      code: 'COMMUNITY_RATE_LIMITED',
+      error: `This DorkOS has tried that community too many times in a short while. Wait ${describeCommunityRetryWait(retryAfterSeconds)}, then try again.`,
+      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
     });
   } else if (error instanceof RemoteCommunityUpgradeRequiredError) {
     res.status(426).json({
       code: 'COMMUNITY_UPGRADE_REQUIRED',
-      error: 'Upgrade this Community server before connecting it to DorkOS.',
+      error: 'This community’s server is too old to connect. Ask whoever runs it to update it.',
     });
   } else if (error instanceof RemoteConnectionAuthorizationError) {
     res.status(409).json({

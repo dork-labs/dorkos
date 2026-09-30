@@ -5,11 +5,11 @@
  */
 import { z } from 'zod';
 import { ExternalIdentifierSchema, parseExternalJson } from './provider-contract.js';
-import { ProviderMutationError, runProviderMutation } from './provider-mutation.js';
+import { ProviderMutationError, runProviderMutation, writeDeadline } from './provider-mutation.js';
 import type { FlySessionReadOptions, FlySecretInventoryItem } from './tigris-session.js';
+import type { FlyAppProvenance } from './fly-graphql-contract.js';
 import {
   FlyAppResponseSchema,
-  readFlyApps,
   toFlyAppIdentity,
   type FlyAppIdentity,
   type FlyRuntimeInventory,
@@ -29,28 +29,50 @@ function parseInput<T>(schema: z.ZodType<T>, value: unknown): T {
 /** Non-secret acknowledgement that a Fly command returned and still needs readback. */
 export interface FlyMutationReceipt {
   /** Operation whose remote state must be independently verified. */
-  operation: 'secrets-stage' | 'deploy' | 'destroy';
+  operation: 'secrets-stage' | 'secrets-unset' | 'deploy' | 'destroy';
 }
 
 /**
- * Create one planned Fly app and retain only its non-secret identity.
+ * Create one planned Fly app on its own private network and retain only its non-secret identity.
  *
- * The created app is bound by its name and the organization slug the operator selected. When the
- * command succeeds but its JSON cannot be read, the app is identified by the same name and slug
- * through a read-only listing instead of being reported as uncertain: preflight already proved the
- * name was absent from that organization, so an exact match there is the app this call created.
- * A response naming a different app or organization is never adopted.
+ * The network name carries the run's provenance marker, which the journal recorded before this
+ * call. The created app is bound by its name and the organization slug the operator selected. When
+ * the command succeeds but its JSON cannot be read, the app is identified through a provenance read
+ * instead of being reported as uncertain, and only when its name, organization slug and network all
+ * match: the network carries a 128-bit marker only this run knew, so a match is the app this call
+ * created. `apps list` is never used for this, because it always reports an empty network. A
+ * response naming a different app or organization is never adopted.
+ *
+ * @param options - Pinned Fly executable and bounded process settings.
+ * @param appName - Planned app name.
+ * @param organizationSlug - Planned organization slug.
+ * @param network - Private network name carrying the run's provenance marker.
+ * @param readProvenance - Provenance read by app name, used only when create output is unreadable.
  */
 export async function createFlyApp(
   options: FlySessionReadOptions,
   appName: string,
-  organizationSlug: string
+  organizationSlug: string,
+  network: string,
+  readProvenance: (appName: string) => Promise<FlyAppProvenance | null>
 ): Promise<FlyAppIdentity> {
   const app = parseInput(ExternalIdentifierSchema, appName);
   const organization = parseInput(ExternalIdentifierSchema, organizationSlug);
+  const networkName = parseInput(ExternalIdentifierSchema, network);
   const created = await runProviderMutation({
     ...options,
-    args: ['apps', 'create', app, '--org', organization, '--json', '--yes'],
+    timeoutMs: writeDeadline(options.timeoutMs),
+    args: [
+      'apps',
+      'create',
+      app,
+      '--org',
+      organization,
+      '--network',
+      networkName,
+      '--json',
+      '--yes',
+    ],
     parse: (stdout) => {
       let document: unknown;
       try {
@@ -67,12 +89,18 @@ export async function createFlyApp(
     },
   });
   if (created) return created;
-  const matches = await readFlyApps(options, organization).catch(() => {
+  const found = await readProvenance(app).catch(() => {
     throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
   });
-  const exact = matches.filter((candidate) => candidate.name === app);
-  if (exact.length !== 1) throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
-  return exact[0]!;
+  if (
+    !found ||
+    found.name !== app ||
+    found.organizationSlug !== organization ||
+    found.network !== networkName
+  ) {
+    throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
+  }
+  return { id: found.id, name: found.name, organizationSlug: found.organizationSlug, status: '' };
 }
 
 /** Stage secrets over stdin; completion must be proved through secret inventory readback. */
@@ -95,11 +123,21 @@ export async function stageFlySecrets(
   const document = `${entries.map(([name, value]) => `${name}=${value}`).join('\n')}\n`;
   return runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: ['secrets', 'import', '--app', app, '--stage'],
     stdin: document,
     parse: () => ({ operation: 'secrets-stage' as const }),
   });
 }
+
+/**
+ * Deadline for a `fly deploy` or `secrets deploy`, which pull an image, replace a Machine and wait
+ * for its health checks. The 30-second deadline every other Fly command shares is not enough: a
+ * live 0.92.0 deploy took about 27 seconds once and was cut off at 30 the next time, which leaves
+ * Fly's release `interrupted` and the launch uncertain (live gate, DOR-2169, 2026-09-30). Ten
+ * minutes is twice flyctl's own default `--wait-timeout` of five.
+ */
+export const FLY_DEPLOY_TIMEOUT_MS = 10 * 60_000;
 
 /** Deploy one immutable image with Fly high availability explicitly disabled. */
 export async function deployFlyImage(
@@ -115,6 +153,7 @@ export async function deployFlyImage(
   }
   return runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs, FLY_DEPLOY_TIMEOUT_MS),
     args: [
       'deploy',
       '--app',
@@ -142,6 +181,8 @@ export async function deployFlySecrets(
   const app = parseInput(ExternalIdentifierSchema, appName);
   return runProviderMutation({
     ...options,
+    // Applying secrets restarts the Machine and waits for it, so it needs the deploy deadline too.
+    timeoutMs: writeDeadline(options.timeoutMs, FLY_DEPLOY_TIMEOUT_MS),
     args: ['secrets', 'deploy', '--app', app],
     parse: () => ({ operation: 'deploy' as const }),
   });
@@ -155,8 +196,37 @@ export async function destroyFlyApp(
   const app = parseInput(ExternalIdentifierSchema, appName);
   return runProviderMutation({
     ...options,
+    // Destroying an app stops and removes its Machine before Fly answers.
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: ['apps', 'destroy', app, '--yes'],
     parse: () => ({ operation: 'destroy' as const }),
+  });
+}
+
+/**
+ * Unset the two credential names a Tigris bucket set on its app, without deploying.
+ *
+ * Used only after the bucket itself is confirmed gone. No Machine exists at the Tigris step, so
+ * `--stage` needs no restart. Completion must be proved through the secret inventory.
+ */
+export async function unsetFlyTigrisSecrets(
+  options: FlySessionReadOptions,
+  appName: string
+): Promise<FlyMutationReceipt> {
+  const app = parseInput(ExternalIdentifierSchema, appName);
+  return runProviderMutation({
+    ...options,
+    timeoutMs: writeDeadline(options.timeoutMs),
+    args: [
+      'secrets',
+      'unset',
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+      '--app',
+      app,
+      '--stage',
+    ],
+    parse: () => ({ operation: 'secrets-unset' as const }),
   });
 }
 
@@ -245,6 +315,65 @@ export function verifyFlyDeployment(
     throw new ProviderMutationError('INVALID_RESPONSE');
   }
   return inventory;
+}
+
+/**
+ * Whether an app that failed its runtime proof is exactly what a cut-off deploy leaves behind, and
+ * so safe to deploy again: one started Machine already running the expected image, and a latest
+ * release for that same image that Fly did not mark `complete` (`interrupted` or `failed`).
+ *
+ * The live gate hit this when `fly deploy` was stopped at its deadline while the Machine came up
+ * (DOR-2169). Anything else (another image, no Machine or several, a stopped Machine, or a
+ * `complete` release whose Machine is unhealthy or has no address) is not ours to overwrite: it may
+ * be an operator's own deploy or an app that crashes on start, and deploying again on every resume
+ * would hide either.
+ *
+ * @param inventory - The app's current runtime.
+ * @param expectedRepository - The pinned image repository.
+ * @param expectedDigest - The digest Fly reports for the pinned image.
+ * @returns True only for an interrupted deploy of the pinned image.
+ */
+export function isInterruptedFlyDeployment(
+  inventory: FlyRuntimeInventory,
+  expectedRepository: string,
+  expectedDigest: string
+): boolean {
+  const latestRelease = inventory.releases.reduce<
+    FlyRuntimeInventory['releases'][number] | undefined
+  >(
+    (latest, release) => (!latest || release.version > latest.version ? release : latest),
+    undefined
+  );
+  const machine = inventory.machines[0];
+  return (
+    inventory.machines.length === 1 &&
+    machine?.state === 'started' &&
+    machine.imageRepository === expectedRepository &&
+    machine.imageDigest === expectedDigest &&
+    latestRelease !== undefined &&
+    latestRelease.status !== 'complete' &&
+    latestRelease.imageRef === `${expectedRepository}@${expectedDigest}`
+  );
+}
+
+/**
+ * The app runs something setup cannot prove it deployed and will not overwrite. The message says
+ * what to look at; it names only the app, never provider output.
+ */
+export class UnprovenFlyRuntimeError extends ProviderMutationError {
+  /**
+   * Create the refusal for one app.
+   *
+   * @param appName - The Fly app setup created.
+   */
+  constructor(appName: string) {
+    super('INVALID_RESPONSE');
+    this.name = 'UnprovenFlyRuntimeError';
+    this.message =
+      `Fly app ${appName} is not running the release setup deployed, and setup will not overwrite it. ` +
+      `Check it with \`fly status --app ${appName}\` and \`fly releases --app ${appName}\`, ` +
+      'fix or remove what is running, then resume.';
+  }
 }
 
 /** Prove the current app already runs one healthy exact-digest deployment. */

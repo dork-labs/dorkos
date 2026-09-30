@@ -10,8 +10,8 @@ import {
 import { transaction } from '../data.js';
 import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
 import { deleteReadyExports, restartExportJobs } from '../exports/store.js';
-import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../mentions.js';
-import { remove } from '../routes/members.js';
+import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../content/mentions.js';
+import { remove } from '../routes/community/members.js';
 import { appendJournalRow, type ErasureJournalRecord } from './journal.js';
 
 /** Hours between a request and the erasure it schedules. A constant, not configuration. */
@@ -456,7 +456,7 @@ async function rewriteMentions(target: Target, above: Watermark | null): Promise
 
 /**
  * Journal one finished erasure, inside the transaction that finishes it: a row in
- * `erasure_journal`, which the host API serves (journal-routes.ts), and a line in
+ * `erasure_journal`, which the host API serves (routes/host/host-erasure-journal.ts), and a line in
  * the `COMMUNITY_ERASURE_JOURNAL` file when one is set.
  */
 async function writeLine(
@@ -494,7 +494,9 @@ async function applyHusk(
     // so an export whose final commit holds it FOR SHARE either commits first (and the check
     // below sees its ready archive, so this goes round again) or waits and then sees the husk.
     // Bumping only at the end left a window where an export read the member as they were,
-    // committed ready after the check, and outlived the erasure.
+    // committed ready after the check, and outlived the erasure. A takedown's evidence export
+    // is not one erasure removes: erasure does not reach what the host keeps for the authorities.
+    // (The erasure worker waits while it is unsettled, so none normally exists here.)
     await bumpContentVersion(client, target.communityId);
     const leftover = await client.query(
       `SELECT 1 WHERE $3::boolean
@@ -503,7 +505,7 @@ async function applyHusk(
          OR EXISTS (SELECT 1 FROM attachments WHERE ${LEFTOVER_FILE_BY_MEMBER})
          OR EXISTS (SELECT 1 FROM attachments WHERE ${LEFTOVER_FILE_BY_AGENT})
          OR EXISTS (SELECT 1 FROM export_archives
-           WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL)
+           WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL AND scope<>'evidence')
          OR EXISTS (SELECT 1 FROM connection_grants WHERE member_id=$2 AND community_id=$1)
          OR EXISTS (SELECT 1 FROM agents WHERE owner_member_id=$2 AND community_id=$1 AND active)`,
       [target.communityId, target.memberId, member.active]

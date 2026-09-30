@@ -1,6 +1,7 @@
 import { Button, Input, Label, Notice, Textarea } from '@dork-labs/ui';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ImagePlus, Trash2 } from 'lucide-react';
+import { COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES } from '@dorkos/shared/community-wire';
 import { describeError, RequestError, request, tenantApiPath } from '../api.js';
 import { ExportPanel } from './ExportPanel.js';
 import { describeReauthenticationError } from '../account-controls.js';
@@ -25,6 +26,12 @@ type DeletionStatus = {
   attempts: number;
   requestedBy: 'owner' | 'host' | null;
   returnsTo: 'archived' | 'suspended' | 'held' | null;
+  takedown: {
+    category: keyof typeof COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES;
+    reference: string | null;
+    createdAt: string;
+  } | null;
+  removedByHost?: boolean;
 };
 
 /** What a cancelled deletion returns to, said plainly. */
@@ -206,7 +213,11 @@ export function CommunityAdministration({
       setDeletion(null);
       setError('');
     } catch (cause) {
-      if (owner && cause instanceof RequestError && cause.code === 'COMMUNITY_DELETION_PENDING') {
+      if (
+        owner &&
+        cause instanceof RequestError &&
+        (cause.code === 'COMMUNITY_DELETION_PENDING' || cause.code === 'COMMUNITY_TAKEN_DOWN')
+      ) {
         try {
           setDeletion(await request<DeletionStatus>('/api/v1/owner/deletion'));
           setError('');
@@ -420,7 +431,18 @@ export function CommunityAdministration({
           </Notice>
         )}
         <section className="panel admin-full-width">
-          <h3>Deletion scheduled</h3>
+          <h3>{deletion.removedByHost ? 'Removed by the host' : 'Deletion scheduled'}</h3>
+          {deletion.removedByHost && (
+            <p>
+              {deletion.takedown
+                ? `The host removed this community on ${new Date(
+                    deletion.takedown.createdAt
+                  ).toLocaleDateString(undefined, { dateStyle: 'long' })}. ${
+                    COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES[deletion.takedown.category]
+                  }${deletion.takedown.reference ? ` Reference: ${deletion.takedown.reference}.` : ''}`
+                : 'This community was removed by its host.'}
+            </p>
+          )}
           <p>
             This community is unavailable and will be permanently deleted after{' '}
             <strong>{formatDeadline(deletion.deleteAfter)}</strong>.
@@ -428,7 +450,11 @@ export function CommunityAdministration({
           <p role="timer" className="eyebrow">
             {formatRemaining(deletion.deleteAfter, clock)}
           </p>
-          {deletion.requestedBy === 'host' ? (
+          {deletion.removedByHost ? (
+            <p className="small muted">
+              Only the host can reverse this. The community can no longer be exported.
+            </p>
+          ) : deletion.requestedBy === 'host' ? (
             <p className="small muted">
               The host started this deletion after the notice date it published. Only the host can
               cancel it. The community can no longer be exported.

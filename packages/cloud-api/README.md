@@ -246,7 +246,15 @@ that server's single-use owner claim; it never owns one itself.
   repeat answers `replayed: true` and without the credential.
 - **The upload goes straight to the Community server**, so the file never passes through the
   service. A mismatched or broken upload leaves the move waiting and the token usable until the
-  window closes. A closed window fails the move with `upload_expired`; a failed or cancelled
+  window closes. When the upload carries `parts`, the file may also go up in numbered parts of at
+  most `parts.partBytes` (each with its digest in `X-Part-SHA256`, the first starting the zip
+  file), up to `parts.maxBytes` and 10,000 parts (`COMMUNITY_MOVE_MAX_PARTS`) in all. A part may
+  be refused with `429` and `Retry-After` (too many arriving; wait), `409` (busy, or the import
+  no longer takes a file), or `413` (too large). `GET ${url}/parts` lists what arrived, so a
+  sender that lost track sends only what is missing, and `POST ${url}/complete` checks the whole
+  file: a count or size that does not add up keeps the parts; a digest mismatch discards them.
+  Either way the token stays usable. `maxBytes` is still the largest single upload. Without
+  `parts`, send one `PUT`. A closed window fails the move with `upload_expired`; a failed or cancelled
   move frees its short name at once, so starting again with the same name works.
 - **New states do not break a page.** A hosted community's `state` and hold `reason`, and a
   move's `state` and `failureCode`, are tolerant (`tolerantEnum`): a value added in a later

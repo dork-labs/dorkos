@@ -166,7 +166,8 @@ const cookieOf = (actor: Actor) => (actor === 'operator' ? operator : person.coo
 function passwordConfirmedRoutes(): string[] {
   const dir = fileURLToPath(new URL('../routes/', import.meta.url));
   const found: string[] = [];
-  for (const file of readdirSync(dir).filter((name) => name.endsWith('.ts'))) {
+  const files = readdirSync(dir, { recursive: true, encoding: 'utf8' }) as string[];
+  for (const file of files.filter((name) => name.endsWith('.ts'))) {
     const source = readFileSync(`${dir}${file}`, 'utf8');
     const handlers = [...source.matchAll(/app\.(get|post|put|patch|delete)\('([^']+)'/gu)];
     handlers.forEach((match, index) => {
@@ -226,7 +227,7 @@ afterEach(() => {
 describe('the one per-account password guess limit', () => {
   it('covers every route that asks for a password', () => {
     // A convenience, not the guarantee: this text scan sees only `app.<method>('…')` handlers in
-    // routes/*.ts. What guarantees no password check skips the budget is the source scan in
+    // routes/**/*.ts. What guarantees no password check skips the budget is the source scan in
     // password-confirmation.test.ts, over all of src/, that finds any Better Auth password
     // check outside createPasswordConfirmation. This one makes a new route get its own case.
     expect(passwordConfirmedRoutes()).toEqual(ROUTES.map((entry) => entry.route).sort());

@@ -127,7 +127,9 @@ describe('every server-side password check', () => {
       .filter((file) => /\.tsx?$/u.test(file))
       .filter((file) => !/(^|\/)__tests__\/|\.test\.tsx?$/u.test(file));
     // The scan really reaches the route modules and the one permitted caller.
-    expect(sources).toEqual(expect.arrayContaining(['routes/members.ts', 'routes/host-keys.ts']));
+    expect(sources).toEqual(
+      expect.arrayContaining(['routes/community/members.ts', 'routes/host/host-keys.ts'])
+    );
     expect(readFileSync(join(root, 'password-confirmation.ts'), 'utf8')).toMatch(/verifyPassword/u);
     const offenders = sources
       .filter((file) => file !== 'password-confirmation.ts')

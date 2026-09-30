@@ -34,8 +34,32 @@ const SafeIdentifierSchema = z
 const Sha256DigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const SecretDigestSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:+/=_-]{0,255}$/);
 const HexHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const SecretNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/);
+/**
+ * Random, non-secret marker a run records before one create and sends with it: 128 bits as 32
+ * lowercase hex characters, so `dorkos-<marker>` and `community_<marker>` stay valid Fly network
+ * and Postgres role names.
+ */
+export const ProvenanceMarkerSchema = z.string().regex(/^[a-f0-9]{32}$/);
 const JournalLockSchema = z
   .object({ ownerId: z.uuid(), pid: z.number().int().positive(), createdAt: z.iso.datetime() })
+  .strict();
+
+/** Most removals one run may record; a run that needs more should start a new launch. */
+export const MAX_REMOVALS = 8;
+
+/** A confirmed removal of the one resource an uncertain create left behind. */
+const PendingRemovalSchema = z
+  .object({
+    provider: z.enum(['fly', 'neon', 'tigris']),
+    // Read back from the service: Fly internalNumericId, Neon project id, or Tigris add-on id.
+    token: SafeIdentifierSchema,
+    resourceName: SafeIdentifierSchema,
+    proof: z.enum(['marker', 'binding']),
+    // Tigris only: non-secret digests of the bucket's AWS_* credentials before removal.
+    priorSecretDigests: z.record(SecretNameSchema, SecretDigestSchema).optional(),
+    requestedAt: z.iso.datetime(),
+  })
   .strict();
 
 /** State checkpoints that can be proved through provider readback. */
@@ -93,6 +117,7 @@ export const LaunchSafeErrorCodeSchema = z.enum([
   'COMMUNITY_RELEASE_PROVENANCE_MISMATCH',
   'JOURNAL_LOCKED',
   'CANCELLED',
+  'REMOVAL_OUTCOME_UNCERTAIN',
 ]);
 
 /** Canonical schema for a launch recovery journal. */
@@ -103,6 +128,12 @@ export const LaunchJournalSchema = z
     revision: z.number().int().nonnegative(),
     planHash: HexHashSchema,
     releaseDigest: Sha256DigestSchema,
+    /**
+     * The linux/amd64 manifest digest inside the attested index, which Fly reports for the running
+     * Machine and release (DOR-2586). Recorded before the first deploy, so a resume checks against
+     * the same digest without reading the registry again.
+     */
+    imagePlatformDigest: Sha256DigestSchema.optional(),
     recoveryContext: z
       .object({
         version: SafeIdentifierSchema,
@@ -124,10 +155,23 @@ export const LaunchJournalSchema = z
         organizationId: SafeIdentifierSchema,
         resourceName: SafeIdentifierSchema,
         idempotencyKey: SafeIdentifierSchema.optional(),
-        provenanceMarker: SafeIdentifierSchema.optional(),
+        // Both are absent on an intent written before provenance markers shipped.
+        provenanceMarker: ProvenanceMarkerSchema.optional(),
+        requestedAt: z.iso.datetime().optional(),
       })
       .strict()
       .nullable(),
+    // Values read back from the service when a create step completed, never copied from an intent.
+    provenance: z.object({ flyNetwork: SafeIdentifierSchema.optional() }).strict().optional(),
+    // A removal of an uncertain create's leftover resource that was confirmed and may be under way.
+    // While it is set, `--resume` refuses to run and only `--remove-uncertain` may finish it.
+    pendingRemoval: PendingRemovalSchema.nullable().optional(),
+    // Resources a verified uncertain-create removal deleted. The Tigris create step reads the
+    // recorded digests so a re-created bucket can never reuse removed credentials.
+    removals: z
+      .array(PendingRemovalSchema.extend({ removedAt: z.iso.datetime() }).strict())
+      .max(MAX_REMOVALS)
+      .optional(),
     resources: z
       .object({
         flyAppId: SafeIdentifierSchema.optional(),
@@ -143,12 +187,8 @@ export const LaunchJournalSchema = z
         tigrisBucketId: SafeIdentifierSchema.optional(),
       })
       .strict(),
-    secretDigests: z
-      .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/), SecretDigestSchema)
-      .optional(),
-    secretBaseline: z
-      .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/), SecretDigestSchema)
-      .optional(),
+    secretDigests: z.record(SecretNameSchema, SecretDigestSchema).optional(),
+    secretBaseline: z.record(SecretNameSchema, SecretDigestSchema).optional(),
     ownerBootstrapRotated: z.boolean().optional(),
     verifiedBindings: z
       .array(

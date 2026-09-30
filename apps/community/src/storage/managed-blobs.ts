@@ -15,18 +15,70 @@ export interface ManagedBlobReservation {
   purpose: 'attachment' | 'export' | 'icon' | 'import_staging';
   lifecycleVersion: number;
   allowArchived?: boolean;
+  /**
+   * The takedown whose evidence export this blob belongs to. Such a reservation is made and
+   * committed in any lifecycle, against the takedown rather than the lifecycle version.
+   */
+  evidenceTakedownId?: string;
 }
 
-/** Reserve one opaque key against the community's current active lifecycle. */
+/**
+ * Whether an evidence reservation may still be made or committed: its community and its
+ * takedown both exist. A reversal moves the lifecycle version and leaves the community
+ * suspended, and the evidence still finishes, so neither is compared.
+ */
+async function evidenceReservationAllowed(
+  client: PoolClient,
+  communityId: string,
+  takedownId: string
+): Promise<{ lifecycle_version: number } | null> {
+  const community = await client.query<{ lifecycle_version: number }>(
+    'SELECT lifecycle_version FROM communities WHERE id=$1 FOR SHARE',
+    [communityId]
+  );
+  if (!community.rows[0]) return null;
+  const takedown = await client.query(
+    `SELECT 1 FROM community_takedowns
+     WHERE id=$1 AND community_id=$2 AND target_kind='community'`,
+    [takedownId, communityId]
+  );
+  return takedown.rowCount ? community.rows[0] : null;
+}
+
+/**
+ * Reserve one opaque key against the community's current active lifecycle. `evidence` reserves
+ * an export segment for a takedown's evidence export instead, in any lifecycle while the
+ * community and that takedown exist.
+ */
 export async function reserveManagedBlob(
   client: PoolClient,
   communityId: string,
   purpose: ManagedBlobReservation['purpose'],
-  options: { allowArchived?: boolean } = {}
+  options: { allowArchived?: boolean; evidence?: string } = {}
 ): Promise<ManagedBlobReservation> {
   await client.query(
     "SELECT pg_advisory_xact_lock_shared(hashtext('dorkos:tenant-reconciliation'))"
   );
+  if (options.evidence !== undefined) {
+    if (purpose !== 'export') throw new Error('Only an export segment can be evidence');
+    const community = await evidenceReservationAllowed(client, communityId, options.evidence);
+    if (!community)
+      throw new ApiError(409, 'STATE_CONFLICT', 'This takedown is no longer preserving evidence.');
+    const reservation = {
+      key: randomBytes(32).toString('hex'),
+      communityId,
+      purpose,
+      lifecycleVersion: community.lifecycle_version,
+      evidenceTakedownId: options.evidence,
+    };
+    await client.query(
+      `INSERT INTO managed_blobs(
+         blob_key,community_id,purpose,community_lifecycle_version,state,evidence_takedown_id
+       ) VALUES($1,$2,$3,$4,'reserved',$5)`,
+      [reservation.key, communityId, purpose, reservation.lifecycleVersion, options.evidence]
+    );
+    return reservation;
+  }
   const result = await client.query<{ lifecycle: string; lifecycle_version: number }>(
     'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR SHARE',
     [communityId]
@@ -136,29 +188,42 @@ export async function settleImportBlob(
   }
 }
 
-/** Recheck lifecycle and move a reservation to stored inside its reference transaction. */
+/**
+ * Recheck lifecycle (or, for an evidence export, that its takedown still exists) and move a
+ * reservation to stored inside its reference transaction.
+ */
 export async function prepareManagedBlobCommit(
   client: PoolClient,
   reservation: ManagedBlobReservation,
   stored: StoredBlob
 ): Promise<void> {
   if (stored.key !== reservation.key) throw new Error('Stored blob key changed after reservation');
-  const result = await client.query<{ lifecycle: string; lifecycle_version: number }>(
-    'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR SHARE',
-    [reservation.communityId]
-  );
-  const community = result.rows[0];
-  if (
-    !community ||
-    (community.lifecycle !== 'active' &&
-      !(reservation.allowArchived && isReadOnlyLifecycle(community.lifecycle))) ||
-    community.lifecycle_version !== reservation.lifecycleVersion
-  ) {
-    throw new ApiError(
-      409,
-      'STATE_CONFLICT',
-      'The community changed while the file was uploading.'
+  if (reservation.evidenceTakedownId !== undefined) {
+    const allowed = await evidenceReservationAllowed(
+      client,
+      reservation.communityId,
+      reservation.evidenceTakedownId
     );
+    if (!allowed)
+      throw new ApiError(409, 'STATE_CONFLICT', 'This takedown is no longer preserving evidence.');
+  } else {
+    const result = await client.query<{ lifecycle: string; lifecycle_version: number }>(
+      'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR SHARE',
+      [reservation.communityId]
+    );
+    const community = result.rows[0];
+    if (
+      !community ||
+      (community.lifecycle !== 'active' &&
+        !(reservation.allowArchived && isReadOnlyLifecycle(community.lifecycle))) ||
+      community.lifecycle_version !== reservation.lifecycleVersion
+    ) {
+      throw new ApiError(
+        409,
+        'STATE_CONFLICT',
+        'The community changed while the file was uploading.'
+      );
+    }
   }
   const updated = await client.query(
     `UPDATE managed_blobs

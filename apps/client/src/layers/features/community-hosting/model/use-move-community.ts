@@ -30,11 +30,12 @@ export type MoveStep =
       move: CloudCommunityMove;
       /**
        * `interrupted`: the connection broke and the same copy can go again.
-       * `refused`: the new host would not take these bytes. `lost`: the window
-       * closed, or this DorkOS no longer holds the copy (it restarted, or
-       * another DorkOS started the move).
+       * `refused`: the new host would not take these bytes. `expired`: the
+       * upload window closed. `restarted`: this DorkOS holds no upload for the
+       * move, because it restarted since the move began (the one-time upload
+       * key lives only in memory, on purpose) or another DorkOS started it.
        */
-      why: 'interrupted' | 'refused' | 'lost';
+      why: 'interrupted' | 'refused' | 'expired' | 'restarted';
     }
   | { kind: 'importing'; move: CloudCommunityMove }
   | { kind: 'ready'; move: CloudCommunityMove }
@@ -55,11 +56,13 @@ export function moveStepOf(move: CloudCommunityMove): MoveStep {
       // Sent, and the service has not noticed yet: that is the import starting.
       if (upload?.state === 'sent') return { kind: 'importing', move };
       const why =
-        upload?.state === 'failed' && upload.failure === 'interrupted'
-          ? 'interrupted'
-          : upload?.state === 'failed' && upload.failure === 'rejected'
-            ? 'refused'
-            : 'lost';
+        upload === null
+          ? 'restarted'
+          : upload.failure === 'interrupted'
+            ? 'interrupted'
+            : upload.failure === 'rejected'
+              ? 'refused'
+              : 'expired';
       return { kind: 'upload-failed', move, why };
     }
     case 'importing':

@@ -132,6 +132,8 @@ Each published message gets a trace ID. Each delivery to an endpoint creates a s
 - Aggregate delivery metrics (success/failure counts, latency percentiles)
 - Budget rejection breakdowns
 
+A message's trace is kept for eight days: the seven days an unread message can wait in an inbox, plus the day its dead letter is kept. After that the message is gone, so its trace is too. Cleanup runs every five minutes, so a dead letter can outlast its trace by up to that long. A connection's event log (connected, disconnected, errors) keeps its newest 500 events, however old they are.
+
 ### Reliability
 
 Three mechanisms protect endpoints under load:

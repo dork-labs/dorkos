@@ -190,6 +190,28 @@ async function partUploadsInFlight(n: number): Promise<void> {
   throw new Error(`expected ${n} part uploads in flight`);
 }
 
+/**
+ * Wait until the server holds (`held`) or has given back the lease of one part upload.
+ *
+ * The lease is the server's own record that the part is arriving, so a test waits on it rather
+ * than a guessed sleep: a dropped connection frees it only once the server notices the drop,
+ * which a busy machine takes longer to do than the client takes to close its end. The deadline
+ * stays far under the lease's expiry, so a lease the server never gives back still fails.
+ */
+async function waitForPartLease(importId: string, partNumber: number, held: boolean) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const leased =
+      (await count(
+        'SELECT 1 FROM community_import_part_uploads WHERE import_id=$1 AND part_number=$2',
+        [importId, partNumber]
+      )) > 0;
+    if (leased === held) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Part ${partNumber} of ${importId} was never ${held ? 'taken' : 'given back'}`);
+}
+
 /** Upload an archive in parts of `size` and complete it; returns the import. */
 async function importInParts(
   bytes: Buffer,
@@ -512,9 +534,12 @@ it('restores a version 2 export uploaded in parts, across a cut-off upload and a
     await expectStatus(await putPart(importId, index + 1, parts[index], uploadToken), 200, 'part');
   // The third part breaks off half-way: nothing of it is kept.
   const dropped = await rawPart(importId, 3, parts[2], uploadToken, parts[2].length >> 1);
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  // Drop only once the server is receiving the body, so this is a drop part-way through, and go
+  // on only once the server has noticed it: the client's end closes before the server's does.
+  await waitForPartLease(importId, 3, true);
   dropped.close();
   await dropped.answer;
+  await waitForPartLease(importId, 3, false);
   const resumed = await listParts(importId, uploadToken);
   expect(resumed.parts.map((part) => part.partNumber)).toEqual([1, 2]);
   expect(resumed.parts[1]).toEqual({

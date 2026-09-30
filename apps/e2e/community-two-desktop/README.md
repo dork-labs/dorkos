@@ -9,8 +9,9 @@ It is a script you run on purpose, not a test suite. It builds and launches
 real apps and uses Docker, so it does nothing unless you set
 `DORKOS_TWO_DESKTOP_ACCEPTANCE=1`. `pnpm test`, `pnpm verify` and CI never
 set that variable, and none of them run this folder. The only part they run
-is `__tests__/config.test.ts`, which checks that the script refuses to start
-without the variable.
+are the unit tests in `__tests__/`: the script refuses to start without the
+variable, refuses an unsafe handoff file, never starts anything in remote
+mode, and accounts for every step.
 
 ## What you need
 
@@ -38,16 +39,17 @@ DORKOS_TWO_DESKTOP_ACCEPTANCE=1 caffeinate -i \
 (`pnpm rebuild better-sqlite3 node-pty`). Leave it off to reuse a build you
 already have. A full run takes about four minutes after the build.
 
-| Variable                             | Default                                 | What it does                                                                                                                                               |
-| ------------------------------------ | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DORKOS_TWO_DESKTOP_ACCEPTANCE`      | unset                                   | Must be `1`, or the script refuses to run                                                                                                                  |
-| `DORKOS_TWO_DESKTOP_BUILD`           | unset                                   | `1` works the same as `--build`                                                                                                                            |
-| `DORKOS_TWO_DESKTOP_APP`             | the macOS arm64 build in `apps/desktop` | Which packaged executable to launch                                                                                                                        |
-| `DORKOS_TWO_DESKTOP_PG_CONTAINER`    | unset: a throwaway Postgres container   | Use an existing Postgres container instead. The script creates and drops only its own databases there, and stops the container again if it had to start it |
-| `DORKOS_TWO_DESKTOP_OUT`             | `.temp/community-two-desktop` (repo)    | Where each run's evidence folder goes                                                                                                                      |
-| `DORKOS_TWO_DESKTOP_HOME_ROOT`       | the system temp folder                  | Where the two people's temporary homes are created (keep it outside the repo)                                                                              |
-| `DORKOS_TWO_DESKTOP_KEEP_HOMES`      | unset                                   | `1` keeps the temporary homes, to look into afterwards                                                                                                     |
-| `DORKOS_TWO_DESKTOP_BROWSER_CHANNEL` | `chrome`                                | Playwright browser channel. Empty means bundled Chromium                                                                                                   |
+| Variable                               | Default                                 | What it does                                                                                                                                               |
+| -------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DORKOS_TWO_DESKTOP_ACCEPTANCE`        | unset                                   | Must be `1`, or the script refuses to run                                                                                                                  |
+| `DORKOS_TWO_DESKTOP_BUILD`             | unset                                   | `1` works the same as `--build`                                                                                                                            |
+| `DORKOS_TWO_DESKTOP_APP`               | the macOS arm64 build in `apps/desktop` | Which packaged executable to launch                                                                                                                        |
+| `DORKOS_TWO_DESKTOP_PG_CONTAINER`      | unset: a throwaway Postgres container   | Use an existing Postgres container instead. The script creates and drops only its own databases there, and stops the container again if it had to start it |
+| `DORKOS_TWO_DESKTOP_OUT`               | `.temp/community-two-desktop` (repo)    | Where each run's evidence folder goes                                                                                                                      |
+| `DORKOS_TWO_DESKTOP_HOME_ROOT`         | the system temp folder                  | Where the two people's temporary homes are created (keep it outside the repo)                                                                              |
+| `DORKOS_TWO_DESKTOP_KEEP_HOMES`        | unset                                   | `1` keeps the temporary homes, to look into afterwards                                                                                                     |
+| `DORKOS_TWO_DESKTOP_BROWSER_CHANNEL`   | `chrome`                                | Playwright browser channel. Empty means bundled Chromium                                                                                                   |
+| `DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF` | unset                                   | The absolute path of a held live community's `handoff.json`. Runs in remote mode (see below)                                                               |
 
 ## What it proves
 
@@ -81,6 +83,82 @@ records the check under `findings` with `"kind": "product-bug"` and how to
 reproduce it, and ends with outcome `FAIL-PRODUCT-CONTRACT` and exit code 1.
 Other findings are observations: they are recorded, and the outcome reads
 `PASS-WITH-FINDINGS`.
+
+## Run against a held live community
+
+The Community live gate can make a real community and keep it alive for a
+while (`DORKOS_COMMUNITY_LIVE_HOLD_MINUTES`, see
+`specs/community-self-host-launcher/04-live-gate.md`). While it holds, it
+writes a `handoff.json` and prints only that file's path. Point this script at
+it to run the member journey on that community:
+
+```bash
+DORKOS_TWO_DESKTOP_ACCEPTANCE=1 \
+DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF=/path/printed/by/the/gate/handoff.json \
+caffeinate -i pnpm --filter @dorkos/e2e community-two-desktop
+```
+
+The handoff holds two passwords, so the script refuses to start unless it is
+a regular file with mode `0600`, in a folder with mode `0700`, and has every
+field:
+
+```json
+{
+  "origin": "https://…",
+  "communityId": "…",
+  "channelId": "…",
+  "owner": { "email": "…", "password": "…" },
+  "member": { "email": "…", "password": "…" },
+  "inviteLink": "https://…"
+}
+```
+
+The origin must be https. The only exception is an address on this machine
+(`127.0.0.1`, `localhost`), which is how a local dry run tries remote mode out.
+
+In remote mode the script starts no Postgres and no Community server. A is
+the handoff's owner and B its member, who is already in. B signs in on the
+live community first, and the script photographs the sign-in page and the
+channel at desktop width and at phone width (390 x 844), before anything is
+typed. Then it runs steps 5-7, 9-15b, 17-20, 22, 23 and 25. Step 20 adds one
+agent each and leaves the community's agent limit alone, and its name in the
+receipt says the limit was not tested.
+
+Every other step appears in `receipt.json` as `"skipped": "remote-mode"`, with
+the reason:
+
+| Step       | Why it is skipped                                                               |
+| ---------- | ------------------------------------------------------------------------------- |
+| 1-3        | The live gate already set up the community and brought the member in            |
+| 4, 8, 16   | They need a second community, and remote mode starts none                       |
+| 21         | It needs a private channel, which the gate's community does not have (DOR-2186) |
+| 24, 26, 28 | They change membership on a community the gate still needs (DOR-2182)           |
+| 27         | It expires an invitation in the database, which a remote run cannot reach       |
+| 29         | It repeats step 19 after steps 21 and 24-28, none of which ran                  |
+
+A run that ends with a step neither run nor listed fails, so a step cannot drop
+out quietly.
+
+Cleanup removes only what the run made: each app's agent enrollments and
+connections (which revokes that app's grant on the community), then both apps
+and their temporary homes. It never deletes the community, its channels or the
+two accounts; the gate does that when its hold ends. The receipt records
+`"mode": "remote"` and the community's host name. The passwords, both email
+addresses and the invite are replaced with `[redacted]` in `steps.log`,
+`receipt.json`, each app's network and console logs, and the `FAIL-*-aria.yml`
+snapshots, and no screenshot is named after any of them. Screenshots are not
+redacted: one can show a person's email address, for example in the app's
+account menu, but never a password (password fields are masked, and the
+sign-in page is photographed before anything is typed). Keep a remote run's
+folder to yourself.
+
+If cleanup cannot undo something it made, the run exits 1, the receipt says
+`"cleanupFailed": true`, and an outcome that would have been `PASS` or
+`PASS-WITH-FINDINGS` becomes `FAIL-CLEANUP`.
+
+To try remote mode without a live community, start a local one with this
+script's own `infra.ts`, make an owner and a member in a browser, and write
+the handoff by hand into a fresh `0700` folder with mode `0600`.
 
 ## Evidence
 

@@ -58,13 +58,15 @@ export class PinnedOriginError extends Error {
 /** A remote status observed through the pinned socket, with no free-form body text or URL. */
 export class PinnedHttpError extends Error {
   /**
-   * Preserve only the semantic HTTP status and, when the Community sent one,
-   * its error code from the closed wire enum. A remote message is untrusted
-   * text and is never kept, so it cannot reach a person.
+   * Preserve only the semantic HTTP status, its error code from the closed
+   * wire enum when the Community sent one, and a `Retry-After` it sent as
+   * whole seconds. A remote message is untrusted text and is never kept, so it
+   * cannot reach a person.
    */
   constructor(
     readonly status: number,
-    readonly remoteCode?: CommunityWireErrorCode
+    readonly remoteCode?: CommunityWireErrorCode,
+    readonly retryAfterSeconds?: number
   ) {
     super(`Remote community returned HTTP ${status}`);
     this.name = 'PinnedHttpError';
@@ -205,6 +207,21 @@ function remoteErrorCode(content: Buffer): CommunityWireErrorCode | undefined {
   }
 }
 
+/** The longest wait a remote `Retry-After` may ask of a person; anything longer is not believed. */
+const MAX_RETRY_AFTER_SECONDS = 3600;
+
+/**
+ * Read a remote `Retry-After` given as whole seconds, the form the Community sends.
+ *
+ * The header is untrusted: an HTTP date, a fraction, zero or an absurd number
+ * reads as unknown rather than being passed on to a person as a wait.
+ */
+export function retryAfterSeconds(header: string | string[] | undefined): number | undefined {
+  if (typeof header !== 'string' || !/^\d{1,6}$/.test(header.trim())) return undefined;
+  const seconds = Number(header.trim());
+  return seconds >= 1 && seconds <= MAX_RETRY_AFTER_SECONDS ? seconds : undefined;
+}
+
 /** Send one bounded JSON request; redirects and unexpected content never reach another host. */
 export async function pinnedJson(
   origin: URL,
@@ -278,7 +295,13 @@ export async function pinnedJson(
             }
             const content = Buffer.concat(chunks);
             if (!(options.accept ?? [200, 201]).includes(response.statusCode ?? 0)) {
-              reject(new PinnedHttpError(response.statusCode ?? 502, remoteErrorCode(content)));
+              reject(
+                new PinnedHttpError(
+                  response.statusCode ?? 502,
+                  remoteErrorCode(content),
+                  retryAfterSeconds(response.headers['retry-after'])
+                )
+              );
               return;
             }
             if (options.response === 'buffer') {

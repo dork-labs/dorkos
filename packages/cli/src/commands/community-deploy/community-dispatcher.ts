@@ -14,7 +14,10 @@ import {
   readDefaultCommunityPreflight,
   createDefaultCommunityCreationDependencies,
 } from './runtime/default-services.js';
-import { createDefaultCommunityDeployDependencies } from './runtime/default-deploy.js';
+import {
+  createDefaultCommunityDeployDependencies,
+  resolveCommunityPlatformDigest,
+} from './runtime/default-deploy.js';
 import {
   assertOwnerHandoffPrerequisites,
   confirmOwnerClipboardWrite,
@@ -24,6 +27,10 @@ import { executeCommunityCreationPhase } from './execute.js';
 import { executeCommunityDeployPhase } from './deploy.js';
 import { executeCommunityOwnerHandoff } from './owner.js';
 import { assertCommunityCliVersions } from './runtime/versions.js';
+import {
+  formatCommunityCredentialNotice,
+  withoutCommunityCredentialEnv,
+} from './runtime/credential-env.js';
 import type { CommunityPreflightSelection } from './preflight.js';
 import {
   initializeLaunchJournal,
@@ -37,13 +44,16 @@ import {
   assertCommunityLaunchPlanUnchanged,
   createInitialCommunityLaunchJournal,
 } from './resume.js';
+import { runRemoveUncertainCommand } from './provenance/removal-command.js';
+import { COMMUNITY_SERVICE_TIMEOUT_MS } from './provider-process.js';
 
 /** Human-facing help for the guided deployment command. */
 export const COMMUNITY_DEPLOY_HELP = `
 Usage: dorkos community deploy [options]
 
 Guide a standalone DorkOS Community onto Fly, Neon, and private Tigris storage.
-The command keeps a non-secret recovery journal and never removes resources automatically.
+The command keeps a non-secret recovery journal and never removes a resource without proof
+that this run made it and your typed confirmation.
 
 Required choices:
   --fly-org <slug>       Fly organization slug
@@ -60,6 +70,10 @@ Options:
   --dry-run              Resolve and inspect the same plan without service writes
   --resume <run-id>      Resume an incomplete journal using the same plan choices
   --list-incomplete      List saved launches that can be inspected or resumed
+  --remove-uncertain <run-id>
+                         Check the resource a stopped create may have left behind, and
+                         remove it only if DorkOS can prove this run made it
+  --confirm <id>         With --remove-uncertain: the id it showed, to remove without a prompt
   -h, --help             Show this help
 
 There is no --yes mode. Before the first write, type the generated app name in an interactive terminal.
@@ -71,7 +85,10 @@ export interface CommunityDispatcherContext {
   cliVersion: string;
   /** Resolved DorkOS data directory. */
   dorkHome: string;
-  /** Minimal child-process environment for local profiles and executables. */
+  /**
+   * Minimal child-process environment for local profiles and executables, plus any non-empty
+   * Fly and Neon credential variables. Only `fly` and `neonctl` receive those.
+   */
   processEnv: Readonly<Record<string, string>>;
   /** Shared signed-manifest parser bundled with the CLI. */
   parseRelease(bytes: Uint8Array): CompatibleCommunityRelease;
@@ -86,7 +103,8 @@ interface CommunityResumeSelection extends CommunityPreflightSelection {
   version: string;
 }
 
-function resumeCommand(plan: LaunchJournal): string | null {
+/** The exact `--resume` command for a saved journal, or `null` without saved plan choices. */
+export function resumeCommand(plan: LaunchJournal): string | null {
   const selection = plan.recoveryContext;
   if (!selection) return null;
   return [
@@ -110,7 +128,7 @@ export function formatIncompleteLaunches(journals: readonly LaunchJournal[]): st
   return `${journals
     .map(
       (journal) =>
-        `${journal.runId}  ${journal.state}  updated ${journal.updatedAt}  confirmed ${Object.keys(journal.resources).length}`
+        `${journal.runId}  ${journal.pendingRemoval ? 'removal pending' : journal.state}  updated ${journal.updatedAt}  confirmed ${Object.keys(journal.resources).length}`
     )
     .join('\n')}\n`;
 }
@@ -160,11 +178,31 @@ export function formatCommunityRecovery(journal: LaunchJournal): string {
           : `Unresolved Tigris creation intent for ${pending.resourceName} in ${pending.organizationId}. Do not create or adopt a name match. Inspect: fly storage list --org ${pending.organizationId}\nConsole: https://fly.io/dashboard/${pending.organizationId}`
       : null;
   const command = resumeCommand(journal);
+  // Shape A: the create may have worked but its id was never recorded, so `--resume` cannot
+  // check it. Only then can the removal command help.
+  const noRecordedId =
+    pending !== null &&
+    !journal.resources[
+      pending.provider === 'fly'
+        ? 'flyAppId'
+        : pending.provider === 'neon'
+          ? 'neonProjectId'
+          : 'tigrisBucketId'
+    ];
   return [
     'Confirmed retained resources:',
     rows.length ? rows.join('\n') : '  No resource identity has been confirmed.',
     `Journal state: ${journal.state}`,
     ...(reconciliation ? ['Manual reconciliation required:', reconciliation] : []),
+    ...(journal.pendingRemoval
+      ? [
+          `A removal is in progress. Finish it with: dorkos community deploy --remove-uncertain ${journal.runId}`,
+        ]
+      : noRecordedId
+        ? [
+            `Check whether DorkOS can prove this run made it and remove it: dorkos community deploy --remove-uncertain ${journal.runId}`,
+          ]
+        : []),
     'Automatic cleanup was not attempted.',
     ...(command
       ? ['Resume with:', `  ${command}`]
@@ -204,17 +242,74 @@ export async function runCommunityDispatcher(
       'neon-org': { type: 'string' },
       'neon-region': { type: 'string' },
       'app-name': { type: 'string' },
-      'machine-size': { type: 'string', default: 'shared-cpu-1x' },
+      'machine-size': { type: 'string' },
       'project-name': { type: 'string' },
       'bucket-name': { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
       'list-incomplete': { type: 'boolean', default: false },
       resume: { type: 'string' },
+      'remove-uncertain': { type: 'string' },
+      confirm: { type: 'string' },
     },
   });
   if (parsed.values.help) {
     process.stdout.write(COMMUNITY_DEPLOY_HELP);
     return 0;
+  }
+  const removeRunId = parsed.values['remove-uncertain'];
+  if (parsed.values.confirm !== undefined && removeRunId === undefined) {
+    throw new Error('--confirm works only with --remove-uncertain');
+  }
+  if (removeRunId !== undefined) {
+    const combined = [
+      'resume',
+      'dry-run',
+      'list-incomplete',
+      'version',
+      'fly-org',
+      'fly-region',
+      'neon-org',
+      'neon-region',
+      'app-name',
+      'machine-size',
+      'project-name',
+      'bucket-name',
+    ].filter((flag) => {
+      const value = parsed.values[flag as keyof typeof parsed.values];
+      return value !== undefined && value !== false;
+    });
+    if (combined.length > 0) {
+      throw new Error(
+        `--remove-uncertain cannot be combined with ${combined.map((flag) => `--${flag}`).join(', ')}`
+      );
+    }
+    // Removal acts on an account too, so it names an exported credential the same way.
+    process.stdout.write(formatCommunityCredentialNotice(context.processEnv));
+    return runRemoveUncertainCommand({
+      runId: removeRunId,
+      journalPath: launchJournalPath(context.dorkHome, removeRunId),
+      confirmToken: parsed.values.confirm,
+      serviceOptions: (signal) => ({
+        fly: {
+          executable: 'fly',
+          env: context.processEnv,
+          timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
+          signal,
+        },
+        neon: {
+          executable: 'neonctl',
+          env: context.processEnv,
+          timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
+          signal,
+        },
+        graphqlTimeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
+        signal,
+      }),
+      input: process.stdin,
+      output: process.stdout,
+      resumeCommand,
+      recovery: formatCommunityRecovery,
+    });
   }
   if (parsed.values['list-incomplete']) {
     process.stdout.write(
@@ -229,6 +324,11 @@ export async function runCommunityDispatcher(
   if (parsed.values.resume && !resumeJournal) {
     throw new Error('The selected Community launch journal was not found');
   }
+  if (resumeJournal?.pendingRemoval) {
+    throw new Error(
+      `A removal is in progress for this run. Finish it first: dorkos community deploy --remove-uncertain ${resumeJournal.runId}`
+    );
+  }
   let latest: LaunchJournal | null = resumeJournal;
   let selection: CommunityResumeSelection;
   try {
@@ -238,7 +338,7 @@ export async function runCommunityDispatcher(
       flyOrganization: required(parsed.values['fly-org'], '--fly-org'),
       flyRegion: required(parsed.values['fly-region'], '--fly-region'),
       appName,
-      machineSize: parsed.values['machine-size']!,
+      machineSize: parsed.values['machine-size'] ?? 'shared-cpu-1x',
       neonOrganization: required(parsed.values['neon-org'], '--neon-org'),
       neonRegion: required(parsed.values['neon-region'], '--neon-region'),
       neonProjectName: parsed.values['project-name'] ?? appName,
@@ -251,21 +351,30 @@ export async function runCommunityDispatcher(
     throw error;
   }
   const childEnv = context.processEnv;
+  // gh, the clipboard tools and the browser opener never need a Fly or Neon credential.
+  const localEnv = withoutCommunityCredentialEnv(childEnv);
   const cancellation = new AbortController();
   const cancel = () => cancellation.abort();
   process.once('SIGINT', cancel);
   process.once('SIGTERM', cancel);
   const serviceOptions = {
-    fly: { executable: 'fly', env: childEnv, timeoutMs: 30_000, signal: cancellation.signal },
+    fly: {
+      executable: 'fly',
+      env: childEnv,
+      timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
+      signal: cancellation.signal,
+    },
     neon: {
       executable: 'neonctl',
       env: childEnv,
-      timeoutMs: 30_000,
+      timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
       signal: cancellation.signal,
     },
-    graphqlTimeoutMs: 30_000,
+    graphqlTimeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
     signal: cancellation.signal,
   };
+  // The attested release, kept so the deploy can use the platform digests its manifest carries.
+  let verifiedRelease: CompatibleCommunityRelease | null = null;
   const trusted: TrustedReleaseIdentity = {
     repository: 'dork-labs/dorkos',
     workflowRef: '.github/workflows/publish-community.yml',
@@ -273,13 +382,15 @@ export async function runCommunityDispatcher(
   };
   const releaseSource = createGitHubCommunityReleaseSource({
     executable: 'gh',
-    env: childEnv,
+    env: localEnv,
     timeoutMs: 60_000,
     repository: trusted.repository,
   });
 
+  // Before the first read, so a person sees which account setup acts as even if it stops.
+  process.stdout.write(formatCommunityCredentialNotice(childEnv));
   try {
-    if (!parsed.values['dry-run']) await assertOwnerHandoffPrerequisites(childEnv);
+    if (!parsed.values['dry-run']) await assertOwnerHandoffPrerequisites(localEnv);
     await runCommunityDeploy(
       {
         version,
@@ -300,6 +411,7 @@ export async function runCommunityDispatcher(
             releaseSource,
             context.parseRelease
           ).then(async (release) => {
+            verifiedRelease = release;
             await assertCommunityCliVersions(serviceOptions.fly, serviceOptions.neon, {
               fly: release.minimumFlyctlVersion,
               neon: release.minimumNeonCliVersion,
@@ -317,13 +429,21 @@ export async function runCommunityDispatcher(
             signal: cancellation.signal,
           }),
         execute: async (result) => {
+          // The digest Fly will report for the running image (DOR-2586), settled once per process.
+          let settledPlatformDigest: Promise<string> | undefined;
+          const platformDigest = () =>
+            (settledPlatformDigest ??= resolveCommunityPlatformDigest({
+              release: verifiedRelease,
+              plan: result.plan,
+              options: serviceOptions,
+            }));
           if (parsed.values.resume) {
             const existing = resumeJournal!;
             assertCommunityLaunchPlanUnchanged(existing, result.plan);
             latest = existing;
           }
           await confirmOwnerClipboardWrite(
-            childEnv,
+            localEnv,
             process.platform,
             undefined,
             cancellation.signal
@@ -375,6 +495,7 @@ export async function runCommunityDispatcher(
               latestJournal: () => latest!,
               persist,
               now: () => new Date().toISOString(),
+              resolvePlatformDigest: platformDigest,
             })
           );
           latest = deployed.journal;
@@ -386,10 +507,11 @@ export async function runCommunityDispatcher(
             createDefaultCommunityOwnerDependencies({
               options: serviceOptions,
               plan: result.plan,
-              env: childEnv,
+              env: localEnv,
               persist,
               now: () => new Date().toISOString(),
               signal: cancellation.signal,
+              platformDigest: async () => latest?.imagePlatformDigest ?? platformDigest(),
             })
           );
           process.stdout.write(
@@ -402,7 +524,8 @@ export async function runCommunityDispatcher(
     );
     return 0;
   } catch (error) {
-    if (latest && cancellation.signal.aborted) {
+    // A journal carrying a removal belongs to `--remove-uncertain`; this run never rewrites it.
+    if (latest && cancellation.signal.aborted && !latest.pendingRemoval) {
       const uncertain = latest.pendingIntent !== null || latest.state === 'uncertain';
       const cancelled: LaunchJournal = {
         ...latest,

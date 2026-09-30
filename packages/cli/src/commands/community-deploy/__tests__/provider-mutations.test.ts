@@ -2,14 +2,17 @@
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { FlyAppProvenance } from '../fly-graphql-contract.js';
 import {
   assertFlyAppNameAvailable,
   createFlyApp,
   deployFlyImage,
   deployFlySecrets,
+  FLY_DEPLOY_TIMEOUT_MS,
   destroyFlyApp,
   stageFlySecrets,
+  unsetFlyTigrisSecrets,
   verifyFlyDeployment,
   verifyDeployedFlySecrets,
   verifyStagedFlySecrets,
@@ -20,8 +23,28 @@ import {
   deleteNeonProject,
 } from '../neon-mutate.js';
 import { mutateTrustedProviderFields } from './provider-contract-harness.js';
+import { PROVIDER_WRITE_TIMEOUT_MS } from '../provider-mutation.js';
+import { readFlyApps } from '../fly-read.js';
 
 const temporaryDirectories: string[] = [];
+const network = 'dorkos-7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a';
+
+function provenance(update: Partial<FlyAppProvenance> = {}): FlyAppProvenance {
+  return {
+    id: 'community-space',
+    internalNumericId: '4817203',
+    name: 'community-space',
+    network,
+    createdAt: '2026-09-23T10:31:07Z',
+    organizationSlug: 'dork-labs',
+    machineCount: 0,
+    volumeCount: 0,
+    ipAddressCount: 0,
+    certificateCount: 0,
+    secretNames: [],
+    ...update,
+  };
+}
 const digest = `sha256:${'a'.repeat(64)}`;
 
 async function fakeProvider(source: string): Promise<{ executable: string; directory: string }> {
@@ -52,14 +75,17 @@ describe('provider mutation boundaries', () => {
       'utf8'
     );
     const { executable } = await fakeProvider(`
-test "$*" = "apps create community-fixture-app --org fixture-org --json --yes" || exit 9
+test "$*" = "apps create community-fixture-app --org fixture-org --network ${network} --json --yes" || exit 9
 printf '%s' "$FIXTURE_JSON"
 `);
+    const readProvenance = vi.fn();
     await expect(
       createFlyApp(
         options(executable, { FIXTURE_JSON: document }),
         'community-fixture-app',
-        'fixture-org'
+        'fixture-org',
+        network,
+        readProvenance
       )
     ).resolves.toEqual({
       id: 'community-fixture-app',
@@ -67,30 +93,59 @@ printf '%s' "$FIXTURE_JSON"
       organizationSlug: 'fixture-org',
       status: 'pending',
     });
+    // A readable create needs no fallback; exact-ID inspection checks the network afterwards.
+    expect(readProvenance).not.toHaveBeenCalled();
   });
 
-  it('identifies a created app by name and slug when the create output is unreadable', async () => {
+  it('identifies a created app by name, slug and marker network when the create output is unreadable', async () => {
     for (const output of ["printf '%s' '{}'", "printf '%s' 'New app created'", ':']) {
-      const { executable, directory } = await fakeProvider(`
+      const { executable } = await fakeProvider(`
 case "$*" in
-  "apps create community-space --org dork-labs --json --yes") ${output} ;;
-  "apps list --org dork-labs --json")
-    printf 'listed\n' >> "${join('$DIR', 'calls')}"
-    printf '%s' '[{"ID":"other-app","Name":"other-app","Status":"deployed","Organization":{"ID":"","Slug":"dork-labs","Name":"Dork Labs"}},{"ID":"community-space","Name":"community-space","Status":"pending","Organization":{"ID":"","Slug":"dork-labs","Name":"Dork Labs"}}]'
-    ;;
+  "apps create community-space --org dork-labs --network ${network} --json --yes") ${output} ;;
   *) exit 9 ;;
 esac
 `);
+      const readProvenance = vi.fn(async () => provenance());
       await expect(
-        createFlyApp(options(executable, { DIR: directory }), 'community-space', 'dork-labs'),
+        createFlyApp(options(executable), 'community-space', 'dork-labs', network, readProvenance),
         output
       ).resolves.toEqual({
         id: 'community-space',
         name: 'community-space',
         organizationSlug: 'dork-labs',
-        status: 'pending',
+        status: '',
       });
-      await expect(readFile(join(directory, 'calls'), 'utf8')).resolves.toBe('listed\n');
+      // The fallback never lists apps: `apps list --json` always reports an empty network.
+      expect(readProvenance).toHaveBeenCalledExactlyOnceWith('community-space');
+    }
+  });
+
+  it("never adopts a same-name app whose network does not carry this run's marker", async () => {
+    const { executable } = await fakeProvider(`printf '%s' '{}'`);
+    const candidates = [
+      // What `apps list` reports for every app, and what an app on the default network looks like.
+      provenance({ network: '' }),
+      provenance({ network: null }),
+      // Another run's marker, or a network someone else chose.
+      provenance({ network: `dorkos-${'0'.repeat(32)}` }),
+      provenance({ network: 'default' }),
+      // The right marker, but a foreign organization or name.
+      provenance({ organizationSlug: 'personal' }),
+      provenance({ name: 'community-other' }),
+      // Nothing by that name.
+      null,
+    ];
+    for (const candidate of candidates) {
+      await expect(
+        createFlyApp(
+          options(executable),
+          'community-space',
+          'dork-labs',
+          network,
+          async () => candidate
+        ),
+        JSON.stringify(candidate)
+      ).rejects.toMatchObject({ code: 'CREATION_OUTCOME_UNCERTAIN' });
     }
   });
 
@@ -98,10 +153,8 @@ esac
     const sources = [
       // The command failed: nothing is looked up or adopted by name.
       "printf '%s' 'lost' >&2; exit 12",
-      // Unreadable output, and the organization does not hold the planned name.
-      `case "$*" in apps\\ create*) printf '%s' '{}' ;; *) printf '%s' '[]' ;; esac`,
-      // Unreadable output, and the follow-up listing fails.
-      `case "$*" in apps\\ create*) printf '%s' '{}' ;; *) exit 3 ;; esac`,
+      // Unreadable output, and the provenance read fails.
+      `printf '%s' '{}'`,
       // Readable output naming a different organization is never adopted.
       `printf '%s' '{"ID":"community-space","Name":"community-space","Status":"pending","Organization":{"ID":"org_123","Slug":"personal","Name":""}}'`,
       // Readable output naming a different app is never adopted.
@@ -109,8 +162,11 @@ esac
     ];
     for (const source of sources) {
       const { executable } = await fakeProvider(source);
+      const readProvenance = vi.fn(async () => {
+        throw new Error('provenance read failed');
+      });
       await expect(
-        createFlyApp(options(executable), 'community-space', 'dork-labs'),
+        createFlyApp(options(executable), 'community-space', 'dork-labs', network, readProvenance),
         source
       ).rejects.toMatchObject({
         code: 'CREATION_OUTCOME_UNCERTAIN',
@@ -126,10 +182,8 @@ esac
     const neonFixture = JSON.parse(
       await readFile(new URL('./fixtures/neon/project-create.json', import.meta.url), 'utf8')
     ) as unknown;
-    // The follow-up listing finds nothing, so a mutated create response cannot be rescued by it.
-    const { executable: flyExecutable } = await fakeProvider(
-      `case "$*" in apps\\ create*) printf '%s' "$FIXTURE_JSON" ;; *) printf '%s' '[]' ;; esac`
-    );
+    // The follow-up provenance read finds nothing, so a mutated create response cannot be rescued.
+    const { executable: flyExecutable } = await fakeProvider(`printf '%s' "$FIXTURE_JSON"`);
     const { executable } = await fakeProvider(`printf '%s' "$FIXTURE_JSON"`);
     await Promise.all(
       mutateTrustedProviderFields(flyFixture, [
@@ -142,7 +196,9 @@ esac
           createFlyApp(
             options(flyExecutable, { FIXTURE_JSON: JSON.stringify(mutation.value) }),
             'community-fixture-app',
-            'fixture-org'
+            'fixture-org',
+            network,
+            async () => null
           ),
           mutation.label
         ).rejects.toMatchObject({ code: 'CREATION_OUTCOME_UNCERTAIN' })
@@ -220,6 +276,74 @@ cat > "$CAPTURE_STDIN"
         ['COMMUNITY_DATABASE_URL']
       )
     ).toThrow();
+  });
+
+  it('lets a deploy outlive the shared 30-second Fly deadline', async () => {
+    // A live `fly deploy` of the 0.92.0 image took ~27s once and was killed at 30s the next run,
+    // leaving the release interrupted (DOR-2169). The fake sleeps past the caller's deadline.
+    const { executable } = await fakeProvider('sleep 1.5');
+    const short = { ...options(executable), timeoutMs: 1_000 };
+    await expect(
+      deployFlyImage(short, 'community-space', `ghcr.io/dork-labs/dorkos-community@${digest}`)
+    ).resolves.toEqual({ operation: 'deploy' });
+    await expect(deployFlySecrets(short, 'community-space')).resolves.toEqual({
+      operation: 'deploy',
+    });
+    expect(FLY_DEPLOY_TIMEOUT_MS).toBeGreaterThanOrEqual(5 * 60_000);
+  });
+
+  // A write cut off by the launcher is an unknown, not a failure: the launch stops as uncertain for
+  // the operator to reconcile by hand (DOR-2169). Every one-call write outlives the 30-second
+  // deadline the reads share; the reads themselves keep it.
+  it('lets every provider write outlive the deadline the reads share, and only the writes', async () => {
+    const appJson = await readFile(
+      new URL('./fixtures/fly/app-create.json', import.meta.url),
+      'utf8'
+    );
+    const projectJson = await readFile(
+      new URL('./fixtures/neon/project-create.json', import.meta.url),
+      'utf8'
+    );
+    const { executable } = await fakeProvider(`sleep 1.5; printf '%s' "$FIXTURE_JSON"`);
+    const short = (fixture = '') => ({
+      ...options(executable, { FIXTURE_JSON: fixture }),
+      timeoutMs: 1_000,
+    });
+    await Promise.all([
+      expect(
+        createFlyApp(
+          short(appJson),
+          'community-fixture-app',
+          'fixture-org',
+          'dorkos-7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a',
+          async () => null
+        )
+      ).resolves.toMatchObject({ name: 'community-fixture-app' }),
+      expect(
+        stageFlySecrets(short(), 'community-space', { COMMUNITY_AUTH_SECRET: 'x'.repeat(43) })
+      ).resolves.toEqual({ operation: 'secrets-stage' }),
+      expect(destroyFlyApp(short(), 'community-space')).resolves.toMatchObject({}),
+      // The uncertain-create removal's unset of a deleted bucket's keys is a write too.
+      expect(unsetFlyTigrisSecrets(short(), 'community-space')).resolves.toEqual({
+        operation: 'secrets-unset',
+      }),
+      expect(
+        createNeonProject(short(projectJson), {
+          organizationId: 'org_fixture_01',
+          name: 'Community Fixture',
+          regionId: 'aws-us-east-2',
+          databaseName: 'community',
+          roleName: 'community_owner',
+          postgresVersion: 17,
+        })
+      ).resolves.toMatchObject({ id: 'project_fixture_01' }),
+      expect(deleteNeonProject(short(), 'project_123')).resolves.toMatchObject({
+        operation: 'delete',
+      }),
+      // A read with the same slow provider still stops at its own deadline.
+      expect(readFlyApps(short('[]'), 'dork-labs')).rejects.toMatchObject({ code: 'TIMEOUT' }),
+    ]);
+    expect(PROVIDER_WRITE_TIMEOUT_MS).toBeGreaterThanOrEqual(2 * 60_000);
   });
 
   it('deploys only an immutable image with HA disabled and verifies exact runtime state', async () => {

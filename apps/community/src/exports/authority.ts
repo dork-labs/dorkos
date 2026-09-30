@@ -2,6 +2,13 @@ import type { Pool, PoolClient } from 'pg';
 
 /** Who an export is for: one member's own data, or the whole community for its owner. */
 export type ExportScope = 'personal' | 'owner';
+/**
+ * Every scope an export job may have: a member's request, or `evidence`, the copy of a whole
+ * community a host takedown preserves. Nobody asks for an evidence export, nobody can list or
+ * download one, and only the takedown worker reads its segments, to copy them into the evidence
+ * store.
+ */
+export type ExportJobScope = ExportScope | 'evidence';
 
 /**
  * Lifecycles in which an owner may export: a host hold keeps the owner's way out open. A personal
@@ -25,18 +32,79 @@ export const READABLE_CHANNEL_SQL = `(
 )`;
 
 /** The requester of one export and what it covers. */
-export interface ExportRequester {
-  communityId: string;
-  memberId: string;
-  scope: ExportScope;
-  /** Personal scope: the channels chosen when the export started. */
-  channelIds: readonly string[];
+export type ExportRequester =
+  | {
+      communityId: string;
+      memberId: string;
+      scope: ExportScope;
+      /** Personal scope: the channels chosen when the export started. */
+      channelIds: readonly string[];
+    }
+  | {
+      communityId: string;
+      /** An evidence export has no requester: its authority is the takedown that made it. */
+      memberId: null;
+      scope: 'evidence';
+      takedownId: string;
+      channelIds: readonly string[];
+    };
+
+/** The export row columns {@link exportRequesterOf} reads. */
+export interface ExportRequesterRow {
+  community_id: string;
+  scope: ExportJobScope;
+  requester_member_id: string | null;
+  evidence_takedown_id: string | null;
+}
+
+/** Who one export job answers to: its requester, or for evidence the takedown that made it. */
+export function exportRequesterOf(
+  row: ExportRequesterRow,
+  channelIds: readonly string[]
+): ExportRequester {
+  if (row.scope === 'evidence')
+    return {
+      communityId: row.community_id,
+      memberId: null,
+      scope: 'evidence',
+      takedownId: row.evidence_takedown_id!,
+      channelIds: [],
+    };
+  return {
+    communityId: row.community_id,
+    memberId: row.requester_member_id!,
+    scope: row.scope,
+    channelIds,
+  };
+}
+
+/**
+ * Whether a takedown's evidence export may still run: the community row still exists and so does
+ * the takedown that made the export. A reversed takedown still counts: its evidence is finished
+ * and kept even when the community comes back. `lock` takes the community row `FOR SHARE`.
+ */
+async function hasEvidenceAuthority(
+  db: Queryable,
+  requester: { communityId: string; takedownId: string },
+  lock: boolean
+): Promise<boolean> {
+  const community = await db.query(
+    `SELECT 1 FROM communities WHERE id=$1${lock ? ' FOR SHARE' : ''}`,
+    [requester.communityId]
+  );
+  if (!community.rowCount) return false;
+  const takedown = await db.query(
+    `SELECT 1 FROM community_takedowns
+     WHERE id=$1 AND community_id=$2 AND target_kind='community'`,
+    [requester.takedownId, requester.communityId]
+  );
+  return Boolean(takedown.rowCount);
 }
 
 /**
  * Whether the requester may still have this export: an active member of a community in an
  * allowed lifecycle, still its owner for an owner export, and still able to read every exported
- * channel for a personal one. `lock` takes the community and member rows `FOR SHARE`, in that
+ * channel for a personal one. An evidence export answers to its takedown instead. `lock` takes the community and member rows `FOR SHARE`, in that
  * order (the order every administration mutation uses), so a demotion or lifecycle change waits
  * for the caller's transaction.
  */
@@ -45,6 +113,7 @@ export async function hasExportAuthority(
   requester: ExportRequester,
   lock = false
 ): Promise<boolean> {
+  if (requester.scope === 'evidence') return hasEvidenceAuthority(db, requester, lock);
   const share = lock ? ' FOR SHARE' : '';
   const community = await db.query<{ lifecycle: string }>(
     `SELECT lifecycle FROM communities WHERE id=$1${share}`,

@@ -31,6 +31,7 @@ export interface HostCommunityRow {
   replacement_id: string | null;
   replacement_state: 'notifying' | 'waiting' | 'claimable' | null;
   replacement_after: Date | null;
+  takedown_id: string | null;
 }
 
 /**
@@ -72,6 +73,7 @@ export function projectCommunity(row: HostCommunityRow, actor: HostActor) {
             claimableAfter: row.replacement_after?.toISOString() ?? null,
           }
         : null,
+    takedownId: row.takedown_id,
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -85,7 +87,7 @@ export function projectCommunity(row: HostCommunityRow, actor: HostActor) {
  */
 export const hostProjectionSql = `SELECT c.id,c.name,c.description,c.lifecycle,c.lifecycle_version,
   c.settings_version,c.created_at,c.suspended_from_state,c.held_from_state,c.deletion_notice_at,
-  c.legal_hold_at,c.legal_hold_reference,
+  c.legal_hold_at,c.legal_hold_reference,c.takedown_id,
   CASE WHEN c.delete_requested_by_host_actor IS NOT NULL THEN 'host'
        WHEN c.delete_requested_by IS NOT NULL THEN 'owner' END AS deletion_requested_by,
   (SELECT n.short_name FROM community_short_names n

@@ -330,7 +330,33 @@ describe('Move a community here', () => {
     const lost = moveStepOf(move({ state: 'awaiting_upload', upload: null }));
     show(moveProgressStep(lost as never, progressHandlers));
     expect(screen.queryByRole('button', { name: 'Send again' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Cancel the move, then start again/)).toBeInTheDocument();
+    expect(screen.getByText(/Cancel the move and start again/)).toBeInTheDocument();
+  });
+
+  // Purpose: after DorkOS restarts it holds no upload for a move (its one-time upload key is
+  // kept in memory only), and the person must be told that plainly, not shown a generic
+  // failure. A closed upload window says so in its own words. Fails if either reads as the other.
+  it('says plainly that a move must start again after DorkOS restarted', () => {
+    const restarted = moveStepOf(move({ state: 'awaiting_upload', upload: null }));
+    expect(restarted).toMatchObject({ kind: 'upload-failed', why: 'restarted' });
+    const first = show(moveProgressStep(restarted as never, progressHandlers));
+    expect(
+      screen.getByRole('heading', { name: 'This move has to start again' })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS restarted since the move began/)).toBeInTheDocument();
+    expect(screen.getByText(/started on another computer/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel move' })).toBeInTheDocument();
+    first.unmount();
+    const expired = moveStepOf(
+      move({
+        state: 'awaiting_upload',
+        upload: { state: 'failed', sentBytes: 5, totalBytes: 100, failure: 'expired' },
+      })
+    );
+    expect(expired).toMatchObject({ why: 'expired' });
+    show(moveProgressStep(expired as never, progressHandlers));
+    expect(screen.getByRole('heading', { name: 'The time to upload ran out' })).toBeInTheDocument();
+    expect(screen.queryByText(/DorkOS restarted/)).not.toBeInTheDocument();
   });
 
   it('says the upload needs DorkOS running, but not this window', () => {

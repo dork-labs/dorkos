@@ -10,13 +10,23 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import * as pty from 'node-pty';
 import { ensureNodePtySpawnHelperExecutable } from '@dorkos/shared/node-pty-spawn-helper';
 import {
   communityLiveGateRecoveryCommand,
   parseCommunityLiveGateConfig,
 } from './community-deploy-live-config.js';
-import { runCommunityLiveOwnerProof } from './community-deploy-live-proof.js';
+import {
+  runCommunityLiveOwnerProof,
+  runCommunityLiveSecondMemberProof,
+} from './community-deploy-live-proof.js';
+import {
+  holdCommunityLive,
+  isWithinDirectory,
+  quietWriter,
+  runHeldPhaseThenCleanUp,
+} from './community-deploy-live-hold.js';
 import {
   CommunityLiveGateError,
   receiveClipboard,
@@ -28,14 +38,17 @@ import {
   describeCommunityLiveGateFailure,
   describeLauncherExit,
   describeLauncherStop,
+  DORKOS_HOSTS_CONTACTED_STEP,
   explainCommunityLiveGateFailure,
   PUBLISHED_LAUNCHER_STEP,
+  withDorkosHostsContacted,
 } from './community-deploy-live-failure.js';
 import {
   parsePublishedVersion,
   runCommunityLiveGateCommand as command,
 } from './community-deploy-live-process.js';
 import {
+  COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS,
   createLauncherPromptResponder,
   requireTigrisTermsAccepted,
 } from './community-deploy-live-launcher.js';
@@ -43,14 +56,31 @@ import {
   cleanupCommunityLiveGate,
   type CommunityLiveGateJournal,
 } from './community-deploy-live-cleanup.js';
+import {
+  guardCommunityLiveProvenance,
+  probeCommunityLiveProvenance,
+  readFlyGraphql,
+} from './community-deploy-live-provenance.js';
 import { readFlyApps } from '../src/commands/community-deploy/fly-read.js';
 import { destroyFlyApp } from '../src/commands/community-deploy/fly-mutate.js';
-import { readNeonProjects } from '../src/commands/community-deploy/neon-read.js';
+import {
+  readNeonBranchTopology,
+  readNeonProjects,
+} from '../src/commands/community-deploy/neon-read.js';
 import { deleteNeonProject } from '../src/commands/community-deploy/neon-mutate.js';
 import { FlyTigrisGraphqlClient } from '../src/commands/community-deploy/fly-graphql-client.js';
-import { readFlySessionCredential } from '../src/commands/community-deploy/tigris-session.js';
+import {
+  readFlySecretInventory,
+  readFlySessionCredential,
+} from '../src/commands/community-deploy/tigris-session.js';
+import { runProviderCommand } from '../src/commands/community-deploy/provider-process.js';
+import {
+  readDorkosHostsContacted,
+  withNoDorkosHostsGuard,
+} from './community-deploy-no-dorkos-hosts-record.js';
 
-const TIMEOUT_MS = 12 * 60_000;
+// Derived from the launcher's own deadlines; see COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS.
+const TIMEOUT_MS = COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS;
 /**
  * How long the gate waits for a secret after the launcher that sends it has exited. A launcher
  * copies a secret before it prompts or exits, so by then the secret is already sent or lost; this
@@ -58,6 +88,13 @@ const TIMEOUT_MS = 12 * 60_000;
  * should the resumed launcher exit cleanly without sending it.
  */
 const DELIVERED_CAPTURE_MS = 30_000;
+/** Deadline for the no-op `fly ssh console` probe; the first one may issue an SSH certificate. */
+const SSH_PROBE_TIMEOUT_MS = 120_000;
+/**
+ * The parents of the launcher processes each run starts under the DorkOS-host guard: `--help`,
+ * the launch and the resume, each spawned directly by the gate (node-pty's helper execs in place).
+ */
+const GUARDED_LAUNCHER_PARENTS = [process.pid, process.pid, process.pid];
 
 /** A launcher running in a PTY: its exit, and a way to stop it from the gate's finally. */
 interface LauncherRun {
@@ -137,10 +174,22 @@ async function main(): Promise<void> {
   // node-pty 1.1.0 ships its spawn-helper non-executable, so on a fresh install every PTY spawn
   // fails. Heal it before the first one; a helper it cannot fix still fails at spawn, pre-write.
   ensureNodePtySpawnHelperExecutable({ resolveFrom: import.meta.url });
+  const liveGateHome = join(process.env.DORK_HOME ?? join(homedir(), '.dork'), 'live-gate');
+  // The handoff file holds two passwords. It is written under the retained run directory, which
+  // must not be inside this checkout, where a `git add` could pick it up. Real paths are compared,
+  // so a symlinked DORK_HOME cannot hide it. Checked before anything is created.
+  if (
+    config.holdMinutes !== null &&
+    (await isWithinDirectory(liveGateHome, fileURLToPath(new URL('../../../', import.meta.url))))
+  )
+    throw new CommunityLiveGateError('hold-directory-inside-repository');
   const runDirectory = await mkdtemp(join(tmpdir(), 'dorkos-community-live-'));
   const appName = `dorkos-gate-${randomBytes(6).toString('hex')}`;
-  const durableHome = join(process.env.DORK_HOME ?? join(homedir(), '.dork'), 'live-gate', appName);
+  const durableHome = join(liveGateHome, appName);
   const socketPath = join(runDirectory, 'bootstrap.sock');
+  // Every DorkOS host the installed launcher tried to reach, recorded by the guard preload
+  // (DOR-2593). Read after cleanup, before the run directory is removed.
+  const dorkosHostsRecordPath = join(runDirectory, 'dorkos-hosts.jsonl');
   const receiptDirectory = join(durableHome, '..', 'receipts');
   const receiptPath = join(receiptDirectory, `${appName}.json`);
   let bootstrap: string | null = null;
@@ -235,10 +284,20 @@ async function main(): Promise<void> {
       'package-install'
     );
     const binary = join(install, 'node_modules/.bin/dorkos');
+    // Guarded like every launcher run (its record is read after cleanup, with the rest). The
+    // guard is appended to whatever NODE_OPTIONS the operator already runs with.
     const help = await command(
       binary,
       ['community', 'deploy', '--help'],
-      process.env,
+      withNoDorkosHostsGuard(
+        Object.fromEntries(
+          // eslint-disable-next-line no-restricted-syntax -- The gate runs --help with the operator's environment, as before.
+          Object.entries(process.env).flatMap(([name, value]) =>
+            value === undefined ? [] : [[name, value]]
+          )
+        ),
+        dorkosHostsRecordPath
+      ),
       PUBLISHED_LAUNCHER_STEP
     );
     if (!help.includes('Guided setup') && !help.includes('Guide a standalone'))
@@ -266,6 +325,8 @@ async function main(): Promise<void> {
         )
       ),
     };
+    // The launcher runs guarded; the gate's own provider reads below use the plain environment.
+    const launcherEnvironment = withNoDorkosHostsGuard(environment, dorkosHostsRecordPath);
     const fly = { executable: 'fly', env: environment, timeoutMs: 30_000 };
     const neon = { executable: 'neonctl', env: environment, timeoutMs: 30_000 };
     // The launcher asks for Tigris terms only after it has created the Fly app and the Neon
@@ -292,7 +353,7 @@ async function main(): Promise<void> {
     launcher = runLauncherPty({
       binary,
       args: launchArgs,
-      environment,
+      environment: launcherEnvironment,
       appName,
       ownerClaimed: new Promise<void>(() => undefined),
       interruptAtOwnerPending: true,
@@ -317,7 +378,7 @@ async function main(): Promise<void> {
     launcher = runLauncherPty({
       binary,
       args: [...launchArgs, '--resume', runId],
-      environment,
+      environment: launcherEnvironment,
       appName,
       ownerClaimed,
     });
@@ -329,7 +390,7 @@ async function main(): Promise<void> {
       step: 'bootstrap-capture-after-launcher-exit',
     });
     await capture.close();
-    const proof = await whileLauncherRuns(
+    const ownerProof = await whileLauncherRuns(
       resumed,
       runCommunityLiveOwnerProof({
         appName,
@@ -349,68 +410,132 @@ async function main(): Promise<void> {
     ) {
       throw new CommunityLiveGateError('bootstrap-rotation', recoveryCommand);
     }
-    const credential = await readFlySessionCredential(fly);
-    const tigris = <T>(operation: (client: FlyTigrisGraphqlClient) => Promise<T>) =>
-      credential.use((token) => operation(new FlyTigrisGraphqlClient({ accessToken: token })));
-    let cleanup;
-    let tigrisBucketFound: boolean;
-    try {
-      cleanup = await cleanupCommunityLiveGate(journal, {
-        readFlyApps: async (organization) =>
-          (await readFlyApps(fly, organization)).map((item) => ({
-            id: item.id,
-            name: item.name,
-            organization: item.organizationSlug,
-          })),
-        readNeonProjects: async (organization) =>
-          (await readNeonProjects(neon, organization)).map((item) => ({
-            id: item.id,
-            name: item.name,
-            organization: item.organizationId,
-          })),
-        readTigris: async (id) => {
-          const item = await tigris((client) => client.readTigris(id));
-          return {
-            id: item.addOnId,
-            name: item.addOnName,
-            organization: item.organizationSlug,
-            appId: item.appId,
-            appName: item.appName,
-          };
-        },
-        listTigrisOnApp: (name) => tigris((client) => client.listTigrisOnApp(name)),
-        deleteTigris: async (name) => void (await tigris((client) => client.deleteTigris(name))),
-        deleteNeonProject: async (id) => void (await deleteNeonProject(neon, id)),
-        destroyFlyApp: async (name) => void (await destroyFlyApp(fly, name)),
-      });
-      // The Fly and Neon inventories are re-read below; a storage bucket bills too, so it is
-      // re-read here, while the session is still held. Only Fly's exact not-found answer counts as
-      // gone; a bucket still there fails the gate before cleanup is called finished, so the
-      // recovery command is still printed.
-      tigrisBucketFound = await tigris((client) =>
-        client.readTigris(journal.resources.tigrisBucketId ?? '')
-      ).then(
-        () => true,
-        (error: unknown) => {
-          if (error instanceof Error && 'code' in error && error.code === 'ADD_ON_MISSING') {
-            return false;
+    // From here the community is finished and proven, and everything left to do before cleanup is
+    // held: the second-member proof, then the operator's hold when one was asked for. Control-C,
+    // SIGTERM, a failed proof and the hold's own end all go to the same cleanup below; a phase that
+    // failed is reported only after it (see runHeldPhaseThenCleanUp).
+    const held = await runHeldPhaseThenCleanUp({
+      signals: process,
+      streams: [process.stdout, process.stderr],
+      write: quietWriter(process.stderr),
+      phase: async (signal) => {
+        const member = await runCommunityLiveSecondMemberProof(ownerProof.owner, {
+          appName,
+          signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]),
+        });
+        // The access (two passwords and the invitation) goes only into the handoff file; the
+        // receipt takes the member's ids and flag, never this object.
+        const hold =
+          config.holdMinutes === null
+            ? null
+            : await holdCommunityLive({
+                parent: durableHome,
+                access: member.access,
+                minutes: config.holdMinutes,
+                signal,
+                write: quietWriter(process.stdout),
+              });
+        return { member: member.receipt, hold };
+      },
+      cleanup: async () => {
+        const credential = await readFlySessionCredential(fly);
+        const tigris = <T>(operation: (client: FlyTigrisGraphqlClient) => Promise<T>) =>
+          credential.use((token) => operation(new FlyTigrisGraphqlClient({ accessToken: token })));
+        const flyGraphql = (query: string, variables: Readonly<Record<string, string>>) =>
+          credential.use((accessToken) => readFlyGraphql({ accessToken, query, variables }));
+        let cleanup;
+        let provenance;
+        let tigrisBucketFound: boolean;
+        try {
+          // What a finished launch shows about its markers, recorded before cleanup removes the
+          // resources that carry them. The guard resolves on every path within its deadline, so a
+          // probe that throws or hangs can never skip or hold up the cleanup below.
+          provenance = await guardCommunityLiveProvenance(() =>
+            probeCommunityLiveProvenance(journal, {
+              readAppProvenance: (name) => tigris((client) => client.readAppProvenance(name)),
+              flyGraphql,
+              readNeonRoleNames: async (projectId, branchId) =>
+                (await readNeonBranchTopology(neon, projectId, branchId)).roles.map(
+                  (role) => role.name
+                ),
+              readNeonProjects: (organization) => readNeonProjects(neon, organization),
+              readTigris: async (id) => {
+                const item = await tigris((client) => client.readTigris(id));
+                return { appId: item.appId, appName: item.appName };
+              },
+              readSecretNames: async (name) =>
+                (await readFlySecretInventory(fly, name)).map((item) => item.name),
+              runSshNoOp: async (name) =>
+                void (await runProviderCommand({
+                  ...fly,
+                  timeoutMs: SSH_PROBE_TIMEOUT_MS,
+                  args: ['ssh', 'console', '--app', name, '--command', 'true'],
+                  parse: () => undefined,
+                })),
+              unknownAppName: () => `dorkos-gate-absent-${randomBytes(12).toString('hex')}`,
+            })
+          );
+          cleanup = await cleanupCommunityLiveGate(journal, {
+            readFlyApps: async (organization) =>
+              (await readFlyApps(fly, organization)).map((item) => ({
+                id: item.id,
+                name: item.name,
+                organization: item.organizationSlug,
+              })),
+            readNeonProjects: async (organization) =>
+              (await readNeonProjects(neon, organization)).map((item) => ({
+                id: item.id,
+                name: item.name,
+                organization: item.organizationId,
+              })),
+            readTigris: async (id) => {
+              const item = await tigris((client) => client.readTigris(id));
+              return {
+                id: item.addOnId,
+                name: item.addOnName,
+                organization: item.organizationSlug,
+                appId: item.appId,
+                appName: item.appName,
+              };
+            },
+            listTigrisOnApp: (name) => tigris((client) => client.listTigrisOnApp(name)),
+            deleteTigris: async (name) =>
+              void (await tigris((client) => client.deleteTigris(name))),
+            deleteNeonProject: async (id) => void (await deleteNeonProject(neon, id)),
+            destroyFlyApp: async (name) => void (await destroyFlyApp(fly, name)),
+          });
+          // The Fly and Neon inventories are re-read below; a storage bucket bills too, so it is
+          // re-read here, while the session is still held. Only Fly's exact not-found answer counts as
+          // gone; a bucket still there fails the gate before cleanup is called finished, so the
+          // recovery command is still printed.
+          tigrisBucketFound = await tigris((client) =>
+            client.readTigris(journal.resources.tigrisBucketId ?? '')
+          ).then(
+            () => true,
+            (error: unknown) => {
+              if (error instanceof Error && 'code' in error && error.code === 'ADD_ON_MISSING') {
+                return false;
+              }
+              throw error;
+            }
+          );
+          if (tigrisBucketFound) {
+            throw new CommunityLiveGateError(
+              'tigris-after-cleanup',
+              recoveryCommand,
+              'the storage bucket still exists after cleanup'
+            );
           }
-          throw error;
+        } finally {
+          credential.dispose();
         }
-      );
-      if (tigrisBucketFound) {
-        throw new CommunityLiveGateError(
-          'tigris-after-cleanup',
-          recoveryCommand,
-          'the storage bucket still exists after cleanup'
-        );
-      }
-    } finally {
-      credential.dispose();
-    }
-    // Clearing `recoveryCommand` alone would not do: the catch re-finds the journal, which stays on
-    // disk until the very end, and would print a recovery command for resources already deleted.
-    cleanedUp = true;
+        // Clearing `recoveryCommand` alone would not do: the catch re-finds the journal, which stays on
+        // disk until the very end, and would print a recovery command for resources already deleted.
+        cleanedUp = true;
+        return { cleanup, provenance, tigrisBucketFound };
+      },
+    });
+    const { cleanup, provenance, tigrisBucketFound } = held.cleanup;
     const after = {
       flyAppIds: (await readFlyApps(fly, config.flyOrganization)).map((item) => item.id),
       neonProjectIds: (await readNeonProjects(neon, config.neonOrganization)).map(
@@ -418,6 +543,23 @@ async function main(): Promise<void> {
       ),
       tigrisBucketFound,
     };
+    // DOR-2593: a self-hosted launch never needs DorkOS. Checked after cleanup, so a run that
+    // fails here strands nothing, and recorded in the receipt so every paid run carries it.
+    // Three guarded launcher processes: `--help`, the interrupted launch and the resume.
+    const dorkosHostsContacted = await readDorkosHostsContacted(
+      dorkosHostsRecordPath,
+      GUARDED_LAUNCHER_PARENTS
+    ).catch((error: unknown) => {
+      // Its message is fixed and non-secret; wrapped so the reason survives the after-cleanup path.
+      throw new CommunityLiveGateError('dorkos-hosts-guard', null, (error as Error).message);
+    });
+    if (dorkosHostsContacted.length > 0) {
+      throw new CommunityLiveGateError(
+        DORKOS_HOSTS_CONTACTED_STEP,
+        null,
+        `the launcher tried to reach ${dorkosHostsContacted.join(', ')}`
+      );
+    }
     // This receipt is intentionally non-secret and remains only long enough for the gate's caller.
     await mkdir(receiptDirectory, { recursive: true, mode: 0o700 });
     await writeFile(
@@ -432,7 +574,11 @@ async function main(): Promise<void> {
         cleanup,
         initialBootstrapSecretDigest: initialBootstrapDigest,
         bootstrapSecretDigest: bootstrapDigest,
-        ...proof,
+        provenance,
+        dorkosHostsContacted,
+        ...ownerProof.receipt,
+        ...held.phase.member,
+        ...(held.phase.hold ? { held: held.phase.hold } : {}),
       }) + '\n',
       { mode: 0o600, flag: 'wx' }
     );
@@ -441,7 +587,7 @@ async function main(): Promise<void> {
     );
     await rm(durableHome, { recursive: true, force: true });
   } catch (error) {
-    throw await explainCommunityLiveGateFailure(
+    const explained = await explainCommunityLiveGateFailure(
       error,
       { cleanedUp, recoveryCommand },
       async () => {
@@ -454,6 +600,12 @@ async function main(): Promise<void> {
         const journal = await readFile(join(journalDirectory, `${runId}.json`), 'utf8');
         return describeLauncherStop(JSON.parse(journal) as unknown);
       }
+    );
+    // A launcher the guard refused usually fails at an earlier step (its journal, its exit), so the
+    // record is read on every failure too, before the finally removes it. Best-effort.
+    throw withDorkosHostsContacted(
+      explained,
+      await readDorkosHostsContacted(dorkosHostsRecordPath, null).catch((): string[] => [])
     );
   } finally {
     if (bootstrap) Buffer.from(bootstrap).fill(0);

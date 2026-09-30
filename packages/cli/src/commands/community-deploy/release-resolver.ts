@@ -27,8 +27,11 @@ export interface CompatibleCommunityRelease {
     repository: string;
     /** Immutable OCI digest. */
     digest: string;
-    /** Published image platforms. */
-    platforms: Array<{ os: string; architecture: string }>;
+    /**
+     * Published image platforms, each with its own manifest digest when the manifest carries one
+     * (manifests from 0.92.0 and earlier do not).
+     */
+    platforms: Array<{ os: string; architecture: string; digest?: string }>;
   };
   /** Release workflow identity embedded by the generator. */
   provenance: {

@@ -27,19 +27,19 @@ import { createCommunityApp } from '../app.js';
 import { createCommunityAuth } from '../auth.js';
 import { parseConfig, type CommunityConfig } from '../config.js';
 import { migrate } from '../migrate.js';
-import { registerAdministrationRoutes } from '../routes/administration.js';
-import { registerHostRoutes } from '../routes/host.js';
-import { registerMembershipRoutes } from '../routes/memberships.js';
-import { registerHostLimitRoutes } from '../routes/host-limits.js';
-import { registerHostLegalHoldRoutes } from '../routes/host-legal-hold.js';
-import { registerHostErasureJournalRoutes } from '../erasure/journal-routes.js';
-import { registerHostLifecycleRoutes } from '../routes/host-lifecycle.js';
-import { registerShortNameRoutes } from '../routes/short-names.js';
-import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
-import { registerHostKeyRoutes } from '../routes/host-keys.js';
-import { registerImportRoutes } from '../routes/imports.js';
+import { registerAdministrationRoutes } from '../routes/community/administration.js';
+import { registerHostRoutes } from '../routes/host/host.js';
+import { registerMembershipRoutes } from '../routes/account/memberships.js';
+import { registerHostLimitRoutes } from '../routes/host/host-limits.js';
+import { registerHostLegalHoldRoutes } from '../routes/host/host-legal-hold.js';
+import { registerHostErasureJournalRoutes } from '../routes/host/host-erasure-journal.js';
+import { registerHostLifecycleRoutes } from '../routes/host/host-lifecycle.js';
+import { registerShortNameRoutes } from '../routes/host/short-names.js';
+import { registerOwnerClaimRoutes } from '../routes/host/owner-claims.js';
+import { registerHostKeyRoutes } from '../routes/host/host-keys.js';
+import { registerImportRoutes } from '../routes/host/imports.js';
 import { UploadSlots } from '../imports/upload.js';
-import { registerHostTakedownRoutes } from '../routes/host-takedowns.js';
+import { registerHostTakedownRoutes } from '../routes/host/host-takedowns.js';
 import { createHostAuthority } from '../host/authority.js';
 import { issueHostApiKey } from '../host/key-store.js';
 import { hashSecret, randomToken } from '../security.js';
@@ -697,6 +697,7 @@ const actions: Action<unknown>[] = [
           'ownerReplacement',
           'settingsVersion',
           'shortName',
+          'takedownId',
         ]);
       }
     },
@@ -749,6 +750,7 @@ const actions: Action<unknown>[] = [
         'ownerReplacement',
         'settingsVersion',
         'shortName',
+        'takedownId',
       ]);
     },
   }),

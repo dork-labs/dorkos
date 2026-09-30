@@ -218,6 +218,99 @@ describe('ConnectCommunityDialog', () => {
     );
   });
 
+  /** Submit an address and return the alert the refusal leaves behind. */
+  async function refusedWith(refusal: unknown, typed = 'https://spaces.example.com/acme') {
+    const user = userEvent.setup();
+    const transport = createMockTransport({
+      listCommunityConnections: vi.fn().mockResolvedValue([]),
+      startCommunityConnection: vi.fn().mockRejectedValue(refusal),
+    });
+    mount(transport, { ref: null });
+    const address = screen.getByLabelText('Community address');
+    await waitFor(() => expect(address).toBeEnabled());
+    await user.type(address, typed);
+    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    return screen.findByRole('alert');
+  }
+
+  /** A refusal shaped the way the HTTP transport throws one: code, status and parsed body. */
+  const coded = (status: number, code: string, body: Record<string, unknown> = {}) =>
+    Object.assign(new Error('server words'), { status, code, body: { code, ...body } });
+
+  // Purpose: a short address the host does not know points at the spelling, and says so in
+  // those words. Fails if COMMUNITY_NAME_NOT_FOUND falls back to the general message.
+  it('says no community uses that short address when the host does not know the name', async () => {
+    const alert = await refusedWith(coded(404, 'COMMUNITY_NAME_NOT_FOUND'));
+    expect(alert).toHaveTextContent(
+      'No community uses that short address on this host. Check the spelling, or ask for the community’s full link.'
+    );
+    expect(screen.getByLabelText('Community address')).toHaveValue(
+      'https://spaces.example.com/acme'
+    );
+  });
+
+  // Purpose: a host turning lookups away is not a wrong address, and the wait the host named
+  // reaches the person. Fails if the code falls back to "check the address", or if the host's
+  // Retry-After is ignored.
+  it('asks the person to wait, for as long as the host said, when lookups are limited', async () => {
+    const alert = await refusedWith(
+      coded(429, 'COMMUNITY_RATE_LIMITED', { retryAfterSeconds: 17 })
+    );
+    expect(alert).toHaveTextContent(
+      'This DorkOS has tried that community too many times in a short while. Your address may be fine. Wait 17 seconds, then try again.'
+    );
+    expect(alert).not.toHaveTextContent('Check the community address');
+  });
+
+  it('rounds a long wait up to minutes, and says a minute when the host named none', async () => {
+    expect(
+      await refusedWith(coded(429, 'COMMUNITY_RATE_LIMITED', { retryAfterSeconds: 90 }))
+    ).toHaveTextContent('Wait 2 minutes, then try again.');
+    cleanup();
+    expect(await refusedWith(coded(429, 'COMMUNITY_RATE_LIMITED'))).toHaveTextContent(
+      'Wait a minute, then try again.'
+    );
+  });
+
+  // Purpose: an outdated community server is nothing the person can fix by typing, so the
+  // message names who can. Fails if COMMUNITY_UPGRADE_REQUIRED falls back to the general message.
+  it('says the community’s server needs updating when it is too old to connect', async () => {
+    const alert = await refusedWith(coded(426, 'COMMUNITY_UPGRADE_REQUIRED'));
+    expect(alert).toHaveTextContent(
+      'This community’s server is too old to connect to this DorkOS. Ask whoever runs the community to update it, then try again.'
+    );
+    expect(alert).not.toHaveTextContent('Check the community address');
+  });
+
+  // Purpose: after a refusal, a keyboard or screen-reader user lands back on the address with
+  // the message tied to it. The field is marked invalid only when the address is in doubt.
+  // Fails if focus stays lost on the disabled field, or the alert is not linked to the input.
+  it('returns focus to the address and ties the message to it', async () => {
+    const alert = await refusedWith(coded(404, 'COMMUNITY_NAME_NOT_FOUND'));
+    const address = screen.getByLabelText('Community address');
+    await waitFor(() => expect(address).toHaveFocus());
+    expect(alert.id).not.toBe('');
+    expect(address.getAttribute('aria-describedby')?.split(' ')).toContain(alert.id);
+    expect(address).toHaveAccessibleDescription(expect.stringContaining('No community uses'));
+    expect(address).toHaveAttribute('aria-invalid', 'true');
+    cleanup();
+
+    const limited = await refusedWith(coded(429, 'COMMUNITY_RATE_LIMITED'));
+    const again = screen.getByLabelText('Community address');
+    await waitFor(() => expect(again).toHaveFocus());
+    expect(again.getAttribute('aria-describedby')?.split(' ')).toContain(limited.id);
+    // Too many tries is not the address's fault.
+    expect(again).not.toHaveAttribute('aria-invalid');
+  });
+
+  // Purpose: only the known codes get their own words. An unknown code, and the server's own
+  // text, never reach the person.
+  it('keeps the general message for a refusal it has no words for', async () => {
+    const alert = await refusedWith(coded(502, 'SOMETHING_ELSE'));
+    expect(alert).toHaveTextContent('Couldn’t connect. Check the community address and try again.');
+    expect(alert).not.toHaveTextContent('server words');
+  });
+
   it('closes and hands over the Community once it is approved', async () => {
     const transport = createMockTransport({
       listCommunityConnections: vi

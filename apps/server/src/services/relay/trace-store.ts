@@ -17,15 +17,15 @@ import {
   hasPercentileSupport,
   type Db,
 } from '@dorkos/db';
-import { ulid } from 'ulidx';
+import { encodeTime, ulid } from 'ulidx';
 import type {
   BudgetRejections,
   DeliveryMetrics,
   ObservedChat,
-  ChannelType,
   TraceSpanStatus,
 } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../lib/logger.js';
+import { parseHumanSubject } from './human-subject.js';
 
 /**
  * Fields that can be updated on a trace span.
@@ -82,6 +82,12 @@ function normalizeStatus(raw: unknown): TraceSpanStatus {
   const mapped = LEGACY_STATUS[value] ?? value;
   return TRACE_STATUSES.has(mapped as TraceSpanStatus) ? (mapped as TraceSpanStatus) : 'failed';
 }
+
+/**
+ * How many lifecycle events each adapter keeps: the most its event log can show
+ * (`GET /api/relay/adapters/:id/events` caps `limit` here). An older one could never be read.
+ */
+export const ADAPTER_EVENTS_KEPT = 500;
 
 /** Every status the schema accepts. */
 const TRACE_STATUSES = new Set<TraceSpanStatus>([
@@ -370,11 +376,32 @@ export class TraceStore {
   }
 
   /**
-   * Get observed chats for an adapter by querying trace metadata.
+   * Get the chats that have messaged a connection recently, most recent first.
    *
-   * Extracts unique chatId values from trace span metadata where the
-   * adapterId matches, groups by chatId, and returns aggregated results
-   * sorted by most recent message.
+   * A chat is read from each delivery span's SUBJECT, which names the
+   * connection and the chat (`relay.human.<platform>.<adapterId>[.group].<chatId>`).
+   * It is parsed with {@link parseHumanSubject}, the same parser binding
+   * resolution uses, so a chat id picked from this list is exactly the id a
+   * binding for that chat is matched against.
+   *
+   * Only spans the connection itself published count — its sender is
+   * `relay.human.<platform>.<adapterId>.bot`. The agent's reply, and every
+   * stream event of its turn, is published to the same chat subject, so
+   * counting those would turn one exchange into dozens of "messages".
+   *
+   * A message with no text (the bot being added to a group) names the chat but
+   * is not a message: it adds no count and no "last message" time, and a chat
+   * seen only that way is not listed. `displayName` is the latest non-empty
+   * name any of the chat's spans recorded — the group title, or a DM sender's
+   * name — and stays unset for a chat whose spans carry none.
+   *
+   * "Recently" is literal: delivery spans are pruned after a retention window
+   * (about eight days), so a chat quiet for longer than that drops off the list
+   * until it next sends a message.
+   *
+   * This used to read `adapterId` and `chatId` out of span metadata, which no
+   * writer ever put there, so the list was empty for every connection
+   * (DOR-2590).
    *
    * @param adapterId - Adapter instance ID to filter by
    * @param limit - Maximum number of chats to return (default 100)
@@ -382,54 +409,129 @@ export class TraceStore {
   getObservedChats(adapterId: string, limit = 100): ObservedChat[] {
     const rows = this.db
       .select({
-        metadata: relayTraces.metadata,
+        subject: relayTraces.subject,
         sentAt: relayTraces.sentAt,
+        from: sql<string | null>`json_extract(${relayTraces.metadata}, '$.from')`,
+        chatName: sql<string | null>`json_extract(${relayTraces.metadata}, '$.chatName')`,
+        emptyContent: sql<number | null>`json_extract(${relayTraces.metadata}, '$.emptyContent')`,
       })
       .from(relayTraces)
-      .where(sql`json_extract(${relayTraces.metadata}, '$.adapterId') = ${adapterId}`)
+      .where(
+        and(
+          eq(relayTraces.kind, 'delivery'),
+          sql`${relayTraces.subject} LIKE 'relay.human.%'`,
+          // Narrows the scan without LIKE, whose `_` and `%` wildcards an
+          // adapter id may contain; the exact match is the parse below.
+          sql`instr(${relayTraces.subject}, ${`.${adapterId}.`}) > 0`
+        )
+      )
       .all();
 
-    const VALID_CHANNEL_TYPES = new Set<ChannelType>(['dm', 'group', 'channel', 'thread']);
-
-    // Group by chatId in application code
     const chatMap = new Map<string, ObservedChat>();
+    // Latest non-empty name per chat, with the time it was recorded.
+    const names = new Map<string, { name: string; at: string }>();
 
     for (const row of rows) {
-      if (!row.metadata) continue;
-      try {
-        const meta = JSON.parse(row.metadata) as Record<string, unknown>;
-        const chatId = meta.chatId as string | undefined;
-        if (!chatId) continue;
+      const parsed = parseHumanSubject(row.subject);
+      if (parsed.adapterId !== adapterId || !parsed.chatId) continue;
+      if (row.from !== `relay.human.${parsed.platformType}.${adapterId}.bot`) continue;
 
-        const existing = chatMap.get(chatId);
-        if (existing) {
-          existing.messageCount++;
-          if (row.sentAt > existing.lastMessageAt) {
-            existing.lastMessageAt = row.sentAt;
-          }
-        } else {
-          const rawChannel = meta.channelType as string | undefined;
-          const channelType =
-            rawChannel && VALID_CHANNEL_TYPES.has(rawChannel as ChannelType)
-              ? (rawChannel as ChannelType)
-              : undefined;
-          chatMap.set(chatId, {
-            chatId,
-            displayName: meta.displayName as string | undefined,
-            channelType,
-            lastMessageAt: row.sentAt,
-            messageCount: 1,
-          });
+      if (row.chatName) {
+        const seen = names.get(parsed.chatId);
+        if (!seen || row.sentAt >= seen.at) {
+          names.set(parsed.chatId, { name: row.chatName, at: row.sentAt });
         }
-      } catch {
-        // Skip malformed metadata
       }
+      if (row.emptyContent) continue;
+
+      const existing = chatMap.get(parsed.chatId);
+      if (existing) {
+        existing.messageCount++;
+        if (row.sentAt > existing.lastMessageAt) existing.lastMessageAt = row.sentAt;
+        continue;
+      }
+      chatMap.set(parsed.chatId, {
+        chatId: parsed.chatId,
+        // The subject carries only a `group.` segment; everything else is a
+        // direct message, the same reading binding resolution gives it.
+        channelType: parsed.channelType === 'group' ? 'group' : 'dm',
+        lastMessageAt: row.sentAt,
+        messageCount: 1,
+      });
     }
 
-    // Sort by lastMessageAt descending and limit
+    for (const [chatId, chat] of chatMap) {
+      const named = names.get(chatId);
+      if (named) chat.displayName = named.name;
+    }
+
     return Array.from(chatMap.values())
       .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
       .slice(0, limit);
+  }
+
+  /**
+   * Delete up to `limit` delivery spans sent before `before`, oldest first.
+   *
+   * The Relay sweep calls this until it deletes fewer than `limit` (see `relay-gc.ts` for the
+   * retention rule). The range is read on the primary key: every span's id is a ULID minted as
+   * it is written, so ids sort by the time they were sent, and the ULID of `before` bounds
+   * them. `sent_at` is checked too, so a span is never deleted early whatever its id says.
+   *
+   * @param before - Unix ms; spans sent before this go.
+   * @param limit - The most to delete in this call.
+   * @returns How many were deleted.
+   */
+  pruneDeliverySpans(before: number, limit: number): number {
+    // The smallest ULID of the cutoff's millisecond: every id minted earlier sorts below it.
+    const firstIdAtCutoff = `${encodeTime(before, 10)}0000000000000000`;
+    const beforeIso = new Date(before).toISOString();
+    // A connection event written before `kind` existed (#665) is stored as a delivery
+    // (migration 0043's default), but the event log still shows it, so it is left to
+    // capAdapterEvents: a delivery span never names an adapter.
+    return this.db
+      .delete(relayTraces)
+      .where(
+        sql`${relayTraces.id} IN (
+          SELECT ${relayTraces.id} FROM ${relayTraces}
+          WHERE ${relayTraces.id} < ${firstIdAtCutoff}
+            AND ${relayTraces.sentAt} < ${beforeIso}
+            AND ${relayTraces.kind} = 'delivery'
+            AND json_extract(${relayTraces.metadata}, '$.adapterId') IS NULL
+          ORDER BY ${relayTraces.id}
+          LIMIT ${limit}
+        )`
+      )
+      .run().changes;
+  }
+
+  /**
+   * Delete each adapter's lifecycle events beyond its newest {@link ADAPTER_EVENTS_KEPT}, in
+   * the order its event log reads them. Kept by count, not age: an adapter that has been
+   * connected for months still shows when it connected.
+   *
+   * An event is what the event log reads, a row naming its adapter in `metadata.adapterId`,
+   * whatever its `kind`: events written before `kind` existed are stored as deliveries.
+   *
+   * @returns How many were deleted.
+   */
+  capAdapterEvents(): number {
+    return this.db
+      .delete(relayTraces)
+      .where(
+        sql`${relayTraces.id} IN (
+          SELECT id FROM (
+            SELECT ${relayTraces.id} AS id, row_number() OVER (
+              PARTITION BY json_extract(${relayTraces.metadata}, '$.adapterId')
+              ORDER BY ${relayTraces.sentAt} DESC, ${relayTraces.id} DESC
+            ) AS newest
+            FROM ${relayTraces}
+            WHERE json_extract(${relayTraces.metadata}, '$.adapterId') IS NOT NULL
+          )
+          WHERE newest > ${ADAPTER_EVENTS_KEPT}
+        )`
+      )
+      .run().changes;
   }
 
   /** No-op — connection lifecycle is managed by the shared Db instance. */

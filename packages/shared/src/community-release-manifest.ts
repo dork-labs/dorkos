@@ -28,11 +28,19 @@ export const COMMUNITY_CONFIG_SCHEMA_VERSION = 1 as const;
 const DigestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 const VersionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 
-/** One platform present in the published multi-platform OCI index. */
+/**
+ * One platform present in the published multi-platform OCI index.
+ *
+ * `digest` is that platform's own image manifest inside the index: the digest a host such as Fly
+ * reports once it has pulled the index (DOR-2586). It is optional so that manifests published
+ * before it existed (0.92.0 and earlier) still parse; a launcher without it reads the index from
+ * the registry instead and checks it hashes to `image.digest`.
+ */
 export const CommunityReleasePlatformSchema = z
   .object({
     os: z.literal('linux'),
     architecture: z.enum(['amd64', 'arm64']),
+    digest: DigestSchema.optional(),
   })
   .strict();
 
@@ -79,6 +87,19 @@ export const CommunityReleaseManifestSchema = z
         message: 'Platforms must be unique',
       });
     }
+    const platformDigests = manifest.image.platforms.flatMap(({ digest }) =>
+      digest === undefined ? [] : [digest]
+    );
+    if (
+      new Set(platformDigests).size !== platformDigests.length ||
+      platformDigests.includes(manifest.image.digest)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['image', 'platforms'],
+        message: 'Platform digests must be distinct from each other and from the index digest',
+      });
+    }
   });
 
 /** Parsed Community release manifest. */
@@ -90,8 +111,8 @@ export interface CreateCommunityReleaseManifestInput {
   dorkosVersion: string;
   /** Multi-platform index digest returned by Buildx. */
   digest: string;
-  /** Platforms read back from that exact index digest. */
-  platforms: Array<{ os: string; architecture: string }>;
+  /** Platforms read back from that exact index digest, each with its own manifest digest. */
+  platforms: Array<{ os: string; architecture: string; digest?: string }>;
   /** SHA-256 fingerprint derived from this tag's sorted production migrations. */
   migrationCompatibilityId: string;
   /** GitHub's exact caller workflow ref for the tag run. */
@@ -112,7 +133,11 @@ export function createCommunityReleaseManifest(
   input: CreateCommunityReleaseManifestInput
 ): CommunityReleaseManifest {
   const platforms = input.platforms
-    .map(({ os, architecture }) => ({ os, architecture }))
+    .map(({ os, architecture, digest }) => ({
+      os,
+      architecture,
+      ...(digest === undefined ? {} : { digest }),
+    }))
     .sort((left, right) =>
       `${left.os}/${left.architecture}`.localeCompare(`${right.os}/${right.architecture}`)
     );

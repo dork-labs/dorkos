@@ -38,7 +38,10 @@ vi.mock('../ui/CommunityPageHeading', () => ({
     <h1>{`${community} heading for ${roomId}`}</h1>
   ),
 }));
-vi.mock('@/layers/shared/model', () => ({ useIsMobile: () => false }));
+vi.mock('@/layers/shared/model', () => ({
+  useIsMobile: () => false,
+  useCommunityAuthority: () => ({ epoch: 1, ownerKey: 'owner' }),
+}));
 const { connections } = vi.hoisted(() => ({
   connections: { data: [] as Array<Record<string, unknown>> },
 }));
@@ -50,6 +53,7 @@ vi.mock('@/layers/entities/community', () => ({
     isPending: false,
     isError: false,
   }),
+  useUnsentCommunityDrafts: () => [],
 }));
 afterEach(() => {
   cleanup();

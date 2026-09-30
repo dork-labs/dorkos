@@ -383,6 +383,9 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
     // because choosing to run unreleased code against paid accounts is a decision too, and a task
     // that passed it through would hand that choice to whatever the environment held.
     'DORKOS_COMMUNITY_LIVE_PACKAGE_TARBALL',
+    // Not an arm either: it keeps the finished community running for up to 45 minutes before
+    // cleanup (DOR-2591). Longer running is more spend, so it is a decision no task may pass on.
+    'DORKOS_COMMUNITY_LIVE_HOLD_MINUTES',
     // Not a money path: the launcher's contract replay (`packages/cli/scripts/
     // community-deploy-contract-replay.ts`) only reads, and its second arm creates one EMPTY Fly
     // app, which has nothing that bills. Listed anyway because both still act on the operator's

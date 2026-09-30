@@ -10,7 +10,7 @@ import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { transaction } from '../data.js';
-import { sweepExpiredAttachments } from '../routes/attachments.js';
+import { sweepExpiredAttachments } from '../routes/community/attachments.js';
 import { sweepExpiredExports } from '../exports/sweep.js';
 import { discardManagedBlob, FileSystemBlobStore } from '../storage/index.js';
 import { MANAGED_BLOB_RESERVATION_TTL_MS } from '../storage/managed-blobs.js';

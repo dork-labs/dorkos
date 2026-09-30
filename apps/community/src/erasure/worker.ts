@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { ContentChangeError } from '../content-removal.js';
 import { transaction } from '../data.js';
+import { ERASURE_WAITS_ON_TAKEDOWN_SQL } from './guards.js';
 import { eraseAccount, eraseMembership, ErasureError, type ErasureOptions } from './erasure.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 
@@ -31,10 +32,14 @@ export async function sweepErasures(
 ): Promise<{ claimed: number; completed: number; failed: number }> {
   const now = options.now ?? new Date();
   const request = await transaction(pool, async (client) => {
+    // A whole community's takedown preserves it as it was: while that evidence has not settled,
+    // no erasure runs in it, and no account erasure runs for anyone who belongs to it, since
+    // erasing an account also husks its members' rows in every community.
     const due = await client.query<ClaimedRequest>(
-      `SELECT id,kind,user_id,community_id,member_id FROM erasure_requests
-       WHERE state IN ('scheduled','running') AND execute_after<=$1 AND next_attempt_at<=$1
-       ORDER BY next_attempt_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`,
+      `SELECT r.id,r.kind,r.user_id,r.community_id,r.member_id FROM erasure_requests r
+       WHERE r.state IN ('scheduled','running') AND r.execute_after<=$1 AND r.next_attempt_at<=$1
+         AND NOT ${ERASURE_WAITS_ON_TAKEDOWN_SQL}
+       ORDER BY r.next_attempt_at,r.id LIMIT 1 FOR UPDATE OF r SKIP LOCKED`,
       [now]
     );
     const row = due.rows[0];

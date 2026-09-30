@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Pool } from 'pg';
+import { Client, Pool } from 'pg';
 import { migrate } from '../migrate.js';
 
 /**
@@ -20,7 +20,12 @@ const admin = new Pool({ connectionString: adminUrl });
 const dbName = `community_index_coverage_${randomUUID().replaceAll('-', '')}`;
 const testUrl = new URL(adminUrl);
 testUrl.pathname = `/${dbName}`;
-let db: Pool;
+// One Client, not a Pool: `Pool.end()` resolves as soon as its idle clients leave its list,
+// before their sockets close, and the pool's idle-error listener stays on them. The
+// `DROP DATABASE … WITH (FORCE)` below could then terminate a backend still shutting down, and
+// its 57P01 reached a pool with no error listener: an unhandled error that failed the whole run
+// in the merge queue. `Client.end()` resolves only once the connection has closed.
+let db: Client;
 
 const HOST_TABLE = 'a host-level table with a handful of rows per operator or key';
 const EXPIRING = 'rows expire and a sweep deletes them, so the table stays small';
@@ -71,7 +76,8 @@ const UNINDEXED_FOREIGN_KEYS: Record<string, string> = {
 beforeAll(async () => {
   await admin.query(`CREATE DATABASE ${dbName}`);
   await migrate(testUrl.toString());
-  db = new Pool({ connectionString: testUrl.toString() });
+  db = new Client({ connectionString: testUrl.toString() });
+  await db.connect();
 });
 
 afterAll(async () => {

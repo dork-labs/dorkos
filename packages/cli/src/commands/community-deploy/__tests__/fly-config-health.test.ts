@@ -34,6 +34,14 @@ describe('Community Fly configuration and health', () => {
     expect(config).not.toContain('DATABASE_URL');
   });
 
+  // DOR-2593: a launcher-made Community signs people in with its own accounts. Single sign-on is
+  // the only way a DorkOS sign-in could reach its sign-in page, and nothing in it names DorkOS.
+  it('configures no single sign-on and names no DorkOS host', () => {
+    const config = renderCommunityFlyConfig(plan);
+    expect(config).not.toMatch(/COMMUNITY_OIDC_/u);
+    expect(config).not.toMatch(/dorkos\.ai/iu);
+  });
+
   it('keeps the temporary config private and removes it after the deploy callback', async () => {
     let captured = '';
     await withCommunityFlyConfig(plan, async (path) => {

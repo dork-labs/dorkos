@@ -1,6 +1,6 @@
 import { transaction } from '../data.js';
 import { BlobStoreError, queueCommittedBlobDeletion } from '../storage/index.js';
-import { hasExportAuthority, READABLE_CHANNEL_SQL } from './authority.js';
+import { exportRequesterOf, hasExportAuthority, READABLE_CHANNEL_SQL } from './authority.js';
 import {
   countScope,
   dataSegmentEntries,
@@ -263,18 +263,12 @@ class ExportRun extends ExportJob {
             )
           ).rows.map((row) => row.channel_id)
         : [];
-    this.requester = {
-      communityId: this.job.community_id,
-      memberId: this.job.requester_member_id,
-      scope: this.job.scope,
-      channelIds,
-    };
+    this.requester = exportRequesterOf(this.job, channelIds);
+    // Only a personal export is limited to one member's messages; an owner or evidence export
+    // holds the whole community.
+    const author = this.job.scope === 'personal' ? this.job.requester_member_id : null;
     if (this.job.watermark) {
-      this.scope = entryScope(
-        this.job.community_id,
-        this.job.scope === 'personal' ? this.job.requester_member_id : null,
-        this.job.watermark
-      );
+      this.scope = entryScope(this.job.community_id, author, this.job.watermark);
       return;
     }
     await this.checkpoint();
@@ -288,7 +282,7 @@ class ExportRun extends ExportJob {
       );
       await this.lockJob(client);
       const channels =
-        this.job.scope === 'owner'
+        this.job.scope !== 'personal'
           ? await client.query<{ id: string }>(
               'SELECT id FROM channels WHERE community_id=$1 ORDER BY id',
               [this.job.community_id]
@@ -311,11 +305,7 @@ class ExportRun extends ExportJob {
         'SELECT COALESCE(max(id),0)::text AS id FROM entry_redactions WHERE community_id=$1',
         [this.job.community_id]
       );
-      const scope = entryScope(
-        this.job.community_id,
-        this.job.scope === 'personal' ? this.job.requester_member_id : null,
-        watermark
-      );
+      const scope = entryScope(this.job.community_id, author, watermark);
       const total = await countScope(client, scope);
       if (this.job.scope === 'personal') {
         await client.query(

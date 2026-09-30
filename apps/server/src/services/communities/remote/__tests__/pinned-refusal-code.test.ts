@@ -5,7 +5,13 @@
  */
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { PinnedHttpError, parseCommunityOrigin, pinnedJson, pinnedSse } from '../pinned-origin.js';
+import {
+  PinnedHttpError,
+  parseCommunityOrigin,
+  pinnedJson,
+  pinnedSse,
+  retryAfterSeconds,
+} from '../pinned-origin.js';
 
 let server: Server;
 let port = 0;
@@ -97,4 +103,25 @@ it('stops reading an endless refusal at the cap, and keeps no code', async () =>
   expect((error as PinnedHttpError).remoteCode).toBeUndefined();
   // Not a byte count of what the server wrote: that measures the OS socket buffer (megabytes on
   // Linux), not this reader. The time above is what an uncapped reader fails.
+});
+
+// Purpose: a remote Retry-After is untrusted, so only a plausible whole number of seconds is
+// passed on as a wait a person is told about. Fails if a date, a fraction, zero or an absurd
+// wait is believed.
+it('keeps a remote Retry-After only as a plausible number of seconds', () => {
+  expect(retryAfterSeconds('17')).toBe(17);
+  expect(retryAfterSeconds(' 60 ')).toBe(60);
+  expect(retryAfterSeconds('3600')).toBe(3600);
+  for (const unbelieved of [
+    undefined,
+    '',
+    '0',
+    '1.5',
+    '-3',
+    '3601',
+    '9999999',
+    'Wed, 21 Oct 2026 07:28:00 GMT',
+    ['17'],
+  ])
+    expect(retryAfterSeconds(unbelieved), String(unbelieved)).toBeUndefined();
 });

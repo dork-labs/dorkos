@@ -19,7 +19,12 @@ const REGISTRY: Record<string, { purpose: string; files: string[] }> = {
   '77281502': { purpose: 'applying migrations', files: ['migrate.ts'] },
   '77281503': {
     purpose: 'creating or claiming a community (bootstrap, host create, owner claim, import)',
-    files: ['app.ts', 'routes/owner-claims.ts', 'routes/imports.ts', 'routes/host.ts'],
+    files: [
+      'app.ts',
+      'routes/host/owner-claims.ts',
+      'routes/host/imports.ts',
+      'routes/host/host.ts',
+    ],
   },
   '77281504': { purpose: 'assigning handles', files: ['handles.ts'] },
   '77281505': { purpose: 'appending to the erasure journal', files: ['erasure/journal.ts'] },

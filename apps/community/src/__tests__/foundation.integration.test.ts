@@ -5,7 +5,7 @@ import { serve } from '@hono/node-server';
 import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
-import { encodeCursor } from '../cursor.js';
+import { encodeCursor } from '../content/cursor.js';
 import { lockChannel, transaction, type Member } from '../data.js';
 import { CommunityWireCommunitySchema } from '@dorkos/shared/community-wire';
 import { bootstrapFirstHost, seedCredentialAccount } from './bootstrap-test-helper.js';

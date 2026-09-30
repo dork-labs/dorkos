@@ -73,10 +73,33 @@ export function isV2EntryName(name: string): boolean {
   );
 }
 
+/**
+ * A version 2 manifest the importer accepts: an owner export. The schema also describes a
+ * takedown's evidence archive, which has no requester and may record any lifecycle; an owner
+ * export always names its requester and records an active or archived community.
+ */
+export type OwnerExportManifestV2 = CommunityExportManifestV2 & {
+  scope: 'owner';
+  requesterMemberId: string;
+  community: CommunityExportManifestV2['community'] & { lifecycle: 'active' | 'archived' };
+};
+
+/**
+ * A type narrowing, never false at run time: the scope check before the schema and the schema's
+ * refines are what enforce it.
+ */
+function isOwnerManifest(manifest: CommunityExportManifestV2): manifest is OwnerExportManifestV2 {
+  return (
+    manifest.scope === 'owner' &&
+    manifest.requesterMemberId !== null &&
+    (manifest.community.lifecycle === 'active' || manifest.community.lifecycle === 'archived')
+  );
+}
+
 /** An owner export of version 2 opened from storage, checked for shape but not yet read. */
 export interface OpenedExportV2 {
   archive: ZipArchive;
-  manifest: CommunityExportManifestV2;
+  manifest: OwnerExportManifestV2;
   /** Every NDJSON file, by name. The manifest lists exactly these. */
   ndjson: ReadonlyMap<string, ZipEntry>;
   icon: ZipEntry | null;
@@ -149,7 +172,8 @@ export async function openExportV2(
     if (typeof scope === 'string' && scope !== 'owner')
       throw new ImportFailure('IMPORT_NOT_OWNER_EXPORT');
     const parsed = CommunityExportManifestV2Schema.safeParse(raw);
-    if (!parsed.success) throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
+    if (!parsed.success || !isOwnerManifest(parsed.data))
+      throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
     const manifest = parsed.data;
 
     // The manifest lists every data file once, each under its own collection's folder.
