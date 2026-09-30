@@ -795,6 +795,23 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     agentId: agent,
   });
   expect(joinedAgent.status, await joinedAgent.clone().text()).toBe(200);
+  // An open owner replacement in B, written directly: this host has no mail, so the request
+  // route refuses to open one. A's owner also owns B, so only the URL community tells them apart.
+  const foreignReplacement = randomUUID();
+  await pool.query(
+    `INSERT INTO owner_replacements(id,community_id,reason,claimant_named,claim_token_hash,
+       requested_by_host_actor,idempotency_key,payload_hash,after_objection,after_withdrawal,
+       prior_owner_member_id,requested_at)
+     VALUES($1,$2,'other',false,$3,'api_key:isolation',$6,$4,false,false,$5,now())`,
+    [
+      foreignReplacement,
+      otherId,
+      hashSecret(randomToken()),
+      createHash('sha256').update(foreignReplacement).digest('hex'),
+      otherOwner,
+      `isolation-${foreignReplacement}`,
+    ]
+  );
   // Community A's own public channel, for probes that pair it with a foreign id.
   const home = await jsonRequest(`${own}/channels`, 'POST', {
     name: 'Isolation home',
@@ -832,6 +849,8 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   );
   const members = await request(`${other}/members`, { headers: { cookie: ownerCookie } });
   expect(JSON.stringify(await members.json())).toContain(otherPlainMember);
+  const notice = await request(`${other}/owner-replacement`, { headers: { cookie: ownerCookie } });
+  expect((await notice.json()).open?.replacementId).toBe(foreignReplacement);
 
   type Ids = {
     channel: string;
@@ -847,6 +866,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     localAgentId: string;
     archive: string;
     admission: string;
+    replacement: string;
   };
   const foreign: Ids = {
     channel,
@@ -862,6 +882,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     localAgentId: 'isolation-agent',
     archive,
     admission: foreignAdmission,
+    replacement: foreignReplacement,
   };
   const foreignPublic: Ids = { ...foreign, channel: publicChannel };
   // The same shapes with ids that exist nowhere: a foreign id must be refused
@@ -881,6 +902,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     archive: randomUUID(),
     // Correctly signed, so it reaches the lookup, but matches no join attempt.
     admission: `community_admission=${signValue(randomToken(), 'a'.repeat(32))}`,
+    replacement: randomUUID(),
   };
   const { lifecycle_version: ownLifecycleVersion } = (
     await pool.query<{ lifecycle_version: number }>(
@@ -1091,6 +1113,13 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     },
     { route: 'DELETE /agents/:id', call: (x) => ({ path: `/agents/${x.agent}`, body: {} }) },
     {
+      route: 'POST /owner-replacement/objection',
+      call: (x) => ({
+        path: '/owner-replacement/objection',
+        body: { replacementId: x.replacement },
+      }),
+    },
+    {
       route: 'POST /channels/:id/agents',
       call: (x) => ({ path: `/channels/${x.channel}/agents`, body: { agentId: x.agent } }),
     },
@@ -1142,6 +1171,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'GET /agents': "lists the caller's own agents",
     'POST /pairings/start': 'creates a new pairing; references nothing',
     'GET /takedowns': "lists the URL community's takedowns the caller may see",
+    'GET /owner-replacement': "reads the URL community's open or completed replacement only",
   };
 
   const scoped = '/api/v1/communities/:communityId';

@@ -1723,6 +1723,42 @@ const actions: Action<unknown>[] = [
     },
   }),
 
+  // ── Owner replacement ──────────────────────────────────────────────────────
+  define<{ id: string }>({
+    rule: "Read the owner-replacement notice: A's members; the owner and admins see an open request",
+    route: 'GET /owner-replacement',
+    allowed: MEMBERS_OF_A,
+    status: 200,
+    // An agent's credential reads nothing here, and says so rather than asking it to sign in.
+    refused: { agent: 403 },
+    prepare: () => openReplacement(),
+    call: () => ({ method: 'GET', path: scoped('/owner-replacement') }),
+    effect: async (body, role, { id }) => {
+      const { open } = JSON.parse(body.toString('utf8'));
+      if (role === 'owner') expect(open).toMatchObject({ role: 'owner', replacementId: id });
+      else if (role === 'admin') expect(open).toMatchObject({ role: 'admin', replacementId: id });
+      else expect(open).toBeNull();
+    },
+  }),
+  define<{ id: string }>({
+    rule: 'Keep ownership against a replacement request: owner only, from their own browser',
+    route: 'POST /owner-replacement/objection',
+    allowed: OWNER,
+    status: 204,
+    // Any bearer is refused before membership is read.
+    refused: { agent: 403 },
+    prepare: () => openReplacement(),
+    call: ({ id }) => ({
+      method: 'POST',
+      path: scoped('/owner-replacement/objection'),
+      body: { replacementId: id },
+    }),
+    effect: async (_body, _role, { id }) => {
+      const row = await pool.query('SELECT state FROM owner_replacements WHERE id=$1', [id]);
+      expect(row.rows).toEqual([{ state: 'objected' }]);
+    },
+  }),
+
   // ── Owner lifecycle ────────────────────────────────────────────────────────
   define<{ version: number }>({
     rule: 'Transfer ownership: owner only, with reauthentication',
@@ -2293,6 +2329,14 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
     'completed self-erasures only; member-erasure.integration.test.ts covers who may read it',
   'GET /takedowns':
     "the host's reasons: moderators see every one told, others their own; host-takedown.integration.test.ts",
+  'POST /owner-replacements/object-preflight':
+    'the emailed one-time token is the authority, whoever sends it; owner-replacement-objection.integration.test.ts',
+  'POST /owner-replacements/object':
+    'the emailed one-time token is the authority, whoever sends it; owner-replacement-objection.integration.test.ts',
+  'POST /owner-replacements/preflight':
+    'the emailed one-time claim token is the authority; owner-replacement-claim.integration.test.ts',
+  'POST /owner-replacements/claim':
+    'the claim cookie plus the account the host named; owner-replacement-claim.integration.test.ts',
 };
 
 function refusalStatus(action: Action<unknown>, role: Role): number {
