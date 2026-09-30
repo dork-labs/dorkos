@@ -24,6 +24,7 @@ import {
 } from '../../data.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { resolveCommunityMentions } from '../../content/mentions.js';
+import { channelRoster } from '../../content/roster.js';
 import { attachmentsForEntries } from './attachments.js';
 import type { DeliveryReceiptGate } from '../../delivery-receipt-gate.js';
 
@@ -239,17 +240,10 @@ export function registerEntryRoutes(
         if (owned.rowCount !== body.attachmentIds.length)
           throw new ApiError(409, 'STATE_CONFLICT', 'An attachment is unavailable.');
       }
-      const roster = await client.query<{ id: string; handle: string; kind: 'human' | 'agent' }>(
-        `SELECT m.id,m.handle,'human'::text AS kind FROM channel_members cm JOIN members m ON m.id=cm.member_id
-         WHERE cm.channel_id=$1 AND m.active
-         UNION ALL SELECT a.id,a.handle,'agent'::text AS kind FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
-         JOIN members owner ON owner.id=a.owner_member_id
-         WHERE acm.channel_id=$1 AND a.active AND owner.active`,
-        [channel.id]
-      );
-      const resolvedMentions = resolveCommunityMentions(body.text, roster.rows);
+      const roster = await channelRoster(client, channel.id, principal.community_id);
+      const resolvedMentions = resolveCommunityMentions(body.text, roster);
       const mentions = body.mentions ?? resolvedMentions;
-      const joinedIds = new Set(roster.rows.map((member) => member.id));
+      const joinedIds = new Set(roster.map((member) => member.id));
       if (mentions.some((memberId) => !joinedIds.has(memberId)))
         throw new ApiError(404, 'NOT_FOUND', 'Mentioned member not found.');
       const next = await client.query<{ last_seq: string }>(
@@ -273,7 +267,7 @@ export function registerEntryRoutes(
           payloadHash,
         ]
       );
-      const kindsById = new Map(roster.rows.map((target) => [target.id, target.kind]));
+      const kindsById = new Map(roster.map((target) => [target.id, target.kind]));
       await client.query(
         // content-change: post-binds-new-entry
         `INSERT INTO entry_mentions(entry_id,position,community_id,mentioned_member_id,mentioned_agent_id)

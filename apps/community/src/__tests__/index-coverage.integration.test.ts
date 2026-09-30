@@ -1,6 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client, Pool } from 'pg';
+import { channelRoster, CHANNEL_ROSTER_SQL } from '../content/roster.js';
+import { channelWatermarks, CHANNEL_WATERMARK_SQL } from '../content/watermark.js';
 import { migrate } from '../migrate.js';
 
 /**
@@ -12,6 +14,11 @@ import { migrate } from '../migrate.js';
  *
  * These tests read the migrated catalog. A new foreign key must come with an index whose
  * leading column is one of its columns, or a line below saying why the child table stays small.
+ * Each tenant reference is declared once: a tenant key (community_id, x) already enforces the
+ * plain key on x, and a second key only doubles the checks every insert and delete runs (0027).
+ *
+ * The last block runs the queries that once read a whole community or host per job or per post
+ * (DOR-2572) against a seeded host, and bounds the rows their plans read.
  */
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -45,23 +52,16 @@ const UNINDEXED_FOREIGN_KEYS: Record<string, string> = {
   host_audit_events_actor_user_id_fkey: HOST_TABLE,
   host_audit_events_subject_api_key_id_fkey: HOST_TABLE,
   tenant_reconciliation_community_id_fkey: 'a single row',
-  pending_admissions_invite_id_fkey: EXPIRING,
   pending_admissions_invite_tenant_fk: EXPIRING,
-  admission_receipts_invite_id_fkey: EXPIRING,
   admission_receipts_invite_tenant_fk: EXPIRING,
-  admission_receipts_member_id_fkey: EXPIRING,
   admission_receipts_member_tenant_fk: EXPIRING,
-  export_archives_requester_member_id_fkey:
-    'archives expire; the tenant key is served by export_archives_requester_idx',
   community_deletion_jobs_requester_tenant_fk: ONE_PER_JOB,
   community_imports_adopt_member_id_fkey: ONE_PER_JOB,
   community_imports_created_by_api_key_id_fkey: ONE_PER_JOB,
   community_imports_created_by_user_id_fkey: ONE_PER_JOB,
   erasure_requests_member_tenant_fk: PER_COMMUNITY_FEW,
   erasure_requests_user_id_fkey: 'one row per erasure request',
-  invites_channel_fk: PER_COMMUNITY_FEW,
   invites_channel_tenant_fk: PER_COMMUNITY_FEW,
-  invites_issuer_member_id_fkey: PER_COMMUNITY_FEW,
   invites_issuer_tenant_fk: PER_COMMUNITY_FEW,
   community_takedowns_actor_api_key_id_fkey: `${HOST_TABLE}: one row per host takedown`,
   community_takedowns_actor_user_id_fkey: `${HOST_TABLE}: one row per host takedown`,
@@ -71,6 +71,14 @@ const UNINDEXED_FOREIGN_KEYS: Record<string, string> = {
   owner_replacements_new_owner_tenant_fk: `${PER_COMMUNITY_FEW}: one row per owner replacement`,
   owner_replacement_object_tokens_community_id_fkey:
     'a few short-lived tokens per replacement, reached through replacement_id',
+};
+
+/**
+ * Plain keys kept beside a tenant key on the same reference, by constraint name, with the reason.
+ */
+const PLAIN_KEYS_KEPT: Record<string, string> = {
+  admission_receipts_admission_id_fkey:
+    'ON DELETE CASCADE removes a receipt with its admission; the tenant key is NO ACTION',
 };
 
 beforeAll(async () => {
@@ -200,5 +208,171 @@ describe('community indexes', () => {
           .map((other) => `${index.name} (covered by ${other.name})`)
       );
     expect(redundant).toEqual([]);
+  });
+
+  it('declare each tenant reference once', async () => {
+    // A plain key x -> parent(id) beside a tenant key (community_id, x) -> parent(community_id,
+    // id) on the same table. With community_id NOT NULL, the tenant key enforces all the plain
+    // key does, so the plain one is a second check on every insert and parent delete.
+    const duplicated = await db.query<{ name: string }>(
+      `SELECT p.conname AS name
+       FROM pg_constraint p JOIN pg_constraint t
+         ON t.conrelid=p.conrelid AND t.confrelid=p.confrelid AND t.contype='f'
+        AND cardinality(p.conkey)=1 AND cardinality(t.conkey)=2
+        AND t.conkey[2]=p.conkey[1] AND t.confkey[2]=p.confkey[1]
+        AND t.conkey[1]=(SELECT attnum FROM pg_attribute
+                         WHERE attrelid=p.conrelid AND attname='community_id')
+        AND t.confkey[1]=(SELECT attnum FROM pg_attribute
+                          WHERE attrelid=p.confrelid AND attname='community_id')
+       WHERE p.contype='f' AND p.connamespace='public'::regnamespace
+       ORDER BY 1`
+    );
+    // Equal, not a subset: a kept key that is no longer duplicated is a stale allowance.
+    expect(duplicated.rows.map((row) => row.name)).toEqual(Object.keys(PLAIN_KEYS_KEPT).sort());
+  });
+});
+
+/** A plan node from `EXPLAIN (ANALYZE, FORMAT JSON)`, with only the fields read here. */
+interface PlanNode {
+  'Relation Name'?: string;
+  'Actual Rows': number;
+  'Actual Loops': number;
+  'Rows Removed by Filter'?: number;
+  'Rows Removed by Index Recheck'?: number;
+  Plans?: PlanNode[];
+}
+
+/**
+ * Rows a query's plan read from a table: those it kept and those its filters dropped. With
+ * `hashJoins`, nested loops are priced out, as the planner itself does once a channel is large
+ * enough that probing row by row costs more than reading a table whole; a join that does not
+ * name the community then has to read every row of the table on the host.
+ */
+async function rowsRead(
+  sql: string,
+  values: unknown[],
+  table: string,
+  hashJoins = false
+): Promise<number> {
+  await db.query('BEGIN');
+  try {
+    if (hashJoins) await db.query('SET LOCAL enable_nestloop = off');
+    const result = await db.query<{ 'QUERY PLAN': [{ Plan: PlanNode }] }>(
+      `EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`,
+      values
+    );
+    const walk = (node: PlanNode): number =>
+      (node['Relation Name'] === table
+        ? (node['Actual Rows'] +
+            (node['Rows Removed by Filter'] ?? 0) +
+            (node['Rows Removed by Index Recheck'] ?? 0)) *
+          node['Actual Loops']
+        : 0) + (node.Plans ?? []).reduce((sum, child) => sum + walk(child), 0);
+    return walk(result.rows[0]['QUERY PLAN'][0].Plan);
+  } finally {
+    await db.query('ROLLBACK');
+  }
+}
+
+/** A deterministic id for the seeded host below. */
+const seeded = (name: string) => {
+  const hex = createHash('md5').update(`guard:${name}`).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+describe('per-job and per-post queries', () => {
+  // Community a: 300 members, 30 agents, four channels of 5,000 messages and an empty fifth.
+  // Community b stands for the rest of the host: 20,000 members, 2,000 agents, one channel.
+  // Channel a:c:1 holds 250 of a's members and 20 of its agents.
+  beforeAll(async () => {
+    await db.query(`
+      CREATE FUNCTION pg_temp.g(t text) RETURNS uuid LANGUAGE sql IMMUTABLE
+        AS $$ SELECT md5('guard:'||t)::uuid $$;
+      INSERT INTO "user"(id,name,email,"emailVerified")
+      SELECT 'guard-'||i,'Guard '||i,'guard'||i||'@example.test',true
+      FROM generate_series(1,20300) i;
+      INSERT INTO communities(id,name,lifecycle,activated_at)
+      VALUES (pg_temp.g('a'),'Small','active',now()),(pg_temp.g('b'),'Large','active',now());
+      INSERT INTO members(id,community_id,user_id,display_name,handle,role,active)
+      SELECT pg_temp.g(c||':m:'||i),pg_temp.g(c),'guard-'||(CASE c WHEN 'a' THEN i ELSE 300+i END),
+        'Member '||i,'m'||i,CASE WHEN i=1 THEN 'owner' ELSE 'member' END,i%50<>0
+      FROM (VALUES ('a',300),('b',20000)) AS size(c,n), generate_series(1,n) i;
+      INSERT INTO agents(id,community_id,owner_member_id,display_name,handle,local_agent_id,active)
+      SELECT pg_temp.g(c||':a:'||i),pg_temp.g(c),pg_temp.g(c||':m:'||(i%100+1)),'Agent '||i,
+        'a'||i,'local-'||i,true
+      FROM (VALUES ('a',30),('b',2000)) AS size(c,n), generate_series(1,n) i;
+      INSERT INTO channels(id,community_id,name,visibility)
+      SELECT pg_temp.g(c||':c:'||k),pg_temp.g(c),'channel-'||k,'public'
+      FROM (VALUES ('a',5),('b',1)) AS size(c,n), generate_series(1,n) k;
+      INSERT INTO channel_members(community_id,channel_id,member_id)
+      SELECT pg_temp.g(c),pg_temp.g(c||':c:1'),pg_temp.g(c||':m:'||i)
+      FROM (VALUES ('a',250),('b',20000)) AS size(c,n), generate_series(1,n) i;
+      INSERT INTO agent_channel_members(community_id,channel_id,agent_id)
+      SELECT pg_temp.g(c),pg_temp.g(c||':c:1'),pg_temp.g(c||':a:'||i)
+      FROM (VALUES ('a',20),('b',2000)) AS size(c,n), generate_series(1,n) i;
+      INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_display_name,text,
+        idempotency_key,payload_hash)
+      SELECT pg_temp.g(c),pg_temp.g(c||':c:'||k),s,pg_temp.g(c||':m:'||(s%250+1)),'Member',
+        'hello','k'||s,'h'
+      FROM (VALUES ('a',4),('b',1)) AS size(c,n), generate_series(1,n) k,
+        generate_series(1,5000) s;
+      ANALYZE;
+    `);
+  }, 120_000);
+
+  it('read one index entry per channel for a watermark', async () => {
+    // Purpose: fails if the export or erasure watermark reads the community's messages again,
+    // or stops matching the GROUP BY it replaced.
+    const community = seeded('a');
+    const replaced = await db.query<{ channel_id: string; seq: string }>(
+      'SELECT channel_id,max(seq)::text AS seq FROM entries WHERE community_id=$1 GROUP BY channel_id',
+      [community]
+    );
+    const marks = await channelWatermarks(db, community);
+    expect(marks).toEqual(new Map(replaced.rows.map((row) => [row.channel_id, Number(row.seq)])));
+    expect(marks.size).toBe(4);
+    // The empty channel has no mark; another community's channel matches nothing.
+    expect(
+      await channelWatermarks(db, community, [seeded('a:c:2'), seeded('a:c:5'), seeded('b:c:1')])
+    ).toEqual(new Map([[seeded('a:c:2'), 5000]]));
+    expect(await rowsRead(CHANNEL_WATERMARK_SQL, [community, null], 'entries')).toBeLessThanOrEqual(
+      5
+    );
+  });
+
+  it("read only the channel's community for a roster", async () => {
+    // Purpose: fails if the mention or roster query reads other communities' members or agents
+    // again, or stops returning what the query it replaced returned.
+    const [community, channel] = [seeded('a'), seeded('a:c:1')];
+    const replaced = await db.query(
+      `SELECT m.id,m.display_name,m.handle,m.role,NULL::uuid AS owner_member_id,
+         NULL::text AS owner_display_name,'human'::text AS kind,cm.joined_at
+       FROM channel_members cm JOIN members m ON m.id=cm.member_id
+       WHERE cm.channel_id=$1 AND m.active
+       UNION ALL SELECT a.id,a.display_name,a.handle,NULL::text AS role,a.owner_member_id,
+         owner.display_name AS owner_display_name,'agent'::text AS kind,acm.joined_at
+       FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
+       JOIN members owner ON owner.id=a.owner_member_id
+       WHERE acm.channel_id=$1 AND a.active AND owner.active
+       ORDER BY joined_at,id`,
+      [channel]
+    );
+    const roster = await channelRoster(db, channel, community);
+    expect(roster).toEqual(replaced.rows);
+    expect(roster.filter((row) => row.kind === 'human')).toHaveLength(245);
+    expect(roster.filter((row) => row.kind === 'agent')).toHaveLength(20);
+    expect(await channelRoster(db, channel, seeded('b'))).toEqual([]);
+    // Community a has 300 members and 30 agents; the host has 20,300 and 2,030. Whichever join
+    // the planner picks, the roster reads within community a: about 314 member rows by probes,
+    // or a's 300 members twice (once for people, once for agents' owners) by hashing. A join on
+    // id alone, without the community, reads all 20,300 once the planner hashes it.
+    for (const hashJoins of [false, true]) {
+      expect(
+        await rowsRead(CHANNEL_ROSTER_SQL, [channel, community], 'members', hashJoins)
+      ).toBeLessThanOrEqual(2 * 300);
+      expect(
+        await rowsRead(CHANNEL_ROSTER_SQL, [channel, community], 'agents', hashJoins)
+      ).toBeLessThanOrEqual(30);
+    }
   });
 });

@@ -23,6 +23,7 @@ import {
   type Member,
   type Principal,
 } from '../../data.js';
+import { channelRoster } from '../../content/roster.js';
 import { ApiError, json, readJson } from '../../http.js';
 
 interface ChannelRow {
@@ -184,29 +185,10 @@ export function registerChannelRoutes(
     const member = await requirePrincipal(c, auth, pool, 'read');
     const channel = await channelProjection(pool, c.req.param('id'), member);
     if (!channel.joined) throw new ApiError(403, 'FORBIDDEN', 'Join this channel first.');
-    const rows = await pool.query<{
-      id: string;
-      display_name: string;
-      handle: string;
-      role: Member['role'] | null;
-      owner_member_id: string | null;
-      owner_display_name: string | null;
-      kind: 'human' | 'agent';
-      joined_at: Date;
-    }>(
-      `SELECT m.id,m.display_name,m.handle,m.role,NULL::uuid AS owner_member_id,NULL::text AS owner_display_name,'human' AS kind,cm.joined_at
-       FROM channel_members cm JOIN members m ON m.id=cm.member_id
-       WHERE cm.channel_id=$1 AND m.active
-       UNION ALL SELECT a.id,a.display_name,a.handle,NULL::text AS role,a.owner_member_id,owner.display_name AS owner_display_name,'agent' AS kind,acm.joined_at
-       FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
-       JOIN members owner ON owner.id=a.owner_member_id
-       WHERE acm.channel_id=$1 AND a.active AND owner.active
-       ORDER BY joined_at,id`,
-      [channel.id]
-    );
+    const rows = await channelRoster(pool, channel.id, member.community_id);
     await assertPrincipalCurrent(c, auth, pool, member, 'read');
     return json(c, CommunityWireMemberListResponseSchema, {
-      members: rows.rows.map((row) => ({
+      members: rows.map((row) => ({
         memberId: row.id,
         kind: row.kind,
         displayName: row.display_name,

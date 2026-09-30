@@ -9,6 +9,7 @@ import {
 } from '../content-removal.js';
 import { transaction } from '../data.js';
 import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
+import { channelWatermarks } from '../content/watermark.js';
 import { deleteReadyExports, restartExportJobs } from '../exports/store.js';
 import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../content/mentions.js';
 import { remove } from '../routes/community/members.js';
@@ -339,11 +340,7 @@ async function tombstone(target: Target): Promise<void> {
 }
 
 async function recordWatermark(target: Target): Promise<Watermark> {
-  const result = await target.pool.query<{ channel_id: string; seq: string }>(
-    'SELECT channel_id,max(seq)::text AS seq FROM entries WHERE community_id=$1 GROUP BY channel_id',
-    [target.communityId]
-  );
-  return new Map(result.rows.map((row) => [row.channel_id, Number(row.seq)]));
+  return channelWatermarks(target.pool, target.communityId);
 }
 
 async function addressTargets(
