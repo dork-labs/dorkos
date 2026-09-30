@@ -8,15 +8,20 @@
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import * as pty from 'node-pty';
 import { ensureNodePtySpawnHelperExecutable } from '@dorkos/shared/node-pty-spawn-helper';
 import {
   communityLiveGateRecoveryCommand,
   parseCommunityLiveGateConfig,
 } from './community-deploy-live-config.js';
-import { runCommunityLiveOwnerProof } from './community-deploy-live-proof.js';
+import {
+  runCommunityLiveOwnerProof,
+  runCommunityLiveSecondMemberProof,
+} from './community-deploy-live-proof.js';
+import { holdCommunityLive, runHeldPhaseThenCleanUp } from './community-deploy-live-hold.js';
 import {
   CommunityLiveGateError,
   receiveClipboard,
@@ -153,9 +158,23 @@ async function main(): Promise<void> {
   // node-pty 1.1.0 ships its spawn-helper non-executable, so on a fresh install every PTY spawn
   // fails. Heal it before the first one; a helper it cannot fix still fails at spawn, pre-write.
   ensureNodePtySpawnHelperExecutable({ resolveFrom: import.meta.url });
+  const liveGateHome = join(process.env.DORK_HOME ?? join(homedir(), '.dork'), 'live-gate');
+  // The handoff file holds two passwords. It is written under the retained run directory, which
+  // must not be inside this checkout, where a `git add` could pick it up. Checked before anything
+  // is created, so a misplaced DORK_HOME costs nothing.
+  const fromRepository = relative(
+    fileURLToPath(new URL('../../../', import.meta.url)),
+    liveGateHome
+  );
+  if (
+    config.holdMinutes !== null &&
+    !fromRepository.startsWith('..') &&
+    !isAbsolute(fromRepository)
+  )
+    throw new CommunityLiveGateError('hold-directory-inside-repository');
   const runDirectory = await mkdtemp(join(tmpdir(), 'dorkos-community-live-'));
   const appName = `dorkos-gate-${randomBytes(6).toString('hex')}`;
-  const durableHome = join(process.env.DORK_HOME ?? join(homedir(), '.dork'), 'live-gate', appName);
+  const durableHome = join(liveGateHome, appName);
   const socketPath = join(runDirectory, 'bootstrap.sock');
   const receiptDirectory = join(durableHome, '..', 'receipts');
   const receiptPath = join(receiptDirectory, `${appName}.json`);
@@ -345,7 +364,7 @@ async function main(): Promise<void> {
       step: 'bootstrap-capture-after-launcher-exit',
     });
     await capture.close();
-    const proof = await whileLauncherRuns(
+    const ownerProof = await whileLauncherRuns(
       resumed,
       runCommunityLiveOwnerProof({
         appName,
@@ -365,99 +384,131 @@ async function main(): Promise<void> {
     ) {
       throw new CommunityLiveGateError('bootstrap-rotation', recoveryCommand);
     }
-    const credential = await readFlySessionCredential(fly);
-    const tigris = <T>(operation: (client: FlyTigrisGraphqlClient) => Promise<T>) =>
-      credential.use((token) => operation(new FlyTigrisGraphqlClient({ accessToken: token })));
-    const flyGraphql = (query: string, variables: Readonly<Record<string, string>>) =>
-      credential.use((accessToken) => readFlyGraphql({ accessToken, query, variables }));
-    let cleanup;
-    let provenance;
-    let tigrisBucketFound: boolean;
-    try {
-      // What a finished launch shows about its markers, recorded before cleanup removes the
-      // resources that carry them. The guard resolves on every path within its deadline, so a
-      // probe that throws or hangs can never skip or hold up the cleanup below.
-      provenance = await guardCommunityLiveProvenance(() =>
-        probeCommunityLiveProvenance(journal, {
-          readAppProvenance: (name) => tigris((client) => client.readAppProvenance(name)),
-          flyGraphql,
-          readNeonRoleNames: async (projectId, branchId) =>
-            (await readNeonBranchTopology(neon, projectId, branchId)).roles.map(
-              (role) => role.name
-            ),
-          readNeonProjects: (organization) => readNeonProjects(neon, organization),
-          readTigris: async (id) => {
-            const item = await tigris((client) => client.readTigris(id));
-            return { appId: item.appId, appName: item.appName };
-          },
-          readSecretNames: async (name) =>
-            (await readFlySecretInventory(fly, name)).map((item) => item.name),
-          runSshNoOp: async (name) =>
-            void (await runProviderCommand({
-              ...fly,
-              timeoutMs: SSH_PROBE_TIMEOUT_MS,
-              args: ['ssh', 'console', '--app', name, '--command', 'true'],
-              parse: () => undefined,
-            })),
-          unknownAppName: () => `dorkos-gate-absent-${randomBytes(12).toString('hex')}`,
-        })
-      );
-      cleanup = await cleanupCommunityLiveGate(journal, {
-        readFlyApps: async (organization) =>
-          (await readFlyApps(fly, organization)).map((item) => ({
-            id: item.id,
-            name: item.name,
-            organization: item.organizationSlug,
-          })),
-        readNeonProjects: async (organization) =>
-          (await readNeonProjects(neon, organization)).map((item) => ({
-            id: item.id,
-            name: item.name,
-            organization: item.organizationId,
-          })),
-        readTigris: async (id) => {
-          const item = await tigris((client) => client.readTigris(id));
-          return {
-            id: item.addOnId,
-            name: item.addOnName,
-            organization: item.organizationSlug,
-            appId: item.appId,
-            appName: item.appName,
-          };
-        },
-        listTigrisOnApp: (name) => tigris((client) => client.listTigrisOnApp(name)),
-        deleteTigris: async (name) => void (await tigris((client) => client.deleteTigris(name))),
-        deleteNeonProject: async (id) => void (await deleteNeonProject(neon, id)),
-        destroyFlyApp: async (name) => void (await destroyFlyApp(fly, name)),
-      });
-      // The Fly and Neon inventories are re-read below; a storage bucket bills too, so it is
-      // re-read here, while the session is still held. Only Fly's exact not-found answer counts as
-      // gone; a bucket still there fails the gate before cleanup is called finished, so the
-      // recovery command is still printed.
-      tigrisBucketFound = await tigris((client) =>
-        client.readTigris(journal.resources.tigrisBucketId ?? '')
-      ).then(
-        () => true,
-        (error: unknown) => {
-          if (error instanceof Error && 'code' in error && error.code === 'ADD_ON_MISSING') {
-            return false;
+    // From here the community is finished and proven, and everything left to do before cleanup is
+    // held: the second-member proof, then the operator's hold when one was asked for. Control-C,
+    // SIGTERM, a failed proof and the hold's own end all go to the same cleanup below; a phase that
+    // failed is reported only after it (see runHeldPhaseThenCleanUp).
+    const held = await runHeldPhaseThenCleanUp({
+      signals: process,
+      write: (text) => void process.stderr.write(text),
+      phase: async (signal) => {
+        const member = await runCommunityLiveSecondMemberProof(ownerProof.owner, {
+          appName,
+          signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]),
+        });
+        // The access (two passwords and the invitation) goes only into the handoff file; the
+        // receipt takes the member's ids and flag, never this object.
+        const hold =
+          config.holdMinutes === null
+            ? null
+            : await holdCommunityLive({
+                parent: durableHome,
+                access: member.access,
+                minutes: config.holdMinutes,
+                signal,
+                write: (text) => void process.stdout.write(text),
+              });
+        return { member: member.receipt, hold };
+      },
+      cleanup: async () => {
+        const credential = await readFlySessionCredential(fly);
+        const tigris = <T>(operation: (client: FlyTigrisGraphqlClient) => Promise<T>) =>
+          credential.use((token) => operation(new FlyTigrisGraphqlClient({ accessToken: token })));
+        const flyGraphql = (query: string, variables: Readonly<Record<string, string>>) =>
+          credential.use((accessToken) => readFlyGraphql({ accessToken, query, variables }));
+        let cleanup;
+        let provenance;
+        let tigrisBucketFound: boolean;
+        try {
+          // What a finished launch shows about its markers, recorded before cleanup removes the
+          // resources that carry them. The guard resolves on every path within its deadline, so a
+          // probe that throws or hangs can never skip or hold up the cleanup below.
+          provenance = await guardCommunityLiveProvenance(() =>
+            probeCommunityLiveProvenance(journal, {
+              readAppProvenance: (name) => tigris((client) => client.readAppProvenance(name)),
+              flyGraphql,
+              readNeonRoleNames: async (projectId, branchId) =>
+                (await readNeonBranchTopology(neon, projectId, branchId)).roles.map(
+                  (role) => role.name
+                ),
+              readNeonProjects: (organization) => readNeonProjects(neon, organization),
+              readTigris: async (id) => {
+                const item = await tigris((client) => client.readTigris(id));
+                return { appId: item.appId, appName: item.appName };
+              },
+              readSecretNames: async (name) =>
+                (await readFlySecretInventory(fly, name)).map((item) => item.name),
+              runSshNoOp: async (name) =>
+                void (await runProviderCommand({
+                  ...fly,
+                  timeoutMs: SSH_PROBE_TIMEOUT_MS,
+                  args: ['ssh', 'console', '--app', name, '--command', 'true'],
+                  parse: () => undefined,
+                })),
+              unknownAppName: () => `dorkos-gate-absent-${randomBytes(12).toString('hex')}`,
+            })
+          );
+          cleanup = await cleanupCommunityLiveGate(journal, {
+            readFlyApps: async (organization) =>
+              (await readFlyApps(fly, organization)).map((item) => ({
+                id: item.id,
+                name: item.name,
+                organization: item.organizationSlug,
+              })),
+            readNeonProjects: async (organization) =>
+              (await readNeonProjects(neon, organization)).map((item) => ({
+                id: item.id,
+                name: item.name,
+                organization: item.organizationId,
+              })),
+            readTigris: async (id) => {
+              const item = await tigris((client) => client.readTigris(id));
+              return {
+                id: item.addOnId,
+                name: item.addOnName,
+                organization: item.organizationSlug,
+                appId: item.appId,
+                appName: item.appName,
+              };
+            },
+            listTigrisOnApp: (name) => tigris((client) => client.listTigrisOnApp(name)),
+            deleteTigris: async (name) =>
+              void (await tigris((client) => client.deleteTigris(name))),
+            deleteNeonProject: async (id) => void (await deleteNeonProject(neon, id)),
+            destroyFlyApp: async (name) => void (await destroyFlyApp(fly, name)),
+          });
+          // The Fly and Neon inventories are re-read below; a storage bucket bills too, so it is
+          // re-read here, while the session is still held. Only Fly's exact not-found answer counts as
+          // gone; a bucket still there fails the gate before cleanup is called finished, so the
+          // recovery command is still printed.
+          tigrisBucketFound = await tigris((client) =>
+            client.readTigris(journal.resources.tigrisBucketId ?? '')
+          ).then(
+            () => true,
+            (error: unknown) => {
+              if (error instanceof Error && 'code' in error && error.code === 'ADD_ON_MISSING') {
+                return false;
+              }
+              throw error;
+            }
+          );
+          if (tigrisBucketFound) {
+            throw new CommunityLiveGateError(
+              'tigris-after-cleanup',
+              recoveryCommand,
+              'the storage bucket still exists after cleanup'
+            );
           }
-          throw error;
+        } finally {
+          credential.dispose();
         }
-      );
-      if (tigrisBucketFound) {
-        throw new CommunityLiveGateError(
-          'tigris-after-cleanup',
-          recoveryCommand,
-          'the storage bucket still exists after cleanup'
-        );
-      }
-    } finally {
-      credential.dispose();
-    }
-    // Clearing `recoveryCommand` alone would not do: the catch re-finds the journal, which stays on
-    // disk until the very end, and would print a recovery command for resources already deleted.
-    cleanedUp = true;
+        // Clearing `recoveryCommand` alone would not do: the catch re-finds the journal, which stays on
+        // disk until the very end, and would print a recovery command for resources already deleted.
+        cleanedUp = true;
+        return { cleanup, provenance, tigrisBucketFound };
+      },
+    });
+    const { cleanup, provenance, tigrisBucketFound } = held.cleanup;
     const after = {
       flyAppIds: (await readFlyApps(fly, config.flyOrganization)).map((item) => item.id),
       neonProjectIds: (await readNeonProjects(neon, config.neonOrganization)).map(
@@ -480,7 +531,9 @@ async function main(): Promise<void> {
         initialBootstrapSecretDigest: initialBootstrapDigest,
         bootstrapSecretDigest: bootstrapDigest,
         provenance,
-        ...proof,
+        ...ownerProof.receipt,
+        ...held.phase.member,
+        ...(held.phase.hold ? { held: held.phase.hold } : {}),
       }) + '\n',
       { mode: 0o600, flag: 'wx' }
     );

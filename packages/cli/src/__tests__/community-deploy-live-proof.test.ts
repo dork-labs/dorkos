@@ -68,7 +68,7 @@ function harness(
 describe('credentialed Community HTTP proof', () => {
   it('creates through atomic setup and proves an authenticated file round trip without leaking secrets', async () => {
     const { run, fetch } = harness();
-    const receipt = await run();
+    const { receipt } = await run();
     expect(receipt).toEqual({
       communityId,
       channelId,

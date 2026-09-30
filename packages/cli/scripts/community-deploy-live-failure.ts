@@ -14,6 +14,7 @@ import { LaunchSafeErrorCodeSchema } from '../src/commands/community-deploy/jour
 import { CommunityLiveGateError } from './community-deploy-live-capture.js';
 import { CommunityLiveGateCleanupError } from './community-deploy-live-cleanup.js';
 import { CommunityLiveGateNotArmedError } from './community-deploy-live-config.js';
+import { CommunityLiveHeldPhaseError } from './community-deploy-live-hold.js';
 
 /** Step a failure after cleanup is reported as. */
 export const AFTER_CLEANUP_STEP = 'after-cleanup';
@@ -119,6 +120,8 @@ export async function explainCommunityLiveGateFailure(
   findRecoveryCommand: () => Promise<string | null>,
   findLauncherStop: () => Promise<string | null> = async () => null
 ): Promise<unknown> {
+  // A held-phase failure is reported after its cleanup and already says so, naming its own step.
+  if (state.cleanedUp && error instanceof CommunityLiveHeldPhaseError) return error;
   if (state.cleanedUp)
     return new CommunityLiveGateError(AFTER_CLEANUP_STEP, null, CLEANED_UP_DETAIL);
   // A launcher that failed before the gate read its journal may still have written one, and may
