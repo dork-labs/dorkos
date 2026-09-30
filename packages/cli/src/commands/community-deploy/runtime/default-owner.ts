@@ -8,7 +8,17 @@ import { platform } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { deployFlySecrets, stageFlySecrets, verifyExistingFlyDeployment } from '../fly-mutate.js';
+import {
+  deployFlyImage,
+  deployFlySecrets,
+  isInterruptedFlyDeployment,
+  stageFlySecrets,
+  UnprovenFlyRuntimeError,
+  verifyExistingFlyDeployment,
+  verifyFlyDeployment,
+} from '../fly-mutate.js';
+import { withCommunityFlyConfig } from '../fly-config.js';
+import { ProviderMutationError } from '../provider-mutation.js';
 import { readFlyRuntimeInventory } from '../fly-read.js';
 import { readFlySecretInventory } from '../tigris-session.js';
 import { runProviderCommand } from '../provider-process.js';
@@ -227,11 +237,38 @@ export function createDefaultCommunityOwnerDependencies(input: {
     },
     readSecrets: () => readFlySecretInventory(input.options.fly, input.plan.fly.appName),
     verifyRuntimeAndHealth: async () => {
-      verifyExistingFlyDeployment(
-        await readFlyRuntimeInventory(input.options.fly, input.plan.fly.appName),
-        COMMUNITY_IMAGE_REPOSITORY,
-        await input.platformDigest()
-      );
+      const appName = input.plan.fly.appName;
+      // Fly reports the linux/amd64 manifest of the attested index (DOR-2586); the index is deployed.
+      const digest = await input.platformDigest();
+      const runtime = await readFlyRuntimeInventory(input.options.fly, appName);
+      try {
+        verifyExistingFlyDeployment(runtime, COMMUNITY_IMAGE_REPOSITORY, digest);
+      } catch (error) {
+        if (!(error instanceof ProviderMutationError) || error.code !== 'INVALID_RESPONSE') {
+          throw error;
+        }
+        // The same narrow recovery as the deploy step (DOR-2169): a secrets deploy cut off part
+        // way leaves the pinned image running under a release Fly marked `interrupted`. Only that
+        // is deployed again (which applies the staged secrets too) and proved in full; anything
+        // else is not setup's to overwrite.
+        if (!isInterruptedFlyDeployment(runtime, COMMUNITY_IMAGE_REPOSITORY, digest)) {
+          throw new UnprovenFlyRuntimeError(appName);
+        }
+        await withCommunityFlyConfig(input.plan, (configPath) =>
+          deployFlyImage(
+            input.options.fly,
+            appName,
+            `${COMMUNITY_IMAGE_REPOSITORY}@${input.plan.imageDigest}`,
+            configPath
+          )
+        );
+        verifyFlyDeployment(
+          await readFlyRuntimeInventory(input.options.fly, appName),
+          runtime.releases,
+          COMMUNITY_IMAGE_REPOSITORY,
+          digest
+        );
+      }
       await verifyCommunityHealth(`https://${input.plan.fly.appName}.fly.dev`, {
         timeoutMs: 120_000,
         signal: input.signal,

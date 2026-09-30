@@ -3,6 +3,8 @@ import { executeCommunityDeployPhase, type CommunityDeployPhaseDependencies } fr
 import { LaunchJournalSchema, type LaunchJournal } from '../journal.js';
 import { createLaunchPlan } from '../plan.js';
 import type { FlySecretInventoryItem } from '../tigris-session.js';
+import { ProviderMutationError } from '../provider-mutation.js';
+import { ProviderCommandError } from '../provider-process.js';
 
 const plan = createLaunchPlan({
   dorkosVersion: '0.76.0',
@@ -117,6 +119,7 @@ function harness(initial = journal()) {
     }),
     resolvePlatformDigest: vi.fn(async () => PLATFORM_DIGEST),
     verifyNewRuntime: vi.fn((value) => value),
+    isInterruptedDeploy: vi.fn(() => false),
     verifyExistingRuntime: vi.fn((value) => value),
     verifyHealth: vi.fn(),
     now: () => '2026-09-21T00:00:01.000Z',
@@ -202,6 +205,93 @@ describe('Community deploy phase', () => {
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
     expect(test.dependencies.deploy).not.toHaveBeenCalled();
     expect(test.persisted().imagePlatformDigest).toBeUndefined();
+  });
+
+  // DOR-2169 live gate: `fly deploy` was cut off while the Machine came up. Fly marked the release
+  // `interrupted` with the secrets applied, so the "already deployed" proof can never pass again.
+  // Only that exact state is deployed again; anything else stops for the operator.
+  it('redeploys on resume only for an interrupted deploy of the pinned image', async () => {
+    const secretDigests = Object.fromEntries(
+      ['DATABASE', 'AUTH', 'INVITE', 'BOOTSTRAP'].map((part, index) => [
+        `COMMUNITY_${part}${part === 'DATABASE' ? '_URL' : '_SECRET'}`,
+        `digest-${index}`,
+      ])
+    );
+    const staged = journal({
+      revision: 7,
+      state: 'secrets_staged',
+      secretDigests,
+      completedSteps: [
+        'planned',
+        'fly_app_created',
+        'neon_project_created',
+        'bucket_created',
+        'secrets_staged',
+      ],
+    });
+    const applied = (test: ReturnType<typeof harness>) =>
+      vi.mocked(test.dependencies.readSecrets).mockResolvedValue([
+        ...test.inventory(),
+        ...Object.entries(secretDigests).map(([name, digest]) => ({
+          name,
+          digest,
+          status: 'Deployed' as const,
+        })),
+      ]);
+    const interrupted = {
+      ...runtime,
+      releases: [{ ...runtime.releases[0]!, status: 'interrupted' }],
+    };
+
+    const test = harness(staged);
+    applied(test);
+    vi.mocked(test.dependencies.readRuntime).mockReset().mockResolvedValue(interrupted);
+    vi.mocked(test.dependencies.verifyExistingRuntime).mockImplementation(() => {
+      throw new ProviderMutationError('INVALID_RESPONSE');
+    });
+    vi.mocked(test.dependencies.isInterruptedDeploy).mockReturnValue(true);
+    const result = await executeCommunityDeployPhase(plan, staged, test.dependencies);
+    expect(test.dependencies.isInterruptedDeploy).toHaveBeenCalledWith(
+      interrupted,
+      PLATFORM_DIGEST
+    );
+    expect(test.dependencies.deploy).toHaveBeenCalledOnce();
+    expect(test.dependencies.deploy).toHaveBeenCalledWith(plan.imageDigest);
+    expect(test.dependencies.verifyNewRuntime).toHaveBeenCalledWith(
+      interrupted,
+      interrupted.releases,
+      PLATFORM_DIGEST
+    );
+    expect(result.journal.state).toBe('healthy');
+
+    // Any other failed proof (another image, no Machine or several, a stopped or unhealthy one)
+    // is not setup's to overwrite: it stops with an error that says what to check.
+    const foreign = harness(staged);
+    applied(foreign);
+    vi.mocked(foreign.dependencies.readRuntime).mockReset().mockResolvedValue(interrupted);
+    vi.mocked(foreign.dependencies.verifyExistingRuntime).mockImplementation(() => {
+      throw new ProviderMutationError('INVALID_RESPONSE');
+    });
+    await expect(
+      executeCommunityDeployPhase(plan, staged, foreign.dependencies)
+    ).rejects.toMatchObject({
+      name: 'UnprovenFlyRuntimeError',
+      code: 'INVALID_RESPONSE',
+      message: expect.stringContaining('fly releases --app dorkos-community-test'),
+    });
+    expect(foreign.dependencies.deploy).not.toHaveBeenCalled();
+
+    // A runtime setup could not read at all is never deployed over.
+    const unreadable = harness(staged);
+    applied(unreadable);
+    vi.mocked(unreadable.dependencies.readRuntime)
+      .mockReset()
+      .mockRejectedValue(new ProviderCommandError('TIMEOUT'));
+    await expect(
+      executeCommunityDeployPhase(plan, staged, unreadable.dependencies)
+    ).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(unreadable.dependencies.deploy).not.toHaveBeenCalled();
+    expect(unreadable.dependencies.isInterruptedDeploy).not.toHaveBeenCalled();
   });
 
   it('adopts one fully staged secret set after a crash before journaling', async () => {

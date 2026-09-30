@@ -5,7 +5,7 @@
  */
 import { z } from 'zod';
 import { ExternalIdentifierSchema, parseExternalJson } from './provider-contract.js';
-import { ProviderMutationError, runProviderMutation } from './provider-mutation.js';
+import { ProviderMutationError, runProviderMutation, writeDeadline } from './provider-mutation.js';
 import type { FlySessionReadOptions, FlySecretInventoryItem } from './tigris-session.js';
 import {
   FlyAppResponseSchema,
@@ -50,6 +50,7 @@ export async function createFlyApp(
   const organization = parseInput(ExternalIdentifierSchema, organizationSlug);
   const created = await runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: ['apps', 'create', app, '--org', organization, '--json', '--yes'],
     parse: (stdout) => {
       let document: unknown;
@@ -95,11 +96,21 @@ export async function stageFlySecrets(
   const document = `${entries.map(([name, value]) => `${name}=${value}`).join('\n')}\n`;
   return runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: ['secrets', 'import', '--app', app, '--stage'],
     stdin: document,
     parse: () => ({ operation: 'secrets-stage' as const }),
   });
 }
+
+/**
+ * Deadline for a `fly deploy` or `secrets deploy`, which pull an image, replace a Machine and wait
+ * for its health checks. The 30-second deadline every other Fly command shares is not enough: a
+ * live 0.92.0 deploy took about 27 seconds once and was cut off at 30 the next time, which leaves
+ * Fly's release `interrupted` and the launch uncertain (live gate, DOR-2169, 2026-09-30). Ten
+ * minutes is twice flyctl's own default `--wait-timeout` of five.
+ */
+export const FLY_DEPLOY_TIMEOUT_MS = 10 * 60_000;
 
 /** Deploy one immutable image with Fly high availability explicitly disabled. */
 export async function deployFlyImage(
@@ -115,6 +126,7 @@ export async function deployFlyImage(
   }
   return runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs, FLY_DEPLOY_TIMEOUT_MS),
     args: [
       'deploy',
       '--app',
@@ -142,6 +154,8 @@ export async function deployFlySecrets(
   const app = parseInput(ExternalIdentifierSchema, appName);
   return runProviderMutation({
     ...options,
+    // Applying secrets restarts the Machine and waits for it, so it needs the deploy deadline too.
+    timeoutMs: writeDeadline(options.timeoutMs, FLY_DEPLOY_TIMEOUT_MS),
     args: ['secrets', 'deploy', '--app', app],
     parse: () => ({ operation: 'deploy' as const }),
   });
@@ -155,6 +169,8 @@ export async function destroyFlyApp(
   const app = parseInput(ExternalIdentifierSchema, appName);
   return runProviderMutation({
     ...options,
+    // Destroying an app stops and removes its Machine before Fly answers.
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: ['apps', 'destroy', app, '--yes'],
     parse: () => ({ operation: 'destroy' as const }),
   });
@@ -245,6 +261,65 @@ export function verifyFlyDeployment(
     throw new ProviderMutationError('INVALID_RESPONSE');
   }
   return inventory;
+}
+
+/**
+ * Whether an app that failed its runtime proof is exactly what a cut-off deploy leaves behind, and
+ * so safe to deploy again: one started Machine already running the expected image, and a latest
+ * release for that same image that Fly did not mark `complete` (`interrupted` or `failed`).
+ *
+ * The live gate hit this when `fly deploy` was stopped at its deadline while the Machine came up
+ * (DOR-2169). Anything else (another image, no Machine or several, a stopped Machine, or a
+ * `complete` release whose Machine is unhealthy or has no address) is not ours to overwrite: it may
+ * be an operator's own deploy or an app that crashes on start, and deploying again on every resume
+ * would hide either.
+ *
+ * @param inventory - The app's current runtime.
+ * @param expectedRepository - The pinned image repository.
+ * @param expectedDigest - The digest Fly reports for the pinned image.
+ * @returns True only for an interrupted deploy of the pinned image.
+ */
+export function isInterruptedFlyDeployment(
+  inventory: FlyRuntimeInventory,
+  expectedRepository: string,
+  expectedDigest: string
+): boolean {
+  const latestRelease = inventory.releases.reduce<
+    FlyRuntimeInventory['releases'][number] | undefined
+  >(
+    (latest, release) => (!latest || release.version > latest.version ? release : latest),
+    undefined
+  );
+  const machine = inventory.machines[0];
+  return (
+    inventory.machines.length === 1 &&
+    machine?.state === 'started' &&
+    machine.imageRepository === expectedRepository &&
+    machine.imageDigest === expectedDigest &&
+    latestRelease !== undefined &&
+    latestRelease.status !== 'complete' &&
+    latestRelease.imageRef === `${expectedRepository}@${expectedDigest}`
+  );
+}
+
+/**
+ * The app runs something setup cannot prove it deployed and will not overwrite. The message says
+ * what to look at; it names only the app, never provider output.
+ */
+export class UnprovenFlyRuntimeError extends ProviderMutationError {
+  /**
+   * Create the refusal for one app.
+   *
+   * @param appName - The Fly app setup created.
+   */
+  constructor(appName: string) {
+    super('INVALID_RESPONSE');
+    this.name = 'UnprovenFlyRuntimeError';
+    this.message =
+      `Fly app ${appName} is not running the release setup deployed, and setup will not overwrite it. ` +
+      `Check it with \`fly status --app ${appName}\` and \`fly releases --app ${appName}\`, ` +
+      'fix or remove what is running, then resume.';
+  }
 }
 
 /** Prove the current app already runs one healthy exact-digest deployment. */

@@ -36,6 +36,7 @@ import {
   runCommunityLiveGateCommand as command,
 } from './community-deploy-live-process.js';
 import {
+  COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS,
   createLauncherPromptResponder,
   requireTigrisTermsAccepted,
 } from './community-deploy-live-launcher.js';
@@ -50,7 +51,8 @@ import { deleteNeonProject } from '../src/commands/community-deploy/neon-mutate.
 import { FlyTigrisGraphqlClient } from '../src/commands/community-deploy/fly-graphql-client.js';
 import { readFlySessionCredential } from '../src/commands/community-deploy/tigris-session.js';
 
-const TIMEOUT_MS = 12 * 60_000;
+// Derived from the launcher's own deadlines; see COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS.
+const TIMEOUT_MS = COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS;
 /**
  * How long the gate waits for a secret after the launcher that sends it has exited. A launcher
  * copies a secret before it prompts or exits, so by then the secret is already sent or lost; this

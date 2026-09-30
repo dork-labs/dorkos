@@ -19,6 +19,32 @@ export class ProviderMutationError extends Error {
   }
 }
 
+/**
+ * Deadline for a provider write that is one API call: creating or destroying a Fly app, staging
+ * Fly secrets, creating or deleting a Neon project, creating or deleting a storage bucket.
+ *
+ * These normally answer in seconds, and the 30-second deadline the reads share was enough in every
+ * live run so far. But a write cut off by the launcher is not a failure, it is an unknown: the
+ * provider may have done it, and the launch stops as uncertain for the operator to reconcile by
+ * hand (DOR-2169). A slow answer costs a wait; a cut-off one costs that manual reconciliation. So
+ * writes get two minutes, reads keep 30 seconds, and deploys get their own, longer deadline.
+ */
+export const PROVIDER_WRITE_TIMEOUT_MS = 2 * 60_000;
+
+/**
+ * The deadline for one provider write: the caller's, raised to {@link PROVIDER_WRITE_TIMEOUT_MS}.
+ *
+ * @param callerTimeoutMs - The deadline the caller passed for its reads.
+ * @param minimumMs - The least this write may be given.
+ * @returns The longer of the two.
+ */
+export function writeDeadline(
+  callerTimeoutMs: number,
+  minimumMs: number = PROVIDER_WRITE_TIMEOUT_MS
+): number {
+  return Math.max(callerTimeoutMs, minimumMs);
+}
+
 /** Options for a bounded provider mutation. */
 export interface ProviderMutationOptions<T> {
   /** Executable path. */
