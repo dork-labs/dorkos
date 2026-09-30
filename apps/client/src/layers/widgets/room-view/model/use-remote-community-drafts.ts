@@ -24,7 +24,7 @@ interface Delivery {
   status: 'sending' | 'failed';
   error?: string;
   /** The composer it was sent from and exactly what was typed, to go back to if it can never send. */
-  origin: { draft: CommunityDraftAddress; typed: string };
+  origin: { draft: CommunityDraftAddress; typed: string; seq: number };
 }
 
 /**
@@ -37,6 +37,11 @@ const COMMUNITY_GONE_CODES: ReadonlySet<string> = new Set([
   'COMMUNITY_DELETED',
   'COMMUNITY_TAKEN_DOWN',
 ]);
+
+/** Join the non-blank parts of a draft with a blank line, so no part leaves an empty one. */
+function joinDraft(parts: readonly string[]): string {
+  return parts.filter((part) => part.trim()).join('\n\n');
+}
 
 function isCommunityGone(cause: unknown): boolean {
   const code = (cause as { code?: unknown } | null)?.code;
@@ -128,6 +133,9 @@ export function useRemoteCommunityDrafts({
   }
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const jobs = useRef(new Map<string, Delivery>());
+  const sent = useRef(0);
+  /** Messages already put back in each composer's draft, by draft key, in the order they were sent. */
+  const returned = useRef(new Map<string, Delivery[]>());
   const running = useRef(new Set<string>());
   const authority = useRef(address);
   const context = useRef(contextKey);
@@ -220,17 +228,36 @@ export function useRemoteCommunityDrafts({
   }
 
   /**
-   * Put a message that can never send back in front of whatever its composer holds now. Refused
-   * (and so `false`) once its connection has ended, when nothing could read the draft back.
+   * Put a message that can never send back into its composer's draft. Every message returned
+   * this way goes first, oldest sent first, and then whatever was typed since; once the person
+   * has changed that returned part, the next one simply goes in front. Refused (and so `false`)
+   * once its connection has ended, when nothing could read the draft back.
    */
   function returnToDraft(job: Delivery): boolean {
-    const { draft, typed } = job.origin;
+    const { draft } = job.origin;
+    const key = communityDraftKey(draft);
     const store = useCommunityDraftStore.getState();
-    const held = store.drafts[communityDraftKey(draft)];
-    const text = held?.text.trim() ? `${typed}\n\n${held.text}` : typed;
-    const files = [...job.files.map(({ id, file }) => ({ id, file })), ...(held?.files ?? [])];
-    store.write(draft, { text, files });
-    return communityDraftKey(draft) in useCommunityDraftStore.getState().drafts;
+    const held = store.drafts[key];
+    const current = held?.text ?? '';
+    let earlier = returned.current.get(key) ?? [];
+    const earlierText = joinDraft(earlier.map((item) => item.origin.typed));
+    let typedSince = current;
+    if (earlierText && current.startsWith(earlierText))
+      typedSince = current.slice(earlierText.length).replace(/^\n+/, '');
+    else earlier = [];
+    const now = [...earlier, job].sort((a, b) => a.origin.seq - b.origin.seq);
+    const returnedIds = new Set(now.flatMap((item) => item.files.map((file) => file.id)));
+    const files = [
+      ...now.flatMap((item) => item.files.map(({ id, file }) => ({ id, file }))),
+      ...(held?.files ?? []).filter((file) => !returnedIds.has(file.id)),
+    ];
+    store.write(draft, {
+      text: joinDraft([...now.map((item) => item.origin.typed), typedSince]),
+      files,
+    });
+    if (!(key in useCommunityDraftStore.getState().drafts)) return false;
+    returned.current.set(key, now);
+    return true;
   }
 
   function send(parentEntryId?: string) {
@@ -258,7 +285,7 @@ export function useRemoteCommunityDrafts({
       files,
       attachmentIds: [],
       status: 'sending',
-      origin: { draft: target, typed: held.text },
+      origin: { draft: target, typed: held.text, seq: (sent.current += 1) },
     };
     jobs.current.set(job.key, job);
     setError(null);

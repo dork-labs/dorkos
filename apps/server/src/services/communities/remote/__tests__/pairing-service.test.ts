@@ -1038,6 +1038,17 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
         { now: () => clock.now, freshMs: 0 },
         countUndelivered
       );
+      // The count is kept before the gone lifecycle is saved, so a crash between them keeps it.
+      const record = store.recordUndeliveredWhenGone.bind(store);
+      vi.spyOn(store, 'recordUndeliveredWhenGone').mockImplementation(async (...args) => {
+        order.push('keep count');
+        return record(...args);
+      });
+      const updateAccess = store.updateAccess.bind(store);
+      vi.spyOn(store, 'updateAccess').mockImplementation(async (...args) => {
+        if (args[2].lastKnown?.lifecycle === 'deleted') order.push('save gone');
+        return updateAccess(...args);
+      });
       const started = await service.start(
         'undelivered-owner',
         `${origin}/c/${remoteCommunityId}`,
@@ -1052,7 +1063,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
 
       refuse(`${qualified}/me/connection-access`, 410, 'COMMUNITY_DELETED');
       expect((await service.status(ref, 'undelivered-owner')).undeliveredAgentMessages).toBe(3);
-      expect(order).toEqual(['count', 'purge']);
+      expect(order).toEqual(['count', 'keep count', 'save gone', 'purge']);
       expect(countUndelivered).toHaveBeenCalledWith(ref, 'undelivered-owner');
 
       // Checked again (a new server start would be the same): the posts are stopped by now.

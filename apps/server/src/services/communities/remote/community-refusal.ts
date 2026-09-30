@@ -60,6 +60,20 @@ const TAKEN_DOWN: CommunityRefusal = {
   error: 'The host took this community down.',
 };
 
+/**
+ * The refusal for a community this installation already recorded as gone (DOR-2575), without
+ * asking it again: the same answer a request to it would get, so a person's send refused before
+ * it leaves this computer reads exactly like one the Community refused.
+ *
+ * @param lifecycle - The recorded lifecycle.
+ * @returns The gone refusal, or `null` for any lifecycle that is not gone.
+ */
+export function communityGoneRefusal(lifecycle: string | undefined): CommunityRefusal | null {
+  if (lifecycle === 'deleted') return DELETED;
+  if (lifecycle === 'taken_down') return TAKEN_DOWN;
+  return null;
+}
+
 const REJECTED = 'The community didn’t accept that request.';
 
 /** The caps a Community sets, as `409` codes, in the app's own words. */

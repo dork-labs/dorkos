@@ -510,7 +510,7 @@ export class RemoteCommunityPairingService {
    * queued posts stop, local agents' turns in its rooms halt, their enrollments end, and the
    * mirrored rooms, their entries, files and search rows are purged.
    *
-   * The no-access state is recorded FIRST, so whatever happens to the purge, nothing here goes on
+   * The no-access state is recorded before the purge (after only the undelivered count), so whatever happens to the purge, nothing here goes on
    * treating the community as live; the purge runs after, and a failed one is logged and tried
    * again on the next check, never thrown into the connection list. A purge that succeeded is
    * not repeated while the state lasts: every check of a pending deletion would otherwise purge
@@ -530,24 +530,16 @@ export class RemoteCommunityPairingService {
     before: CommunityConnectionAccess | null | undefined,
     lifecycle: 'deletion_pending' | 'deleted' | 'taken_down'
   ): Promise<RemoteConnectionDescriptor> {
-    const gone = await this.store.updateAccess(ref, ownerKey, {
-      state: 'verified',
-      effective: NO_CAPABILITIES,
-      lastKnown: {
-        lifecycle,
-        capabilities: NO_CAPABILITIES,
-        verifiedAt: new Date(this.timing.now()).toISOString(),
-      },
-    });
-    this.notifyAccessAuthorityChanged(ref, ownerKey, before, gone.access!);
     const key = `${ownerKey}\0${ref}`;
     const wasGone =
       before?.lastKnown?.lifecycle === 'deletion_pending' ||
       before?.lastKnown?.lifecycle === 'deleted' ||
       before?.lastKnown?.lifecycle === 'taken_down';
-    // Count what its agents never delivered before the purge stops it and removes its rooms, and
-    // only on the way in: a later check, or a retried purge, would find those posts already
-    // stopped and count none (DOR-2575). A count that cannot be kept never holds up the purge.
+    // Count what its agents never delivered, and keep the count, before anything records the
+    // community as gone (DOR-2575): once that is saved no later check takes the count again, so
+    // a crash between the two must leave the count behind, never the lifecycle alone. Only on
+    // the way in: a later check, or a retried purge, would find those posts already stopped and
+    // count none. A count that cannot be kept never holds up the rest.
     if (!wasGone) {
       try {
         await this.store.recordUndeliveredWhenGone(
@@ -561,6 +553,16 @@ export class RemoteCommunityPairingService {
         });
       }
     }
+    const gone = await this.store.updateAccess(ref, ownerKey, {
+      state: 'verified',
+      effective: NO_CAPABILITIES,
+      lastKnown: {
+        lifecycle,
+        capabilities: NO_CAPABILITIES,
+        verifiedAt: new Date(this.timing.now()).toISOString(),
+      },
+    });
+    this.notifyAccessAuthorityChanged(ref, ownerKey, before, gone.access!);
     if (!(wasGone && this.purgedGone.has(key))) {
       const [purge] = await Promise.allSettled([
         this.onReconnectRequired?.(ref, ownerKey) ?? Promise.resolve(),

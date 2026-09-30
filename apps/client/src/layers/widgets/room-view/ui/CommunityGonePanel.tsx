@@ -134,10 +134,14 @@ export function CommunityGonePanel({ connection, onRemoved }: CommunityGonePanel
       <p className="text-foreground font-medium">{heading}</p>
       <p className="text-muted-foreground max-w-sm">{body}</p>
       {unsent && (
-        <p className="text-foreground max-w-sm" data-testid="community-gone-unsent">
+        <p role="status" className="text-foreground max-w-sm" data-testid="community-gone-unsent">
           {unsent}
         </p>
       )}
+      {/* The button's own label changes too, but a changed label is not reliably read out. */}
+      <span className="sr-only" aria-live="polite" data-testid="community-gone-copy-status">
+        {copied ? 'Copied.' : failed ? 'Couldn’t copy to the clipboard.' : ''}
+      </span>
       <div className="flex flex-wrap items-center justify-center gap-2">
         {drafts.length > 0 && (
           <Button variant="outline" onClick={() => void copy(drafts.join('\n\n'))}>

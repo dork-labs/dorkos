@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(communities): say what didn’t send when a community is deleted or taken down (DOR-2575)'
+  - "fix(communities): answer a gone community's post with its gone refusal, and keep the count first (DOR-2575 review)"
 ---
 
 ### Added
@@ -9,4 +10,4 @@ covers:
 
 ### Fixed
 
-- A message you send just as a Community is deleted or taken down now goes back into your message box instead of disappearing with the room (DOR-2575)
+- A message you send just as a Community is deleted or taken down is no longer lost with its room. The community's page counts it with your drafts, and "Copy your drafts" gives you its text back (DOR-2575)

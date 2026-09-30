@@ -5,6 +5,7 @@
  * @module routes/remote-community-refusal
  */
 export {
+  communityGoneRefusal,
   communityRefusal,
   type CommunityRefusal,
   type CommunityRefusalAction,

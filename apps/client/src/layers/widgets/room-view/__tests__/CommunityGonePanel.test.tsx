@@ -246,12 +246,17 @@ describe('CommunityGonePanel', () => {
         typeDraft('Another owner', { ownerKey: 'owner-b' });
       });
 
-      expect(screen.getByTestId('community-gone-unsent')).toHaveTextContent(
+      expect(screen.getByRole('status')).toHaveTextContent(
         '3 messages from your agents and 2 drafts of yours weren’t sent.'
       );
       await user.click(screen.getByRole('button', { name: 'Copy your drafts' }));
       expect(await navigator.clipboard.readText()).toBe('First thought\n\nSecond thought');
       expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
+      expect(screen.getByTestId('community-gone-copy-status')).toHaveTextContent('Copied.');
+      expect(screen.getByTestId('community-gone-copy-status')).toHaveAttribute(
+        'aria-live',
+        'polite'
+      );
 
       await user.click(screen.getByRole('button', { name: 'Remove from DorkOS' }));
       expect(screen.getByRole('alertdialog')).toHaveTextContent(
