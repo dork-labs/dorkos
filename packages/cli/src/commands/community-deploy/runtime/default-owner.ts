@@ -208,6 +208,11 @@ export function createDefaultCommunityOwnerDependencies(input: {
   now(): string;
   signal?: AbortSignal;
   platform?: NodeJS.Platform;
+  /**
+   * The digest Fly reports for the running release: the journal's recorded linux/amd64 digest, or
+   * a fresh resolution for a journal that predates it (DOR-2586).
+   */
+  platformDigest(): Promise<string>;
 }): CommunityOwnerDependencies {
   return {
     persist: input.persist,
@@ -225,7 +230,7 @@ export function createDefaultCommunityOwnerDependencies(input: {
       verifyExistingFlyDeployment(
         await readFlyRuntimeInventory(input.options.fly, input.plan.fly.appName),
         COMMUNITY_IMAGE_REPOSITORY,
-        input.plan.imageDigest
+        await input.platformDigest()
       );
       await verifyCommunityHealth(`https://${input.plan.fly.appName}.fly.dev`, {
         timeoutMs: 120_000,

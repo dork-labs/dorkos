@@ -47,6 +47,9 @@ function journal(update: Partial<LaunchJournal> = {}): LaunchJournal {
   });
 }
 
+// Fly deploys the attested index but reports the linux/amd64 manifest it ran (DOR-2586).
+const PLATFORM_DIGEST = `sha256:${'f'.repeat(64)}`;
+
 const runtime = {
   machines: [
     {
@@ -54,7 +57,7 @@ const runtime = {
       name: 'machine-name',
       state: 'started',
       region: 'ord',
-      imageDigest: plan.imageDigest,
+      imageDigest: PLATFORM_DIGEST,
       imageRepository: 'ghcr.io/dork-labs/dorkos-community',
       checks: [{ name: 'health', status: 'passing' }],
     },
@@ -62,7 +65,7 @@ const runtime = {
   releases: [
     {
       id: 'release-id',
-      imageRef: `ghcr.io/dork-labs/dorkos-community@${plan.imageDigest}`,
+      imageRef: `ghcr.io/dork-labs/dorkos-community@${PLATFORM_DIGEST}`,
       status: 'complete',
       stable: false,
       version: 1,
@@ -112,6 +115,7 @@ function harness(initial = journal()) {
         item.status === 'Staged' ? { ...item, status: 'Deployed' as const } : item
       );
     }),
+    resolvePlatformDigest: vi.fn(async () => PLATFORM_DIGEST),
     verifyNewRuntime: vi.fn((value) => value),
     verifyExistingRuntime: vi.fn((value) => value),
     verifyHealth: vi.fn(),
@@ -126,7 +130,13 @@ describe('Community deploy phase', () => {
     const result = await executeCommunityDeployPhase(plan, test.persisted(), test.dependencies);
 
     expect(test.dependencies.stageSecrets).toHaveBeenCalledOnce();
+    // The attested index is what gets deployed; the platform digest is what gets checked.
     expect(test.dependencies.deploy).toHaveBeenCalledWith(plan.imageDigest);
+    expect(test.dependencies.verifyNewRuntime).toHaveBeenCalledWith(runtime, [], PLATFORM_DIGEST);
+    expect(
+      vi.mocked(test.dependencies.resolvePlatformDigest).mock.invocationCallOrder[0]
+    ).toBeLessThan(vi.mocked(test.dependencies.deploy).mock.invocationCallOrder[0]!);
+    expect(result.journal.imagePlatformDigest).toBe(PLATFORM_DIGEST);
     expect(test.dependencies.verifyHealth).toHaveBeenCalledWith(
       'https://dorkos-community-test.fly.dev'
     );
@@ -153,6 +163,7 @@ describe('Community deploy phase', () => {
       revision: 7,
       state: 'secrets_staged',
       secretDigests,
+      imagePlatformDigest: PLATFORM_DIGEST,
       completedSteps: [
         'planned',
         'fly_app_created',
@@ -175,8 +186,22 @@ describe('Community deploy phase', () => {
     const result = await executeCommunityDeployPhase(plan, staged, test.dependencies);
     expect(test.dependencies.stageSecrets).not.toHaveBeenCalled();
     expect(test.dependencies.deploy).not.toHaveBeenCalled();
-    expect(test.dependencies.verifyExistingRuntime).toHaveBeenCalledOnce();
+    expect(test.dependencies.verifyExistingRuntime).toHaveBeenCalledWith(runtime, PLATFORM_DIGEST);
+    // The journal already holds the digest, so a resume never reads the registry again.
+    expect(test.dependencies.resolvePlatformDigest).not.toHaveBeenCalled();
     expect(result.bootstrapSecret).toBeNull();
+  });
+
+  it('deploys nothing when the platform digest cannot be proved', async () => {
+    const test = harness();
+    vi.mocked(test.dependencies.resolvePlatformDigest).mockRejectedValue(
+      Object.assign(new Error('x'), { code: 'INVALID_RESPONSE' })
+    );
+    await expect(
+      executeCommunityDeployPhase(plan, test.persisted(), test.dependencies)
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(test.dependencies.deploy).not.toHaveBeenCalled();
+    expect(test.persisted().imagePlatformDigest).toBeUndefined();
   });
 
   it('adopts one fully staged secret set after a crash before journaling', async () => {

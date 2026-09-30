@@ -19,3 +19,7 @@ specs/room-per-agent-stop/02-specification.md diff
 # Windows, where a checkout with CRLF line endings breaks them (a sourced
 # `\r` becomes part of each command). Keep them LF everywhere.
 *.sh text eol=lf
+
+# A registry index captured byte for byte: its test proves the bytes hash to the attested digest,
+# so any line-ending conversion on checkout (Windows) would break it. Never treat it as text.
+*.oci -text

@@ -77,13 +77,22 @@ export interface CommunityDeployPhaseDependencies {
   readRuntime(): Promise<FlyRuntimeInventory>;
   /** Deploy the immutable image with one Machine and a generated config. */
   deploy(imageReference: string): Promise<void>;
+  /**
+   * The digest Fly will report for the attested release: its linux/amd64 manifest, not the index
+   * that is deployed (DOR-2586).
+   */
+  resolvePlatformDigest(): Promise<string>;
   /** Verify the first post-deploy inventory against its pre-deploy releases. */
   verifyNewRuntime(
     inventory: FlyRuntimeInventory,
-    previous: FlyRuntimeInventory['releases']
+    previous: FlyRuntimeInventory['releases'],
+    platformDigest: string
   ): FlyRuntimeInventory;
   /** Verify an already completed deployment during resume. */
-  verifyExistingRuntime(inventory: FlyRuntimeInventory): FlyRuntimeInventory;
+  verifyExistingRuntime(
+    inventory: FlyRuntimeInventory,
+    platformDigest: string
+  ): FlyRuntimeInventory;
   /** Verify the public health endpoint independently of Fly checks. */
   verifyHealth(origin: string): Promise<void>;
   /** Clock used only for journal timestamps. */
@@ -244,6 +253,16 @@ export async function executeCommunityDeployPhase(
   }
 
   if (!current.completedSteps.includes('deployed')) {
+    // Settled and saved before anything is deployed, so a resume checks the same digest and a
+    // registry that cannot prove the mapping stops the launch before Fly runs anything.
+    let platformDigest = current.imagePlatformDigest;
+    if (!platformDigest) {
+      platformDigest = await dependencies.resolvePlatformDigest();
+      current = await persist(dependencies, current, {
+        imagePlatformDigest: platformDigest,
+        lastSafeError: null,
+      });
+    }
     const existingSecrets = await dependencies.readSecrets();
     const deployedRows = runtimeSecretRows(existingSecrets);
     let inventory: FlyRuntimeInventory;
@@ -254,7 +273,10 @@ export async function executeCommunityDeployPhase(
       const deployed = exactSecretDigests(existingSecrets, 'Deployed');
       if (!sameDigests(deployed, expectedDigests))
         throw new ProviderMutationError('INVALID_RESPONSE');
-      inventory = dependencies.verifyExistingRuntime(await dependencies.readRuntime());
+      inventory = dependencies.verifyExistingRuntime(
+        await dependencies.readRuntime(),
+        platformDigest
+      );
     } else {
       const staged = exactSecretDigests(existingSecrets, 'Staged');
       if (!sameDigests(staged, expectedDigests))
@@ -265,7 +287,11 @@ export async function executeCommunityDeployPhase(
       if (!sameDigests(afterSecrets, expectedDigests)) {
         throw new ProviderMutationError('INVALID_RESPONSE');
       }
-      inventory = dependencies.verifyNewRuntime(await dependencies.readRuntime(), previous);
+      inventory = dependencies.verifyNewRuntime(
+        await dependencies.readRuntime(),
+        previous,
+        platformDigest
+      );
     }
     const { machine, release } = runtimeEvidence(inventory);
     current = await persist(dependencies, current, {
