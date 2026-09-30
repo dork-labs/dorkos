@@ -1045,7 +1045,11 @@ export class AdapterManager {
       // the list, unremovable by name, and rewritten on every save. Deleting
       // one is also the only way to clear a cleartext credential stuck inside
       // it, so this path has to exist.
-      if (await this.removeUnparsedEntry(id)) return;
+      // Its id may still name records from before its settings broke.
+      if (await this.removeUnparsedEntry(id)) {
+        this.deleteConnectionHistory(id);
+        return;
+      }
       throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
     }
 
@@ -1111,13 +1115,15 @@ export class AdapterManager {
   }
 
   /**
-   * Delete what the delivery log holds about a removed connection: its chats'
-   * messages, their names, and its connect and error events (DOR-2604).
+   * Delete the delivery records a removed connection left behind: its chats'
+   * messages, the chat names they hold, and its connect and error events
+   * (DOR-2604).
    *
    * Runs only once the removal is saved, so a removal that fails part way
-   * leaves the history of a connection that still exists. A failure here is logged, not
-   * thrown: the connection is already gone, and the delivery records still age
-   * out with the rest after the retention window (`relay-gc.ts`).
+   * leaves the history of a connection that still exists. A failure here is
+   * logged, not thrown: the connection is already gone, and the delivery
+   * records still age out with the rest after the retention window
+   * (`relay-gc.ts`).
    *
    * @param id - The removed connection's id.
    */

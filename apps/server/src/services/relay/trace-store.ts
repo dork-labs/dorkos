@@ -563,8 +563,8 @@ export class TraceStore {
   }
 
   /**
-   * Delete everything this store holds about one chat connection, for when a
-   * person removes it (DOR-2604).
+   * Delete one chat connection's delivery records and the chat names they
+   * hold, for when a person removes it (DOR-2604).
    *
    * That is three kinds of row, deleted in one statement, so they go together
    * or not at all:
@@ -584,7 +584,9 @@ export class TraceStore {
    *
    * Agent traffic that never involved this connection stays, and so does the
    * rest of an agent's trace for a forwarded message: only the rows that name
-   * this connection go.
+   * this connection go. So do its approval answers, published as
+   * `relay.system.approval-bridge.<platform>.<adapterId>`: they carry no chat
+   * and no name.
    *
    * @param adapterId - The removed connection's id.
    * @returns How many rows were deleted.

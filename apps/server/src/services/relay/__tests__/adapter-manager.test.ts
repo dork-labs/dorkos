@@ -1664,6 +1664,26 @@ describe('AdapterManager', () => {
         expect(traces.getAdapterEvents('tg-main')).toHaveLength(1);
       });
 
+      it('deletes the history of an entry whose saved settings could not be read', async () => {
+        vi.mocked(readFile).mockResolvedValue(
+          JSON.stringify({
+            adapters: [{ id: 'tg-main', type: 'telegram', enabled: 'yes please', config: null }],
+          })
+        );
+        const traces = seededTraceStore();
+        const withTraces = new AdapterManager(registry, configPath, {
+          ...mockDeps,
+          traceEraser: traces,
+        });
+        await initAndStart(withTraces);
+
+        await withTraces.removeAdapter('tg-main');
+
+        expect(traces.getObservedChats('tg-main')).toEqual([]);
+        expect(traces.getAdapterEvents('tg-main')).toEqual([]);
+        expect(traces.getObservedChats('tg-main-2')).toHaveLength(1);
+      });
+
       it('still removes the connection when its history cannot be deleted', async () => {
         vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
         const traceEraser = {

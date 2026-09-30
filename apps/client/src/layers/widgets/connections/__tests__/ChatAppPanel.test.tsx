@@ -138,9 +138,9 @@ describe('ChatAppPanel', () => {
     expect(within(more).queryByRole('button', { name: /Set up another/ })).not.toBeInTheDocument();
     await user.click(within(more).getByRole('button', { name: /Remove…/ }));
     const confirm = await screen.findByRole('alertdialog', { name: 'Remove Telegram?' });
-    // Removing deletes the chats it saw and their names, so the dialog says so (DOR-2604).
+    // Removing deletes its delivery records and the chat names in them, so the dialog says so (DOR-2604).
     expect(confirm).toHaveAccessibleDescription(
-      /its recent activity, including the names of the chats that messaged it/
+      /its record of recent deliveries, with the chat names it holds/
     );
     expect(transport.removeRelayAdapter).not.toHaveBeenCalled();
     await user.click(within(confirm).getByRole('button', { name: 'Remove' }));

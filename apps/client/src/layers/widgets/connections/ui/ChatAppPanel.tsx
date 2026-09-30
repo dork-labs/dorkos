@@ -133,8 +133,8 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {manifest.displayName}?</AlertDialogTitle>
             <AlertDialogDescription>
-              It stops working and its settings are deleted. So is its recent activity, including
-              the names of the chats that messaged it. Messages sent to it after that reach nobody.
+              It stops working and its settings are deleted. So is its record of recent deliveries,
+              with the chat names it holds. Messages sent to it after that reach nobody.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
