@@ -474,6 +474,14 @@ describe('completion equals a transfer (AC-8)', () => {
       204,
       'remove'
     );
+    // Removal already revoked that grant, so a claim that forgot to clear the old membership
+    // would pass unseen. Leave one live on the inactive row, as a row from before removal
+    // revoked grants would be, so only the claim's own clearing can revoke it.
+    const planted = await plain.h.pool.query(
+      'UPDATE connection_grants SET revoked_at=NULL WHERE member_id=$1 AND community_id=$2',
+      [former.memberId, c.communityId]
+    );
+    expect(planted.rowCount).toBe(1);
     const { replacementId, claimToken } = await requestReplacement(plain, c);
     await toClaimable(plain, replacementId);
     const { cookie: claimCookie } = await preflightClaim(plain, claimToken);
