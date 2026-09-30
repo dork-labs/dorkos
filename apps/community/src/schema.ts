@@ -51,6 +51,8 @@ export const communities = pgTable(
     legalHoldReference: text('legal_hold_reference'),
     /** When an import finished restoring this community's history from an owner export. */
     importedAt: timestamp('imported_at', { withTimezone: true }),
+    /** The host's whole-community takedown this pending deletion belongs to (0025). */
+    takedownId: uuid('takedown_id'),
     redactionEpoch: bigint('redaction_epoch', { mode: 'bigint' })
       .notNull()
       .default(sql`(('x' || substr(md5(gen_random_uuid()::text), 1, 16))::bit(64)::bigint)`),
@@ -85,7 +87,7 @@ export const communities = pgTable(
     ),
     check(
       'communities_deletion_state',
-      sql`(${table.lifecycle} = 'deletion_pending' AND ${table.deleteRequestedAt} IS NOT NULL AND ${table.deleteAfter} IS NOT NULL AND num_nonnulls(${table.deleteRequestedBy}, ${table.deleteRequestedByHostActor}) = 1 AND ${table.deleteAfter} = ${table.deleteRequestedAt} + interval '7 days') OR (${table.lifecycle} <> 'deletion_pending' AND ${table.deleteRequestedAt} IS NULL AND ${table.deleteAfter} IS NULL AND ${table.deleteRequestedBy} IS NULL AND ${table.deleteRequestedByHostActor} IS NULL)`
+      sql`(${table.lifecycle} = 'deletion_pending' AND ${table.deleteRequestedAt} IS NOT NULL AND ${table.deleteAfter} IS NOT NULL AND num_nonnulls(${table.deleteRequestedBy}, ${table.deleteRequestedByHostActor}) = 1 AND (${table.deleteAfter} = ${table.deleteRequestedAt} + interval '7 days' OR (${table.takedownId} IS NOT NULL AND ${table.deleteAfter} >= ${table.deleteRequestedAt} + interval '24 hours'))) OR (${table.lifecycle} <> 'deletion_pending' AND ${table.deleteRequestedAt} IS NULL AND ${table.deleteAfter} IS NULL AND ${table.deleteRequestedBy} IS NULL AND ${table.deleteRequestedByHostActor} IS NULL)`
     ),
     check(
       'communities_deletion_from_state',
@@ -94,6 +96,10 @@ export const communities = pgTable(
     check(
       'communities_hold_state',
       sql`(${table.heldFromState} IS NULL) = (${table.heldAt} IS NULL) AND (${table.heldFromState} IS NULL OR ${table.heldFromState} IN ('active','archived')) AND (${table.deletionNoticeAt} IS NULL OR ${table.heldFromState} IS NOT NULL) AND (${table.heldFromState} IS NOT NULL) = (${table.lifecycle} = 'held' OR (${table.lifecycle} = 'suspended' AND ${table.suspendedFromState} = 'held') OR (${table.lifecycle} = 'deletion_pending' AND (${table.deletionFromState} = 'held' OR ${table.deletionFromPriorState} = 'held')))`
+    ),
+    check(
+      'communities_takedown',
+      sql`${table.takedownId} IS NULL OR (${table.lifecycle} = 'deletion_pending' AND ${table.deleteRequestedByHostActor} IS NOT NULL)`
     ),
     check(
       'communities_host_requester',
@@ -976,10 +982,11 @@ export const exportArchives = pgTable(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
-    requesterMemberId: uuid('requester_member_id')
-      .notNull()
-      .references(() => members.id),
+    /** Null only for an evidence export, which nobody asked for (0025). */
+    requesterMemberId: uuid('requester_member_id').references(() => members.id),
     scope: text('scope').notNull(),
+    /** The whole-community takedown an evidence export preserves (0025). */
+    evidenceTakedownId: uuid('evidence_takedown_id'),
     blobKey: text('blob_key').unique(),
     byteSize: bigint('byte_size', { mode: 'number' }),
     createdAt: time('created_at'),
@@ -1013,7 +1020,11 @@ export const exportArchives = pgTable(
   },
   (table) => [
     uniqueIndex('export_archives_community_id_unique').on(table.communityId, table.id),
-    check('export_archives_scope', sql`${table.scope} IN ('personal','owner')`),
+    check('export_archives_scope', sql`${table.scope} IN ('personal','owner','evidence')`),
+    check(
+      'export_archives_evidence',
+      sql`(${table.scope} = 'evidence') = (${table.requesterMemberId} IS NULL) AND (${table.scope} = 'evidence') = (${table.evidenceTakedownId} IS NOT NULL)`
+    ),
     check('export_archives_format_version', sql`${table.formatVersion} IN (1,2)`),
     check(
       'export_archives_state',
@@ -1056,6 +1067,9 @@ export const exportArchives = pgTable(
     uniqueIndex('export_archives_open_personal_unique')
       .on(table.requesterMemberId)
       .where(sql`${table.scope} = 'personal' AND ${table.state} IN ('queued','building')`),
+    uniqueIndex('export_archives_open_evidence_unique')
+      .on(table.evidenceTakedownId)
+      .where(sql`${table.scope} = 'evidence' AND ${table.state} IN ('queued','building')`),
     index('export_archives_due_idx')
       .on(table.claimedAt.asc().nullsFirst(), table.createdAt)
       .where(sql`${table.state} IN ('queued','building')`),
@@ -1177,6 +1191,8 @@ export const managedBlobs = pgTable(
     createdAt: time('created_at'),
     storedAt: timestamp('stored_at', { withTimezone: true }),
     committedAt: timestamp('committed_at', { withTimezone: true }),
+    /** The takedown whose evidence export reserved this blob (0025). */
+    evidenceTakedownId: uuid('evidence_takedown_id'),
   },
   (table) => [
     uniqueIndex('managed_blobs_community_key_unique').on(table.communityId, table.blobKey),
@@ -1201,6 +1217,10 @@ export const managedBlobs = pgTable(
       'managed_blobs_commit_timestamp',
       sql`(${table.state} <> 'committed' OR ${table.committedAt} IS NOT NULL) AND (${table.committedAt} IS NULL OR ${table.state} IN ('committed','pending_delete','evidence_hold'))`
     ),
+    check(
+      'managed_blobs_evidence_takedown',
+      sql`${table.evidenceTakedownId} IS NULL OR ${table.purpose} = 'export'`
+    ),
   ]
 );
 
@@ -1223,6 +1243,8 @@ export const communityDeletionJobs = pgTable(
     lastErrorClass: text('last_error_class'),
     createdAt: time('created_at'),
     updatedAt: time('updated_at'),
+    /** The whole-community takedown this deletion belongs to (0025). */
+    takedownId: uuid('takedown_id'),
   },
   (table) => [
     foreignKey({
@@ -1236,6 +1258,10 @@ export const communityDeletionJobs = pgTable(
       sql`num_nonnulls(${table.requestedByMemberId}, ${table.requestedByHostActor}) = 1 AND (${table.requestedByHostActor} IS NULL OR ${table.requestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$')`
     ),
     check('community_deletion_jobs_lifecycle_version', sql`${table.lifecycleVersion} > 0`),
+    check(
+      'community_deletion_jobs_takedown',
+      sql`${table.takedownId} IS NULL OR ${table.requestedByHostActor} IS NOT NULL`
+    ),
     check('community_deletion_jobs_attempts_check', sql`${table.attempts} >= 0`),
     check(
       'community_deletion_jobs_state_check',
@@ -1807,6 +1833,10 @@ export const communityTakedowns = pgTable(
     releasedByKind: text('released_by_kind'),
     releasedByUserId: text('released_by_user_id').references(() => users.id),
     releasedAt: timestamp('released_at', { withTimezone: true }),
+    /** A community takedown's evidence export, while it has one (0025). */
+    evidenceExportId: uuid('evidence_export_id'),
+    /** A community takedown: when its reversal window ends and the deletion is due (0025). */
+    deleteAfter: timestamp('delete_after', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('community_takedowns_idempotency').on(
@@ -1826,6 +1856,13 @@ export const communityTakedowns = pgTable(
     index('community_takedowns_unsettled_idx')
       .on(table.communityId)
       .where(sql`${table.evidenceState} IN ('pending','retrying','failed','held_on_primary')`),
+    index('community_takedowns_actor_community_idx')
+      .on(
+        table.actorKind,
+        sql`COALESCE(${table.actorUserId}, ${table.actorApiKeyId}::text)`,
+        table.createdAt
+      )
+      .where(sql`${table.targetKind} = 'community'`),
     check(
       'community_takedowns_target_kind_check',
       sql`${table.targetKind} IN ('entry','attachment','icon','community')`
@@ -1886,6 +1923,14 @@ export const communityTakedowns = pgTable(
     check(
       'community_takedowns_evidence_due',
       sql`${table.evidenceState} NOT IN ('pending','retrying') OR ${table.nextAttemptAt} IS NOT NULL`
+    ),
+    check(
+      'community_takedowns_evidence_export',
+      sql`${table.evidenceExportId} IS NULL OR ${table.targetKind} = 'community'`
+    ),
+    check(
+      'community_takedowns_delete_after',
+      sql`(${table.targetKind} = 'community') = (${table.deleteAfter} IS NOT NULL)`
     ),
   ]
 );

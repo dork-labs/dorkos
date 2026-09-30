@@ -37,6 +37,7 @@ function isCommunityUnavailable(cause: unknown): cause is RequestError {
       'COMMUNITY_SUSPENDED',
       'COMMUNITY_DELETION_PENDING',
       'COMMUNITY_DELETED',
+      'COMMUNITY_TAKEN_DOWN',
     ].includes(cause.code)
   );
 }

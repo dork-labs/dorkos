@@ -339,6 +339,11 @@ const schema = z.object({
     6,
     168
   ),
+  // How long a whole-community takedown can be reversed before the community is deleted. Never
+  // less than a day, so a mistaken or malicious takedown can always be undone.
+  COMMUNITY_TAKEDOWN_REVERSAL_HOURS: between(24, 72, 720),
+  // Whole-community takedowns one host operator or key may make in any rolling 24 hours.
+  COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY: integer('COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY', 3, 100),
   COMMUNITY_PORT: integer('COMMUNITY_PORT', 6481, 65535),
   COMMUNITY_TEST_RUNTIME: z.enum(['true', 'false']).default('false'),
   COMMUNITY_POSTS_PER_TEN_MINUTES: integer('COMMUNITY_POSTS_PER_TEN_MINUTES', 120, 1000),
@@ -692,6 +697,8 @@ export function parseConfig(env: Record<string, unknown>) {
       /** Export uploads one replica receives at once; each can stage up to twice its size. */
       importUploads: value.COMMUNITY_IMPORT_UPLOADS,
       takedownEvidenceAlertHours: value.COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS,
+      takedownReversalHours: value.COMMUNITY_TAKEDOWN_REVERSAL_HOURS,
+      takedownCommunitiesPerDay: value.COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY,
     },
   };
 }

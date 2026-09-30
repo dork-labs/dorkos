@@ -142,6 +142,10 @@ function deletionProjection(row: {
   attempts: number | null;
   requested_by: 'owner' | 'host' | null;
   returns_to: 'archived' | 'suspended' | 'held' | null;
+  takedown_category?: 'child_safety' | 'illegal_content' | 'legal_order' | 'terms_violation' | null;
+  takedown_reference?: string | null;
+  takedown_created_at?: Date | null;
+  removed_by_host?: boolean;
 }) {
   return {
     communityId: row.community_id,
@@ -152,7 +156,15 @@ function deletionProjection(row: {
     attempts: row.attempts ?? 0,
     requestedBy: row.requested_by,
     returnsTo: row.returns_to,
-    takedown: null,
+    takedown:
+      row.takedown_category && row.takedown_created_at
+        ? {
+            category: row.takedown_category,
+            reference: row.takedown_reference ?? null,
+            createdAt: row.takedown_created_at.toISOString(),
+          }
+        : null,
+    removedByHost: row.removed_by_host ?? false,
   };
 }
 
@@ -162,6 +174,18 @@ const deletionOrigin = `CASE WHEN c.delete_requested_by_host_actor IS NOT NULL T
   CASE WHEN c.lifecycle<>'deletion_pending' THEN NULL
     WHEN c.deletion_from_state IN ('held','suspended') THEN c.deletion_from_state
     ELSE 'archived' END AS returns_to`;
+
+/**
+ * The host's takedown behind a pending deletion, with `c` the community: that the host removed
+ * it, always, and its reason only when the host chose to tell the owner.
+ */
+const deletionTakedown = `(SELECT t.category FROM community_takedowns t
+    WHERE t.id=c.takedown_id AND t.notify) AS takedown_category,
+  (SELECT t.reference FROM community_takedowns t
+    WHERE t.id=c.takedown_id AND t.notify) AS takedown_reference,
+  (SELECT t.created_at FROM community_takedowns t
+    WHERE t.id=c.takedown_id AND t.notify) AS takedown_created_at,
+  c.takedown_id IS NOT NULL AS removed_by_host`;
 
 /**
  * Lifecycles the owner may ask to delete from. Neither a suspension nor a host's hold may trap
@@ -476,7 +500,8 @@ export function registerAdministrationRoutes(
       const currentActor = await lockMember(client, actor, ['owner']);
       const status = await client.query(
         `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
-                c.delete_requested_by,j.state,j.attempts,${deletionOrigin}
+                c.delete_requested_by,j.state,j.attempts,${deletionOrigin},
+                ${deletionTakedown}
          FROM communities c LEFT JOIN community_deletion_jobs j ON j.community_id=c.id
          WHERE c.id=$1`,
         [current.id]
@@ -513,7 +538,8 @@ export function registerAdministrationRoutes(
       if (current.lifecycle === 'deletion_pending') {
         const pending = await client.query(
           `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
-                  j.state,j.attempts,${deletionOrigin}
+                  j.state,j.attempts,${deletionOrigin},
+                ${deletionTakedown}
            FROM communities c JOIN community_deletion_jobs j ON j.community_id=c.id
            WHERE c.id=$1`,
           [current.id]
@@ -547,7 +573,8 @@ export function registerAdministrationRoutes(
       if (current.lifecycle === 'deletion_pending') {
         const existing = await client.query(
           `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
-                  j.state,j.attempts,${deletionOrigin}
+                  j.state,j.attempts,${deletionOrigin},
+                ${deletionTakedown}
            FROM communities c JOIN community_deletion_jobs j ON j.community_id=c.id
            WHERE c.id=$1`,
           [current.id]
@@ -623,16 +650,24 @@ export function registerAdministrationRoutes(
           delete_requested_by: string | null;
           deletion_from_state: string | null;
           deletion_from_prior_state: 'active' | 'archived' | 'held' | null;
+          takedown_id: string | null;
         }
       >(
         `SELECT id,name,description,admission_policy,icon_blob_key,settings_version,
                 lifecycle,lifecycle_version,delete_after,delete_requested_by,
-                deletion_from_state,deletion_from_prior_state
+                deletion_from_state,deletion_from_prior_state,takedown_id
          FROM communities WHERE id=$1 FOR UPDATE`,
         [actor.community_id]
       );
       const row = current.rows[0];
       const currentActor = await lockMember(client, actor, ['owner']);
+      if (row?.lifecycle === 'deletion_pending' && row.takedown_id) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'The host removed this community. Only the host can reverse that.'
+        );
+      }
       if (row?.lifecycle === 'deletion_pending' && row.delete_requested_by === null) {
         throw new ApiError(
           409,

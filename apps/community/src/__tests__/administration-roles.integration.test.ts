@@ -696,6 +696,7 @@ const actions: Action<unknown>[] = [
           'ownerReplacement',
           'settingsVersion',
           'shortName',
+          'takedownId',
         ]);
       }
     },
@@ -748,6 +749,7 @@ const actions: Action<unknown>[] = [
         'ownerReplacement',
         'settingsVersion',
         'shortName',
+        'takedownId',
       ]);
     },
   }),

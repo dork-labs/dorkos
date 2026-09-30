@@ -186,6 +186,11 @@ export const CommunityAdminHostProjectionSchema = z.strictObject({
       claimableAfter: timestamp.nullable(),
     })
     .nullable(),
+  /**
+   * The host's takedown of the whole community, while it waits out its reversal window. Its
+   * pending deletion is reversed through the takedown, never cancelled. Added later.
+   */
+  takedownId: id.nullable().optional(),
   createdAt: timestamp,
 });
 
@@ -355,8 +360,8 @@ export const CommunityAdminDeletionStatusSchema = z.strictObject({
   /** Where a cancel of a pending deletion returns the community. */
   returnsTo: z.enum(['archived', 'suspended', 'held']).nullable(),
   /**
-   * Why the host removed the whole community, when it did and chose to say so. Always null
-   * until whole-community takedowns ship.
+   * Why the host removed the whole community, when it did and chose to say so (null when the
+   * host withheld it, and for every other deletion). `requestedBy` is `host` either way.
    */
   takedown: z
     .strictObject({
@@ -365,6 +370,11 @@ export const CommunityAdminDeletionStatusSchema = z.strictObject({
       createdAt: timestamp,
     })
     .nullable(),
+  /**
+   * The host took the whole community down, whether or not it said why: the owner always learns
+   * that the host removed it, only the reason can be withheld. Added later.
+   */
+  removedByHost: z.boolean().optional(),
 });
 
 /** Host API key scopes. Host authority only; no scope reaches community content. */
@@ -813,6 +823,36 @@ export const CommunityEvidenceRecordV1Schema = z.strictObject({
     })
     .nullable(),
   notes: z.array(z.string()),
+  /**
+   * A whole-community takedown's copy: the evidence export's segments, in order, beside this
+   * file. Absent for a message, file, or icon.
+   */
+  archive: z
+    .strictObject({
+      format: z.literal('zip64'),
+      manifestVersion: z.literal(2),
+      segments: z.array(
+        z.strictObject({
+          /** Relative to the attempt folder: `archive.zip.000001` and on. */
+          path: z.string(),
+          byteSize: z.int().positive(),
+          sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+      ),
+      byteSize: z.int().positive(),
+      /** How to read it: concatenate the segments in order to get one .zip. */
+      note: z.string(),
+    })
+    .nullable()
+    .optional(),
+  /**
+   * A whole-community takedown: every member's account as it was at the takedown, so a later
+   * erasure or sign-out cannot take it out of the copy. Absent for a message, file, or icon.
+   */
+  accounts: z
+    .array(z.strictObject({ memberId: id, account: evidenceAccount }))
+    .nullable()
+    .optional(),
 });
 
 /**

@@ -306,7 +306,8 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     const mirror = this.findRoom(communityRef, remoteRoomId);
     if (!mirror || mirror.state === 'revoked') return [];
     const ordered = [...entries].sort((a, b) => a.remoteSeq - b.remoteSeq);
-    const imported: RoomEntry[] = [];
+    // The whole page is checked before anything is written: it is stored in one transaction, so
+    // a bad entry refuses the page rather than leaving part of it cached.
     for (const item of ordered) {
       if (!Number.isSafeInteger(item.remoteSeq) || item.remoteSeq <= 0) {
         throw new Error('A native community entry needs a positive integer sequence');
@@ -314,10 +315,70 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       if (item.entry.community !== communityRef || item.entry.roomId !== remoteRoomId) {
         throw new Error('A native community entry does not belong to this mirror');
       }
-      const saved = this.importEntry(mirror.localRoomId, communityRef, remoteRoomId, item);
-      if (saved) imported.push(saved);
     }
-    return imported;
+    // A change the redaction feed reported before an entry was cached wins over the frame, which
+    // may have been read before the change. Resolved before the write transaction, as the author
+    // registry writes on its own.
+    const items = ordered.map((frame) => {
+      const item = this.withKnownRedaction(communityRef, remoteRoomId, frame);
+      const external = this.authors.resolveExternal({
+        platformType: 'community',
+        instanceId: communityRef,
+        platformUserId: item.author.memberId,
+        displayName: item.author.displayName,
+      });
+      return { item, authorId: external.id };
+    });
+    if (!items.length) return [];
+    // One transaction per page, and every statement in it an index lookup: the cost of a page
+    // no longer grows with the room it lands in (DOR-2573).
+    return this.db.transaction(
+      (tx) => {
+        const imported: RoomEntry[] = [];
+        let nextSeq: number | null = null;
+        let newest: string | null = null;
+        for (const { item, authorId } of items) {
+          const existing = tx
+            .select({ localEntryId: communityMirrorEntries.localEntryId })
+            .from(communityMirrorEntries)
+            .where(
+              and(
+                eq(communityMirrorEntries.communityRef, communityRef),
+                eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+                eq(communityMirrorEntries.remoteEntryId, item.entry.id)
+              )
+            )
+            .get();
+          if (existing) {
+            const row = this.localRow(tx, mirror.localRoomId, existing.localEntryId);
+            if (row) imported.push(row);
+            continue;
+          }
+          nextSeq ??= this.nextLocalSeq(tx, mirror.localRoomId);
+          const saved = this.insertEntry(tx, mirror.localRoomId, communityRef, remoteRoomId, {
+            item,
+            authorId,
+            localSeq: nextSeq,
+          });
+          nextSeq += 1;
+          if (newest === null || item.entry.createdAt > newest) newest = item.entry.createdAt;
+          if (saved) imported.push(saved);
+        }
+        if (newest !== null) {
+          tx.update(rooms)
+            // A late history page may be older than the snapshot already cached.
+            // Keep the newest server timestamp only for sidebar activity; remote
+            // sequence remains the authoritative order everywhere else.
+            .set({
+              lastActivityAt: sql`CASE WHEN ${rooms.lastActivityAt} > ${newest} THEN ${rooms.lastActivityAt} ELSE ${newest} END`,
+            })
+            .where(eq(rooms.id, mirror.localRoomId))
+            .run();
+        }
+        return imported;
+      },
+      { behavior: 'immediate' }
+    );
   }
 
   /**
@@ -1370,148 +1431,122 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     });
   }
 
-  private importEntry(
+  /** The local room log's next `seq`, read once per page inside its write transaction. */
+  private nextLocalSeq(tx: DbTransaction, localRoomId: string): number {
+    const allocated = tx
+      .select({ next: sql<number>`COALESCE(MAX(${roomEntries.seq}), 0) + 1` })
+      .from(roomEntries)
+      .where(eq(roomEntries.roomId, localRoomId))
+      .get();
+    return allocated?.next ?? 1;
+  }
+
+  /** One local room entry as the room store returns it. */
+  private localRow(tx: DbTransaction, localRoomId: string, localEntryId: string): RoomEntry | null {
+    const row = tx
+      .select()
+      .from(roomEntries)
+      .where(and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, localEntryId)))
+      .get();
+    return row ? toEntry(row) : null;
+  }
+
+  /**
+   * Store one entry not cached yet: its room log row, its cache row, and the links of any reply
+   * that arrived before it.
+   */
+  private insertEntry(
+    tx: DbTransaction,
     localRoomId: string,
     communityRef: CommunityRef,
     remoteRoomId: string,
-    frame: NativeMirrorEntry
+    { item, authorId, localSeq }: { item: NativeMirrorEntry; authorId: string; localSeq: number }
   ): RoomEntry | null {
-    // A change the redaction feed reported before this entry was cached wins over the frame,
-    // which may have been read before the change.
-    const item = this.withKnownRedaction(communityRef, remoteRoomId, frame);
-    const external = this.authors.resolveExternal({
-      platformType: 'community',
-      instanceId: communityRef,
-      platformUserId: item.author.memberId,
-      displayName: item.author.displayName,
-    });
-    return this.db.transaction(
-      (tx) => {
-        const existing = tx
-          .select({ localEntryId: communityMirrorEntries.localEntryId })
-          .from(communityMirrorEntries)
-          .where(
-            and(
-              eq(communityMirrorEntries.communityRef, communityRef),
-              eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-              eq(communityMirrorEntries.remoteEntryId, item.entry.id)
-            )
-          )
-          .get();
-        if (existing) {
-          const row = tx
-            .select()
-            .from(roomEntries)
-            .where(
-              and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, existing.localEntryId))
-            )
-            .get();
-          return row ? toEntry(row) : null;
-        }
+    const colliding = tx
+      .select({ remoteEntryId: communityMirrorEntries.remoteEntryId })
+      .from(communityMirrorEntries)
+      .where(
+        and(
+          eq(communityMirrorEntries.localRoomId, localRoomId),
+          eq(communityMirrorEntries.remoteSeq, item.remoteSeq)
+        )
+      )
+      .get();
+    if (colliding) throw new Error('Two remote entries cannot share a remote sequence');
 
-        const colliding = tx
-          .select({ remoteEntryId: communityMirrorEntries.remoteEntryId })
-          .from(communityMirrorEntries)
-          .where(
-            and(
-              eq(communityMirrorEntries.localRoomId, localRoomId),
-              eq(communityMirrorEntries.remoteSeq, item.remoteSeq)
-            )
-          )
-          .get();
-        if (colliding) throw new Error('Two remote entries cannot share a remote sequence');
-
-        const parentEntryId = this.localEntryId(
-          tx,
-          communityRef,
-          remoteRoomId,
-          item.entry.parentEntryId
-        );
-        const threadRootEntryId = this.localEntryId(
-          tx,
-          communityRef,
-          remoteRoomId,
-          item.entry.threadRootEntryId
-        );
-        const localEntryId = ulid();
-        tx.insert(roomMembers)
-          .values({
-            roomId: localRoomId,
-            authorId: external.id,
-            responseMode: 'silent',
-            joinedAt: item.entry.createdAt,
-            joinedSeq: 0,
-            lastReadSeq: 0,
-          })
-          .onConflictDoNothing()
-          .run();
-        const allocated = tx
-          .select({ next: sql<number>`COALESCE(MAX(${roomEntries.seq}), 0) + 1` })
-          .from(roomEntries)
-          .where(eq(roomEntries.roomId, localRoomId))
-          .get();
-        const localSeq = allocated?.next ?? 1;
-        tx.insert(roomEntries)
-          .values({
-            roomId: localRoomId,
-            seq: localSeq,
-            id: localEntryId,
-            authorId: external.id,
-            kind: 'post',
-            body: JSON.stringify({ text: item.entry.text }),
-            mentions: JSON.stringify(item.entry.mentions),
-            mentionSpans: '[]',
-            sessionId: null,
-            cascadeRoot: localEntryId,
-            cascadeDepth: 0,
-            dispatchId: null,
-            parentEntryId,
-            threadRootEntryId,
-            signature: null,
-            createdAt: item.entry.createdAt,
-          })
-          .run();
-        tx.delete(communityMirrorRedactions)
-          .where(
-            and(
-              eq(communityMirrorRedactions.communityRef, communityRef),
-              eq(communityMirrorRedactions.remoteRoomId, remoteRoomId),
-              eq(communityMirrorRedactions.remoteEntryId, item.entry.id)
-            )
-          )
-          .run();
-        tx.insert(communityMirrorEntries)
-          .values({
-            communityRef,
-            remoteRoomId,
-            remoteEntryId: item.entry.id,
-            localRoomId,
-            localEntryId,
-            remoteSeq: item.remoteSeq,
-            entryJson: JSON.stringify(CommunityEntrySchema.parse(item.entry)),
-            authorDisplayName: item.author.displayName,
-            authorKind: item.author.kind,
-          })
-          .run();
-        this.repairRelations(tx, communityRef, remoteRoomId, localRoomId);
-        tx.update(rooms)
-          // A late history page may be older than the snapshot already cached.
-          // Keep the newest server timestamp only for sidebar activity; remote
-          // sequence remains the authoritative order everywhere else.
-          .set({
-            lastActivityAt: sql`CASE WHEN ${rooms.lastActivityAt} > ${item.entry.createdAt} THEN ${rooms.lastActivityAt} ELSE ${item.entry.createdAt} END`,
-          })
-          .where(eq(rooms.id, localRoomId))
-          .run();
-        const row = tx
-          .select()
-          .from(roomEntries)
-          .where(and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, localEntryId)))
-          .get();
-        return row ? toEntry(row) : null;
-      },
-      { behavior: 'immediate' }
+    const parentEntryId = this.localEntryId(
+      tx,
+      communityRef,
+      remoteRoomId,
+      item.entry.parentEntryId
     );
+    const threadRootEntryId = this.localEntryId(
+      tx,
+      communityRef,
+      remoteRoomId,
+      item.entry.threadRootEntryId
+    );
+    const localEntryId = ulid();
+    tx.insert(roomMembers)
+      .values({
+        roomId: localRoomId,
+        authorId,
+        responseMode: 'silent',
+        joinedAt: item.entry.createdAt,
+        joinedSeq: 0,
+        lastReadSeq: 0,
+      })
+      .onConflictDoNothing()
+      .run();
+    tx.insert(roomEntries)
+      .values({
+        roomId: localRoomId,
+        seq: localSeq,
+        // Remote history reads in the Community's order (`room_entries.timeline_band`).
+        timelineBand: 0,
+        timelinePos: item.remoteSeq,
+        id: localEntryId,
+        authorId,
+        kind: 'post',
+        body: JSON.stringify({ text: item.entry.text }),
+        mentions: JSON.stringify(item.entry.mentions),
+        mentionSpans: '[]',
+        sessionId: null,
+        cascadeRoot: localEntryId,
+        cascadeDepth: 0,
+        dispatchId: null,
+        parentEntryId,
+        threadRootEntryId,
+        signature: null,
+        createdAt: item.entry.createdAt,
+      })
+      .run();
+    tx.delete(communityMirrorRedactions)
+      .where(
+        and(
+          eq(communityMirrorRedactions.communityRef, communityRef),
+          eq(communityMirrorRedactions.remoteRoomId, remoteRoomId),
+          eq(communityMirrorRedactions.remoteEntryId, item.entry.id)
+        )
+      )
+      .run();
+    tx.insert(communityMirrorEntries)
+      .values({
+        communityRef,
+        remoteRoomId,
+        remoteEntryId: item.entry.id,
+        localRoomId,
+        localEntryId,
+        remoteSeq: item.remoteSeq,
+        entryJson: JSON.stringify(CommunityEntrySchema.parse(item.entry)),
+        authorDisplayName: item.author.displayName,
+        authorKind: item.author.kind,
+        remoteParentEntryId: item.entry.parentEntryId,
+        remoteThreadRootEntryId: item.entry.threadRootEntryId,
+      })
+      .run();
+    this.linkWaitingReplies(tx, localRoomId, item.entry.id, localEntryId);
+    return this.localRow(tx, localRoomId, localEntryId);
   }
 
   /** The entry as the redaction feed last reported it, when it changed before it was cached. */
@@ -1565,43 +1600,49 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     );
   }
 
-  /** Repair children imported before their parent or thread root arrived. */
-  private repairRelations(
-    tx: Db | DbTransaction,
-    communityRef: CommunityRef,
-    remoteRoomId: string,
-    localRoomId: string
+  /**
+   * Link the replies cached before the entry they answer, now that it has arrived.
+   *
+   * A history page read backwards brings replies before their parents, so a reply is stored
+   * with no local parent and linked here, when its parent lands. Only the replies that name this
+   * entry are touched, found through their stored Community relation; this once re-read every
+   * cached entry of the room on every import, which made filling a room quadratic (DOR-2573).
+   */
+  private linkWaitingReplies(
+    tx: DbTransaction,
+    localRoomId: string,
+    remoteEntryId: string,
+    localEntryId: string
   ): void {
-    const cached = tx
-      .select({
-        localEntryId: communityMirrorEntries.localEntryId,
-        entryJson: communityMirrorEntries.entryJson,
-      })
-      .from(communityMirrorEntries)
+    const waiting = (
+      relation:
+        | typeof communityMirrorEntries.remoteParentEntryId
+        | typeof communityMirrorEntries.remoteThreadRootEntryId
+    ) =>
+      tx
+        .select({ localEntryId: communityMirrorEntries.localEntryId })
+        .from(communityMirrorEntries)
+        .where(
+          and(eq(communityMirrorEntries.localRoomId, localRoomId), eq(relation, remoteEntryId))
+        );
+    tx.update(roomEntries)
+      .set({ parentEntryId: localEntryId })
       .where(
         and(
-          eq(communityMirrorEntries.communityRef, communityRef),
-          eq(communityMirrorEntries.remoteRoomId, remoteRoomId)
+          eq(roomEntries.roomId, localRoomId),
+          inArray(roomEntries.id, waiting(communityMirrorEntries.remoteParentEntryId))
         )
       )
-      .all();
-    for (const row of cached) {
-      // Rows imported before the opaque cache field existed are intentionally
-      // unreadable through this projection; a fresh remote page replaces them.
-      if (!row.entryJson) continue;
-      const entry = CommunityEntrySchema.parse(JSON.parse(row.entryJson));
-      const parentEntryId = this.localEntryId(tx, communityRef, remoteRoomId, entry.parentEntryId);
-      const threadRootEntryId = this.localEntryId(
-        tx,
-        communityRef,
-        remoteRoomId,
-        entry.threadRootEntryId
-      );
-      tx.update(roomEntries)
-        .set({ parentEntryId, threadRootEntryId })
-        .where(and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, row.localEntryId)))
-        .run();
-    }
+      .run();
+    tx.update(roomEntries)
+      .set({ threadRootEntryId: localEntryId })
+      .where(
+        and(
+          eq(roomEntries.roomId, localRoomId),
+          inArray(roomEntries.id, waiting(communityMirrorEntries.remoteThreadRootEntryId))
+        )
+      )
+      .run();
   }
 }
 

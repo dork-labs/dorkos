@@ -286,6 +286,14 @@ export function registerHostLifecycleRoutes(
       const at = now();
       await assertHostActor(client, actor, at);
       if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      // A takedown's deletion is undone only by reversing the takedown, which records why and
+      // leaves the community suspended; cancelling it here would reopen it in one step.
+      if (row.takedown_id)
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'This community was taken down. Reverse the takedown to stop its deletion.'
+        );
       // The host cancels only its own deletion, and only before the worker starts; an owner's
       // deletion is the owner's to cancel.
       const pending = await client.query<{ delete_after: Date; state: string }>(

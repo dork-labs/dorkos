@@ -482,7 +482,9 @@ async function applyHusk(
     // so an export whose final commit holds it FOR SHARE either commits first (and the check
     // below sees its ready archive, so this goes round again) or waits and then sees the husk.
     // Bumping only at the end left a window where an export read the member as they were,
-    // committed ready after the check, and outlived the erasure.
+    // committed ready after the check, and outlived the erasure. A takedown's evidence export
+    // is not one erasure removes: erasure does not reach what the host keeps for the authorities.
+    // (The erasure worker waits while it is unsettled, so none normally exists here.)
     await bumpContentVersion(client, target.communityId);
     const leftover = await client.query(
       `SELECT 1 WHERE $3::boolean
@@ -491,7 +493,7 @@ async function applyHusk(
          OR EXISTS (SELECT 1 FROM attachments WHERE ${LEFTOVER_FILE_BY_MEMBER})
          OR EXISTS (SELECT 1 FROM attachments WHERE ${LEFTOVER_FILE_BY_AGENT})
          OR EXISTS (SELECT 1 FROM export_archives
-           WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL)
+           WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL AND scope<>'evidence')
          OR EXISTS (SELECT 1 FROM connection_grants WHERE member_id=$2 AND community_id=$1)
          OR EXISTS (SELECT 1 FROM agents WHERE owner_member_id=$2 AND community_id=$1 AND active)`,
       [target.communityId, target.memberId, member.active]

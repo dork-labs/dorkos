@@ -378,6 +378,30 @@ describe('community startup config', () => {
     ).toThrow();
   });
 
+  it('keeps a community takedown reversible for at least a day and limits takedowns per day', () => {
+    // Purpose (AC-13): fails if a host could set a reversal window under a day (a takedown that
+    // cannot be undone) or over thirty days, or turn the per-actor daily limit off.
+    expect(parseConfig(valid).limits.takedownReversalHours).toBe(72);
+    expect(parseConfig(valid).limits.takedownCommunitiesPerDay).toBe(3);
+    for (const hours of ['24', '720'])
+      expect(
+        parseConfig({ ...valid, COMMUNITY_TAKEDOWN_REVERSAL_HOURS: hours }).limits
+          .takedownReversalHours
+      ).toBe(Number(hours));
+    for (const hours of ['23', '721', '0'])
+      expect(() => parseConfig({ ...valid, COMMUNITY_TAKEDOWN_REVERSAL_HOURS: hours })).toThrow(
+        /COMMUNITY_TAKEDOWN_REVERSAL_HOURS/
+      );
+    for (const count of ['0', '101'])
+      expect(() =>
+        parseConfig({ ...valid, COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY: count })
+      ).toThrow(/COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY/);
+    expect(
+      parseConfig({ ...valid, COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY: '100' }).limits
+        .takedownCommunitiesPerDay
+    ).toBe(100);
+  });
+
   it('keeps a filesystem evidence store apart from everything the server serves, stores, or stages', async () => {
     // Purpose (AC-14): fails if evidence could land where it is served, swept, or staged: the
     // primary store, the web app folder, or the temporary folder, whether equal, containing, or

@@ -96,6 +96,8 @@ export function createCommunityApp({
     afterTakedownCommunityLock?: () => Promise<void>;
     /** Runs inside a takedown after its target is read for evidence, before it is removed. */
     afterTakedownSnapshot?: () => Promise<void>;
+    /** Runs inside a takedown reversal after the community and takedown are locked. */
+    afterTakedownReverseLock?: () => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
@@ -402,6 +404,7 @@ export function createCommunityApp({
     hooks: {
       afterCommunityLock: hooks?.afterTakedownCommunityLock,
       afterSnapshot: hooks?.afterTakedownSnapshot,
+      afterReverseLock: hooks?.afterTakedownReverseLock,
     },
   });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });

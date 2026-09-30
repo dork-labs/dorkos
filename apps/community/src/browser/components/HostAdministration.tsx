@@ -27,6 +27,7 @@ type Community = {
   legalHold: { since: string; reference: string | null } | null;
   importId: string | null;
   importState: string | null;
+  takedownId?: string | null;
   createdAt: string;
 };
 type Claim = { grantId: string; ownerClaimToken: string; expiresAt: string };

@@ -119,6 +119,30 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     expect(request).toHaveBeenCalledOnce();
   });
 
+  // Right after deleteAddOn, Fly still answers the exact-ID read with the renamed, detached record
+  // (live gate, 2026-09-30). The gate's post-cleanup recheck must read it as gone.
+  it('reports a bucket Fly soft-deleted as a missing add-on', async () => {
+    const client = new FlyTigrisGraphqlClient({
+      accessToken: 'token',
+      fetch: vi.fn().mockResolvedValueOnce(
+        json({
+          data: {
+            addOn: {
+              id: identity.id,
+              name: `${identity.name}_deleted_Cllkq5qk`,
+              status: 'deleted',
+              options: null,
+              addOnProvider: { name: 'tigris' },
+              app: null,
+              organization: { slug: 'fixture-org' },
+            },
+          },
+        })
+      ),
+    });
+    await expect(client.readTigris(identity.id)).rejects.toMatchObject({ code: 'ADD_ON_MISSING' });
+  });
+
   it('reports an id Fly does not know as a missing add-on on both exact-ID reads', async () => {
     const notFound = {
       data: { addOn: null },
