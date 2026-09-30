@@ -96,7 +96,7 @@ function AccountRow({
         'flex min-h-11 min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-2 text-sm transition-colors duration-150',
         // The radio itself is visually hidden (the mockup marks the pick with the
         // row's border), so the row carries its keyboard focus ring.
-        'has-[:focus-visible]:ring-ring/50 has-[:focus-visible]:ring-[3px]',
+        'has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-[3px]',
         selected ? 'border-foreground ring-foreground ring-1 ring-inset' : 'border-border',
         selectable ? 'hover:bg-muted/50 cursor-pointer' : 'cursor-not-allowed',
         // Not eligible reads dimmed whether or not it can still be picked (Q2).

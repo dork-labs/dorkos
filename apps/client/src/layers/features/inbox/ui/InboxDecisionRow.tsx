@@ -324,7 +324,7 @@ export function InboxDecisionRow({
     <button
       type="button"
       onClick={onOpen}
-      className="hover:text-foreground focus-visible:ring-ring/60 rounded-sm text-left outline-none hover:underline focus-visible:ring-2"
+      className="hover:text-foreground focus-visible:ring-ring rounded-sm text-left outline-none hover:underline focus-visible:ring-2"
     >
       <bdi>{title}</bdi>
     </button>

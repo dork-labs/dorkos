@@ -275,7 +275,7 @@ export function FileTree(props: FileTreeProps) {
       onDragLeave={() => setRootDropTarget(false)}
       onDrop={handleRootDrop}
       className={cn(
-        'focus-visible:ring-ring/40 h-full overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-inset',
+        'focus-visible:ring-ring h-full overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-inset',
         rootDropTarget && 'ring-ring/60 bg-accent/30 ring-1 ring-inset'
       )}
     >

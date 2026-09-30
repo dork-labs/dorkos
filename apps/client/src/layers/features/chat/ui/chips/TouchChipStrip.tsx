@@ -281,7 +281,7 @@ export function TouchChipStrip({ parts, sessionId, turnActive = false }: TouchCh
               onClick={tray.toggleExpanded}
               className={cn(
                 'hover:text-foreground rounded-sm underline underline-offset-2',
-                'focus-visible:ring-ring/50 outline-none focus-visible:ring-2'
+                'focus-visible:ring-ring outline-none focus-visible:ring-2'
               )}
             >
               {tray.expanded ? 'hide' : 'show all'}

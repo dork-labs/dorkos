@@ -308,7 +308,8 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
             // darkening of `--status-success` only widens both margins.
             className={cn(
               'bg-status-success dark:text-status-success-bg text-white',
-              'hover:bg-status-success/90 focus-visible:ring-status-success/40'
+              'hover:bg-status-success/90 focus-visible:ring-status-success',
+              'focus-visible:ring-offset-background focus-visible:ring-offset-2'
             )}
           >
             <Zap aria-hidden />

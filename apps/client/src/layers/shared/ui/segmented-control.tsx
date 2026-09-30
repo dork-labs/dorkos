@@ -127,7 +127,13 @@ function SegmentedControlItem({
         // what is left, so a long word like "Full autonomy" is not squeezed into an
         // ellipsis by two short ones. The stop words are the control.
         'text-muted-foreground relative flex min-w-0 flex-auto cursor-pointer items-center justify-center rounded-md px-2 py-1.5 text-xs',
-        'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
+        // The focus ring is an OUTLINE, not a box-shadow ring. The checked segment
+        // is the one keyboard focus lands on, and its `shadow-soft` floor below
+        // writes the whole `box-shadow`, so a `ring-*` there was never painted:
+        // tabbing to the control showed nothing at all (DOR-2615). An outline is a
+        // separate property, drawn solid in the ring colour for the 3:1 a focus
+        // indicator needs.
+        'focus-visible:outline-ring outline-none focus-visible:outline-2 focus-visible:outline-solid',
         // The raised surface belongs to the thumb below now, which is why this
         // only transitions colour. But `data-[state=checked]:bg-background` and
         // its shadow stay as the FLOOR, not decoration: Radix owns `data-state`

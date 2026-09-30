@@ -439,7 +439,7 @@ function TopologyGraphInner({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDeleteBinding}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              className="focus-visible:ring-offset-background bg-red-600 hover:bg-red-700 focus-visible:ring-red-600 focus-visible:ring-offset-2"
             >
               Remove
             </AlertDialogAction>

@@ -670,7 +670,7 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
   });
 
   describe('focusedOptionIndex prop', () => {
-    it('adds ring-1 to the focused option', () => {
+    it('adds the focus ring to the focused option', () => {
       render(
         <QuestionPrompt
           {...baseProps}
@@ -681,14 +681,14 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
       );
       // Query option wrapper divs with data-selected attribute
       const optionDivs = document.querySelectorAll('[data-selected]');
-      // Index 1 should have the ring-1 class
-      expect(optionDivs[1].className).toContain('ring-1');
-      expect(optionDivs[1].className).toContain('ring-status-info/50');
+      // Index 1 should carry the solid focus ring
+      expect(optionDivs[1].className).toContain('ring-2');
+      expect(optionDivs[1].className).toContain('ring-ring');
       // Index 0 should not
-      expect(optionDivs[0].className).not.toContain('ring-1');
+      expect(optionDivs[0].className).not.toContain('ring-2');
     });
 
-    it('adds ring-1 to the "Other" option when focused', () => {
+    it('adds the focus ring to the "Other" option when focused', () => {
       render(
         <QuestionPrompt
           {...baseProps}
@@ -699,10 +699,10 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
       );
       const optionDivs = document.querySelectorAll('[data-selected]');
       // "Other" is at index 2 (after 2 regular options)
-      expect(optionDivs[2].className).toContain('ring-1');
+      expect(optionDivs[2].className).toContain('ring-2');
     });
 
-    it('does not add ring-1 when isActive is false', () => {
+    it('does not add the focus ring when isActive is false', () => {
       render(
         <QuestionPrompt
           {...baseProps}
@@ -712,7 +712,7 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
         />
       );
       const optionDivs = document.querySelectorAll('[data-selected]');
-      expect(optionDivs[0].className).not.toContain('ring-1');
+      expect(optionDivs[0].className).not.toContain('ring-2');
     });
   });
 

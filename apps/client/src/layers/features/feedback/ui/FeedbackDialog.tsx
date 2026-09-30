@@ -439,7 +439,7 @@ export function FeedbackDialog({
               <div
                 className={cn(
                   'dark:bg-input/30 flex flex-col rounded-lg border transition-[border-color,box-shadow] duration-150',
-                  'focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
+                  'focus-within:border-ring focus-within:ring-ring focus-within:ring-[3px]',
                   screenshot.isDraggingOver && 'border-primary'
                 )}
               >

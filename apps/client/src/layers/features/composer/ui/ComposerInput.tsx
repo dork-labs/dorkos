@@ -439,7 +439,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
         <div
           className={cn(
             'border-input bg-background flex items-end gap-1.5 rounded-md border p-1.5 shadow-xs transition-[color,box-shadow]',
-            isFocused && 'border-ring ring-ring/75 ring-[1px]',
+            isFocused && 'border-ring ring-ring ring-[1px]',
             editingQueueItem && 'border-primary/40',
             !onAttach && 'pl-3'
           )}

@@ -602,7 +602,7 @@ export function ApprovalPrompt({
               disabled={responding}
               className={cn(
                 'text-muted-foreground hover:text-foreground text-2xs rounded underline',
-                'focus-visible:ring-ring/50 underline-offset-2 focus-visible:ring-2',
+                'focus-visible:ring-ring underline-offset-2 focus-visible:ring-2',
                 'focus-visible:outline-none disabled:opacity-50'
               )}
             >

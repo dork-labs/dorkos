@@ -257,7 +257,7 @@ function PackageRow({
           ref={rescueTarget}
           tabIndex={-1}
           data-testid="installation-update-status"
-          className="focus-visible:ring-ring/50 mt-1.5 rounded-sm outline-none focus-visible:ring-2"
+          className="focus-visible:ring-ring mt-1.5 rounded-sm outline-none focus-visible:ring-2"
         >
           <InstallationUpdateStatus state={updateState} />
         </div>

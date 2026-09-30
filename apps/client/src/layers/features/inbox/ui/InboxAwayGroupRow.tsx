@@ -64,7 +64,7 @@ export function InboxAwayGroupRow({
         aria-expanded={expanded}
         aria-controls={expanded ? membersId : undefined}
         onClick={onToggleExpanded}
-        className="hover:bg-accent/50 focus-visible:ring-ring/60 flex min-h-9 w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors outline-none focus-visible:ring-2"
+        className="hover:bg-accent/50 focus-visible:ring-ring flex min-h-9 w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors outline-none focus-visible:ring-2"
       >
         <span
           aria-hidden
