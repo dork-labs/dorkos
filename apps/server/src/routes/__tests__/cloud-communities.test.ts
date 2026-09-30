@@ -814,7 +814,7 @@ describe('moving a community in', () => {
     expect(res.body).toEqual({
       ok: false,
       message:
-        'This computer doesn’t have room to hold the export. It needs 513 MB free and has 512 MB. Free up some space, then try again.',
+        'This computer doesn’t have room to hold the export. It needs 537 MB free and has 536 MB. Free up some space, then try again.',
     });
     expect(serviceRequests()).toHaveLength(0);
     expect(stagedCopies()).toHaveLength(0);

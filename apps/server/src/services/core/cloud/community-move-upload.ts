@@ -34,6 +34,9 @@
  * the move starts, and the route checks it again before a byte leaves for the
  * host. The host's limit is only known once the move exists, and a move
  * cannot start until the file is measured, so that check comes after staging.
+ * A refusal for room writes nothing, but the browser still sends the whole
+ * file before it reads the answer: quick on this machine, slow over the
+ * tunnel.
  *
  * @module services/core/cloud/community-move-upload
  */

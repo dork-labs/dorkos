@@ -104,8 +104,9 @@ const MoveQuerySchema = z.object({
 });
 
 /**
- * A size in the units a person reads on their own computer: GB with one
- * decimal from a gigabyte up, then whole MB, KB or bytes.
+ * A size in the units a person's own computer shows (powers of 1000, as
+ * macOS Finder and most file managers count): GB with one decimal from a
+ * gigabyte up, then whole MB, KB or bytes.
  *
  * @param bytes - The size in bytes.
  * @param round - `up` for space needed, `down` for space on hand, so a
@@ -113,9 +114,9 @@ const MoveQuerySchema = z.object({
  */
 function describeBytes(bytes: number, round: 'up' | 'down'): string {
   const fit = round === 'up' ? Math.ceil : Math.floor;
-  if (bytes >= 1024 ** 3) return `${(fit((bytes / 1024 ** 3) * 10) / 10).toFixed(1)} GB`;
-  if (bytes >= 1024 ** 2) return `${fit(bytes / 1024 ** 2)} MB`;
-  if (bytes >= 1024) return `${fit(bytes / 1024)} KB`;
+  if (bytes >= 1e9) return `${(fit(bytes / 1e8) / 10).toFixed(1)} GB`;
+  if (bytes >= 1e6) return `${fit(bytes / 1e6)} MB`;
+  if (bytes >= 1e3) return `${fit(bytes / 1e3)} KB`;
   return `${bytes} bytes`;
 }
 
@@ -146,7 +147,7 @@ function stagingRefusal(error: StagingError): { status: number; message: string 
       return {
         status: 411,
         message:
-          'The file arrived without its size, so there was no way to check it fits. Try again.',
+          'The file arrived without its size, so DorkOS couldn’t check that it fits. Try again from the computer running DorkOS.',
       };
     case 'no_room': {
       const { neededBytes, freeBytes } = error.space ?? { neededBytes: 0, freeBytes: 0 };
@@ -331,8 +332,10 @@ export function createCloudCommunitiesRouter(
       staged = await stageArchive(req, declaredLength(req));
     } catch (error) {
       if (error instanceof StagingError) {
-        // Most refusals come before a byte is read; let the rest of the body
-        // go by unread so the browser still gets this answer.
+        // Every refusal but `size_mismatch` comes before a byte is read. Let
+        // the rest of the body go by unread so the browser gets this answer
+        // (it reads it once it has sent the file). A mismatch has already
+        // closed the connection, so nobody is left to answer.
         req.resume();
         const refusal = stagingRefusal(error);
         return res
