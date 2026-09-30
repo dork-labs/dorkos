@@ -242,20 +242,36 @@ interface PlanNode {
   Plans?: PlanNode[];
 }
 
-/** Rows a query's plan read from a table: those it kept and those its filters dropped. */
-async function rowsRead(sql: string, values: unknown[], table: string): Promise<number> {
-  const result = await db.query<{ 'QUERY PLAN': [{ Plan: PlanNode }] }>(
-    `EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`,
-    values
-  );
-  const walk = (node: PlanNode): number =>
-    (node['Relation Name'] === table
-      ? (node['Actual Rows'] +
-          (node['Rows Removed by Filter'] ?? 0) +
-          (node['Rows Removed by Index Recheck'] ?? 0)) *
-        node['Actual Loops']
-      : 0) + (node.Plans ?? []).reduce((sum, child) => sum + walk(child), 0);
-  return walk(result.rows[0]['QUERY PLAN'][0].Plan);
+/**
+ * Rows a query's plan read from a table: those it kept and those its filters dropped. With
+ * `hashJoins`, nested loops are priced out, as the planner itself does once a channel is large
+ * enough that probing row by row costs more than reading a table whole; a join that does not
+ * name the community then has to read every row of the table on the host.
+ */
+async function rowsRead(
+  sql: string,
+  values: unknown[],
+  table: string,
+  hashJoins = false
+): Promise<number> {
+  await db.query('BEGIN');
+  try {
+    if (hashJoins) await db.query('SET LOCAL enable_nestloop = off');
+    const result = await db.query<{ 'QUERY PLAN': [{ Plan: PlanNode }] }>(
+      `EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`,
+      values
+    );
+    const walk = (node: PlanNode): number =>
+      (node['Relation Name'] === table
+        ? (node['Actual Rows'] +
+            (node['Rows Removed by Filter'] ?? 0) +
+            (node['Rows Removed by Index Recheck'] ?? 0)) *
+          node['Actual Loops']
+        : 0) + (node.Plans ?? []).reduce((sum, child) => sum + walk(child), 0);
+    return walk(result.rows[0]['QUERY PLAN'][0].Plan);
+  } finally {
+    await db.query('ROLLBACK');
+  }
 }
 
 /** A deterministic id for the seeded host below. */
@@ -346,14 +362,17 @@ describe('per-job and per-post queries', () => {
     expect(roster.filter((row) => row.kind === 'human')).toHaveLength(245);
     expect(roster.filter((row) => row.kind === 'agent')).toHaveLength(20);
     expect(await channelRoster(db, channel, seeded('b'))).toEqual([]);
-    // Community a has 300 members and 30 agents; the host has 20,300 and 2,030. The plan reads
-    // about 314 member rows today; the bounds leave room for a different plan over the same
-    // community, and none for a scan of the host.
-    expect(await rowsRead(CHANNEL_ROSTER_SQL, [channel, community], 'members')).toBeLessThanOrEqual(
-      1000
-    );
-    expect(await rowsRead(CHANNEL_ROSTER_SQL, [channel, community], 'agents')).toBeLessThanOrEqual(
-      100
-    );
+    // Community a has 300 members and 30 agents; the host has 20,300 and 2,030. Whichever join
+    // the planner picks, the roster reads within community a: about 314 member rows by probes,
+    // or a's 300 members twice (once for people, once for agents' owners) by hashing. A join on
+    // id alone, without the community, reads all 20,300 once the planner hashes it.
+    for (const hashJoins of [false, true]) {
+      expect(
+        await rowsRead(CHANNEL_ROSTER_SQL, [channel, community], 'members', hashJoins)
+      ).toBeLessThanOrEqual(2 * 300);
+      expect(
+        await rowsRead(CHANNEL_ROSTER_SQL, [channel, community], 'agents', hashJoins)
+      ).toBeLessThanOrEqual(30);
+    }
   });
 });

@@ -22,14 +22,34 @@
 --
 -- Locks: each drop takes ACCESS EXCLUSIVE on the table and on the table it references, and
 -- changes only the catalog, with no scan of either table, so the whole file takes milliseconds
--- once it holds them. Startup runs migrations before the HTTP listener opens, in one process
--- (OPERATIONS.md, "Upgrade and roll back"), so nothing of Community's own waits on them. A
--- backup or console query running at that moment makes the migration wait for it, and anything
--- that queues behind the migration waits too. CREATE INDEX CONCURRENTLY does not apply: this
--- file builds no index, and the runner holds every migration in one transaction.
+-- once it holds them (48 ms on the seeded host). Startup runs migrations before the HTTP listener
+-- opens, in one process (OPERATIONS.md, "Upgrade and roll back"), so nothing of Community's own
+-- waits on them. Something else can: a pg_dump or console query holding a table. Without a
+-- limit the migration would wait behind it for as long as it runs, and every query arriving
+-- after would queue behind the migration. lock_timeout caps each lock wait at 30 seconds: long
+-- enough to outlast an ordinary query or a brief stall, and short enough that whatever queues
+-- behind the migration waits at most that long, never for a whole backup. On timeout the
+-- statement fails with 55P03 (tried: a held ACCESS SHARE on members stopped it at 30.1 s), the
+-- runner's single transaction rolls back every migration of this run, startup exits, and the
+-- next start retries from the same point. The end of the file puts back the value it found, so
+-- later migrations in the same run keep the server's own setting. CREATE INDEX CONCURRENTLY
+-- does not apply: this file builds no index, and the runner holds every migration in one
+-- transaction.
+--
+-- Pending trigger events: Postgres refuses to ALTER a table that has deferred trigger events
+-- queued in the same transaction. members carries a deferred constraint trigger
+-- (members_owner_lifecycle, 0010), and this file alters members, because dropping a key that
+-- references it removes triggers on it. So a migration that runs before this one in the same run
+-- must not write members rows, or this file fails with "cannot ALTER TABLE because it has pending
+-- trigger events". None does today: 0026 does not touch members, and on a fresh database the
+-- earlier files write no rows.
 --
 -- Backout: none needed. No code names these constraints or depends on their rules, so older code
 -- runs unchanged against this schema. This migration stays applied.
+
+-- Remember the running value, so the end of the file can put it back exactly.
+SELECT set_config('community_migration.lock_timeout', current_setting('lock_timeout'), true);
+SET LOCAL lock_timeout = '30s';
 
 DO $$
 DECLARE
@@ -120,3 +140,5 @@ BEGIN
     EXECUTE format('ALTER TABLE public.%I DROP CONSTRAINT %I', pair.child, pair.plain_name);
   END LOOP;
 END $$;
+
+SELECT set_config('lock_timeout', current_setting('community_migration.lock_timeout'), true);

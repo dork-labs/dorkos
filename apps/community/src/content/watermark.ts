@@ -5,10 +5,11 @@ import type { Pool, PoolClient } from 'pg';
  * message. `$1` is the community; `$2` limits it to some of its channels, or is NULL for all.
  *
  * One backward step of the `(channel_id, seq)` unique index per channel. `GROUP BY channel_id`
- * over the community's messages read every one of them instead: 1,000,000 rows and about 200 ms
- * per export and per erasure round at the largest measured community (DOR-2572). A message's
- * channel is always in its community (entries_channel_tenant_fk), so starting from the channels
- * finds the same rows.
+ * over the community's messages read every one of them instead. At the largest measured
+ * community (1,000,000 messages) that was 64,069 buffers and 107–157 ms per export and per
+ * erasure round; this reads 252 buffers in about 0.2 ms (DOR-2572). A message's channel is
+ * always in its community (entries_channel_tenant_fk), so starting from the channels finds the
+ * same rows.
  */
 export const CHANNEL_WATERMARK_SQL = `SELECT c.id AS channel_id,mark.seq::text AS seq
   FROM channels c
