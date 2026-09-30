@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { initConfigManager, configManager } from '../../config-manager.js';
 import { CloudLinkManager, initCloudLinkManager, getCloudLinkManager } from '../cloud-link.js';
-import { linkProofForKey } from '../cloud-link-client.js';
+import { linkProofForKey, ManagedConnectorCloudError } from '../cloud-link-client.js';
 import { logger } from '../../../../lib/logger.js';
 
 /** Immediate, deterministic sleep so the background poll settles synchronously. */
@@ -541,6 +541,27 @@ describe('CloudLinkManager', () => {
 
       expect('previousLinkProof' in scopeOf(fetchImpl)).toBe(false);
     });
+  });
+
+  it('names the cloud code and status when managed provider registration fails', async () => {
+    configManager.set('cloud', {
+      instanceToken: 'linked-key',
+      instanceName: 'kai-mbp',
+      linkedAccountLabel: null,
+    });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    manager = new CloudLinkManager({
+      fetchImpl: routerFetch({ revoke: () => ({ status: 200, body: { ok: true } }) }),
+      sleep: noSleep,
+    });
+    manager.setManagedProviderSync(async () => {
+      throw new ManagedConnectorCloudError('unavailable', { status: 503 });
+    });
+    await manager.unlink();
+    expect(warn).toHaveBeenCalledWith(
+      '[CloudLink] Managed provider registration failed',
+      expect.objectContaining({ code: 'unavailable', status: 503 })
+    );
   });
 
   it('logs only closed managed authentication failure details and rethrows unchanged', async () => {

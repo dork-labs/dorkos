@@ -38,6 +38,23 @@ describe('errorHandler', () => {
     return res;
   }
 
+  it('logs the method, path, code, and status beside the message', async () => {
+    const { logger } = await import('../../lib/logger.js');
+    const res = createMockRes();
+    const error = Object.assign(new Error('Refused'), { code: 'cloud_refused', status: 502 });
+    errorHandler(error, { method: 'GET', path: '/api/connectors/x' } as Request, res, mockNext);
+    expect(logger.error).toHaveBeenCalledWith(
+      '[DorkOS Error]',
+      'Refused',
+      expect.objectContaining({
+        method: 'GET',
+        path: '/api/connectors/x',
+        code: 'cloud_refused',
+        status: 502,
+      })
+    );
+  });
+
   it('returns 500 with error message', () => {
     const res = createMockRes();
     const error = new Error('Something broke');
@@ -107,7 +124,11 @@ describe('errorHandler', () => {
 
     errorHandler(error, mockReq, res, mockNext);
 
-    expect(logger.error).toHaveBeenCalledWith('[DorkOS Error]', 'Log me', expect.any(String));
+    expect(logger.error).toHaveBeenCalledWith(
+      '[DorkOS Error]',
+      'Log me',
+      expect.objectContaining({ stack: expect.any(String) })
+    );
   });
 
   it('delegates to next(err) instead of writing a body when headers are already sent', async () => {

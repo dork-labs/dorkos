@@ -40,6 +40,7 @@ import {
 import { NANGO_SECRET_KEY_REF } from '../providers/nango.js';
 import { ManagedCloudConnectorProvider } from '../providers/managed/managed-cloud.js';
 import { ManagedConnectorCloudError } from '../../core/auth/cloud-link-client.js';
+import { logger } from '../../../lib/logger.js';
 import { NangoApiError, type NangoHttpClient } from '../providers/nango-client.js';
 import type { RawMcpServerDescriptor } from '../providers/raw-mcp.js';
 import { ConnectorOperatorQueryService } from '../resources/operator-query-service.js';
@@ -1903,6 +1904,33 @@ describe('ConnectorProviderBootstrapper', () => {
       await bootstrapper.reload('composio');
       expect(bootstrapper.nextWayCheckAt(composioInstance)).toBeUndefined();
       expect(bootstrapper.wayHealth(composioInstance, 'gmail')).not.toHaveProperty('nextCheckAt');
+    });
+
+    it('names the cloud code and status when the managed provider fails its check', async () => {
+      const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+      const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
+      const managed = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      managed.listAccounts = () =>
+        Promise.reject(new ManagedConnectorCloudError('unavailable', { status: 503 }));
+      const bootstrapper = makeBootstrapper({
+        managedCloud: {
+          instanceId,
+          configured: () => true,
+          executionConfigDigest: () => 'linked-material',
+          create: () => managed,
+        },
+      });
+      await bootstrapper.registerBootProviders();
+      expect(error).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /DorkOS managed provider failed its connection check: .*\(code=unavailable, status=503\)$/
+        )
+      );
+      error.mockRestore();
     });
 
     it.each([

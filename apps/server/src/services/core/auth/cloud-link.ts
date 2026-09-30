@@ -788,7 +788,14 @@ export class CloudLinkManager {
     try {
       await this.syncManagedProvider();
     } catch (error) {
-      logger.warn('[CloudLink] Managed provider registration failed', logError(error));
+      const detail =
+        error instanceof ManagedConnectorCloudError
+          ? { code: error.code, status: error.status }
+          : {};
+      logger.warn('[CloudLink] Managed provider registration failed', {
+        ...logError(error),
+        ...detail,
+      });
     }
   }
 

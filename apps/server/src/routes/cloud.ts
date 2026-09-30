@@ -107,7 +107,12 @@ router.get('/status', (_req, res) => {
  * @param what - What was being read, for the log line.
  */
 function cloudReadFailed(res: Response, error: unknown, what: string) {
-  logger.warn(`[Cloud] Could not read ${what}`, logError(error));
+  const problem = problemOf(error);
+  logger.warn(`[Cloud] Could not read ${what}`, {
+    ...logError(error),
+    code: problem?.code,
+    status: problem?.status,
+  });
   return res.status(502).json({ error: 'Could not reach the DorkOS cloud. Try again shortly.' });
 }
 
