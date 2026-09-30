@@ -347,6 +347,7 @@ export class RelayPublishPipeline {
       this.recordTrace({
         messageId,
         subject,
+        from: options.from,
         createdAt,
         deliveredTo: result.state === 'delivered' ? 1 : 0,
         rejected: undefined,
@@ -482,6 +483,7 @@ export class RelayPublishPipeline {
         this.recordTrace({
           messageId,
           subject,
+          from: options.from,
           deliveredTo: 0,
           rejected,
           adapterResult: null,
@@ -726,6 +728,7 @@ export class RelayPublishPipeline {
     this.recordTrace({
       messageId,
       subject,
+      from: envelope.from,
       deliveredTo,
       rejected,
       adapterResult,
@@ -873,6 +876,7 @@ export class RelayPublishPipeline {
     this.recordTrace({
       messageId,
       subject,
+      from: envelope.from,
       deliveredTo: 0,
       rejected,
       adapterResult: null,
@@ -917,6 +921,13 @@ export class RelayPublishPipeline {
   private recordTrace(span: {
     messageId: string;
     subject: string;
+    /**
+     * Who published it. Recorded so a span can tell a message a chat
+     * connection brought in (`relay.human.<platform>.<adapterId>.bot`) from the
+     * agent's replies and stream events published back to the same chat
+     * subject — the observed-chats list counts only the former (DOR-2590).
+     */
+    from: string;
     deliveredTo: number;
     rejected: PublishResult['rejected'];
     adapterResult: DeliveryResult | null;
@@ -959,6 +970,7 @@ export class RelayPublishPipeline {
         ...(status === 'delivered' ? { deliveredAt: new Date().toISOString() } : {}),
         ...(failureReason ? { error: failureReason } : {}),
         metadata: {
+          from: span.from,
           deliveredTo,
           rejectedCount: rejected?.length ?? 0,
           hasAdapterResult: !!adapterResult,
