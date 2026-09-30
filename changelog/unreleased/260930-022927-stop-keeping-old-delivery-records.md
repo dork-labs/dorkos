@@ -2,6 +2,7 @@
 covers:
   - 'perf(relay): keep delivery traces only while a message could still need them'
   - 'fix(community): delete used pairing requests an hour after they expire too'
+  - 'fix(relay): keep connection events written before kind existed'
 ---
 
 ### Changed
