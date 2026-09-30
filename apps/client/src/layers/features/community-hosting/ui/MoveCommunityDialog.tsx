@@ -266,21 +266,29 @@ export function moveProgressStep(
           ),
         };
       }
-      return step.why === 'refused'
-        ? {
-            title: 'The new host didn’t accept the file',
-            description:
-              'The file arrived changed or incomplete. Cancel the move, export the old community again, then start again.',
-            body: notice,
-            actions: cancelMove,
-          }
-        : {
-            title: 'This move can’t carry on',
-            description:
-              'Your DorkOS no longer has the file for it. Cancel the move, then start again with the same export.',
-            body: notice,
-            actions: cancelMove,
-          };
+      if (step.why === 'refused')
+        return {
+          title: 'The new host didn’t accept the file',
+          description:
+            'The file arrived changed or incomplete. Cancel the move, export the old community again, then start again.',
+          body: notice,
+          actions: cancelMove,
+        };
+      if (step.why === 'restarted')
+        return {
+          title: 'This move has to start again',
+          description:
+            'DorkOS restarted, so this move has to start again. For safety, the permission to upload is only kept while DorkOS is running. Cancel the move, then start again with the same export. If you started it on another computer, finish it there instead.',
+          body: notice,
+          actions: cancelMove,
+        };
+      return {
+        title: 'The time to upload ran out',
+        description:
+          'The new host stopped waiting for the file. Cancel the move, then start again with the same export.',
+        body: notice,
+        actions: cancelMove,
+      };
     case 'importing': {
       const counts = reportLine(move);
       return {
