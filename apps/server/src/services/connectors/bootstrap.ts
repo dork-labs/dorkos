@@ -548,7 +548,7 @@ export class ConnectorProviderBootstrapper {
       logger.error(
         `[Connectors] DorkOS managed provider recovery check failed: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }${managedCloudDetail(error)}`
       );
       this._managedWayFailed(error);
     }
