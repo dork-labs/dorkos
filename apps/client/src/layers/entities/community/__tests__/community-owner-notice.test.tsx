@@ -132,7 +132,7 @@ describe('announcing a request to replace the owner', () => {
 
     // The notification's button opens the community on its own host.
     const [, options] = vi.mocked(toast.warning).mock.calls[0]!;
-    (options as { action: { onClick: () => void } }).action.onClick();
+    (options as unknown as { action: { onClick: () => void } }).action.onClick();
     expect(openExternalLink).toHaveBeenCalledWith('https://a.example/c/remote-a');
   });
 
@@ -235,7 +235,7 @@ describe('what the owner reads', () => {
     expect(ownerNoticeBanner(noPassword, 'active', UTC)[1]).toBe(
       'Open the community to keep ownership. To hand it to someone or delete it, add a password to your account first.'
     );
-    expect(ownerNoticeBanner(noPassword, 'held', UTC)[1]).toBe(
+    expect(ownerNoticeBanner(noPassword, 'archived', UTC)[1]).toBe(
       'Open the community to keep ownership. To delete it, add a password to your account first.'
     );
   });

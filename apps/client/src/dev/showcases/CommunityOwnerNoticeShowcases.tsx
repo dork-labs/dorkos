@@ -25,7 +25,7 @@ type OpenNotice = Extract<CommunityConnectionOwnerNotice, { state: 'open' }>;
 
 function ownerConnection(
   ref: string,
-  lifecycle: 'active' | 'archived' | 'held',
+  lifecycle: 'active' | 'archived',
   notice: Partial<OpenNotice> = {}
 ): CommunityConnectionDescriptor {
   return {
@@ -75,8 +75,8 @@ const STATES: ReadonlyArray<{ label: string; connection: CommunityConnectionDesc
     }),
   },
   {
-    label: 'Held community — handing it on is not possible, only deleting',
-    connection: ownerConnection('notice-held', 'held', {
+    label: 'On hold — handing it on is not possible, only deleting',
+    connection: ownerConnection('notice-held', 'archived', {
       options: { keep: true, transfer: false, delete: true, needsPassword: false },
     }),
   },
