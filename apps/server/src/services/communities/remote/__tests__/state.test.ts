@@ -118,13 +118,13 @@ describe('the agents disconnecting removes', () => {
       {
         localAgentId: 'renamed',
         remoteMemberId: `member-renamed-owner-a-${REF}`,
-        displayName: 'Unnamed agent',
+        displayName: null,
         active: true,
       },
       {
         localAgentId: 'removed',
         remoteMemberId: `member-removed-owner-a-${REF}`,
-        displayName: 'Unnamed agent',
+        displayName: null,
         active: false,
       },
     ]);

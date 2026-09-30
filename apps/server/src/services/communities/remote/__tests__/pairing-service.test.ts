@@ -1836,7 +1836,20 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
         remoteRevoked: false,
         agentsNotRemoved: [view(scout), view(echo)],
       });
+      // Nothing reached the Community, so the revoke is not tried only to wait out another timeout.
+      expect(revocations).toEqual([]);
       await expectLocalCopyGone(store, ref, 'offline-owner');
+    });
+
+    it('still revokes the grant when the Community answered any agent removal', async () => {
+      const { service, ref } = await connectedWith('answered-agent-owner', [scout, echo]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 'hang-up');
+      agentRemovalAnswers.set(echo.remoteMemberId, 500);
+      expect(await service.disconnect(ref, 'answered-agent-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout), view(echo)],
+      });
+      expect(revocations).toHaveLength(1);
     });
 
     it('does not count a 404 the Community did not send as removed', async () => {
@@ -1848,19 +1861,37 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       });
     });
 
-    it('also tries an agent revoked here earlier, without naming it on a live connection', async () => {
+    // An agent revoked here may since have been enrolled again, under the same local id, by
+    // another installation of the same person; the Community would remove that live agent too.
+    it('never sends a removal for an agent revoked here earlier, nor names it', async () => {
       const { service, ref } = await connectedWith('earlier-owner', [scout, relay]);
       expect(await service.disconnectImpact(ref, 'earlier-owner')).toEqual({
         agents: [view(scout)],
       });
-      agentRemovalAnswers.set(relay.remoteMemberId, 500);
       expect(await service.disconnect(ref, 'earlier-owner')).toEqual({
         remoteRevoked: true,
         agentsNotRemoved: [],
       });
-      expect(agentRemovals.map((removal) => removal.memberId).sort()).toEqual(
-        [scout.remoteMemberId, relay.remoteMemberId].sort()
-      );
+      expect(agentRemovals.map((removal) => removal.memberId)).toEqual([scout.remoteMemberId]);
+    });
+
+    it('names a fenced connection’s agents without removing them, even with a bearer', async () => {
+      const fenced = [{ ...scout, active: false }];
+      const { store, service, ref } = await connectedWith('fenced-bearer-owner', fenced);
+      const file = join(directory, 'communities', 'remote', 'connections.json');
+      const records = JSON.parse(await readFile(file, 'utf8')) as Array<{
+        ref: string;
+        status: string;
+      }>;
+      records.find((record) => record.ref === ref)!.status = 'reconnect-required';
+      await writeFile(file, JSON.stringify(records));
+      expect(await service.disconnect(ref, 'fenced-bearer-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout)],
+      });
+      expect(agentRemovals).toEqual([]);
+      expect(revocations).toHaveLength(1);
+      await expectLocalCopyGone(store, ref, 'fenced-bearer-owner');
     });
 
     // The reconnect dialog's path: a rejected grant revoked every enrollment here without telling

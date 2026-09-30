@@ -143,14 +143,13 @@ export const CommunityConnectionPollResponseSchema = z.strictObject({
 
 /**
  * One agent this install added to a Community, named as this app knows it. Only
- * agents added from this install appear: one added by another install of the
- * same person is that install's to manage.
+ * agents added from this install appear.
  */
 export const CommunityInstallationAgentSchema = z.strictObject({
   /** The local agent's manifest id. */
   localAgentId: z.string().min(1),
-  /** The agent's name in this app. */
-  displayName: z.string().min(1),
+  /** The agent's name in this app, or `null` when this app no longer has the agent. */
+  displayName: z.string().min(1).nullable(),
 });
 
 /**

@@ -526,7 +526,10 @@ function ConnectCommunityBody({
           {origin}
           {agentsLine && <p className="text-sm">{agentsLine}</p>}
           {impact.isError && !impact.data && !checking && (
-            <div role="alert" className="flex items-center justify-between gap-3 text-sm">
+            <div
+              role="alert"
+              className="flex flex-col items-start gap-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+            >
               <p className="text-destructive">
                 Couldn’t check which of your agents are on {connection.label}.
               </p>

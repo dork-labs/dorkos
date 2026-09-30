@@ -140,7 +140,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 const mockEndConnection = vi.fn();
 /** What the Disconnect confirmation reads about the agents it would remove. */
 let mockDisconnectImpact: {
-  data?: { agents: { localAgentId: string; displayName: string }[] };
+  data?: { agents: { localAgentId: string; displayName: string | null }[] };
   isError: boolean;
   fetchStatus: 'fetching' | 'idle';
   refetch: () => void;
@@ -1448,6 +1448,27 @@ describe('the context switcher’s lifecycle actions', () => {
       expect.anything()
     );
     expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('counts agents this app no longer has instead of repeating a placeholder', async () => {
+    mockConnections = [alpha()];
+    mockDisconnectImpact = {
+      data: {
+        agents: [
+          { localAgentId: 'scout', displayName: 'Scout' },
+          { localAgentId: 'gone-1', displayName: null },
+          { localAgentId: 'gone-2', displayName: null },
+        ],
+      },
+      isError: false,
+      fetchStatus: 'idle',
+      refetch: vi.fn(),
+    };
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'The 3 agents you added from here will be removed from Alpha: Scout and 2 unnamed agents.'
+    );
   });
 
   it('names an agent the Community would not remove even though the rest went', async () => {

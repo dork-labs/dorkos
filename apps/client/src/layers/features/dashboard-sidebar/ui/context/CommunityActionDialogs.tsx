@@ -195,7 +195,10 @@ export function DisconnectCommunityDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         {impact.isError && agents === undefined && !checking && (
-          <div role="alert" className="flex items-center justify-between gap-3 text-sm">
+          <div
+            role="alert"
+            className="flex flex-col items-start gap-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+          >
             <p className="text-destructive">Couldn’t check which of your agents are on {label}.</p>
             <Button size="sm" variant="outline" onClick={() => void impact.refetch()}>
               Check again

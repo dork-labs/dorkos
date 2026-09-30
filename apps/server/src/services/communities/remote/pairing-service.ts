@@ -47,8 +47,8 @@ export interface RemoteInstallationAgent {
   localAgentId: string;
   /** The agent's member id on the Community, which removing it there names. */
   remoteMemberId: string;
-  /** The agent's name in this app, for telling the person which agent it is. */
-  displayName: string;
+  /** The agent's name in this app, or `null` when this app no longer has the agent. */
+  displayName: string | null;
   /**
    * Whether this installation still runs it. An inactive one was revoked here,
    * by a rejected grant or an earlier removal, and may still be active on the
@@ -59,8 +59,11 @@ export interface RemoteInstallationAgent {
 
 /**
  * Read the agents one owner's installation added to one Community, active or
- * revoked here, from local records only. Agents added by another installation
- * of the same person never appear here, so disconnecting cannot touch them.
+ * revoked here, from local records only. Only these are ever named or removed.
+ * One limit: the Community keys an agent by its owner and local agent id, and
+ * two installations of the same person can share a local id (it is committed
+ * with the agent), so removing an agent active here also removes it for the
+ * other installation if that one enrolled the same id.
  */
 export type RemoteInstallationAgentsReader = (
   communityRef: CommunityRef,
@@ -862,14 +865,23 @@ export class RemoteCommunityPairingService {
       // a grant, so it has no bearer and makes no call. Revocation never
       // throws, so the local copy is always removed below.
       const bearer = await this.store.storedPersonalToken(ref, ownerKey);
-      // Agents first: removing one needs the grant that is about to be revoked. Every agent this
-      // installation ever added here is tried, since removing one already gone is harmless, but
-      // only the ones the person still counts as theirs are named when they stay (see
-      // namedOnDisconnect). Without a bearer none can be removed from here, so all those are named.
+      // Agents first: removing one needs the grant that is about to be revoked. Only an agent still
+      // active here is removed. A row revoked here is never sent: the Community names an agent by
+      // its local id, which another installation of the same person can share and re-enroll, so
+      // removing a row this app already let go could remove that installation's live agent. The
+      // ones the person still counts as theirs are named when they stay (see namedOnDisconnect).
+      // Without a bearer none can be removed from here, so all of those are named.
       const named = agents.filter((agent) => namedOnDisconnect(agent, record.status));
-      const agentsNotRemoved = bearer
-        ? await this.removeInstallationAgents(bearer, record, agents, named)
-        : named.map(installationAgentView);
+      const removal = bearer
+        ? await this.removeInstallationAgents(
+            bearer,
+            record,
+            agents.filter((agent) => agent.active)
+          )
+        : { removed: new Set<RemoteInstallationAgent>(), unreachable: false };
+      const agentsNotRemoved = named
+        .filter((agent) => !removal.removed.has(agent))
+        .map(installationAgentView);
       // A connected record that lost its bearer cannot confirm anything, so it
       // reports unconfirmed rather than claiming the grant is gone.
       //
@@ -879,8 +891,13 @@ export class RemoteCommunityPairingService {
       // for a missing scope could in theory still be live there. It is rare,
       // because grants are approved with fixed scopes, and reporting false
       // here would warn on every ordinary revocation.
+      //
+      // When every agent removal could not even reach the Community, the revoke would only wait
+      // out the same timeout again, so it is reported unconfirmed without a call.
       const remoteRevoked = bearer
-        ? await this.revokeRemoteGrant(bearer, record)
+        ? removal.unreachable
+          ? false
+          : await this.revokeRemoteGrant(bearer, record)
         : record.status !== 'connected';
       // Everything copied through this connection goes with it (DOR-2334): the same path a
       // rejected grant takes stops its streams and agents' turns and purges its mirrored rooms,
@@ -925,30 +942,29 @@ export class RemoteCommunityPairingService {
    * Remove each agent from the Community with the installation's own bearer,
    * one request per agent so one failure never keeps the others, all at once
    * so an unreachable Community costs one timeout rather than one per agent.
-   * The grant revoke after it waits its own timeout, so an unreachable
-   * Community makes a disconnect take up to two before the local copy goes.
    *
-   * @returns The named agents the Community could not be told to remove.
+   * @returns The agents the Community removed, and whether every request
+   *   failed without reaching it, so the caller can skip the grant revoke.
    */
   private async removeInstallationAgents(
     bearer: string,
     record: { pinnedOrigin: string; remoteCommunityId: string },
-    agents: readonly RemoteInstallationAgent[],
-    named: readonly RemoteInstallationAgent[]
-  ): Promise<CommunityInstallationAgent[]> {
-    const removed = await Promise.all(
+    agents: readonly RemoteInstallationAgent[]
+  ): Promise<{ removed: Set<RemoteInstallationAgent>; unreachable: boolean }> {
+    const outcomes = await Promise.all(
       agents.map((agent) => this.removeRemoteAgent(bearer, record, agent.remoteMemberId))
     );
-    return agents
-      .filter((agent, index) => !removed[index] && named.includes(agent))
-      .map(installationAgentView);
+    return {
+      removed: new Set(agents.filter((_, index) => outcomes[index] === 'removed')),
+      unreachable: outcomes.length > 0 && outcomes.every((outcome) => outcome === 'unreachable'),
+    };
   }
 
   private async removeRemoteAgent(
     bearer: string,
     record: { pinnedOrigin: string; remoteCommunityId: string },
     remoteMemberId: string
-  ): Promise<boolean> {
+  ): Promise<'removed' | 'kept' | 'unreachable'> {
     try {
       await pinnedJson(
         parseCommunityOrigin(record.pinnedOrigin),
@@ -960,18 +976,19 @@ export class RemoteCommunityPairingService {
         undefined,
         { method: 'DELETE', authorization: bearer, accept: [200, 204] }
       );
-      return true;
+      return 'removed';
     } catch (error) {
       // The Community's own 404: the agent is already gone there (a bare 404 from
       // something in between proves nothing). A deleted or taken-down community
       // holds no agent that can act. Anything else (unreachable, refused, a
-      // rejected bearer) leaves the agent active, so the person is told.
-      return (
-        error instanceof PinnedHttpError &&
-        ((error.status === 404 && error.remoteCode === 'NOT_FOUND') ||
-          isCommunityDeleted(error) ||
-          isCommunityTakenDown(error))
-      );
+      // rejected bearer) leaves the agent active, so the person is told. No HTTP
+      // answer at all means the Community was not reached.
+      if (!(error instanceof PinnedHttpError)) return 'unreachable';
+      return (error.status === 404 && error.remoteCode === 'NOT_FOUND') ||
+        isCommunityDeleted(error) ||
+        isCommunityTakenDown(error)
+        ? 'removed'
+        : 'kept';
     }
   }
 
@@ -1004,8 +1021,9 @@ export class RemoteCommunityPairingService {
 /**
  * Whether the person is told about this agent when disconnecting. An agent this installation
  * still runs always is. Once a rejected grant has fenced the connection (`reconnect-required`),
- * every agent was revoked here by that fence, not by the person, so all are theirs to hear about.
- * On a live connection a revoked one was removed on purpose earlier; it is still tried, quietly.
+ * every agent was revoked here by that fence, not by the person, so all are theirs to hear about,
+ * though none is removed from here (see disconnect). On a live connection a revoked one was
+ * removed on purpose earlier, and is left alone.
  */
 function namedOnDisconnect(
   agent: RemoteInstallationAgent,

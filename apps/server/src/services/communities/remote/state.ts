@@ -105,11 +105,12 @@ export function getRemotePairingService(): RemoteCommunityPairingService {
 
 /**
  * The agents this installation added to one Community for one owner, which disconnecting removes
- * there (DOR-2603). Read from this installation's own enrollments, so an agent another
- * installation of the same person added is never among them. Revoked ones are included, marked
- * inactive: a rejected grant revokes every enrollment here without telling the Community, and a
- * removal the Community never confirmed leaves its agent active there. No database yet means no
- * enrollment yet. Each is named as this app knows it, so the person recognises it.
+ * there when still active here (DOR-2603). Read from this installation's own enrollments only;
+ * see RemoteInstallationAgentsReader for the shared-local-id limit. Revoked ones are included,
+ * marked inactive, so a connection a rejected grant fenced can still name them; they are never
+ * removed from here, since that id may since belong to another installation. No database yet means no
+ * enrollment yet. Each is named as this app knows it, so the person recognises it, or `null` when
+ * this app no longer has the agent.
  *
  * @param communityRef - The local connection ref.
  * @param ownerKey - The local owner the connection belongs to.
@@ -123,8 +124,7 @@ export function readRemoteInstallationAgents(
     localAgentId: enrollment.localAgentId,
     remoteMemberId: enrollment.remoteMemberId,
     active: enrollment.state === 'active',
-    displayName:
-      resolveRemoteCommunityLocalAgent(enrollment.localAgentId)?.displayName ?? 'Unnamed agent',
+    displayName: resolveRemoteCommunityLocalAgent(enrollment.localAgentId)?.displayName ?? null,
   }));
 }
 

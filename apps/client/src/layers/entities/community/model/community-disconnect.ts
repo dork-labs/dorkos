@@ -46,9 +46,14 @@ export function useCommunityDisconnectImpact(connection: CommunityConnectionDesc
   });
 }
 
-/** "Scout", "Scout and Echo", "Scout, Echo and Relay". */
+/**
+ * "Scout", "Scout and Echo", "Scout, Echo and Relay". Agents this app no longer
+ * has are counted rather than listed: "Scout and 2 unnamed agents".
+ */
 function joinAgentNames(agents: readonly CommunityInstallationAgent[]): string {
-  const names = agents.map((agent) => agent.displayName);
+  const names = agents.flatMap((agent) => (agent.displayName ? [agent.displayName] : []));
+  const unnamed = agents.length - names.length;
+  if (unnamed > 0) names.push(unnamed === 1 ? 'an unnamed agent' : `${unnamed} unnamed agents`);
   return names.length <= 1
     ? (names[0] ?? '')
     : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
@@ -67,7 +72,9 @@ export function disconnectAgentsLine(
 ): string | null {
   if (agents.length === 0) return null;
   if (agents.length === 1)
-    return `The agent you added from here, ${agents[0]!.displayName}, will be removed from ${label}.`;
+    return agents[0]!.displayName
+      ? `The agent you added from here, ${agents[0]!.displayName}, will be removed from ${label}.`
+      : `The agent you added from here will be removed from ${label}.`;
   return `The ${agents.length} agents you added from here will be removed from ${label}: ${joinAgentNames(agents)}.`;
 }
 
