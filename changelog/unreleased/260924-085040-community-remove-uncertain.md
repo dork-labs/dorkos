@@ -2,6 +2,7 @@
 covers:
   - 'feat(cli): remove what an uncertain Community launch create left behind, only with proof (DOR-2238)'
   - 'fix(cli): size the Tigris create window, explain a stuck restart, release a claim cancelled before the delete (DOR-2238)'
+  - "fix(cli): size the removal's create windows from the write deadline (DOR-2238 review)"
 ---
 
 ### Added
