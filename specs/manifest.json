@@ -6,7 +6,9 @@
       "slug": "community-launch-acceptance",
       "title": "Verify launch-to-first-conversation and publish the entry point",
       "created": "2026-09-29",
-      "status": "specified"
+      "status": "specified",
+      "project": "Communities",
+      "linearIssue": "DOR-2170"
     },
     {
       "id": "260929-140932",
