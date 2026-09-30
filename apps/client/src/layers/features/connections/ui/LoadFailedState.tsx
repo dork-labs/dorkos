@@ -1,6 +1,6 @@
 import { cloudFailure } from '@/layers/entities/connectors';
 import { SETTINGS_RELINK_SECTION, useSettingsDeepLink } from '@/layers/shared/model';
-import { Button, QueryErrorState } from '@/layers/shared/ui';
+import { Button, QueryErrorState, type ButtonProps } from '@/layers/shared/ui';
 
 /** Props for {@link LoadFailedState}. */
 export interface LoadFailedStateProps {
@@ -20,7 +20,6 @@ export interface LoadFailedStateProps {
  * other failure keeps the surface's own copy.
  */
 export function LoadFailedState({ error, title, description, ...retry }: LoadFailedStateProps) {
-  const settings = useSettingsDeepLink();
   const failure = cloudFailure(error);
   return (
     <div className="space-y-2">
@@ -29,15 +28,20 @@ export function LoadFailedState({ error, title, description, ...retry }: LoadFai
         description={failure?.description ?? description}
         {...retry}
       />
-      {failure?.action === 'relink' && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => settings.open('access', SETTINGS_RELINK_SECTION)}
-        >
-          Link my DorkOS account again
-        </Button>
-      )}
+      {failure?.action === 'relink' && <RelinkButton variant="outline" size="sm" />}
     </div>
+  );
+}
+
+/**
+ * The one action a link problem needs: open Settings › Access and start
+ * linking this computer to the DorkOS account again, in one click.
+ */
+export function RelinkButton(props: Pick<ButtonProps, 'variant' | 'size' | 'className'>) {
+  const settings = useSettingsDeepLink();
+  return (
+    <Button {...props} onClick={() => settings.open('access', SETTINGS_RELINK_SECTION)}>
+      Link my DorkOS account again
+    </Button>
   );
 }
