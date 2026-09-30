@@ -384,7 +384,7 @@ const CONFIRM_WINDOW_MS = 3_000;
  * mutation with `purge: false`, which keeps the package's own data. It does
  * not keep everything: uninstalling a chat-app (adapter) package removes its
  * connection, and with it that connection's delivery history and chat names
- * (DOR-2604). If the window expires without a second click the row resets
+ * (DOR-2604) and every chat it recorded for the claim feed (DOR-2608). If the window expires without a second click the row resets
  * silently.
  *
  * Renders loading, error, empty, and populated states via shared primitives
