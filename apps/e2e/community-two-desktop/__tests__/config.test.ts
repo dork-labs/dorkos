@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -196,6 +197,13 @@ describe('two-Desktop remote mode (the live gate handoff)', () => {
         const link = path.join(dir, 'link.json');
         symlinkSync(file, link);
         expect(() => readHandoff(link)).toThrow(/not a regular file/);
+        // A named pipe with the right modes: opening it must not wait for a writer.
+        const pipe = path.join(dir, 'pipe.json');
+        execFileSync('mkfifo', ['-m', '600', pipe]);
+        chmodSync(pipe, 0o600);
+        const started = Date.now();
+        expect(() => readHandoff(pipe)).toThrow(/not a regular file/);
+        expect(Date.now() - started).toBeLessThan(1000);
       } finally {
         chmodSync(dir, 0o700);
         rmSync(dir, { recursive: true, force: true });

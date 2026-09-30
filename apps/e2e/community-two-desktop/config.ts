@@ -97,8 +97,17 @@ export interface HandoffFs {
 
 const realFs: HandoffFs = {
   open: (file) => {
-    const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
-    const info = fstatSync(fd);
+    // O_NONBLOCK: opening a named pipe for reading would otherwise wait for a
+    // writer forever. Nonblocking changes nothing for a regular file, and the
+    // isFile() check refuses anything else before a byte is read.
+    const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    let info;
+    try {
+      info = fstatSync(fd);
+    } catch (error) {
+      closeSync(fd);
+      throw error;
+    }
     return {
       isFile: () => info.isFile(),
       mode: info.mode,
