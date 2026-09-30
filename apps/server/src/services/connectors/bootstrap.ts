@@ -282,16 +282,15 @@ function keyCheckLine(type: string, failure: KeyCheckFailure, recheckScheduled: 
 }
 
 /**
- * Whether the DorkOS account refused the link itself: its credential is not
- * accepted, or it needs a permission the owner must grant by linking again.
- * Only those wait for the owner. A plain refused request (even a 403) or a
- * network failure can pass, so the way is re-checked.
+ * Whether the DorkOS account refused the link itself: it needs a permission the
+ * owner must grant by linking again. Only that waits for the owner. A refused
+ * key (`unauthorized`) is judged by the cloud link, which checks the key before
+ * the error arrives here and drops it when it is really gone, so it is read
+ * from `configured()` instead (DOR-2620). A plain refused request (even a 403)
+ * or a network failure can pass, so the way is re-checked.
  */
 function isLinkRefusal(err: unknown): boolean {
-  return (
-    err instanceof ManagedConnectorCloudError &&
-    (err.code === 'unauthorized' || err.code === 'permission_upgrade_required')
-  );
+  return err instanceof ManagedConnectorCloudError && err.code === 'permission_upgrade_required';
 }
 
 /** Strip a `file:` prefix down to the credential-store name. */

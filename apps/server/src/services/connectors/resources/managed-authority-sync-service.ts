@@ -106,6 +106,13 @@ export interface ManagedAuthorityCloudPort {
     commandId: string,
     signal?: AbortSignal
   ): Promise<ManagedConnectorAuthorityCommandStatus>;
+  /**
+   * Whether this computer still holds its DorkOS account key. Read after a
+   * refused (`unauthorized`) call: the cloud link checks the key before that
+   * error reaches here, so a key still held was vouched for (or could not be
+   * checked) and the refusal is retried rather than waiting for a new link.
+   */
+  isLinked(): boolean;
 }
 
 /** Input for replacing one managed agent's complete hosted operation grant set. */
@@ -1532,6 +1539,15 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   ): DeliveryFailure {
     if (signal.aborted) return { code: 'interrupted' };
     if (deadline.aborted) return { code: 'timeout' };
+    // Only a refusal that cost this computer its key means the link lapsed and
+    // waits for a new one. One the key check did not back up is a refused
+    // request like any other, tried again later (DOR-2620).
+    if (
+      isManagedCloudError(error) &&
+      error.code === 'unauthorized' &&
+      this.options.cloud.isLinked()
+    )
+      return { code: 'request_failed', status: error.status };
     if (isManagedCloudError(error)) return { code: error.code, status: error.status };
     return { code: 'local_error', errorName: error instanceof Error ? error.name : typeof error };
   }

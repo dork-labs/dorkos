@@ -168,7 +168,11 @@ describe('CloudLinkManager', () => {
 
     manager = new CloudLinkManager({
       config,
-      fetchImpl: routerFetch({ authority: () => ({ status: 401, body: {} }) }),
+      // The heartbeat, the authoritative key check, refuses the key too.
+      fetchImpl: routerFetch({
+        authority: () => ({ status: 401, body: {} }),
+        heartbeat: () => ({ status: 401, body: {} }),
+      }),
     });
     await expect(manager.submitConnectorAuthorityCommand(command)).rejects.toMatchObject({
       code: 'unauthorized',

@@ -132,6 +132,9 @@ describe('ManagedAuthoritySyncService', () => {
       readConnectorAuthorityCommand: vi.fn(async () => {
         throw cloudError('not_found');
       }),
+      // A refusal (`unauthorized`) here stands for one the link's key check
+      // backed up, so the key is gone; a test that keeps it says so.
+      isLinked: () => false,
     };
   });
 
@@ -1096,6 +1099,20 @@ describe('ManagedAuthoritySyncService', () => {
       expect(db.select().from(connectorManagedAuthorityOutbox).get()).toMatchObject({
         state: 'rejected',
         rejectionCode: 'unauthorized',
+      });
+    });
+
+    it('tries a refused change again when the link kept its key (DOR-2620)', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw cloudError('unauthorized');
+      });
+      cloud.isLinked = () => true;
+      await replace();
+      expect(db.select().from(connectorManagedAuthorityOutbox).get()).toMatchObject({
+        state: 'pending',
+        rejectionCode: null,
+        nextAttemptAt: expect.any(String),
+        safeReason: 'DorkOS’s servers turned the request down.',
       });
     });
 
