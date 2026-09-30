@@ -7,6 +7,7 @@
  */
 import type { LaunchJournal } from '../journal.js';
 import { COMMUNITY_SERVICE_TIMEOUT_MS } from '../provider-process.js';
+import { writeDeadline } from '../provider-mutation.js';
 import {
   PROVENANCE_ROUND_TRIP_PROVED,
   flyProvenanceNetwork,
@@ -28,19 +29,26 @@ export interface ProvenanceGate {
   neon: boolean;
 }
 
-/** Deadline a Fly or Neon create ran under: one bounded service call. */
-export const DEFAULT_CREATE_DEADLINE_MS = COMMUNITY_SERVICE_TIMEOUT_MS;
+/**
+ * Deadline a Fly app or Neon project create ran under. A create is a provider write, and the
+ * launcher gives every write the shared write deadline (`writeDeadline`, at least
+ * `PROVIDER_WRITE_TIMEOUT_MS`, DOR-2169 #2374), not the 30-second read deadline, so a create cut
+ * off at its deadline is exactly the slow case this command exists for.
+ */
+export const DEFAULT_CREATE_DEADLINE_MS = writeDeadline(COMMUNITY_SERVICE_TIMEOUT_MS);
 
 /**
  * How long after its recorded request time a Tigris create can still reach the service. The
- * intent is written before `create()`, and the Tigris `create()` makes three bounded reads before
- * it sends `createAddOn`: the Fly app listing, `fly auth token`, and the terms check. The window
- * is widened by those three calls instead of writing a second request time just before the
- * mutation, because that would add a journal write inside the create, and a failed write there
- * would strand a run whose create may already be under way. Widening only loosens the time check
- * for Tigris, whose proof still needs its app re-proved by marker, the exact name and the org.
+ * intent is written before `create()`, and the Tigris `create()` makes three bounded reads (30
+ * seconds each) before it sends `createAddOn`: the Fly app listing, `fly auth token`, and the terms
+ * check. `createAddOn` itself then runs under the write deadline. The window is widened by those
+ * reads instead of writing a second request time just before the mutation, because that would add
+ * a journal write inside the create, and a failed write there would strand a run whose create may
+ * already be under way. Widening only loosens the time check for Tigris, whose proof still needs
+ * its app re-proved by marker, the exact name and the org.
  */
-export const TIGRIS_CREATE_DEADLINE_MS = 4 * COMMUNITY_SERVICE_TIMEOUT_MS;
+export const TIGRIS_CREATE_DEADLINE_MS =
+  3 * COMMUNITY_SERVICE_TIMEOUT_MS + writeDeadline(COMMUNITY_SERVICE_TIMEOUT_MS);
 
 /** The deadline a create for this service ran under, for the create window. */
 export function createDeadlineFor(provider: RemovalProvider): number {

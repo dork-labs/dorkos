@@ -216,6 +216,7 @@ export async function unsetFlyTigrisSecrets(
   const app = parseInput(ExternalIdentifierSchema, appName);
   return runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: [
       'secrets',
       'unset',

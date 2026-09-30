@@ -12,6 +12,7 @@ import {
   FLY_DEPLOY_TIMEOUT_MS,
   destroyFlyApp,
   stageFlySecrets,
+  unsetFlyTigrisSecrets,
   verifyFlyDeployment,
   verifyDeployedFlySecrets,
   verifyStagedFlySecrets,
@@ -322,6 +323,10 @@ cat > "$CAPTURE_STDIN"
         stageFlySecrets(short(), 'community-space', { COMMUNITY_AUTH_SECRET: 'x'.repeat(43) })
       ).resolves.toEqual({ operation: 'secrets-stage' }),
       expect(destroyFlyApp(short(), 'community-space')).resolves.toMatchObject({}),
+      // The uncertain-create removal's unset of a deleted bucket's keys is a write too.
+      expect(unsetFlyTigrisSecrets(short(), 'community-space')).resolves.toEqual({
+        operation: 'secrets-unset',
+      }),
       expect(
         createNeonProject(short(projectJson), {
           organizationId: 'org_fixture_01',
