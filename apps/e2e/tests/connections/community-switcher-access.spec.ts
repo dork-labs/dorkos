@@ -244,22 +244,32 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await page.goto('/tasks');
     await new BasePage(page).waitForAppReady();
     const trigger = page.getByTestId('sidebar-header-block');
-    // What each page heading said at the moment it took focus: that is what a
-    // screen reader reads aloud, so it has to be the whole name, not "Beta".
+    // Everything that took focus, in order. A page heading is recorded as what
+    // it said at that moment: that is what a screen reader reads aloud, so it
+    // has to be the whole name, not "Beta". Anything else is recorded by role
+    // and name, so the test can say what took focus after a heading did.
     await page.evaluate(() => {
-      const spoken: string[] = [];
-      (window as unknown as { __spokenHeadings: string[] }).__spokenHeadings = spoken;
+      const focused: string[] = [];
+      (window as unknown as { __focused: string[] }).__focused = focused;
       document.addEventListener(
         'focusin',
         (event) => {
           const target = event.target as Element;
-          if (target.matches('h1[data-page-heading]')) spoken.push(target.textContent ?? '');
+          focused.push(
+            target.matches('h1[data-page-heading]')
+              ? `heading: ${target.textContent ?? ''}`
+              : `${target.getAttribute('role') ?? target.tagName.toLowerCase()}: ${target.getAttribute('aria-label') ?? ''}`
+          );
         },
         true
       );
     });
-    const spokenHeadings = () =>
-      page.evaluate(() => (window as unknown as { __spokenHeadings: string[] }).__spokenHeadings);
+    const focusedInOrder = () =>
+      page.evaluate(() => (window as unknown as { __focused: string[] }).__focused);
+    const spokenHeadings = async () =>
+      (await focusedInOrder())
+        .filter((entry) => entry.startsWith('heading: '))
+        .map((entry) => entry.slice('heading: '.length));
 
     // Into a Community: the heading names the Community and then the channel,
     // and it is where focus is once the channel has opened (DOR-2240).
@@ -309,6 +319,14 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toBeHidden();
     await expect(trigger).toBeFocused();
+
+    // An order check, not a timing one: whenever the composer's mounts landed,
+    // none of them took focus after Home was announced. The composer may have
+    // had it before the heading did; that is fine, the heading came last.
+    const order = await focusedInOrder();
+    const announced = order.lastIndexOf('heading: Home');
+    expect(announced, order.join(' → ')).toBeGreaterThan(-1);
+    expect(order.slice(announced), order.join(' → ')).not.toContain('combobox: Message #team…');
   });
 
   test('at 200% zoom every destination stays reachable without sideways scrolling', async ({
