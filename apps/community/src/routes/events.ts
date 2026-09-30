@@ -129,7 +129,7 @@ export function registerEventRoutes(
          COALESCE(SUM(GREATEST(channel.last_seq-COALESCE(cursor.seq,0),0)),0)::text AS unread_count,
          COALESCE(SUM((SELECT count(DISTINCT entry.id) FROM entries entry
            JOIN entry_mentions mention ON mention.entry_id=entry.id
-           WHERE entry.channel_id=channel.id AND entry.community_id=$2
+           WHERE entry.channel_id=channel.id AND entry.community_id=$2 AND mention.community_id=$2
              AND entry.seq>COALESCE(cursor.seq,0) AND mention.mentioned_member_id=$1)),0)::text AS mention_count
        FROM channels channel
        LEFT JOIN channel_members membership ON membership.channel_id=channel.id AND membership.member_id=$1

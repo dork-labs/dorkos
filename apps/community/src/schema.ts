@@ -341,6 +341,9 @@ export const members = pgTable(
     uniqueIndex('members_community_user_unique').on(table.communityId, table.userId),
     uniqueIndex('members_handle_unique').on(table.communityId, table.handle),
     index('members_community_active_idx').on(table.communityId, table.active),
+    index('members_user_idx')
+      .on(table.userId)
+      .where(sql`${table.userId} IS NOT NULL`),
   ]
 );
 
@@ -457,6 +460,7 @@ export const inviteUses = pgTable(
   (table) => [
     primaryKey({ columns: [table.inviteId, table.userId] }),
     index('invite_uses_community_idx').on(table.communityId),
+    index('invite_uses_user_idx').on(table.userId),
     foreignKey({
       name: 'invite_uses_invite_tenant_fk',
       columns: [table.communityId, table.inviteId],
@@ -483,7 +487,6 @@ export const pendingAdmissions = pgTable(
     createdAt: time('created_at'),
   },
   (table) => [
-    index('pending_admissions_community_idx').on(table.communityId),
     index('pending_admissions_expires_at_idx').on(table.expiresAt, table.id),
     uniqueIndex('pending_admissions_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('pending_admissions_account_binding_unique').on(
@@ -572,6 +575,9 @@ export const connectionPairings = pgTable(
   },
   (table) => [
     index('connection_pairings_community_idx').on(table.communityId),
+    index('connection_pairings_member_idx')
+      .on(table.memberId)
+      .where(sql`${table.memberId} IS NOT NULL`),
     foreignKey({
       name: 'connection_pairings_member_tenant_fk',
       columns: [table.communityId, table.memberId],
@@ -600,6 +606,7 @@ export const connectionGrants = pgTable(
   },
   (table) => [
     index('connection_grants_community_idx').on(table.communityId),
+    index('connection_grants_member_idx').on(table.memberId),
     foreignKey({
       name: 'connection_grants_member_tenant_fk',
       columns: [table.communityId, table.memberId],
@@ -624,10 +631,7 @@ export const channels = pgTable(
     epoch: integer('epoch').notNull().default(1),
     createdAt: time('created_at'),
   },
-  (table) => [
-    uniqueIndex('channels_community_id_unique').on(table.communityId, table.id),
-    index('channels_community_idx').on(table.communityId),
-  ]
+  (table) => [uniqueIndex('channels_community_id_unique').on(table.communityId, table.id)]
 );
 /** Explicit human channel membership. */
 export const channelMembers = pgTable(
@@ -708,6 +712,7 @@ export const agentCredentials = pgTable(
   },
   (table) => [
     index('agent_credentials_community_idx').on(table.communityId),
+    index('agent_credentials_agent_idx').on(table.agentId),
     foreignKey({
       name: 'agent_credentials_agent_tenant_fk',
       columns: [table.communityId, table.agentId],
@@ -733,6 +738,7 @@ export const agentChannelMembers = pgTable(
   (table) => [
     primaryKey({ columns: [table.channelId, table.agentId] }),
     index('agent_channel_members_community_idx').on(table.communityId),
+    index('agent_channel_members_agent_idx').on(table.agentId),
     foreignKey({
       name: 'agent_channel_members_channel_tenant_fk',
       columns: [table.communityId, table.channelId],
@@ -826,7 +832,6 @@ export const entries = pgTable(
     index('entries_thread_root_ref_idx')
       .on(table.threadRootEntryId, table.communityId)
       .where(sql`${table.threadRootEntryId} IS NOT NULL`),
-    index('entries_community_idx').on(table.communityId),
     index('entries_community_created_idx').on(table.communityId, table.createdAt.desc()),
     foreignKey({
       name: 'entries_channel_tenant_fk',
@@ -923,7 +928,7 @@ export const attachments = pgTable(
   (table) => [
     uniqueIndex('attachments_community_id_unique').on(table.communityId, table.id),
     index('attachments_entry_idx').on(table.entryId),
-    index('attachments_community_idx').on(table.communityId),
+    index('attachments_channel_idx').on(table.channelId),
     uniqueIndex('attachments_human_retry_idx')
       .on(table.uploaderMemberId, table.channelId, table.idempotencyKey)
       .where(sql`${table.uploaderMemberId} IS NOT NULL`),
@@ -1042,7 +1047,6 @@ export const exportArchives = pgTable(
       'export_archives_progress',
       sql`${table.progressDone} >= 0 AND (${table.progressTotal} IS NULL OR ${table.progressTotal} >= 0)`
     ),
-    index('export_archives_community_idx').on(table.communityId),
     index('export_archives_expiry_idx')
       .on(table.cleanupNextAttemptAt, table.expiresAt, table.id)
       .where(sql`${table.deletedAt} IS NULL`),
@@ -1330,6 +1334,7 @@ export const readCursors = pgTable(
   (table) => [
     primaryKey({ columns: [table.channelId, table.memberId] }),
     index('read_cursors_community_idx').on(table.communityId),
+    index('read_cursors_member_idx').on(table.memberId),
     foreignKey({
       name: 'read_cursors_channel_tenant_fk',
       columns: [table.communityId, table.channelId],
@@ -1390,6 +1395,9 @@ export const auditEvents = pgTable(
   (table) => [
     check('audit_events_origin', sql`${table.origin} IN ('native','imported')`),
     index('audit_events_community_created_idx').on(table.communityId, table.createdAt),
+    index('audit_events_actor_idx')
+      .on(table.actorMemberId)
+      .where(sql`${table.actorMemberId} IS NOT NULL`),
     foreignKey({
       name: 'audit_events_actor_tenant_fk',
       columns: [table.communityId, table.actorMemberId],
@@ -1536,7 +1544,8 @@ export const entryRedactions = pgTable(
       foreignColumns: [entries.communityId, entries.id],
     }).onDelete('cascade'),
     index('entry_redactions_channel_idx').on(table.channelId, table.id),
-    index('entry_redactions_community_idx').on(table.communityId),
+    index('entry_redactions_community_id_idx').on(table.communityId, table.id),
+    index('entry_redactions_entry_idx').on(table.entryId),
   ]
 );
 

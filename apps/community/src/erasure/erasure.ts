@@ -219,14 +219,22 @@ async function endAccess(target: Target): Promise<void> {
   });
 }
 
-const AUTHORED_ATTACHMENT = `community_id=$1 AND (uploader_member_id=$2 OR uploader_agent_id IN
-  (SELECT id FROM agents WHERE owner_member_id=$2 AND community_id=$1))`;
+// The agent ids as `= ANY(ARRAY(...))`, not `IN (...)`: a hashed IN subplan cannot drive an
+// index, so the uploader_agent_id half could only ever be a filter.
+const AUTHORED_ATTACHMENT = `community_id=$1 AND (uploader_member_id=$2 OR uploader_agent_id = ANY(ARRAY
+  (SELECT id FROM agents WHERE owner_member_id=$2 AND community_id=$1)))`;
 
 async function eraseFiles(target: Target): Promise<void> {
   while (true) {
     // Find candidates without a lock; lock and re-check each batch by id.
     const candidates = await target.pool.query<{ id: string }>(
-      `SELECT id FROM attachments WHERE ${AUTHORED_ATTACHMENT} ORDER BY id LIMIT $3`,
+      // OFFSET 0 fences the filter from `ORDER BY id LIMIT`: without it the planner may walk
+      // (community_id, id) in order, reading the whole community per batch. Fenced, it
+      // collects the person's rows from the uploader indexes and sorts those. Measured with
+      // bound parameters: 30,213 to 12-55 buffers per batch at 30,000 files, 100,765 to
+      // 5-61 at 100,000.
+      `SELECT id FROM (SELECT id FROM attachments WHERE ${AUTHORED_ATTACHMENT} OFFSET 0) mine
+       ORDER BY id LIMIT $3`,
       [target.communityId, target.memberId, target.batchSize]
     );
     if (!candidates.rows.length) return;
@@ -284,13 +292,17 @@ async function deleteExports(target: Target): Promise<void> {
   });
 }
 
+// As AUTHORED_ATTACHMENT: the agent ids as an array so the author indexes can serve both halves.
 const AUTHORED_ENTRY = `community_id=$1 AND erased_at IS NULL AND (author_member_id=$2 OR
-  author_agent_id IN (SELECT id FROM agents WHERE owner_member_id=$2 AND community_id=$1))`;
+  author_agent_id = ANY(ARRAY(SELECT id FROM agents WHERE owner_member_id=$2 AND community_id=$1)))`;
 
 async function tombstone(target: Target): Promise<void> {
   while (true) {
     const candidates = await target.pool.query<{ id: string }>(
-      `SELECT id FROM entries WHERE ${AUTHORED_ENTRY} ORDER BY id LIMIT $3`,
+      // Fenced as in eraseFiles. Measured with bound parameters: 302,323 to 5-493 buffers
+      // per batch at 300,000 messages, 1,008,083 to 5-460 at 1,000,000.
+      `SELECT id FROM (SELECT id FROM entries WHERE ${AUTHORED_ENTRY} OFFSET 0) mine
+       ORDER BY id LIMIT $3`,
       [target.communityId, target.memberId, target.batchSize]
     );
     if (!candidates.rows.length) return;
@@ -445,6 +457,15 @@ async function writeLine(options: ErasureOptions, line: string): Promise<void> {
   if (options.journalPath) await appendFile(options.journalPath, `${line}\n`, { mode: 0o600 });
 }
 
+// AUTHORED_ENTRY and AUTHORED_ATTACHMENT, each split at its OR. With nothing left, one EXISTS
+// over the OR became a sequential scan of every entry on the host (55,098 buffers, about
+// 150 ms); one EXISTS per author column is an index probe each (4-10 buffers).
+const MY_AGENTS = `ANY(ARRAY(SELECT id FROM agents WHERE owner_member_id=$2 AND community_id=$1))`;
+const LEFTOVER_ENTRY_BY_MEMBER = `community_id=$1 AND erased_at IS NULL AND author_member_id=$2`;
+const LEFTOVER_ENTRY_BY_AGENT = `community_id=$1 AND erased_at IS NULL AND author_agent_id = ${MY_AGENTS}`;
+const LEFTOVER_FILE_BY_MEMBER = `community_id=$1 AND uploader_member_id=$2`;
+const LEFTOVER_FILE_BY_AGENT = `community_id=$1 AND uploader_agent_id = ${MY_AGENTS}`;
+
 /**
  * The last transaction: if nothing of the person's is left, turn the member row and their
  * agents into husks, write the content-free audit row, and mark the membership done.
@@ -465,8 +486,10 @@ async function applyHusk(
     await bumpContentVersion(client, target.communityId);
     const leftover = await client.query(
       `SELECT 1 WHERE $3::boolean
-         OR EXISTS (SELECT 1 FROM entries WHERE ${AUTHORED_ENTRY})
-         OR EXISTS (SELECT 1 FROM attachments WHERE ${AUTHORED_ATTACHMENT})
+         OR EXISTS (SELECT 1 FROM entries WHERE ${LEFTOVER_ENTRY_BY_MEMBER})
+         OR EXISTS (SELECT 1 FROM entries WHERE ${LEFTOVER_ENTRY_BY_AGENT})
+         OR EXISTS (SELECT 1 FROM attachments WHERE ${LEFTOVER_FILE_BY_MEMBER})
+         OR EXISTS (SELECT 1 FROM attachments WHERE ${LEFTOVER_FILE_BY_AGENT})
          OR EXISTS (SELECT 1 FROM export_archives
            WHERE community_id=$1 AND state='ready' AND deleted_at IS NULL)
          OR EXISTS (SELECT 1 FROM connection_grants WHERE member_id=$2 AND community_id=$1)

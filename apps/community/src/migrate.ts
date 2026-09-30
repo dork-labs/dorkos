@@ -27,6 +27,7 @@ export const COMMUNITY_MIGRATIONS = [
   [21, '0021_notice_outbox.sql'],
   [22, '0022_owner_replacements.sql'],
   [23, '0023_import_parts.sql'],
+  [24, '0024_query_indexes.sql'],
 ] as const;
 
 /**
