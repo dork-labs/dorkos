@@ -68,12 +68,17 @@ describe('useToolShortcuts option cursor', () => {
     expect(hook.result.current.focusedOptionIndex).toBe(0);
   });
 
-  it('advances to the next question on Enter while hidden, without submitting an unseen choice', () => {
+  it('submits a mouse-picked answer on Enter even while the keyboard cursor is still hidden', () => {
+    // The card's own submit() reads selections, not focusedOptionIndex — a
+    // person who picked an answer with the mouse and never touched an arrow
+    // key must still be able to submit with Enter (single-question or
+    // last-tab ask). Regression test: fails if onSubmit ever re-gates on
+    // keyboardEngaged.
     const { hook, handle } = setup();
     press('Enter');
-    expect(handle.navigateQuestion).toHaveBeenCalledWith('next');
-    expect(handle.submit).not.toHaveBeenCalled();
-    expect(hook.result.current.focusedOptionIndex).toBe(0);
+    expect(handle.submit).toHaveBeenCalled();
+    expect(handle.navigateQuestion).not.toHaveBeenCalled();
+    expect(hook.result.current.focusedOptionIndex).toBe(-1);
   });
 
   it('submits on Enter once the cursor is revealed', () => {

@@ -111,17 +111,14 @@ export function useToolShortcuts(
   }, []);
 
   const onSubmit = useCallback(() => {
-    // Same reveal-first rule as the arrows: while hidden, the cursor's index
-    // is not a choice anyone has actually seen, so Enter must not submit it.
-    // Advancing to the next question is the safe interpretation of "Enter
-    // with nothing selected yet" (DOR-2617).
-    if (!keyboardEngaged) {
-      onNavigateQuestion('next');
-      return;
-    }
+    // Unlike the arrows, Enter never reads the hidden cursor: the card's own
+    // submit() advances tabs and submits selections, which are tracked
+    // separately from focusedOptionIndex (QuestionPrompt.tsx). Gating this on
+    // keyboardEngaged would swallow Enter on a single-question or last-tab
+    // ask, and in the free-text "Other" field.
     const handle = activeToolHandleRef.current;
     if (handle && 'submit' in handle) handle.submit();
-  }, [keyboardEngaged, onNavigateQuestion]);
+  }, []);
 
   useInteractiveShortcuts({
     activeInteraction: activeInteractionForShortcuts,
