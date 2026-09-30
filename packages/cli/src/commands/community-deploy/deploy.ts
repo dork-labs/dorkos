@@ -78,15 +78,24 @@ export interface CommunityDeployPhaseDependencies {
   readRuntime(): Promise<FlyRuntimeInventory>;
   /** Deploy the immutable image with one Machine and a generated config. */
   deploy(imageReference: string): Promise<void>;
+  /**
+   * The digest Fly will report for the attested release: its linux/amd64 manifest, not the index
+   * that is deployed (DOR-2586).
+   */
+  resolvePlatformDigest(): Promise<string>;
   /** Verify the first post-deploy inventory against its pre-deploy releases. */
   verifyNewRuntime(
     inventory: FlyRuntimeInventory,
-    previous: FlyRuntimeInventory['releases']
+    previous: FlyRuntimeInventory['releases'],
+    platformDigest: string
   ): FlyRuntimeInventory;
   /** Whether an unproven runtime is a cut-off deploy of the pinned image (see fly-mutate). */
-  isInterruptedDeploy(inventory: FlyRuntimeInventory): boolean;
+  isInterruptedDeploy(inventory: FlyRuntimeInventory, platformDigest: string): boolean;
   /** Verify an already completed deployment during resume. */
-  verifyExistingRuntime(inventory: FlyRuntimeInventory): FlyRuntimeInventory;
+  verifyExistingRuntime(
+    inventory: FlyRuntimeInventory,
+    platformDigest: string
+  ): FlyRuntimeInventory;
   /** Verify the public health endpoint independently of Fly checks. */
   verifyHealth(origin: string): Promise<void>;
   /** Clock used only for journal timestamps. */
@@ -247,8 +256,19 @@ export async function executeCommunityDeployPhase(
   }
 
   if (!current.completedSteps.includes('deployed')) {
+    // Settled and saved before anything is deployed, so a resume checks the same digest and a
+    // registry that cannot prove the mapping stops the launch before Fly runs anything.
+    let platformDigest = current.imagePlatformDigest;
+    if (!platformDigest) {
+      platformDigest = await dependencies.resolvePlatformDigest();
+      current = await persist(dependencies, current, {
+        imagePlatformDigest: platformDigest,
+        lastSafeError: null,
+      });
+    }
     const existingSecrets = await dependencies.readSecrets();
     const deployedRows = runtimeSecretRows(existingSecrets);
+    const settled = platformDigest;
     /** Deploy the pinned image and prove a new, complete release runs it with these secrets. */
     const deployAndVerify = async () => {
       const previous = (await dependencies.readRuntime()).releases;
@@ -257,7 +277,7 @@ export async function executeCommunityDeployPhase(
       if (!sameDigests(afterSecrets, expectedDigests)) {
         throw new ProviderMutationError('INVALID_RESPONSE');
       }
-      return dependencies.verifyNewRuntime(await dependencies.readRuntime(), previous);
+      return dependencies.verifyNewRuntime(await dependencies.readRuntime(), previous, settled);
     };
     let inventory: FlyRuntimeInventory;
     if (
@@ -270,7 +290,7 @@ export async function executeCommunityDeployPhase(
       // A failed read stops here: nothing is deployed on a runtime setup could not see.
       const runtime = await dependencies.readRuntime();
       try {
-        inventory = dependencies.verifyExistingRuntime(runtime);
+        inventory = dependencies.verifyExistingRuntime(runtime, platformDigest);
       } catch (error) {
         if (!(error instanceof ProviderMutationError) || error.code !== 'INVALID_RESPONSE') {
           throw error;
@@ -279,7 +299,7 @@ export async function executeCommunityDeployPhase(
         // release Fly marked `interrupted` (live gate, DOR-2169), which can never pass this proof.
         // Only that is deployed again, and the new release is proved in full like a first deploy.
         // Anything else is not setup's to overwrite, so it stops and says what to check.
-        if (!dependencies.isInterruptedDeploy(runtime)) {
+        if (!dependencies.isInterruptedDeploy(runtime, platformDigest)) {
           throw new UnprovenFlyRuntimeError(plan.fly.appName);
         }
         inventory = await deployAndVerify();

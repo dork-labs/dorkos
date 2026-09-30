@@ -21,7 +21,9 @@ vi.mock('../fly-mutate.js', async (importOriginal) => ({
 
 const { createDefaultCommunityOwnerDependencies } = await import('../runtime/default-owner.js');
 
+// The attested index is what gets deployed; Fly reports its linux/amd64 manifest (DOR-2586).
 const DIGEST = `sha256:${'a'.repeat(64)}`;
+const PLATFORM = `sha256:${'6'.repeat(64)}`;
 const REPOSITORY = 'ghcr.io/dork-labs/dorkos-community';
 const plan = createLaunchPlan({
   dorkosVersion: '0.92.0',
@@ -43,7 +45,7 @@ const plan = createLaunchPlan({
 });
 
 function runtime(update: { digest?: string; status?: string; version?: number } = {}) {
-  const digest = update.digest ?? DIGEST;
+  const digest = update.digest ?? PLATFORM;
   return {
     machines: [
       {
@@ -80,6 +82,7 @@ const owner = () =>
     env: {},
     persist: vi.fn(),
     now: () => '2026-09-30T00:00:00.000Z',
+    platformDigest: async () => PLATFORM,
   });
 
 beforeEach(() => vi.clearAllMocks());

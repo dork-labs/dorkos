@@ -15,7 +15,32 @@ const cliPackage = resolve(import.meta.dirname, '..');
 const temporary = await mkdtemp(join(tmpdir(), 'dorkos-community-package-'));
 const version = JSON.parse(await readFile(join(cliPackage, 'package.json'), 'utf8'))
   .version as string;
-const imageDigest = `sha256:${'a'.repeat(64)}`;
+// A two-platform OCI index like the one the release workflow pushes. The release manifest pins
+// the index by its own hash (as a real one does), and carries no per-platform digests (as 0.92.0's
+// does not), so the launcher must read the index from the registry, which the bootstrap below
+// serves offline, and prove the deploy against the linux/amd64 manifest Fly reports (DOR-2586).
+const platformDigest = `sha256:${'6'.repeat(64)}`;
+const imageIndex = Buffer.from(
+  JSON.stringify({
+    schemaVersion: 2,
+    mediaType: 'application/vnd.oci.image.index.v1+json',
+    manifests: [
+      {
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        digest: platformDigest,
+        size: 1813,
+        platform: { architecture: 'amd64', os: 'linux' },
+      },
+      {
+        mediaType: 'application/vnd.oci.image.manifest.v1+json',
+        digest: `sha256:${'7'.repeat(64)}`,
+        size: 1813,
+        platform: { architecture: 'arm64', os: 'linux' },
+      },
+    ],
+  })
+);
+const imageDigest = `sha256:${createHash('sha256').update(imageIndex).digest('hex')}`;
 const appName = `dorkos-package-${randomUUID().slice(0, 8)}`;
 const dorkHome = join(temporary, 'dork-home');
 const fakeHome = join(temporary, 'home');
@@ -72,6 +97,7 @@ const initialState = {
   stagedValues: {},
   deployed: false,
   imageDigest: null,
+  registryReads: 0,
   config: null,
 };
 
@@ -108,8 +134,8 @@ else if(args[0]==='secrets'&&args[1]==='import') { const input=fs.readFileSync(0
 else if(args[0]==='secrets'&&args[1]==='deploy'&&args.some((arg)=>!['secrets','deploy','--app',at('--app'),'--detach'].includes(arg))) { process.stderr.write('Error: unknown flag'); process.exit(1); }
 else if(args[0]==='secrets'&&args[1]==='deploy') { for(const item of Object.values(state.secrets)) item.status='Deployed'; write(state); value={}; }
 else if(args[0]==='deploy') { state.deployed=true; state.imageDigest=at('--image').split('@')[1]; state.config=fs.readFileSync(at('--config'),'utf8'); for(const item of Object.values(state.secrets)) item.status='Deployed'; write(state); value={}; }
-else if(args[0]==='machine') value=state.deployed?[{id:'machine-1',name:'machine-1',state:'started',region:'ord',image_ref:{digest:state.imageDigest,registry:'ghcr.io',repository:'dork-labs/dorkos-community'},checks:[{name:'http',status:'passing'}]}]:[];
-else if(args[0]==='releases') value=state.deployed?[{ID:'release-1',ImageRef:'ghcr.io/dork-labs/dorkos-community@'+state.imageDigest,Status:'complete',Stable:false,Version:1}]:[];
+else if(args[0]==='machine') value=state.deployed?[{id:'machine-1',name:'machine-1',state:'started',region:'ord',image_ref:{digest:state.imageDigest===${JSON.stringify(imageDigest)}?${JSON.stringify(platformDigest)}:state.imageDigest,registry:'ghcr.io',repository:'dork-labs/dorkos-community'},checks:[{name:'http',status:'passing'}]}]:[];
+else if(args[0]==='releases') value=state.deployed?[{ID:'release-1',ImageRef:'ghcr.io/dork-labs/dorkos-community@'+(state.imageDigest===${JSON.stringify(imageDigest)}?${JSON.stringify(platformDigest)}:state.imageDigest),Status:'complete',Stable:false,Version:1}]:[];
 else if(args[0]==='ips') value=state.deployed?[{ID:'',Address:'1.2.3.4',Type:'shared_v4',Region:'',CreatedAt:'2026-09-21T00:00:00Z',ServiceName:'',Network:null}]:[];
 else process.exit(3);
 process.stdout.write(JSON.stringify(value));
@@ -151,6 +177,10 @@ globalThis.fetch=async (input,init={})=>{
   const url=String(input);
   const state=JSON.parse(fs.readFileSync(statePath,'utf8'));
   if(url.endsWith('/health')) return json({status:'ok'});
+  // The registry, offline: an anonymous pull token, then the index by its attested digest.
+  if(url.startsWith('https://ghcr.io/token?')) return json({token:'anonymous-pull'});
+  if(url==='https://ghcr.io/v2/dork-labs/dorkos-community/manifests/${imageDigest}') { state.registryReads++; fs.writeFileSync(statePath,JSON.stringify(state)); return new Response(Buffer.from(${JSON.stringify(imageIndex.toString('base64'))},'base64'),{status:200,headers:{'content-type':'application/vnd.oci.image.index.v1+json'}}); }
+  if(url.startsWith('https://ghcr.io/')) return new Response('',{status:404});
   if(url.endsWith('/api/v1/community')) return json({},404);
   const body=JSON.parse(String(init.body??'{}'));
   const query=String(body.query??'');
@@ -308,6 +338,7 @@ try {
     tigrisCreates: number;
     config: string | null;
     imageDigest: string | null;
+    registryReads: number;
     stagedValues: Record<string, string>;
   };
   if (state.flyCreates !== 1 || state.neonCreates !== 1 || state.tigrisCreates !== 1) {
@@ -321,6 +352,10 @@ try {
   }
   if (state.imageDigest !== imageDigest)
     throw new Error('Packaged deployment did not use the exact digest');
+  // Read once, before the deploy; the resume and the owner step reuse the journal's record.
+  if (state.registryReads !== 1) {
+    throw new Error(`Packaged launch read the image index ${state.registryReads} times, not once`);
+  }
   if (
     state.stagedValues.AWS_ACCESS_KEY_ID !== TIGRIS_ENVIRONMENT.AWS_ACCESS_KEY_ID ||
     state.stagedValues.AWS_SECRET_ACCESS_KEY !== TIGRIS_ENVIRONMENT.AWS_SECRET_ACCESS_KEY ||
@@ -354,12 +389,15 @@ try {
   const journal = JSON.parse(await readFile(join(journalDirectory, journalName), 'utf8')) as {
     state: string;
     resources: { neonDatabaseId?: unknown };
+    imagePlatformDigest?: string;
   };
   if (journal.state !== 'owner_pending')
     throw new Error('Packaged resume did not retain owner-pending state');
   // Neon reports database ids as integers; the journal must keep the id the launcher normalized.
   if (journal.resources.neonDatabaseId !== '4821907')
     throw new Error('Packaged journal did not keep the Neon database id as a string');
+  if (journal.imagePlatformDigest !== platformDigest)
+    throw new Error('Packaged journal did not record the platform digest Fly reports');
   process.stdout.write(
     'Packaged Community launcher proof passed: dry-run, exact release, provisioning, resume, pinned config, owner-pending.\n'
   );

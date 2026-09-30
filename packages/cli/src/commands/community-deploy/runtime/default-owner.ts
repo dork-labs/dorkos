@@ -218,6 +218,11 @@ export function createDefaultCommunityOwnerDependencies(input: {
   now(): string;
   signal?: AbortSignal;
   platform?: NodeJS.Platform;
+  /**
+   * The digest Fly reports for the running release: the journal's recorded linux/amd64 digest, or
+   * a fresh resolution for a journal that predates it (DOR-2586).
+   */
+  platformDigest(): Promise<string>;
 }): CommunityOwnerDependencies {
   return {
     persist: input.persist,
@@ -233,7 +238,8 @@ export function createDefaultCommunityOwnerDependencies(input: {
     readSecrets: () => readFlySecretInventory(input.options.fly, input.plan.fly.appName),
     verifyRuntimeAndHealth: async () => {
       const appName = input.plan.fly.appName;
-      const digest = input.plan.imageDigest;
+      // Fly reports the linux/amd64 manifest of the attested index (DOR-2586); the index is deployed.
+      const digest = await input.platformDigest();
       const runtime = await readFlyRuntimeInventory(input.options.fly, appName);
       try {
         verifyExistingFlyDeployment(runtime, COMMUNITY_IMAGE_REPOSITORY, digest);
