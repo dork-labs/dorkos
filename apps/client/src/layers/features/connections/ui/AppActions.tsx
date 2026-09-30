@@ -5,7 +5,7 @@ import type {
   ConnectorAppActions,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorReconciliationCandidate } from '@dorkos/shared/connector-schemas';
-import { useConnectorAppActions } from '@/layers/entities/connectors';
+import { cloudFailure, useConnectorAppActions } from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
 import {
   Button,
@@ -97,7 +97,7 @@ export function AppActions({ toolkit, appName, providerInstanceId, grant }: AppA
   } else if (actions.isError) {
     body = (
       <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-sm">
-        Couldn’t load what {appName} offers agents.
+        {cloudFailure(actions.error)?.description ?? `Couldn’t load what ${appName} offers agents.`}
         <Button
           variant="link"
           size="xs"
