@@ -247,8 +247,9 @@ const takedownEvidence = setInterval(() => {
     });
 }, 15_000);
 takedownEvidence.unref();
-// Off unless the host configured SMTP. No feature queues mail yet, so there is nothing to
-// compose; each one that does adds its messages here.
+// Off unless the host configured SMTP. Each feature that queues mail adds its composers here;
+// a queued kind with no composer fails as NOTICE_KIND_UNSUPPORTED. Owner replacements queue
+// their notices from the host routes; their composers arrive with the replacement timeline.
 const mail = startMailDelivery({ config, pool, composers: {} });
 const onSignal = createSignalHandler(
   createStop({

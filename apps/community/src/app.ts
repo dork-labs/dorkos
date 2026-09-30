@@ -48,6 +48,7 @@ import { callerAddress } from './caller-address.js';
 import { registerOwnerClaimRoutes } from './routes/host/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host/host-keys.js';
 import { registerHostTakedownRoutes } from './routes/host/host-takedowns.js';
+import { registerHostOwnerReplacementRoutes } from './routes/host/host-owner-replacements.js';
 import { registerTakedownNoticeRoutes } from './routes/community/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host/host-links.js';
 import {
@@ -415,6 +416,7 @@ export function createCommunityApp({
       afterReverseLock: hooks?.afterTakedownReverseLock,
     },
   });
+  registerHostOwnerReplacementRoutes(hostApi, { pool, config, authority, now, confirmPassword });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
   app.route('/api/v1', hostApi);
