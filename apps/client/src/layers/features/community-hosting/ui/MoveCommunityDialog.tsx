@@ -276,9 +276,9 @@ export function moveProgressStep(
         };
       if (step.why === 'restarted')
         return {
-          title: 'This move has to start again',
+          title: 'DorkOS restarted',
           description:
-            'DorkOS restarted, so this move has to start again. For safety, the permission to upload is only kept while DorkOS is running. Cancel the move, then start again with the same export. If you started it on another computer, finish it there instead.',
+            'DorkOS restarted, so this move has to start again: for safety, the permission to upload is kept only while DorkOS is running. Cancel the move, then start again with the same export. If you started it on another computer, finish it there instead.',
           body: notice,
           actions: cancelMove,
         };

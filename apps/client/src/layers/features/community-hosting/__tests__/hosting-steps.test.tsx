@@ -340,9 +340,7 @@ describe('Move a community here', () => {
     const restarted = moveStepOf(move({ state: 'awaiting_upload', upload: null }));
     expect(restarted).toMatchObject({ kind: 'upload-failed', why: 'restarted' });
     const first = show(moveProgressStep(restarted as never, progressHandlers));
-    expect(
-      screen.getByRole('heading', { name: 'This move has to start again' })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'DorkOS restarted' })).toBeInTheDocument();
     expect(
       screen.getByText(/DorkOS restarted, so this move has to start again/)
     ).toBeInTheDocument();

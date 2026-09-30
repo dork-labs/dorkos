@@ -11,7 +11,7 @@ import path from 'node:path';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { partRanges } from '../community-move-parts.js';
+import { fitsInParts, MAX_WAIT_SECONDS } from '../community-move-parts.js';
 import { CommunityMoveUploads, type StagedArchive } from '../community-move-upload.js';
 
 const GIB = 1024 ** 3;
@@ -46,6 +46,8 @@ interface Fake {
   expectedSha256: string;
   /** Authorization headers that were not the token. */
   badAuth: number;
+  /** The Retry-After a busy part answer names. */
+  retryAfter: string;
 }
 
 async function fakeServer(): Promise<Fake> {
@@ -58,6 +60,7 @@ async function fakeServer(): Promise<Fake> {
     completeStatus: [],
     expectedSha256: '',
     badAuth: 0,
+    retryAfter: '5',
   };
   const server = createServer((req: IncomingMessage, res) => {
     const url = new URL(req.url ?? '/', 'http://fake');
@@ -81,7 +84,7 @@ async function fakeServer(): Promise<Fake> {
       const busy = fake.partStatus.shift();
       if (busy) {
         req.resume();
-        return answer(busy, { code: 'RATE_LIMITED' }, { 'retry-after': '5' });
+        return answer(busy, { code: 'RATE_LIMITED' }, { 'retry-after': fake.retryAfter });
       }
       const hash = createHash('sha256');
       let size = 0;
@@ -130,6 +133,11 @@ async function fakeServer(): Promise<Fake> {
       });
       return;
     }
+    if (req.method === 'PUT' && url.pathname === '/imp') {
+      req.resume();
+      req.on('end', () => answer(200, {}));
+      return;
+    }
     req.resume();
     answer(404, {});
   });
@@ -174,14 +182,14 @@ function recordingWaits() {
   return { uploads, waits };
 }
 
-describe('partRanges', () => {
-  it('cuts a file into numbered parts, the last one shorter', () => {
-    expect(partRanges(20, 8)).toEqual([
-      { partNumber: 1, start: 0, end: 7 },
-      { partNumber: 2, start: 8, end: 15 },
-      { partNumber: 3, start: 16, end: 19 },
-    ]);
-    expect(partRanges(16, 8)).toHaveLength(2);
+describe('fitsInParts', () => {
+  // Purpose: a file goes up in parts only within the host's parted limit and in no more parts
+  // than the contract allows. Fails if either bound is ignored.
+  it('bounds a parted upload by the host limit and the part count', () => {
+    expect(fitsInParts(20, { partBytes: 8, maxBytes: 20 })).toBe(true);
+    expect(fitsInParts(21, { partBytes: 8, maxBytes: 20 })).toBe(false);
+    expect(fitsInParts(10_000, { partBytes: 1, maxBytes: GIB })).toBe(true);
+    expect(fitsInParts(10_001, { partBytes: 1, maxBytes: GIB })).toBe(false);
   });
 });
 
@@ -199,8 +207,8 @@ describe('an upload in parts', () => {
     await uploads.begin('move_big', file, target(fake, 256 * MIB));
     const broken = uploads.progress('move_big')!;
     expect(broken).toMatchObject({ state: 'failed', failure: 'interrupted', totalBytes: 3 * GIB });
-    expect(broken.sentBytes).toBeGreaterThanOrEqual(4 * 256 * MIB);
-    expect(broken.sentBytes).toBeLessThan(5 * 256 * MIB);
+    // Only the parts the server confirmed count as sent, never the part that broke.
+    expect(broken.sentBytes).toBe(4 * 256 * MIB);
     expect([...fake.held.keys()]).toEqual([1, 2, 3, 4]);
     expect(existsSync(file.filePath)).toBe(true);
 
@@ -278,6 +286,82 @@ describe('an upload in parts', () => {
     fake.expectedSha256 = other.sha256;
     await uploads.begin('move_late', other, target(fake, 8));
     expect(uploads.progress('move_late')).toMatchObject({ state: 'failed', failure: 'expired' });
+  });
+
+  // Purpose (review): pressing "send again" twice (a double click, a second tab) must not start
+  // two uploads of one copy: the second would find the copy gone when the first finishes and
+  // report a failure for a move that succeeded. Fails if the second press is accepted.
+  it('runs one attempt at a time, however often send again is pressed', async () => {
+    const fake = await fakeServer();
+    const file = await staged(Buffer.from('0123456789abcdefghij'));
+    fake.expectedSha256 = file.sha256;
+    fake.partStatus = [500];
+    const { uploads } = recordingWaits();
+    await uploads.begin('move_twice', file, target(fake, 8));
+    expect(uploads.progress('move_twice')).toMatchObject({ failure: 'interrupted', sentBytes: 0 });
+    expect(uploads.retry('move_twice')).toBe(true);
+    expect(uploads.progress('move_twice')).toMatchObject({ state: 'sending' });
+    expect(uploads.retry('move_twice')).toBe(false);
+    await vi.waitFor(() => expect(uploads.progress('move_twice')?.state).toBe('sent'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(uploads.progress('move_twice')).toMatchObject({ state: 'sent', failure: null });
+    expect(fake.log.filter((line) => line === 'POST /imp/complete')).toHaveLength(1);
+  });
+
+  // Purpose (review): a conflict that does not clear (the import takes no file any more) ends
+  // the attempt after a few short waits, looking again at what the server holds each time,
+  // instead of retrying for minutes; a Retry-After of weeks waits at most a minute. Fails if a
+  // lasting conflict is retried on and on, or a wait is taken as asked.
+  it('stops on a lasting conflict, and waits a minute at most', async () => {
+    const fake = await fakeServer();
+    const file = await staged(Buffer.from('0123456789abcdefghij'));
+    fake.expectedSha256 = file.sha256;
+    fake.partStatus = [409, 409, 409, 409, 409];
+    fake.retryAfter = String(40 * 86_400);
+    const { uploads, waits } = recordingWaits();
+    await uploads.begin('move_stuck', file, target(fake, 8));
+    expect(uploads.progress('move_stuck')).toMatchObject({
+      state: 'failed',
+      failure: 'interrupted',
+    });
+    expect(waits).toEqual([MAX_WAIT_SECONDS, MAX_WAIT_SECONDS, MAX_WAIT_SECONDS]);
+    expect(fake.log.filter((line) => line === 'GET /imp/parts')).toHaveLength(4);
+    expect(fake.log.filter((line) => line.startsWith('PUT'))).toHaveLength(4);
+  });
+
+  // Purpose (review): a part size that would cut the file into more parts than the contract
+  // allows, or a file past the host's parted limit, goes as one upload when it fits one. Fails
+  // if such a file is sent in parts.
+  it('sends one upload when the file does not fit the parts offered', async () => {
+    const fake = await fakeServer();
+    const file = await staged(Buffer.from('x'.repeat(10_001)));
+    fake.expectedSha256 = file.sha256;
+    const { uploads } = recordingWaits();
+    await uploads.begin('move_single', file, { ...target(fake, 1), maxBytes: GIB });
+    expect(fake.log).toEqual(['PUT /imp']);
+  });
+
+  // Purpose (review): when the upload window closes, the outcome says so (`expired`), so the
+  // app tells the person the time ran out rather than that DorkOS restarted. Fails if the
+  // closing window drops the record.
+  it('keeps an expired record when the window closes mid-upload', async () => {
+    const fake = await fakeServer();
+    const file = await staged(Buffer.from('0123456789abcdefghij'));
+    fake.expectedSha256 = file.sha256;
+    fake.completeStatus = [202];
+    // A `complete` still checking when the window closes: the wait ends only when stopped.
+    const uploads = new CommunityMoveUploads({
+      wait: (_seconds, signal) =>
+        new Promise((resolve) => signal.addEventListener('abort', () => resolve(), { once: true })),
+    });
+    const soon = { ...target(fake, 8), expiresAt: new Date(Date.now() + 500).toISOString() };
+    await uploads.begin('move_late_window', file, soon);
+    expect(uploads.progress('move_late_window')).toMatchObject({
+      state: 'failed',
+      failure: 'expired',
+    });
+    expect(uploads.retry('move_late_window')).toBe(false);
+    await vi.waitFor(() => expect(existsSync(file.filePath)).toBe(false));
   });
 
   // Purpose: cancelling a move stops the upload in parts at once. Fails if it keeps sending.

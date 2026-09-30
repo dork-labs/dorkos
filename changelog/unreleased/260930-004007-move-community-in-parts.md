@@ -2,6 +2,7 @@
 covers:
   - 'feat(cloud): send a community move in parts when the server offers them (DOR-2297)'
   - 'fix(cloud): say plainly that a move must start again after DorkOS restarted (DOR-2297)'
+  - 'fix(cloud): send a move one attempt at a time, and bound its waits (DOR-2297)'
 ---
 
 ### Added

@@ -21,7 +21,9 @@ import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import {
   COMMUNITY_ARCHIVE_PART_DIGEST_HEADER,
+  COMMUNITY_MOVE_MAX_PARTS,
   CommunityMovePartListSchema,
+  type CommunityMovePart,
   type CommunityMoveUpload,
 } from '@dork-labs/cloud-api';
 import type { CloudCommunityMoveUpload } from '@dorkos/shared/cloud-schemas';
@@ -64,20 +66,32 @@ export const REAL_WAIT: PartedOptions['wait'] = (seconds, signal) =>
     );
   });
 
-/** The most times one part, or `complete`, waits on a busy server before the attempt stops. */
-const MAX_BUSY_WAITS = 120;
+/** The longest one wait lasts, whatever `Retry-After` asks: never a timer that overflows. */
+export const MAX_WAIT_SECONDS = 60;
+/** The most one attempt waits in all before it stops and may be sent again. */
+export const MAX_TOTAL_WAIT_SECONDS = 30 * 60;
+/** How many conflicts on one part are waited out before the attempt stops. */
+const MAX_CONFLICTS = 3;
 /** How long to wait when a busy answer names no time. */
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
+/** The most of an answer kept: a part list of the most parts the contract allows fits. */
+const MAX_ANSWER_BYTES = 4 * 1024 * 1024;
 
-/** The parts a file of `bytes` cuts into: numbered from 1, each `[start, end]` inclusive. */
-export function partRanges(
+/** Why an attempt stopped. */
+type Failure = NonNullable<CloudCommunityMoveUpload['failure']>;
+
+/**
+ * Whether a file of `bytes` can go up in the parts a Community server offers: within its
+ * parted limit, and in no more parts than the contract allows at the offered part size.
+ *
+ * @param bytes - The file's size.
+ * @param parts - What the server offers.
+ */
+export function fitsInParts(
   bytes: number,
-  partBytes: number
-): { partNumber: number; start: number; end: number }[] {
-  const ranges = [];
-  for (let start = 0, partNumber = 1; start < bytes; start += partBytes, partNumber++)
-    ranges.push({ partNumber, start, end: Math.min(bytes, start + partBytes) - 1 });
-  return ranges;
+  parts: NonNullable<CommunityMoveUpload['parts']>
+): boolean {
+  return bytes <= parts.maxBytes && Math.ceil(bytes / parts.partBytes) <= COMMUNITY_MOVE_MAX_PARTS;
 }
 
 /** A request's answer: status, `Retry-After` in seconds, and its (small) body. */
@@ -126,9 +140,13 @@ export async function sendParts(
     stop.abort();
     current?.();
   };
-  const fail = (failure: NonNullable<CloudCommunityMoveUpload['failure']>) => {
-    job.progress = { ...job.progress, state: 'failed', failure };
+  /** Bytes of parts the server has confirmed; a failure reports only these as sent. */
+  let confirmed = 0;
+  const fail = (failure: Failure) => {
+    job.progress = { ...job.progress, sentBytes: confirmed, state: 'failed', failure };
   };
+  // Sending from the first moment, so a second "send again" sees this one running.
+  job.progress = { state: 'sending', sentBytes: 0, totalBytes: total, failure: null };
 
   /** One request, with the token as bearer; the body is a buffer or a byte range of the file. */
   const call = (
@@ -159,9 +177,9 @@ export async function sendParts(
           const chunks: Buffer[] = [];
           let size = 0;
           res.on('data', (chunk: Buffer) => {
-            // Answers here are small JSON; never hold more than a little of one.
+            // Answers here are JSON; a part list of the most parts fits well within the cap.
             size += chunk.length;
-            if (size <= 64 * 1024) chunks.push(chunk);
+            if (size <= MAX_ANSWER_BYTES) chunks.push(chunk);
           });
           res.on('end', () => {
             if (settled) return;
@@ -198,73 +216,99 @@ export async function sendParts(
     });
 
   try {
-    // What the server already holds, so only the missing parts go.
-    const listed = await call('GET', `${base}/parts`, {}, null);
-    if (listed.status === 401) return fail('expired');
-    if (listed.status !== 200) return fail(listed.status >= 500 ? 'interrupted' : 'rejected');
-    const parsed = CommunityMovePartListSchema.safeParse(JSON.parse(listed.body || 'null'));
-    if (!parsed.success) return fail('interrupted');
-    const held = new Map(parsed.data.parts.map((part) => [part.partNumber, part]));
+    // A file that does not fit in parts is sent as one upload when it fits one (the caller
+    // decides, with `fitsInParts`); one that reaches here anyway is refused.
+    const partBytes = target.parts.partBytes;
+    const partCount = Math.ceil(total / partBytes);
+    if (!fitsInParts(total, target.parts)) return fail('rejected');
 
-    const ranges = partRanges(total, target.parts.partBytes);
+    /** The parts the server holds now, or a failure that ends this attempt. */
+    const heldParts = async (): Promise<Map<number, CommunityMovePart> | Failure> => {
+      const listed = await call('GET', `${base}/parts`, {}, null);
+      if (listed.status === 401) return 'expired';
+      if (listed.status !== 200) return listed.status >= 500 ? 'interrupted' : 'rejected';
+      const parsed = CommunityMovePartListSchema.safeParse(JSON.parse(listed.body || 'null'));
+      if (!parsed.success) return 'interrupted';
+      return new Map(parsed.data.parts.map((part) => [part.partNumber, part]));
+    };
+    let held = await heldParts();
+    if (typeof held === 'string') return fail(held);
+
     let sent = 0;
-    job.progress = { state: 'sending', sentBytes: 0, totalBytes: total, failure: null };
-    for (const range of ranges) {
-      const size = range.end - range.start + 1;
-      let digest = job.partDigests.get(range.partNumber);
+    const budget = { waitedSeconds: 0 };
+    /** Wait as the server asked, within limits; false once the attempt has waited long enough. */
+    const waitAsAsked = async (seconds: number): Promise<boolean> => {
+      const capped = Math.min(Math.max(seconds, 0), MAX_WAIT_SECONDS);
+      if (budget.waitedSeconds + capped > MAX_TOTAL_WAIT_SECONDS) return false;
+      budget.waitedSeconds += capped;
+      await options.wait(capped, stop.signal);
+      if (stop.signal.aborted) throw new Stopped();
+      return true;
+    };
+
+    // One part at a time, cut as it goes rather than all up front.
+    for (let partNumber = 1; partNumber <= partCount; partNumber++) {
+      const start = (partNumber - 1) * partBytes;
+      const end = Math.min(total, start + partBytes) - 1;
+      const size = end - start + 1;
+      let digest = job.partDigests.get(partNumber);
       if (!digest) {
-        digest = await digestRange(job.staged.filePath, range.start, range.end);
-        job.partDigests.set(range.partNumber, digest);
+        digest = await digestRange(job.staged.filePath, start, end);
+        job.partDigests.set(partNumber, digest);
       }
-      const there = held.get(range.partNumber);
-      if (there && there.byteSize === size && there.sha256 === digest) {
-        sent += size;
-        job.progress = { ...job.progress, sentBytes: sent };
-        continue;
-      }
-      for (let tries = 0; ; tries++) {
+      let conflicts = 0;
+      for (;;) {
+        const there = held.get(partNumber);
+        if (there && there.byteSize === size && there.sha256 === digest) break;
         let inFlight = 0;
         const answer = await call(
           'PUT',
-          `${base}/parts/${range.partNumber}`,
+          `${base}/parts/${partNumber}`,
           {
             'content-type': 'application/octet-stream',
             [COMMUNITY_ARCHIVE_PART_DIGEST_HEADER]: digest,
           },
-          { start: range.start, end: range.end },
+          { start, end },
           (count) => {
             inFlight += count;
             job.progress = { ...job.progress, sentBytes: sent + Math.min(inFlight, size) };
           }
         );
-        if (answer.status >= 200 && answer.status < 300) break;
+        job.progress = { ...job.progress, sentBytes: sent };
+        if (answer.status >= 200 && answer.status < 300) {
+          held.set(partNumber, { partNumber, byteSize: size, sha256: digest });
+          break;
+        }
         if (answer.status === 401) return fail('expired');
-        // Busy: too many parts arriving at once, or this part is still being taken in.
-        if ((answer.status === 429 || answer.status === 409) && tries < MAX_BUSY_WAITS) {
-          job.progress = { ...job.progress, sentBytes: sent };
-          await options.wait(answer.retryAfter, stop.signal);
+        // Too many parts arriving at once: wait as asked and send it again.
+        if (answer.status === 429) {
+          if (await waitAsAsked(answer.retryAfter)) continue;
+          return fail('interrupted');
+        }
+        // A conflict is either passing (this part, or the parts being put together, is still
+        // in hand) or for good (the import takes no file any more), and both carry the same
+        // code. Wait a little, then look at what the server holds before sending again; a
+        // conflict that does not clear ends this attempt rather than retrying for minutes.
+        if (answer.status === 409 && conflicts++ < MAX_CONFLICTS) {
+          if (!(await waitAsAsked(answer.retryAfter))) return fail('interrupted');
+          const again = await heldParts();
+          if (typeof again === 'string') return fail(again);
+          held = again;
           continue;
         }
-        return fail(
-          answer.status >= 500 || answer.status === 429 || answer.status === 409
-            ? 'interrupted'
-            : 'rejected'
-        );
+        return fail(answer.status >= 500 || answer.status === 409 ? 'interrupted' : 'rejected');
       }
       sent += size;
+      confirmed = sent;
       job.progress = { ...job.progress, sentBytes: sent };
     }
 
     // Put the parts together. A large file takes the server a while to check; it
     // says so with 202 and a time to ask again.
     const body = Buffer.from(
-      JSON.stringify({
-        parts: ranges.length,
-        archiveBytes: total,
-        archiveSha256: job.staged.sha256,
-      })
+      JSON.stringify({ parts: partCount, archiveBytes: total, archiveSha256: job.staged.sha256 })
     );
-    for (let tries = 0; ; tries++) {
+    for (;;) {
       const answer = await call(
         'POST',
         `${base}/complete`,
@@ -276,17 +320,14 @@ export async function sendParts(
         return;
       }
       if (answer.status === 401) return fail('expired');
-      if ((answer.status === 202 || answer.status === 409) && tries < MAX_BUSY_WAITS) {
-        await options.wait(answer.retryAfter, stop.signal);
-        continue;
+      if (answer.status === 202) {
+        if (await waitAsAsked(answer.retryAfter)) continue;
+        return fail('interrupted');
       }
-      // 400: the parts did not make the declared file. The server discarded
-      // them; these bytes would be refused again.
-      return fail(
-        answer.status >= 500 || answer.status === 202 || answer.status === 409
-          ? 'interrupted'
-          : 'rejected'
-      );
+      // 400: the parts did not make the declared file. These bytes would be
+      // refused again. 409: someone else is uploading, or the import takes no
+      // file any more; this attempt ends, and a broken one may be sent again.
+      return fail(answer.status >= 500 || answer.status === 409 ? 'interrupted' : 'rejected');
     }
   } catch (error) {
     if (!(error instanceof Stopped))

@@ -39,7 +39,7 @@ import { pipeline } from 'node:stream/promises';
 import { COMMUNITY_ARCHIVE_DIGEST_HEADER, type CommunityMoveUpload } from '@dork-labs/cloud-api';
 import type { CloudCommunityMoveUpload } from '@dorkos/shared/cloud-schemas';
 import { logger, logError } from '../../../lib/logger.js';
-import { REAL_WAIT, sendParts, type PartedOptions } from './community-move-parts.js';
+import { fitsInParts, REAL_WAIT, sendParts, type PartedOptions } from './community-move-parts.js';
 
 /**
  * The largest export this machine will stage.
@@ -174,6 +174,10 @@ interface UploadJob {
   expiry: ReturnType<typeof setTimeout> | undefined;
   /** Each part's SHA-256 once measured, for an upload in parts. */
   partDigests: Map<number, string>;
+  /** Whether an attempt is running now; there is never more than one. */
+  running: boolean;
+  /** Set once the upload window has closed; the outcome then stays `expired`. */
+  expired: boolean;
 }
 
 /**
@@ -308,6 +312,8 @@ export class CommunityMoveUploads {
       abort: null,
       expiry: undefined,
       partDigests: new Map(),
+      running: false,
+      expired: false,
     };
     // The token is worthless once the window closes, and so is the copy. A
     // window longer than one timer can hold waits in steps.
@@ -316,7 +322,7 @@ export class CommunityMoveUploads {
         () => {
           if (this.jobs.get(moveId) !== job) return;
           if (Date.now() < expiresAt) arm();
-          else this.discard(moveId);
+          else this.expire(moveId);
         },
         Math.min(MAX_TIMER_MS, Math.max(0, expiresAt - Date.now()))
       );
@@ -340,9 +346,30 @@ export class CommunityMoveUploads {
    */
   retry(moveId: string): boolean {
     const job = this.jobs.get(moveId);
-    if (!job || job.target === null || job.progress.failure !== 'interrupted') return false;
+    if (!job || job.running || job.target === null || job.progress.failure !== 'interrupted')
+      return false;
     void this.run(moveId, job);
     return true;
+  }
+
+  /**
+   * Close a move's upload when its window has closed: stop what is running, forget the token
+   * and remove the copy, but keep the outcome as `expired`, so the app says the time ran out
+   * rather than that this DorkOS holds no upload for the move.
+   *
+   * @param moveId - The move whose window closed.
+   */
+  expire(moveId: string): void {
+    const job = this.jobs.get(moveId);
+    if (!job) return;
+    clearTimeout(job.expiry);
+    job.expired = true;
+    job.abort?.();
+    job.target = null;
+    // A finished outcome (sent, or refused) stays as it was; anything still open expired.
+    if (job.progress.state === 'sending' || job.progress.failure === 'interrupted')
+      job.progress = { ...job.progress, state: 'failed', failure: 'expired' };
+    void discardStagedArchive(job.staged);
   }
 
   /**
@@ -377,10 +404,29 @@ export class CommunityMoveUploads {
    */
   private async run(moveId: string, job: UploadJob): Promise<void> {
     const target = job.target;
-    if (target === null) return;
-    // In parts whenever the Community server offers them; the single PUT otherwise.
-    if (target.parts) await sendParts(job, { ...target, parts: target.parts }, this.options);
-    else await send(job, target);
+    if (target === null || job.running) return;
+    // One attempt at a time: set before the first await, so a second "send again" (a double
+    // click, another tab) is refused rather than starting a second upload of the same copy.
+    job.running = true;
+    job.progress = { state: 'sending', sentBytes: 0, totalBytes: job.staged.bytes, failure: null };
+    try {
+      // In parts whenever the Community server offers them and the file fits them; the
+      // single PUT otherwise.
+      if (
+        target.parts &&
+        (fitsInParts(job.staged.bytes, target.parts) || job.staged.bytes > target.maxBytes)
+      )
+        await sendParts(job, { ...target, parts: target.parts }, this.options);
+      else await send(job, target);
+    } finally {
+      job.running = false;
+      // An attempt the closing window stopped reads as expired, not as a broken connection.
+      if (
+        job.expired &&
+        (job.progress.state === 'sending' || job.progress.failure === 'interrupted')
+      )
+        job.progress = { ...job.progress, state: 'failed', failure: 'expired' };
+    }
     if (this.jobs.get(moveId) !== job) return;
     if (job.progress.state === 'sent' || job.progress.failure !== 'interrupted') {
       // Keep the finished progress so a poll can still say what happened until
