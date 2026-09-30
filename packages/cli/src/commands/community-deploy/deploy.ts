@@ -246,6 +246,16 @@ export async function executeCommunityDeployPhase(
   if (!current.completedSteps.includes('deployed')) {
     const existingSecrets = await dependencies.readSecrets();
     const deployedRows = runtimeSecretRows(existingSecrets);
+    /** Deploy the pinned image and prove a new, complete release runs it with these secrets. */
+    const deployAndVerify = async () => {
+      const previous = (await dependencies.readRuntime()).releases;
+      await dependencies.deploy(`${plan.imageDigest}`);
+      const afterSecrets = exactSecretDigests(await dependencies.readSecrets(), 'Deployed');
+      if (!sameDigests(afterSecrets, expectedDigests)) {
+        throw new ProviderMutationError('INVALID_RESPONSE');
+      }
+      return dependencies.verifyNewRuntime(await dependencies.readRuntime(), previous);
+    };
     let inventory: FlyRuntimeInventory;
     if (
       deployedRows.length === COMMUNITY_RUNTIME_SECRET_NAMES.length &&
@@ -254,18 +264,24 @@ export async function executeCommunityDeployPhase(
       const deployed = exactSecretDigests(existingSecrets, 'Deployed');
       if (!sameDigests(deployed, expectedDigests))
         throw new ProviderMutationError('INVALID_RESPONSE');
-      inventory = dependencies.verifyExistingRuntime(await dependencies.readRuntime());
+      try {
+        inventory = dependencies.verifyExistingRuntime(await dependencies.readRuntime());
+      } catch (error) {
+        // The secrets are applied but no complete release proves the runtime. That is what a
+        // deploy cut off part way leaves behind: Fly marks its release `interrupted` even when
+        // the Machine came up (live gate, DOR-2169). Stopping here would stop every resume, so the
+        // same pinned image is deployed again and the new release is proved in full, exactly as a
+        // first deploy is. Anything but a failed proof still stops.
+        if (!(error instanceof ProviderMutationError) || error.code !== 'INVALID_RESPONSE') {
+          throw error;
+        }
+        inventory = await deployAndVerify();
+      }
     } else {
       const staged = exactSecretDigests(existingSecrets, 'Staged');
       if (!sameDigests(staged, expectedDigests))
         throw new ProviderMutationError('INVALID_RESPONSE');
-      const previous = (await dependencies.readRuntime()).releases;
-      await dependencies.deploy(`${plan.imageDigest}`);
-      const afterSecrets = exactSecretDigests(await dependencies.readSecrets(), 'Deployed');
-      if (!sameDigests(afterSecrets, expectedDigests)) {
-        throw new ProviderMutationError('INVALID_RESPONSE');
-      }
-      inventory = dependencies.verifyNewRuntime(await dependencies.readRuntime(), previous);
+      inventory = await deployAndVerify();
     }
     const { machine, release } = runtimeEvidence(inventory);
     current = await persist(dependencies, current, {

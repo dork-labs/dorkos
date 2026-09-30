@@ -5,7 +5,7 @@
  */
 import { z } from 'zod';
 import { ExternalIdentifierSchema, parseExternalJson } from './provider-contract.js';
-import { ProviderMutationError, runProviderMutation } from './provider-mutation.js';
+import { ProviderMutationError, runProviderMutation, writeDeadline } from './provider-mutation.js';
 import type { FlySessionReadOptions, FlySecretInventoryItem } from './tigris-session.js';
 import {
   FlyAppResponseSchema,
@@ -50,6 +50,7 @@ export async function createFlyApp(
   const organization = parseInput(ExternalIdentifierSchema, organizationSlug);
   const created = await runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: ['apps', 'create', app, '--org', organization, '--json', '--yes'],
     parse: (stdout) => {
       let document: unknown;
@@ -95,11 +96,21 @@ export async function stageFlySecrets(
   const document = `${entries.map(([name, value]) => `${name}=${value}`).join('\n')}\n`;
   return runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: ['secrets', 'import', '--app', app, '--stage'],
     stdin: document,
     parse: () => ({ operation: 'secrets-stage' as const }),
   });
 }
+
+/**
+ * Deadline for a `fly deploy` or `secrets deploy`, which pull an image, replace a Machine and wait
+ * for its health checks. The 30-second deadline every other Fly command shares is not enough: a
+ * live 0.92.0 deploy took about 27 seconds once and was cut off at 30 the next time, which leaves
+ * Fly's release `interrupted` and the launch uncertain (live gate, DOR-2169, 2026-09-30). Ten
+ * minutes is twice flyctl's own default `--wait-timeout` of five.
+ */
+export const FLY_DEPLOY_TIMEOUT_MS = 10 * 60_000;
 
 /** Deploy one immutable image with Fly high availability explicitly disabled. */
 export async function deployFlyImage(
@@ -115,6 +126,7 @@ export async function deployFlyImage(
   }
   return runProviderMutation({
     ...options,
+    timeoutMs: writeDeadline(options.timeoutMs, FLY_DEPLOY_TIMEOUT_MS),
     args: [
       'deploy',
       '--app',
@@ -142,6 +154,8 @@ export async function deployFlySecrets(
   const app = parseInput(ExternalIdentifierSchema, appName);
   return runProviderMutation({
     ...options,
+    // Applying secrets restarts the Machine and waits for it, so it needs the deploy deadline too.
+    timeoutMs: writeDeadline(options.timeoutMs, FLY_DEPLOY_TIMEOUT_MS),
     args: ['secrets', 'deploy', '--app', app],
     parse: () => ({ operation: 'deploy' as const }),
   });
@@ -155,6 +169,8 @@ export async function destroyFlyApp(
   const app = parseInput(ExternalIdentifierSchema, appName);
   return runProviderMutation({
     ...options,
+    // Destroying an app stops and removes its Machine before Fly answers.
+    timeoutMs: writeDeadline(options.timeoutMs),
     args: ['apps', 'destroy', app, '--yes'],
     parse: () => ({ operation: 'destroy' as const }),
   });

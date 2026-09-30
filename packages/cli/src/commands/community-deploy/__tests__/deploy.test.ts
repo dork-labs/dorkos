@@ -3,6 +3,7 @@ import { executeCommunityDeployPhase, type CommunityDeployPhaseDependencies } fr
 import { LaunchJournalSchema, type LaunchJournal } from '../journal.js';
 import { createLaunchPlan } from '../plan.js';
 import type { FlySecretInventoryItem } from '../tigris-session.js';
+import { ProviderMutationError } from '../provider-mutation.js';
 
 const plan = createLaunchPlan({
   dorkosVersion: '0.76.0',
@@ -177,6 +178,70 @@ describe('Community deploy phase', () => {
     expect(test.dependencies.deploy).not.toHaveBeenCalled();
     expect(test.dependencies.verifyExistingRuntime).toHaveBeenCalledOnce();
     expect(result.bootstrapSecret).toBeNull();
+  });
+
+  // DOR-2169 live gate: `fly deploy` was cut off while the Machine came up. Fly marked the release
+  // `interrupted` with the secrets applied, so the "already deployed" proof can never pass again.
+  // A resume deploys the same pinned image once more and proves that new release in full.
+  it('redeploys on resume when applied secrets have no complete release behind them', async () => {
+    const secretDigests = Object.fromEntries(
+      ['DATABASE', 'AUTH', 'INVITE', 'BOOTSTRAP'].map((part, index) => [
+        `COMMUNITY_${part}${part === 'DATABASE' ? '_URL' : '_SECRET'}`,
+        `digest-${index}`,
+      ])
+    );
+    const staged = journal({
+      revision: 7,
+      state: 'secrets_staged',
+      secretDigests,
+      completedSteps: [
+        'planned',
+        'fly_app_created',
+        'neon_project_created',
+        'bucket_created',
+        'secrets_staged',
+      ],
+    });
+    const applied = (test: ReturnType<typeof harness>) =>
+      vi.mocked(test.dependencies.readSecrets).mockResolvedValue([
+        ...test.inventory(),
+        ...Object.entries(secretDigests).map(([name, digest]) => ({
+          name,
+          digest,
+          status: 'Deployed' as const,
+        })),
+      ]);
+    const interrupted = {
+      ...runtime,
+      releases: [{ ...runtime.releases[0]!, status: 'interrupted' }],
+    };
+
+    const test = harness(staged);
+    applied(test);
+    vi.mocked(test.dependencies.readRuntime).mockReset().mockResolvedValue(interrupted);
+    vi.mocked(test.dependencies.verifyExistingRuntime).mockImplementation(() => {
+      throw new ProviderMutationError('INVALID_RESPONSE');
+    });
+    const result = await executeCommunityDeployPhase(plan, staged, test.dependencies);
+    expect(test.dependencies.deploy).toHaveBeenCalledOnce();
+    expect(test.dependencies.deploy).toHaveBeenCalledWith(plan.imageDigest);
+    expect(test.dependencies.verifyNewRuntime).toHaveBeenCalledWith(
+      interrupted,
+      interrupted.releases
+    );
+    expect(result.journal.state).toBe('healthy');
+
+    // Anything but a failed proof, such as Fly being unreachable, still stops without deploying.
+    const unreachable = harness(staged);
+    applied(unreachable);
+    vi.mocked(unreachable.dependencies.readRuntime).mockReset().mockResolvedValue(interrupted);
+    vi.mocked(unreachable.dependencies.verifyExistingRuntime).mockImplementation(() => {
+      throw new ProviderMutationError('PROVIDER_UNAVAILABLE');
+    });
+    await expect(
+      executeCommunityDeployPhase(plan, staged, unreachable.dependencies)
+    ).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    expect(unreachable.dependencies.deploy).not.toHaveBeenCalled();
   });
 
   it('adopts one fully staged secret set after a crash before journaling', async () => {
