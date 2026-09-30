@@ -10,6 +10,7 @@ import {
   describeLauncherStop,
   explainCommunityLiveGateFailure,
   PUBLISHED_LAUNCHER_STEP,
+  withDorkosHostsContacted,
 } from '../../scripts/community-deploy-live-failure.js';
 
 const RECOVERY = 'npx -y dorkos@1.2.3 community deploy --resume run-1';
@@ -358,5 +359,32 @@ describe('describeLauncherExit', () => {
     expect((explained as Error).message).toBe(
       'Community live gate failed (published-launcher): launcher exited with COMMUNITY_RELEASE_INVALID before writing a launch record'
     );
+  });
+});
+
+describe('withDorkosHostsContacted', () => {
+  // Purpose: fails if a run whose launcher the guard refused reports only the step it tripped
+  // over later, hiding the DorkOS contact that caused it (DOR-2593).
+  it('adds the hosts to the failure, keeping its step and recovery command', () => {
+    const failure = withDorkosHostsContacted(
+      new CommunityLiveGateError('launch-journal', RECOVERY, 'no journal'),
+      ['dorkos.ai']
+    );
+    expect(failure).toMatchObject({
+      step: 'launch-journal',
+      recoveryCommand: RECOVERY,
+      detail: 'no journal; the launcher tried to reach dorkos.ai',
+    });
+  });
+
+  it('turns an unexplained failure into a named one, and leaves others alone', () => {
+    const plain = new Error('provider said no');
+    expect(withDorkosHostsContacted(plain, ['cloud.dorkos.ai'])).toMatchObject({
+      step: 'dorkos-hosts-contacted',
+      detail: 'the launcher tried to reach cloud.dorkos.ai',
+    });
+    expect(withDorkosHostsContacted(plain, [])).toBe(plain);
+    const named = new CommunityLiveGateError('dorkos-hosts-contacted', null, 'x');
+    expect(withDorkosHostsContacted(named, ['dorkos.ai'])).toBe(named);
   });
 });

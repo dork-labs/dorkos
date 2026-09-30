@@ -28,8 +28,10 @@ import {
   describeCommunityLiveGateFailure,
   describeLauncherExit,
   describeLauncherStop,
+  DORKOS_HOSTS_CONTACTED_STEP,
   explainCommunityLiveGateFailure,
   PUBLISHED_LAUNCHER_STEP,
+  withDorkosHostsContacted,
 } from './community-deploy-live-failure.js';
 import {
   parsePublishedVersion,
@@ -78,6 +80,8 @@ const TIMEOUT_MS = COMMUNITY_LIVE_LAUNCHER_TIMEOUT_MS;
 const DELIVERED_CAPTURE_MS = 30_000;
 /** Deadline for the no-op `fly ssh console` probe; the first one may issue an SSH certificate. */
 const SSH_PROBE_TIMEOUT_MS = 120_000;
+/** Launcher processes each run starts under the DorkOS-host guard: `--help`, launch, resume. */
+const GUARDED_LAUNCHER_RUNS = 3;
 
 /** A launcher running in a PTY: its exit, and a way to stop it from the gate's finally. */
 interface LauncherRun {
@@ -258,11 +262,20 @@ async function main(): Promise<void> {
       'package-install'
     );
     const binary = join(install, 'node_modules/.bin/dorkos');
-    // Guarded like every launcher run (its record is read after cleanup, with the rest).
+    // Guarded like every launcher run (its record is read after cleanup, with the rest). The
+    // guard is appended to whatever NODE_OPTIONS the operator already runs with.
     const help = await command(
       binary,
       ['community', 'deploy', '--help'],
-      { ...process.env, ...withNoDorkosHostsGuard({}, dorkosHostsRecordPath) },
+      withNoDorkosHostsGuard(
+        Object.fromEntries(
+          // eslint-disable-next-line no-restricted-syntax -- The gate runs --help with the operator's environment, as before.
+          Object.entries(process.env).flatMap(([name, value]) =>
+            value === undefined ? [] : [[name, value]]
+          )
+        ),
+        dorkosHostsRecordPath
+      ),
       PUBLISHED_LAUNCHER_STEP
     );
     if (!help.includes('Guided setup') && !help.includes('Guide a standalone'))
@@ -477,10 +490,17 @@ async function main(): Promise<void> {
     };
     // DOR-2593: a self-hosted launch never needs DorkOS. Checked after cleanup, so a run that
     // fails here strands nothing, and recorded in the receipt so every paid run carries it.
-    const dorkosHostsContacted = await readDorkosHostsContacted(dorkosHostsRecordPath);
+    // Three guarded launcher processes: `--help`, the interrupted launch and the resume.
+    const dorkosHostsContacted = await readDorkosHostsContacted(
+      dorkosHostsRecordPath,
+      GUARDED_LAUNCHER_RUNS
+    ).catch((error: unknown) => {
+      // Its message is fixed and non-secret; wrapped so the reason survives the after-cleanup path.
+      throw new CommunityLiveGateError('dorkos-hosts-guard', null, (error as Error).message);
+    });
     if (dorkosHostsContacted.length > 0) {
       throw new CommunityLiveGateError(
-        'dorkos-hosts-contacted',
+        DORKOS_HOSTS_CONTACTED_STEP,
         null,
         `the launcher tried to reach ${dorkosHostsContacted.join(', ')}`
       );
@@ -510,7 +530,7 @@ async function main(): Promise<void> {
     );
     await rm(durableHome, { recursive: true, force: true });
   } catch (error) {
-    throw await explainCommunityLiveGateFailure(
+    const explained = await explainCommunityLiveGateFailure(
       error,
       { cleanedUp, recoveryCommand },
       async () => {
@@ -523,6 +543,12 @@ async function main(): Promise<void> {
         const journal = await readFile(join(journalDirectory, `${runId}.json`), 'utf8');
         return describeLauncherStop(JSON.parse(journal) as unknown);
       }
+    );
+    // A launcher the guard refused usually fails at an earlier step (its journal, its exit), so the
+    // record is read on every failure too, before the finally removes it. Best-effort.
+    throw withDorkosHostsContacted(
+      explained,
+      await readDorkosHostsContacted(dorkosHostsRecordPath, 0).catch((): string[] => [])
     );
   } finally {
     if (bootstrap) Buffer.from(bootstrap).fill(0);

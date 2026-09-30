@@ -230,7 +230,11 @@ function args(extra: string[] = []): string[] {
   ];
 }
 
+// Every launcher process the proof starts; the DorkOS-host guard must have loaded into each.
+let launcherRuns = 0;
+
 function runPlain(binary: string, commandArgs: string[], environment: NodeJS.ProcessEnv) {
+  launcherRuns++;
   return new Promise<{ code: number; output: string }>((resolvePromise, reject) => {
     const child = spawn(binary, commandArgs, {
       env: environment,
@@ -251,6 +255,7 @@ function runInteractive(
   commandArgs: string[],
   environment: NodeJS.ProcessEnv
 ) {
+  launcherRuns++;
   return new Promise<{ code: number; output: string }>((resolvePromise, reject) => {
     const child = spawn('python3', [helper, process.execPath, binary, ...commandArgs], {
       cwd: temporary,
@@ -535,7 +540,7 @@ try {
   await assertOrphanSurvives('does not carry the marker this run recorded', 'unmarked app');
 
   // Last, so it covers every run above: the launch, the resume and both refused removals.
-  const dorkosHostsContacted = await readDorkosHostsContacted(dorkosHostsRecordPath);
+  const dorkosHostsContacted = await readDorkosHostsContacted(dorkosHostsRecordPath, launcherRuns);
   if (dorkosHostsContacted.length > 0) {
     throw new Error(`Packaged launcher tried to reach DorkOS: ${dorkosHostsContacted.join(', ')}`);
   }

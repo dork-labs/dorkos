@@ -117,7 +117,12 @@ describe('credentialed live gate entrypoint', () => {
     expect(tigrisRecheck).toBeLessThan(cleanedUp);
     expect(main.slice(afterRead, afterRead + 400)).toContain('tigrisBucketFound,');
     expect(main).toMatch(
-      /catch \(error\) \{\s*throw await explainCommunityLiveGateFailure\(\s*error,\s*\{ cleanedUp, recoveryCommand \}/u
+      /catch \(error\) \{\s*const explained = await explainCommunityLiveGateFailure\(\s*error,\s*\{ cleanedUp, recoveryCommand \}/u
+    );
+    // DOR-2593: every failure also names the DorkOS hosts the launcher tried, read before the
+    // finally removes the run directory that holds the guard's record.
+    expect(main).toMatch(
+      /throw withDorkosHostsContacted\(\s*explained,\s*await readDorkosHostsContacted\(dorkosHostsRecordPath, 0\)/u
     );
     // A launcher that exits with a failure is reported with the code it saved in its journal.
     expect(main).toMatch(/return describeLauncherStop\(JSON\.parse\(journal\) as unknown\);/u);

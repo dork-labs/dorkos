@@ -161,6 +161,36 @@ export async function explainCommunityLiveGateFailure(
   );
 }
 
+/** Step a run fails at when its launcher tried to reach a DorkOS host (DOR-2593). */
+export const DORKOS_HOSTS_CONTACTED_STEP = 'dorkos-hosts-contacted';
+
+/**
+ * Name the DorkOS hosts a failed run's launcher tried to reach. A launcher the guard refused
+ * usually fails at an earlier step (its journal, its exit), so without this the operator would see
+ * that step and pay for another run to learn the cause.
+ *
+ * @param explained - The failure `explainCommunityLiveGateFailure` decided on.
+ * @param contacted - Hosts from the guard's record; empty when none (or no record).
+ * @returns `explained` unchanged when nothing was contacted or it already names the hosts; else a
+ *   gate error keeping its step and recovery command, with the hosts added to its detail.
+ */
+export function withDorkosHostsContacted(
+  explained: unknown,
+  contacted: readonly string[]
+): unknown {
+  if (contacted.length === 0) return explained;
+  if (explained instanceof CommunityLiveGateError && explained.step === DORKOS_HOSTS_CONTACTED_STEP)
+    return explained;
+  const reached = `the launcher tried to reach ${contacted.join(', ')}`;
+  if (!(explained instanceof CommunityLiveGateError))
+    return new CommunityLiveGateError(DORKOS_HOSTS_CONTACTED_STEP, null, reached);
+  return new CommunityLiveGateError(
+    explained.step,
+    explained.recoveryCommand,
+    explained.detail ? `${explained.detail}; ${reached}` : reached
+  );
+}
+
 /**
  * The text the gate writes to stderr for a failure.
  *

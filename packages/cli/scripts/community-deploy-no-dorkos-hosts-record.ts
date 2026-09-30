@@ -39,27 +39,37 @@ export function withNoDorkosHostsGuard(
 }
 
 /**
- * Every DorkOS host the guarded launcher tried to reach, in first-seen order.
+ * Every DorkOS host the guarded launchers tried to reach, in first-seen order.
  *
- * The guard creates the record file the moment it loads, so a missing file means it never ran
- * (a launcher that ignored `NODE_OPTIONS`, say) and proves nothing: that is an error, not a pass.
+ * Each process the guard loads into records a `loaded` line first. Fewer loads than the launcher
+ * processes the caller started means at least one ran unguarded (it ignored `NODE_OPTIONS`, say)
+ * and proves nothing: that is an error, never a clean pass.
  *
  * @param recordPath - The file named in the guarded environment.
- * @returns Distinct host names; empty when the launcher contacted none.
+ * @param expectedLoads - How many launcher processes the caller started with this record.
+ * @returns Distinct host names; empty when no launcher contacted any.
+ * @throws When the guard loaded fewer times than `expectedLoads`.
  */
-export async function readDorkosHostsContacted(recordPath: string): Promise<string[]> {
-  let text: string;
+export async function readDorkosHostsContacted(
+  recordPath: string,
+  expectedLoads = 1
+): Promise<string[]> {
+  let text = '';
   try {
     text = await readFile(recordPath, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error('The DorkOS-host guard never loaded into the launcher', { cause: error });
-    }
-    throw error;
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
-  const hosts = text
+  const lines = text
     .split('\n')
     .filter((line) => line.trim().length > 0)
-    .map((line) => (JSON.parse(line) as DorkosHostRefusal).host);
+    .map((line) => JSON.parse(line) as DorkosHostRefusal | { loaded: number });
+  const loads = lines.filter((line) => 'loaded' in line).length;
+  if (loads < expectedLoads) {
+    throw new Error(
+      `The DorkOS-host guard loaded into ${loads} of ${expectedLoads} launcher processes`
+    );
+  }
+  const hosts = lines.flatMap((line) => ('host' in line ? [line.host] : []));
   return [...new Set(hosts)];
 }

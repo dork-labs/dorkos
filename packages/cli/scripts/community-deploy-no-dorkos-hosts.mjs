@@ -3,7 +3,7 @@
  * never needs DorkOS Cloud" is a mechanical check instead of a design claim (DOR-2593).
  *
  * Load it into the launcher with `NODE_OPTIONS=--import=<file URL of this module>` and name a
- * record file in `DORKOS_NO_DORKOS_HOSTS_RECORD`; the guard creates that file as it loads. Every
+ * record file in `DORKOS_NO_DORKOS_HOSTS_RECORD`; the guard records its own load there. Every
  * refused attempt is appended to it as one JSON line, `{"seam":"fetch","host":"dorkos.ai"}`, and
  * then fails where it was made. The file is the evidence: a launcher that swallows the failure (a
  * best-effort crash report, say) still leaves its line behind, so the caller fails on a non-empty
@@ -25,6 +25,15 @@
  *
  * The ESM named exports of those built-ins are re-synced after patching, so a bundle that did
  * `import { spawn } from 'node:child_process'` sees the guarded function too.
+ *
+ * It guards against accidental contact, not deliberate evasion. Known gaps, none of which the
+ * launcher uses today: worker threads (a `--import` preload does not run in them), `dns.resolve*`
+ * and `dns.Resolver`, `dgram`, and what a spawned program does itself: the launcher hands provider
+ * CLIs a minimal environment without `NODE_OPTIONS`, so only their command line and environment
+ * values are checked.
+ *
+ * Each process the preload loads into appends one `{"loaded":<pid>}` line, so a caller can prove
+ * the guard ran in every launcher it started, not just in one of them.
  *
  * @module scripts/community-deploy-no-dorkos-hosts
  */
@@ -139,12 +148,13 @@ function hostOfRequestInput(input) {
   return '';
 }
 
-function hostOfOptions(options) {
-  if (!options || typeof options !== 'object') return '';
-  if (typeof options.hostname === 'string') return normalizeHost(options.hostname);
-  if (typeof options.host === 'string') return normalizeHost(options.host);
-  if (typeof options.servername === 'string') return normalizeHost(options.servername);
-  return '';
+// Every host-naming field, not the first present: `tls.connect({ host: <ip>, servername:
+// 'dorkos.ai' })` names a DorkOS host through its TLS server name alone.
+function hostsOfOptions(options) {
+  if (!options || typeof options !== 'object') return [];
+  return [options.hostname, options.host, options.servername]
+    .filter((value) => typeof value === 'string')
+    .map(normalizeHost);
 }
 
 /**
@@ -172,8 +182,9 @@ export function installNoDorkosHostsGuard({ recordPath, extraHosts = cloudHostsF
   };
   const hostGuard = (seam, readHost) => (original) =>
     function guarded(...args) {
-      const host = readHost(args);
-      if (host && isDorkosHost(host, extraHosts)) throw refuse(seam, host);
+      // Every host the call names is checked: an options object can override a URL's host.
+      const host = [readHost(args)].flat().find((item) => item && isDorkosHost(item, extraHosts));
+      if (host) throw refuse(seam, host);
       return original.apply(this, args);
     };
 
@@ -190,8 +201,11 @@ export function installNoDorkosHostsGuard({ recordPath, extraHosts = cloudHostsF
   }
 
   // `request(url | options, [options], [callback])`: the host is on the URL or either options.
-  const requestHost = ([first, second]) =>
-    hostOfRequestInput(first) || hostOfOptions(first) || hostOfOptions(second);
+  const requestHost = ([first, second]) => [
+    hostOfRequestInput(first),
+    ...hostsOfOptions(first),
+    ...hostsOfOptions(second),
+  ];
   for (const [label, module] of [
     ['http', http],
     ['https', https],
@@ -201,8 +215,13 @@ export function installNoDorkosHostsGuard({ recordPath, extraHosts = cloudHostsF
   }
 
   // `connect(options, [cb])`, `connect(port, [host], [cb])`, or `connect(path, [cb])` for a socket.
-  const socketHost = ([first, second]) =>
-    hostOfOptions(first) || (typeof second === 'string' ? normalizeHost(second) : '');
+  // `tls.connect(port, host, options)` can also carry a server name in its third argument.
+  const socketHost = ([first, second, third]) => [
+    ...hostsOfOptions(first),
+    typeof second === 'string' ? normalizeHost(second) : '',
+    ...hostsOfOptions(second),
+    ...hostsOfOptions(third),
+  ];
   patch(net, 'connect', hostGuard('net.connect', socketHost));
   patch(net, 'createConnection', hostGuard('net.createConnection', socketHost));
   patch(tls, 'connect', hostGuard('tls.connect', socketHost));
@@ -256,10 +275,10 @@ export function installNoDorkosHostsGuard({ recordPath, extraHosts = cloudHostsF
 }
 
 // Loaded as a preload: install only when a record file is named, so importing the module for its
-// helpers (the unit tests do) changes nothing. Creating the (empty) record file first is how the
-// caller knows the guard loaded at all: no file means an unguarded run, never a clean one.
+// helpers (the unit tests do) changes nothing. The `loaded` line is how the caller knows the guard
+// ran at all: a run with fewer loads than launchers is an unguarded run, never a clean one.
 const recordPath = process.env[NO_DORKOS_HOSTS_RECORD_VARIABLE];
 if (recordPath) {
-  appendFileSync(recordPath, '');
+  appendFileSync(recordPath, `${JSON.stringify({ loaded: process.pid })}\n`);
   installNoDorkosHostsGuard({ recordPath });
 }

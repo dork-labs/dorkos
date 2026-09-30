@@ -34,6 +34,7 @@ function runNode(script: string, environment: Record<string, string>) {
     execFile(
       process.execPath,
       [script],
+      // eslint-disable-next-line no-restricted-syntax -- The child needs the test's PATH to find node's tools.
       { env: { PATH: process.env.PATH ?? '', ...environment } },
       (error, stdout, stderr) =>
         resolvePromise({
@@ -164,7 +165,8 @@ process.stdout.write(JSON.stringify(outcomes));
     const seams = (await readFile(record, 'utf8'))
       .trim()
       .split('\n')
-      .map((line) => (JSON.parse(line) as { seam: string }).seam);
+      .map((line) => JSON.parse(line) as { seam?: string; loaded?: number })
+      .flatMap((line) => (line.seam ? [line.seam] : []));
     expect(seams).toEqual([
       'fetch',
       'fetch',
@@ -207,12 +209,41 @@ process.stdout.write(JSON.stringify(outcomes));
   });
 
   // Purpose: fails if a launcher that never loaded the guard could pass as one that contacted
-  // nothing. The guard creates the record file as it loads; no file is an error.
-  it('treats a missing record as an unguarded run, not a clean one', async () => {
+  // nothing. Each guarded process records its load; fewer loads than launchers is an error.
+  it('treats fewer loads than launchers as an unguarded run, not a clean one', async () => {
     const directory = await scratch();
     await expect(readDorkosHostsContacted(join(directory, 'never.jsonl'))).rejects.toThrow(
-      'never loaded'
+      'loaded into 0 of 1'
     );
+    const record = join(directory, 'record.jsonl');
+    const script = join(directory, 'launcher.mjs');
+    await writeFile(script, 'process.exitCode = 0;\n');
+    await runNode(script, withNoDorkosHostsGuard({}, record));
+    await runNode(script, {});
+    await expect(readDorkosHostsContacted(record, 2)).rejects.toThrow('loaded into 1 of 2');
+    await runNode(script, withNoDorkosHostsGuard({}, record));
+    expect(await readDorkosHostsContacted(record, 2)).toEqual([]);
+  });
+
+  // Purpose: fails if an options field can hide a DorkOS host behind another host-naming field.
+  it('checks every host a call names, not only the first', async () => {
+    const directory = await scratch();
+    const record = join(directory, 'record.jsonl');
+    const script = join(directory, 'launcher.mjs');
+    await writeFile(
+      script,
+      `
+import https from 'node:https';
+import tls from 'node:tls';
+const tries = [
+  () => tls.connect({ host: '127.0.0.1', port: 9, servername: 'dorkos.ai' }),
+  () => https.request('https://api.fly.io/graphql', { hostname: 'cloud.dorkos.ai' }),
+];
+for (const run of tries) { try { run(); } catch {} }
+`
+    );
+    await runNode(script, withNoDorkosHostsGuard({}, record));
+    expect(await readDorkosHostsContacted(record)).toEqual(['dorkos.ai', 'cloud.dorkos.ai']);
   });
 
   it('appends itself after any preload already in NODE_OPTIONS', () => {
