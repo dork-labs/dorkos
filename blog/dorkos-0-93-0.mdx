@@ -1,0 +1,89 @@
+---
+title: DorkOS 0.93.0
+description: Keep each Claude account to its own projects, let an extension start work in a new chat, and run your own Community with imports, takedowns and a minimum age.
+date: 2026-09-29
+author: DorkOS Team
+category: release
+tags: [release, accounts, extensions, communities]
+---
+
+DorkOS 0.93.0 lets you keep each Claude account to the projects it belongs to, and lets an extension start work in a new chat with one click. If you run your own Community server, you can now move a community in, take down illegal content, and set a minimum age to join.
+
+## Highlights
+
+### Keep a work account on work projects
+
+Set an account to "Only for client-app" in Settings → Runtimes. DorkOS will never use it for new chats anywhere else, whether you, a schedule or an agent starts the chat.
+
+### Extensions can start work in a new chat
+
+An extension's button can open a new chat and get it working, and the chat you're in stays exactly as it was. The new chat's first line says who started it and why.
+
+### Trust a source once
+
+When the same extension lives in several projects, DorkOS runs the newest copy and asks you once. You can also choose to trust everything from a marketplace, and undo that any time in Settings.
+
+### More for people who run their own Community
+
+Hosts can move a community in from another host, at any size. They can take down one illegal message, file or icon, keep a copy for the authorities, and set a minimum age to join.
+
+## All Changes
+
+> DorkOS 0.93.0 lets you keep each Claude account to the projects it belongs to, and lets an extension start work in a new chat with one click. People who run their own Community server can now move a community in from another host, take down illegal content, and set a minimum age to join.
+
+### Added
+
+- A Community host can start moving a community in from another host. Starting an import makes a new, empty community that nobody owns yet, with its web address if the host gives one, and gives back a one-time upload link for the owner's export file. The link keeps working if an upload breaks off or sends the wrong file, until it expires after a day. A large upload can take as long as it needs, as long as it keeps sending. The host can cancel an import at any time before it finishes, which removes the new community and the uploaded file, unless the host has put that community under a legal hold. Nobody can claim the community while it is being imported. (DOR-2258)
+- A Community host can now finish moving a community in from another host. After the owner's export is uploaded, the server checks it first and shows what it holds: how many channels, messages, files, and past members. Nothing is visible until the host starts the import. Then every channel, message, reply, mention, and file comes back as it was, all at once or not at all. The person who claims the new community takes over the old owner's place, so their past messages are still theirs. Past members show as former members, and everyone else joins again with an invitation. Someone who was erased on the old host arrives as an ordinary former member, with their messages already replaced. A channel name or description that is too long for this host is shortened. Each moved channel starts with a line saying when its history was brought over. A damaged file, a personal export, or an export that doesn't fit the community's file space is refused with a plain reason, and the host can cancel at any point before it finishes. A community under a legal hold is never removed by a cancelled or failed import. (DOR-2259)
+- A person who runs a Community server can now take down one message, one file, or a community's icon when they learn it is illegal. It disappears at once: the message shows "This message was removed by the host.", any finished export of that community is deleted, and a download already under way stops. The host names it by its ID and never sees what it said. If the host sets up a separate evidence store, the server first saves a copy there, with who posted it, because many laws require keeping one for the authorities. The owner and the author are told why, unless the host holds that back, which it does by default when the reason is protecting children. Hosts can do this from the host page or through the requests described in the Community API guide.
+- A Community host can now let the server send short notices by email through the host's own mail server. It stays off until you set `COMMUNITY_SMTP_URL` and `COMMUNITY_MAIL_FROM`, and mail to another machine must be encrypted. The server never stores the address it sends to, reports a notice as delivered only when your mail server accepts it, and keeps trying a busy mail server for up to three days. Hosts and their programs can check whether mail is on at `GET /api/v1/host/capabilities`. (DOR-2537)
+- Right after you turn on an extension, the inbox can offer "Next time, trust everything from dork-labs/marketplace?". Say yes and extensions DorkOS installs from there turn on without asking. Only you can do this, and you can undo it in Settings → Extensions → Trusted sources (DOR-2527)
+- Keep an account to the projects it belongs to. Set a work account to "Only for client-app" in Settings → Runtimes, and DorkOS will never use it for new chats anywhere else, whether you, a schedule or an agent picks it. In other projects the account shows in the chat's account menu but can't be chosen, and the menu's Default names the account a new chat there will really use. Chats already running keep their account (DOR-2526)
+- An extension's button can now start work in a new chat with one click. The chat you are in, and anything you have typed there, stays as it was. The new chat has a plain title, and its first line says who started it and why, like "Started by the Flow extension: 12 new ideas were waiting to be sorted". What it was asked is folded under "What it was asked" so it is there when you want it. (DOR-2524)
+- A chat that an agent starts from another chat now says so as its first line, with a link back to the chat it came from. (DOR-2524)
+- The chats an extension starts are limited: at most 10 an hour and 3 working at once, counting the chats those chats start. Continuing one of those chats on another account is never blocked by these limits. Chats started other ways, like schedules and rooms, have limits of their own. (DOR-2524)
+- A chat an extension starts uses an account the same way any new chat does, so an account kept to other projects is never used, and a project no account may work in says so instead of starting. (DOR-2524)
+- A Community host can now import a community of any size, whether its export was made before or after exports became background jobs. Through the host API, a large export can go up in numbered pieces, so a dropped connection costs one piece, not the whole file, and the upload picks up where it stopped. The server checks the whole file before it restores anything, then brings the community back a piece at a time, so a restart carries on instead of starting over. Newer exports also bring back more than older ones did: the community's picture and description, removed and erased messages marked as removed, and the channels the owner was actually in. A host can set the largest import it takes and how long an upload may take. (DOR-2296)
+- On a Community's own web page, a message with replies now shows how many ("2 replies · last 9:41 AM") and keeps the count current as replies arrive. Tap it to open the thread (DOR-2562)
+- On a Community's own web page, an agent's message now looks like one, the same way it does in the DorkOS app: a square avatar with a small bot badge, and screen readers hear "Agent" after the name (DOR-2563)
+- A Community host can now take down one message, one file, or the community icon from the host page, by the ID in a report. The page warns when takedowns won't keep a copy for the authorities, and lists each takedown with where its copy stands, with Try again and Release where they apply.
+- When the host removes something and says why, the community's owner and admins see it under "Removed by the host" in Settings, and the person who posted it sees a one-time note with the reason.
+- Each file in a message now has its own Report link, so a host can take down just that file.
+- The person running a Community server can set a minimum age with `COMMUNITY_MINIMUM_AGE`. Everyone who creates an account then sees "You must be at least N to join" and ticks a box to confirm it first, whether they sign up with a password, Google, GitHub, or single sign-on. The server checks too, so no account is made without the tick. Leave it unset and nothing changes (DOR-2554)
+
+### Changed
+
+- Connections now uses plain words when something goes wrong. Its error lines and sign-in failures no longer show internal words, raw app ids or status codes. Ways to reach your apps are called by name everywhere, like "Your DorkOS account", "Your Composio key" or "The app's own MCP server".
+- When DorkOS turns down an agent's action or request, the agent reads plain words and the app's name instead of internal terms and raw ids. The ids an agent needs to act on still come along, in their own place.
+- The line about who pays for an app is now true for every way you connect it. Apps on your own Nango server or an app's own MCP server no longer say usage is "billed to you". Apps on your own Composio key say the charges go to your Composio account.
+- Actions the service marks as risky now say "High risk" everywhere: in the access lists, on the approval card, in the warning about what every agent can do, in what an agent is told when it must wait for approval, and in Activity. They used to say "delete" or "can't be undone", which wasn't always true, because the service also marks sending and sharing this way. When the same action is listed twice, the older one says "Older version".
+- The Composio key form now asks for your project key by name, and the messages after saving or removing a key no longer say "provider key". If a key check fails, you see one plain line. It says DorkOS will check again only while it really will, updates on its own once DorkOS stops, and says when DorkOS couldn't reach Composio or your Nango server at all.
+- A chat app that stopped working shows one plain line. Its raw error is still there under "Details" if you need it for a bug report.
+- When the same extension is installed in several projects, DorkOS now runs the newest copy everywhere instead of whichever project it opened first. You say yes to it once, not once per project (DOR-2527)
+- When you give an agent **Read** or **Read and write** on an app, DorkOS now keeps that choice as you made it. If the app adds a way to read, agents on **Read** get it. If an action starts changing things, or becomes high-risk, it leaves **Read**, and no high-risk action ever joins either level. DorkOS checks each app's actions every 12 hours while it runs, right after it's updated, and whenever you open **Who can use it?**, so while DorkOS runs, a change reaches your agents within 12 hours. It works the same for **Every agent** and for apps connected through your DorkOS account. Actions you picked one by one stay exactly as you picked them. An agent on **Read** no longer shows up as "Exact actions" just because the app changed (DOR-2506)
+- A Community server now says when a community was deleted, instead of answering as if it had never existed. When an owner or host asks to delete a community, open channels close as before and new ones are refused while the deletion waits. Once the deletion finishes, a DorkOS app that asks about that community is told it is gone for 30 days; after that it looks like any community that never existed. Nothing else about the deleted community is shared (DOR-2334)
+- Open the thread list, room members, an agent's sessions and mirrored Community rooms faster on a busy install. On a test install with 500,000 room messages, the thread list went from about ten seconds to under half a second.
+- The pricing page and the Communities guide now say that paid plans, and communities DorkOS hosts for you, are for people in the United States who are 18 or older. The free, open-source app, and running DorkOS or a community yourself, stay open to everyone, wherever they live (DOR-2555)
+- The plan section in Settings, and the Start a community and Move a community here windows, now say the same thing. The line sits just above the button, with a link to the full answer on the pricing page.
+
+### Fixed
+
+- The Nango line no longer promises that nothing leaves your systems. Your sign-ins stay in your own database, but actions still go out to the app itself.
+- When your Nango encryption key is missing or the wrong length, the message now says to restart DorkOS after you set it, because DorkOS only reads it when it starts.
+- A request from a program to connect an app now shows the app's name, its status and where its sign-in is kept, instead of raw ids and version numbers. If its sign-in didn't finish, it says why in one line and points you to the Connections page.
+- On a phone or tablet, the top bar no longer spills past the edge when the inbox bell shows a number. The bell keeps its size and shows the number as a small badge on its corner. (DOR-2524)
+- When DorkOS is shutting down, new requests now get a clear message to try again after it restarts.
+- When a Community you're connected to starts being deleted, DorkOS now removes its copy of that community: the rooms, messages, files and search results it kept. Any of your agents working in those rooms stop, and the community shows as being deleted, then as deleted once the deletion finishes. If its owner cancels the deletion, you reconnect and the rooms come back from the Community, but you need to add your agents to it again.
+- Disconnecting a Community now removes those copies too. Copies left on your computer by an earlier disconnect are removed the next time DorkOS starts.
+- Setting up your own community with `dorkos community deploy` no longer stops right after it creates the file storage for uploads. Setup was checking on the new storage with a request Fly doesn't support; it now uses the one Fly does, and it treats a storage bucket that is already gone as gone, not as an error. Setup also hands the storage keys to your community itself, since Fly leaves that step to whoever creates the storage, and does it the moment the storage exists. If they still go missing, setup stops and tells you how to add them by hand and carry on, and it never replaces keys your app already has. And setup no longer fails at the last step, when it replaces your community's one-time setup key: it was passing Fly an option that step doesn't accept (DOR-2559, DOR-2584)
+- When you paste the address of a site that holds several communities into Connect a community, DorkOS now tells you to use the link for the one you want (its short address, or its full link with /c/ in it), instead of a general "Couldn't connect" (DOR-2561)
+- The Community pages that tell you how to connect DorkOS now give the steps the app really uses (the menu at the top left, then Add community, then Connect a community…) and show the community's own link with a Copy button, so you paste the right address (DOR-2564)
+- When a Community you're connected to has been deleted, DorkOS now notices, even if it was offline while that happened. It removes the rooms, messages, files and search results it kept, stops your agents working there, and shows the community as deleted.
+- If a Community keeps saying it doesn't exist for two weeks, DorkOS shows that it seems to be gone and offers a **Remove local copy** button. Nothing is removed until you choose to, because a missing community and a misconfigured one look the same from here.
+- On a Community server, a legal hold now also keeps files that were already waiting to be deleted when the hold was placed. They are deleted once the hold is released.
+- On a Community server, an export that starts while a member is being erased, or while the host takes something down, no longer fails and has to retry.
+
+### Security
+
+- An extension only counts as coming from a place when DorkOS installed it from a branch or tag there and its files are still exactly what was installed. If anything in the plugin changes afterwards, for example by a `git pull`, it asks you again before it runs, and Settings → Extensions says why (DOR-2527)
+- An extension you trust through another project runs from a checked copy that DorkOS keeps for itself, so editing the files in the project can't change what runs (DOR-2527)
