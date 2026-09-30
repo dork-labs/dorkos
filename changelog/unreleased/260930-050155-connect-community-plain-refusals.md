@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(communities): plain messages when connecting a community fails for a known reason (DOR-2568)'
+  - 'fix(communities): treat a limited pairing start as rate limited, not a bad address (DOR-2568 review)'
+  - 'refactor(communities): name the rate-limit refusal for what it covers (DOR-2568 review)'
 ---
 
 ### Fixed
