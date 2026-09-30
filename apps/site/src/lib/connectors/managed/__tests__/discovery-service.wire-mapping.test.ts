@@ -142,6 +142,19 @@ describe('managed toolkit version wire mapping', () => {
   });
 });
 
+describe('managed toolkit version reason', () => {
+  it('caps an upstream reason at the wire limit instead of failing the answer', async () => {
+    const answer = await resolveManagedToolkitVersion({
+      rawRequest: { version: 1, toolkit: 'gmail' },
+      signal,
+      operations: operationsClient({
+        resolveToolkitVersion: async () => ({ status: 'unsupported', reason: 'r'.repeat(1_500) }),
+      }),
+    });
+    expect(answer).toEqual({ version: 1, status: 'unsupported', reason: 'r'.repeat(1_000) });
+  });
+});
+
 describe('managed operation wire mapping', () => {
   let client: PGlite;
   let db: ManagedConnectorDatabase;

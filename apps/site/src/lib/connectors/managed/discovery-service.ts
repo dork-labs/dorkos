@@ -79,12 +79,12 @@ function toWireToolkit(toolkit: ConnectorToolkit): ManagedConnectorToolkit {
   };
 }
 
-/** Map one resolved toolkit version onto the strict wire field by field. */
+/** Map one resolved toolkit version onto the strict wire field by field, capping its reason. */
 function toWireToolkitVersion(
   result: ConnectorToolkitVersionResult | ConnectorUnsupportedResult
 ): ManagedConnectorToolkitVersionResponse {
   return result.status === 'unsupported'
-    ? { version: 1, status: 'unsupported', reason: result.reason }
+    ? { version: 1, status: 'unsupported', reason: result.reason.slice(0, 1_000) }
     : {
         version: 1,
         status: 'ok',
