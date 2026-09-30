@@ -2,6 +2,7 @@
 covers:
   - "fix(relay): delete a removed connection's unclaimed chats, blocked and ignored ones too (DOR-2608)"
   - 'fix(connections): refetch the claim feed after a removal, and say a block must be redone (DOR-2608)'
+  - 'fix(marketplace): refetch the claim feed after uninstalling a chat-app package (DOR-2608)'
 ---
 
 ### Changed

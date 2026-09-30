@@ -17,9 +17,11 @@
  * @module features/marketplace/model/use-uninstall-with-toast
  */
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { humanizePackageName } from '@/layers/shared/lib';
+import { UNCLAIMED_CHATS_QUERY_KEY } from '@/layers/entities/binding';
 import { useUninstallPackage, type UninstallPackageArgs } from '@/layers/entities/marketplace';
 import type { UninstallResult } from '@dorkos/shared/marketplace-schemas';
 
@@ -66,16 +68,27 @@ function said(result: UninstallResult | undefined): { description?: string } {
  * The per-call callbacks run **in addition to** the hook-level `onSuccess`
  * callback in `useUninstallPackage`, so TanStack Query cache invalidation still
  * fires correctly.
+ *
+ * A successful uninstall also refetches the claim feed. Uninstalling a
+ * chat-app package removes its connection, and the server deletes that
+ * connection's waiting chats with it (DOR-2608) without sending an event. The
+ * refetch lives here, not in the marketplace entity, because the feed belongs
+ * to the binding entity.
  */
 export function useUninstallWithToast() {
   const uninstall = useUninstallPackage();
+  const queryClient = useQueryClient();
   const { mutate: baseMutate, mutateAsync: baseMutateAsync } = uninstall;
+  const refetchClaimFeed = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: [...UNCLAIMED_CHATS_QUERY_KEY] });
+  }, [queryClient]);
 
   const mutate = useCallback(
     ({ where, ...args }: UninstallWithToastArgs) => {
       const toastId = toast.loading(`Uninstalling ${toastSubject({ ...args, where })}…`);
       baseMutate(args, {
         onSuccess: (result) => {
+          refetchClaimFeed();
           toast.success(`Uninstalled ${toastSubject({ ...args, where })}`, {
             id: toastId,
             ...said(result),
@@ -86,7 +99,7 @@ export function useUninstallWithToast() {
         },
       });
     },
-    [baseMutate]
+    [baseMutate, refetchClaimFeed]
   );
 
   const mutateAsync = useCallback(
@@ -94,6 +107,7 @@ export function useUninstallWithToast() {
       const toastId = toast.loading(`Uninstalling ${toastSubject({ ...args, where })}…`);
       try {
         const result = await baseMutateAsync(args);
+        refetchClaimFeed();
         toast.success(`Uninstalled ${toastSubject({ ...args, where })}`, {
           id: toastId,
           ...said(result),
@@ -104,7 +118,7 @@ export function useUninstallWithToast() {
         throw err;
       }
     },
-    [baseMutateAsync]
+    [baseMutateAsync, refetchClaimFeed]
   );
 
   return { ...uninstall, mutate, mutateAsync };
