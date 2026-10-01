@@ -193,9 +193,11 @@ More detail, including how to stop or remove an agent, is in [Connect your local
 
 Your community has two things to back up: the database and the files. A backup of only one cannot bring the other back. The steps for a community made this way (finding what is running, pausing writes, copying the database and every file, practicing a restore, and upgrading to a new release) are in [Back up and upgrade a community made with guided setup](https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md#back-up-and-upgrade-a-community-made-with-guided-setup).
 
+Backing up, restoring into a test copy, and redeploying the same release have been tried on a guided-setup community, on October 1, 2026. Upgrading to a new version, and rolling back to an older one, have not been tried yet on a guided-setup community.
+
 Upgrades only move forward. Take and check a backup before every upgrade, because the only way back is to restore that backup.
 
-{/* PENDING LIVE EVIDENCE (A6, L2): the linked backup, restore and upgrade steps have not yet been followed on a guided-setup community. The link target lands with DOR-2594 (PR #2384). If L2 only redeploys the same image, keep a sentence saying an upgrade between two releases has not been practiced on guided setup. */}
+{/* PENDING LIVE EVIDENCE (A6, L2): the cross-version upgrade and roll-back steps in the linked guide have not yet been followed on a guided-setup community. (Backup, restore and a same-image redeploy were, on 2026-10-01 UTC.) Remove this note once L2 records a cross-version upgrade and roll-back there too. */}
 
 ## Remove your community
 
@@ -212,7 +214,21 @@ fly apps destroy your-community
 
 Afterwards, `fly apps list`, `fly storage list` and `neonctl projects list` should no longer show them.
 
-{/* PENDING LIVE EVIDENCE (A1, L4): these removal steps are what L4 cleans up with. Check afterwards whether Fly leaves a deleted bucket's record or the app's private network behind, and say so here if a person would see it. */}
+### Delete the bucket's access key too
+
+Deleting the bucket does not delete the access key Fly made for it. That key still works, even with the bucket gone, until you delete it yourself. Do it one of two ways:
+
+- **In the Fly dashboard:** run `fly storage dashboard --org your-fly-org`, open **Access Keys**, find the key named after the bucket (usually `your-community_access_key`), and delete it.
+- **From the command line:** install the Tigris CLI, sign in, then delete the key by its ID (it starts with `tid_`):
+
+  ```sh
+  npm install -g @tigrisdata/cli
+  tigris login oauth            # choose "Sign in with Fly"
+  tigris access-keys list       # find the key named after your bucket
+  tigris access-keys delete <tid_...>
+  ```
+
+{/* PENDING LIVE EVIDENCE (A1, L4): these removal steps, including deleting the access key above, are what L4 cleans up with. Check afterwards whether Fly leaves a deleted bucket's record or the app's private network behind, and say so here if a person would see it. */}
 
 ## Get help
 
