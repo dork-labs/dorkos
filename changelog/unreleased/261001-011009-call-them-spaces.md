@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): call them spaces, and make Start and Join the two choices (DOR-2631)'
   - 'fix(client): refuse broken invitation links and keep the old guide anchor (DOR-2631)'
+  - 'test(e2e): follow the space copy into the two-desktop suite and mocks (DOR-2631)'
 ---
 
 ### Changed

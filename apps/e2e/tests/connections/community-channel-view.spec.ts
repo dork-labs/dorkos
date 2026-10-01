@@ -189,7 +189,7 @@ const HISTORY = Array.from({ length: 30 }, (_, index) =>
   entry(index + 1, tall(`Earlier ${index + 1}`))
 );
 
-test.describe('Community channel view', () => {
+test.describe('Space channel view', () => {
   test('one press of Scroll to bottom reaches the newest message after a burst (DOR-2268)', async ({
     page,
   }) => {

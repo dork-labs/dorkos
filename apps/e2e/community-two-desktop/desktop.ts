@@ -388,15 +388,15 @@ export const messageRow = (scope: Locator, text: string) =>
     .filter({ has: scope.page().getByRole('button', { name: /Reply in thread|Open thread/ }) })
     .last();
 
-/** The line a Community channel shows while its live stream is still starting. */
-export const CONNECTING_LINE = 'Connecting to the community…';
+/** The line a space's channel shows while its live stream is still starting. */
+export const CONNECTING_LINE = 'Connecting to the space…';
 
 /**
  * Type a message into a Community composer, send it with Enter, and confirm
  * the app actually posted it.
  *
  * The composer ignores Enter until the channel's live stream is up: a page
- * that has just loaded shows "Connecting to the community…", greys Send, and
+ * that has just loaded shows "Connecting to the space…", greys Send, and
  * an Enter pressed then leaves the words in the box and posts nothing
  * (DOR-2650). So this waits for that line to go and for Send to be enabled,
  * and after Enter waits for the app's own 201 `POST …/entries` carrying this

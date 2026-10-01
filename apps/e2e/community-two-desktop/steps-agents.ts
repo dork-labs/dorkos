@@ -324,7 +324,7 @@ export async function agentSteps(w: World): Promise<void> {
       .toBe(true);
     await openGeneral(a, refA);
     const ask = `@b-helper please confirm the two-desktop proof ${stamp}`;
-    // `send` waits out the reload's "Connecting to the community…" and confirms the post.
+    // `send` waits out the reload's "Connecting to the space…" and confirms the post.
     const { liveWaitMs } = await send(composer(a), ask);
     await seeNewest(a, ask);
     let reply: Entry | undefined;

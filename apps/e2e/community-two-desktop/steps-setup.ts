@@ -87,7 +87,9 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
     await page.getByLabel('Your name').fill(o.person);
     await page.getByLabel('Email', { exact: true }).fill(o.email);
     await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-    await page.getByLabel('Community name').fill(o.community);
+    // The space server's own setup form, by its field id: its label is the server's copy
+    // (apps/community), which the app-side rename (DOR-2631) leaves for DOR-2653.
+    await page.locator('#community-name').fill(o.community);
     await page.getByLabel('First channel').fill('general');
     await page.getByRole('button', { name: 'Create community', exact: true }).click();
     await expect(page.getByRole('button', { name: 'general', exact: true })).toBeVisible();
