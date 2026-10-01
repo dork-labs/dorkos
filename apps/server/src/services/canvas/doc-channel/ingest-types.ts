@@ -23,7 +23,7 @@ export interface DocIngestAccess {
   envelopeBytes?: number;
   eventsPerMinute?: number;
   /** Validate declared payloads without allowing an app manifest to grant routing authority. */
-  validatePayload?(type: string, payload: CanvasChannelJsonValue): void;
+  validatePayload?(type: string, payload: CanvasChannelJsonValue): undefined;
 }
 
 /** Required synchronous callback rechecks current identity, closure and authority before any mutation. */

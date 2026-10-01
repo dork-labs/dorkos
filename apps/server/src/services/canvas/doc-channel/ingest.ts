@@ -90,7 +90,15 @@ export class DocChannelIngest {
     if (identity.bytes > Math.min(access.envelopeBytes ?? 16384, 16384))
       throw new DocIngestRefusal('DOC_EVENT_TOO_LARGE', 413);
     try {
-      access.validatePayload?.(event.type, event.payload);
+      const validation: unknown = access.validatePayload?.(event.type, event.payload);
+      if (
+        validation &&
+        (typeof validation === 'object' || typeof validation === 'function') &&
+        'then' in validation
+      ) {
+        void Promise.resolve(validation).catch(() => {});
+        throw new Error('Document payload validation must be synchronous.');
+      }
     } catch {
       throw new DocIngestRefusal('INVALID_DOC_EVENT_PAYLOAD', 422);
     }
