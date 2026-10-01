@@ -95,6 +95,55 @@ export const AccountExportResponseSchema = z
 export type AccountExport = z.infer<typeof AccountExportResponseSchema>;
 
 /**
+ * `POST /v1/account/deletion` — ask to delete the account, for good.
+ *
+ * **Nothing is deleted by this call.** The service checks that the account can
+ * be deleted, then emails the account's own address a link. The account is
+ * deleted only when the person follows that link, in their own browser. So a
+ * credential that can reach this route (a linked computer's key, say) can at
+ * most cause that email, never an erasure.
+ *
+ * The body carries nothing today. It is an object rather than absent so a
+ * later minor can add an optional field, and an empty body is accepted.
+ */
+export const AccountDeletionRequestSchema = z
+  .object({})
+  .describe('A request to delete the caller`s account. Carries nothing today.');
+
+/**
+ * The accepted request: a confirmation link is on its way.
+ *
+ * Asking again sends a fresh link. Whether an earlier link keeps working is the
+ * service's decision, so a client tells the person to use the newest one.
+ *
+ * A request the service will not act on is a `Problem` instead, and nothing is
+ * sent or changed: `conflict` when something on the account has to be settled
+ * first (its `title` and `detail` say what, and `actionUrl`, when present, is
+ * where to settle it); `temporarily_unavailable` when it cannot be done right
+ * now; `rate_limited` when links were asked for too often; and `not_found`
+ * from a service that does not serve the route.
+ */
+export const AccountDeletionResponseSchema = z
+  .object({
+    requestedAt: TimestampSchema,
+    confirmationSentTo: z
+      .string()
+      .min(1)
+      .describe(
+        'Where the confirmation link went, written the way the service chose to show it (it may be partly hidden). Show it as given.'
+      ),
+    confirmBy: TimestampSchema.nullable().describe(
+      'When the emailed link stops working. Null when the service sets no limit.'
+    ),
+  })
+  .describe(
+    'A request to delete the account was accepted: a confirmation link went to the account`s email, and nothing is deleted until the person follows it.'
+  );
+
+/** An accepted request to delete the account. */
+export type AccountDeletion = z.infer<typeof AccountDeletionResponseSchema>;
+
+/**
  * `POST /v1/device/code` — the device-authorization request of RFC 8628.
  *
  * One of the two unauthenticated routes in this contract; the other is the

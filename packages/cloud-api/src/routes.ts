@@ -12,6 +12,11 @@ export const V1_ROUTES = {
   session: '/v1/session',
   account: '/v1/account',
   accountExport: '/v1/account/export',
+  /**
+   * Ask to delete the account, answered with `AccountDeletionResponseSchema`.
+   * Nothing is deleted until the person follows the emailed link.
+   */
+  accountDeletion: '/v1/account/deletion',
   deviceCode: '/v1/device/code',
   deviceToken: '/v1/device/token',
   instances: '/v1/instances',

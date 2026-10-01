@@ -43,7 +43,7 @@ body is neither.
 
 | Group                     | Covers                                                                                                                                                                                                                    |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`                                                                                                                                                           |
+| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`, `POST /v1/account/deletion`                                                                                                                              |
 | Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                                                |
 | Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                                             |
 | Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage, who a grant covers (one agent or every agent)                                |
@@ -422,6 +422,15 @@ by a browser session must come from an origin the service trusts, or it is refus
 `POST /v1/topup` carries an amount in the request (`TopupRequestSchema`). It publishes neither a
 minimum nor a first-purchase ceiling: those are server policy, and a request that misses one is
 refused with `topup_below_minimum` or `first_purchase_cap` rather than described here.
+
+`POST /v1/account/deletion` deletes nothing itself. It asks the service to email the account's own
+address a confirmation link, and the account is deleted only when the person follows that link in
+their own browser, so a linked computer's key can at most cause that email. The answer
+(`AccountDeletionResponseSchema`) says where the link went and when it stops working. A refusal is
+the shared envelope with nothing sent: `conflict` when something on the account has to be settled
+first (its `title`, `detail` and `actionUrl` say what and where), `temporarily_unavailable` or
+`rate_limited` to try later, and `not_found` from a service that does not serve the route. Once the
+account is deleted, every computer linked to it is unlinked: its key is refused on the next call.
 
 Fields typed `SecretValueSchema` are returned **once**: hold them as credential references, never
 as configuration strings, and never log them.

@@ -1,0 +1,8 @@
+{
+  "code": "conflict",
+  "status": 409,
+  "title": "Make someone else an owner first.",
+  "detail": "The text the service chose to explain what has to be settled before the account can be deleted.",
+  "actionUrl": "https://account.example.invalid/team",
+  "actionLabel": "Open your team"
+}
