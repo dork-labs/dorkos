@@ -31,13 +31,22 @@ export async function accountErasureOpen(client: Queryable, userId: string): Pro
   return Boolean(result.rowCount);
 }
 
-/** Whether an account erasure is running for this account, so it may not sign in. */
-export async function accountErasureRunning(client: Queryable, userId: string): Promise<boolean> {
-  const result = await client.query(
-    `SELECT 1 FROM erasure_requests WHERE kind='account' AND user_id=$1 AND state='running' LIMIT 1`,
+/**
+ * Why this account may not sign in, or null when it may: its erasure is running, or the host
+ * closed it and the closure has not been cancelled.
+ */
+export async function signInRefusal(client: Queryable, userId: string): Promise<string | null> {
+  const result = await client.query<{ running: boolean; closed: boolean }>(
+    `SELECT
+       EXISTS (SELECT 1 FROM erasure_requests
+         WHERE kind='account' AND user_id=$1 AND state='running') AS running,
+       EXISTS (SELECT 1 FROM account_closures WHERE user_id=$1 AND state='closed') AS closed`,
     [userId]
   );
-  return Boolean(result.rowCount);
+  const { running, closed } = result.rows[0];
+  if (running) return 'This account is being deleted.';
+  if (closed) return 'This account has been closed.';
+  return null;
 }
 
 /**
@@ -80,3 +89,35 @@ export const ERASURE_WAITS_ON_TAKEDOWN_SQL = `EXISTS (
         SELECT 1 FROM members m WHERE m.community_id=t.community_id AND m.user_id=r.user_id))
     )
 )`;
+
+/**
+ * SQL, for an erasure request aliased `r`: true while it belongs to an open host closure the
+ * person did not ask for themselves (the account request, or a membership request the account
+ * erasure made under it) and a community it touches is under a legal hold. Such an erasure
+ * waits until the hold is released. A person's own request is not held: a legal hold does not
+ * stop anyone erasing themselves (OPERATIONS.md, "Legal holds").
+ */
+export const ERASURE_WAITS_ON_LEGAL_HOLD_SQL = `(EXISTS (
+  SELECT 1 FROM account_closures ac
+  WHERE ac.erasure_request_id=COALESCE(r.parent_request_id,r.id)
+    AND ac.state='closed' AND NOT ac.person_requested
+) AND EXISTS (
+  SELECT 1 FROM communities c
+  WHERE c.legal_hold_at IS NOT NULL AND (
+    (r.kind='membership' AND c.id=r.community_id)
+    OR (r.kind='account' AND EXISTS (
+      SELECT 1 FROM members m WHERE m.community_id=c.id AND m.user_id=r.user_id))
+  )
+))`;
+
+/** Whether this running account erasure must stop and wait for a legal hold to be released. */
+export async function erasureHeldByLegalHold(
+  client: Queryable,
+  requestId: string
+): Promise<boolean> {
+  const result = await client.query(
+    `SELECT 1 FROM erasure_requests r WHERE r.id=$1 AND ${ERASURE_WAITS_ON_LEGAL_HOLD_SQL}`,
+    [requestId]
+  );
+  return Boolean(result.rowCount);
+}

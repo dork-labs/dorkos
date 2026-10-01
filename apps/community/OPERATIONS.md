@@ -124,7 +124,7 @@ Then watch for failed notices. The server logs each attempt that does not delive
 
 ## Host API keys
 
-A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, hold and release, set deletion notice dates, and delete a held community or cancel that deletion, `communities:import` to [bring a community in from another server](#imports), `communities:legal_hold` to place and release a [legal hold](#legal-holds), `communities:takedown` to take down content by its ID, `communities:erasure_journal` to copy the [erasure journal](#erasure-requests) off the server, and `communities:ownership` to ask to replace an owner who has left (see [below](#replacing-an-owner-who-has-left)). No other permission includes `communities:ownership`, so a key that suspends communities cannot replace owners. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
+A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, hold and release, set deletion notice dates, and delete a held community or cancel that deletion, `communities:import` to [bring a community in from another server](#imports), `communities:legal_hold` to place and release a [legal hold](#legal-holds), `communities:takedown` to take down content by its ID, `communities:erasure_journal` to copy the [erasure journal](#erasure-requests) off the server, `communities:ownership` to ask to replace an owner who has left (see [below](#replacing-an-owner-who-has-left)), and `accounts:close` to [close someone's account](#closing-someones-account). No other permission includes `communities:ownership`, so a key that suspends communities cannot replace owners. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
 
 Keep `communities:lifecycle` off a provisioning key. A program that creates communities and sets their limits needs `communities:read` and `communities:write`, nothing more. `communities:lifecycle` can suspend a community, which cuts off every member's DorkOS connections and agents at once, and it can delete a held community once its notice date passes. Give it to a separate key, used by the few people or programs that decide when a community stops.
 
@@ -193,7 +193,7 @@ Once requests open, the server emails the owner, waits at least 7 days (30 whene
 
 When you must preserve a community, for example under a court order or while litigation is pending, place a **legal hold** with `PUT /api/v1/host/communities/:id/legal-hold`. It needs a key with the `communities:legal_hold` permission, which suspend-and-delete keys do not have. Nothing in the community changes for anyone, but it can't be permanently deleted until you release the hold. Your own delete and abandon actions are refused. If the owner asks to delete it, their request is accepted and the community closes as they asked, but nothing is removed until you release the hold. The owner and members are not told a legal hold exists. A hold placed while a deletion is already running stops it before the next file. Release it with `DELETE` on the same address, and a deletion that was waiting then goes ahead.
 
-A legal hold does not stop someone removing their own messages or asking to be erased. If you must keep specific content, take a copy through your own database and file backups while the hold stands.
+A legal hold does not stop someone removing their own messages or asking to be erased. It does stop the erasure of an account you closed, while the person belongs to the held community (see [Closing someone's account](#closing-someones-account)). If you must keep specific content, take a copy through your own database and file backups while the hold stands.
 
 Before you roll back to a release without holds, release every hold and cancel every deletion you started. Older releases do not know the held state. Release every legal hold first too: an older release would start a deletion that the legal hold was stopping. The database still refuses to delete the community's own records, but the older release would already have deleted its files by then.
 
@@ -251,9 +251,33 @@ docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
 
 `node dist-server/takedown/commands.js evidence-retry <takedown id>` sends a failed or held copy back to the worker. Removed messages keep their tombstones after a rollback.
 
+## Closing someone's account
+
+Sometimes you have to close an account yourself: for example when you learn the person is younger than your minimum age, or a court orders it. Use a program with a host API key that has `accounts:close`, or sign in as a host operator and confirm with your password. [The API reference](API.md#close-someones-account) has the routes.
+
+Here is what happens when you close an account:
+
+- **At once,** the person is signed out everywhere and cannot sign in again. Their DorkOS apps lose their connection, and their agents stop working. Nothing they wrote changes yet.
+- **After 72 hours,** the server erases the account, exactly as if the person had asked. Their name, messages, files and agents go from every community, and the erasure journal gets its line.
+- **Until then,** you can cancel the closure. The person can sign in again straight away and reconnect their apps. That is what the wait is for: if you closed the wrong account, or the reason turns out to be wrong, nothing is lost.
+
+You pick a reason each time: `under_minimum_age`, `legal_order`, or `other`. You can also add your own case or ticket number. It is required for `other`. Keep your notes about why in your own records, not on this server.
+
+Some accounts cannot be closed:
+
+- **An owner.** First replace them as owner (see [Replacing an owner who has left](#replacing-an-owner-who-has-left)) or delete the community. The refusal names the communities they own.
+- **A host operator,** for the same reason they cannot delete their own account.
+- **An account already being erased.** If the person had asked to delete their account but it has not started yet, your closure joins their request. They are signed out at once, and their own date stands. Cancelling your closure then gives them their access back and leaves their request waiting.
+
+If the person belongs to a community under a [legal hold](#legal-holds), the erasure waits until you release the hold, and a hold placed while it runs stops it before the next community. It also waits for any takedown copy you have not finished saving. A person's own request is never held this way.
+
+If your sign-in service tells you who someone is, look up their account here by the identity it gives you (its issuer and the person's subject). Only an exact match answers, so the lookup cannot be used to list accounts.
+
+The server keeps each closure's record, with its reason and your reference, until 30 days after it ends. Your host audit trail keeps a row for every close and cancel, naming who did it but not whose account it was.
+
 ## Erasure requests
 
-People erase themselves. A member can erase their messages from one community, or delete their account and be erased from every community on this host. Each request waits 72 hours, then the server removes their name, handle, account link, messages, files, agents, and connections, and deletes every live export in that community. Host operators cannot start, cancel, speed up, or read an erasure. If someone emails you because they cannot sign in to do it themselves, use [account recovery](RECOVERY.md) so they can sign in and erase themselves.
+People erase themselves. A member can erase their messages from one community, or delete their account and be erased from every community on this host. Each request waits 72 hours, then the server removes their name, handle, account link, messages, files, agents, and connections, and deletes every live export in that community. Host operators cannot cancel, speed up, or read a person's own erasure. The one thing a host can start is [closing someone's account](#closing-someones-account), which ends in the same erasure. If someone emails you because they cannot sign in to do it themselves, use [account recovery](RECOVERY.md) so they can sign in and erase themselves.
 
 An account that has ever been a host operator cannot be deleted online, because host audit records must keep naming who acted. That person can still erase each of their memberships.
 

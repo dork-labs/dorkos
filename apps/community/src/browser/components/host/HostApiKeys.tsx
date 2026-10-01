@@ -64,6 +64,12 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
     detail:
       'Read the erasure journal, the list of people who were erased, by id only, so a copy can be kept off this server and used after restoring a backup. See “Erasure requests” in OPERATIONS.md.',
   },
+  {
+    scope: 'accounts:close',
+    label: 'Close accounts',
+    detail:
+      'Close someone’s account, for example a person under your minimum age or by legal order. They are signed out at once and their account is erased 72 hours later, unless the closure is cancelled first. See “Closing someone’s account” in OPERATIONS.md.',
+  },
 ];
 
 function describeState(key: HostApiKey, now: number): string {
