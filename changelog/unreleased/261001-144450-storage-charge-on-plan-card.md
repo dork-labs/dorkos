@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(cloud): show the last settled storage charge on the plan card'
+  - 'fix(cloud): drop a charge once a free month has followed it, and keep twin rows'
 ---
 
 ### Fixed
