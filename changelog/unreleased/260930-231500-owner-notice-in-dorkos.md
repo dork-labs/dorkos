@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(communities): tell the owner on their DorkOS connection when someone asks to take over their community (DOR-2543)'
+  - 'fix(client): match the connection lifecycle type in the owner notice showcase and test (DOR-2543)'
 ---
 
 ### Added
