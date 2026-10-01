@@ -18,6 +18,16 @@ import {
 } from '../emitters/community-owner-replacement.js';
 
 const DAY = 24 * 60 * 60 * 1000;
+/** What `notify` answers when it stored the row. */
+const STORED: { notification: unknown; deduped: boolean } = {
+  notification: { id: 'stored' },
+  deduped: false,
+};
+/** What `notify` answers when the store failed: it never throws. */
+const NOT_STORED: { notification: unknown; deduped: boolean } = {
+  notification: null,
+  deduped: false,
+};
 const open: CommunityConnectionOwnerNotice = {
   state: 'open',
   replacementId: 'replacement-1',
@@ -81,7 +91,9 @@ describe('the owner-replacement notification', () => {
 });
 
 describe('announcing an owner notice once', () => {
-  function announcer(raise: (payload: unknown) => Promise<unknown>) {
+  function announcer(
+    raise: (payload: unknown) => Promise<{ notification: unknown; deduped: boolean }>
+  ) {
     return new CommunityOwnerNoticeAnnouncer(home, raise);
   }
 
@@ -90,7 +102,7 @@ describe('announcing an owner notice once', () => {
   // over the same data, raised the same request again.
   it('raises each request and phase once, across restarts', async () => {
     expect(NOTIFICATION_RETENTION_DAYS).toBeLessThan(194);
-    const raise = vi.fn(async () => undefined);
+    const raise = vi.fn(async () => STORED);
     const first = announcer(raise);
     await Promise.all([
       first.announce('remote_a', 'Night shift', open),
@@ -106,21 +118,43 @@ describe('announcing an owner notice once', () => {
     expect(ledger).toContain('owner-replacement:remote_a:replacement-1:completed');
   });
 
-  it('starts over from an unreadable ledger, and never throws', async () => {
+  it('starts over from an unreadable ledger', async () => {
     const file = join(home, OWNER_NOTICE_LEDGER_FILE);
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, 'not json');
-    const raise = vi.fn(async () => {
-      throw new Error('store down');
+    const raise = vi.fn(async () => STORED);
+    await announcer(raise).announce('remote_a', 'Night shift', open);
+    expect(raise).toHaveBeenCalledTimes(1);
+  });
+
+  // Purpose: notify() never throws; a store failure answers with no row. Fails if the key were
+  // recorded before (or regardless of) the raise, which would lose the notice for good.
+  it('tries again on the next read when the store kept nothing', async () => {
+    const raise = vi.fn(async () => NOT_STORED);
+    const one = announcer(raise);
+    await one.announce('remote_a', 'Night shift', open);
+    raise.mockResolvedValue(STORED);
+    await one.announce('remote_a', 'Night shift', open);
+    await announcer(raise).announce('remote_a', 'Night shift', open);
+    expect(raise).toHaveBeenCalledTimes(2);
+    // A repeat the store already holds counts as said.
+    const deduped = vi.fn(async () => ({ notification: null, deduped: true }));
+    await announcer(deduped).announce('remote_b', 'Day shift', open);
+    await announcer(deduped).announce('remote_b', 'Day shift', open);
+    expect(deduped).toHaveBeenCalledTimes(1);
+  });
+
+  it('never throws when the raise does', async () => {
+    const raise = vi.fn(async (): Promise<typeof STORED> => {
+      throw new Error('unexpected');
     });
     await expect(announcer(raise).announce('remote_a', 'Night shift', open)).resolves.toBe(
       undefined
     );
-    expect(raise).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the ledger bounded', async () => {
-    const raise = vi.fn(async () => undefined);
+    const raise = vi.fn(async () => STORED);
     const one = announcer(raise);
     for (let index = 0; index < 205; index += 1)
       await one.announce('remote_a', 'Night shift', { ...open, replacementId: `r-${index}` });

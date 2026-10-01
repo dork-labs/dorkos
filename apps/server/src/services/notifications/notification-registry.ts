@@ -1267,7 +1267,7 @@ const ENTRIES: NotificationRegistryMap = {
   'community.owner-replacement': {
     // Raised by `emitters/community-owner-replacement.ts` from the owner's connection list.
     // `notable`, never `blocking`: nothing is stuck, the wait is at least a week, and the
-    // Community has emailed the owner already; it badges the bell and never reaches a phone.
+    // Community also emails the owner; it badges the bell and never reaches a phone.
     kind: 'community.owner-replacement',
     tier: 'notable',
     storage: 'event',

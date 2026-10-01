@@ -32,8 +32,14 @@ const MAX_REMEMBERED = 200;
 
 type Payload = NotificationPayload<'community.owner-replacement'>;
 
-/** What raises the notification; the registry's `notify` unless a test supplies one. */
-export type RaiseOwnerNotice = (payload: Payload) => Promise<unknown>;
+/**
+ * What raises the notification; the registry's `notify` unless a test supplies one. Its answer
+ * says whether the notification now exists: stored, or already said (deduped). `notify` never
+ * throws; a store failure answers with neither.
+ */
+export type RaiseOwnerNotice = (
+  payload: Payload
+) => Promise<{ notification: unknown; deduped: boolean }>;
 
 /**
  * The ledger key, which is the registry's dedupe key too: one per request and phase.
@@ -91,7 +97,8 @@ function parseLedger(text: string): Set<string> {
  * Announce each owner notice once, ever, per request and phase.
  *
  * Never throws: a ledger that cannot be read or written costs at most a repeated notification
- * (the registry's window still holds), never the connection list it is called from.
+ * (the registry's window still holds), never the connection list it is called from. A raise that
+ * stored nothing is not recorded, so a passing store failure is retried on the next read.
  */
 export class CommunityOwnerNoticeAnnouncer {
   private announced?: Promise<Set<string>>;
@@ -121,9 +128,12 @@ export class CommunityOwnerNoticeAnnouncer {
       try {
         const announced = await this.load();
         if (announced.has(key)) return;
+        // Raise first, and remember it only once it exists: a store that failed this time stores
+        // nothing, and the next read must try again rather than find it marked as said.
+        const result = await this.raise(ownerNoticePayload(ref, communityLabel, notice));
+        if (!result.notification && !result.deduped) return;
         announced.add(key);
         await this.save(announced);
-        await this.raise(ownerNoticePayload(ref, communityLabel, notice));
       } catch (err) {
         logger.debug('[Notifications] Could not announce an owner notice', { err });
       }

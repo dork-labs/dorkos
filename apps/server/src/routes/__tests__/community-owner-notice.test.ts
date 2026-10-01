@@ -252,6 +252,7 @@ async function router(
   const sink = raised;
   const announcer = new CommunityOwnerNoticeAnnouncer(dorkHome, async (payload) => {
     sink.push(payload);
+    return { notification: payload, deduped: false };
   });
   announcers.push(announcer);
   const app = express();
