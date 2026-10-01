@@ -23,10 +23,11 @@ import {
   confirmOwnerClipboardWrite,
   createDefaultCommunityOwnerDependencies,
 } from './runtime/default-owner.js';
-import { executeCommunityCreationPhase } from './execute.js';
+import { CommunityCreationRefusedError, executeCommunityCreationPhase } from './execute.js';
 import { executeCommunityDeployPhase } from './deploy.js';
 import { executeCommunityOwnerHandoff } from './owner.js';
 import { assertCommunityCliVersions } from './runtime/versions.js';
+import { stopForRefusedCreate } from './runtime/refused-create.js';
 import {
   formatCommunityCredentialNotice,
   withoutCommunityCredentialEnv,
@@ -538,6 +539,9 @@ export async function runCommunityDispatcher(
       };
       await writeLaunchJournal(journalPath, cancelled, latest.revision).catch(() => undefined);
       latest = cancelled;
+    }
+    if (error instanceof CommunityCreationRefusedError && latest) {
+      await stopForRefusedCreate(error, latest, journalPath, childEnv, formatCommunityRecovery);
     }
     if (latest) {
       process.stderr.write(`Community setup stopped.\n${formatCommunityRecovery(latest)}\n`);

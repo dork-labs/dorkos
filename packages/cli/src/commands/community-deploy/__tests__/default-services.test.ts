@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   createTigris: vi.fn(),
   readTigris: vi.fn(),
   readAppProvenance: vi.fn(),
+  readAppProvenanceOrNotFound: vi.fn(),
   isAppNameAvailable: vi.fn(),
   isTigrisNameHeld: vi.fn(),
   hasAcceptedTerms: vi.fn(),
@@ -61,6 +62,7 @@ vi.mock('../fly-graphql-client.js', () => ({
     createTigris = mocks.createTigris;
     readTigris = mocks.readTigris;
     readAppProvenance = mocks.readAppProvenance;
+    readAppProvenanceOrNotFound = mocks.readAppProvenanceOrNotFound;
     isAppNameAvailable = mocks.isAppNameAvailable;
     isTigrisNameHeld = mocks.isTigrisNameHeld;
     hasAcceptedTerms = mocks.hasAcceptedTerms;
@@ -160,6 +162,7 @@ beforeEach(() => {
   ]);
   mocks.readFlyOrganizationId.mockResolvedValue('org_fixture_graphql_01');
   mocks.readAppProvenance.mockResolvedValue(appProvenance());
+  mocks.readAppProvenanceOrNotFound.mockResolvedValue(appProvenance());
   mocks.readNeonProjects.mockResolvedValue([
     {
       id: 'project_fixture_01',
@@ -255,7 +258,8 @@ describe('default Community creation boundaries', () => {
       name: string
     ) => Promise<unknown>;
     await expect(readProvenance('community-fixture-app')).resolves.toMatchObject({ network });
-    expect(mocks.readAppProvenance).toHaveBeenCalledWith('community-fixture-app');
+    // The create's fallback uses the read that can tell Fly's exact NOT_FOUND from another null.
+    expect(mocks.readAppProvenanceOrNotFound).toHaveBeenCalledWith('community-fixture-app');
   });
 
   it('records the Fly network exactly as the provenance read reports it', async () => {
