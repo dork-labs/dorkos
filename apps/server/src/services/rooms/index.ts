@@ -1,3 +1,4 @@
+import { isServerPrincipal } from '../connectors/principal/server-principal.js';
 /**
  * Rooms subsystem barrel + factory (spec `rooms`, ADR 260726-170125).
  *
@@ -8,7 +9,7 @@
  *
  * @module server/services/rooms
  */
-import { agents, eq, type Db } from '@dorkos/db';
+import { agents, authors as authorRows, sessionMetadata, eq, type Db } from '@dorkos/db';
 import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
 import {
   USER_CONFIG_DEFAULTS,
@@ -36,6 +37,7 @@ import { ReactionStore } from './reactions/reaction-store.js';
 import {
   CanvasDocumentStore,
   CanvasService,
+  SESSION_AGENT_AUTHOR,
   parseScope,
   publishSessionCanvas,
   sessionCanvasViewers,
@@ -92,6 +94,8 @@ export interface RoomSubsystem {
   welcomeBack: WelcomeBackGreeter;
   /** The canvas service built and registered over this database. */
   canvas: CanvasService;
+  /** Same physical document store used by canvas commands and lifecycle transactions. */
+  canvasDocuments: CanvasDocumentStore;
 }
 
 /** Builds persisted remote-mirror policy only after room stores and authors exist. */
@@ -474,6 +478,49 @@ export function createRoomSubsystem(opts: {
   // decision lives in one function rather than inside the service.
   const canvas = new CanvasService({
     documents: canvasDocuments,
+    resolveOpener: (scope, authorId, tx, principal) => {
+      const parsed = parseScope(canvasDocuments.lifecycle.resolveScope(scope));
+      let agentPath: string | undefined;
+      let runtime: string | null | undefined;
+      let authorStamp: string | null | undefined;
+      if (parsed.kind === 'session') {
+        if (
+          authorId !== SESSION_AGENT_AUTHOR ||
+          !isServerPrincipal(principal) ||
+          principal.claims.kind !== 'runtime'
+        )
+          return null;
+        const claims = principal.claims;
+        if (
+          canvasDocuments.lifecycle.resolveScope(`session:${claims.canonicalSessionId}`) !== scope
+        )
+          return null;
+        const session = tx
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, parsed.id))
+          .get();
+        agentPath = session?.agentPath ?? undefined;
+        runtime = session?.runtime;
+        if (claims.agentPath !== agentPath || claims.runtime !== runtime) return null;
+        authorStamp = claims.agentId;
+      } else if (parsed.kind === 'room') {
+        const author = tx.select().from(authorRows).where(eq(authorRows.id, authorId)).get();
+        if (author?.kind !== 'agent' || author.retiredAt) return null;
+        agentPath = author.naturalKey;
+        authorStamp = author.mintedForManifestId;
+      }
+      if (!agentPath) return null;
+      const agent = tx.select().from(agents).where(eq(agents.projectPath, agentPath)).get();
+      if (
+        !agent ||
+        agent.status !== 'active' ||
+        (authorStamp !== undefined && authorStamp !== agent.id) ||
+        (runtime !== undefined && agent.runtime !== runtime)
+      )
+        return null;
+      return agent.id;
+    },
     channels: {
       publish: (scope, frame) => {
         const parsed = parseScope(scope);
@@ -679,6 +726,7 @@ export function createRoomSubsystem(opts: {
     readCursors,
     welcomeBack,
     canvas,
+    canvasDocuments,
   };
 }
 

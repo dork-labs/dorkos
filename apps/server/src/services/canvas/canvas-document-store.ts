@@ -29,7 +29,11 @@ import {
 } from '@dorkos/db';
 import { UiCanvasContentSchema, type UiCanvasContent } from '@dorkos/shared/schemas';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
-import { DocChannelLifecycle, type DocChannelLifecycleOptions } from './doc-channel/lifecycle.js';
+import {
+  DocChannelLifecycle,
+  type DocChannelLifecycleOptions,
+  type DocChannelInitialization,
+} from './doc-channel/lifecycle.js';
 import { logger } from '../../lib/logger.js';
 
 /** Everything a fresh row is written from. */
@@ -256,12 +260,15 @@ export class CanvasDocumentStore {
    *
    * @param input - Everything the row is written from.
    */
-  insert(input: CanvasDocumentInsert): void {
+  insert(
+    input: CanvasDocumentInsert,
+    channel?: DocChannelInitialization | ((tx: DbTransaction) => DocChannelInitialization)
+  ): void {
     this.db.transaction((tx) => {
       tx.insert(canvasDocuments)
         .values({ ...input, editingBy: null, editingHeartbeatAt: null, threadRootEntryId: null })
         .run();
-      this.lifecycle.opened(tx, input);
+      this.lifecycle.opened(tx, input, typeof channel === 'function' ? channel(tx) : channel);
     });
   }
 
