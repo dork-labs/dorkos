@@ -132,6 +132,11 @@ export class CommunityOwnerNoticeAnnouncer {
     return step;
   }
 
+  /** Resolves once every announcement started so far has settled. */
+  idle(): Promise<void> {
+    return this.queue;
+  }
+
   private file(): string {
     return path.join(this.dorkHome, OWNER_NOTICE_LEDGER_FILE);
   }

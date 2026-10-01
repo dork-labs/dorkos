@@ -215,6 +215,7 @@ afterAll(async () => {
 beforeEach(async () => {
   // Each test starts with nothing announced.
   dorkHome = await mkdtemp(join(tmpdir(), 'community-owner-notice-home-'));
+  announcers = [];
   behaviour = { owner: 'answer', admin: 'answer', member: 'answer' };
   requestPhase = 'open';
   noticeReads.length = 0;
@@ -222,6 +223,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // A list read hands notices to the announcer without waiting; let its ledger writes finish.
+  await Promise.all(announcers.map((announcer) => announcer.idle()));
   await rm(dorkHome, { recursive: true, force: true });
   // A hung notice read holds its socket open; let the router's servers go regardless.
   fixture.closeAllConnections();
@@ -236,6 +239,8 @@ afterEach(async () => {
 let raised: unknown[];
 /** This test's own data directory, so no test sees another's announcements. */
 let dorkHome: string;
+/** This test's announcers, drained before its directory is removed. */
+let announcers: CommunityOwnerNoticeAnnouncer[];
 
 /** A fresh router, with its own caches, over the test's connection store. */
 async function router(
@@ -244,6 +249,10 @@ async function router(
 ) {
   // A late announcement from an earlier test lands in that test's array, never this one's.
   const sink = raised;
+  const announcer = new CommunityOwnerNoticeAnnouncer(dorkHome, async (payload) => {
+    sink.push(payload);
+  });
+  announcers.push(announcer);
   const app = express();
   app.use(
     '/api/community-connections',
@@ -252,9 +261,7 @@ async function router(
       undefined,
       new CommunityAttentionCache(),
       noticeCache,
-      new CommunityOwnerNoticeAnnouncer(dorkHome, async (payload) => {
-        sink.push(payload);
-      })
+      announcer
     )
   );
   const server = app.listen(0, '127.0.0.1');
