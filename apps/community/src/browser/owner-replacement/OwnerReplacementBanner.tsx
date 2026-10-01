@@ -25,10 +25,12 @@ type NoticeResponse = z.infer<typeof CommunityWireOwnerReplacementNoticeResponse
  */
 function OwnerBanner({
   communityName,
+  lifecycle,
   notice,
   onKept,
 }: {
   communityName: string;
+  lifecycle: string | null;
   notice: OwnerNotice;
   onKept: () => void;
 }) {
@@ -79,7 +81,7 @@ function OwnerBanner({
               // Plain text in quotes, never a link, whatever it looks like.
               <p className="mb-1">The host’s reference: “{notice.reference}”</p>
             )}
-            {ownerOptionSentences(notice.options).map((sentence) => (
+            {ownerOptionSentences(notice.options, lifecycle).map((sentence) => (
               <p key={sentence} className="mb-1">
                 {sentence}
               </p>
@@ -122,9 +124,12 @@ function OwnerBanner({
 export function OwnerReplacementBanner({
   communityId,
   communityName,
+  lifecycle,
 }: {
   communityId: string;
   communityName: string;
+  /** The community's lifecycle, which decides what adding a password would let the owner do. */
+  lifecycle: string | null;
 }) {
   const [body, setBody] = useState<NoticeResponse | null>(null);
   const [kept, setKept] = useState(false);
@@ -158,6 +163,7 @@ export function OwnerReplacementBanner({
       {body?.open?.role === 'owner' && (
         <OwnerBanner
           communityName={communityName}
+          lifecycle={lifecycle}
           notice={body.open}
           onKept={() => {
             setKept(true);

@@ -9,6 +9,7 @@ import type {
   CommunityWireOwnerReplacementOwnerNoticeSchema,
 } from '@dorkos/shared/community-wire';
 import { formatReplacementDate } from '../../owner-replacement/dates.js';
+import { addPasswordSentence } from '../../owner-replacement/options.js';
 
 /** One owner replacement as the host page lists it. */
 export type HostReplacement = z.infer<typeof CommunityAdminOwnerReplacementSchema>;
@@ -149,13 +150,16 @@ export function adminBannerSentence(notice: Pick<AdminNotice, 'claimableAfter'>)
   return `The host has been asked to make someone else the owner. The owner has ${until} to respond.`;
 }
 
-/** Only what this owner can do now, besides keeping ownership. */
-export function ownerOptionSentences(options: OwnerOptions): string[] {
+/**
+ * Only what this owner can do now, besides keeping ownership. `lifecycle` decides what a
+ * password would open: a transfer only in an `active` community, so an unknown one promises
+ * deletion alone.
+ */
+export function ownerOptionSentences(options: OwnerOptions, lifecycle: string | null): string[] {
   const sentences: string[] = [];
   if (options.transfer) sentences.push('You can hand the community to someone yourself.');
   if (options.delete) sentences.push('You can delete the community.');
-  if (options.needsPassword)
-    sentences.push('To hand it to someone or delete it, add a password to your account first.');
+  if (options.needsPassword) sentences.push(addPasswordSentence(lifecycle ?? ''));
   return sentences;
 }
 

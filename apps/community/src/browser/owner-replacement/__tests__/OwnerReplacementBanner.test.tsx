@@ -15,6 +15,7 @@ const OBJECTION = `POST /api/v1/communities/${COMMUNITY}/owner-replacement/objec
 const TRANSFER = 'You can hand the community to someone yourself.';
 const DELETE = 'You can delete the community.';
 const ADD_PASSWORD = 'To hand it to someone or delete it, add a password to your account first.';
+const ADD_PASSWORD_TO_DELETE = 'To delete it, add a password to your account first.';
 
 function ownerNotice(overrides: Record<string, unknown> = {}) {
   return {
@@ -33,8 +34,14 @@ function ownerNotice(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function renderBanner() {
-  return render(<OwnerReplacementBanner communityId={COMMUNITY} communityName="Acme Ops" />);
+function renderBanner(lifecycle: string | null = 'active') {
+  return render(
+    <OwnerReplacementBanner
+      communityId={COMMUNITY}
+      communityName="Acme Ops"
+      lifecycle={lifecycle}
+    />
+  );
 }
 
 /** Wait until the banner has read the notice and rendered what it got. */
@@ -80,25 +87,50 @@ describe('OwnerReplacementBanner, owner', () => {
     expect(screen.queryByText(/was sent again/u)).toBeNull();
   });
 
-  it.each([
+  it.each<[string, string | null, Record<string, boolean>, string[]]>([
     [
-      'held or archived, with a password',
+      'held, with a password',
+      'held',
       { transfer: false, delete: true, needsPassword: false },
       [DELETE],
     ],
-    ['without a password', { transfer: false, delete: false, needsPassword: true }, [ADD_PASSWORD]],
-  ])('offers only what the owner can do: %s', async (_label, options, shown) => {
+    [
+      'active, without a password',
+      'active',
+      { transfer: false, delete: false, needsPassword: true },
+      [ADD_PASSWORD],
+    ],
+    [
+      'held, without a password',
+      'held',
+      { transfer: false, delete: false, needsPassword: true },
+      [ADD_PASSWORD_TO_DELETE],
+    ],
+    [
+      'archived, without a password',
+      'archived',
+      { transfer: false, delete: false, needsPassword: true },
+      [ADD_PASSWORD_TO_DELETE],
+    ],
+    [
+      'not loaded yet, without a password',
+      null,
+      { transfer: false, delete: false, needsPassword: true },
+      [ADD_PASSWORD_TO_DELETE],
+    ],
+  ])('offers only what the owner can do: %s', async (_label, lifecycle, options, shown) => {
     // Purpose: fails if the transfer sentence shows without `transfer`, the delete sentence
-    // without `delete`, or the add-a-password sentence when a password exists.
+    // without `delete`, the add-a-password sentence when a password exists, or a password-less
+    // owner of a community that cannot be handed on is told a password would let them.
     mockFetch({
       [READ]: {
         status: 200,
         body: { open: ownerNotice({ options: { keep: true, ...options } }), completed: null },
       },
     });
-    renderBanner();
+    renderBanner(lifecycle);
     await openDetails();
-    for (const sentence of [TRANSFER, DELETE, ADD_PASSWORD])
+    for (const sentence of [TRANSFER, DELETE, ADD_PASSWORD, ADD_PASSWORD_TO_DELETE])
       expect(Boolean(screen.queryByText(sentence))).toBe(shown.includes(sentence));
   });
 

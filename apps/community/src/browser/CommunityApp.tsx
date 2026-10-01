@@ -494,6 +494,7 @@ export function CommunityApp() {
           key={`owner-replacement:${community!.id}:${me.member.memberId}`}
           communityId={community!.id}
           communityName={community!.name}
+          lifecycle={communityLifecycle}
         />
         {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
         {settings ? (

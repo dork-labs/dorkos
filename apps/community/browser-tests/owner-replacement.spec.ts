@@ -634,6 +634,8 @@ test('the owner sees only what they can do; admins and members see their own not
   const transfer = 'You can hand the community to someone yourself.';
   const remove = 'You can delete the community.';
   const addPassword = 'To hand it to someone or delete it, add a password to your account first.';
+  // Held: only deletion would open with a password, so that is all it promises.
+  const addPasswordToDelete = 'To delete it, add a password to your account first.';
 
   const owner = await contextFor(browser, c.owner.cookie);
   const page = await owner.newPage();
@@ -649,7 +651,7 @@ test('the owner sees only what they can do; admins and members see their own not
       await expect(reference).toBeVisible();
       await expect(reference.locator('a')).toHaveCount(0);
       await expect(page.getByRole('link', { name: /example\.com/u })).toHaveCount(0);
-      for (const sentence of [transfer, remove, addPassword])
+      for (const sentence of [transfer, remove, addPassword, addPasswordToDelete])
         await expect(page.getByText(sentence, { exact: true })).toHaveCount(
           shown.includes(sentence) ? 1 : 0
         );
@@ -663,7 +665,7 @@ test('the owner sees only what they can do; admins and members see their own not
       `UPDATE account SET password=NULL WHERE "userId"=$1 AND "providerId"='credential'`,
       [c.ownerUserId]
     );
-    await expectOptions([addPassword], 'owner-banner-no-password');
+    await expectOptions([addPasswordToDelete], 'owner-banner-no-password');
 
     const adminPage = await adminContext.newPage();
     await adminPage.goto(`${baseUrl}/c/${c.communityId}`);
