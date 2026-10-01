@@ -361,6 +361,9 @@ export class DocChannelLifecycle {
         )
         .all();
       for (const grant of grants) {
+        const approvedPath = (
+          grant.approvalEvidence as { binding?: { target?: { agentPath?: unknown } } }
+        ).binding?.target?.agentPath;
         const source = tx
           .select()
           .from(sessionMetadata)
@@ -378,6 +381,8 @@ export class DocChannelLifecycle {
           !source ||
           !target ||
           source.runtime !== grant.targetRuntime ||
+          typeof approvedPath !== 'string' ||
+          source.agentPath !== approvedPath ||
           source.agentPath !== target.agentPath ||
           target.runtime !== grant.targetRuntime ||
           !agent ||
