@@ -19,11 +19,14 @@ import {
   type DbTransaction,
   type SessionMessageAcceptanceReceipt,
 } from '@dorkos/db';
+import { assertIdentityMoveTarget } from './identity/identity-target.js';
 import { DocChannelStore } from './store.js';
 import { QUEUE_POSITION_STEP } from '../../session/message-queue-store.js';
 
 /** Source-owned canonical receipt rebinding, inside the document move's transaction. */
 export interface DocChannelReceiptRebinder {
+  /** Suspend an exact authenticated source observation only after SQLite ownership rollback. */
+  onRebindFailed?(error: unknown): undefined;
   /** Revalidate and rebind one accepted receipt without changing its source authority. */
   rebindAccepted(tx: DbTransaction, receiptId: string, fromId: string, toId: string): boolean;
 }
@@ -41,14 +44,8 @@ export interface DocChannelDocumentIdentity {
   sourceKey: string | null;
 }
 
-/** Admission refuses incomplete moves instead of treating an alias as authority. */
-export class DocChannelIdentityBlockedError extends Error {
-  readonly code = 'DOC_CHANNEL_IDENTITY_BLOCKED';
-  /** Build a safe, payload-free ownership refusal. */
-  constructor() {
-    super('The document ownership move needs recovery.');
-  }
-}
+export { DocChannelIdentityBlockedError } from './identity/identity-error.js';
+import { DocChannelIdentityBlockedError } from './identity/identity-error.js';
 
 /** Synchronous lifecycle operations over the same database used by the document store. */
 export class DocChannelLifecycle {
@@ -188,6 +185,13 @@ export class DocChannelLifecycle {
     if (blocked) throw new DocChannelIdentityBlockedError();
   }
 
+  /** Attach the fixed coordinator before boot recovery or any admission pump begins. */
+  attachReceiptCoordinator(receipts: DocChannelReceiptRebinder): void {
+    if (this.options.receipts && this.options.receipts !== receipts)
+      throw new Error('Document receipt authority is already configured.');
+    this.options.receipts = receipts;
+  }
+
   /** Payload-free repair health; caller must authorize operator access first. */
   health(documentId: string): { status: 'ready' | 'in_doubt'; reasons: string[] } {
     const intents = this.db
@@ -276,6 +280,7 @@ export class DocChannelLifecycle {
           )
         )
         .run();
+      this.options.receipts?.onRebindFailed?.(error);
       throw error;
     }
   }
@@ -318,6 +323,44 @@ export class DocChannelLifecycle {
           .get()
       )
         throw new Error('Document source identity collision.');
+      assertIdentityMoveTarget(tx, document.id, fromId, toId);
+    }
+    for (const document of documents) {
+      tx.update(canvasDocBatches)
+        .set({ scope: to, updatedAt: now })
+        .where(eq(canvasDocBatches.documentId, document.id))
+        .run();
+      tx.update(canvasDocGrants)
+        .set({ targetSessionId: toId })
+        .where(
+          and(
+            eq(canvasDocGrants.documentId, document.id),
+            eq(canvasDocGrants.targetSessionId, fromId)
+          )
+        )
+        .run();
+      tx.update(canvasDocChannels)
+        .set({ scope: to, updatedAt: now })
+        .where(eq(canvasDocChannels.documentId, document.id))
+        .run();
+    }
+    const changed = tx
+      .update(canvasDocuments)
+      .set({ scope: to })
+      .where(eq(canvasDocuments.scope, from))
+      .run().changes;
+    tx.update(canvasDocIdentityIntents)
+      .set({
+        status: 'applied',
+        errorCode: null,
+        updatedAt: now,
+      })
+      .where(
+        and(eq(canvasDocIdentityIntents.fromScope, from), eq(canvasDocIdentityIntents.toScope, to))
+      )
+      .run();
+    // Uncommitted canonical state permits the source to revalidate real grant authority.
+    for (const document of documents) {
       const batches = tx
         .select()
         .from(canvasDocBatches)
@@ -349,72 +392,7 @@ export class DocChannelLifecycle {
             .run();
         }
       }
-      const grants = tx
-        .select()
-        .from(canvasDocGrants)
-        .where(
-          and(
-            eq(canvasDocGrants.documentId, document.id),
-            eq(canvasDocGrants.targetSessionId, fromId),
-            isNull(canvasDocGrants.revokedAt)
-          )
-        )
-        .all();
-      for (const grant of grants) {
-        const approvedPath = (
-          grant.approvalEvidence as { binding?: { target?: { agentPath?: unknown } } }
-        ).binding?.target?.agentPath;
-        const source = tx
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, fromId))
-          .get();
-        const target = tx
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, toId))
-          .get();
-        const agent = grant.targetAgentId
-          ? tx.select().from(agents).where(eq(agents.id, grant.targetAgentId)).get()
-          : undefined;
-        if (
-          !source ||
-          !target ||
-          source.runtime !== grant.targetRuntime ||
-          typeof approvedPath !== 'string' ||
-          source.agentPath !== approvedPath ||
-          source.agentPath !== target.agentPath ||
-          target.runtime !== grant.targetRuntime ||
-          !agent ||
-          agent.status !== 'active' ||
-          agent.runtime !== target.runtime ||
-          agent.projectPath !== target.agentPath
-        )
-          throw new DocChannelIdentityBlockedError();
-      }
-      tx.update(canvasDocBatches)
-        .set({ scope: to, updatedAt: now })
-        .where(eq(canvasDocBatches.documentId, document.id))
-        .run();
-      tx.update(canvasDocGrants)
-        .set({ targetSessionId: toId })
-        .where(
-          and(
-            eq(canvasDocGrants.documentId, document.id),
-            eq(canvasDocGrants.targetSessionId, fromId)
-          )
-        )
-        .run();
-      tx.update(canvasDocChannels)
-        .set({ scope: to, updatedAt: now })
-        .where(eq(canvasDocChannels.documentId, document.id))
-        .run();
     }
-    const changed = tx
-      .update(canvasDocuments)
-      .set({ scope: to })
-      .where(eq(canvasDocuments.scope, from))
-      .run().changes;
     tx.update(canvasDocIdentityIntents)
       .set({
         status: uncertain ? 'in_doubt' : 'applied',

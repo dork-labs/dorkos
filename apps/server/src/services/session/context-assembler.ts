@@ -1,3 +1,7 @@
+import {
+  CanvasChannelDocEventsContextSchema,
+  type CanvasChannelDocEventsContext,
+} from '@dorkos/shared/canvas-channel-schemas';
 /**
  * Runtime-neutral additional-context assembler (ADR-0273).
  *
@@ -184,4 +188,16 @@ export async function assembleAdditionalContext(
   }
 
   return bag;
+}
+
+/** Append validated server document context synchronously after the final private claim. */
+export function appendDocEventsContext(
+  context: AdditionalContext,
+  data: CanvasChannelDocEventsContext
+): void {
+  context.push({
+    kind: 'doc_events',
+    scope: 'per-turn',
+    data: CanvasChannelDocEventsContextSchema.parse(data),
+  });
 }

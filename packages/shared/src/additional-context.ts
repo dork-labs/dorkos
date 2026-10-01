@@ -17,6 +17,10 @@
  * @module shared/additional-context
  */
 import { z } from 'zod';
+import {
+  CanvasChannelDocEventsContextSchema,
+  type CanvasChannelDocEventsContext,
+} from './canvas-channel-schemas.js';
 import { ResponseModeSchema, type ResponseMode } from './mesh-schemas.js';
 import type { AuthorOrigin } from './room-schemas.js';
 import { UiStateSchema, type UiState } from './schemas.js';
@@ -32,7 +36,8 @@ export type ContextKind =
   | 'room_context'
   | 'seed_context'
   | 'approval_verdict'
-  | 'accounts_access';
+  | 'accounts_access'
+  | 'doc_events';
 
 /** Lifetime of an entry — informs adapter placement, not yet load-bearing. */
 export type ContextScope = 'per-turn' | 'per-session';
@@ -904,6 +909,7 @@ export interface ApprovalVerdictData {
  * {@link ContextScope}.
  */
 export type AdditionalContextEntry =
+  | { kind: 'doc_events'; scope: 'per-turn'; data: CanvasChannelDocEventsContext }
   | { kind: 'git_status'; scope: 'per-turn'; data: GitStatusData }
   | { kind: 'ui_state'; scope: 'per-turn'; data: UiState }
   | { kind: 'queue_note'; scope: 'per-turn'; data: { composedDuringPrevTurn: true } }
@@ -948,6 +954,7 @@ export const CONTEXT_TAG = {
   seed_context: 'seed_context',
   approval_verdict: 'approval_verdict',
   accounts_access: 'accounts_access',
+  doc_events: 'doc_events',
 } satisfies Record<ContextKind, string>;
 
 /**
@@ -1246,6 +1253,13 @@ export const ApprovalVerdictDataSchema = z
 
 /** Zod schema for {@link AdditionalContextEntry} (discriminated on `kind`). */
 export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('doc_events'),
+      scope: z.literal('per-turn'),
+      data: CanvasChannelDocEventsContextSchema,
+    })
+    .strict(),
   z.object({
     kind: z.literal('accounts_access'),
     scope: z.literal('per-turn'),

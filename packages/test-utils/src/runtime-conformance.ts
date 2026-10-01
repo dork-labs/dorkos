@@ -861,6 +861,7 @@ const INJECTED_CONTEXT_TAGS = [
   'env',
   'room_tools',
   'room_context',
+  'doc_events',
   'relay_context',
   'git_status',
   'ui_state',
@@ -2090,6 +2091,44 @@ export function runtimeConformance(
             expect(parsed.data.resetsAt).toBeUndefined();
             expect(parsed.data.windowLabel).toBeUndefined();
           }
+        }
+      });
+
+      it('accepts structured document context without exposing it as the visible trigger or output', async () => {
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        const events: StreamEvent[] = [];
+        for await (const event of runtime.sendMessage(sessionId, messageContent, {
+          cwd: projectDir,
+          additionalContext: [
+            {
+              kind: 'doc_events',
+              scope: 'per-turn',
+              data: {
+                documentId: 'conformance-document',
+                documentLabel: 'Tasks',
+                scope: `session:${sessionId}`,
+                batchId: 'conformance-batch',
+                routeId: 'route',
+                grantId: 'grant',
+                events: [
+                  {
+                    id: 'f0a1b2c3-4567-4890-a123-456789abcdef',
+                    type: 'task.toggle',
+                    docSeq: 1,
+                    payload: { text: 'private-document-marker' },
+                  },
+                ],
+              },
+            },
+          ],
+        }))
+          events.push(event);
+        expect(events.length).toBeGreaterThan(0);
+        for (const event of events) {
+          if (event.type === 'text_delta' || event.type === 'thinking_delta')
+            expect(JSON.stringify(event.data)).not.toContain('private-document-marker');
         }
       });
 

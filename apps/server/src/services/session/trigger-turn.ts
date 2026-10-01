@@ -101,7 +101,7 @@ import type { LockActivity } from './session-lock.js';
 import { feedProjector } from './session-event-normalizer.js';
 import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { createCanonicalRekey } from './turn-identity/canonical-rekey.js';
-import { assembleAdditionalContext } from './context-assembler.js';
+import { assembleAdditionalContext, appendDocEventsContext } from './context-assembler.js';
 import { takeStagedContext } from './staged-context-store.js';
 import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import { withStallGuard } from './stall-guard.js';
@@ -407,7 +407,8 @@ export interface TriggerTurnDeps {
   /** Revalidate and exclusively claim immediately before the runtime call. */
   claimPrivateMessage?(
     receiptId: string,
-    prepared: PreparedPrivateSessionMessage
+    prepared: PreparedPrivateSessionMessage,
+    sessionId?: string
   ): ClaimedPrivateSessionMessage;
   /** Cancel an accepted receipt when final authority fails before any runtime effect. */
   cancelPrivateMessage?(receiptId: string, reason: string): void;
@@ -823,9 +824,10 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       }
       privatePreflightStarted = true;
       const prepared = await deps.preparePrivateMessage(opts.privateReceiptId);
-      const claimed = deps.claimPrivateMessage(opts.privateReceiptId, prepared);
+      const claimed = deps.claimPrivateMessage(opts.privateReceiptId, prepared, sessionId);
       privateDispatchClaimed = true;
       dispatchContent = claimed.content;
+      if (claimed.docEvents) appendDocEventsContext(additionalContext, claimed.docEvents);
     }
     // **What the `ui` verbs need to know about this turn, bound runtime-neutrally**
     // (spec `canvas-agent-seat` §5). `control_ui` and `get_ui_state` answer about
@@ -865,8 +867,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
         ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
-        // A protected message is a connector's (an event, or an agent request's
-        // continuation), never a person typing, so nobody is watching this turn
+        // A protected message comes from a server-owned source, never a person typing, so nobody is watching this turn
         // for an approval card and it must not hold for one (spec
         // `agent-permissions` D6). The card still reaches the inbox, and the
         // verdict wakes the session.
