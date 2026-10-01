@@ -268,6 +268,8 @@ export class CloudLinkManager {
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   private pollController: AbortController | undefined;
   private pollTask: Promise<void> | undefined;
+  /** True once {@link stop} ran: nothing starts for a key saved afterwards. */
+  private stopped = false;
   /** Settles once the current flow's token exchange has been applied, before any follow-up. */
   private pollSettled: Promise<void> | undefined;
   private keyCheck:
@@ -428,6 +430,7 @@ export class CloudLinkManager {
     descriptor: InstanceDescriptor,
     accessToken: string
   ): Promise<void> {
+    if (this.stopped) return;
     const context = this.captureContext(accessToken, baseUrl);
     await this.notifyManagedProviderSync();
     if (!this.ownsContext(context)) return;
@@ -508,19 +511,12 @@ export class CloudLinkManager {
    * The revoke retains only the retiring credential and cannot affect a new link.
    */
   async unlink(): Promise<void> {
-    // An exchange in flight finishes first, so a key it issues is the one
-    // cleared and revoked below, never left live and unrecorded.
-    const draining = this.drainPoll();
-    if (draining) await draining;
     const token = this.config.getToken();
     const baseUrl = resolveCloudBaseUrl();
-    this.advanceGeneration();
-    this.cancelPoll();
-    this.stopHeartbeatSchedule();
-    this.clearKeepingProof();
-    this.lastHeartbeatAt = undefined;
-    this.relinkOutcome = undefined;
-    this.setState('idle');
+    // Withdraw locally first, before any await. A token exchange already in
+    // flight is drained afterwards rather than abandoned (see drainPoll).
+    const draining = this.drainPoll();
+    this.withdrawLocally();
     const reconciliation = this.notifyManagedProviderSync();
     const revocation = token
       ? revokeInstanceKey({
@@ -529,8 +525,30 @@ export class CloudLinkManager {
           fetchImpl: this.fetchImpl,
         })
       : undefined;
+    if (draining) {
+      await draining;
+      // That exchange may have saved a key the cloud issued meanwhile. The
+      // person asked to unlink, so it is cleared and revoked too, never left
+      // live in config.
+      const issued = this.config.getToken();
+      if (issued) {
+        this.withdrawLocally();
+        await this.notifyManagedProviderSync();
+        await revokeInstanceKey({ baseUrl, accessToken: issued, fetchImpl: this.fetchImpl });
+      }
+    }
     await reconciliation;
     await revocation;
+  }
+
+  /** Drop the key and everything running on it, keeping its relink proof. */
+  private withdrawLocally(): void {
+    this.advanceGeneration();
+    this.stopHeartbeatSchedule();
+    this.clearKeepingProof();
+    this.lastHeartbeatAt = undefined;
+    this.relinkOutcome = undefined;
+    this.setState('idle');
   }
 
   /** The link-flow state for `GET /api/cloud/link/status`. */
@@ -842,6 +860,7 @@ export class CloudLinkManager {
 
   /** Stop all timers and cancel any in-flight poll (server shutdown). */
   stop(): void {
+    this.stopped = true;
     this.advanceGeneration();
     this.cancelPoll();
     this.stopHeartbeatSchedule();
@@ -1044,6 +1063,7 @@ export class CloudLinkManager {
 
   private startHeartbeatSchedule(): void {
     this.stopHeartbeatSchedule();
+    if (this.stopped) return;
     this.heartbeatTimer = setInterval(() => {
       void this.heartbeatTick();
     }, this.heartbeatIntervalMs);

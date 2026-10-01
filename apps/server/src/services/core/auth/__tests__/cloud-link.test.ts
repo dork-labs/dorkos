@@ -4,7 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { initConfigManager, configManager } from '../../config-manager.js';
 import { CloudLinkManager, initCloudLinkManager, getCloudLinkManager } from '../cloud-link.js';
-import { linkProofForKey, ManagedConnectorCloudError } from '../cloud-link-client.js';
+import {
+  DEVICE_TOKEN_REQUEST_TIMEOUT_MS,
+  linkProofForKey,
+  ManagedConnectorCloudError,
+} from '../cloud-link-client.js';
 import { logger } from '../../../../lib/logger.js';
 
 /** Immediate, deterministic sleep so the background poll settles synchronously. */
@@ -713,23 +717,101 @@ describe('CloudLinkManager', () => {
       expect(secondScope.previousLinkProof).toBe(linkProofForKey('dork_inst_new'));
     });
 
-    it('lets an exchange in flight finish before an unlink, then unlinks the key it issued', async () => {
+    it('withdraws locally at once on unlink, then clears and revokes a key issued meanwhile', async () => {
       configManager.set('cloud', HELD);
       const cloud = exchangeOnCue('approved');
       manager = managerWith(cloud.fetchImpl);
       await manager.startLink();
       await cloud.exchanging();
       const unlinking = manager.unlink();
-      cloud.release();
-      await unlinking;
+      // Withdrawn before any await: the held key is gone and nothing waits on the exchange.
       expect(configManager.getDot('cloud.instanceToken')).toBeNull();
       expect(manager.getStatus().state).toBe('idle');
-      const revoke = cloud.fetchImpl.mock.calls.find((c) =>
-        String(c[0]).endsWith('/instances/revoke')
-      );
-      expect((revoke![1] as RequestInit).headers).toMatchObject({
-        authorization: 'Bearer dork_inst_new',
-      });
+      cloud.release();
+      await unlinking;
+      await manager.pendingLink;
+      expect(configManager.getDot('cloud.instanceToken')).toBeNull();
+      expect(manager.getStatus().state).toBe('idle');
+      const revoked = cloud.fetchImpl.mock.calls
+        .filter((c) => String(c[0]).endsWith('/instances/revoke'))
+        .map((c) => ((c[1] as RequestInit).headers as Record<string, string>).authorization);
+      expect(revoked).toEqual(['Bearer dork_inst_held', 'Bearer dork_inst_new']);
+    });
+
+    it.each(['cancelLink', 'startLink'] as const)(
+      'lets %s finish within the token request bound when the request hangs',
+      async (action) => {
+        vi.useFakeTimers();
+        try {
+          configManager.set('cloud', HELD);
+          let tokenRequests = 0;
+          const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+            const p = new URL(url).pathname;
+            if (p.endsWith('/device/code')) return new Response(JSON.stringify(CODES.body));
+            if (p.endsWith('/device/token')) {
+              tokenRequests += 1;
+              if (tokenRequests > 1) {
+                return new Response(JSON.stringify({ error: 'expired_token' }), { status: 400 });
+              }
+              // Hangs until its own signal gives up on it.
+              return new Promise<Response>((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+              });
+            }
+            throw new Error(`unexpected request: ${p}`);
+          });
+          manager = managerWith(fetchImpl);
+          await manager.startLink();
+          for (let i = 0; i < 20 && tokenRequests === 0; i++) await vi.advanceTimersByTimeAsync(0);
+          expect(tokenRequests).toBe(1);
+          let settled = false;
+          const acting = (
+            action === 'cancelLink' ? manager.cancelLink() : manager.startLink()
+          ).then(() => {
+            settled = true;
+          });
+          await vi.advanceTimersByTimeAsync(DEVICE_TOKEN_REQUEST_TIMEOUT_MS - 1);
+          expect(settled).toBe(false);
+          await vi.advanceTimersByTimeAsync(1);
+          expect(settled).toBe(true);
+          await acting;
+          expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_held');
+        } finally {
+          vi.useRealTimers();
+        }
+      }
+    );
+
+    it('keeps a key issued after stop, but starts nothing for it', async () => {
+      vi.useFakeTimers();
+      try {
+        const cloud = exchangeOnCue('approved');
+        manager = new CloudLinkManager({
+          fetchImpl: cloud.fetchImpl as never,
+          sleep: noSleep,
+          heartbeatIntervalMs: 1_000,
+          resolveTelemetryInstanceId: async () => undefined,
+        });
+        const sync = vi.fn(async () => {});
+        manager.setManagedProviderSync(sync);
+        await manager.startLink();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(cloud.fetchImpl.mock.calls.some((c) => String(c[0]).endsWith('/device/token'))).toBe(
+          true
+        );
+        const poll = manager.pendingLink;
+        manager.stop();
+        cloud.release();
+        await poll;
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_new');
+        expect(sync).not.toHaveBeenCalled();
+        expect(
+          cloud.fetchImpl.mock.calls.filter((c) => String(c[0]).endsWith('/instances/heartbeat'))
+        ).toHaveLength(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

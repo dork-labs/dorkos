@@ -571,6 +571,14 @@ export async function requestDeviceCode(opts: {
   return (await res.json()) as DeviceCodeResponse;
 }
 
+/**
+ * How long one device-token request may take. Its own bound, never the
+ * cancel signal: once sent, a token request is allowed to finish, so this is
+ * what keeps a cancel from waiting on a request that hangs. A timeout reads
+ * as a failed poll.
+ */
+export const DEVICE_TOKEN_REQUEST_TIMEOUT_MS = 30_000;
+
 /** Wait `ms`, or less if `signal` aborts first. */
 function sleepUnlessAborted(
   sleep: (ms: number) => Promise<void>,
@@ -628,15 +636,26 @@ export async function pollForToken(opts: {
     if (opts.signal?.aborted) return { status: 'expired' };
     if (now() >= deadline) return { status: 'expired' };
 
-    const res = await fetchImpl(`${opts.baseUrl}/api/auth/device/token`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        grant_type: DEVICE_GRANT_TYPE,
-        device_code: opts.deviceCode,
-        client_id: INSTANCE_CLIENT_ID,
-      }),
-    });
+    const timeout = new AbortController();
+    const timer = setTimeout(
+      () => timeout.abort(new Error('Device-token request timed out')),
+      DEVICE_TOKEN_REQUEST_TIMEOUT_MS
+    );
+    let res: Response;
+    try {
+      res = await fetchImpl(`${opts.baseUrl}/api/auth/device/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          grant_type: DEVICE_GRANT_TYPE,
+          device_code: opts.deviceCode,
+          client_id: INSTANCE_CLIENT_ID,
+        }),
+        signal: timeout.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (res.ok) {
       const body = (await res.json()) as { access_token?: string };
