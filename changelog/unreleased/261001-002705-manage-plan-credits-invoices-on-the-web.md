@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(cloud): manage your plan, credits and invoices on the web, one click from the app (DOR-2632)'
+  - 'fix(cloud): review round for manage on the web (DOR-2632)'
 ---
 
 ### Added
