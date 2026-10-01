@@ -1,5 +1,5 @@
 /**
- * "Move a community here": bring a community from another host by its owner
+ * "Move a space here": bring a space from another server by its owner
  * export, then make it yours and connect this DorkOS to it.
  *
  * @module features/community-hosting/ui/MoveCommunityDialog

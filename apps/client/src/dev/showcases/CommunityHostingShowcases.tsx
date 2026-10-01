@@ -292,9 +292,8 @@ function HostedListShowcase() {
       deletionNoticeAt: '2026-10-15T00:00:00.000Z',
     },
     notice: {
-      title: 'On hold by the host.',
-      detail:
-        'Contact the host to talk about it. You can export the community until the date shown.',
+      title: 'On hold.',
+      detail: 'Contact DorkOS to talk about it. You can export the space until the date shown.',
       actionUrl: 'https://host.example.invalid/contact',
       actionLabel: 'Contact the host',
     },

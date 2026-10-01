@@ -26,6 +26,12 @@ import {
   type ConnectCommunityRequest,
 } from '../ui/context/ConnectCommunityDialog';
 
+const mockOpenExternalLink = vi.hoisted(() => vi.fn(() => true));
+vi.mock('@/layers/shared/lib', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/lib')>();
+  return { ...actual, openExternalLink: mockOpenExternalLink };
+});
+
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
@@ -214,6 +220,35 @@ describe('ConnectCommunityDialog', () => {
     await user.type(address, 'spaces');
     await user.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('like https://example.com/acme,');
+  });
+
+  // Purpose: a join link that is not a secure invitation is refused in words
+  // and never posted as an address. Fails if any of these reaches
+  // startCommunityConnection, or opens, or is refused silently.
+  it.each([
+    ['plain http off this machine', 'http://a.example.com/c/remote-a/join#invite=secret'],
+    ['the invite in the query', 'https://a.example.com/c/remote-a/join?invite=secret'],
+    ['no invite at all', 'https://a.example.com/join'],
+  ])('refuses a join link with %s, without sending it', async (_label, link) => {
+    const user = userEvent.setup();
+    const start = vi.fn();
+    const transport = createMockTransport({
+      listCommunityConnections: vi.fn().mockResolvedValue([]),
+      startCommunityConnection: start,
+    });
+    mount(transport, { ref: null });
+    const address = screen.getByLabelText('Space address or invitation link');
+    await waitFor(() => expect(address).toBeEnabled());
+    expect(address).toHaveAttribute('autocomplete', 'off');
+    address.closest('form')?.setAttribute('novalidate', '');
+    await user.type(address, link);
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That invitation link is incomplete or isn’t secure.'
+    );
+    expect(address).toHaveAttribute('aria-invalid', 'true');
+    expect(start).not.toHaveBeenCalled();
+    expect(mockOpenExternalLink).not.toHaveBeenCalled();
   });
 
   /** Submit an address and return the alert the refusal leaves behind. */

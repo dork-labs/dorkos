@@ -5,6 +5,7 @@
  * @module features/dashboard-sidebar/ui/context/join-space-copy
  */
 import { describeCommunityRetryWait } from '@dorkos/shared/community-connections';
+import { isCommunityInvitationUrl } from '@dorkos/shared/community-wire';
 
 /**
  * What to say when a connection could not start.
@@ -69,6 +70,28 @@ function shortAddressExample(address: string | undefined): string {
   } catch {
     return 'https://example.com/acme';
   }
+}
+
+/** What the form says when a join link can't be opened as an invitation. */
+export const INCOMPLETE_INVITATION =
+  'That invitation link is incomplete or isn’t secure. Copy the whole link from the invitation you were sent.';
+
+/**
+ * Whether a value is shaped like an invitation (a space's join page) without
+ * being one this app may open: plain http off this machine, the invite in the
+ * query instead of the fragment, or no invite at all. Such a link is refused
+ * in words rather than sent on as an address, which would post it.
+ *
+ * @param value - What the person typed or pasted.
+ */
+export function isBrokenInvitation(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return false;
+  }
+  return /^\/(?:c\/[^/]+\/)?join\/?$/u.test(url.pathname) && !isCommunityInvitationUrl(value);
 }
 
 /**

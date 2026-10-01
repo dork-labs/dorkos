@@ -539,6 +539,12 @@
       "terms": ["community", "communities"],
       "contains": "sees \"This community was removed by its host.\"",
       "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/cli-usage.mdx",
+      "terms": ["community"],
+      "contains": "<span id=\"community-server\" />",
+      "reason": "An invisible anchor, not prose: released apps link to cli-usage#community-server, and this keeps that link landing on the renamed Space server section."
     }
   ]
 }

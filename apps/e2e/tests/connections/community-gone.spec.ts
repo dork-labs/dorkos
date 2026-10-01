@@ -18,7 +18,7 @@ for (const viewport of [
   { name: 'desktop', width: 1280, height: 800 },
   { name: 'phone', width: 390, height: 844 },
 ]) {
-  test(`says a Community seems to be gone and offers to remove the copy (DOR-2334, ${viewport.name})`, async ({
+  test(`says a space seems to be gone and offers to remove the copy (DOR-2334, ${viewport.name})`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
@@ -48,7 +48,7 @@ for (const viewport of [
   { name: 'desktop', width: 1280, height: 800 },
   { name: 'phone', width: 390, height: 844 },
 ]) {
-  test(`says the host took a Community down (DOR-2334, ${viewport.name})`, async ({ page }) => {
+  test(`says a space was taken down (DOR-2334, ${viewport.name})`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await mockCommunities(page, [TAKEN_DOWN]);
     await page.goto(`/channels?community=${TAKEN_DOWN.ref}&id=${ROOM}`);

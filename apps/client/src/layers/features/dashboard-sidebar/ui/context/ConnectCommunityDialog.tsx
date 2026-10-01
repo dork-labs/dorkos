@@ -41,7 +41,13 @@ import {
   useShowCommunityApproval,
   type CommunityApprovalCheck,
 } from '@/layers/entities/community';
-import { blamesAddress, spaceAddressFromInvitation, startErrorMessage } from './join-space-copy';
+import {
+  blamesAddress,
+  INCOMPLETE_INVITATION,
+  isBrokenInvitation,
+  spaceAddressFromInvitation,
+  startErrorMessage,
+} from './join-space-copy';
 
 /** What the connect dialog was opened for. */
 export interface ConnectCommunityRequest {
@@ -297,6 +303,8 @@ function ConnectCommunityBody({
   // Set once an invitation was opened: where it opened, so the form can say
   // what happens next while the person joins there.
   const [joiningOn, setJoiningOn] = useState<string | null>(null);
+  // A join link that is not one this app may open: said, never sent on.
+  const [brokenInvitation, setBrokenInvitation] = useState(false);
   const [installName, setInstallName] = useState(defaultInstallName);
   const addressInput = useRef<HTMLInputElement>(null);
   const approvalLink = useRef<HTMLAnchorElement>(null);
@@ -342,14 +350,24 @@ function ConnectCommunityBody({
   // field was disabled while the start ran, so focus is moved once it is enabled again.
   const startError = start.error;
   useEffect(() => {
-    if (startError) addressInput.current?.focus();
-  }, [startError]);
+    if (startError || brokenInvitation) addressInput.current?.focus();
+  }, [startError, brokenInvitation]);
 
   const isInvitation = isCommunityInvitationUrl(url);
+  const errorText = brokenInvitation
+    ? INCOMPLETE_INVITATION
+    : start.error
+      ? startErrorMessage(start.error, start.variables)
+      : null;
 
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!url.trim() || start.isPending) return;
+    if (isBrokenInvitation(url)) {
+      start.reset();
+      setBrokenInvitation(true);
+      return;
+    }
     // An invitation is joined on the space's own site, never here: open it as
     // it is, and stay on Connect with the space's address filled in, so the
     // person comes back to a computer that connects rather than to a
@@ -418,14 +436,18 @@ function ConnectCommunityBody({
               type="url"
               inputMode="url"
               placeholder="https://example.com/acme"
-              aria-describedby={start.error ? `${id}-url-hint ${id}-url-error` : `${id}-url-hint`}
-              aria-invalid={start.error && blamesAddress(start.error) ? true : undefined}
+              aria-describedby={errorText ? `${id}-url-hint ${id}-url-error` : `${id}-url-hint`}
+              aria-invalid={
+                brokenInvitation || (start.error && blamesAddress(start.error)) ? true : undefined
+              }
               required
-              autoComplete="url"
+              // A one-time invitation must never be saved by the browser's autofill.
+              autoComplete="off"
               value={url}
               onChange={(event) => {
                 setUrl(event.target.value);
                 setJoiningOn(null);
+                setBrokenInvitation(false);
               }}
               disabled={start.isPending || !authority}
             />
@@ -450,9 +472,9 @@ function ConnectCommunityBody({
               What the space calls this DorkOS.
             </p>
           </div>
-          {start.error && (
+          {errorText && (
             <p id={`${id}-url-error`} role="alert" className="text-destructive text-sm">
-              {startErrorMessage(start.error, start.variables)}
+              {errorText}
             </p>
           )}
         </ResponsiveDialogBody>
