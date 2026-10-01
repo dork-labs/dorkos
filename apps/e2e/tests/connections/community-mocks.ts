@@ -211,7 +211,7 @@ export async function mockCommunities(
     if (destination) {
       const ref = decodeURIComponent(destination[1]!);
       if (mock.failDestination.has(ref)) {
-        await route.fulfill({ status: 503, json: { error: 'Community unavailable' } });
+        await route.fulfill({ status: 503, json: { error: 'Space unavailable' } });
         return;
       }
       if (mock.holdDestination.has(ref)) await hold(ref, 'destination');

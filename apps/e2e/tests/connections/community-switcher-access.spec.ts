@@ -464,7 +464,7 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await expect(last).toBeInViewport();
     expect((await last.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     // The search box and this DorkOS's own row stay reachable above fifty rows.
-    const search = sheet.getByRole('searchbox', { name: 'Find a community' });
+    const search = sheet.getByRole('searchbox', { name: 'Find a space' });
     await search.scrollIntoViewIfNeeded();
     await expect(search).toBeInViewport();
     await sheet.getByRole('radio', { name: /team/ }).scrollIntoViewIfNeeded();

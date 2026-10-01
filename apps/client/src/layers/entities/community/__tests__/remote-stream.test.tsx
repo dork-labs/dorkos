@@ -288,8 +288,8 @@ describe('remote room stream lifecycle', () => {
   // again, so the gone panel shows now. It fails if the room goes offline and retries, or the
   // connection list is left to the next poll.
   it.each([
-    ['COMMUNITY_DELETED', 410, 'This community was deleted.'],
-    ['COMMUNITY_TAKEN_DOWN', 423, 'The host took this community down.'],
+    ['COMMUNITY_DELETED', 410, 'This space was deleted.'],
+    ['COMMUNITY_TAKEN_DOWN', 423, 'This space was taken down.'],
   ] as const)('ends the room on %s and reads the connections again', async (code, status, text) => {
     const { streams, subscribe, wrapper, client, authority } = setup();
     const invalidate = vi.spyOn(client, 'invalidateQueries');

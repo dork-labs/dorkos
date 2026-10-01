@@ -33,7 +33,7 @@ function qualified<T extends { community: string; roomId?: string }>(
   roomId?: string
 ): T {
   if (value.community !== ref || (roomId !== undefined && value.roomId !== roomId)) {
-    throw new Error('The community returned data for a different room.');
+    throw new Error('The space returned data for a different room.');
   }
   return value;
 }
@@ -135,7 +135,7 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
         ref
       );
       if (agent.localAgentId !== localAgentId)
-        throw new Error('The community returned a different agent.');
+        throw new Error('The space returned a different agent.');
       return agent;
     },
     async ejectRemoteCommunityAgent(ref, localAgentId) {
@@ -221,7 +221,7 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
 
 /** Enforce the hard ceiling on actual bytes, even when Content-Length is absent or false. */
 async function boundedBlob(response: Response): Promise<Blob> {
-  if (!response.body) throw new Error('The community returned an empty file response.');
+  if (!response.body) throw new Error('The space returned an empty file response.');
   const reader = response.body.getReader();
   const chunks: ArrayBuffer[] = [];
   let total = 0;
@@ -230,7 +230,7 @@ async function boundedBlob(response: Response): Promise<Blob> {
       const { value, done } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > MAX_FILE_BYTES) throw new Error('The community file exceeds the 25 MB limit.');
+      if (total > MAX_FILE_BYTES) throw new Error('This file is over the 25 MB limit.');
       chunks.push(Uint8Array.from(value).buffer);
     }
     return new Blob(chunks, {

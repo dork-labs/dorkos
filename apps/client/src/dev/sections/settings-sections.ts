@@ -262,6 +262,13 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     keywords: ['plan', 'cloud', 'account', 'seats', 'who can buy', 'eligibility'],
   },
   {
+    id: 'manage-on-the-web',
+    title: 'Manage on the web',
+    page: 'settings',
+    category: 'Account',
+    keywords: ['billing', 'invoices', 'add credits', 'change plan', 'checkout', 'portal', 'cloud'],
+  },
+  {
     id: 'credits-and-other-charges',
     title: 'Credits and other charges',
     page: 'settings',

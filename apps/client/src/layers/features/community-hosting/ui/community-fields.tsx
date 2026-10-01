@@ -48,7 +48,7 @@ export function CommunityFields(props: CommunityFieldsProps) {
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <Label htmlFor={`${id}-name`}>Community name</Label>
+        <Label htmlFor={`${id}-name`}>Space name</Label>
         <Input
           id={`${id}-name`}
           required

@@ -26,6 +26,12 @@ import {
   type ConnectCommunityRequest,
 } from '../ui/context/ConnectCommunityDialog';
 
+const mockOpenExternalLink = vi.hoisted(() => vi.fn(() => true));
+vi.mock('@/layers/shared/lib', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/lib')>();
+  return { ...actual, openExternalLink: mockOpenExternalLink };
+});
+
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
@@ -133,10 +139,10 @@ describe('ConnectCommunityDialog', () => {
     mount(transport, { ref: null });
     // The installation's own name is offered, and the form waits for the owner.
     expect(screen.getByLabelText('Name for this installation')).toHaveValue('Studio Mac');
-    const address = screen.getByLabelText('Community address');
+    const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
     await user.type(address, 'https://a.example');
-    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
     expect(transport.startCommunityConnection).toHaveBeenCalledWith({
       url: 'https://a.example',
       installName: 'Studio Mac',
@@ -159,12 +165,12 @@ describe('ConnectCommunityDialog', () => {
       startCommunityConnection: vi.fn().mockRejectedValue(new Error('not a community')),
     });
     mount(transport, { ref: null });
-    const address = screen.getByLabelText('Community address');
+    const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
     await user.type(address, 'https://nowhere.example');
-    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Couldn’t connect. Check the community address and try again.'
+      'Couldn’t connect. Check the space’s address and try again.'
     );
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
@@ -172,7 +178,7 @@ describe('ConnectCommunityDialog', () => {
   it('asks for one community’s own link when the address is a host with several', async () => {
     const user = userEvent.setup();
     const selectionRequired = Object.assign(
-      new Error('Choose a specific community from this host and use its community link.'),
+      new Error('That address has more than one space on it. Use the link for the one you want.'),
       { status: 409, code: 'COMMUNITY_SELECTION_REQUIRED' }
     );
     const transport = createMockTransport({
@@ -180,14 +186,14 @@ describe('ConnectCommunityDialog', () => {
       startCommunityConnection: vi.fn().mockRejectedValue(selectionRequired),
     });
     mount(transport, { ref: null });
-    const address = screen.getByLabelText('Community address');
+    const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
     await user.type(address, 'https://spaces.example.com');
-    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('That address has more than one community on it.');
+    expect(alert).toHaveTextContent('That address has more than one space on it.');
     // The example is on the host the person typed, so it is one they can use as it stands.
-    expect(alert).toHaveTextContent('like https://spaces.example.com/your-community,');
+    expect(alert).toHaveTextContent('like https://spaces.example.com/your-space,');
     expect(alert).toHaveTextContent('/c/');
     expect(alert).not.toHaveTextContent('Check the community address');
     // The address stays, so the person can add the community's part to it.
@@ -206,16 +212,43 @@ describe('ConnectCommunityDialog', () => {
       ),
     });
     mount(transport, { ref: null });
-    const address = screen.getByLabelText('Community address');
+    const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
     // A type="url" field still lets a person submit this in some browsers; the form's own check
     // is bypassed here so the fallback is reached.
     address.closest('form')?.setAttribute('novalidate', '');
     await user.type(address, 'spaces');
-    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('like https://example.com/acme,');
+  });
+
+  // Purpose: a join link that is not a secure invitation is refused in words
+  // and never posted as an address. Fails if any of these reaches
+  // startCommunityConnection, or opens, or is refused silently.
+  it.each([
+    ['plain http off this machine', 'http://a.example.com/c/remote-a/join#invite=secret'],
+    ['the invite in the query', 'https://a.example.com/c/remote-a/join?invite=secret'],
+    ['no invite at all', 'https://a.example.com/join'],
+  ])('refuses a join link with %s, without sending it', async (_label, link) => {
+    const user = userEvent.setup();
+    const start = vi.fn();
+    const transport = createMockTransport({
+      listCommunityConnections: vi.fn().mockResolvedValue([]),
+      startCommunityConnection: start,
+    });
+    mount(transport, { ref: null });
+    const address = screen.getByLabelText('Space address or invitation link');
+    await waitFor(() => expect(address).toBeEnabled());
+    expect(address).toHaveAttribute('autocomplete', 'off');
+    address.closest('form')?.setAttribute('novalidate', '');
+    await user.type(address, link);
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'like https://spaces.example.com/acme,'
+      'That invitation link is incomplete or isn’t secure.'
     );
+    expect(address).toHaveAttribute('aria-invalid', 'true');
+    expect(start).not.toHaveBeenCalled();
+    expect(mockOpenExternalLink).not.toHaveBeenCalled();
   });
 
   /** Submit an address and return the alert the refusal leaves behind. */
@@ -226,10 +259,10 @@ describe('ConnectCommunityDialog', () => {
       startCommunityConnection: vi.fn().mockRejectedValue(refusal),
     });
     mount(transport, { ref: null });
-    const address = screen.getByLabelText('Community address');
+    const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
     await user.type(address, typed);
-    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
     return screen.findByRole('alert');
   }
 
@@ -242,9 +275,9 @@ describe('ConnectCommunityDialog', () => {
   it('says no community uses that short address when the host does not know the name', async () => {
     const alert = await refusedWith(coded(404, 'COMMUNITY_NAME_NOT_FOUND'));
     expect(alert).toHaveTextContent(
-      'No community uses that short address on this host. Check the spelling, or ask for the community’s full link.'
+      'No space uses that short address there. Check the spelling, or ask for the space’s full link.'
     );
-    expect(screen.getByLabelText('Community address')).toHaveValue(
+    expect(screen.getByLabelText('Space address or invitation link')).toHaveValue(
       'https://spaces.example.com/acme'
     );
   });
@@ -257,7 +290,7 @@ describe('ConnectCommunityDialog', () => {
       coded(429, 'COMMUNITY_RATE_LIMITED', { retryAfterSeconds: 17 })
     );
     expect(alert).toHaveTextContent(
-      'This DorkOS has tried that community too many times in a short while. Your address may be fine. Wait 17 seconds, then try again.'
+      'This DorkOS has tried that space too many times in a short while. Your address may be fine. Wait 17 seconds, then try again.'
     );
     expect(alert).not.toHaveTextContent('Check the community address');
   });
@@ -277,7 +310,7 @@ describe('ConnectCommunityDialog', () => {
   it('says the community’s server needs updating when it is too old to connect', async () => {
     const alert = await refusedWith(coded(426, 'COMMUNITY_UPGRADE_REQUIRED'));
     expect(alert).toHaveTextContent(
-      'This community’s server is too old to connect to this DorkOS. Ask whoever runs the community to update it, then try again.'
+      'This space’s server is too old to connect to this DorkOS. Ask whoever runs the space to update it, then try again.'
     );
     expect(alert).not.toHaveTextContent('Check the community address');
   });
@@ -287,16 +320,16 @@ describe('ConnectCommunityDialog', () => {
   // Fails if focus stays lost on the disabled field, or the alert is not linked to the input.
   it('returns focus to the address and ties the message to it', async () => {
     const alert = await refusedWith(coded(404, 'COMMUNITY_NAME_NOT_FOUND'));
-    const address = screen.getByLabelText('Community address');
+    const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toHaveFocus());
     expect(alert.id).not.toBe('');
     expect(address.getAttribute('aria-describedby')?.split(' ')).toContain(alert.id);
-    expect(address).toHaveAccessibleDescription(expect.stringContaining('No community uses'));
+    expect(address).toHaveAccessibleDescription(expect.stringContaining('No space uses'));
     expect(address).toHaveAttribute('aria-invalid', 'true');
     cleanup();
 
     const limited = await refusedWith(coded(429, 'COMMUNITY_RATE_LIMITED'));
-    const again = screen.getByLabelText('Community address');
+    const again = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(again).toHaveFocus());
     expect(again.getAttribute('aria-describedby')?.split(' ')).toContain(limited.id);
     // Too many tries is not the address's fault.
@@ -307,7 +340,7 @@ describe('ConnectCommunityDialog', () => {
   // text, never reach the person.
   it('keeps the general message for a refusal it has no words for', async () => {
     const alert = await refusedWith(coded(502, 'SOMETHING_ELSE'));
-    expect(alert).toHaveTextContent('Couldn’t connect. Check the community address and try again.');
+    expect(alert).toHaveTextContent('Couldn’t connect. Check the space’s address and try again.');
     expect(alert).not.toHaveTextContent('server words');
   });
 
@@ -338,7 +371,7 @@ describe('ConnectCommunityDialog', () => {
         'Approval for Community A expired. Connect again to continue.'
       )
     );
-    expect(screen.getByLabelText('Community address')).toHaveFocus();
+    expect(screen.getByLabelText('Space address or invitation link')).toHaveFocus();
     expect(toast.warning).not.toHaveBeenCalled();
   });
 
@@ -354,10 +387,10 @@ describe('ConnectCommunityDialog', () => {
       }),
     });
     mount(transport, { ref: null });
-    const address = screen.getByLabelText('Community address');
+    const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
     await user.type(address, 'https://a.example');
-    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(
         'Approval for Community A ended somewhere else. Connect again to continue.'
@@ -380,10 +413,10 @@ describe('ConnectCommunityDialog', () => {
         .mockResolvedValue({ status: 'pending', connection: pending }),
     });
     mount(transport, { ref: null });
-    const address = screen.getByLabelText('Community address');
+    const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
     await user.type(address, 'https://a.example');
-    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByRole('link', { name: 'Open Community A to approve' })).toBeVisible();
 
     // A new authority epoch, even for the same owner, is a new owner as far as
@@ -392,7 +425,7 @@ describe('ConnectCommunityDialog', () => {
       invalidateCommunityAuthority();
     });
     await waitFor(() =>
-      expect(screen.getByText(/Approve in the community tab you opened/)).toBeInTheDocument()
+      expect(screen.getByText(/Approve in the tab you opened for this space/)).toBeInTheDocument()
     );
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByText('Next, approve this DorkOS on Community A.')).not.toBeInTheDocument();
@@ -420,7 +453,7 @@ describe('ConnectCommunityDialog', () => {
       invalidateCommunityAuthority();
     });
     await waitFor(() => expect(navigation).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole('dialog', { name: 'Connect a community' })).toBeVisible();
+    expect(await screen.findByRole('dialog', { name: 'Join a space' })).toBeVisible();
     await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
     expect(screen.queryByText(/Community A/)).not.toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('');
@@ -455,7 +488,7 @@ describe('ConnectCommunityDialog', () => {
       </QueryClientProvider>
     );
     expect(await screen.findByRole('dialog', { name: 'Approve on Community A' })).toBeVisible();
-    expect(screen.getByText(/Approve in the community tab you opened/)).toBeInTheDocument();
+    expect(screen.getByText(/Approve in the tab you opened for this space/)).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
@@ -469,10 +502,10 @@ describe('ConnectCommunityDialog', () => {
       }),
     });
     mount(transport, { ref: null });
-    const address = screen.getByLabelText('Community address');
+    const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
     await user.type(address, 'https://a.example');
-    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t connect.');
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(useCommunityApprovalStore.getState().links).toBeNull();
@@ -509,7 +542,7 @@ describe('ConnectCommunityDialog', () => {
     expect(screen.getByText('https://a.example')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Approve in the community tab you opened. If you closed it, cancel and connect again.'
+        'Approve in the tab you opened for this space. If you closed it, cancel and connect again.'
       )
     ).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
@@ -571,7 +604,7 @@ describe('ConnectCommunityDialog', () => {
         'Community A is disconnected. Connect again to continue.'
       )
     );
-    expect(screen.getByLabelText('Community address')).toHaveFocus();
+    expect(screen.getByLabelText('Space address or invitation link')).toHaveFocus();
   });
 
   it('says so when this DorkOS disconnected but the Community could not be told', async () => {
@@ -642,7 +675,7 @@ describe('ConnectCommunityDialog', () => {
       listCommunityConnections: vi.fn().mockResolvedValue([reconnectRequired]),
     });
     const view = mount(transport, { ref: null });
-    const address = screen.getByLabelText('Community address');
+    const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
     await user.type(address, 'https://half-typed.example');
     view.rerender(null);
@@ -650,6 +683,6 @@ describe('ConnectCommunityDialog', () => {
     expect(await screen.findByRole('dialog', { name: 'Reconnect Community A' })).toBeVisible();
     view.rerender(null);
     view.rerender({ ref: null });
-    expect(await screen.findByLabelText('Community address')).toHaveValue('');
+    expect(await screen.findByLabelText('Space address or invitation link')).toHaveValue('');
   });
 });

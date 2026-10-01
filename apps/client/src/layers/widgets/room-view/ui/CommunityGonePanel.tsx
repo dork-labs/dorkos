@@ -105,16 +105,16 @@ export function CommunityGonePanel({ connection, onRemoved }: CommunityGonePanel
   const deleted = state === 'deleted' || state === 'taken-down';
   const heading =
     state === 'taken-down'
-      ? 'The host took this community down'
+      ? 'This space was taken down'
       : state === 'deleted'
-        ? 'This community was deleted'
-        : 'This community seems to be gone';
+        ? 'This space was deleted'
+        : 'This space seems to be gone';
   const body =
     state === 'taken-down'
-      ? `The host of ${label} took it down, so DorkOS removed the copy it kept on this computer. If the host puts it back, you can connect again.`
+      ? `Whoever runs ${label} took it down, so DorkOS removed the copy it kept on this computer. If they put it back, you can connect again.`
       : state === 'deleted'
         ? `${label} no longer exists, so DorkOS removed the copy it kept on this computer.`
-        : `Since ${since}, ${label} has said this community doesn’t exist. It may have been deleted. This computer still has a copy of its channels, messages and files.`;
+        : `Since ${since}, ${label} has said this space doesn’t exist. It may have been deleted. This computer still has a copy of its channels, messages and files.`;
   const unsent = unsentSummary(
     deleted ? (connection.undeliveredAgentMessages ?? 0) : 0,
     drafts.length

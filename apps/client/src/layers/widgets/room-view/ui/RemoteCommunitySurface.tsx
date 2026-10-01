@@ -288,7 +288,7 @@ export function RemoteCommunitySurface({
     canSendReason: removed
       ? 'You no longer have access to this channel.'
       : !access.capabilities.post && access.cacheReadable
-        ? 'This community is read-only.'
+        ? 'This space is read-only.'
         : room?.archived
           ? 'This channel is archived.'
           : !room?.joined
@@ -350,10 +350,7 @@ export function RemoteCommunitySurface({
   }
   return (
     <Conversation.Root surface="room" capabilities={CAPABILITIES} target={target}>
-      <section
-        className="flex h-full min-h-0 flex-col"
-        aria-label={room?.title ?? 'Community channel'}
-      >
+      <section className="flex h-full min-h-0 flex-col" aria-label={room?.title ?? 'Space channel'}>
         <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
           {threadId && (
             <Button variant="ghost" size="sm" onClick={() => onThread()}>
@@ -426,8 +423,8 @@ export function RemoteCommunitySurface({
             {stream.status !== 'live' && (
               <p role="status" className="text-muted-foreground px-4 py-2 text-sm">
                 {stream.status === 'connecting'
-                  ? 'Connecting to the community…'
-                  : 'Community unavailable. Showing saved messages.'}
+                  ? 'Connecting to the space…'
+                  : 'Space unavailable. Showing saved messages.'}
               </p>
             )}
             {roomQuery.isError && (
@@ -450,7 +447,7 @@ export function RemoteCommunitySurface({
                       {member.displayName}
                       {member.kind === 'agent' ? ' · Agent' : ''}
                       {member.ownerMemberId &&
-                        ` · owned by ${roster.data.members.find((owner) => owner.memberId === member.ownerMemberId)?.displayName ?? 'a community member'}`}
+                        ` · owned by ${roster.data.members.find((owner) => owner.memberId === member.ownerMemberId)?.displayName ?? 'a space member'}`}
                     </span>
                     {member.handle && (
                       <Button
@@ -503,7 +500,7 @@ export function RemoteCommunitySurface({
               ref={timeline}
               conversationId={target.id}
               rows={rows}
-              label={threadId ? 'Community thread' : 'Community messages'}
+              label={threadId ? 'Space thread' : 'Space messages'}
               busy={history.isFetching}
               resumeRow={() => remembered?.scrollAnchorEntryId ?? undefined}
               onTopRow={noteTopRow}
@@ -548,10 +545,10 @@ export function RemoteCommunitySurface({
                   ))}
                   <p className="text-muted-foreground">
                     {delivery.state === 'pending'
-                      ? 'Waiting for community confirmation…'
+                      ? 'Waiting for space confirmation…'
                       : delivery.failure === 'expired'
                         ? 'Delivery not confirmed. The retry window has ended.'
-                        : 'Delivery not confirmed. Check that the community is reachable and the agent can access this channel before asking it to try again.'}
+                        : 'Delivery not confirmed. Check that the space is reachable and the agent can access this channel before asking it to try again.'}
                   </p>
                   {delivery.state === 'pending' && delivery.retryable && (
                     <Button

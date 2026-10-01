@@ -1,5 +1,6 @@
 /**
- * Every sentence the hosted-community surfaces say about a state, in one place.
+ * Every sentence the space surfaces say about a state, in one place. (Code
+ * calls a space a community; people read "space", spec D6.)
  *
  * The service's own words (a problem's `title` and `detail`, a community's
  * `notice`) are shown as given and never live here. What lives here is what
@@ -35,32 +36,32 @@ export function moveFailureCopy(code: CommunityMoveFailureCode | Unrecognised): 
     case 'not_owner_export':
       return {
         title: 'This file is a personal export, not an owner export.',
-        next: 'Sign in to the old community as its owner, export it from Settings, then try again.',
+        next: 'Sign in to the old space as its owner, export it from Settings, then try again.',
       };
     case 'archive_invalid':
       return {
-        title: 'This file is damaged, or it isn’t a community export.',
-        next: 'Export the old community again, then try again.',
+        title: 'This file is damaged, or it isn’t a space export.',
+        next: 'Export the old space again, then try again.',
       };
     case 'checksum_mismatch':
       return {
         title: 'Part of this export is damaged.',
-        next: 'Export the old community again, then try again.',
+        next: 'Export the old space again, then try again.',
       };
     case 'version_unsupported':
       return {
-        title: 'This export comes from a version the new host can’t read.',
-        next: 'Update the old community, export it again, then try again.',
+        title: 'This export comes from a version DorkOS can’t read yet.',
+        next: 'Update the old space, export it again, then try again.',
       };
     case 'too_large':
       return {
         title: 'This export is too large to move.',
-        next: 'Delete some large files in the old community, export it again, then try again.',
+        next: 'Delete some large files in the old space, export it again, then try again.',
       };
     case 'storage_limit_reached':
       return {
-        title: 'The files don’t fit in the new community’s file space.',
-        next: 'Delete some files in the old community, export it again, then try again.',
+        title: 'The files don’t fit in the new space’s file storage.',
+        next: 'Delete some files in the old space, export it again, then try again.',
       };
     case 'upload_expired':
       return {
@@ -69,7 +70,7 @@ export function moveFailureCopy(code: CommunityMoveFailureCode | Unrecognised): 
       };
     case 'storage_unavailable':
       return {
-        title: 'The new host couldn’t store the files just now.',
+        title: 'DorkOS couldn’t store the files just now.',
         next: 'Wait a little while, then start the move again.',
       };
     default:
@@ -114,13 +115,13 @@ export function communityStateLabel(state: HostedCommunity['state']): string {
 export function holdReasonCopy(reason: NonNullable<HostedCommunity['hold']>['reason']): string {
   switch (reason) {
     case 'over_limit':
-      return 'Your account has more communities than it allows. Choose which ones stay open.';
+      return 'Your account has more spaces than it allows. Choose which ones stay open.';
     case 'inactive':
       return 'Nobody has posted here in a long time. You can reopen it.';
     case 'host':
-      return 'The host put this community on hold. People can still read it.';
+      return 'DorkOS put this space on hold. People can still read it.';
     default:
-      return 'This community is on hold for a reason this version of DorkOS doesn’t know.';
+      return 'This space is on hold for a reason this version of DorkOS doesn’t know.';
   }
 }
 
@@ -169,8 +170,8 @@ export function formatBytes(bytes: number): string {
 export function allowanceCopy(allowance: CloudCommunityAllowance | null): string | null {
   if (allowance?.maxCommunities == null || allowance.usedCommunities == null) return null;
   const left = allowance.maxCommunities - allowance.usedCommunities;
-  if (left <= 0) return 'Your account has no room for another community right now.';
-  return `You can start ${left} more ${left === 1 ? 'community' : 'communities'}.`;
+  if (left <= 0) return 'Your account has no room for another space right now.';
+  return `You can start ${left} more ${left === 1 ? 'space' : 'spaces'}.`;
 }
 
 /** The web address grammar, said plainly. Shown under the field as a hint. */

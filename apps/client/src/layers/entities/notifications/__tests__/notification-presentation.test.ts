@@ -30,4 +30,21 @@ describe('notification presentation', () => {
     };
     expect(notificationLink(row)).toEqual({ to: '/', search: { settings: 'extensions' } });
   });
+
+  // DOR-2543. The subject is the owner's connection ref; the row opens that community's page,
+  // where the banner says what to do.
+  it('takes an owner-replacement row to the community it is about', () => {
+    const row: NotificationDTO = {
+      id: '01JZG0000000000000000010',
+      kind: 'community.owner-replacement',
+      tier: 'notable',
+      subject: { type: 'system', id: 'remote_owner_a' },
+      title: 'Someone asked to take over Night shift',
+      createdAt: '2026-09-28T12:00:00.000Z',
+    };
+    expect(notificationLink(row)).toEqual({
+      to: '/channels',
+      search: { community: 'remote_owner_a' },
+    });
+  });
 });

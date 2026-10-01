@@ -1,5 +1,5 @@
 /**
- * "Move a community here": send an owner export, watch it upload and import,
+ * "Move a space here": send an owner export, watch it upload and import,
  * then hand over to claim and connect.
  *
  * Where a move is comes from the service on every poll. Nothing about it is

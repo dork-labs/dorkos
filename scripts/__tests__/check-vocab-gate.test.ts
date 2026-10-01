@@ -833,7 +833,26 @@ describe('runVocabGate — docs scan wired end to end', () => {
     expect(violations[0]?.term).toBe('integration');
   });
 
-  it('scans docs against wave 4 only — a wave-1 "connection" hit in docs prose is not flagged', () => {
+  // Purpose: the Space rename (DOR-2631) holds in docs, where people learn
+  // the word. Fails if wave 5 drops out of the docs scan, or if a command in
+  // inline code (which still says community until DOR-2639) starts firing.
+  it('scans docs against wave 5 — "community" in prose is flagged, in inline code it is not', () => {
+    const root = makeTempDir();
+    const docPath = join(root, 'docs/guides/fixture-guide.mdx');
+    mkdirSync(join(docPath, '..'), { recursive: true });
+    writeFileSync(
+      docPath,
+      'Run `dorkos community deploy` to set up a server.\nJoin a community from the menu.\nYour Communities list.\n'
+    );
+
+    const violations = runVocabGate(root, ['apps/client/src'], ['docs']);
+    expect(violations.map((v) => [v.line, v.term, v.wave])).toEqual([
+      [2, 'community', 'wave-5'],
+      [3, 'communities', 'wave-5'],
+    ]);
+  });
+
+  it('scans docs against waves 4 and 5 only — a wave-1 "connection" hit in docs prose is not flagged', () => {
     const root = makeTempDir();
     const docPath = join(root, 'docs/guides/fixture-guide.mdx');
     mkdirSync(join(docPath, '..'), { recursive: true });
@@ -1005,6 +1024,12 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     const terms = loadBannedTerms();
     expect(terms).toContainEqual({ term: '...', wave: 'wave-3', issue: 'DOR-1756' });
     expect(terms).toContainEqual({ term: '&apos;', wave: 'wave-3', issue: 'DOR-1756' });
+  });
+
+  it('carries the Wave 5 Space rename terms in singular AND plural', () => {
+    const terms = loadBannedTerms();
+    for (const term of ['community', 'communities'])
+      expect(terms).toContainEqual({ term, wave: 'wave-5', issue: 'DOR-2631' });
   });
 
   it('carries the Wave 4 Connections terms in singular AND plural', () => {

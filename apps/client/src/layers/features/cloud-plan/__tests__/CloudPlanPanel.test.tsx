@@ -73,7 +73,7 @@ function linkedTransport(overrides: Partial<Record<string, unknown>> = {}): Tran
 /** The line saying who can buy a plan, with its link to the pricing page's answer. */
 async function findEligibilityLine() {
   const line = await screen.findByText(
-    /Paid plans, and communities that DorkOS hosts for you, are for people in the United States who are 18 or older\./
+    /Paid plans, and spaces that run on DorkOS for you, are for people in the United States who are 18 or older\./
   );
   const link = within(line).getByRole('link', { name: 'Who can buy a plan?' });
   expect(link).toHaveAttribute('href', 'https://dorkos.ai/pricing#faq');

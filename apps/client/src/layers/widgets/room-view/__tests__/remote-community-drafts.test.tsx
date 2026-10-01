@@ -344,8 +344,8 @@ describe('remote community delivery drafts', () => {
   function goneRefusal(code: 'COMMUNITY_DELETED' | 'COMMUNITY_TAKEN_DOWN') {
     const body =
       code === 'COMMUNITY_DELETED'
-        ? { code, error: 'This community was deleted.' }
-        : { code, error: 'The host took this community down.' };
+        ? { code, error: 'This space was deleted.' }
+        : { code, error: 'This space was taken down.' };
     return Object.assign(new Error(body.error), {
       code,
       status: code === 'COMMUNITY_DELETED' ? 410 : 423,

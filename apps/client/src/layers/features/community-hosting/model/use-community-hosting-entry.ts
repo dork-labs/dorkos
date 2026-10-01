@@ -1,6 +1,6 @@
 /**
- * What the community switcher needs to decide whether, and how, to offer
- * "Start a community" and "Move a community here".
+ * What the context switcher needs to decide whether, and how, to offer
+ * "Start a space" and "Your spaces" (where a space is moved here).
  *
  * @module features/community-hosting/model/use-community-hosting-entry
  */
@@ -14,8 +14,6 @@ export interface CommunityHostingEntry {
   allowance: CloudCommunityAllowance | null;
   /** The newest move that still needs this app, to pick up after a reload. */
   unfinishedMoveId: string | null;
-  /** The account hosts at least one community, or has a recent move to show. */
-  hasHosted: boolean;
 }
 
 /**
@@ -33,11 +31,9 @@ export function useCommunityHostingEntry(): CommunityHostingEntry | null {
   const list = useHostedCommunities(linked);
   if (!linked || list.isPending || list.data?.available === false) return null;
   const data = list.data?.available === true ? list.data : null;
-  const communities = data?.communities ?? [];
   const moves = data?.moves ?? [];
   return {
     allowance: data?.allowance ?? null,
     unfinishedMoveId: moves.find(isUnfinishedMove)?.moveId ?? null,
-    hasHosted: communities.length > 0 || moves.length > 0,
   };
 }

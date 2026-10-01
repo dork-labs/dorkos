@@ -122,8 +122,8 @@ function RemoteChannelsBar({ community, roomId }: { community: string; roomId: s
   const label = connection?.label;
   return (
     <OneBar
-      identity={<BarTitle>{room.data?.title ?? 'Community channel'}</BarTitle>}
-      chips={<span className="text-muted-foreground truncate text-xs">{label ?? 'Community'}</span>}
+      identity={<BarTitle>{room.data?.title ?? 'Space channel'}</BarTitle>}
+      chips={<span className="text-muted-foreground truncate text-xs">{label ?? 'Space'}</span>}
     />
   );
 }

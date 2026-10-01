@@ -112,7 +112,7 @@ export class RemotePairingBusyError extends Error {
 /** An origin-only link cannot choose among multiple private communities. */
 export class RemoteCommunitySelectionRequiredError extends Error {
   constructor() {
-    super('A canonical community link is required');
+    super('A canonical space link is required');
     this.name = 'RemoteCommunitySelectionRequiredError';
   }
 }
@@ -189,7 +189,7 @@ const NO_CAPABILITIES = { read: false, post: false, enrollAgent: false, stream: 
 /** A `/<name>` link whose host knows no community by that name. */
 export class RemoteCommunityNameNotFoundError extends Error {
   constructor() {
-    super('No community answers to this short name');
+    super('No space answers to this short name');
     this.name = 'RemoteCommunityNameNotFoundError';
   }
 }
@@ -205,7 +205,7 @@ export class RemoteCommunityRateLimitedError extends Error {
    * @param retryAfterSeconds - How long the host asked this server to wait, when it said.
    */
   constructor(readonly retryAfterSeconds?: number) {
-    super('The community host is limiting requests from this server');
+    super('The space’s server is limiting requests from this computer');
     this.name = 'RemoteCommunityRateLimitedError';
   }
 }

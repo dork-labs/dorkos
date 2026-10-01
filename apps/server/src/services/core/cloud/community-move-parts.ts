@@ -216,7 +216,7 @@ export async function sendParts(
       current = () => req.destroy(new Stopped());
       // A server that stops answering (or stops reading) must not hold the attempt for good.
       req.setTimeout(options.idleMs ?? REQUEST_IDLE_MS, () =>
-        req.destroy(new Error('The Community server stopped answering.'))
+        req.destroy(new Error('The space’s server stopped answering.'))
       );
       req.on('error', (error) => {
         if (settled) return;

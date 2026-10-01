@@ -29,6 +29,7 @@ export const cloudPlanKeys = {
   orgs: () => [...cloudPlanKeys.all, 'orgs'] as const,
   members: (orgId: string) => [...cloudPlanKeys.all, 'members', orgId] as const,
   seats: (orgId: string) => [...cloudPlanKeys.all, 'seats', orgId] as const,
+  offers: () => [...cloudPlanKeys.all, 'offers'] as const,
 };
 
 /** How long a plan read stays fresh. Plans do not move minute to minute. */

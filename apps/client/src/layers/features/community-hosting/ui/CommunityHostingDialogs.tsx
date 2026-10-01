@@ -1,6 +1,7 @@
 /**
- * The three hosted-community dialogs, mounted together by whoever offers the
- * entry points (the community switcher).
+ * The three dialogs for spaces that run on DorkOS (Start a space, Your spaces,
+ * Move a space here), mounted together by whoever offers the entry points
+ * (the context switcher).
  *
  * @module features/community-hosting/ui/CommunityHostingDialogs
  */
@@ -59,6 +60,7 @@ export function CommunityHostingDialogs({
         onOpenChange={close}
         installName={installName}
         onOpenMove={(moveId) => onDialogChange({ kind: 'move', moveId })}
+        onMoveHere={() => onDialogChange({ kind: 'move', moveId: entry.unfinishedMoveId })}
         onConnected={onConnected}
       />
     </>

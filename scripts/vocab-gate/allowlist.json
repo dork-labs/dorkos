@@ -398,6 +398,153 @@
       "terms": ["adapter", "adapters"],
       "contains": "The webhook adapter is a generic HTTP bridge.",
       "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact sentence."
+    },
+    {
+      "path": "docs/contributing/architecture.mdx",
+      "terms": ["community", "communities"],
+      "reason": "The contributor architecture reference names code components by their code names — the Community server (apps/community), CommunityAdapter, /api/v1/communities routes — which DOR-2631 deliberately leaves as \"community\" until DOR-2639 renames identifiers, routes and the contract. A reader here is reading source structure, not product copy."
+    },
+    {
+      "path": "apps/site/src/app/(marketing)/marketplace/page.tsx",
+      "terms": ["community"],
+      "reason": "\"The DorkOS community\" here means the people who build and share marketplace packages (and the dorkos-community GitHub organization), the ordinary English sense — not a space."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketplace/ui/MarketplaceHeader.tsx",
+      "terms": ["community"],
+      "reason": "\"The DorkOS community\" here means the people who build and share marketplace packages, the ordinary English sense — not a space."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["community"],
+      "contains": "Two things, by name: Cline",
+      "reason": "\"A fork started by its own community\" is ZooCode's open-source contributor community, the ordinary English sense — not a space."
+    },
+    {
+      "path": "apps/server/src/services/core/openapi-registry.ts",
+      "terms": ["community"],
+      "contains": "Snapshot on a cold connect",
+      "reason": "An API route description, compiled into openapi.json and docs/api, naming the wire's mirrored-room source by its wire name. Routes and the contract keep \"community\" until DOR-2639."
+    },
+    {
+      "path": "docs/getting-started/quickstart.mdx",
+      "terms": ["community"],
+      "contains": "skill packs from th",
+      "reason": "Marketplace packages \"from the community\": the people who share them, the ordinary English sense — not a space."
+    },
+    {
+      "path": "docs/integrations/extensions.mdx",
+      "terms": ["community"],
+      "contains": "Install extensions from the community registry",
+      "reason": "The community registry of extensions: packages shared by people, the ordinary English sense — not a space."
+    },
+    {
+      "path": "docs/getting-started/uninstall.mdx",
+      "terms": ["community"],
+      "contains": "Settings > Community plugins",
+      "reason": "Obsidian's own settings section is literally named \"Community plugins\"; the step quotes Obsidian's UI."
+    },
+    {
+      "path": "docs/guides/obsidian-plugin.mdx",
+      "terms": ["community"],
+      "contains": "Settings > Community plugins",
+      "reason": "Obsidian's own settings section is literally named \"Community plugins\"; the step quotes Obsidian's UI."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["community"],
+      "contains": "description: Browse and install pre-built agents",
+      "reason": "Packages \"from the DorkOS community\": the people who share them, the ordinary English sense — not a space."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["community"],
+      "contains": "The marketplace is the public face of the",
+      "reason": "The dorkos-community GitHub organization, and the people who maintain its registry — a proper name and the ordinary English sense, not a space."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["community"],
+      "contains": "You can also manage sources in DorkOS",
+      "reason": "\"Community packages\" are packages from the public registry other people share — the ordinary English sense, not a space."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["community"],
+      "contains": "documented in the [dorkos-community CONTRIBUTING",
+      "reason": "Link text naming the dorkos-community GitHub organization's CONTRIBUTING guide — a proper name."
+    },
+    {
+      "path": "docs/marketplace/index.mdx",
+      "terms": ["community"],
+      "contains": "The marketplace is community-driven",
+      "reason": "\"Community-driven\": built by the people who share packages, the ordinary English sense — not a space."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community"],
+      "contains": "A space's own pages still call it a \"community\"",
+      "reason": "The sentence that tells the reader the space's own site still says \"community\", so the quoted button names below make sense. It has to name the old word."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community", "communities"],
+      "contains": "before choosing **Create community**",
+      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community", "communities"],
+      "contains": "and finish with **Join community**",
+      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community", "communities"],
+      "contains": "Enter a name, then choose **Create community**",
+      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community", "communities"],
+      "contains": "community**. After that they choose **Open community**",
+      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community", "communities"],
+      "contains": "message was removed by a community admin.",
+      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community", "communities"],
+      "contains": "choose **Export this community**",
+      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community", "communities"],
+      "contains": "under **Leave community**, choose **Leave community**",
+      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community", "communities"],
+      "contains": "find it under **Communities you left**",
+      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community", "communities"],
+      "contains": "sees \"This community was removed by its host.\"",
+      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/cli-usage.mdx",
+      "terms": ["community"],
+      "contains": "<span id=\"community-server\" />",
+      "reason": "An invisible anchor, not prose: released apps link to cli-usage#community-server, and this keeps that link landing on the renamed Space server section."
     }
   ]
 }

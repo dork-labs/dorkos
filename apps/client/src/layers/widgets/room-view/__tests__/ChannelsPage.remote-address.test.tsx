@@ -78,7 +78,7 @@ describe('qualified channel route', () => {
       },
     ];
     render(<ChannelsPage />);
-    expect(screen.getByText('This community seems to be gone')).toBeInTheDocument();
+    expect(screen.getByText('This space seems to be gone')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove local copy' })).toBeInTheDocument();
     expect(remote).not.toHaveBeenCalled();
   });

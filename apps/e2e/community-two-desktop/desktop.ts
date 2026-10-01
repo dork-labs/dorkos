@@ -233,21 +233,21 @@ export async function connectDesktop(
   signIn: { email: string; password: string } | null
 ): Promise<string> {
   await local.page.goto(local.origin + '/');
-  // Connect lives in the sidebar's switcher, under Add community.
+  // Connect lives in the sidebar's switcher, under Add a space › Join a space.
   await expect(trigger(local)).toBeVisible({ timeout: 60_000 });
   await trigger(local).click();
   await local.page.locator('[data-menu-item-id="add-community"]').hover();
-  await local.page.getByRole('menuitem', { name: 'Connect a community…' }).click();
-  const dialog = local.page.getByRole('dialog', { name: 'Connect a community' });
+  await local.page.getByRole('menuitem', { name: 'Join a space…' }).click();
+  const dialog = local.page.getByRole('dialog', { name: 'Join a space' });
   await expect(dialog).toBeVisible();
   const before = (await externalOpens(local)).length;
-  await dialog.getByLabel('Community address').fill(origin);
+  await dialog.getByLabel('Space address or invitation link').fill(origin);
   await dialog.getByLabel('Name for this installation').fill(installName);
   const started = local.page.waitForResponse(
     (r) =>
       r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/community-connections'
   );
-  await dialog.getByRole('button', { name: 'Connect community', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
   const response = await started;
   assert.equal(response.status(), 201, 'connection start');
   const result = (await response.json()) as {
@@ -356,8 +356,7 @@ export async function openManageMenu(local: Desktop, communityName: string): Pro
  *
  * @param local - The app.
  */
-export const feed = (local: Desktop) =>
-  local.page.getByRole('feed', { name: 'Community messages' });
+export const feed = (local: Desktop) => local.page.getByRole('feed', { name: 'Space messages' });
 
 /**
  * The open thread's feed in an app.
@@ -365,7 +364,7 @@ export const feed = (local: Desktop) =>
  * @param local - The app.
  */
 export const threadFeed = (local: Desktop) =>
-  local.page.getByRole('feed', { name: 'Community thread' });
+  local.page.getByRole('feed', { name: 'Space thread' });
 
 /**
  * The message composer. It offers @mention completion, so it is a combobox, not a bare textbox.
@@ -389,15 +388,15 @@ export const messageRow = (scope: Locator, text: string) =>
     .filter({ has: scope.page().getByRole('button', { name: /Reply in thread|Open thread/ }) })
     .last();
 
-/** The line a Community channel shows while its live stream is still starting. */
-export const CONNECTING_LINE = 'Connecting to the community…';
+/** The line a space's channel shows while its live stream is still starting. */
+export const CONNECTING_LINE = 'Connecting to the space…';
 
 /**
  * Type a message into a Community composer, send it with Enter, and confirm
  * the app actually posted it.
  *
  * The composer ignores Enter until the channel's live stream is up: a page
- * that has just loaded shows "Connecting to the community…", greys Send, and
+ * that has just loaded shows "Connecting to the space…", greys Send, and
  * an Enter pressed then leaves the words in the box and posts nothing
  * (DOR-2650). So this waits for that line to go and for Send to be enabled,
  * and after Enter waits for the app's own 201 `POST …/entries` carrying this

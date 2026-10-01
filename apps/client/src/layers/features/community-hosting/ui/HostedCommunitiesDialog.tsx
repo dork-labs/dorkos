@@ -1,6 +1,7 @@
 /**
- * "Hosted communities": every community this account hosts, what state each
- * is in, and the ways out of a hold, plus recent moves.
+ * "Your spaces": every space that runs on DorkOS under this account, what
+ * state each is in, and the ways out of a hold, plus recent moves and the way
+ * to move another one here.
  *
  * @module features/community-hosting/ui/HostedCommunitiesDialog
  */
@@ -60,9 +61,7 @@ function HostedCommunityRow({ community, names, actions, onFinishSetup, onOpenMo
   const confirming = actions.confirmingKeep === community.communityId;
   const notice = actions.notices[community.communityId];
   const usage = usageLine(community);
-  const wouldHold = community.actions.keep.wouldHold.map(
-    (id) => names.get(id) ?? 'another community'
-  );
+  const wouldHold = community.actions.keep.wouldHold.map((id) => names.get(id) ?? 'another space');
   const attention =
     community.state === 'held' ||
     community.state === 'deletion_pending' ||
@@ -89,8 +88,7 @@ function HostedCommunityRow({ community, names, actions, onFinishSetup, onOpenMo
       </div>
       {community.state === 'unrecognised' && (
         <p className="text-muted-foreground text-sm">
-          This community is in a state this version of DorkOS doesn’t know. Update DorkOS to see
-          more.
+          This space is in a state this version of DorkOS doesn’t know. Update DorkOS to see more.
         </p>
       )}
       {community.hold && (
@@ -99,7 +97,7 @@ function HostedCommunityRow({ community, names, actions, onFinishSetup, onOpenMo
           <p className="text-muted-foreground">On hold since {formatDay(community.hold.since)}.</p>
           {community.hold.deletionNoticeAt && (
             <p className="text-destructive">
-              The host may delete it after {formatDay(community.hold.deletionNoticeAt)}. You can
+              DorkOS may delete it after {formatDay(community.hold.deletionNoticeAt)}. You can
               export it until then.
             </p>
           )}
@@ -237,7 +235,7 @@ export function HostedCommunityList(props: HostedCommunityListProps) {
           ))}
         </ul>
       ) : (
-        <p className="text-muted-foreground text-sm">You don’t host any communities yet.</p>
+        <p className="text-muted-foreground text-sm">You don’t have any spaces on DorkOS yet.</p>
       )}
       {props.moves.length > 0 && (
         <section aria-labelledby="hosted-moves" className="space-y-2">
@@ -293,6 +291,8 @@ export interface HostedCommunitiesDialogProps {
   installName: string;
   /** Open the move dialog on one move. */
   onOpenMove: (moveId: string) => void;
+  /** Open the move dialog to move another space here, picking up an unfinished move. */
+  onMoveHere: () => void;
   onConnected: (ref: string) => void;
 }
 
@@ -306,6 +306,7 @@ function HostedCommunitiesFlow({
   onOpenChange,
   installName,
   onOpenMove,
+  onMoveHere,
   onConnected,
 }: HostedCommunitiesDialogProps) {
   const list = useHostedCommunities(true);
@@ -319,7 +320,7 @@ function HostedCommunitiesFlow({
     step = claimConnectStep({
       state: claim.state,
       name: claiming.name,
-      doneDetail: 'Invite people from the community’s own settings when you’re ready.',
+      doneDetail: 'Invite people from the space’s own settings when you’re ready.',
       onOpenClaim: claim.openClaim,
       onConfirmClaimed: claim.confirmClaimed,
       onOpenApproval: claim.openApproval,
@@ -329,8 +330,8 @@ function HostedCommunitiesFlow({
   } else {
     const data = list.data?.available === true ? list.data : null;
     step = {
-      title: 'Hosted communities',
-      description: 'The communities your DorkOS account hosts.',
+      title: 'Your spaces',
+      description: 'The spaces that run on DorkOS under your account.',
       body: list.isPending ? (
         <p className="text-muted-foreground text-sm">Loading…</p>
       ) : data ? (
@@ -349,9 +350,20 @@ function HostedCommunitiesFlow({
         <HostingNoticeView notice={{ message: 'Couldn’t reach your DorkOS account. Try again.' }} />
       ),
       actions: (
-        <Button variant="outline" onClick={close}>
-          Close
-        </Button>
+        <>
+          <Button variant="outline" onClick={close}>
+            Close
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              close();
+              onMoveHere();
+            }}
+          >
+            Move one here
+          </Button>
+        </>
       ),
     };
   }

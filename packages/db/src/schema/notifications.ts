@@ -60,6 +60,7 @@ export const notifications = sqliteTable(
         'credits.refused',
         'extension.approval',
         'extension.decision',
+        'community.owner-replacement',
       ],
     }).notNull(),
 

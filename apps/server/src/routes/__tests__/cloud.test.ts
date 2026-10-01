@@ -38,6 +38,7 @@ vi.mock('../../services/core/cloud/plan.js', () => mockPlan);
 const mockV1 = vi.hoisted(() => ({
   isCloudLinked: vi.fn(() => true),
   problemOf: vi.fn(() => null as unknown),
+  isAbsent: vi.fn(() => false),
 }));
 vi.mock('../../services/core/cloud/v1-client.js', () => mockV1);
 

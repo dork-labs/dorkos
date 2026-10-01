@@ -225,9 +225,13 @@ dorkos browser forget <site>     # Take one site away from your agents (--all fo
 
 The full guide, including setup for the `claude`, `codex` and `opencode` command-line tools, is [Signed-in Browser](/docs/guides/agent-browser).
 
-#### Community server
+#### Space server
 
-**`dorkos community deploy`** (early): set up your own community server on Fly, with a Neon database and a private Tigris bucket for files. It shows the whole plan first, including which accounts may be charged, and creates nothing until you type the app name it will use. If setup stops partway, it keeps everything it made and tells you how to pick up where it left off. It never deletes anything that costs money on its own. It does not start DorkOS or need a DorkOS Cloud account.
+{/* Released apps link to this section by its old anchor, below; it keeps them landing here. */}
+
+<span id="community-server" />
+
+**`dorkos community deploy`** (early): set up your own space server on Fly, with a Neon database and a private Tigris bucket for files. It shows the whole plan first, including which accounts may be charged, and creates nothing until you type the app name it will use. If setup stops partway, it keeps everything it made and tells you how to pick up where it left off. It never deletes anything that costs money on its own. It does not start DorkOS or need a DorkOS Cloud account.
 
 ```bash
 dorkos community deploy --help              # Every option, and the tools you need signed in first

@@ -1,5 +1,5 @@
 /**
- * "Move a community here": bring a community from another host by its owner
+ * "Move a space here": bring a space from another server by its owner
  * export, then make it yours and connect this DorkOS to it.
  *
  * @module features/community-hosting/ui/MoveCommunityDialog
@@ -31,14 +31,14 @@ export const MOVE_DONE_DETAIL = 'Your history is here. Send invitations so peopl
  */
 export function moveExplainStep(onNext: () => void, onCancel: () => void): HostingStep {
   return {
-    title: 'Move a community here',
+    title: 'Move a space here',
     description:
-      'Moving copies your community’s history and files. Everyone joins again and reconnects their DorkOS. Your old community keeps running until you delete it.',
+      'Moving copies your space’s history and files to DorkOS. Everyone joins again and reconnects their DorkOS. Your old space keeps running until you delete it.',
     body: (
       <div className="space-y-2 text-sm">
-        <p className="font-medium">First, get an export of the old community:</p>
+        <p className="font-medium">First, get an export of the old space:</p>
         <ol className="text-muted-foreground list-decimal space-y-1 pl-5">
-          <li>Open the old community’s Settings, signed in as its owner.</li>
+          <li>Open the old space’s Settings, signed in as its owner.</li>
           <li>Choose Export.</li>
           <li>Confirm with your password.</li>
           <li>Save the file. It ends in .zip.</li>
@@ -114,7 +114,7 @@ export function moveChooseStep(props: MoveChooseStepProps): HostingStep {
     props.webAddressStatus.kind === 'reserved';
   return {
     title: 'Choose the export',
-    description: 'Pick the .zip file you saved, and name the community here.',
+    description: 'Pick the .zip file you saved, and name the space here.',
     body: (
       <form id={props.formId} onSubmit={props.onSubmit} className="space-y-4" noValidate>
         <ExportFileField file={props.file} onFileChange={props.onFileChange} />
@@ -235,7 +235,7 @@ export function moveProgressStep(
       return {
         title: `Uploading ${move.name}`,
         description:
-          'Your DorkOS is sending the export to the new host. You can close this window, but keep DorkOS running until this finishes.',
+          'This computer is sending the export to DorkOS. You can close this window, but keep DorkOS running until this finishes.',
         body: (
           <>
             <ByteProgress
@@ -268,9 +268,9 @@ export function moveProgressStep(
       }
       if (step.why === 'refused')
         return {
-          title: 'The new host didn’t accept the file',
+          title: 'DorkOS didn’t accept the file',
           description:
-            'The file arrived changed or incomplete. Cancel the move, export the old community again, then start again.',
+            'The file arrived changed or incomplete. Cancel the move, export the old space again, then start again.',
           body: notice,
           actions: cancelMove,
         };
@@ -285,7 +285,7 @@ export function moveProgressStep(
       return {
         title: 'The time to upload ran out',
         description:
-          'The new host stopped waiting for the file. Cancel the move, then start again with the same export.',
+          'DorkOS stopped waiting for the file. Cancel the move, then start again with the same export.',
         body: notice,
         actions: cancelMove,
       };
@@ -294,7 +294,7 @@ export function moveProgressStep(
       return {
         title: `Moving ${move.name}`,
         description:
-          'The new host is reading your history and files. You can close this window, or quit DorkOS; the move keeps going and shows here again when you come back.',
+          'DorkOS is reading your history and files. You can close this window, or quit the app; the move keeps going and shows here again when you come back.',
         body: (
           <>
             <p role="status" className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -319,7 +319,7 @@ export function moveProgressStep(
         description: copy.next,
         body: (
           <p className="text-muted-foreground text-sm">
-            Nothing was kept, and your old community is unchanged.
+            Nothing was kept, and your old space is unchanged.
           </p>
         ),
         actions: (
@@ -333,7 +333,7 @@ export function moveProgressStep(
     case 'cancelled':
       return {
         title: 'Move cancelled',
-        description: 'Nothing was kept, and your old community is unchanged.',
+        description: 'Nothing was kept, and your old space is unchanged.',
         actions: (
           <>
             {close}

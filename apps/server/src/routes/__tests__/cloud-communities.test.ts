@@ -945,7 +945,7 @@ describe('moving a community in', () => {
     expect(again.body).toEqual({
       ok: false,
       message:
-        'That move was already cancelled, so nothing was sent on to the new host. Press Start moving to begin a new one.',
+        'That move was already cancelled, so nothing was sent on to DorkOS. Press Start moving to begin a new one.',
     });
     expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
     expect(uploads.progress('move_0001')).toBeNull();
@@ -984,7 +984,7 @@ describe('moving a community in', () => {
     const res = await startMoveRequest().expect(413);
     expect(res.body).toEqual({
       ok: false,
-      message: `This export is too large for the new host. It is ${archive.length} bytes, and the most the host takes is ${archive.length - 1} bytes.`,
+      message: `This export is too large to move. It is ${archive.length} bytes, and the most DorkOS takes is ${archive.length - 1} bytes.`,
     });
     expect(res.text).not.toContain(UPLOAD_TOKEN);
     expect(received.some((r) => r.path === '/v1/communities/moves/move_0001/cancel')).toBe(true);

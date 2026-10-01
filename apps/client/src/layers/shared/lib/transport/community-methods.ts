@@ -40,7 +40,7 @@ export function createCommunityMethods(baseUrl: string): CommunityConnectionTran
         approval.username ||
         approval.password
       ) {
-        throw new Error('The community returned an invalid approval address.');
+        throw new Error('The space returned an invalid approval address.');
       }
       return result;
     },

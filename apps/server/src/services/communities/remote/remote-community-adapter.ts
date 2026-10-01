@@ -38,6 +38,8 @@ import {
   CommunityWireChannelListResponseSchema,
   CommunityWireChannelResponseSchema,
   CommunityWireAttentionResponseSchema,
+  CommunityWireOwnerReplacementNoticeResponseSchema,
+  type CommunityWireOwnerReplacementNoticeResponse,
   CommunityWireAgentChannelMembershipResponseSchema,
   CommunityWireAgentListResponseSchema,
   CommunityWireAttachmentUploadResponseSchema,
@@ -479,17 +481,17 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     } catch (error) {
       if (error instanceof PinnedHttpError && error.status === 401) {
         await this.requireReconnect();
-        return { status: 'unauthorized', error: 'The stored community grant was rejected.' };
+        return { status: 'unauthorized', error: 'The stored space grant was rejected.' };
       }
       if (error instanceof RemoteConnectionAuthorizationError)
-        return { status: 'unauthorized', error: 'Reconnect this community to continue.' };
+        return { status: 'unauthorized', error: 'Reconnect this space to continue.' };
       if (error instanceof PinnedHttpError)
         return {
           status: 'unreachable',
-          error: `The community returned HTTP ${error.status}.`,
+          error: `The space returned HTTP ${error.status}.`,
         };
       if (error instanceof PinnedOriginError) return { status: 'unreachable', error: error.code };
-      return { status: 'unauthorized', error: 'The stored community grant is unavailable.' };
+      return { status: 'unauthorized', error: 'The stored space grant is unavailable.' };
     }
   }
 
@@ -520,6 +522,17 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
   async attention(): Promise<{ unreadCount: number; mentionCount: number }> {
     return CommunityWireAttentionResponseSchema.parse(
       await this.request(COMMUNITY_API_V1_ROUTES.attention, undefined, undefined, 'GET')
+    );
+  }
+
+  /**
+   * Read what the Community tells this connection's member about a request to replace the
+   * community's owner: the owner's view of an open request (the admins' view for an admin),
+   * and a completed one for 7 days. Untrusted, like every remote answer.
+   */
+  async ownerReplacementNotice(): Promise<CommunityWireOwnerReplacementNoticeResponse> {
+    return CommunityWireOwnerReplacementNoticeResponseSchema.parse(
+      await this.request(COMMUNITY_API_V1_ROUTES.ownerReplacement, undefined, undefined, 'GET')
     );
   }
 

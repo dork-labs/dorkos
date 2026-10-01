@@ -95,9 +95,9 @@ describe('plan figures', () => {
       'In the cloud':
         'None | You + 3 agents | You + 10 agents | You + 25 agents | One seat per person or agent. No minimum.',
       'Extra agents': '— | $30 a month each | $30 a month each | $30 a month each | $30 per seat',
-      'Communities you can host': expect.stringMatching(/^1 \| /),
-      'People in each community': 'Up to 50 | No limit | No limit | No limit | No limit',
-      'Community storage': expect.stringMatching(/^1 GB \| /),
+      'Spaces you can start': expect.stringMatching(/^1 \| /),
+      'People in each space': 'Up to 50 | No limit | No limit | No limit | No limit',
+      'Storage for spaces': expect.stringMatching(/^1 GB \| /),
       'Your own web address': '— | $10 a month | $10 a month | $10 a month | Included',
       'Cloud time each month': '— | 5 hours | 40 hours | 100 hours | 10 hours per seat, shared',
       'Cloud storage': '— | 5 GB | 25 GB | 50 GB | 10 GB per seat, shared',

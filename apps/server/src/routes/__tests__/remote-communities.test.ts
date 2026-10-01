@@ -336,7 +336,7 @@ describe('qualified remote community writes and live projections', () => {
     expect(response.status).toBe(409);
     expect(response.body).toEqual({
       code: 'COMMUNITY_RECONNECT_REQUIRED',
-      error: 'Reconnect this community to continue.',
+      error: 'Reconnect this space to continue.',
     });
   });
 
@@ -358,7 +358,7 @@ describe('qualified remote community writes and live projections', () => {
     });
     const response = await request(testServer).get(`/api/communities/${fixture.ref}/rooms`);
     expect(response.status).toBe(502);
-    expect(response.body).toEqual({ error: 'Community unavailable.' });
+    expect(response.body).toEqual({ error: 'Space unavailable.' });
   });
 
   it('refuses a live stream when verified access is read-only', async () => {
@@ -952,7 +952,7 @@ describe('qualified remote community writes and live projections', () => {
     expect(response.status).toBe(429);
     expect(response.body).toEqual({
       code: 'COMMUNITY_LIMIT_REACHED',
-      error: 'You’ve reached this community’s limit on active agents. Remove one to add another.',
+      error: 'You’ve reached this space’s limit on active agents. Remove one to add another.',
     });
   });
 
@@ -972,7 +972,7 @@ describe('qualified remote community writes and live projections', () => {
     expect(hidden.body).toEqual(missing.body);
     expect(hidden.body).toEqual({
       code: 'COMMUNITY_NOT_FOUND',
-      error: 'That isn’t available in this community.',
+      error: 'That isn’t available in this space.',
     });
   });
 
@@ -983,7 +983,7 @@ describe('qualified remote community writes and live projections', () => {
         .post(`/api/communities/${fixture.ref}/rooms/room-a/entries`)
         .send({ text: 'hello', idempotencyKey: 'outage-key' });
       expect(response.status).toBe(502);
-      expect(response.body).toEqual({ error: 'Community unavailable.' });
+      expect(response.body).toEqual({ error: 'Space unavailable.' });
     }
   });
 
@@ -992,8 +992,8 @@ describe('qualified remote community writes and live projections', () => {
   // the app returns a person's refused message to their draft only on the gone codes. It fails
   // if a gone community answers 403 COMMUNITY_ACCESS_DENIED, or if either request reaches it.
   it.each([
-    ['deleted', 410, 'COMMUNITY_DELETED', 'This community was deleted.'],
-    ['taken_down', 423, 'COMMUNITY_TAKEN_DOWN', 'The host took this community down.'],
+    ['deleted', 410, 'COMMUNITY_DELETED', 'This space was deleted.'],
+    ['taken_down', 423, 'COMMUNITY_TAKEN_DOWN', 'This space was taken down.'],
   ] as const)(
     'answers a post and an upload to a %s community with its gone refusal',
     async (lifecycle, status, code, error) => {
@@ -1035,7 +1035,7 @@ describe('qualified remote community writes and live projections', () => {
     expect(response.status).toBe(423);
     expect(response.body).toEqual({
       code: 'COMMUNITY_READ_ONLY',
-      error: 'This community is being deleted.',
+      error: 'This space is being deleted.',
     });
   });
 
