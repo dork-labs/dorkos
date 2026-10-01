@@ -11,6 +11,11 @@ const journal = {
   resources: { flyAppId: 'fly-1', neonProjectId: 'neon-1', tigrisBucketId: 'bucket-1' },
 };
 
+const LEFT_KEY = {
+  bucket: 'dorkos-gate-012345abcdef',
+  keyName: 'dorkos-gate-012345abcdef_access_key',
+};
+
 function dependencies() {
   return {
     readFlyApps: vi
@@ -41,7 +46,8 @@ describe('Community live gate cleanup', () => {
     await expect(cleanupCommunityLiveGate(journal, boundary)).resolves.toEqual({
       cleaned: ['bucket-1', 'neon-1', 'fly-1'],
       alreadyGone: [],
-      retained: ['dorkos-gate-012345abcdef_access_key'],
+      retained: [],
+      accessKeyLeftAtTigris: LEFT_KEY,
     });
     expect(boundary.deleteTigris).toHaveBeenCalledWith(journal.recoveryContext.bucketName);
     expect(boundary.deleteNeonProject).toHaveBeenCalledWith('neon-1');
@@ -50,10 +56,21 @@ describe('Community live gate cleanup', () => {
 
   // DOR-2646: Fly's delete leaves the bucket's Tigris access key active, and the gate holds nothing
   // that can delete it, so the receipt must never let it pass as cleaned.
-  it('reports the bucket access key as retained, never cleaned, after the bucket is deleted', async () => {
+  it('names the access key the deleted bucket left, apart from retained and cleaned', async () => {
     const receipt = await cleanupCommunityLiveGate(journal, dependencies());
-    expect(receipt.retained).toEqual(['dorkos-gate-012345abcdef_access_key']);
-    expect(receipt.cleaned).not.toContain('dorkos-gate-012345abcdef_access_key');
+    expect(receipt.accessKeyLeftAtTigris).toEqual(LEFT_KEY);
+    expect(receipt.retained).not.toContain(LEFT_KEY.keyName);
+    expect(receipt.cleaned).not.toContain(LEFT_KEY.keyName);
+  });
+
+  it('does not name an access key when cleanup stopped before the bucket was deleted', async () => {
+    const boundary = dependencies();
+    boundary.deleteTigris.mockRejectedValue(new Error('raw provider error'));
+    await expect(cleanupCommunityLiveGate(journal, boundary)).rejects.toMatchObject({
+      step: 'provider-operation',
+      retained: ['fly-1', 'neon-1', 'bucket-1'],
+      accessKeyLeftAtTigris: null,
+    });
   });
 
   it('does not delete a same-name Fly app with a different provider identity', async () => {
@@ -75,7 +92,8 @@ describe('Community live gate cleanup', () => {
     boundary.deleteNeonProject.mockRejectedValue(new Error('raw provider error'));
     await expect(cleanupCommunityLiveGate(journal, boundary)).rejects.toMatchObject({
       step: 'provider-operation',
-      retained: ['fly-1', 'neon-1', 'dorkos-gate-012345abcdef_access_key'],
+      retained: ['fly-1', 'neon-1'],
+      accessKeyLeftAtTigris: LEFT_KEY,
     });
     expect(boundary.destroyFlyApp).not.toHaveBeenCalled();
   });
@@ -91,7 +109,8 @@ describe('Community live gate cleanup', () => {
     await expect(cleanupCommunityLiveGate(journal, boundary)).resolves.toEqual({
       cleaned: ['neon-1', 'fly-1'],
       alreadyGone: ['bucket-1'],
-      retained: ['dorkos-gate-012345abcdef_access_key'],
+      retained: [],
+      accessKeyLeftAtTigris: LEFT_KEY,
     });
     expect(boundary.listTigrisOnApp).toHaveBeenCalledWith(journal.recoveryContext.appName);
     expect(boundary.deleteTigris).not.toHaveBeenCalled();

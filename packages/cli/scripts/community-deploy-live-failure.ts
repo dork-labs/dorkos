@@ -19,8 +19,12 @@ import { CommunityLiveHeldPhaseError } from './community-deploy-live-hold.js';
 /** Step a failure after cleanup is reported as. */
 export const AFTER_CLEANUP_STEP = 'after-cleanup';
 
-/** What a failure after cleanup did and did not leave behind. */
-export const CLEANED_UP_DETAIL = 'cleanup finished; a later step failed';
+/**
+ * What a failure after cleanup did and did not leave behind. Cleanup deletes the bucket but never
+ * its Tigris access key (DOR-2646); the gate prints the steps to delete that key before this.
+ */
+export const CLEANED_UP_DETAIL =
+  "cleanup finished, apart from the bucket's Tigris access key (see the steps above); a later step failed";
 
 /** Step a published launcher that exited with a failure is reported as. */
 export const PUBLISHED_LAUNCHER_STEP = 'published-launcher';
@@ -142,7 +146,11 @@ export async function explainCommunityLiveGateFailure(
     return new CommunityLiveGateError(
       error.step,
       recoveryCommand,
-      `retained: ${error.retained.join(', ') || 'unknown'}`
+      `retained: ${error.retained.join(', ') || 'unknown'}${
+        error.accessKeyLeftAtTigris
+          ? `; Tigris access key left active: ${error.accessKeyLeftAtTigris.keyName}`
+          : ''
+      }`
     );
   // The journal's saved error is the more specific answer (it names the service); without a
   // journal, the launcher's own last code, which the PTY runner attached, is the next best.

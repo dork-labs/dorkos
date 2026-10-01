@@ -53,8 +53,10 @@ import {
   requireTigrisTermsAccepted,
 } from './community-deploy-live-launcher.js';
 import {
+  CommunityLiveGateCleanupError,
   cleanupCommunityLiveGate,
   type CommunityLiveGateJournal,
+  type TigrisAccessKeyLeftover,
 } from './community-deploy-live-cleanup.js';
 import {
   guardCommunityLiveProvenance,
@@ -213,8 +215,20 @@ async function main(): Promise<void> {
   const receiptPath = join(receiptDirectory, `${appName}.json`);
   let bootstrap: string | null = null;
   let recoveryCommand: string | null = null;
-  // Set once cleanup returns: from then on nothing the run created is left to reconcile.
+  // Set once cleanup returns: from then on nothing the run created is left to reconcile, apart from
+  // the bucket's Tigris access key, which no cleanup can delete (see `accessKeyLeft`).
   let cleanedUp = false;
+  // DOR-2646: set once cleanup has deleted the bucket (or proved it gone). Fly leaves the bucket's
+  // Tigris access key active and nothing the gate holds can delete it, so on every later path,
+  // pass or fail, the gate prints the steps to delete it by hand.
+  let accessKeyLeft: TigrisAccessKeyLeftover | null = null;
+  const writeAccessKeySteps = (stream: NodeJS.WritableStream) => {
+    if (accessKeyLeft) {
+      stream.write(
+        `${tigrisAccessKeySteps(accessKeyLeft.bucket, config.flyOrganization).join('\n')}\n`
+      );
+    }
+  };
   // Held outside the try so a throw on any path still closes the capture socket.
   let clipboard: Awaited<ReturnType<typeof receiveClipboard>> | null = null;
   // Likewise the launcher, so a failure elsewhere never leaves its PTY waiting on a prompt.
@@ -554,7 +568,14 @@ async function main(): Promise<void> {
               void (await tigris((client) => client.deleteTigris(name))),
             deleteNeonProject: async (id) => void (await deleteNeonProject(neon, id)),
             destroyFlyApp: async (name) => void (await destroyFlyApp(fly, name)),
+          }).catch((error: unknown) => {
+            // A cleanup that stopped after deleting the bucket still left its key behind.
+            if (error instanceof CommunityLiveGateCleanupError) {
+              accessKeyLeft = error.accessKeyLeftAtTigris;
+            }
+            throw error;
           });
+          accessKeyLeft = cleanup.accessKeyLeftAtTigris;
           // The Fly and Neon inventories are re-read below; a storage bucket bills too, so it is
           // re-read here, while the session is still held. Only Fly's exact not-found answer counts as
           // gone; a bucket still there fails the gate before cleanup is called finished, so the
@@ -677,11 +698,8 @@ async function main(): Promise<void> {
     process.stdout.write(
       `Community live gate passed for ${version}${tarball ? ` (unreleased tarball from ${tarball.receipt.commit.slice(0, 12)})` : ''} at ${appName}; receipt ${receiptPath}\n`
     );
-    // DOR-2646: cleanup deleted the bucket, but Fly leaves its Tigris access key active and the gate
-    // holds nothing that can delete it. The receipt lists it under `retained`; this says what to do.
-    process.stdout.write(
-      `${tigrisAccessKeySteps(journal.recoveryContext?.bucketName ?? appName, config.flyOrganization).join('\n')}\n`
-    );
+    // The receipt names the key under `accessKeyLeftAtTigris`; this says what to do about it.
+    writeAccessKeySteps(process.stdout);
     await rm(durableHome, { recursive: true, force: true });
   } catch (error) {
     const explained = await explainCommunityLiveGateFailure(
@@ -698,6 +716,8 @@ async function main(): Promise<void> {
         return describeLauncherStop(JSON.parse(journal) as unknown);
       }
     );
+    // Printed before the failure itself, which points back at these steps (CLEANED_UP_DETAIL).
+    writeAccessKeySteps(process.stderr);
     // A launcher the guard refused usually fails at an earlier step (its journal, its exit), so the
     // record is read on every failure too, before the finally removes it. Best-effort.
     throw withDorkosHostsContacted(

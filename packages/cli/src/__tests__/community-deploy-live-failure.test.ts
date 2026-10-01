@@ -30,9 +30,11 @@ describe('explainCommunityLiveGateFailure', () => {
     expect(explained).toBeInstanceOf(CommunityLiveGateError);
     expect(explained).toMatchObject({ step: AFTER_CLEANUP_STEP, recoveryCommand: null });
     expect((explained as Error).message).toBe(
-      'Community live gate failed (after-cleanup): cleanup finished; a later step failed'
+      'Community live gate failed (after-cleanup): ' + CLEANED_UP_DETAIL
     );
-    expect(CLEANED_UP_DETAIL).toBe('cleanup finished; a later step failed');
+    expect(CLEANED_UP_DETAIL).toBe(
+      "cleanup finished, apart from the bucket's Tigris access key (see the steps above); a later step failed"
+    );
     expect(findRecoveryCommand).not.toHaveBeenCalled();
     expect(describeCommunityLiveGateFailure(explained)).not.toContain('Retained resources');
   });
@@ -52,7 +54,7 @@ describe('explainCommunityLiveGateFailure', () => {
     );
     expect(explained).toMatchObject({ step: 'dorkos-hosts-contacted', recoveryCommand: null });
     expect((explained as Error).message).toBe(
-      'Community live gate failed (dorkos-hosts-contacted): cleanup finished; a later step failed: the launcher tried to reach dorkos.ai'
+      `Community live gate failed (dorkos-hosts-contacted): ${CLEANED_UP_DETAIL}: the launcher tried to reach dorkos.ai`
     );
     expect(findRecoveryCommand).not.toHaveBeenCalled();
   });
@@ -80,6 +82,22 @@ describe('explainCommunityLiveGateFailure', () => {
     expect(describeCommunityLiveGateFailure(explained)).toBe(
       'Community live gate failed (provider-operation): retained: fly-app-1, neon-project-1\n' +
         `Retained resources can be reconciled with:\n  ${RECOVERY}\n`
+    );
+  });
+
+  // DOR-2646: once the bucket is deleted its Tigris access key is left active, even when a later
+  // cleanup step fails, so the refusal names it apart from the resources cleanup still owes.
+  it('names the Tigris access key a deleted bucket left, apart from what cleanup retained', async () => {
+    const explained = await explainCommunityLiveGateFailure(
+      new CommunityLiveGateCleanupError('provider-operation', ['fly-app-1', 'neon-project-1'], {
+        bucket: 'dorkos-gate-1',
+        keyName: 'dorkos-gate-1_access_key',
+      }),
+      { cleanedUp: false, recoveryCommand: RECOVERY },
+      async () => null
+    );
+    expect((explained as Error).message).toBe(
+      'Community live gate failed (provider-operation): retained: fly-app-1, neon-project-1; Tigris access key left active: dorkos-gate-1_access_key'
     );
   });
 
