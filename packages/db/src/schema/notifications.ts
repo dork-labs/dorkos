@@ -59,6 +59,7 @@ export const notifications = sqliteTable(
         'account.reset',
         'extension.approval',
         'extension.decision',
+        'community.owner-replacement',
       ],
     }).notNull(),
 

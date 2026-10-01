@@ -1383,6 +1383,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getCloudSeats: vi.fn().mockResolvedValue({ available: false }),
     assignCloudSeat: vi.fn(),
     releaseCloudSeat: vi.fn(),
+    getCloudOffers: vi.fn().mockResolvedValue({ available: false }),
+    createCloudBillingSession: vi.fn(),
+    requestCloudAccountExport: vi.fn(),
     getCloudCredits: vi.fn().mockResolvedValue({
       enabled: false,
       ready: false,

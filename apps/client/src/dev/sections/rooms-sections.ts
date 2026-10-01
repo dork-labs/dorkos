@@ -15,6 +15,7 @@ import type { PlaygroundSection } from '../playground-registry';
  * RoomThreadShowcases — ThreadReplyRow, RoomThreadPanel, Thread arrival
  * animations. RoomDeliveryShowcases — Room moments, Room notices, PendingRow,
  * Message.Attachments. CommunityGoneShowcases — CommunityGonePanel.
+ * CommunityOwnerNoticeShowcases — CommunityOwnerNoticeBanner.
  */
 export const ROOMS_SECTIONS: PlaygroundSection[] = [
   {
@@ -247,5 +248,21 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     page: 'rooms',
     category: 'Delivery',
     keywords: ['community', 'deleted', 'taken down', 'gone', 'unsent', 'draft', 'copy', 'remove'],
+  },
+  {
+    id: 'communityownernoticebanner',
+    title: 'CommunityOwnerNoticeBanner',
+    page: 'rooms',
+    category: 'Delivery',
+    keywords: [
+      'community',
+      'space',
+      'owner',
+      'take over',
+      'replace',
+      'keep ownership',
+      'host',
+      'warning',
+    ],
   },
 ];

@@ -89,6 +89,7 @@ import type {
   HostedCommunity,
   Member,
   Nudge,
+  OffersResponse,
   Org,
   Problem,
   Seat,
@@ -139,6 +140,51 @@ export type CloudSeatsResponse = { available: false } | { available: true; seats
  */
 export type CloudSeatActionResponse =
   { ok: true; seat?: Seat } | { ok: false; problem: Problem } | { ok: false; message: string };
+
+/**
+ * `GET /api/cloud/offers` — everything the service will sell this account right
+ * now, exactly as it sent it.
+ *
+ * Render the offers in the order given and never re-sort them. Every name and
+ * amount on them is the service's; `skuId` goes back unchanged to
+ * `POST /api/cloud/billing/checkout`.
+ */
+export type CloudOffersResponse =
+  { available: false } | { available: true; offers: OffersResponse };
+
+/** Which page `POST /api/cloud/billing/:page` opens: the billing portal, checkout, or buying credits. */
+export type CloudBillingPage = 'portal' | 'checkout' | 'topup';
+
+/**
+ * The answer to `POST /api/cloud/billing/:page`: the web address of a billing
+ * session just started, to open in the person's own browser, or a refusal.
+ *
+ * Nothing is paid inside the app. A refusal is the service's own problem
+ * envelope, or the local server's one plain sentence when the service could
+ * not be asked (not linked, unreachable) or does not offer this page to the
+ * account. It answers HTTP 200 either way, for the reason
+ * `CloudSeatActionResponse` gives.
+ */
+export type CloudBillingSessionResponse =
+  { ok: true; url: string } | { ok: false; problem: Problem } | { ok: false; message: string };
+
+/**
+ * Where an account export stands, as the service answered.
+ *
+ * `downloadUrl` is null until the export is ready; asking again is how to get
+ * it. Once present it is a short-lived https link.
+ */
+export interface CloudAccountExport {
+  requestedAt: string;
+  readyAt: string | null;
+  downloadUrl: string | null;
+}
+
+/** `POST /api/cloud/account/export` — the export just asked for, or a refusal. */
+export type CloudAccountExportResponse =
+  | { ok: true; export: CloudAccountExport }
+  | { ok: false; problem: Problem }
+  | { ok: false; message: string };
 
 /**
  * Why a seat write answers `200` even when it refused.

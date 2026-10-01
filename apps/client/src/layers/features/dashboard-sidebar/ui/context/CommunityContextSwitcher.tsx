@@ -28,6 +28,7 @@ import {
   useGuardedMenuNodes,
 } from '@/layers/shared/ui';
 import {
+  openOwnerNotice,
   useCommunityConnections,
   useCommunityNavigation,
   useMoveCommunityNavigation,
@@ -376,6 +377,16 @@ export function CommunityContextSwitcher({
                 >
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="min-w-0 truncate">{connection.label}</span>
+                    {/* Only the owner's connection carries a notice (DOR-2543): the
+                        community's page says what it is and what they can do. */}
+                    {openOwnerNotice(connection) && (
+                      <span
+                        role="img"
+                        className="bg-status-warning-dot size-2 shrink-0 rounded-full"
+                        aria-label="Someone asked to take over this space"
+                        title="Someone asked to take over this space"
+                      />
+                    )}
                     {mentions > 0 && (
                       <span
                         className="bg-primary text-primary-foreground shrink-0 rounded-full px-1.5 text-xs"

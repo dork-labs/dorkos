@@ -39,11 +39,13 @@ const UNAVAILABLE: CommunityConnectionAttention = {
 };
 
 /**
- * Whether the Community refused to show counts at all (401/403, or a grant it
- * rejected), as opposed to being slow or down. After a refusal the counts
- * confirmed before it must never be shown again, even as stale.
+ * Whether the Community refused the read at all (401/403, or a grant it
+ * rejected), as opposed to being slow or down. After a refusal what it
+ * confirmed before must never be shown again, even as stale.
+ *
+ * @param error - Why a read of the Community failed.
  */
-function isRefusal(error: unknown): boolean {
+export function isCommunityReadRefusal(error: unknown): boolean {
   return (
     error instanceof RemoteConnectionAuthorizationError ||
     (error instanceof PinnedHttpError && (error.status === 401 || error.status === 403))
@@ -200,7 +202,8 @@ export class CommunityAttentionCache {
       })
       .catch((error: unknown) => {
         // Lost read permission: drop the entry, but only if it is still this one.
-        if (isRefusal(error) && this.owners.get(owner)?.get(ref) === entry) this.forget(owner, ref);
+        if (isCommunityReadRefusal(error) && this.owners.get(owner)?.get(ref) === entry)
+          this.forget(owner, ref);
         throw error;
       })
       .finally(() => {

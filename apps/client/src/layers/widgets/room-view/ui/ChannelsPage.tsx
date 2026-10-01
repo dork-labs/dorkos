@@ -8,6 +8,7 @@ import { RoomSurface } from './RoomSurface';
 import { RemoteCommunitySurface } from './RemoteCommunitySurface';
 import { CommunityPageHeading } from './CommunityPageHeading';
 import { CommunityGonePanel, communityGoneState } from './CommunityGonePanel';
+import { CommunityOwnerNoticeBanner } from './CommunityOwnerNoticeBanner';
 import { useCommunityConnections } from '@/layers/entities/community';
 
 /**
@@ -126,6 +127,9 @@ function ChannelsPageBody() {
  * A Community that is gone, or seems to be, says so in place of rooms that could never load
  * (DOR-2334). Only the Community branch reads the connection list, so a local room needs nothing
  * beyond what it always did.
+ *
+ * Above a Community that is there, its owner sees the warning that someone asked to take it over
+ * (DOR-2543), on every page of it: a channel, or none chosen yet.
  */
 function CommunityGoneGuard({
   community,
@@ -143,5 +147,10 @@ function CommunityGoneGuard({
         onRemoved={() => void navigate({ to: '/channels', search: {} })}
       />
     );
-  return <>{children}</>;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {connection && <CommunityOwnerNoticeBanner connection={connection} />}
+      <div className="min-h-0 flex-1">{children}</div>
+    </div>
+  );
 }

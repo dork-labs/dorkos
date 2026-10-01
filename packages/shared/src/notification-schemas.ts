@@ -101,6 +101,11 @@ export const NOTIFICATION_KINDS = [
    * so it may reach a phone, with generic push text.
    */
   'extension.decision',
+  /**
+   * Someone asked the host to make someone else the owner of a community this person owns, or
+   * that request completed (DOR-2543). One per request and phase.
+   */
+  'community.owner-replacement',
 ] as const;
 
 /** Every kind of notification DorkOS can raise. */

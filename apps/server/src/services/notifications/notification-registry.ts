@@ -340,6 +340,27 @@ export interface NotificationPayloads {
     /** When a reading confirmed the reset, ISO 8601: the reset's identity when `resetsAt` is unknown. */
     resetConfirmedAt: string;
   };
+  /**
+   * Someone asked the host to make someone else the owner of a community this person owns, or
+   * that request completed (DOR-2543). Raised from the owner's own connection list, the only
+   * connection the Community tells; see `emitters/community-owner-replacement.ts`.
+   */
+  'community.owner-replacement': {
+    /** The owner's connection ref: the subject, and where "Open" goes. */
+    ref: string;
+    /** What this DorkOS calls the community. */
+    communityLabel: string;
+    replacementId: string;
+  } & (
+    | {
+        phase: 'open';
+        /** The new owner can take over at any time now. */
+        claimable: boolean;
+        /** The earliest it can happen, ISO 8601; `null` until the owner's notice resolves. */
+        claimableAfter: string | null;
+      }
+    | { phase: 'completed'; newOwnerDisplayName: string }
+  );
   /** The daily digest. */
   'report.daily': {
     /** The day it covers, `YYYY-MM-DD` (the boundary's own date — see
@@ -618,6 +639,33 @@ const REPORT_DAILY_DEDUPE_WINDOW_MS = 25 * 60 * 60 * 1000;
  * resets at a different time and so carries a different key.
  */
 const ACCOUNT_LIMITED_DEDUPE_WINDOW_MS = 8 * 24 * 60 * 60 * 1000;
+
+/**
+ * How long one owner-replacement notice stays deduped: longer than any request can stay open,
+ * which is the Community's longest wait (180 days) plus its 14-day claim window.
+ */
+const OWNER_REPLACEMENT_DEDUPE_WINDOW_MS = 210 * 24 * 60 * 60 * 1000;
+
+const OWNER_REPLACEMENT_DATE = new Intl.DateTimeFormat('en-US', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+/**
+ * When an open owner replacement could happen, as the end of a sentence. In UTC, named, because
+ * a notification is written once on the server and read wherever the person is.
+ */
+function ownerReplacementWhen(
+  p: Extract<NotificationPayload<'community.owner-replacement'>, { phase: 'open' }>
+): string {
+  if (p.claimable) return 'at any time now';
+  if (p.claimableAfter)
+    return `on or after ${OWNER_REPLACEMENT_DATE.format(new Date(p.claimableAfter))} (UTC)`;
+  return 'after a waiting period of at least 7 days';
+}
 
 /** A reset time in the server's local zone, short, e.g. `9/27/26, 8:00 PM`. */
 function formatResetTime(iso: string): string {
@@ -1216,6 +1264,34 @@ const ENTRIES: NotificationRegistryMap = {
     }),
   },
 
+  'community.owner-replacement': {
+    // Raised by `emitters/community-owner-replacement.ts` from the owner's connection list.
+    // `notable`, never `blocking`: nothing is stuck, the wait is at least a week, and the
+    // Community also emails the owner; it badges the bell and never reaches a phone.
+    kind: 'community.owner-replacement',
+    tier: 'notable',
+    storage: 'event',
+    // There is no community subject type; the subject id is the connection ref, which the
+    // app's link turns into that community's page.
+    subjectType: 'system',
+    locate: (p) => ({ subjectId: p.ref }),
+    title: (p) =>
+      p.phase === 'open'
+        ? `Someone asked to take over ${p.communityLabel}`
+        : `${p.newOwnerDisplayName} is now the owner of ${p.communityLabel}`,
+    body: (p) =>
+      p.phase === 'open'
+        ? `Unless you keep ownership, the host can make someone else its owner ${ownerReplacementWhen(p)}. Open the space to keep it.`
+        : 'You are still a member.',
+    actions: () => OPEN_ACTION,
+    dedupeKey: (p) => `owner-replacement:${p.ref}:${p.replacementId}:${p.phase}`,
+    // Longer than any request can stay open (the Community's longest wait, 180 days, plus its
+    // 14-day claim window). The table keeps only 30 days, so the emitter's own ledger is what
+    // makes it once for the whole life of a request.
+    dedupeWindowMs: OWNER_REPLACEMENT_DEDUPE_WINDOW_MS,
+    relay: 'never',
+  },
+
   'report.daily': {
     // The one kind whose title AND body are already fully written when they
     // arrive — `shift-report.ts` composes both from the day's actual counts,
@@ -1299,6 +1375,9 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * resolved by `services/extensions/extension-inbox.ts` (`ctx.inbox`), which
  * writes exactly one history row per decision, including the history-only
  * rows `ctx.inbox.record` writes for decisions that were never asked.
+ *
+ * `community.owner-replacement` joined them in DOR-2543. It is raised from the owner's
+ * connection list by `emitters/community-owner-replacement.ts`.
  */
 export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'ask.pending',
@@ -1319,6 +1398,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'account.reset',
   'extension.approval',
   'extension.decision',
+  'community.owner-replacement',
 ];
 
 /**

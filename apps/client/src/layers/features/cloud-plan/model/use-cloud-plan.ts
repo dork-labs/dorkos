@@ -31,6 +31,7 @@ export const cloudPlanKeys = {
   members: (orgId: string) => [...cloudPlanKeys.all, 'members', orgId] as const,
   seats: (orgId: string) => [...cloudPlanKeys.all, 'seats', orgId] as const,
   credits: () => [...cloudPlanKeys.all, 'credits'] as const,
+  offers: () => [...cloudPlanKeys.all, 'offers'] as const,
 };
 
 /** How often the credits read re-asks while credits are on (see {@link useCloudCredits}). */

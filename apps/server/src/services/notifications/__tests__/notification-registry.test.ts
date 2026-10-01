@@ -137,6 +137,14 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     link: '/x/flow/p/dorkos',
     openProjects: 2,
   },
+  'community.owner-replacement': {
+    ref: 'remote_owner_a',
+    communityLabel: 'Night shift',
+    replacementId: '7f1c2a4e-0000-4000-8000-000000000001',
+    phase: 'open',
+    claimable: false,
+    claimableAfter: '2026-10-04T10:00:00.000Z',
+  },
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
@@ -163,6 +171,9 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   // Somebody's work waits on the answer, so it may reach a phone, with
   // generic text (spec flow-multiproject §7.4).
   'extension.decision': 'blocking',
+  // Nothing is stuck and the wait is at least a week: it badges the bell and never reaches a
+  // phone (DOR-2543).
+  'community.owner-replacement': 'notable',
 };
 
 /**
@@ -244,6 +255,7 @@ describe('notification registry', () => {
       'agent.unreachable',
       'approval.pending',
       'ask.pending',
+      'community.owner-replacement',
       'dead-letter.created',
       'dm.received',
       'extension.approval',

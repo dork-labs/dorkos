@@ -11,6 +11,13 @@ export {
 } from './model/use-community-connections';
 export { useCommunityConnectionsSync } from './model/use-community-connections-sync';
 export {
+  communityPageUrl,
+  openOwnerNotice,
+  ownerNoticeBanner,
+  type OpenOwnerNotice,
+  type OwnerNoticeDateFormat,
+} from './lib/owner-notice';
+export {
   communityOwnerAddress,
   useCommunityApprovalCheck,
   useCommunityApprovalStore,
