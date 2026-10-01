@@ -410,17 +410,20 @@ API errors contain a stable `code` and human-readable `message`. Use the code an
 | `429`  | Posting, upload, admission or password-guess rate limit reached          |
 | `503`  | Service temporarily unavailable                                          |
 
-The host tools add these codes. Each is described in its own section above.
+The host tools add these codes, among others; each section above is the full reference. Some come back as the status of a request. Others are an import's `failureCode`, read from `GET /api/v1/host/imports/:id` after the background check or restore stops; that list is under [Import an owner export](#import-an-owner-export).
 
-| Code                     | Status | When                                                                |
-| ------------------------ | ------ | ------------------------------------------------------------------- |
-| `MEMBER_LIMIT_REACHED`   | `409`  | Joining would pass the community's member limit                     |
-| `STORAGE_LIMIT_REACHED`  | `409`  | A file or icon would pass the file-space limit, or an import would  |
-| `AGENT_LIMIT_REACHED`    | `409`  | Enrolling an agent would pass that person's agent limit             |
-| `SHORT_NAME_TAKEN`       | `409`  | The web address is in use, retired, or cooling off                  |
-| `SHORT_NAME_RESERVED`    | `409`  | The web address is reserved by the server or the host               |
-| `IMPORT_ARCHIVE_INVALID` | `400`  | An uploaded export does not match its size or digest, or is damaged |
-| `COMMUNITY_HELD`         | `423`  | The host has put the community on hold                              |
+| Code                      | Returned as                                   | When                                                                                                      |
+| ------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `MEMBER_LIMIT_REACHED`    | `409`                                         | Joining would pass the community's member limit                                                           |
+| `STORAGE_LIMIT_REACHED`   | `409`, or an import's `failureCode`           | A file or icon would pass the file-space limit, or an import's files would                                |
+| `AGENT_LIMIT_REACHED`     | `409`                                         | Enrolling an agent would pass that person's agent limit                                                   |
+| `SHORT_NAME_TAKEN`        | `409`                                         | The web address is in use, retired, or cooling off                                                        |
+| `SHORT_NAME_RESERVED`     | `409`                                         | The web address is reserved by the server or the host                                                     |
+| `COMMUNITY_HELD`          | `423`                                         | The host has put the community on hold                                                                    |
+| `LEGAL_HOLD_ACTIVE`       | `409`                                         | A legal hold stops a deletion, an abandon, or cancelling an import                                        |
+| `IMPORT_ARCHIVE_INVALID`  | `400` on upload, or an import's `failureCode` | Upload: the body does not match its size or digest. Import: the file is damaged or is not an owner export |
+| `IMPORT_TOO_LARGE`        | `413` on upload, or an import's `failureCode` | Upload: the export or a part is over the size limit. Import: it holds more than an import may             |
+| `IMPORT_NOT_OWNER_EXPORT` | an import's `failureCode`                     | The file is a personal export, not the owner's export of the whole community                              |
 
 On `/api/v1/*` and at sign-up, every `429` except the posting and daily upload limits carries a `Retry-After` header with the seconds to wait. Sign-in and the other `/api/auth/*` routes are limited by the sign-in library itself, whose `429` has only a `message` and sends `X-Retry-After` instead.
 

@@ -84,7 +84,7 @@ Imports take an export from another server. These settings bound them; the [oper
 
 ## Web addresses
 
-A community can have a short web address, such as `https://community.example.com/acme`, which you set on the host page. Some names can never be used, because the server needs those paths itself (for example `api`, `host`, and `settings`). To keep more names for yourself, list them in `COMMUNITY_RESERVED_SHORT_NAMES`, separated by commas, such as `support,status,docs`. Each name is trimmed and lowercased, and must be a name a community could have: 3 to 32 lowercase letters, digits, and single hyphens, starting with a letter. The service refuses to start if one is not.
+A community can have a short web address, such as `https://community.example.com/acme`, which you set on the host page. Some names can never be used, because the server needs those paths itself (for example `api`, `host`, and `settings`). To keep more names for yourself, list them in `COMMUNITY_RESERVED_SHORT_NAMES`, separated by commas, such as `support,billing,blog`. Each name is trimmed and lowercased, and must be a name a community could have: 3 to 32 lowercase letters, digits, and single hyphens, starting with a letter. The service refuses to start if one is not.
 
 `COMMUNITY_SHORT_NAME_COOLOFF_DAYS` (in the limits table above) is how long a released address stays unavailable, and `COMMUNITY_NAME_LOOKUPS_PER_MINUTE` limits how often one caller can look an address up. The [operations guide](OPERATIONS.md#web-addresses) explains renames, releases, and what happens to an address that becomes reserved.
 
