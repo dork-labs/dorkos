@@ -19,13 +19,13 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.3"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
-    "drizzle-kit": "^0.31.10",
+    "drizzle-kit": "^0.31.11",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   }

@@ -179,7 +179,12 @@ export interface AgentBrowserSite {
 
 /** A cookie domain or URL host, lowercased and without the leading dot. */
 function normalizeHost(host: string): string {
-  return host.trim().toLowerCase().replace(/^\.+/, '').replace(/\.+$/, '');
+  const h = host.trim().toLowerCase().replace(/^\.+/, '');
+  // Trim trailing dots by hand: `/\.+$/` backtracks quadratically on a long run
+  // of dots that is not at the end, and cookie domains come from the session file.
+  let end = h.length;
+  while (end > 0 && h[end - 1] === '.') end--;
+  return h.slice(0, end);
 }
 
 /**

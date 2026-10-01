@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { escapeHtml } from '../escape-html';
+import { escapeHtml, escapeHtmlAttribute } from '../escape-html';
 
 describe('escapeHtml', () => {
   it('escapes the characters that could break out of the markup', () => {
@@ -32,5 +32,20 @@ describe('escapeHtml', () => {
     // Pins the documented limit of this function rather than implying more
     // safety than it offers. See its TSDoc.
     expect(escapeHtml('say "hi"')).toBe('say "hi"');
+  });
+});
+
+describe('escapeHtmlAttribute', () => {
+  it('escapes both quotes, so a value cannot close the attribute it sits in', () => {
+    expect(escapeHtmlAttribute(`x" onclick="a' b`)).toBe('x&quot; onclick=&quot;a&#39; b');
+  });
+
+  it('keeps the text-content escapes, ampersand first', () => {
+    expect(escapeHtmlAttribute('<a>&quot;')).toBe('&lt;a&gt;&amp;quot;');
+  });
+
+  it('leaves an ordinary URL alone', () => {
+    const url = 'https://dorkos.ai/docs/changelog';
+    expect(escapeHtmlAttribute(url)).toBe(url);
   });
 });

@@ -6,8 +6,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 14 / 15
+**Status:** Complete
+**Tasks Completed:** 15 / 15
 
 ## Implemented
 
@@ -29,6 +29,6 @@
 - `pnpm --filter dorkos test:community-package` builds and installs the production npm tarball in a temporary directory, then passes the complete checkout-independent fake-service flow and removes its temporary package, provider state, journals, and fake credentials.
 - Service mutation tests use fake executables and local HTTP fixtures. Ordinary verification never contacts or mutates Fly, Neon, Tigris, GitHub, or another paid service.
 
-## Remaining Work
+## Release gate (task 4.3)
 
-Task 4.3 remains separate: the explicitly armed credentialed release gate must exercise the exact published package and image in designated test organizations, induce and resume one interruption, verify meaningful Community behavior, and prove exact-identity cleanup. Until that gate passes, the release must not be described as guided-launch ready.
+The explicitly armed credentialed release gate exercises the exact published package and image in designated test organizations, induces and resumes one interruption, verifies meaningful Community behavior, and proves exact-identity cleanup. It passed against the published `dorkos@0.94.0` release on receipt `dorkos-gate-854ea55f80a0`; see `04-live-gate.md`, "Published-release gate pass (DOR-2169, DOR-2606)".

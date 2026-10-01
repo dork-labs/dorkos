@@ -19,7 +19,10 @@ export function ledgerSlug(name: string): string | null {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^[^a-z0-9]+/, '')
-    .replace(/-+$/, '');
-  return slug === '' ? null : slug;
+    .replace(/^[^a-z0-9]+/, '');
+  // Trim trailing `-` by hand: `/-+$/` backtracks quadratically on a long run
+  // of `-` that is not at the end, and `name` is whatever a source reported.
+  let end = slug.length;
+  while (end > 0 && slug[end - 1] === '-') end--;
+  return end === 0 ? null : slug.slice(0, end);
 }
