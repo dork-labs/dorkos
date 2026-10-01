@@ -299,7 +299,7 @@
       "slug": "community-self-host-launcher",
       "title": "Guided Community self-host launch",
       "created": "2026-09-20",
-      "status": "decomposed",
+      "status": "implemented",
       "project": "Community Self-Hosting"
     },
     {
