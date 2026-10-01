@@ -186,7 +186,7 @@ describe('claim and connect', () => {
     show(
       claimConnectStep({
         ...base,
-        state: { kind: 'claim', opened: false, busy: false, notice: null },
+        state: { kind: 'claim', opened: false, busy: false, notice: null, withAccount: false },
       })
     );
     expect(
@@ -198,6 +198,22 @@ describe('claim and connect', () => {
     expect(screen.getByRole('button', { name: 'I’ve finished' })).toBeInTheDocument();
   });
 
+  // Purpose: on a space that runs on DorkOS, nobody is told to make a second account.
+  it('says to sign in with the DorkOS account where the space signs in with it', () => {
+    show(
+      claimConnectStep({
+        ...base,
+        state: { kind: 'claim', opened: false, busy: false, notice: null, withAccount: true },
+      })
+    );
+    expect(
+      screen.getByText(
+        'Finish in your browser by signing in with your DorkOS account, then come back.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/create your account/)).not.toBeInTheDocument();
+  });
+
   it('offers to open it again once opened, and says when the sign-in is not done', () => {
     show(
       claimConnectStep({
@@ -207,6 +223,7 @@ describe('claim and connect', () => {
           opened: true,
           busy: false,
           notice: { message: 'Your sign-in isn’t finished yet.' },
+          withAccount: false,
         },
       })
     );

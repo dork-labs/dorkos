@@ -31,6 +31,7 @@ import {
   buildHeaderBlockIdentityNodes,
   buildHeaderBlockVersionNodes,
 } from '../ui/header-block-menu';
+import { useCommunityApprovalStore } from '@/layers/entities/community';
 import { SidebarHeaderBlock, teamNameFor } from '../ui/SidebarHeaderBlock';
 import { MobileCommunityContextSwitcher } from '../ui/context/CommunityContextSwitcher';
 
@@ -75,6 +76,12 @@ const mockGetCloudStatus = vi.fn(() =>
 const mockGetCloudPlan = vi.fn(() => Promise.resolve({ available: false }));
 const mockListHostedCommunities = vi.fn(() =>
   Promise.resolve({ available: true, communities: [], moves: [], allowance: null })
+);
+/** Where the linked account signs a person in; none unless a test says so. */
+const mockGetCommunityAccountSignIn = vi.fn(() =>
+  Promise.resolve<{ available: false } | { available: true; origins: string[] }>({
+    available: false,
+  })
 );
 let mockSearch: { community?: string } = {};
 let mockPathname = '/';
@@ -130,6 +137,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       getCloudStatus: mockGetCloudStatus,
       getCloudPlan: mockGetCloudPlan,
       listHostedCommunities: mockListHostedCommunities,
+      getCommunityAccountSignIn: mockGetCommunityAccountSignIn,
     }),
     useSettingsDeepLink: () => ({ open: mockOpenSettings }),
     useProfileDeepLink: () => ({ open: mockOpenProfile }),
@@ -179,6 +187,9 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
   useCommunityApprovalStore: (await importOriginal<typeof import('@/layers/entities/community')>())
     .useCommunityApprovalStore,
   useCommunityApprovalCheck: () => ({ error: null, isFetching: false, retry: () => {} }),
+  // The real read, over the mocked transport, so a test decides where the account signs in.
+  useCommunityAccountSignIn: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .useCommunityAccountSignIn,
   useShowCommunityApproval: () => {},
   useEndCommunityConnection: () => ({
     mutate: mockEndConnection,
@@ -234,6 +245,7 @@ beforeEach(() => {
   mockCommunityOrder = [];
   mockCloudLinked = false;
   mockCloudAccountLabel = null;
+  mockGetCommunityAccountSignIn.mockResolvedValue({ available: false });
   mockResolveCommunityNavigation.mockResolvedValue(null);
   mockGetCommunityNavigation.mockResolvedValue({
     ownerKey: 'owner-a',
@@ -1673,6 +1685,63 @@ describe('the context switcher’s lifecycle actions', () => {
     // Connect waits for this DorkOS's owner, which this test never confirms.
     expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
     expect(mockOpenConnections).not.toHaveBeenCalled();
+  });
+
+  // Purpose: joining a space that runs on DorkOS makes no second account
+  // (D5). Fails if the invitation opens without the single sign-on hint, if
+  // the invite leaves its fragment, or if the hint reaches another server.
+  it('opens an invitation on the DorkOS account where the space signs in with it', async () => {
+    mockGetCommunityAccountSignIn.mockResolvedValue({
+      available: true,
+      origins: ['https://a.example.com'],
+    });
+    renderMobileSwitcher();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: 'Add a space' })).getByRole('menuitem', {
+        name: /Join a space…/,
+      })
+    );
+    const field = await screen.findByLabelText('Space address or invitation link');
+    await waitFor(() => expect(mockGetCommunityAccountSignIn).toHaveBeenCalled());
+
+    const elsewhere = 'https://b.example.com/c/remote-b/join#invite=secret';
+    fireEvent.change(field, { target: { value: elsewhere } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
+    expect(mockOpenExternalLink).toHaveBeenLastCalledWith(elsewhere);
+
+    fireEvent.change(field, {
+      target: { value: 'https://a.example.com/c/remote-a/join#invite=secret' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
+    expect(mockOpenExternalLink).toHaveBeenLastCalledWith(
+      'https://a.example.com/c/remote-a/join?sign-in=single-sign-on#invite=secret'
+    );
+    expect(field).toHaveValue('https://a.example.com/c/remote-a');
+    expect(field).toHaveAccessibleDescription(
+      'Join on a.example.com with your DorkOS account in the tab that opened, then come back and connect.'
+    );
+  });
+
+  // Purpose: the approval page of a space that runs on DorkOS also leads with
+  // the account. Fails if the link opens without the hint.
+  it('opens the approval page on the DorkOS account where the space signs in with it', async () => {
+    mockGetCommunityAccountSignIn.mockResolvedValue({
+      available: true,
+      origins: ['https://a.example.com'],
+    });
+    mockConnections = [alpha({ status: 'pending' })];
+    useCommunityApprovalStore.getState().rememberLink('', 'a', 'https://a.example.com/pair/p_1');
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Approve on Alpha' });
+    const open = await within(dialog).findByRole('link', { name: /Open Alpha to approve/ });
+    await waitFor(() =>
+      expect(open).toHaveAttribute('href', 'https://a.example.com/pair/p_1?sign-in=single-sign-on')
+    );
+    expect(dialog).toHaveTextContent('Sign in there with your DorkOS account.');
+    useCommunityApprovalStore.getState().forget('none');
   });
 
   it('opens a Community that needs reconnecting in the connect dialog, not Connections', async () => {

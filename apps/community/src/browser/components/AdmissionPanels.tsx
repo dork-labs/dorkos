@@ -116,3 +116,18 @@ export function JoinLostNotice() {
     </Notice>
   );
 }
+
+/**
+ * What a join page shows above its sign-in: the invitation it is for, or that the join attempt
+ * was lost; nothing before an invitation has been read.
+ */
+export function InvitationHeading({
+  lost,
+  preview,
+}: {
+  lost: boolean;
+  preview: PendingAdmission | null;
+}) {
+  if (preview) return <InvitationSummary preview={preview} />;
+  return lost ? <JoinLostNotice /> : null;
+}

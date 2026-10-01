@@ -91,7 +91,7 @@ The [repository system architecture guide](https://github.com/dork-labs/dorkos/b
 
 The public hosted-community contract connects optional Cloud management to the independently runnable Community host. Scoped host APIs manage lifecycle, claims, limits and usage. The local start/move dialogs and `/api/cloud/communities/*` relay are implemented. Complete hosted availability and Community import acceptance remain separate from that app-side implementation.
 
-The local server stages and uploads a move archive to the Community server. Cloud receives management requests, not the archive. Installation and upload credentials stay on the local server; a one-time claim URL reaches the browser only through the explicit claim-link action. Hosting does not grant ordinary Community membership. Optional shared sign-in is separate work.
+The local server stages and uploads a move archive to the Community server. Cloud receives management requests, not the archive. Installation and upload credentials stay on the local server; a one-time claim URL reaches the browser only through the explicit claim-link action. Hosting does not grant ordinary Community membership. Where Cloud names a Community server whose single sign-on is the DorkOS account, the app opens that server's claim, invitation and approval pages with a hint that makes them lead with that sign-in; the person still signs in in their own browser, and an unlisted server keeps its own accounts.
 
 ## Monorepo Structure
 

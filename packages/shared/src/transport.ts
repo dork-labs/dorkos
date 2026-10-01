@@ -209,6 +209,7 @@ import type {
   CloudCommunityMoveResponse,
   CloudCommunityMoveStartInput,
   CloudCommunityNameCheckResponse,
+  CloudCommunitySignInResponse,
   CloudCommunityRestoreResponse,
   CloudCommunityStartResponse,
   CloudCreditsStatus,
@@ -2953,6 +2954,11 @@ export interface Transport
 
   /** Read this account's hosted communities, its recent moves, and its allowance. */
   listHostedCommunities(): Promise<CloudHostedCommunitiesResponse>;
+  /**
+   * Read the space servers where the linked DorkOS account signs a person in,
+   * so their pages open on that sign-in instead of a second sign-up.
+   */
+  getCommunityAccountSignIn(): Promise<CloudCommunitySignInResponse>;
   /**
    * Ask whether a web address is free right now. Advisory: starting checks again.
    *

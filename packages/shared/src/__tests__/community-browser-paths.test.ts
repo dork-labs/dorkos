@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   COMMUNITY_SETTINGS_SECTIONS,
   communitySettingsPath,
+  hasCommunitySingleSignOnHint,
   isCommunityInvitationUrl,
   parseCommunitySettingsPath,
+  withCommunitySingleSignOnHint,
 } from '../community-wire.js';
 
 const ID = '5b0c6f7e-8a51-4c1e-9d0e-2f3a4b5c6d7e';
@@ -64,5 +66,41 @@ describe('isCommunityInvitationUrl', () => {
       `https://user@community.example.com/c/${ID}/join#invite=abc`,
     ])
       expect(isCommunityInvitationUrl(value)).toBe(false);
+  });
+});
+
+describe('the single sign-on hint', () => {
+  it('keeps an invitation in the fragment, so the hinted link is still an invitation', () => {
+    const invitation = `https://community.example.com/c/${ID}/join#invite=abc`;
+    const hinted = withCommunitySingleSignOnHint(invitation);
+    expect(hinted).toBe(
+      `https://community.example.com/c/${ID}/join?sign-in=single-sign-on#invite=abc`
+    );
+    expect(isCommunityInvitationUrl(hinted)).toBe(true);
+  });
+
+  it('keeps an owner claim and any query the server already put there', () => {
+    expect(withCommunitySingleSignOnHint('https://community.example.com/claim#claim=t_1')).toBe(
+      'https://community.example.com/claim?sign-in=single-sign-on#claim=t_1'
+    );
+    expect(withCommunitySingleSignOnHint('https://community.example.com/pair?code=p_1')).toBe(
+      'https://community.example.com/pair?code=p_1&sign-in=single-sign-on'
+    );
+  });
+
+  it('adds the hint once, however often it is applied', () => {
+    const once = withCommunitySingleSignOnHint('https://community.example.com/claim');
+    expect(withCommunitySingleSignOnHint(once)).toBe(once);
+  });
+
+  it('leaves a value that is not a link alone', () => {
+    expect(withCommunitySingleSignOnHint('not a link')).toBe('not a link');
+  });
+
+  it('is read back only from its own exact value', () => {
+    expect(hasCommunitySingleSignOnHint('?sign-in=single-sign-on')).toBe(true);
+    expect(hasCommunitySingleSignOnHint('code=p_1&sign-in=single-sign-on')).toBe(true);
+    expect(hasCommunitySingleSignOnHint('?sign-in=password')).toBe(false);
+    expect(hasCommunitySingleSignOnHint('')).toBe(false);
   });
 });

@@ -163,6 +163,102 @@ describe('Start a space', () => {
     expect(onConnected).toHaveBeenCalledWith('ref-1');
   });
 
+  // Purpose: a space that runs on DorkOS makes no second account (D5). Fails
+  // if the claim or the approval page opens without the single sign-on hint,
+  // or if the step still tells the person to create an account there.
+  it('opens the claim and the approval on the DorkOS account where the space signs in with it', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.getCommunityAccountSignIn).mockResolvedValue({
+      available: true,
+      origins: [new URL(community.communityUrl).origin],
+    });
+    vi.mocked(transport.startHostedCommunity).mockResolvedValue({
+      ok: true,
+      community: community as never,
+      claimReady: true,
+    });
+    vi.mocked(transport.listHostedCommunities).mockResolvedValue({
+      available: true,
+      communities: [community as never],
+      moves: [],
+      allowance: null,
+    });
+    vi.mocked(transport.getHostedCommunityClaimLink).mockResolvedValue({
+      ok: true,
+      claimUrl: CLAIM_URL,
+      expiresAt: startFixture.claim.expiresAt,
+    });
+    renderDialogs(transport, { kind: 'start' });
+
+    fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Night shift' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
+    expect(
+      await screen.findByText(
+        'Finish in your browser by signing in with your DorkOS account, then come back.'
+      )
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Open in your browser/ }));
+    await waitFor(() =>
+      expect(mockWindowGo).toHaveBeenCalledWith(`${CLAIM_URL}?sign-in=single-sign-on`)
+    );
+
+    vi.mocked(transport.listHostedCommunities).mockResolvedValue({
+      available: true,
+      communities: [{ ...community, state: 'active' } as never],
+      moves: [],
+      allowance: null,
+    });
+    vi.mocked(transport.startCommunityConnection).mockResolvedValue({
+      connection: { ref: 'ref-1' } as never,
+      approvalUrl: 'https://community.example.invalid/approve/abc',
+    });
+    vi.mocked(transport.pollCommunityConnection).mockResolvedValue({
+      connection: null,
+      status: 'pending',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'I’ve finished' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Open approval page/ }));
+    expect(mockOpenExternalLink).toHaveBeenCalledWith(
+      'https://community.example.invalid/approve/abc?sign-in=single-sign-on'
+    );
+  });
+
+  // Purpose: a space on a server the account does not sign in to keeps its
+  // own accounts. Fails if the hint leaks onto another server's pages.
+  it('opens a space on another server exactly as before', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.getCommunityAccountSignIn).mockResolvedValue({
+      available: true,
+      origins: ['https://elsewhere.example.invalid'],
+    });
+    vi.mocked(transport.startHostedCommunity).mockResolvedValue({
+      ok: true,
+      community: community as never,
+      claimReady: true,
+    });
+    vi.mocked(transport.listHostedCommunities).mockResolvedValue({
+      available: true,
+      communities: [community as never],
+      moves: [],
+      allowance: null,
+    });
+    vi.mocked(transport.getHostedCommunityClaimLink).mockResolvedValue({
+      ok: true,
+      claimUrl: CLAIM_URL,
+      expiresAt: startFixture.claim.expiresAt,
+    });
+    renderDialogs(transport, { kind: 'start' });
+
+    fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Night shift' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
+    await screen.findByText(
+      'Finish in your browser. Sign in or create your account there, then come back.'
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Open in your browser/ }));
+    await waitFor(() => expect(mockWindowGo).toHaveBeenCalledWith(CLAIM_URL));
+  });
+
   // Purpose: a blocked window must not be reported as opened, and must not
   // spend a claim link. Fails if the link is fetched anyway.
   it('says so when the browser blocks the window, and fetches nothing', async () => {

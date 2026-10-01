@@ -48,8 +48,9 @@ export function claimConnectStep(props: ClaimConnectStepProps): HostingStep {
     case 'claim':
       return {
         title: `Make ${name} yours`,
-        description:
-          'Finish in your browser. Sign in or create your account there, then come back.',
+        description: state.withAccount
+          ? 'Finish in your browser by signing in with your DorkOS account, then come back.'
+          : 'Finish in your browser. Sign in or create your account there, then come back.',
         body: state.notice ? <HostingNoticeView notice={state.notice} /> : undefined,
         actions: (
           <>

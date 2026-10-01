@@ -16,7 +16,8 @@ import { startFakeIssuer, type FakeIssuer } from '../src/__tests__/fake-oidc-iss
 
 // Single sign-on (task 6.2 of specs/community-host-operator-api) in a real browser: the button
 // with the host's label, a full redirect through an in-process fake issuer, joining with an
-// invitation, adding a password in Settings, and the explicit-linking refusal in plain words.
+// invitation, adding a password in Settings, the explicit-linking refusal in plain words, and
+// the single sign-on hint the DorkOS app adds for a space that runs on DorkOS.
 const { COMMUNITY_TEST_DATABASE_URL: adminUrl } = process.env;
 if (!adminUrl)
   throw new Error('COMMUNITY_TEST_DATABASE_URL is required for community browser tests');
@@ -140,6 +141,42 @@ test('an invited person joins through single sign-on, then adds a password in Se
   );
   await expect(panel).toContainText(`You sign in with a password and ${LABEL}.`);
   await expect(panel.getByLabel('New password')).toHaveCount(0);
+});
+
+test('an invitation opened with the single sign-on hint leads with it, so joining makes no second account', async ({
+  page,
+}) => {
+  // Fails if a page the DorkOS app opens for a space that runs on DorkOS leads with a sign-up
+  // form, loses the hint on the way to the join page, or cannot finish joining from the lead.
+  const issued = await post(
+    `/api/v1/communities/${communityId}/invites`,
+    { seats: 1 },
+    ownerCookie
+  );
+  expect(issued.status).toBe(201);
+  const { token } = (await issued.json()) as { token: string };
+  issuer.identity = {
+    sub: 'sso-hinted-person',
+    email: 'sso-hinted@example.com',
+    email_verified: true,
+    name: 'Hinted Person',
+  };
+  await page.goto(
+    `${baseUrl}/c/${communityId}/join?sign-in=single-sign-on#invite=${encodeURIComponent(token)}`
+  );
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(
+    page.getByText(`Continue with ${LABEL}. You don’t need a separate account here.`)
+  ).toBeVisible();
+  await expect(page.getByLabel('Email')).toBeHidden();
+  await expect(page.getByRole('button', { name: `Continue with ${LABEL}` })).toHaveCount(1);
+  await page.getByRole('button', { name: `Continue with ${LABEL}` }).click();
+  await expect(page.getByRole('heading', { name: 'You’re in Single Place.' })).toBeVisible();
+  const { rows } = await pool.query<{ providerId: string }>(
+    `SELECT a."providerId" FROM account a JOIN "user" u ON u.id=a."userId" WHERE u.email=$1`,
+    ['sso-hinted@example.com']
+  );
+  expect(rows.map((row) => row.providerId)).toEqual(['oidc']);
 });
 
 test('an issuer identity that matches an existing account is refused, in words that say what to do', async ({

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { CommunityWireAuthOptions } from '@dorkos/shared/community-wire';
+import {
+  hasCommunitySingleSignOnHint,
+  type CommunityWireAuthOptions,
+} from '@dorkos/shared/community-wire';
 import { request } from './api.js';
 
 const NO_PROVIDERS: CommunityWireAuthOptions = {
@@ -9,24 +12,62 @@ const NO_PROVIDERS: CommunityWireAuthOptions = {
   minimumAge: null,
 };
 
+/** The host's sign-in options, and whether the read has finished (found or failed). */
+export interface SignInOptionsState {
+  options: CommunityWireAuthOptions;
+  loaded: boolean;
+}
+
+/**
+ * The sign-in buttons this host offers beside email and password, the minimum age a new account
+ * must confirm, and whether they have been read yet. A failed read counts as read, with none.
+ */
+export function useSignInOptionsState(): SignInOptionsState {
+  const [state, setState] = useState<SignInOptionsState>({ options: NO_PROVIDERS, loaded: false });
+  useEffect(() => {
+    let active = true;
+    void request<Partial<CommunityWireAuthOptions>>('/api/v1/auth-options')
+      .then((loaded) => {
+        if (active) setState({ options: { ...NO_PROVIDERS, ...loaded }, loaded: true });
+      })
+      .catch(() => {
+        if (active) setState((current) => ({ ...current, loaded: true }));
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return state;
+}
+
 /**
  * The sign-in buttons this host offers beside email and password, and the minimum age a new
  * account must confirm; none until loaded.
  */
 export function useSignInOptions(): CommunityWireAuthOptions {
-  const [options, setOptions] = useState(NO_PROVIDERS);
-  useEffect(() => {
-    let active = true;
-    void request<Partial<CommunityWireAuthOptions>>('/api/v1/auth-options')
-      .then((loaded) => {
-        if (active) setOptions({ ...NO_PROVIDERS, ...loaded });
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, []);
-  return options;
+  return useSignInOptionsState().options;
+}
+
+/**
+ * Whether a page leads with the host's single sign-on, and with what name.
+ *
+ * A page opened with `?sign-in=single-sign-on` (the DorkOS app adds it where the person's
+ * DorkOS account is this host's single sign-on) leads with "Continue with <label>" and folds
+ * every other way under "Other ways to sign in", so nobody is asked to make a second account
+ * here. `loading` while the options are still being read, so the form does not flash first;
+ * `null` without the hint, or on a host with no single sign-on, which is the page as it always
+ * was.
+ *
+ * @param search - The page's query string, as it loaded.
+ * @param state - The host's sign-in options.
+ */
+export function singleSignOnLead(
+  search: string,
+  state: SignInOptionsState
+): { label: string } | 'loading' | null {
+  if (!hasCommunitySingleSignOnHint(search)) return null;
+  if (!state.loaded) return 'loading';
+  return state.options.oidc ? { label: state.options.oidc.label } : null;
 }
 
 const MESSAGES: Record<string, string> = {

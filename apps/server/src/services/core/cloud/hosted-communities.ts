@@ -27,6 +27,7 @@ import {
   CommunityMoveSchema,
   CommunityMoveStartResponseSchema,
   CommunityNameCheckResponseSchema,
+  CommunitySignInResponseSchema,
   CommunityStartResponseSchema,
   EntitlementsSchema,
   HostedCommunityListResponseSchema,
@@ -165,6 +166,23 @@ export async function checkCommunityName(
       signal,
     })
   );
+}
+
+/**
+ * The origins of the Community servers where this account signs a person in,
+ * or `null` when unlinked or when the service does not serve the route yet.
+ *
+ * An empty list is a real answer (the service offers this sign-in nowhere
+ * today), and the app treats it exactly like `null`: every space page opens as
+ * it always has.
+ *
+ * @param signal - Aborts the request.
+ */
+export async function readAccountSignInOrigins(signal?: AbortSignal): Promise<string[] | null> {
+  const answer = await readOrNull((client) =>
+    client.get(V1_ROUTES.communitiesSignIn, CommunitySignInResponseSchema, { signal })
+  );
+  return answer === null ? null : answer.servers.map((server) => server.origin);
 }
 
 /**

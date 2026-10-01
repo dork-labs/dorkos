@@ -1397,6 +1397,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // so a test that drives them must say what the server would answer.
     listHostedCommunities: vi.fn().mockResolvedValue({ available: false }),
     checkHostedCommunityName: vi.fn().mockResolvedValue({ available: false }),
+    // No space server signs in with the account unless a test says so: today's flow.
+    getCommunityAccountSignIn: vi.fn().mockResolvedValue({ available: false }),
     startHostedCommunity: vi.fn(),
     getHostedCommunityClaimLink: vi.fn(),
     keepHostedCommunity: vi.fn(),

@@ -126,7 +126,26 @@ function StartShowcase() {
             label="Claim in the browser"
             step={claimConnectStep({
               ...claimBase,
-              state: { kind: 'claim', opened: false, busy: false, notice: null },
+              state: {
+                kind: 'claim',
+                opened: false,
+                busy: false,
+                notice: null,
+                withAccount: false,
+              },
+            })}
+          />
+          <State
+            label="Claim with your DorkOS account"
+            step={claimConnectStep({
+              ...claimBase,
+              state: {
+                kind: 'claim',
+                opened: false,
+                busy: false,
+                notice: null,
+                withAccount: true,
+              },
             })}
           />
           <State
@@ -141,6 +160,7 @@ function StartShowcase() {
                   message:
                     'Your sign-in isn’t finished yet. Finish it in your browser, then try again.',
                 },
+                withAccount: false,
               },
             })}
           />

@@ -254,6 +254,17 @@ export type CloudHostedCommunitiesResponse =
       allowance: CloudCommunityAllowance | null;
     };
 
+/**
+ * `GET /api/cloud/communities/sign-in` — the space servers where the linked
+ * DorkOS account signs a person in, as bare origins (`new URL(link).origin`).
+ *
+ * `available: false` when this instance is not linked, or the service does not
+ * offer this sign-in yet; the app then opens every space page exactly as before
+ * and says nothing about the account there.
+ */
+export type CloudCommunitySignInResponse =
+  { available: false } | { available: true; origins: string[] };
+
 /** `GET /api/cloud/communities/name-check` — is this web address free right now? Advisory. */
 export type CloudCommunityNameCheckResponse =
   { available: false } | { available: true; check: CommunityNameCheckResponse };
