@@ -83,9 +83,10 @@ export async function openBillingPage(
 /**
  * Ask for a copy of everything the account holds.
  *
- * The service assembles it as a job and emails the account when it is ready,
- * which is asked for explicitly here because the contract publishes no route
- * to check on a job later. When the answer already carries a download link,
+ * The service assembles it as a job. An email when it is ready is asked for,
+ * because the contract publishes no route to check on a job later, but the
+ * app promises nothing about it: asking again is how a person gets the link.
+ * When the answer already carries a download link,
  * that link is held to the same rule as a billing page; one that fails it is
  * dropped, so the export reads as still being prepared rather than offering a
  * link this app would not open.

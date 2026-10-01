@@ -191,10 +191,10 @@ describe('billing-page routes', () => {
 
     it.each([
       ['portal', '/v1/portal', 'Billing isn’t available on your account yet.'],
-      ['checkout', '/v1/checkout', 'Changing plan isn’t available on your account yet.'],
+      ['checkout', '/v1/checkout', 'That plan isn’t on sale any more.'],
       ['topup', '/v1/topup', 'Adding credits isn’t available on your account yet.'],
     ])(
-      'says plainly that %s is not available, instead of the service`s own not-found prose',
+      'answers a not-found refusal from %s in a plain sentence, never the service`s own prose',
       async (page, v1Path, sentence) => {
         const notFound = {
           code: 'not_found',
@@ -211,18 +211,25 @@ describe('billing-page routes', () => {
       }
     );
 
-    it('treats a route that is not deployed at all the same way', async () => {
-      fakeAccount({ '/v1/topup': { status: 404, body: 'Not Found' } });
-      const res = await request(server).post('/api/cloud/billing/topup').expect(200);
-      expect(res.body).toEqual({
-        ok: false,
-        message: 'Adding credits isn’t available on your account yet.',
-      });
-    });
+    it.each([
+      ['portal', '/v1/portal', 'Billing isn’t available on your account yet.'],
+      ['checkout', '/v1/checkout', 'Changing plan isn’t available on your account yet.'],
+      ['topup', '/v1/topup', 'Adding credits isn’t available on your account yet.'],
+    ])(
+      'says %s is not available on the account when the route is not deployed at all',
+      async (page, v1Path, sentence) => {
+        fakeAccount({ [v1Path]: { status: 404, body: 'Not Found' } });
+        const res = await request(server)
+          .post(`/api/cloud/billing/${page}`)
+          .send({ skuId: 'sku_opaque_0001' })
+          .expect(200);
+        expect(res.body).toEqual({ ok: false, message: sentence });
+      }
+    );
   });
 
   describe('POST /api/cloud/account/export', () => {
-    it('asks for the export with an email when it is ready, and says it is being prepared', async () => {
+    it('asks for the export and says it is still being prepared while it has no link', async () => {
       const seen = fakeAccount({ '/v1/account/export': { status: 200, body: exportFixture } });
       const res = await request(server).post('/api/cloud/account/export').expect(200);
       expect(res.body).toEqual({
@@ -264,13 +271,22 @@ describe('billing-page routes', () => {
       expect(res.body.export).toMatchObject({ readyAt: null, downloadUrl: null });
     });
 
-    it('says plainly when exporting is not available on the account', async () => {
+    it('says the account could not be found when the service answers not-found', async () => {
       fakeAccount({
         '/v1/account/export': {
           status: 404,
-          body: { code: 'not_found', status: 404, title: 'Route not served' },
+          body: { code: 'not_found', status: 404, title: 'Developer prose' },
         },
       });
+      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      expect(res.body).toEqual({
+        ok: false,
+        message: 'Couldn’t find your DorkOS account. Try linking this computer again.',
+      });
+    });
+
+    it('says exporting is not available when the route is not deployed at all', async () => {
+      fakeAccount({ '/v1/account/export': { status: 404, body: 'Not Found' } });
       const res = await request(server).post('/api/cloud/account/export').expect(200);
       expect(res.body).toEqual({
         ok: false,

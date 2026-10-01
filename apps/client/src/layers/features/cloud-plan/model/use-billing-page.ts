@@ -62,6 +62,7 @@ export interface OpenBillingPage {
  */
 export function useOpenBillingPage(): OpenBillingPage {
   const transport = useTransport();
+  const queryClient = useQueryClient();
   const refreshOnReturn = useRefreshPlanOnReturn();
   const [pending, setPending] = useState<BillingPageTarget | null>(null);
   const [notice, setNotice] = useState<BillingNotice | null>(null);
@@ -85,6 +86,11 @@ export function useOpenBillingPage(): OpenBillingPage {
         .then((answer) => {
           if (!answer.ok) {
             win.close();
+            // A refused checkout most often means the offer left the list
+            // since it was read; read the list again.
+            if (target.page === 'checkout') {
+              void queryClient.invalidateQueries({ queryKey: cloudPlanKeys.offers() });
+            }
             setNotice(
               'problem' in answer ? { problem: answer.problem } : { message: answer.message }
             );
@@ -102,7 +108,7 @@ export function useOpenBillingPage(): OpenBillingPage {
           setPending(null);
         });
     },
-    [transport, refreshOnReturn]
+    [transport, queryClient, refreshOnReturn]
   );
 
   return { open, pending, notice };

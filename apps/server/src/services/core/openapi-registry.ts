@@ -3695,8 +3695,8 @@ registry.registerPath({
   tags: ['Cloud'],
   summary: 'Ask for a copy of everything the DorkOS account holds',
   description:
-    'The service assembles the export and emails the account when it is ready; the answer ' +
-    'carries the download link only when it already is. A refusal answers 200 with the ' +
+    'The answer carries the download link once the export is ready; until then, ask again. ' +
+    'A refusal answers 200 with the ' +
     'service`s own problem envelope, or one plain sentence. Sent `no-store`.',
   responses: {
     200: {

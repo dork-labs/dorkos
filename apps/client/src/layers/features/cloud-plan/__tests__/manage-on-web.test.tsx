@@ -209,7 +209,7 @@ describe('manage on the web', () => {
   });
 
   describe('exporting the account data', () => {
-    it('says the export is being prepared, and asks for an email, while it has no link', async () => {
+    it('says the export is being prepared, promising nothing, while it has no link', async () => {
       const transport = linkedTransport();
       vi.mocked(transport.requestCloudAccountExport).mockResolvedValue({
         ok: true,
@@ -220,9 +220,23 @@ describe('manage on the web', () => {
         await screen.findByRole('button', { name: 'Export your account data' })
       );
       expect(await screen.findByRole('status')).toHaveTextContent(
-        'Your export is being prepared. We’ll email you a link when it’s ready.'
+        'Your export is being prepared. Try again in a few minutes to get the link.'
       );
+      expect(screen.queryByText(/email/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+
+      // Asking again is how the link arrives.
+      vi.mocked(transport.requestCloudAccountExport).mockResolvedValue({
+        ok: true,
+        export: {
+          requestedAt: '2026-09-15T12:00:00.000Z',
+          readyAt: '2026-09-15T12:05:00.000Z',
+          downloadUrl: 'https://example.invalid/exports/exp_0001',
+        },
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByText('Your export is ready.')).toBeInTheDocument();
+      expect(transport.requestCloudAccountExport).toHaveBeenCalledTimes(2);
     });
 
     it('offers the download once the export is ready, opening it only from a press', async () => {
@@ -273,6 +287,37 @@ describe('manage on the web', () => {
         'Couldn’t reach your DorkOS account. Try again.'
       );
     });
+  });
+
+  it('reads the offers again when a checkout is refused, and says the plan is gone', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.createCloudBillingSession).mockResolvedValue({
+      ok: false,
+      message: 'That plan isn’t on sale any more.',
+    });
+    renderManage(transport);
+    const list = await screen.findByRole('list');
+    const offersReads = vi.mocked(transport.getCloudOffers).mock.calls.length;
+    await userEvent.click(within(list).getAllByRole('button', { name: /choose/i })[0]);
+    expect(await screen.findByRole('alert')).toHaveTextContent('That plan isn’t on sale any more.');
+    await waitFor(() =>
+      expect(vi.mocked(transport.getCloudOffers).mock.calls.length).toBeGreaterThan(offersReads)
+    );
+  });
+
+  it('does not read the offers again when another page is refused', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.createCloudBillingSession).mockResolvedValue({
+      ok: false,
+      message: 'Adding credits isn’t available on your account yet.',
+    });
+    renderManage(transport);
+    await screen.findByRole('list');
+    const offersReads = vi.mocked(transport.getCloudOffers).mock.calls.length;
+    await userEvent.click(screen.getByRole('button', { name: 'Add credits' }));
+    await screen.findByRole('alert');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(vi.mocked(transport.getCloudOffers).mock.calls.length).toBe(offersReads);
   });
 
   it('shows a refusal in the service`s own words and closes the waiting window', async () => {

@@ -166,8 +166,8 @@ export type CloudBillingSessionResponse =
 /**
  * Where an account export stands, as the service answered.
  *
- * `downloadUrl` is null until the export is ready (the service emails the
- * account then); once present it is a short-lived https link.
+ * `downloadUrl` is null until the export is ready; asking again is how to get
+ * it. Once present it is a short-lived https link.
  */
 export interface CloudAccountExport {
   requestedAt: string;

@@ -2950,9 +2950,9 @@ export interface Transport
     skuId?: string
   ): Promise<CloudBillingSessionResponse>;
   /**
-   * Ask for a copy of everything the DorkOS account holds. The service emails
-   * the account when it is ready; the answer carries the download link only
-   * when it already is. A refusal comes back as a value.
+   * Ask for a copy of everything the DorkOS account holds. The answer carries
+   * the download link once it is ready; until then, ask again. A refusal comes
+   * back as a value.
    */
   requestCloudAccountExport(): Promise<CloudAccountExportResponse>;
   /**

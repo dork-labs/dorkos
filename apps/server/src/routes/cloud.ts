@@ -216,11 +216,18 @@ interface WriteFailureWording {
   /** What was being done, for the log line. */
   what: string;
   /**
-   * What to tell the person when the service does not serve this write at all
-   * (a 404, or a route that is not deployed). Without it, such a refusal is
-   * passed through like any other.
+   * What to tell the person when the service does not serve this write at all:
+   * a 404 that is not a problem envelope, which is a route that is not
+   * deployed. Also used for a `not_found` problem when `notFound` is absent.
+   * Without it, such a refusal is passed through like any other.
    */
   absent?: string;
+  /**
+   * What to tell the person when the service answers with a `not_found`
+   * problem: the route is there, but the thing the write names is not (an
+   * offer no longer on sale, say).
+   */
+  notFound?: string;
 }
 
 /**
@@ -231,9 +238,12 @@ interface WriteFailureWording {
  * knowing a single plan: the words, including `requiredPlanDisplayName`, are the
  * service's.
  *
- * A write the service does not serve is the exception. Its refusal is written
- * for developers, not people, so a write that can meet one names its own plain
- * sentence in `wording.absent`, and that is what the person reads.
+ * A "not found" is the exception. Its words are written for developers, not
+ * people, so a write that can meet one names its own plain sentences: one for
+ * a route that is not served at all (`wording.absent`), and one for a route
+ * that is served but could not find what the write named (`wording.notFound`).
+ * The two are told apart by the answer's shape: a deployed route refuses with
+ * a problem envelope, a missing one does not.
  *
  * **It answers 200, and that is not sloppiness.** A refusal a plan change would
  * lift is an ANSWER this route succeeded in obtaining, not a failure of this
@@ -250,10 +260,13 @@ interface WriteFailureWording {
  * @param wording - What was being done, and what to say when it is not served.
  */
 function cloudWriteFailed(res: Response, error: unknown, wording: WriteFailureWording) {
-  if (wording.absent !== undefined && isAbsent(error)) {
-    return res.json({ ok: false, message: wording.absent } satisfies CloudWriteRefusal);
-  }
   const problem = problemOf(error);
+  if (isAbsent(error)) {
+    const sentence = problem !== null ? (wording.notFound ?? wording.absent) : wording.absent;
+    if (sentence !== undefined) {
+      return res.json({ ok: false, message: sentence } satisfies CloudWriteRefusal);
+    }
+  }
   if (problem !== null) {
     return res.json({ ok: false, problem } satisfies CloudWriteRefusal);
   }
@@ -348,14 +361,16 @@ router.post('/billing/:page', async (req, res) => {
     return cloudWriteFailed(res, err, {
       what: `open the ${page.data} page`,
       absent: BILLING_ABSENT[page.data],
+      // A served checkout that cannot find the offer: it is no longer on sale.
+      ...(page.data === 'checkout' ? { notFound: 'That plan isn’t on sale any more.' } : {}),
     });
   }
 });
 
 /**
  * POST /api/cloud/account/export — ask for a copy of everything the account
- * holds. The service emails the account when it is ready; when the answer
- * already carries a download link, it is here. Sent `no-store`.
+ * holds. When the answer already carries a download link, it is here; until
+ * then, asking again is how to get it. Sent `no-store`.
  */
 router.post('/account/export', async (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -371,6 +386,7 @@ router.post('/account/export', async (_req, res) => {
     return cloudWriteFailed(res, err, {
       what: 'request an account export',
       absent: 'Exporting your data isn’t available on your account yet.',
+      notFound: 'Couldn’t find your DorkOS account. Try linking this computer again.',
     });
   }
 });
