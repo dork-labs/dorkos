@@ -399,12 +399,12 @@ describe('GET /api/cloud/communities/sign-in', () => {
 
   it('passes on the origin and nothing else the service put beside it', async () => {
     script.signIn = {
-      servers: [{ origin: 'https://community.example.invalid', subject: 'pairwise-sub' }],
+      servers: [{ origin: 'https://community.example.invalid', subject: 'account-subject' }],
       account: 'u_1',
     };
     const res = await request(server).get('/api/cloud/communities/sign-in').expect(200);
     expect(res.body).toEqual({ available: true, origins: ['https://community.example.invalid'] });
-    expect(JSON.stringify(res.body)).not.toContain('pairwise-sub');
+    expect(JSON.stringify(res.body)).not.toContain('account-subject');
   });
 
   it('refuses a server that is not a bare origin rather than opening pages on it', async () => {

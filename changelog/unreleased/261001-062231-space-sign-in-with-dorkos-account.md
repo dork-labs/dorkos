@@ -2,6 +2,7 @@
 covers:
   - 'feat(cloud-api): name the space servers where the DorkOS account signs a person in (DOR-2634)'
   - 'feat(spaces): start and join a space on DorkOS with your DorkOS account (DOR-2634)'
+  - 'test(server): name the dropped field plainly (DOR-2634)'
 ---
 
 ### Added
