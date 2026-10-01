@@ -432,7 +432,7 @@ export function errorHandler(err: Error, req: Request, res: Response, next: Next
 
 (keep the existing `if (res.headersSent) { next(err); return; }` guard above this line untouched, and its `next(err)` call unaffected by the rename).
 
-**`apps/server/src/routes/cloud.ts:110`** (`cloudReadFailed`, which already imports `problemOf` at line 50): `logger.warn(\`[Cloud] Could not read ${what}\`, logError(error));` \u2014 add the Problem's own code and status: `const problem = problemOf(error); logger.warn(\`[Cloud] Could not read ${what}\`, { ...logError(error), code: problem?.code, status: problem?.status });`.
+**`apps/server/src/routes/cloud.ts:110`** (`cloudReadFailed`, which already imports `problemOf` at line 50): `logger.warn(\`[Cloud] Could not read ${what}\`, logError(error));`\u2014 add the Problem's own code and status:`const problem = problemOf(error); logger.warn(\`[Cloud] Could not read ${what}\`, { ...logError(error), code: problem?.code, status: problem?.status });`.
 
 **`apps/server/src/routes/cloud-communities.ts:210` and `:226`** (`writeFailed`'s no-Problem branch and `readFailed`, both already have `problemOf` imported at line 66): apply the same pattern \u2014 `const problem = problemOf(error);` then spread `code: problem?.code, status: problem?.status` into each existing `logger.warn(...)` call's context object (at line 210 `problem` will usually be `null` here since a real Problem already short-circuited earlier in `writeFailed`, at lines ~202-209 \u2014 that is fine; the point is every one of these four log sites now shares one consistent shape).
 
