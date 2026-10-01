@@ -34,6 +34,7 @@ import {
   IMPLICIT_ACCOUNT_ID,
   isAbsoluteAccountPath,
   isAccountColor,
+  isReservedAccountId,
   resolveAccountColor,
 } from './account-identity.js';
 import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
@@ -1519,7 +1520,8 @@ export function settleLegacyAccountAlias(merged: unknown, patch: unknown): void 
  * - `row-invalid`: the entry is not an object; skipped.
  * - `path-invalid`: `path` is missing or not absolute; skipped.
  * - `id-duplicate`: an earlier listed row already has this id; skipped.
- * - `id-reserved`: the id is `default`, which names the default account;
+ * - `id-reserved`: the id is `default`, which names the default account, or
+ *   `dorkos-credits`, which names DorkOS credits;
  *   listed, but not routable until the config migration renames it.
  * - `id-invalid`: the id fails {@link ACCOUNT_ID_PATTERN} (a hand edit);
  *   listed, but it has no usage file and cannot be routed.
@@ -1724,11 +1726,11 @@ export function readClaudeAccountSettings(
         message: `${noun} "${id}" has a label that is not text, so it has no label.`,
       });
     }
-    if (id === IMPLICIT_ACCOUNT_ID) {
+    if (isReservedAccountId(id)) {
       warnings.push({
         code: 'id-reserved',
         index,
-        message: `${noun} "${id}" uses the reserved id "default", so it is listed but not routable until it is renamed.`,
+        message: `${noun} "${id}" uses the reserved id "${id}", so it is listed but not routable until it is renamed.`,
       });
     } else if (!ACCOUNT_ID_PATTERN.test(id)) {
       warnings.push({
@@ -1918,6 +1920,56 @@ const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().def
 export const DefaultAccountColorSchema = z
   .union([z.string().regex(ACCOUNT_COLOR_PATTERN), z.literal('')])
   .nullable();
+
+/**
+ * One runtime's DorkOS credits default (ADR 261001-000811): new work on that
+ * runtime runs on credits when nothing more specific (a session's own pick, its
+ * agent, a project rule) names an account.
+ *
+ * Kept here rather than in the runtime's `defaultAccount`, on purpose: that
+ * field names the person's OWN sign-in, which is what turning credits off
+ * returns to, and what flow's CLI reads as the runtime's default account. A
+ * credits default must never change either.
+ */
+export const CloudCreditsDefaultSchema = z.object({
+  /**
+   * `default` when DorkOS set it on a new link because the runtime had no
+   * working sign-in; `user` when a person chose it.
+   */
+  chosenBy: z.enum(['default', 'user']),
+  /** Whether the person has seen the notice that DorkOS made this choice. */
+  announced: z.boolean().default(true),
+  /**
+   * Whether switching back to the runtime's own sign-in was offered once after
+   * a working sign-in appeared under a `default` choice.
+   */
+  signInReoffered: z.boolean().default(false),
+});
+
+/** One runtime's credits default. See {@link CloudCreditsDefaultSchema}. */
+export type CloudCreditsDefault = z.infer<typeof CloudCreditsDefaultSchema>;
+
+/**
+ * The person's DorkOS credits choices (`cloud.credits`, ADR 261001-000811).
+ * Written only by the server: a person's pick in Runs on, the fill-the-gaps
+ * step of a NEW link, and the dismissals of the notices about those.
+ */
+export const CloudCreditsSettingsSchema = z.object({
+  /**
+   * Runtime type → its credits default. A runtime with no entry runs new work
+   * on its own sign-in by default.
+   */
+  defaults: z.record(z.string(), CloudCreditsDefaultSchema).default({}),
+  /**
+   * The one dismissible offer a computer linked BEFORE credits were a choice
+   * gets instead of being switched over: `pending` until it is answered,
+   * `dismissed` after, `none` when it was never owed (a new link, or no link).
+   */
+  offer: z.enum(['none', 'pending', 'dismissed']).default('none'),
+});
+
+/** The `cloud.credits` block. See {@link CloudCreditsSettingsSchema}. */
+export type CloudCreditsSettings = z.infer<typeof CloudCreditsSettingsSchema>;
 
 /**
  * What a NEW Claude Code session starts with, and which account it bills.
@@ -3390,12 +3442,18 @@ export const UserConfigSchema = z.object({
        * before it existed; every reader treats absence as `null`.
        */
       previousLinkProof: z.string().nullable().default(null),
+      /**
+       * Which runtimes run new work on DorkOS credits by default, and who chose
+       * that (ADR 261001-000811). See {@link CloudCreditsSettingsSchema}.
+       */
+      credits: CloudCreditsSettingsSchema.default(() => ({ defaults: {}, offer: 'none' as const })),
     })
     .default(() => ({
       instanceToken: null,
       instanceName: null,
       linkedAccountLabel: null,
       previousLinkProof: null,
+      credits: { defaults: {}, offer: 'none' as const },
     })),
   /**
    * Connector gateway settings (connector-completion spec). `rawMcpServers`

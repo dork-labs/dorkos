@@ -1009,8 +1009,22 @@ Linking this instance to a DorkOS account lets the account see and manage it. Ru
       type: 'string | null',
       default: 'null',
     },
+    'cloud.credits.defaults': {
+      description:
+        'Which runtimes run new work on DorkOS credits by default, and who chose that: you, in Runs on, or DorkOS, when you linked your account and that runtime had no working sign-in (DorkOS tells you once). Change it in Settings, not by hand.',
+      type: 'object',
+      default: '{}',
+    },
+    'cloud.credits.offer': {
+      description:
+        'Whether this computer is still owed its one offer to use DorkOS credits. Computers linked before credits were a choice get the offer; nothing is switched for them.',
+      type: "'none' | 'pending' | 'dismissed'",
+      default: "'none'",
+    },
   }}
 />
+
+Set `DORKOS_CLOUD_CREDITS=0` to turn DorkOS credits off on a server. Anything set to run on credits then stops and says so, instead of running on another sign-in. The variable can only turn credits off, never on.
 
 Set `DORKOS_CLOUD_URL` to point at a non-production cloud (defaults to `https://dorkos.ai`). While linked, the instance checks in with the cloud on startup and every 15 minutes. If the account revokes the instance, the next check-in clears the local token and the instance is unlinked.
 

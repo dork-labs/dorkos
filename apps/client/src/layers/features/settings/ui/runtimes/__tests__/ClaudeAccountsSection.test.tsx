@@ -151,13 +151,13 @@ describe('ClaudeAccountsSection', () => {
     expect(within(limits).getByText('Uses only Work')).toBeInTheDocument();
   });
 
-  it('renders as a boxed sub-section headed "Billing account"', async () => {
+  it('renders as a boxed sub-section headed "Runs on"', async () => {
     renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
 
     // The section lives INSIDE the Claude Code runtime card now, so its own
     // heading is what tells an operator which part of the card they are in.
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'Billing account', level: 3 })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Runs on', level: 3 })).toBeInTheDocument()
     );
     // No card chrome of its own: the runtime card supplies that.
     expect(screen.getByTestId('claude-accounts-section')).toBeInTheDocument();
@@ -174,9 +174,7 @@ describe('ClaudeAccountsSection', () => {
 
     await waitFor(() => expect(screen.getByText('Default account')).toBeInTheDocument());
     expect(
-      screen.getByText(
-        'New sessions bill this account unless the agent or the session picks another.'
-      )
+      screen.getByText('New sessions run on this unless the agent or the session picks another.')
     ).toBeInTheDocument();
   });
 
@@ -683,7 +681,7 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
     });
   });
 
-  it('shows the one account\'s bars under "Billing account", labelled with the account', async () => {
+  it('shows the one account\'s bars under "Runs on", labelled with the account', async () => {
     renderSection(
       { resolvedAccount: WORK, inherited: false, accounts: [ACME] },
       { usage: [usageFor('acme-corp', WORK)] }
@@ -1192,5 +1190,104 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       await user.click(screen.getByRole('button', { name: 'Settings → Flow' }));
       expect(mockSetTab).toHaveBeenCalledWith('flow:fleet');
     });
+  });
+});
+
+describe('ClaudeAccountsSection — DorkOS credits in Runs on (ADR 261001-000811)', () => {
+  const CREDITS_PATH = '/Users/dev/.dork/runtimes/claude-code/credits';
+  const PERSONAL = {
+    id: 'personal',
+    path: HOME,
+    label: 'Personal',
+    color: '#3b82f6',
+    colorIsDefault: true,
+    isAccountRoot: true,
+  };
+
+  beforeEach(() => {
+    updateConfigResult = () => Promise.resolve();
+    vi.clearAllMocks();
+  });
+  afterEach(cleanup);
+
+  it('offers DorkOS credits as one more default, and records the pick as the person’s', async () => {
+    const user = userEvent.setup();
+    const transport = renderSection({
+      resolvedAccount: HOME,
+      inherited: false,
+      resolvedAccountId: 'personal',
+      accounts: [PERSONAL],
+      credits: { id: 'dorkos-credits', path: CREDITS_PATH, available: true, isDefault: false },
+    });
+    await screen.findByRole('combobox', { name: 'Default account' });
+    await chooseOption(user, 'DorkOS credits');
+    await waitFor(() =>
+      expect(transport.setCloudCreditsDefault).toHaveBeenCalledWith('claude-code', true)
+    );
+    // The person's own default is untouched: credits never overwrite it.
+    expect(transport.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not offer credits while they cannot be had', async () => {
+    const user = userEvent.setup();
+    renderSection({
+      resolvedAccount: HOME,
+      inherited: true,
+      accounts: [PERSONAL],
+      credits: { id: 'dorkos-credits', path: CREDITS_PATH, available: false, isDefault: false },
+    });
+    await user.click(await screen.findByRole('combobox', { name: 'Default account' }));
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).queryByRole('option', { name: 'DorkOS credits' })).toBeNull();
+  });
+
+  it('says calmly when DorkOS chose credits, and going back turns them off first', async () => {
+    const user = userEvent.setup();
+    const transport = renderSection({
+      resolvedAccount: HOME,
+      inherited: false,
+      resolvedAccountId: 'dorkos-credits',
+      accounts: [PERSONAL],
+      credits: {
+        id: 'dorkos-credits',
+        path: CREDITS_PATH,
+        available: true,
+        isDefault: true,
+        chosenBy: 'default',
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Default account' })).toHaveTextContent(
+        'DorkOS credits'
+      )
+    );
+    expect(screen.getByTestId('claude-credits-chosen-for-you')).toHaveTextContent(
+      'DorkOS chose this when you linked your account'
+    );
+    await chooseOption(user, 'Personal');
+    await waitFor(() =>
+      expect(transport.setCloudCreditsDefault).toHaveBeenCalledWith('claude-code', false)
+    );
+    // `Personal` was already the stored default, so nothing else is written.
+    expect(transport.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('warns that a credits default refuses new sessions while credits cannot be had', async () => {
+    renderSection({
+      resolvedAccount: HOME,
+      inherited: true,
+      resolvedAccountId: 'dorkos-credits',
+      accounts: [],
+      credits: {
+        id: 'dorkos-credits',
+        path: CREDITS_PATH,
+        available: false,
+        isDefault: true,
+        chosenBy: 'user',
+      },
+    });
+    expect(await screen.findByTestId('claude-credits-unavailable')).toHaveTextContent(
+      'new sessions here won’t start'
+    );
   });
 });

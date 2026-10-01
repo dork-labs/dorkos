@@ -21,6 +21,7 @@ import type {
   CloudCommunityNameCheckResponse,
   CloudCommunityRestoreResponse,
   CloudCommunityStartResponse,
+  CloudCreditsNoticeDismissRequest,
   CloudCreditsStatus,
   CloudHostedCommunitiesResponse,
   CloudLinkStatus,
@@ -113,8 +114,26 @@ export function createCloudMethods(baseUrl: string) {
       return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits');
     },
 
-    selectCloudCredits(): Promise<CloudCreditsStatus> {
-      return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits/select', { method: 'POST' });
+    setCloudCreditsDefault(runtime: string, useCredits: boolean): Promise<CloudCreditsStatus> {
+      return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits/default', {
+        method: 'PUT',
+        body: JSON.stringify({ runtime, useCredits }),
+      });
+    },
+
+    undoFilledCloudCredits(): Promise<CloudCreditsStatus> {
+      return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits/undo-filled', {
+        method: 'POST',
+      });
+    },
+
+    dismissCloudCreditsNotice(
+      request: CloudCreditsNoticeDismissRequest
+    ): Promise<CloudCreditsStatus> {
+      return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits/notices/dismiss', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
     },
 
     listHostedCommunities(): Promise<CloudHostedCommunitiesResponse> {

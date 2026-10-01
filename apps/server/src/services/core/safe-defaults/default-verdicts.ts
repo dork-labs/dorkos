@@ -449,6 +449,10 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'cloud.linkedAccountLabel': null,
   // No earlier link to continue, so a first link asks for nothing it did not have.
   'cloud.previousLinkProof': null,
+  // No runtime runs on DorkOS credits, and no offer is owed: nothing is spent
+  // that a person did not choose (ADR 261001-000811).
+  'cloud.credits.defaults': {},
+  'cloud.credits.offer': 'none',
 };
 
 /**

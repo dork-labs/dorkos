@@ -452,6 +452,13 @@ export const ContinueOptionsResponseSchema = z
     }),
     /** True when the account advisor's ranking was used, false for DorkOS's own. */
     advised: z.boolean(),
+    /**
+     * Whether DorkOS credits are offered as one more place to continue (ADR
+     * 261001-000811): `true` only while they can be had and the session is one
+     * a person may move. Offered, never recommended, and never picked by an
+     * automatic handoff. Absent on a server too old to offer them.
+     */
+    credits: z.boolean().optional(),
   })
   .openapi('ContinueOptionsResponse');
 
@@ -4293,6 +4300,34 @@ export const ServerConfigSchema = z
           description:
             'Whether Claude Code agents stay warm between messages (`runtimes.claudeCode.persistentSession`). Read here because the setting graduated out of Settings → Experiments and its switch now lives in the Control Center, which needs the current value to show it — the value is written through PATCH /api/config as before.',
         }),
+        credits: z
+          .object({
+            id: z.literal('dorkos-credits').openapi({
+              description:
+                'The id an agent, a project rule or a session launch hint names DorkOS credits by. Never a registry row',
+            }),
+            path: z.string().openapi({
+              description:
+                "The DorkOS-owned folder a credits session's transcript lives in, so a session's account root can be named. Never launched without the credits token",
+            }),
+            available: z.boolean().openapi({
+              description:
+                'Whether credits can be chosen right now: this computer is linked to a DorkOS account and credits are not switched off. A session already set to credits is refused while this is false, never moved',
+            }),
+            isDefault: z.boolean().openapi({
+              description:
+                'Whether new Claude Code work runs on credits when nothing more specific names an account. `resolvedAccountId` is `dorkos-credits` then',
+            }),
+            chosenBy: z.enum(['default', 'user']).optional().openapi({
+              description:
+                'Who made credits the default: `default` when DorkOS filled a gap on a new link, `user` when a person chose it. Absent when credits are not the default',
+            }),
+          })
+          .optional()
+          .openapi({
+            description:
+              'The DorkOS credits entry in the Runs on list (ADR 261001-000811). Present only while Claude Code declares credits support',
+          }),
       })
       .optional()
       .openapi({

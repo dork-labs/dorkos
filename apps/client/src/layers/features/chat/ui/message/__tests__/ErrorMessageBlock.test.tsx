@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import type { DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { ErrorMessageBlock } from '../ErrorMessageBlock';
 
 // The component deep-links to Settings → Runtimes via useSettingsDeepLink,
@@ -1183,5 +1183,53 @@ describe('ErrorMessageBlock rate_limit (spec claude-account-ui §6.7)', () => {
     const transport = renderBlock(<ErrorMessageBlock message="boom" sessionId={SESSION_ID} />);
     expect(screen.getByTestId('error-message-block')).toBeInTheDocument();
     expect(transport.getLimitHistory).not.toHaveBeenCalled();
+  });
+});
+
+describe('ErrorMessageBlock — a turn refused because DorkOS credits could not pay (ADR 261001-000811)', () => {
+  afterEach(() => {
+    cleanup();
+    useAppStore.getState().setRetryAccount(null);
+  });
+
+  const SENTENCE =
+    "Couldn't reach DorkOS credits, so nothing was sent. Try again, or use your Claude Code sign-in.";
+
+  it('says what happened in the server’s words and offers Retry and the own sign-in', () => {
+    const onRetry = vi.fn();
+    renderBlock(
+      <ErrorMessageBlock
+        message={SENTENCE}
+        category="execution_error"
+        code="credits_unavailable"
+        onRetry={onRetry}
+        sessionId={SESSION_ID}
+        runtimeLabel="Claude Code"
+      />
+    );
+    expect(screen.getByText('Couldn’t reach DorkOS credits')).toBeInTheDocument();
+    expect(screen.getByText(SENTENCE)).toBeInTheDocument();
+    // One Retry, not the generic one beside the card as well.
+    expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().retryAccount).toBeNull();
+  });
+
+  it('sends the retried message on this computer’s own sign-in when the person asks', () => {
+    const onRetry = vi.fn();
+    renderBlock(
+      <ErrorMessageBlock
+        message={SENTENCE}
+        category="execution_error"
+        code="credits_unavailable"
+        onRetry={onRetry}
+        sessionId={SESSION_ID}
+        runtimeLabel="Claude Code"
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Use your Claude Code sign-in' }));
+    expect(useAppStore.getState().retryAccount).toEqual({ id: 'default', sessionId: SESSION_ID });
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });

@@ -41,6 +41,27 @@ const account = vi.hoisted(() => ({ root: '' }));
  */
 const persistent = vi.hoisted(() => ({ on: false }));
 
+/** Where a credits session runs in this suite; nothing is written there. */
+const CREDITS_ROOT = '/tmp/dorkos-conformance/runtimes/claude-code/credits';
+
+/**
+ * Whether the suite's computer reads as linked to a DorkOS account. The credits
+ * cases hold a token only through the module's test seam; nothing here can
+ * reach a real cloud, because no context is ever captured.
+ */
+vi.mock('../credits-root.js', () => ({
+  creditsClaudeRoot: () => CREDITS_ROOT,
+  isCreditsClaudeRoot: (root: string) => root === CREDITS_ROOT,
+  ensureCreditsClaudeRoot: () => {},
+}));
+vi.mock('../../../core/cloud/v1-client.js', () => ({
+  isCloudLinked: () => true,
+  readCloudInstanceToken: () => 'conformance-link',
+  captureCloudV1Context: () => null,
+  resolveCloudInstanceId: async () => null,
+  problemOf: () => null,
+}));
+
 // The account resolver is the ONLY thing standing between this suite and the
 // developer's real Claude Code history, and unmocked it does not stand there at
 // all: `resolveClaudeRootSet()` unconditionally includes `~/.claude` plus
@@ -61,7 +82,12 @@ const persistent = vi.hoisted(() => ({ on: false }));
 // directory this laptop has.
 vi.mock('../claude-config-dir.js', () => ({
   resolveActiveClaudeRoot: () => account.root,
-  resolveLaunchAccountRoot: () => ({ ok: true, root: account.root, accountId: 'default' }),
+  // The credits entry of Runs on (ADR 261001-000811): a session that names it
+  // runs in the credits folder, every other one in the seeded account.
+  resolveLaunchAccountRoot: (opts: { hintId?: string }) =>
+    opts.hintId === 'dorkos-credits'
+      ? { ok: true, root: CREDITS_ROOT, accountId: 'dorkos-credits' }
+      : { ok: true, root: account.root, accountId: 'default' },
   resolveClaudeRootSet: () => [account.root],
   claudeConfigDirEnv: (root: string) => ({ CLAUDE_CONFIG_DIR: root }),
   describeClaudeCodeAccounts: () => ({
@@ -185,6 +211,9 @@ import { FakeCli } from '../sessions/__tests__/fake-persistent-cli.js';
 import { grantsFromSettings } from '../messaging/directory-grants.js';
 import { projectSlug } from '../sessions/project-slug.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
+
+import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
+import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
 
 const mockedQuery = vi.mocked(query);
 
@@ -752,6 +781,40 @@ runtimeConformance(
         };
       };
       return [handed(0), handed(-1)] as const;
+    },
+    // ADR 261001-000811's negatives. The observation is the options the SDK
+    // was launched with (its env carries the token, or does not); a refused
+    // credits turn never reaches `query()` at all.
+    creditsTurn: async (runtime, { runsOn, heldToken }) => {
+      __setCreditsStateForTests({
+        token:
+          heldToken === null
+            ? null
+            : { ...CREDITS_TOKEN_FIXTURE, token: heldToken, expiresAt: '2999-01-01T00:00:00.000Z' },
+      });
+      try {
+        const before = mockedQuery.mock.calls.length;
+        const sessionId = randomUUID();
+        runtime.ensureSession(sessionId, {
+          permissionMode: 'default',
+          cwd: '/projects/conformance',
+        });
+        const events = [];
+        for await (const event of runtime.sendMessage(sessionId, 'conformance ping', {
+          cwd: '/projects/conformance',
+          ...(runsOn === 'credits' ? { accountHint: 'dorkos-credits' } : {}),
+        })) {
+          events.push(event);
+        }
+        const calls = mockedQuery.mock.calls.slice(before);
+        return {
+          launched: calls.length > 0,
+          handed: calls.map(([args]) => args.options),
+          events,
+        };
+      } finally {
+        __setCreditsStateForTests({ token: null });
+      }
     },
     // C2/C3 are server-owned invariants every runtime inherits by construction,
     // driven through the shared machinery rather than claude-code itself.

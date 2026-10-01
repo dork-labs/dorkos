@@ -27,9 +27,9 @@ export { CreditsGauge } from './ui/CreditsGauge';
 export { UpgradeNudge } from './ui/UpgradeNudge';
 export { SeatManagement } from './ui/SeatManagement';
 export { CreditsSource } from './ui/CreditsSource';
+export { CreditsNotices } from './ui/CreditsNotices';
 export {
   cloudPlanKeys,
-  useCloudCredits,
   useCloudMembers,
   useCloudNudge,
   useCloudOrgs,
@@ -37,7 +37,6 @@ export {
   useCloudSeats,
   useCloudUsage,
   useSeatActions,
-  useSelectCloudCredits,
 } from './model/use-cloud-plan';
 export { useLocalSpend } from './model/use-local-spend';
 export type { LocalSpend } from './model/use-local-spend';

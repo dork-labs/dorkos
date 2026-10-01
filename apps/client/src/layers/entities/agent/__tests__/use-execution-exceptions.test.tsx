@@ -165,6 +165,7 @@ describe('useExecutionExceptions — a billing account nobody registered', () =>
           inherited: boolean;
           accounts: { id: string | null; path: string; label: string | null }[];
           accountsUnavailable?: boolean;
+          credits?: { id: string; path: string; available: boolean; isDefault: boolean };
         }
       | undefined,
     /**
@@ -253,6 +254,25 @@ describe('useExecutionExceptions — a billing account nobody registered', () =>
     expect(result.current.brokenPaths).toEqual([]);
     expect(result.current.exceptions[0].report.deviations).toEqual([
       { field: 'account', label: 'Acme Corp' },
+    ]);
+  });
+
+  // DorkOS credits are never a registry row, so an agent on them must not read
+  // as pinned to an account nobody registered (ADR 261001-000811).
+  it('names an agent on DorkOS credits as a choice, never a broken reference', async () => {
+    const { result } = renderAccounts('dorkos-credits', {
+      ...REGISTRY,
+      credits: {
+        id: 'dorkos-credits',
+        path: '/Users/dev/.dork/runtimes/claude-code/credits',
+        available: false,
+        isDefault: false,
+      },
+    });
+    await waitFor(() => expect(result.current.exceptions).toHaveLength(1));
+    expect(result.current.brokenPaths).toEqual([]);
+    expect(result.current.exceptions[0].report.deviations).toEqual([
+      { field: 'account', label: 'DorkOS credits' },
     ]);
   });
 

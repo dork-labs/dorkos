@@ -199,6 +199,10 @@ function defaultConfigPort(): CloudConfigPort {
         instanceName: null,
         linkedAccountLabel: null,
         previousLinkProof,
+        // The person's credits choices outlive the link: a session set to
+        // credits is refused while unlinked, never moved, and a relink finds
+        // them as they were (ADR 261001-000811).
+        credits: current.credits,
       });
       logConfigWrite('unlinking this instance', 'cloud', current, configManager.get('cloud'));
     },
@@ -255,6 +259,7 @@ export class CloudLinkManager {
   private observeManagedReceipt:
     ((receipt: ManagedConnectorExecutionReceipt) => void | Promise<void>) | undefined;
   private syncManagedProvider: (() => void | Promise<void>) | undefined;
+  private onNewLink: (() => void | Promise<void>) | undefined;
   private configPort: CloudConfigPort | undefined;
 
   private state: CloudLinkState = 'idle';
@@ -384,6 +389,8 @@ export class CloudLinkManager {
         this.setState('linked');
         await this.notifyManagedProviderSync();
         if (!this.ownsContext(context)) return;
+        await this.notifyNewLink();
+        if (!this.ownsContext(context)) return;
         await this.heartbeat(baseUrl, descriptor, result.accessToken, generation);
         if (this.ownsContext(context)) this.startHeartbeatSchedule();
       } else {
@@ -478,6 +485,25 @@ export class CloudLinkManager {
   /** Attach the provider-registry reconciliation callback during server composition. */
   setManagedProviderSync(sync: () => void | Promise<void>): void {
     this.syncManagedProvider = sync;
+  }
+
+  /**
+   * Attach the step that runs once when a person approves a NEW link, and only
+   * then: never at startup, never on a heartbeat. The credits defaults use it
+   * to fill the gaps a new link opens (ADR 261001-000811), which is exactly why
+   * a computer linked before that existed is never switched over by it.
+   */
+  setOnNewLink(onNewLink: () => void | Promise<void>): void {
+    this.onNewLink = onNewLink;
+  }
+
+  private async notifyNewLink(): Promise<void> {
+    if (!this.onNewLink) return;
+    try {
+      await this.onNewLink();
+    } catch (error) {
+      logger.warn('[CloudLink] New-link step failed', logError(error));
+    }
   }
 
   /** Submit one durable managed connector authority command with the current linked key. */

@@ -69,6 +69,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'a2a.enabled',
       'agents.defaultDirectory',
       'auth.enabled',
+      'cloud.credits.defaults',
+      'cloud.credits.offer',
       'cloud.instanceName',
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',

@@ -211,6 +211,7 @@ import type {
   CloudCommunityNameCheckResponse,
   CloudCommunityRestoreResponse,
   CloudCommunityStartResponse,
+  CloudCreditsNoticeDismissRequest,
   CloudCreditsStatus,
   CloudHostedCommunitiesResponse,
   CloudLinkStatus,
@@ -2927,17 +2928,29 @@ export interface Transport
    */
   releaseCloudSeat(seatId: string): Promise<CloudSeatActionResponse>;
   /**
-   * Read whether DorkOS credits are armed as an inference source on this
-   * server. Carries no credential — only whether the path is on and which
-   * runtimes it reaches.
+   * Read whether DorkOS credits can be chosen on this computer, which runtimes
+   * they reach, who chose them as a default, and the notices owed about choices
+   * made for the person. Carries no credential.
    */
   getCloudCredits(): Promise<CloudCreditsStatus>;
   /**
-   * Select DorkOS credits as the inference source for this server process.
-   * Inert unless the server's own feature flag is on beside its cloud link, and
-   * it answers the same report either way rather than an error.
+   * A person's choice for one runtime's default: run new work on DorkOS
+   * credits, or go back to the runtime's own sign-in (ADR 261001-000811).
+   * Recorded as chosen by the person. Rejects turning credits on for a runtime
+   * that does not declare them, or while they cannot be had.
+   *
+   * @param runtime - The runtime whose default to change.
+   * @param useCredits - Whether new work should run on credits by default.
    */
-  selectCloudCredits(): Promise<CloudCreditsStatus>;
+  setCloudCreditsDefault(runtime: string, useCredits: boolean): Promise<CloudCreditsStatus>;
+  /** Put back every runtime DorkOS set to credits on a new link ("Undo all"). */
+  undoFilledCloudCredits(): Promise<CloudCreditsStatus>;
+  /**
+   * Settle one credits notice without changing any choice.
+   *
+   * @param request - Which notice, and for `signed-in` which runtime.
+   */
+  dismissCloudCreditsNotice(request: CloudCreditsNoticeDismissRequest): Promise<CloudCreditsStatus>;
 
   // --- Hosted communities (community-host-operator-api P5) ---
   //

@@ -45,7 +45,13 @@ import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
-import { IMPLICIT_ACCOUNT_ID, isAccountColor } from '@dorkos/shared/account-usage';
+import {
+  CREDITS_ACCOUNT_ID,
+  IMPLICIT_ACCOUNT_ID,
+  isAccountColor,
+} from '@dorkos/shared/account-usage';
+import { creditsClaudeRoot, isCreditsClaudeRoot } from './credits-root.js';
+import { creditsIsDefaultFor, readCreditsSettings } from '../../core/cloud/credits-defaults.js';
 import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
@@ -406,6 +412,17 @@ export function resolveLaunchAccountRoot(opts: {
     // id, so `find(a => a.id === id)` with an absent `id` on both sides would
     // return the first row and bill an account nobody named.
     if (!id) continue;
+    // DorkOS credits, named by the person or the agent. Never a registry row,
+    // so it is matched before the registry and judged by its own project
+    // rule. Whether credits are AVAILABLE is deliberately not asked here: a
+    // named choice that cannot be honoured is refused at launch, never moved
+    // onto somebody's own sign-in (ADR 261001-000811).
+    if (id === CREDITS_ACCOUNT_ID) {
+      const verdict = accountEligibility(config, 'claude-code', CREDITS_ACCOUNT_ID, project);
+      if (!verdict.eligible)
+        return { ok: false, error: refusalFor(config, CREDITS_ACCOUNT_ID, project, verdict) };
+      return { ok: true, root: creditsClaudeRoot(), accountId: CREDITS_ACCOUNT_ID };
+    }
     // First, so a `default` still reaches a row the '0.87.0' migration renamed
     // from it, while that row keeps its marker (see `findRegisteredAccount`).
     const match = findRegisteredAccount(accounts, id);
@@ -432,19 +449,30 @@ export function resolveLaunchAccountRoot(opts: {
     return { ok: true, root, accountId };
   }
 
+  // Rung 3, when the machine default is DorkOS credits: a choice a person made,
+  // or one DorkOS made on a new link and said so. Kept apart from
+  // `defaultAccount`, which still names the person's own sign-in.
+  if (creditsIsDefaultFor('claude-code', config)) {
+    if (accountEligibility(config, 'claude-code', CREDITS_ACCOUNT_ID, project).eligible) {
+      return { ok: true, root: creditsClaudeRoot(), accountId: CREDITS_ACCOUNT_ID };
+    }
+    // Credits may not work in this project: the default is automatic, so the
+    // person's own accounts below take it, exactly as for any default.
+  }
   const root = resolveActiveClaudeRoot(config);
   const accountId = accountIdForRoot(root, config);
   if (accountEligibility(config, 'claude-code', accountId, project).eligible) {
     return { ok: true, root, accountId };
   }
   // The automatic choice may not work here: the next eligible account runs it.
+  // Never credits: an automatic step may not start spending (ADR 261001-000811).
   const candidates = [
     ...launchFallbackOrder('claude-code', project, config),
     ...accounts
       .filter((account) => account.id !== IMPLICIT_ACCOUNT_ID)
       .map((account) => account.id),
     IMPLICIT_ACCOUNT_ID,
-  ];
+  ].filter((id) => id !== CREDITS_ACCOUNT_ID);
   const [next] = eligibleAccountIds(config, 'claude-code', [...new Set(candidates)], project);
   if (next !== undefined) {
     // `default` is always the machine root itself, as rungs 1-2 spell it, never
@@ -471,6 +499,9 @@ export function resolveLaunchAccountRoot(opts: {
  * @param config - Config reader.
  */
 export function accountIdForRoot(root: string, config: ConfigReader = configManager): string {
+  // Before the registry: the credits folder is no row, and reading it as Main
+  // would name the person's own sign-in as what paid for a credits session.
+  if (isCreditsClaudeRoot(root)) return CREDITS_ACCOUNT_ID;
   try {
     const home = os.homedir();
     const { accounts } = resolveRuntimeAccounts('claude-code', {
@@ -568,6 +599,9 @@ export function isRegisteredClaudeAccount(
   id: string,
   config: ConfigReader = configManager
 ): boolean | undefined {
+  // DorkOS credits are no registry row, but the ladder never falls through
+  // them: a named credits pick is honoured, or refused at launch.
+  if (id === CREDITS_ACCOUNT_ID) return true;
   const { accounts, unavailable } = readClaudeCodeConfig(config);
   if (unavailable) return undefined;
   return findRegisteredAccount(accounts, id) !== undefined;
@@ -606,6 +640,9 @@ export function resolveClaudeRootSet(config: ConfigReader = configManager): stri
     ...(inherited ? [inherited] : []),
     path.join(os.homedir(), '.claude'),
     ...accounts.map((account) => account.path),
+    // Last: credits sessions are listed beside the person's own, and the
+    // folder qualifies only once a credits session has run.
+    creditsClaudeRoot(),
   ];
 
   const seen = new Set<string>();
@@ -777,14 +814,22 @@ function launchOverride(
  * this function and `ServerConfigSchema` cannot drift apart.
  *
  * @param config - Config reader (defaults to the module singleton).
+ * @param opts - What the caller knows beyond config.
+ * @param opts.creditsAvailable - Whether DorkOS credits can be had right now
+ *   (linked and not switched off). `false` when not said.
  * @returns The `claudeCode` block of the server config response.
  */
 export function describeClaudeCodeAccounts(
-  config: ConfigReader = configManager
+  config: ConfigReader = configManager,
+  opts: { creditsAvailable?: boolean } = {}
 ): NonNullable<ServerConfig['claudeCode']> {
   const { defaultAccount, accounts, defaultAccountColor, unavailable } =
     readClaudeCodeConfig(config);
   const resolved = resolvedDefaultAccount(config, unavailable);
+  const credits = describeCreditsEntry(config, opts.creditsAvailable ?? false);
+  // New sessions run on credits when they are the machine default, so the row
+  // marked "in use" is the credits entry, not the folder `defaultAccount` names.
+  if (credits.isDefault) resolved.resolvedAccountId = CREDITS_ACCOUNT_ID;
   return {
     resolvedAccount: defaultAccount ?? inheritedClaudeRoot(),
     inherited: defaultAccount === null,
@@ -832,6 +877,27 @@ export function describeClaudeCodeAccounts(
           : account.onlyProjects.map((root) => projectRefFor(canonicalDirectory(root))),
     })),
     ...describeAccountRules(config, unavailable),
+    credits,
+  };
+}
+
+/**
+ * The DorkOS credits entry of the Runs on list, for `GET /api/config`.
+ * Never a registry row: see `credits-root.ts`. Whether credits can be had is
+ * the caller's answer (the route reads the link and the kill switch), which
+ * keeps this module free of the cloud client.
+ */
+function describeCreditsEntry(
+  config: ConfigReader,
+  available: boolean
+): NonNullable<NonNullable<ServerConfig['claudeCode']>['credits']> {
+  const choice = readCreditsSettings(config).defaults['claude-code'];
+  return {
+    id: CREDITS_ACCOUNT_ID,
+    path: creditsClaudeRoot(),
+    available,
+    isDefault: choice !== undefined,
+    ...(choice ? { chosenBy: choice.chosenBy } : {}),
   };
 }
 

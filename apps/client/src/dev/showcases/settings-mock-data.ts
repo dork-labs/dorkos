@@ -572,7 +572,7 @@ export const MOCK_EXECUTION_EXCEPTIONS: ExecutionException[] = [
         {
           kind: 'account-unregistered',
           message:
-            'The account “acme-legacy” isn’t registered on this machine, so this agent bills to the default.',
+            'The account “acme-legacy” isn’t registered on this machine, so this agent runs on the default.',
         },
       ],
       deviations: [{ field: 'account', label: 'acme-legacy' }],

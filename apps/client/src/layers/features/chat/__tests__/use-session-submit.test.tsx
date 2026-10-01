@@ -50,6 +50,10 @@ const mockAppState = vi.hoisted(() => ({
   selectedCwd: '/test/cwd' as string | null,
   enableMessagePolling: false,
   pendingAccount: null as { id: string; sessionId: string } | null,
+  retryAccount: null as { id: string; sessionId: string } | null,
+  setRetryAccount: vi.fn((pick: { id: string; sessionId: string } | null) => {
+    mockAppState.retryAccount = pick;
+  }),
   // The rekey branch re-aims any canvas write still waiting for this session's
   // stream (DOR-2016). A stand-in store has to carry the actions the code under
   // test calls, or the whole rekey branch throws before it rewrites the URL.
@@ -139,6 +143,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     vi.clearAllMocks();
     resetUuidCounter();
     mockAppState.pendingAccount = null;
+    mockAppState.retryAccount = null;
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionListStore.setState({
@@ -548,6 +553,47 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     });
 
     expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage.mock.calls[1][3]).not.toHaveProperty('account');
+  });
+
+  it('sends a one-shot retry account on exactly the next send, even on an existing session', async () => {
+    // "Use your own sign-in" on a turn refused for want of DorkOS credits
+    // (ADR 261001-000811). The server applies it only while the session has
+    // not launched; the client's part is to carry it once and forget it.
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport, queryClient),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    mockAppState.retryAccount = { id: 'default', sessionId: 's1' };
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+    expect(postMessage.mock.calls[0][3]).toMatchObject({ account: 'default' });
+    expect(mockAppState.retryAccount).toBeNull();
+
+    act(() => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent('s1', { seq: 1, type: 'turn_start' });
+      store.applyEvent('s1', { seq: 2, type: 'turn_end' });
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    act(() => {
+      result.current.setInput('Second');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Second'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
     expect(postMessage.mock.calls[1][3]).not.toHaveProperty('account');
   });
 

@@ -655,6 +655,9 @@
           },
           "advised": {
             "type": "boolean"
+          },
+          "credits": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -19898,6 +19901,21 @@
                           "supportsAccounts": {
                             "type": "boolean",
                             "description": "Whether this runtime can run sessions on more than one registered billing account. The account chip, dots and badge show only when this is true and two or more accounts are registered."
+                          },
+                          "credits": {
+                            "type": "object",
+                            "properties": {
+                              "protocol": {
+                                "type": "string",
+                                "enum": [
+                                  "anthropic-messages"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "protocol"
+                            ],
+                            "description": "Whether this runtime can run a turn on DorkOS credits, and the protocol it speaks to the credits endpoint (ADR 261001-000811). Absent means no: the server hands a credits token only to a runtime that declares this."
                           },
                           "permissionModes": {
                             "type": "object",

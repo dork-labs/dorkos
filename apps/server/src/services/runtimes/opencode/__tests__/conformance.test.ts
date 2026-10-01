@@ -141,6 +141,8 @@ vi.mock('../providers/check-dependencies.js', async (importOriginal) => {
 });
 
 import { OpenCodeRuntime } from '../opencode-runtime.js';
+import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
+import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import {
@@ -579,8 +581,48 @@ runtimeConformance(
             'a live OpenCode sidecar is a separate process this suite can only send to, so what its prompt carried is only observable in the mocked run',
           directoryGrantsUnprovenReason:
             'a live sidecar asks only when a model chooses to reach a folder, which this suite cannot script; the ask handler is proven in the mocked run against the live-captured ask shapes',
+          creditsUnprovenReason:
+            'a live OpenCode sidecar is a separate process this suite can only send to, so whether a credits token reached it is only observable in the mocked run',
         }
       : {
+          // ADR 261001-000811: OpenCode does not declare credits, so whatever
+          // the host holds and whatever the session asks for, nothing the
+          // adapter sends the sidecar for the turn may carry a credits token.
+          creditsTurn: async (runtime, { runsOn, heldToken }) => {
+            const client = lastClient;
+            if (!client) {
+              throw new Error('OpenCode conformance: no mocked client to read the turn off');
+            }
+            __setCreditsStateForTests({
+              token:
+                heldToken === null
+                  ? null
+                  : {
+                      ...CREDITS_TOKEN_FIXTURE,
+                      token: heldToken,
+                      expiresAt: '2999-01-01T00:00:00.000Z',
+                    },
+            });
+            try {
+              const sessionId = randomUUID();
+              runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
+              const events: StreamEvent[] = [];
+              for await (const event of runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, {
+                cwd: PROJECT_DIR,
+                ...(runsOn === 'credits' ? { accountHint: 'dorkos-credits' } : {}),
+              })) {
+                events.push(event);
+              }
+              const sent = vi.mocked(client.session.promptAsync).mock.calls;
+              return {
+                launched: sent.length > 0,
+                handed: { prompts: sent, created: vi.mocked(client.session.create).mock.calls },
+                events,
+              };
+            } finally {
+              __setCreditsStateForTests({ token: null });
+            }
+          },
           // The `agent-home-desk` §4.6 gate. OpenCode's grants are enforced at
           // the sidecar's ask (NOTES.md "Folder grants"), so what the backend
           // was HANDED is what the adapter answered it: each turn is scripted

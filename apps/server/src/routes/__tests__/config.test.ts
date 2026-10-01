@@ -1757,6 +1757,8 @@ describe('GET /api/config', () => {
         projectAccounts: [],
         // Warm agents default on, exposed here for the Control Center switch.
         persistentSession: true,
+        // The DorkOS credits entry of Runs on (ADR 261001-000811), not chosen.
+        credits: expect.objectContaining({ id: 'dorkos-credits', isDefault: false }),
       });
     });
 
@@ -1822,6 +1824,7 @@ describe('GET /api/config', () => {
         projectAccounts: [],
         // The warm-agents value flows through from config to the Control Center.
         persistentSession: false,
+        credits: expect.objectContaining({ id: 'dorkos-credits', isDefault: false }),
       });
     });
 

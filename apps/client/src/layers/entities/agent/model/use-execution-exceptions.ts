@@ -41,8 +41,10 @@ import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ModelOption } from '@dorkos/shared/types';
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import {
   claudeAccountName,
+  CREDITS_ACCOUNT_LABEL,
   describeAgentExecution,
   knownModelsFrom,
   type AgentExecutionReport,
@@ -135,9 +137,17 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
   // filter states that rule where the rule is used.
   const accountRows = config?.claudeCode?.accounts;
   const accountsUnavailable = config?.claudeCode?.accountsUnavailable;
-  const knownAccounts: KnownAccount[] | undefined = accountRows?.flatMap((row) =>
-    row.id === null ? [] : [{ id: row.id, label: claudeAccountName(row.path, accountRows) }]
-  );
+  // DorkOS credits are known whenever the server describes them (ADR
+  // 261001-000811): an agent set to credits is a choice, never a broken
+  // reference, even while credits cannot be had (those turns are refused).
+  const knownAccounts: KnownAccount[] | undefined = accountRows && [
+    ...accountRows.flatMap((row) =>
+      row.id === null ? [] : [{ id: row.id, label: claudeAccountName(row.path, accountRows) }]
+    ),
+    ...(config?.claudeCode?.credits
+      ? [{ id: CREDITS_ACCOUNT_ID, label: CREDITS_ACCOUNT_LABEL }]
+      : []),
+  ];
 
   /** The model the server default supplies for one runtime, if it supplies one. */
   const serverModelFor = (runtime: string) =>

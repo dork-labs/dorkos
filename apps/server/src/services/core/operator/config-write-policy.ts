@@ -801,6 +801,10 @@ export const CONFIG_WRITE_POLICY = {
   // continue. Machine-managed by the link flow; an agent writing it could aim
   // a person's next link at another install's apps.
   'cloud.previousLinkProof': 'operator-only',
+  // Whether new work runs on DorkOS credits, which spends the person's money
+  // (ADR 261001-000811). Only a person picks it, in Runs on.
+  'cloud.credits.defaults': 'operator-only',
+  'cloud.credits.offer': 'operator-only',
 
   // A configured raw-MCP server becomes a tool endpoint sessions can attach —
   // an agent writing one grants itself a capability, which is exactly the line
@@ -961,6 +965,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.instanceName',
       'cloud.linkedAccountLabel',
       'cloud.previousLinkProof',
+      'cloud.credits.defaults',
+      'cloud.credits.offer',
       'runtimes.codex.credentialRef',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',

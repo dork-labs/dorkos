@@ -25,9 +25,9 @@ vi.mock('../../auth/cloud-link.js', () => ({ getCloudLinkGeneration: () => link.
 import { captureCloudV1Context } from '../v1-client.js';
 import {
   __setCreditsStateForTests,
-  creditsTurnEnvFor,
+  heldCreditsToken,
   creditsWiringReport,
-  primeCreditsInference,
+  primeCreditsInferenceGated,
   primeCreditsInferenceWithContext,
 } from '../credits-inference.js';
 
@@ -105,7 +105,7 @@ describe('authoritative Cloud identity for credits', () => {
     expect(sessionInit.headers).toMatchObject({ authorization: 'Bearer token-A' });
     expect(mintInit.headers).toMatchObject({ authorization: 'Bearer token-A' });
     expect(JSON.parse(mintInit.body as string)).toEqual({ instanceId: 'service-issued-id' });
-    expect(creditsWiringReport().ready).toBe(true);
+    expect(creditsWiringReport([]).ready).toBe(true);
   });
 
   it.each([
@@ -117,7 +117,7 @@ describe('authoritative Cloud identity for credits', () => {
     const fetch = fakeCloud(() => answer(body));
     expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(creditsWiringReport().ready).toBe(false);
+    expect(creditsWiringReport([]).ready).toBe(false);
   });
 
   it.each([401, 404])('refuses a %s session response without minting', async (status) => {
@@ -174,23 +174,23 @@ describe('authoritative Cloud identity for credits', () => {
     changeToken('token-A');
     pending.resolve(answer(tokenFixture));
     expect(await priming).toBe(false);
-    expect(creditsWiringReport().ready).toBe(false);
+    expect(creditsWiringReport([]).ready).toBe(false);
   });
 
   it('invalidates launch state on token rotation, origin change and lifecycle relink', async () => {
     fakeCloud((url) => answer(url.pathname === '/v1/session' ? session : tokenFixture));
     expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(true);
     changeToken('token-B');
-    expect(creditsWiringReport().ready).toBe(false);
-    expect(creditsTurnEnvFor('claude-code', true)).toEqual({});
+    expect(creditsWiringReport([]).ready).toBe(false);
+    expect(heldCreditsToken()).toBeNull();
 
     expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(true);
     link.origin = 'https://other.example.invalid/';
-    expect(creditsWiringReport().ready).toBe(false);
+    expect(creditsWiringReport([]).ready).toBe(false);
 
     expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(true);
     link.generation += 1;
-    expect(creditsWiringReport().ready).toBe(false);
+    expect(creditsWiringReport([]).ready).toBe(false);
   });
 
   it('rejects a captured context after config manager replacement and moves its one listener', () => {
@@ -218,11 +218,11 @@ describe('authoritative Cloud identity for credits', () => {
     await vi.waitFor(() => expect(mintCount).toBe(2));
     second.resolve(answer({ ...tokenFixture, token: 'new-token' }));
     expect(await newer).toBe(true);
-    expect(creditsTurnEnvFor('claude-code', true).ANTHROPIC_AUTH_TOKEN).toBe('new-token');
+    expect(heldCreditsToken()?.token).toBe('new-token');
     first.resolve(answer({ ...tokenFixture, token: 'old-token' }));
     expect(await older).toBe(false);
-    expect(creditsWiringReport().ready).toBe(true);
-    expect(creditsTurnEnvFor('claude-code', true).ANTHROPIC_AUTH_TOKEN).toBe('new-token');
+    expect(creditsWiringReport([]).ready).toBe(true);
+    expect(heldCreditsToken()?.token).toBe('new-token');
   });
 
   it('clears a prior mint on observed refusal but keeps it after a transient refresh failure', async () => {
@@ -238,11 +238,11 @@ describe('authoritative Cloud identity for credits', () => {
       vi.fn(() => Promise.reject(new Error('offline')))
     );
     expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
-    expect(creditsWiringReport().ready).toBe(true);
+    expect(creditsWiringReport([]).ready).toBe(true);
     status = 401;
     fakeCloud(() => answer({ code: 'unauthorized', status, title: 'No longer linked' }, status));
     expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
-    expect(creditsWiringReport().ready).toBe(false);
+    expect(creditsWiringReport([]).ready).toBe(false);
   });
 
   it('never logs a malformed mint response body containing credential material', async () => {
@@ -258,9 +258,9 @@ describe('authoritative Cloud identity for credits', () => {
     warn.mockRestore();
   });
 
-  it('keeps the production paid gate before any introspection', async () => {
+  it('makes no request while the kill switch is on', async () => {
     const fetch = fakeCloud(() => answer(session));
-    expect(await primeCreditsInference()).toBe(false);
+    expect(await primeCreditsInferenceGated(true, captureCloudV1Context)).toBe(false);
     expect(fetch).not.toHaveBeenCalled();
   });
 });

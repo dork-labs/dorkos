@@ -1517,6 +1517,13 @@ const RuntimeCapabilitiesSchema = z.object({
     description:
       'Whether this runtime can run sessions on more than one registered billing account. The account chip, dots and badge show only when this is true and two or more accounts are registered.',
   }),
+  credits: z
+    .object({ protocol: z.enum(['anthropic-messages']) })
+    .optional()
+    .openapi({
+      description:
+        'Whether this runtime can run a turn on DorkOS credits, and the protocol it speaks to the credits endpoint (ADR 261001-000811). Absent means no: the server hands a credits token only to a runtime that declares this.',
+    }),
   permissionModes: z
     .object({
       supported: z.boolean(),

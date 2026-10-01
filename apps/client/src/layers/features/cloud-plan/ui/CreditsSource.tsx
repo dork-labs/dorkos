@@ -1,54 +1,89 @@
-import { Button, FieldCard, FieldCardContent } from '@/layers/shared/ui';
-import { useCloudCredits, useSelectCloudCredits } from '../model/use-cloud-plan';
+import { FieldCard, FieldCardContent, SwitchSettingRow } from '@/layers/shared/ui';
+import { useClaudeAccounts, useCloudCredits, useSetCreditsDefault } from '@/layers/shared/model';
+import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { CreditsNotices } from './CreditsNotices';
+
+/** A runtime's name as the app shows it everywhere ("Claude Code"). */
+function runtimeLabel(type: string): string {
+  return getRuntimeDescriptor(type).label;
+}
 
 /**
- * Choosing DorkOS credits as the inference source.
+ * "Use credits for": one switch per runtime DorkOS credits reach (ADR
+ * 261001-000811).
  *
- * **This renders only where the server says the path is armed**, which is off by
- * default: it needs the server's own feature flag set beside the account link,
- * and neither alone arms anything. On every other install the block is absent
- * rather than disabled, because an affordance nobody can use is worse than no
- * affordance.
+ * Each switch is a view onto that runtime's default in Runs on, with no state
+ * of its own: on, new work there runs on credits unless an agent or a session
+ * picks something else; off, it goes back to the runtime's own sign-in, which
+ * the line under the switch names. Only runtimes that DECLARE credits get a
+ * switch, and the ones that do not are named in words, so nobody is told their
+ * work runs on credits when it does not.
  *
- * It says plainly which runtimes the choice actually reaches. Two of the three
- * need a design decision on the DorkOS side before they can, and saying so is
- * the honest version of shipping this — a switch that silently did nothing for
- * two of a person's three runtimes would be a lie about where their money goes.
+ * Renders nothing until this computer is linked, and nothing at all on a server
+ * where credits are switched off, beyond saying so.
  */
 export function CreditsSource() {
   const { data } = useCloudCredits();
-  const select = useSelectCloudCredits();
+  const setDefault = useSetCreditsDefault();
+  const { ownResolvedAccount, nameFor } = useClaudeAccounts();
 
-  if (!data?.enabled) return null;
+  if (!data?.linked) return null;
 
+  const wired = Object.entries(data.runtimes)
+    .filter(([, state]) => state === 'wired')
+    .map(([runtime]) => runtime);
   const pending = Object.entries(data.runtimes)
     .filter(([, state]) => state === 'follow-up')
-    .map(([runtime]) => runtime);
+    .map(([runtime]) => runtimeLabel(runtime));
+  const ownSignIn = (runtime: string) =>
+    runtime === 'claude-code' && ownResolvedAccount
+      ? nameFor(ownResolvedAccount)
+      : `your ${runtimeLabel(runtime)} sign-in`;
 
   return (
     <FieldCard>
       <FieldCardContent className="space-y-3">
-        <div>
-          <p className="text-muted-foreground text-xs tracking-wide uppercase">Inference source</p>
-          <p className="text-sm">
-            {data.ready
-              ? 'Turns run on your DorkOS credits.'
-              : 'Run turns on your DorkOS credits instead of your own key.'}
-          </p>
-        </div>
-        {pending.length > 0 && (
-          <p className="text-muted-foreground text-xs">
-            {pending.join(' and ')} still run on whatever you have set up for them.
+        <p className="text-muted-foreground text-xs tracking-wide uppercase">Use credits for</p>
+        <CreditsNotices />
+        {data.killed && (
+          <p className="text-muted-foreground text-sm">
+            DorkOS credits are turned off on this computer, so nothing runs on them.
           </p>
         )}
-        <Button
-          size="sm"
-          variant={data.ready ? 'outline' : 'default'}
-          disabled={select.isPending}
-          onClick={() => select.mutate()}
-        >
-          {data.ready ? 'Refresh' : 'Use my credits'}
-        </Button>
+        {wired.map((runtime) => {
+          const choice = data.defaults?.[runtime];
+          const label = runtimeLabel(runtime);
+          return (
+            <SwitchSettingRow
+              key={runtime}
+              label={label}
+              description={
+                choice
+                  ? choice.chosenBy === 'default'
+                    ? `DorkOS turned this on when you linked, because ${label} had no working sign-in. Turn it off to use ${ownSignIn(runtime)}.`
+                    : `New ${label} sessions run on your DorkOS credits unless an agent or a session picks another account.`
+                  : `New ${label} sessions run on ${ownSignIn(runtime)}.`
+              }
+              checked={choice !== undefined}
+              disabled={setDefault.isPending || (data.killed && choice === undefined)}
+              ariaLabel={`Use DorkOS credits for ${label}`}
+              onCheckedChange={(useCredits) => setDefault.mutate({ runtime, useCredits })}
+            />
+          );
+        })}
+        {setDefault.isError && (
+          <p role="alert" className="text-destructive text-sm">
+            {setDefault.error instanceof Error && setDefault.error.message
+              ? setDefault.error.message
+              : 'Couldn’t save that. Try again.'}
+          </p>
+        )}
+        {pending.length > 0 && (
+          <p className="text-muted-foreground text-xs">
+            {pending.join(' and ')} {pending.length === 1 ? 'runs' : 'run'} on{' '}
+            {pending.length === 1 ? 'its' : 'their'} own sign-in for now.
+          </p>
+        )}
       </FieldCardContent>
     </FieldCard>
   );

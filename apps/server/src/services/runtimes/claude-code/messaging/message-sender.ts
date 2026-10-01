@@ -32,7 +32,7 @@ import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
 import { recordSessionUsage } from '../accounts/account-usage-feed.js';
-import { resolveEffectiveCwd, resolveLaunch } from './launch-resolver.js';
+import { creditsRefusalEvent, resolveEffectiveCwd, resolveLaunch } from './launch-resolver.js';
 import type { MessageSenderOpts } from './message-sender-shared.js';
 // The turn path's boundary rule and the refusal it surfaces, shared with the
 // pump's per-dispatch gate so the two cannot drift. Which validator it picks,
@@ -145,14 +145,26 @@ export async function* executeSdkQuery(
   // Everything this launch is pinned to, resolved by the module the pump path
   // shares — one resolution, so a value the two paths disagreed on could never
   // read as "no change" to the pump's relaunch fingerprint.
-  const { sdkOptions, enrichedContent, meshAgentId, statusEvents } = await resolveLaunch({
-    sessionId,
-    content,
-    session,
-    opts,
-    ...(messageOpts !== undefined ? { messageOpts } : {}),
-    effectiveCwd,
-  });
+  let resolved: Awaited<ReturnType<typeof resolveLaunch>>;
+  try {
+    resolved = await resolveLaunch({
+      sessionId,
+      content,
+      session,
+      opts,
+      ...(messageOpts !== undefined ? { messageOpts } : {}),
+      effectiveCwd,
+    });
+  } catch (err) {
+    // A session set to DorkOS credits with no live token is refused with its
+    // own typed event, so the chat can offer Retry and the person's own
+    // sign-in. Nothing was launched, so nothing was billed.
+    const refusal = creditsRefusalEvent(err);
+    if (!refusal) throw err;
+    yield refusal;
+    return;
+  }
+  const { sdkOptions, enrichedContent, meshAgentId, statusEvents } = resolved;
   // The auto-permission-mode downgrade notice, which the resolver returns as
   // data rather than yielding. Ahead of every SDK event, exactly where this
   // turn has always emitted it.

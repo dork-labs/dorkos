@@ -245,12 +245,16 @@ The `approvals` section (standing permissions, DOR-501/DOR-520) is **retired** (
 
 The `cloud` section holds the device-link binding between this instance and a DorkOS account (accounts-and-auth P2). It is managed by the `dorkos cloud` CLI commands and the `/api/cloud/*` routes — not edited by hand — and is independent of `auth.enabled`:
 
-| Key                        | Type           | Default | Description                                                                                    |
-| -------------------------- | -------------- | ------- | ---------------------------------------------------------------------------------------------- |
-| `cloud.instanceToken`      | string \| null | `null`  | Scoped instance API key issued by the cloud on link (**sensitive**); `null` when not linked    |
-| `cloud.instanceName`       | string \| null | `null`  | This instance's display name registered with the cloud (typically the hostname)                |
-| `cloud.linkedAccountLabel` | string \| null | `null`  | Human-readable label of the linked DorkOS account, when the cloud reports one                  |
-| `cloud.previousLinkProof`  | string \| null | `null`  | Relink proof of the last dropped instance key (HMAC keyed by it, **sensitive**); never the key |
+| Key                        | Type           | Default  | Description                                                                                                                                     |
+| -------------------------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cloud.instanceToken`      | string \| null | `null`   | Scoped instance API key issued by the cloud on link (**sensitive**); `null` when not linked                                                     |
+| `cloud.instanceName`       | string \| null | `null`   | This instance's display name registered with the cloud (typically the hostname)                                                                 |
+| `cloud.linkedAccountLabel` | string \| null | `null`   | Human-readable label of the linked DorkOS account, when the cloud reports one                                                                   |
+| `cloud.previousLinkProof`  | string \| null | `null`   | Relink proof of the last dropped instance key (HMAC keyed by it, **sensitive**); never the key                                                  |
+| `cloud.credits.defaults`   | record         | `{}`     | Runtime type → `{ chosenBy, announced, signInReoffered }`: the runtimes whose default is DorkOS credits, and who chose that (ADR 261001-000811) |
+| `cloud.credits.offer`      | enum           | `'none'` | `pending` while a computer linked before credits were a choice is owed its one offer, `dismissed` after, `none` otherwise                       |
+
+`cloud.credits` records who chose DorkOS credits as a runtime's default: `user` for a pick in Runs on, `default` when a NEW link found a runtime with no working sign-in and filled the gap (announced once, with Change and Undo all). It is written only by the server, never armed by a migration (the `'0.95.0'` migration owes an already-linked computer one offer, `offer: 'pending'`, and switches nothing), withheld from agents and `operator-only` for writes. It survives an unlink: a session set to credits is then refused, never moved. The credits token itself is never stored; the server mints one at startup and before each expires.
 
 `cloud.instanceToken` is registered in `SENSITIVE_CONFIG_KEYS`, so the CLI and REST API warn when it is written directly. The cloud base URL is set by the `DORKOS_CLOUD_URL` environment variable (default `https://dorkos.ai`; override for local dev against the site). While linked, the server heartbeats the cloud on startup and every 15 minutes; a `401` from the cloud (the account revoked the instance) clears the token and marks the instance unlinked. (This device-link check-in is unrelated to the opt-in telemetry heartbeat below.)
 
@@ -325,6 +329,7 @@ The following settings are controlled exclusively by environment variables and h
 | `DORKOS_CORS_ORIGIN`      | (none; adds to the defaults)    | EXTRA CORS origin(s) — a comma-separated list, added to the loopback/tunnel/same-origin policy rather than replacing it. `*` is ignored with a warning (see below).                                                                                                 |
 | `DORKOS_TRUST_PROXY`      | `false`                         | Key rate limits on `X-Forwarded-For` instead of the connection. Only behind a single proxy you control (see below).                                                                                                                                                 |
 | `DORKOS_CLOUD_URL`        | `https://dorkos.ai`             | Base URL of the DorkOS cloud (dorkos.ai) that this instance device-links and heartbeats to. Override for local dev against a self-hosted `apps/site`. Read via `apps/server/src/env.ts`.                                                                            |
+| `DORKOS_CLOUD_CREDITS`    | unset (the person's choice)     | A kill switch for DorkOS credits: `0`, `false`, `no` or `off` turns them off for this server, so every session set to credits is refused rather than run on anything else. Any other value changes nothing; it can never turn credits on (ADR 261001-000811).       |
 | `DORKOS_VERSION_OVERRIDE` | (none)                          | Override the reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version. Example: `DORKOS_VERSION_OVERRIDE=0.1.0` simulates running an old version so the upgrade notification appears. |
 
 The config file also contains a `version` field (currently `1`) that the schema carries for historical reasons. The authoritative migration tracker is a separate internal key that `conf` manages automatically — see **Schema Migrations** below.

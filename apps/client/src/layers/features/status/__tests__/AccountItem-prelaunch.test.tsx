@@ -567,3 +567,75 @@ describe('AccountItem before launch — the Default row names what the ladder wi
     expect(accountGroup()).not.toHaveTextContent('Default: Personal');
   });
 });
+
+describe('AccountItem before launch — DorkOS credits (ADR 261001-000811)', () => {
+  const CREDITS = {
+    id: 'dorkos-credits' as const,
+    path: '/Users/dev/.dork/runtimes/claude-code/credits',
+    available: true,
+    isDefault: false,
+  };
+
+  it('offers DorkOS credits last, as one more account for this session', async () => {
+    mockServerConfig = {
+      claudeCode: {
+        resolvedAccount: PERSONAL.path,
+        inherited: true,
+        accounts: [PERSONAL],
+        credits: CREDITS,
+      },
+    };
+    render(<Chip />);
+    await waitFor(() =>
+      expect(radioValues()).toEqual(['__default__', 'personal', 'dorkos-credits'])
+    );
+    expect(accountGroup()).toHaveTextContent('DorkOS credits');
+  });
+
+  it('holds the pick as this session’s launch hint, never a config write', async () => {
+    const user = userEvent.setup();
+    mockServerConfig = {
+      claudeCode: {
+        resolvedAccount: PERSONAL.path,
+        inherited: true,
+        accounts: [PERSONAL],
+        credits: CREDITS,
+      },
+    };
+    render(<Chip />);
+    await waitFor(() => expect(radioValues()).toContain('dorkos-credits'));
+    await user.click(within(accountGroup()).getByText('DorkOS credits'));
+    expect(useAppStore.getState().pendingAccount).toEqual({
+      id: 'dorkos-credits',
+      sessionId: SESSION,
+    });
+    expect(lastTransport.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not offer credits while they cannot be had', async () => {
+    mockServerConfig = {
+      claudeCode: {
+        resolvedAccount: PERSONAL.path,
+        inherited: true,
+        accounts: [PERSONAL, ACME],
+        credits: { ...CREDITS, available: false },
+      },
+    };
+    render(<Chip />);
+    await waitFor(() => expect(radioValues()).toEqual(['__default__', 'personal', 'acme-corp']));
+  });
+
+  it('names credits as the default when they are the machine default', async () => {
+    mockServerConfig = {
+      claudeCode: {
+        resolvedAccount: PERSONAL.path,
+        inherited: true,
+        accounts: [PERSONAL],
+        resolvedAccountId: 'dorkos-credits',
+        credits: { ...CREDITS, isDefault: true, chosenBy: 'user' },
+      },
+    };
+    render(<Chip />);
+    await waitFor(() => expect(accountGroup()).toHaveTextContent('Default: DorkOS credits'));
+  });
+});

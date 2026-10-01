@@ -30,6 +30,11 @@ vi.mock('../../launch/launch-session.js', () => ({
 vi.mock('../../../notifications/emitters/session-lifecycle.js', () => ({
   notifyAutoMoveFailed: vi.fn(),
 }));
+/** Whether this computer reads as linked to a DorkOS account (credits cases). */
+const cloudLink = vi.hoisted(() => ({ linked: false }));
+vi.mock('../../../core/cloud/credits-availability.js', () => ({
+  creditsCanBeHad: () => cloudLink.linked,
+}));
 
 import { dispatchSessionMessage, isAgentLaunchCapFull } from '../../launch/launch-session.js';
 import { notifyAutoMoveFailed } from '../../../notifications/emitters/session-lifecycle.js';
@@ -1636,5 +1641,80 @@ describe('carrying a chat an extension started', () => {
     await limitedSession('src-1');
     await continueSession('src-1', { account: 'spare' }, deps);
     expect(startedBy.get('new-1')).toBeNull();
+  });
+});
+
+// === DorkOS credits (ADR 261001-000811) =====================================
+
+describe('continuing on DorkOS credits', () => {
+  /** Claude Code declares credits, and this computer is linked. */
+  function creditsAvailable(): void {
+    cloudLink.linked = true;
+    const capabilities = runtime.getCapabilities();
+    runtime.getCapabilities.mockReturnValue({
+      ...capabilities,
+      credits: { protocol: 'anthropic-messages' },
+    });
+  }
+
+  afterEach(() => {
+    cloudLink.linked = false;
+  });
+
+  it('offers credits to a person, never as the recommendation', async () => {
+    creditsAvailable();
+    await limitedSession('src-1');
+    const options = await continueOptions('src-1');
+    expect(options.credits).toBe(true);
+    expect(options.ranking.recommendedId).not.toBe('dorkos-credits');
+    expect(options.ranking.accounts.map((a) => a.id)).not.toContain('dorkos-credits');
+  });
+
+  it('does not offer credits while this computer is unlinked', async () => {
+    creditsAvailable();
+    cloudLink.linked = false;
+    await limitedSession('src-1');
+    expect((await continueOptions('src-1')).credits).toBe(false);
+  });
+
+  it('carries the work over to a new session set to credits when a person picks it', async () => {
+    creditsAvailable();
+    await limitedSession('src-1');
+    expect(await continueSession('src-1', { account: 'dorkos-credits' }, deps)).toEqual({
+      sessionId: 'new-1',
+    });
+    const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
+    expect(call.request).toMatchObject({ runtime: 'claude-code', account: 'dorkos-credits' });
+  });
+
+  it('refuses credits when they are not on offer, and starts nothing', async () => {
+    await limitedSession('src-1');
+    const err = await refusal(continueSession('src-1', { account: 'dorkos-credits' }, deps));
+    expect(err.code).toBe('CREDITS_NOT_OFFERED');
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('never offers credits on a session flow moves', async () => {
+    creditsAvailable();
+    advise({ claims: async () => true, move: vi.fn(async () => undefined) });
+    await limitedSession('src-1');
+    expect((await continueOptions('src-1')).credits).toBe(false);
+    const err = await refusal(continueSession('src-1', { account: 'dorkos-credits' }, deps));
+    expect(err.code).toBe('CREDITS_NOT_OFFERED');
+  });
+
+  it('an automatic handoff never lands on credits, even when the advisor names them', async () => {
+    creditsAvailable();
+    const onLimited = vi.fn(async () => ({
+      mode: 'auto' as const,
+      target: 'dorkos-credits',
+      delaySeconds: 0,
+    }));
+    advise({ onLimited });
+    await limitedSession('src-1');
+    expect(onLimited).toHaveBeenCalled();
+    expect(plan('src-1')).toEqual({ mode: 'ask' });
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
   });
 });

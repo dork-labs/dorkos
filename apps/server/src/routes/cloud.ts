@@ -49,10 +49,12 @@ import {
 } from '../services/core/cloud/plan.js';
 import { isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
 import {
-  creditsFlagEnabled,
-  creditsWiringReport,
-  primeCreditsInference,
-} from '../services/core/cloud/credits-inference.js';
+  dismissCreditsNotice,
+  setCreditsDefault,
+  undoFilledDefaults,
+} from '../services/core/cloud/credits-defaults.js';
+import { creditsKilled } from '../services/core/cloud/credits-availability.js';
+import { creditsRuntimeViews, creditsStatus } from '../services/core/cloud/credits-runtimes.js';
 import { logger, logError } from '../lib/logger.js';
 import { createCloudCommunitiesRouter } from './cloud-communities.js';
 
@@ -260,22 +262,69 @@ router.post('/seats/:seatId/release', async (req, res) => {
   }
 });
 
-/** GET /api/cloud/credits — whether the credits path is armed. Carries no credential. */
-router.get('/credits', (_req, res) => {
-  res.json(creditsWiringReport());
+/**
+ * GET /api/cloud/credits — whether DorkOS credits can be chosen here, which
+ * runtimes they reach, who chose them as a default, and the notices owed about
+ * choices made for the person. Carries no credential.
+ */
+router.get('/credits', async (_req, res) => {
+  res.json(await creditsStatus());
+});
+
+const CreditsDefaultBodySchema = z.object({
+  runtime: z.string().min(1),
+  useCredits: z.boolean(),
 });
 
 /**
- * POST /api/cloud/credits/select — obtain an inference token for this process.
- *
- * Behind the `DORKOS_CLOUD_CREDITS` flag, which is off by default, and behind
- * the link credential beside it. With either missing this answers the same
- * report the GET does, unchanged, rather than an error: nothing was armed, and
- * nothing was spent.
+ * PUT /api/cloud/credits/default — a person's choice for one runtime's default:
+ * run new work on DorkOS credits, or go back to the runtime's own sign-in.
+ * Recorded as chosen by the person (ADR 261001-000811). Refuses a runtime that
+ * does not declare credits, and turning credits ON while they cannot be had,
+ * so nothing is ever set that would refuse every turn.
  */
-router.post('/credits/select', async (_req, res) => {
-  if (creditsFlagEnabled()) await primeCreditsInference();
-  return res.json(creditsWiringReport());
+router.put('/credits/default', async (req, res) => {
+  const parsed = CreditsDefaultBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Name a runtime and whether to use credits.' });
+  }
+  const { runtime, useCredits } = parsed.data;
+  if (useCredits) {
+    const view = creditsRuntimeViews().find((candidate) => candidate.type === runtime);
+    if (!view?.capabilities.credits) {
+      return res.status(400).json({ error: `${runtime} can't run on DorkOS credits yet.` });
+    }
+    if (creditsKilled()) {
+      return res.status(409).json({ error: 'DorkOS credits are turned off on this computer.' });
+    }
+    if (!isCloudLinked()) {
+      return res.status(409).json({ error: 'Sign in to your DorkOS account first.' });
+    }
+  }
+  setCreditsDefault(runtime, useCredits);
+  return res.json(await creditsStatus());
+});
+
+/**
+ * POST /api/cloud/credits/undo-filled — put back every runtime DorkOS set to
+ * credits on a new link, leaving the person's own picks alone ("Undo all").
+ */
+router.post('/credits/undo-filled', async (_req, res) => {
+  undoFilledDefaults();
+  return res.json(await creditsStatus());
+});
+
+const CreditsNoticeDismissBodySchema = z.object({
+  kind: z.enum(['filled', 'offer', 'signed-in']),
+  runtime: z.string().min(1).optional(),
+});
+
+/** POST /api/cloud/credits/notices/dismiss — settle one notice without changing any choice. */
+router.post('/credits/notices/dismiss', async (req, res) => {
+  const parsed = CreditsNoticeDismissBodySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Name the notice to dismiss.' });
+  dismissCreditsNotice(parsed.data);
+  return res.json(await creditsStatus());
 });
 
 export default router;

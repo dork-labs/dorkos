@@ -50,6 +50,11 @@ runtimeConformance(() => new TestModeRuntime(), {
   // file tool, so there is nothing a folder grant could be handed to.
   directoryGrantsUnprovenReason:
     'test-mode answers from a scripted scenario table — it has no file tools and no backend a folder grant could be handed to',
+  // ADR 261001-000811's credits negatives, for the same reason: test-mode
+  // declares no credits and starts no backend, so there is no environment or
+  // request a token could reach.
+  creditsUnprovenReason:
+    'test-mode answers from a scripted scenario table — it starts no backend and has no environment or request a credits token could reach',
   // The one runtime allowed to repeat its trigger: `simple-text` answers
   // `Echo: <content>`, and that determinism is the fixture's entire job — the
   // browser suite asserts on it (`apps/e2e/tests/chat-mock.spec.ts`). Only the

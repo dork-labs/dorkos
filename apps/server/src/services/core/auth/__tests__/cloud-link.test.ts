@@ -129,6 +129,33 @@ describe('CloudLinkManager', () => {
     expect(sync).toHaveBeenCalledTimes(2);
   });
 
+  it('runs the new-link step on an approved link only, never at startup (ADR 261001-000811)', async () => {
+    const fetchImpl = routerFetch({
+      code: () => CODES,
+      token: () => ({ status: 200, body: { access_token: 'dork_inst_new' } }),
+      heartbeat: () => ({
+        status: 200,
+        body: { ok: true, instanceId: 'inst-1', lastSeenAt: '2026-07-03T00:00:00Z' },
+      }),
+    });
+    const onNewLink = vi.fn(async () => {});
+    manager = new CloudLinkManager({ fetchImpl, sleep: noSleep });
+    manager.setOnNewLink(onNewLink);
+
+    await manager.startLink();
+    await manager.pendingLink;
+    expect(onNewLink).toHaveBeenCalledTimes(1);
+
+    // A restart of an already-linked computer is not a new link: the credits
+    // defaults must never fill gaps on a link made before they existed.
+    manager.stop();
+    const restarted = new CloudLinkManager({ fetchImpl, sleep: noSleep });
+    restarted.setOnNewLink(onNewLink);
+    await restarted.initOnStartup();
+    expect(onNewLink).toHaveBeenCalledTimes(1);
+    restarted.stop();
+  });
+
   it('preserves an old linked key on permission upgrade and clears an invalid key', async () => {
     const config = {
       token: 'old-key' as string | null,
@@ -413,8 +440,25 @@ describe('CloudLinkManager', () => {
         instanceName: null,
         linkedAccountLabel: null,
         previousLinkProof: OLD_PROOF,
+        credits: { defaults: {}, offer: 'none' },
       });
       expect(JSON.stringify(configManager.getAll())).not.toContain('dork_inst_old');
+    });
+
+    it('keeps the person’s credits choices across an unlink, so nothing is moved (ADR 261001-000811)', async () => {
+      const credits = { defaults: { 'claude-code': { chosenBy: 'user' } }, offer: 'none' };
+      configManager.set('cloud', { ...LINKED, credits } as never);
+      manager = new CloudLinkManager({
+        fetchImpl: routerFetch({ revoke: () => ({ status: 200, body: {} }) }),
+        sleep: noSleep,
+      });
+
+      await manager.unlink();
+
+      expect(configManager.get('cloud').credits).toEqual({
+        defaults: { 'claude-code': { chosenBy: 'user', announced: true, signInReoffered: false } },
+        offer: 'none',
+      });
     });
 
     it('keeps a proof of the key when the cloud refuses it (401)', async () => {

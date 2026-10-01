@@ -3,8 +3,10 @@ import { ChevronDown } from 'lucide-react';
 import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-schemas';
 import type { EffortLevel } from '@dorkos/shared/types';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import {
   cn,
+  CREDITS_ACCOUNT_LABEL,
   describeAgentExecution,
   effortLabel,
   knownModelsFrom,
@@ -273,7 +275,7 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   const runtimeHasEffort = declaredEffortSupport !== false;
   const modelTakesEffort = selectedModel ? (selectedModel.supportsEffort ?? false) : undefined;
 
-  // Billing accounts belong to Claude Code alone, so everything below is read
+  // Runs on accounts belong to Claude Code alone, so everything below is read
   // from the server's account registry and only ever drawn for that runtime.
   //
   // The id filter is defensive rather than load-bearing: the server heals an id
@@ -285,10 +287,23 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   const accountRows = config?.claudeCode?.accounts;
   // The app's one name for an account, so this computer's own sign-in reads
   // "Main (this computer's sign-in)" here as everywhere (decision §12).
-  const { nameFor: accountName } = useClaudeAccounts();
-  const knownAccounts: (KnownAccount & { path: string })[] | undefined = accountRows?.flatMap(
-    (row) => (row.id === null ? [] : [{ id: row.id, label: accountName(row.path), path: row.path }])
-  );
+  const { nameFor: accountName, creditsEntry, resolvedAccount } = useClaudeAccounts();
+  // DorkOS credits are one more entry an agent may run on (ADR 261001-000811),
+  // listed last; an agent already set to credits keeps a known entry even while
+  // credits cannot be had, so it never reads as an unregistered account.
+  const creditsKnown =
+    creditsEntry ??
+    (agent.account === CREDITS_ACCOUNT_ID && config?.claudeCode?.credits
+      ? { id: CREDITS_ACCOUNT_ID, path: config.claudeCode.credits.path }
+      : null);
+  const knownAccounts: (KnownAccount & { path: string })[] | undefined = accountRows && [
+    ...accountRows.flatMap((row) =>
+      row.id === null ? [] : [{ id: row.id, label: accountName(row.path), path: row.path }]
+    ),
+    ...(creditsKnown
+      ? [{ id: CREDITS_ACCOUNT_ID, label: CREDITS_ACCOUNT_LABEL, path: creditsKnown.path }]
+      : []),
+  ];
   // `?? null`, not `!= null` alone: an in-flight optimistic reset carries the
   // wire's `null`, and every provenance read below has to see that as "back to
   // inheriting" rather than as a value (same rule as model and effort above).
@@ -296,9 +311,8 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   const accountIsSetHere = accountId !== null;
   // The account a new session would bill to with nothing set here — already
   // resolved by the server, because the client cannot compute it.
-  const serverDefaultAccount = config?.claudeCode
-    ? accountName(config.claudeCode.resolvedAccount)
-    : null;
+  const serverDefaultAccount =
+    config?.claudeCode && resolvedAccount ? accountName(resolvedAccount) : null;
 
   // **The Account row writes through the OPERATOR's route, never the agent
   // self-edit route** (DOR-1736) — the same split the Tools page's toggles took
@@ -491,14 +505,18 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
                 // where it does not — a row about a broken reference that hid
                 // the reference would be unfixable.
                 (knownAccounts?.find((a) => a.id === accountId)?.label ?? accountId)
-              : (serverDefaultAccount ?? 'Default account')
+              : (serverDefaultAccount ?? 'Default')
           }
           options={(knownAccounts ?? []).map((account) => ({
             value: account.id,
             label: account.label,
             // The folder under the name: two accounts an operator labelled
             // similarly are told apart by where they live, and nowhere else.
-            hint: shortenHomePath(account.path),
+            // Credits live in no folder of the person's, so they say who pays.
+            hint:
+              account.id === CREDITS_ACCOUNT_ID
+                ? 'Paid from your DorkOS account'
+                : shortenHomePath(account.path),
           }))}
           selected={accountId}
           isSetHere={accountIsSetHere}

@@ -339,13 +339,11 @@ describe('ExecutionExceptionsStrip', () => {
 });
 
 describe('ExecutionExceptionsStrip — billing overrides', () => {
-  it('names an agent that bills to another account', async () => {
+  it('names an agent that runs on another account', async () => {
     renderStrip({ '/a': agent('alpha', { account: 'work' }) }, { claudeCode: ACCOUNTS });
     // The registry's label, not the raw id — the strip sits under cards that
     // call the same account "Acme Corp".
-    expect(await screen.findByTestId('execution-exception')).toHaveTextContent(
-      'bills to Acme Corp'
-    );
+    expect(await screen.findByTestId('execution-exception')).toHaveTextContent('runs on Acme Corp');
     expect(screen.queryByTestId('execution-exception-broken')).toBeNull();
   });
 
@@ -371,7 +369,7 @@ describe('ExecutionExceptionsStrip — billing overrides', () => {
     // catalog keeps. The override is still named; only the verdict waits.
     renderStrip({ '/a': agent('alpha', { account: 'retired-client' }) });
     expect(await screen.findByTestId('execution-exception')).toHaveTextContent(
-      'bills to retired-client'
+      'runs on retired-client'
     );
     expect(screen.queryByTestId('execution-exception-broken')).toBeNull();
   });

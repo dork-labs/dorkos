@@ -77,6 +77,7 @@ import {
   accountIdForRoot,
   type LaunchAccountResolution,
 } from './claude-config-dir.js';
+import { isCreditsClaudeRoot } from './credits-root.js';
 import { withClaudeConfigDir } from './claude-config-env-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
@@ -99,7 +100,7 @@ import {
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { checkClaudeLaunchAccount } from './launch-account-check.js';
-import { predictLaunchBillsPerToken } from './messaging/per-token-billing.js';
+import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
 import {
   disposeProjector,
   getOrCreateProjector,
@@ -1027,6 +1028,22 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return checkClaudeLaunchAccount({ cwd: projectDir, hintId });
   }
 
+  /**
+   * Whether this session has already settled on an account (it launched, and
+   * disk says which account holds it). A session that has not, such as one
+   * whose first turn was refused because DorkOS credits were unreachable, may
+   * still take the person's pick of account on its next send.
+   *
+   * @param sessionId - DorkOS or SDK session id.
+   * @param projectDir - The folder the session runs in.
+   */
+  async hasSettledAccount(sessionId: string, projectDir: string): Promise<boolean> {
+    const settled = await this.sessionStore
+      .settledAccountRoot(sessionId, this.transcriptReader, projectDir)
+      .catch(() => undefined);
+    return settled !== undefined;
+  }
+
   /** @inheritdoc */
   async renameSession(sessionId: string, title: string, projectDir: string): Promise<void> {
     // `renameSession` runs IN-PROCESS and its options expose no config dir, so
@@ -1349,7 +1366,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const session = this.sessionStore.findSession(sessionId);
     if (session?.launchedPerToken !== undefined) return session.launchedPerToken;
     if (session?.lastSubscriptionUsage?.kind === 'subscription') return false;
-    return predictLaunchBillsPerToken();
+    const root = session?.accountRoot;
+    return predictLaunchBillsPerToken(
+      readPerTokenSignals(root !== undefined && isCreditsClaudeRoot(root))
+    );
   }
 
   /**

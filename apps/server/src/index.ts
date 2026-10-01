@@ -38,6 +38,12 @@ import {
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from './services/core/config/tunnel-settings.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
+import {
+  startCreditsLifecycle,
+  stopCreditsLifecycle,
+} from './services/core/cloud/credits-inference.js';
+import { fillCreditsGaps } from './services/core/cloud/credits-defaults.js';
+import { creditsRuntimeViews } from './services/core/cloud/credits-runtimes.js';
 import { initMoveStaging } from './services/core/cloud/community-move-upload.js';
 import {
   initConfigManager,
@@ -554,6 +560,7 @@ import {
   claudeDefaultAccountFolder,
   dropClaudeAccountRenameMarkers,
 } from './services/runtimes/claude-code/claude-config-dir.js';
+import { ensureCreditsClaudeRoot } from './services/runtimes/claude-code/credits-root.js';
 import { machineDefaultCodexHome } from './services/runtimes/codex/codex-home.js';
 import {
   initObservability,
@@ -5889,6 +5896,23 @@ async function start() {
     .catch((err) => {
       logger.warn('[CloudLink] Startup heartbeat failed', logError(err));
     });
+
+  // DorkOS credits (ADR 261001-000811): keep a live inference token while this
+  // computer is linked, minted now and again before each one expires, so a
+  // restart never quietly drops a session set to credits. The credits folder
+  // exists from boot so a credits session's transcript is always listed. A new
+  // link (and only a new link) fills the gaps: a runtime with no working
+  // sign-in of its own defaults to credits, and the person is told.
+  ensureCreditsClaudeRoot();
+  startCreditsLifecycle();
+  getCloudLinkManager().setOnNewLink(async () => {
+    const switched = await fillCreditsGaps(creditsRuntimeViews());
+    if (switched.length > 0) {
+      logger.info('[Cloud] New link: these runtimes now run on DorkOS credits by default', {
+        runtimes: switched,
+      });
+    }
+  });
 }
 
 // Ordered teardown of all running services WITHOUT calling process.exit().
@@ -5996,6 +6020,7 @@ async function shutdownServices() {
   await shutdownSessionPumps();
   await tunnelManager.stop();
   getCloudLinkManager().stop();
+  stopCreditsLifecycle();
   // Flush and tear down debug tracing last so late spans are written. No-op
   // when tracing is off.
   await shutdownObservability();

@@ -426,6 +426,17 @@ function mockHarnessStatus(): HarnessStatusResponse {
   };
 }
 
+/** What a mock transport answers about DorkOS credits: not linked, nothing chosen. */
+const UNLINKED_CREDITS = {
+  enabled: false,
+  killed: false,
+  linked: false,
+  ready: false,
+  runtimes: { 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' },
+  defaults: {},
+  notices: [],
+} as const;
+
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {
   return {
@@ -1382,16 +1393,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getCloudSeats: vi.fn().mockResolvedValue({ available: false }),
     assignCloudSeat: vi.fn(),
     releaseCloudSeat: vi.fn(),
-    getCloudCredits: vi.fn().mockResolvedValue({
-      enabled: false,
-      ready: false,
-      runtimes: { 'claude-code': 'follow-up', opencode: 'follow-up', codex: 'follow-up' },
-    }),
-    selectCloudCredits: vi.fn().mockResolvedValue({
-      enabled: false,
-      ready: false,
-      runtimes: { 'claude-code': 'follow-up', opencode: 'follow-up', codex: 'follow-up' },
-    }),
+    getCloudCredits: vi.fn().mockResolvedValue(UNLINKED_CREDITS),
+    setCloudCreditsDefault: vi.fn().mockResolvedValue(UNLINKED_CREDITS),
+    undoFilledCloudCredits: vi.fn().mockResolvedValue(UNLINKED_CREDITS),
+    dismissCloudCreditsNotice: vi.fn().mockResolvedValue(UNLINKED_CREDITS),
     // Hosted communities: reads default to "not linked"; writes stay unstubbed
     // so a test that drives them must say what the server would answer.
     listHostedCommunities: vi.fn().mockResolvedValue({ available: false }),

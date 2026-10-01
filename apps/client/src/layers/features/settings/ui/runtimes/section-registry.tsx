@@ -38,7 +38,7 @@ const SECTION_RENDERERS: Record<string, SectionRenderer> = {
   'claude-accounts': () => <ClaudeAccountsSection />,
   'opencode-power-source': ({ type }) => <PowerSourceSection type={type} />,
   // Codex and OpenCode: the account's usage, which Claude Code draws under
-  // "Billing account" instead.
+  // "Runs on" instead.
   'runtime-usage': ({ type }) => <RuntimeUsageSection type={type} />,
 };
 
