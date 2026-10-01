@@ -1,4 +1,12 @@
-import { Fragment, Suspense, useEffect, useId, type ComponentType, type ReactNode } from 'react';
+import {
+  Fragment,
+  Suspense,
+  useEffect,
+  useId,
+  useRef,
+  type ComponentType,
+  type ReactNode,
+} from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   ResponsiveDialog,
@@ -12,6 +20,7 @@ import {
   NavigationLayoutSidebar,
   NavigationLayoutSectionHeader,
   NavigationLayoutGroupToggle,
+  NavigationLayoutTabList,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,
@@ -194,14 +203,57 @@ export function TabbedDialog<T extends string>({
   });
   const foldId = useId();
 
-  const renderItems = (group: string | undefined) =>
-    allTabs
-      .filter((tab) => tab.group === group)
-      .map((tab) => (
-        <NavigationLayoutItem key={tab.id} value={tab.id} icon={tab.icon}>
-          {tab.label}
-        </NavigationLayoutItem>
-      ));
+  const renderItems = (items: TabbedDialogTab<T>[]) =>
+    items.map((tab) => (
+      <NavigationLayoutItem key={tab.id} value={tab.id} icon={tab.icon}>
+        {tab.label}
+      </NavigationLayoutItem>
+    ));
+
+  // Folded, the group still shows the ONE tab that is active, if any: hiding a
+  // selected tab would leave the panel labelled by a tab that is not there and
+  // drop focus that was sitting on it. Folded with nothing active, the list is
+  // not rendered at all — an empty tablist is an error, and so is a toggle
+  // naming one in `aria-controls`.
+  const foldTabs =
+    foldedName === undefined
+      ? []
+      : allTabs.filter((tab) => tab.group === foldedName && (foldExpanded || tab.id === activeTab));
+  const hasFold = foldedName !== undefined && allTabs.some((tab) => tab.group === foldedName);
+
+  // Opening the fold scrolls its first row into view: on a phone the group
+  // sits at the foot of a long list, and a chevron that turns while nothing
+  // visible changes reads as a dead control. A ref rather than state, so the
+  // scroll happens once, after the rows exist, and only for the person's press.
+  const scrollFoldOnOpen = useRef(false);
+  useEffect(() => {
+    if (!foldExpanded || !scrollFoldOnOpen.current) return;
+    scrollFoldOnOpen.current = false;
+    document
+      .getElementById(foldId)
+      ?.querySelector<HTMLElement>('[data-value]')
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [foldExpanded, foldId]);
+
+  const foldFooter = hasFold ? (
+    <>
+      <NavigationLayoutGroupToggle
+        expanded={foldExpanded}
+        onExpandedChange={(next) => {
+          scrollFoldOnOpen.current = next;
+          setFoldExpanded(next);
+        }}
+        controls={foldTabs.length > 0 ? foldId : undefined}
+      >
+        {foldedName}
+      </NavigationLayoutGroupToggle>
+      {foldTabs.length > 0 && (
+        <NavigationLayoutTabList id={foldId} label={foldedName!}>
+          {renderItems(foldTabs)}
+        </NavigationLayoutTabList>
+      )}
+    </>
+  ) : undefined;
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -231,41 +283,19 @@ export function TabbedDialog<T extends string>({
           </NavigationLayoutDialogHeader>
 
           <NavigationLayoutBody>
-            <NavigationLayoutSidebar>
+            <NavigationLayoutSidebar footer={foldFooter}>
               {hasGroups
-                ? groupOrder.map((group) =>
-                    group !== undefined && group === foldedName ? (
-                      <Fragment key={group}>
-                        <NavigationLayoutGroupToggle
-                          expanded={foldExpanded}
-                          onExpandedChange={setFoldExpanded}
-                          controls={foldId}
-                        >
-                          {group}
-                        </NavigationLayoutGroupToggle>
-                        {/* `display: contents`, so the tabs stay direct
-                            children of the list for layout and the wrapper
-                            exists only to be what `aria-controls` names. A
-                            folded group's tabs are not rendered at all, which
-                            keeps them out of the arrow-key walk too. */}
-                        <div id={foldId} role="presentation" className="contents">
-                          {foldExpanded && renderItems(group)}
-                        </div>
-                      </Fragment>
-                    ) : (
+                ? groupOrder
+                    .filter((group) => group === undefined || group !== foldedName)
+                    .map((group) => (
                       <Fragment key={group ?? '__ungrouped'}>
                         {group && (
                           <NavigationLayoutSectionHeader>{group}</NavigationLayoutSectionHeader>
                         )}
-                        {renderItems(group)}
+                        {renderItems(allTabs.filter((tab) => tab.group === group))}
                       </Fragment>
-                    )
-                  )
-                : allTabs.map((tab) => (
-                    <NavigationLayoutItem key={tab.id} value={tab.id} icon={tab.icon}>
-                      {tab.label}
-                    </NavigationLayoutItem>
-                  ))}
+                    ))
+                : renderItems(allTabs)}
             </NavigationLayoutSidebar>
 
             <NavigationLayoutContent className={cn(minHeight, 'p-4')}>

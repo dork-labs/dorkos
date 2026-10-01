@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import * as React from 'react';
 import { Settings, User, Bell } from 'lucide-react';
@@ -609,12 +609,55 @@ describe('TabbedDialog', () => {
     const toggle = () => screen.getByRole('button', { name: 'Later' });
     const labels = () => screen.getAllByRole('tab').map((t) => t.textContent);
 
-    it('starts folded, keeping its tabs out of the tablist', () => {
+    it('starts folded, with no list rendered and nothing named in aria-controls', () => {
       renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD });
       expect(toggle()).toHaveAttribute('aria-expanded', 'false');
       expect(labels()).toEqual(['Alpha', 'Beta']);
-      // The toggle names the region it opens.
-      expect(document.getElementById(toggle().getAttribute('aria-controls')!)).not.toBeNull();
+      expect(screen.getAllByRole('tablist')).toHaveLength(1);
+      expect(toggle()).not.toHaveAttribute('aria-controls');
+    });
+
+    it('sits outside every tablist and opens a second, named tablist', () => {
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD });
+      // A tablist may own only tabs.
+      expect(toggle().closest('[role="tablist"]')).toBeNull();
+      fireEvent.click(toggle());
+      const later = screen.getByRole('tablist', { name: 'Later' });
+      expect(toggle()).toHaveAttribute('aria-controls', later.id);
+      expect(
+        within(later)
+          .getAllByRole('tab')
+          .map((t) => t.textContent)
+      ).toEqual(['Gamma']);
+    });
+
+    it('keeps the active tab showing when folded while it is selected', () => {
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD, initialTab: 'gamma' });
+      fireEvent.click(toggle());
+      expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+      const later = screen.getByRole('tablist', { name: 'Later' });
+      const gamma = within(later).getByRole('tab', { name: 'Gamma' });
+      expect(gamma).toHaveAttribute('aria-selected', 'true');
+      // The panel's label still points at a tab that exists.
+      const panel = screen.getByRole('tabpanel');
+      expect(document.getElementById(panel.getAttribute('aria-labelledby')!)).toBe(gamma);
+    });
+
+    it('walks the arrow keys across both lists as one sequence', () => {
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD, initialTab: 'beta' });
+      fireEvent.click(toggle());
+      fireEvent.keyDown(screen.getByRole('tab', { name: 'Beta' }), { key: 'ArrowDown' });
+      expect(screen.getByRole('tab', { name: 'Gamma' })).toHaveAttribute('aria-selected', 'true');
+      fireEvent.keyDown(screen.getByRole('tab', { name: 'Gamma' }), { key: 'ArrowDown' });
+      expect(screen.getByRole('tab', { name: 'Alpha' })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('never switches tabs on a key pressed on the toggle', () => {
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD });
+      fireEvent.click(toggle());
+      fireEvent.keyDown(toggle(), { key: 'ArrowDown' });
+      fireEvent.keyDown(toggle(), { key: 'End' });
+      expect(screen.getByRole('tab', { name: 'Alpha' })).toHaveAttribute('aria-selected', 'true');
     });
 
     it('renders below every other group, an extension group included', () => {
@@ -659,11 +702,19 @@ describe('TabbedDialog', () => {
 
     it('works as a tappable row in the phone list', () => {
       viewport.mobile = true;
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
       renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD });
       const list = screen.getByRole('list');
-      expect(list).toContainElement(toggle());
+      // Every row of the drill-in list is a list item, the toggle's included.
+      const rows = within(list).getAllByRole('listitem');
+      expect(rows.map((row) => row.textContent)).toEqual(['Alpha', 'Beta', 'Later']);
+      expect(rows[2]).toContainElement(toggle());
       expect(screen.queryByText('Gamma')).toBeNull();
       fireEvent.click(toggle());
+      // Opening scrolls the first revealed row into view, at the list's foot.
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect((scrollIntoView.mock.contexts[0] as HTMLElement).textContent).toBe('Gamma');
       fireEvent.click(screen.getByText('Gamma'));
       // Drilled in: the list is gone and Gamma's panel is showing.
       expect(screen.getByTestId('panel-gamma')).toBeInTheDocument();

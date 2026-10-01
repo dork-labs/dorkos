@@ -523,10 +523,10 @@ function IndividualTabsSection() {
         </MockedQueryProvider>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Rooms Tab</ShowcaseLabel>
+      <ShowcaseLabel>Room limits Tab</ShowcaseLabel>
       <ShowcaseDemo>
         <MockedQueryProvider>
-          <TabShell value="rooms" title="Rooms">
+          <TabShell value="rooms" title="Room limits">
             <RoomsTab />
           </TabShell>
         </MockedQueryProvider>

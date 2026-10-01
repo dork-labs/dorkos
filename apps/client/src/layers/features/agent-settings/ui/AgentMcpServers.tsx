@@ -47,7 +47,7 @@ interface AgentMcpServersProps {
 /**
  * Cross-link to the inbound MCP direction (plan D7): this section gives THIS
  * agent tools FROM other MCP servers; letting OTHER apps use DorkOS itself as
- * an MCP server is the opposite direction, in Settings → Tools, not here.
+ * an MCP server is the opposite direction, in Settings → Advanced → Tools, not here.
  */
 function InboundMcpCrossLink() {
   const { open } = useSettingsDeepLink();
@@ -61,7 +61,7 @@ function InboundMcpCrossLink() {
         className="h-auto p-0 text-xs"
         onClick={() => open('tools', 'external-mcp')}
       >
-        See Settings → Tools
+        See Settings → Advanced → Tools
       </Button>
     </p>
   );

@@ -74,7 +74,7 @@ export class SettingsPage {
   }
 
   get tabList() {
-    return this.dialog.getByRole('tablist');
+    return this.dialog.getByRole('tablist', { name: 'Navigation' });
   }
 
   /** Get a specific tab by name. */
