@@ -15,6 +15,7 @@ covers:
   - "fix(cloud-link): keep a linked computer linked when a relink doesn't finish (DOR-2622)"
   - "fix(connectors): keep the provider error's cause when discovery wraps it (DOR-2622)"
   - 'fix(cloud-link): never throw away a key the cloud issued at token exchange (DOR-2622)'
+  - 'fix(cloud-link): withdraw before draining, bound the token request, nothing after stop (DOR-2622)'
 ---
 
 ### Fixed
