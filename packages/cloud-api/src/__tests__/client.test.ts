@@ -56,6 +56,24 @@ describe('createCloudApiClient', () => {
     expect(headers.authorization).toBe('Bearer tok_0001');
   });
 
+  it('trims every trailing slash, and stays linear on a long run of slashes mid-URL', async () => {
+    const fetchMock = respondWith(200, signedOut);
+    // `/\/+$/` backtracked quadratically on a run of slashes that is not at the
+    // end (CodeQL js/polynomial-redos).
+    const slashes = '/'.repeat(100_000);
+    const started = performance.now();
+    const client = createCloudApiClient({
+      baseUrl: `https://example.invalid/a${slashes}b///`,
+      fetch: fetchMock,
+    });
+    expect(performance.now() - started).toBeLessThan(1_000);
+
+    await client.get(V1_ROUTES.session, SessionSchema);
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`https://example.invalid/a${slashes}b/v1/session`);
+  });
+
   it('resolves a token supplied as a function, so a refresh can happen per call', async () => {
     const fetchMock = respondWith(200, signedOut);
     const token = vi.fn(async () => 'tok_0002');

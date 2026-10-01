@@ -96,15 +96,27 @@ DORK_HOME=$(mktemp -d) node packages/cli/dist/bin/cli.js auth enable --email you
 
 `auth enable` must exit 0 and the integration test's sign-up, sign-in and `get-session` chain must pass.
 
-### `@a2a-js/sdk` — pinned exact at 1.0.1 (DOR-1549)
+### `@a2a-js/sdk` — pinned exact (DOR-1549)
 
-`packages/a2a-gateway` declares `@a2a-js/sdk` exactly — `"1.0.1"`, no caret. Protocol SDK, and 1.0 is a ground-up rewrite: a pinned version here is a verified claim about what goes on the wire, not a range (DOR-1549, PR #1293).
+`packages/a2a-gateway` declares `@a2a-js/sdk` exactly — `"1.2.0"` today, no caret. Protocol SDK, and 1.0 is a ground-up rewrite: a pinned version here is a verified claim about what goes on the wire, not a range (DOR-1549, PR #1293).
 
 The A2A gateway does not merely call this SDK — it **is** the SDK's wire behavior: the protobuf-derived types the cards serialize through, the v0.3 compat layer that keeps older peers working, and the request handler every external agent talks to. All of it moved wholesale in 1.0, so a caret would take an unreviewed patch of a brand-new implementation directly into the protocol DorkOS speaks to other people's agents, and the first sign of trouble would be a peer that stopped understanding us.
 
 Runtime SDKs are pinned for the same reason and bumped by the same discipline — `contributing/adding-a-runtime.md`, "Bumping a pinned SDK": confirm the target is a stable release, diff the types the adapter imports, recompile, run the suites.
 
 **Drop condition:** none. This is not a workaround waiting on an upstream fix. Revisit it at the next deliberate SDK bump, which re-verifies the claim and moves the pin.
+
+**Held at 1.2.0: 1.2.1 answers the v1.0 wire with "method not found" (DOR-2641).** The weekly group bump in #2364 moved the pin to 1.2.1, and 10 of the 15 tests in `packages/a2a-gateway/src/__tests__/a2a-v1-wire.integration.test.ts` failed: every v1.0 JSON-RPC call (`SendMessage`, `GetTask`, `ListTasks`) came back as error `-32601`, so the gateway stopped answering the protocol it advertises. The takeover branch kept the pin at 1.2.0, where all 149 gateway tests pass, and `.github/dependabot.yml` ignores 1.2.1 by version. There is no middle version to try: 1.2.1 is the only release after 1.2.0. To re-test a later release, set the spec in `packages/a2a-gateway/package.json`, run `pnpm install`, then `pnpm vitest run packages/a2a-gateway`. **Drop the hold** (and the version-scoped ignore) when a release after 1.2.1 passes that suite, or when the gateway is changed on purpose to match what 1.2.1 expects.
+
+### `turbo` — held exact at 2.10.13 (DOR-2645)
+
+The root `package.json` declares `turbo` exactly, `"2.10.13"`, with no caret. A caret is not enough to hold it: `^2.10.13` re-resolves to the newest 2.x on the next `pnpm install`.
+
+**What breaks.** Turbo 2.11 writes a block of its own guidance (`<!-- BEGIN:turborepo-agent-rules -->`) into `AGENTS.md` whenever it thinks an AI agent ran it, and puts it back if anyone removes it. Nearly every turbo run in this repo comes from an agent, so each one would leave `AGENTS.md` modified in its worktree, and the change would end up in somebody's commit. It showed up while the weekly group bump in #2364 (2.10.13 to 2.11.4) was being taken over in #2429: the pre-commit hook's turbo run added the block during a rebase.
+
+**Why not a 2.11 release with the block deleted.** Turbo puts it back on the next run. The only off switch is turbo's own `"agentGuidance": false` setting in `turbo.json`, and per that setting's documentation it does not remove a block that is already there.
+
+**Drop condition:** add `"agentGuidance": false` to the root `turbo.json`. Editing `turbo.json` is a CI pipeline change, so it needs its ledger entry in `ci/ledger/`. Then move `turbo` to the current 2.x, check that a turbo run leaves `AGENTS.md` unchanged (`git status --short AGENTS.md` prints nothing), and remove the version-scoped ignore in `.github/dependabot.yml`. Tracked in DOR-2645.
 
 ## Before you add one
 

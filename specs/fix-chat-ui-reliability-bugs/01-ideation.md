@@ -48,7 +48,7 @@ status: ideation
 
 | File                                                                          | Role                                                                                                                                         |
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` | Renders assistant message content parts (text, tool calls, approvals, questions); Bug 1 site — line 121 uses `key={\`text-${i}\`}`           |
+| `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` | Renders assistant message content parts (text, tool calls, approvals, questions); Bug 1 site — line 121 uses ``key={`text-${i}`}``           |
 | `apps/client/src/layers/features/chat/model/stream-event-handler.ts`          | Processes SSE events and builds the `parts` array; Bug 1 source — `text_delta` branch never assigns an ID to new text parts                  |
 | `apps/client/src/layers/features/chat/model/use-task-state.ts`                | TanStack Query hook for session task list; Bug 2 site — missing `enabled: !!sessionId` guard on lines 48-53                                  |
 | `apps/client/src/layers/entities/session/model/use-session-status.ts`         | TanStack Query hook for session metadata (model, permission mode); Bug 2 site — missing `enabled: !!sessionId` guard on lines 52-56          |
@@ -111,7 +111,7 @@ executeSubmission → setMessages([...prev, userMessage])  ← optimistic user i
 
 - **Evidence:**
   - `stream-event-handler.ts:139`: `currentPartsRef.current = [...parts, { type: 'text', text }]` — no `id` field on the new object
-  - `AssistantMessageContent.tsx:121`: `key={\`text-${i}\`}`— index`i` is unstable when parts array changes
+  - `AssistantMessageContent.tsx:121`: ``key={`text-${i}`}`` — index `i` is unstable when parts array changes
   - `TextPartSchema` (schemas.ts:323-328): `{ type, text }` only — no `id` on the wire
   - Self-test log: "74 baseline errors on page load, ~160 per streaming response"
 
@@ -182,7 +182,7 @@ executeSubmission → setMessages([...prev, userMessage])  ← optimistic user i
 
 ### Bug 1 — Stable Keys for Streaming Text Parts
 
-1. **Positional `_partId` counter (Recommended):** Assign `_partId: \`text-part-${parts.length}\`` in the `text_delta` else branch of `stream-event-handler.ts`. Use `part._partId ?? \`text-${i}\``as the key in`AssistantMessageContent`. Counter string is cheaper than UUID, assigned exactly once at creation, never changes through the part's lifetime.
+1. **Positional `_partId` counter (Recommended):** Assign `` _partId: `text-part-${parts.length}` `` in the `text_delta` else branch of `stream-event-handler.ts`. Use `` part._partId ?? `text-${i}` `` as the key in `AssistantMessageContent`. Counter string is cheaper than UUID, assigned exactly once at creation, never changes through the part's lifetime.
 2. **`crypto.randomUUID()` per text part:** Same mechanics, UUID instead of counter. No correctness benefit here; trivially more expensive.
 3. **Composite key (index + content-length):** One-liner but wrong — key changes on every delta, forcing React to unmount/remount `StreamingText` on every event.
 

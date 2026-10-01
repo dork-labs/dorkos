@@ -46,3 +46,22 @@ describe('the pricing page says who can buy', () => {
     expect(question.nextElementSibling?.textContent).toBe(ELIGIBILITY_LINE);
   });
 });
+
+describe('the plan buttons', () => {
+  // Fails if a paid plan's button stops asking for early access, or the free plan's button changes.
+  it('asks for early access on every paid plan', () => {
+    render(<PricingPage />);
+    const plans = screen.getByRole('region', { name: 'Plans' });
+    const paid = within(plans).getAllByRole('link', { name: 'Request early access' });
+    expect(paid).toHaveLength(3);
+    for (const link of paid) expect(link.getAttribute('href')).toBe('/early-access');
+    expect(within(plans).queryByRole('link', { name: 'Create your account' })).toBeNull();
+  });
+
+  it('leaves the free plan pointing at the install page', () => {
+    render(<PricingPage />);
+    const plans = screen.getByRole('region', { name: 'Plans' });
+    const free = within(plans).getByRole('link', { name: 'Get DorkOS' });
+    expect(free.getAttribute('href')).toBe('/install');
+  });
+});

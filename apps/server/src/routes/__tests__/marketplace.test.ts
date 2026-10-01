@@ -1877,7 +1877,7 @@ describe('Marketplace Routes', () => {
       }
 
       const install = (body: Record<string, unknown> = {}) =>
-        request(fixtureServer).post('/api/marketplace/packages/./helper/install').send(body);
+        request(fixtureServer).post('/api/marketplace/packages/helper/install').send(body);
 
       beforeEach(() => {
         agentHeader = 'agent-token';

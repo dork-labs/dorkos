@@ -828,9 +828,11 @@ export async function handleAgentMessage(
         ...(agentManifestDir ? { agentDirectory: agentManifestDir } : {}),
       });
     } catch (err) {
+      // The session id rides as an argument, never inside the format string: it
+      // is a runtime-minted value, and a `%s` in it would be read as a directive.
       log.warn(
-        `[CCA] could not record which runtime owns ${durableSessionKey}; the next turn on this ` +
-          `conversation will resolve it from the agent's manifest again`,
+        "[CCA] could not record which runtime owns %s; the next turn on this conversation will resolve it from the agent's manifest again",
+        durableSessionKey,
         describeError(err)
       );
     }

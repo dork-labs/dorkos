@@ -102,8 +102,8 @@ linearIssue: DOR-167
   member on the global `/api/events` stream; handlers get the raw envelope as
   `unknown`. Subscription is easy; the envelope is available to us.
 - `apps/client/src/layers/features/mesh/lib/build-topology-elements.ts:189-235`:
-  **the edge-id source of truth.** Binding edge `id = \`binding:${binding.id}\``,
-  `source = \`adapter:${binding.adapterId}\``, `target = binding.agentId`. The
+  **the edge-id source of truth.** Binding edge `` id = `binding:${binding.id}` ``,
+  `` source = `adapter:${binding.adapterId}` ``, `target = binding.agentId`. The
   only other edges are cross-namespace (group→group) and deny. **There are no
   agent↔agent edges.**
 - `apps/server/src/index.ts:944-957`: the server wires relay→SSE with

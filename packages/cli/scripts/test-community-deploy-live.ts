@@ -61,7 +61,25 @@ import {
   probeCommunityLiveProvenance,
   readFlyGraphql,
 } from './community-deploy-live-provenance.js';
+import { watchCommunityLiveCreates } from './community-deploy-live-create-watch.js';
+import {
+  buildCommunityLiveRemovalReceipt,
+  guardRemovalReadsAfterCleanup,
+  guardRemovalReadsBeforeCleanup,
+  NAME_RELEASE_DEADLINE_MS,
+  readRemovalBeforeCleanup,
+  readRemovalJournalNames,
+  readRemovalNamesAfterCleanup,
+  sleepUnlessAborted,
+  whileInterruptible,
+} from './community-deploy-live-removal-reads.js';
 import { readFlyApps } from '../src/commands/community-deploy/fly-read.js';
+import type { LaunchJournal } from '../src/commands/community-deploy/journal.js';
+import { createDefaultRemovalProbes } from '../src/commands/community-deploy/runtime/default-removal.js';
+import {
+  useTigrisClient,
+  type CommunityServiceOptions,
+} from '../src/commands/community-deploy/runtime/default-services.js';
 import { destroyFlyApp } from '../src/commands/community-deploy/fly-mutate.js';
 import {
   readNeonBranchTopology,
@@ -200,6 +218,8 @@ async function main(): Promise<void> {
   let clipboard: Awaited<ReturnType<typeof receiveClipboard>> | null = null;
   // Likewise the launcher, so a failure elsewhere never leaves its PTY waiting on a prompt.
   let launcher: LauncherRun | null = null;
+  // And the journal watch that times each create, so its timer never outlives a failed run.
+  let createWatch: ReturnType<typeof watchCommunityLiveCreates> | null = null;
   const journalDirectory = join(durableHome, 'launches', 'community');
   // An unreleased tarball is copied into the retained run directory and checked there before any
   // npm, profile or service call; the only process is a local `tar` read of the copy. Install and
@@ -245,6 +265,18 @@ async function main(): Promise<void> {
   const readRunId = async (): Promise<string | null> => {
     const journals = (await readdir(journalDirectory)).filter((name) => name.endsWith('.json'));
     return journals.length === 1 ? journals[0]!.slice(0, -'.json'.length) : null;
+  };
+  /** The run's journal while the launcher writes it; null until there is exactly one. */
+  const readLiveJournal = async (): Promise<unknown> => {
+    let runId: string | null;
+    try {
+      runId = await readRunId();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+    if (!runId) return null;
+    return JSON.parse(await readFile(join(journalDirectory, `${runId}.json`), 'utf8')) as unknown;
   };
   const recoveryFor = (runId: string) =>
     communityLiveGateRecoveryCommand(
@@ -329,6 +361,10 @@ async function main(): Promise<void> {
     const launcherEnvironment = withNoDorkosHostsGuard(environment, dorkosHostsRecordPath);
     const fly = { executable: 'fly', env: environment, timeoutMs: 30_000 };
     const neon = { executable: 'neonctl', env: environment, timeoutMs: 30_000 };
+    // The same boundaries the uncertain-create removal builds, so the gate's reads of its queries
+    // go through its own code (DOR-2606).
+    const serviceOptions: CommunityServiceOptions = { fly, neon, graphqlTimeoutMs: 30_000 };
+    const removalProbes = createDefaultRemovalProbes(serviceOptions);
     // The launcher asks for Tigris terms only after it has created the Fly app and the Neon
     // project, and the gate cannot answer. Refuse here, before any provider write.
     const termsCredential = await readFlySessionCredential(fly);
@@ -348,6 +384,9 @@ async function main(): Promise<void> {
         (item) => item.id
       ),
     };
+    // Time each create as it happens: the launcher clears `requestedAt` once a create completes, so
+    // only a read while it runs can see it. Read-only, and stopped once the resumed launcher exits.
+    createWatch = watchCommunityLiveCreates(readLiveJournal);
     // Interrupt only after the first process has persisted owner_pending. The resumed process must
     // replace the unavailable in-memory bootstrap secret before it can hand ownership over.
     launcher = runLauncherPty({
@@ -401,6 +440,7 @@ async function main(): Promise<void> {
     markOwnerClaimed!();
     bootstrap = null;
     await resumed;
+    const observedCreates = await createWatch.stop();
     const journal = JSON.parse(await readFile(journalPath, 'utf8')) as CommunityLiveGateJournal;
     const bootstrapDigest = journal.secretDigests?.COMMUNITY_BOOTSTRAP_SECRET;
     if (
@@ -446,6 +486,7 @@ async function main(): Promise<void> {
         let cleanup;
         let provenance;
         let tigrisBucketFound: boolean;
+        let removalBefore;
         try {
           // What a finished launch shows about its markers, recorded before cleanup removes the
           // resources that carry them. The guard resolves on every path within its deadline, so a
@@ -473,6 +514,15 @@ async function main(): Promise<void> {
                   parse: () => undefined,
                 })),
               unknownAppName: () => `dorkos-gate-absent-${randomBytes(12).toString('hex')}`,
+            })
+          );
+          // The removal's own reads against the live launch (DOR-2606), guarded the same way.
+          removalBefore = await guardRemovalReadsBeforeCleanup(() =>
+            readRemovalBeforeCleanup(journal, observedCreates, {
+              // The removal's find reads only `recoveryContext.appName` from the journal it is given.
+              findTigris: (intent) =>
+                removalProbes('tigris').find(intent, journal as unknown as LaunchJournal),
+              isAppNameAvailable: (name) => tigris((client) => client.isAppNameAvailable(name)),
             })
           );
           cleanup = await cleanupCommunityLiveGate(journal, {
@@ -532,10 +582,10 @@ async function main(): Promise<void> {
         // Clearing `recoveryCommand` alone would not do: the catch re-finds the journal, which stays on
         // disk until the very end, and would print a recovery command for resources already deleted.
         cleanedUp = true;
-        return { cleanup, provenance, tigrisBucketFound };
+        return { cleanup, provenance, tigrisBucketFound, removalBefore };
       },
     });
-    const { cleanup, provenance, tigrisBucketFound } = held.cleanup;
+    const { cleanup, provenance, tigrisBucketFound, removalBefore } = held.cleanup;
     const after = {
       flyAppIds: (await readFlyApps(fly, config.flyOrganization)).map((item) => item.id),
       neonProjectIds: (await readNeonProjects(neon, config.neonOrganization)).map(
@@ -560,6 +610,38 @@ async function main(): Promise<void> {
         `the launcher tried to reach ${dorkosHostsContacted.join(', ')}`
       );
     }
+    // The removal's name reads, once cleanup has finished: how long Fly holds the app name and the
+    // bucket name. Each failure is recorded, and none can fail the gate. Control-C, SIGTERM or the
+    // terminal closing only stops the wait: the receipt is still written and the finally still runs.
+    quietWriter(process.stdout)(
+      `Waiting up to ${NAME_RELEASE_DEADLINE_MS / 60_000} minutes for Fly to release the app and bucket names (Control-C stops waiting; the receipt is still written)\n`
+    );
+    const removalAfter = await whileInterruptible(process, (interrupt) =>
+      guardRemovalReadsAfterCleanup(
+        (signal) =>
+          readRemovalNamesAfterCleanup(
+            readRemovalJournalNames(journal),
+            {
+              // Each read carries its signal into the Fly session and GraphQL calls, so a
+              // cancelled read stops instead of running on after the receipt.
+              isAppNameAvailable: (name, readSignal) =>
+                useTigrisClient(
+                  { ...serviceOptions, fly: { ...fly, signal: readSignal }, signal: readSignal },
+                  (client) => client.isAppNameAvailable(name)
+                ),
+              isTigrisNameHeld: (name, readSignal) =>
+                useTigrisClient(
+                  { ...serviceOptions, fly: { ...fly, signal: readSignal }, signal: readSignal },
+                  (client) => client.isTigrisNameHeld(name)
+                ),
+              now: Date.now,
+              sleep: sleepUnlessAborted,
+            },
+            { signal }
+          ),
+        { signal: interrupt }
+      )
+    );
     // This receipt is intentionally non-secret and remains only long enough for the gate's caller.
     await mkdir(receiptDirectory, { recursive: true, mode: 0o700 });
     await writeFile(
@@ -574,7 +656,16 @@ async function main(): Promise<void> {
         cleanup,
         initialBootstrapSecretDigest: initialBootstrapDigest,
         bootstrapSecretDigest: bootstrapDigest,
-        provenance,
+        provenance: {
+          ...provenance,
+          removal: buildCommunityLiveRemovalReceipt({
+            observed: observedCreates,
+            before: removalBefore,
+            after: removalAfter,
+            flyCreatedAt: provenance.fly.ok ? provenance.fly.createdAt : null,
+            neonCreatedAt: provenance.neon.ok ? provenance.neon.projectCreatedAt : null,
+          }),
+        },
         dorkosHostsContacted,
         ...ownerProof.receipt,
         ...held.phase.member,
@@ -609,6 +700,8 @@ async function main(): Promise<void> {
     );
   } finally {
     if (bootstrap) Buffer.from(bootstrap).fill(0);
+    // The watch stops first, so its last read never races the launcher being killed.
+    await createWatch?.stop();
     launcher?.kill();
     // Closing twice is harmless; the success path closes it as soon as the
     // last secret has arrived rather than waiting for the run to finish.

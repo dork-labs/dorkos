@@ -203,11 +203,11 @@ index still has the same problem if the order of tool calls vs text changes duri
 
 **Approach 1 (positional `_partId` assigned at creation in the event handler).**
 
-Assign `_partId: \`text-part-${parts.length}\`` when a new text part is created in `createStreamEventHandler`
+Assign `` _partId: `text-part-${parts.length}` `` when a new text part is created in `createStreamEventHandler`
 (the `text_delta` else branch, line 139 of `stream-event-handler.ts`). Add `_partId?: string` to the
 client-side `TextPart` extension (either via the schema or a discriminated wrapper type at the features
-layer). Use `part._partId ?? \`text-${i}\``as the key in`AssistantMessageContent.tsx`to maintain
-backward compatibility for history-loaded messages which won't have`\_partId`.
+layer). Use `` part._partId ?? `text-${i}` `` as the key in `AssistantMessageContent.tsx` to maintain
+backward compatibility for history-loaded messages which won't have `_partId`.
 
 The ID only needs to be assigned for streaming parts (history messages have one text part per message
 and don't generate warnings). `_partId` must be preserved through the `parts.map((p) => ({ ...p }))`
@@ -751,7 +751,7 @@ performance impact. Adds `setPendingUserContent` (1 extra setState) — also neg
 ## Risk of Regressions
 
 **Bug 1:** Risk is very low. The `_partId` field is additive. History-loaded messages without `_partId`
-fall back to the existing `key={\`text-${i}\`}` (can use `part._partId ?? \`text-${i}\``). No behavior
+fall back to the existing ``key={`text-${i}`}`` (can use `` part._partId ?? `text-${i}` ``). No behavior
 change for non-streaming messages.
 
 **Bug 2:** Risk is very low. The `enabled` guard only prevents queries from firing when `sessionId`
@@ -769,7 +769,7 @@ test with relay mode enabled on a simulated 500ms+ POST latency.
 # Sources & Evidence
 
 - Source read: `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` —
-  confirmed `key={\`text-${i}\`}`on line 121;`tool_call`uses`key={part.toolCallId}` (stable)
+  confirmed ``key={`text-${i}`}`` on line 121; `tool_call` uses `key={part.toolCallId}` (stable)
 - Source read: `apps/client/src/layers/features/chat/model/stream-event-handler.ts` — confirmed
   `TextPart` is created without an ID field; parts array is immutably replaced on each `text_delta`
 - Source read: `packages/shared/src/schemas.ts` — confirmed `TextPartSchema` has no `id` field;

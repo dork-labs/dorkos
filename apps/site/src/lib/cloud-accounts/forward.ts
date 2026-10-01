@@ -87,6 +87,7 @@ export const PROXY_SECRET_MIN_LENGTH = 32;
 export const CLOUD_ACCOUNT_PAGE_PREFIXES = [
   '/signin',
   '/signup',
+  '/early-access',
   '/reset-password',
   '/verify-email',
   '/activate',
