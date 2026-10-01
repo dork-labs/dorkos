@@ -178,8 +178,15 @@ export function selectBatchSlice(
   tx: DbTransaction,
   batch: DocBatchRow,
   maxBatch: number,
-  documentLabel: string
+  documentLabel: string,
+  promptBytes = DOC_EVENTS_PROMPT_BYTES
 ): DocBatchSlice {
+  if (
+    !Number.isSafeInteger(promptBytes) ||
+    promptBytes < 1 ||
+    promptBytes > DOC_EVENTS_PROMPT_BYTES
+  )
+    throw new RangeError('Invalid prompt byte maximum.');
   if (!Number.isInteger(maxBatch) || maxBatch < 1 || maxBatch > 100)
     throw new RangeError('Invalid batch maximum.');
   if (!['pending', 'waiting'].includes(batch.status))
@@ -198,8 +205,7 @@ export function selectBatchSlice(
   for (const event of inputs) {
     if (
       selected.length === maxBatch ||
-      docEventsPromptBytes(batchContext(batch, [...selected, event], documentLabel)) >
-        DOC_EVENTS_PROMPT_BYTES
+      docEventsPromptBytes(batchContext(batch, [...selected, event], documentLabel)) > promptBytes
     )
       break;
     selected.push(event);
@@ -223,12 +229,13 @@ export function admitBatchSlice<T>(
   maxBatch: number,
   documentLabel: string,
   now: string,
-  admit: (tx: DbTransaction, slice: DocBatchSlice) => T & SynchronousResult<T>
+  admit: (tx: DbTransaction, slice: DocBatchSlice) => T & SynchronousResult<T>,
+  promptBytes = DOC_EVENTS_PROMPT_BYTES
 ): T {
   return store.transaction<T>((tx) => {
     const original = store.getBatch(batchId, tx);
     if (!original) throw new Error('Missing pending batch.');
-    const slice = selectBatchSlice(store, tx, original, maxBatch, documentLabel);
+    const slice = selectBatchSlice(store, tx, original, maxBatch, documentLabel, promptBytes);
     if (
       !store.updatePendingBatch(
         {

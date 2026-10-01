@@ -1,4 +1,5 @@
 /** Source-owned movement of an accepted protected receipt, never a new admission. */
+import { requireSynchronous } from './synchronous-source.js';
 import {
   and,
   eq,
@@ -21,7 +22,7 @@ export function rebindAcceptedReceipt(
     .where(eq(sessionMessageAcceptanceReceipts.id, receiptId))
     .get();
   if (!receipt || receipt.state !== 'accepted' || receipt.sessionId !== fromSessionId) return false;
-  const digest = validate(receipt);
+  const digest = requireSynchronous(validate(receipt));
   if (!digest) return false;
   return (
     tx
