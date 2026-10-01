@@ -1,5 +1,6 @@
 import type { Hono } from 'hono';
 import type { Pool } from 'pg';
+import { ZodError } from 'zod';
 import {
   CommunityAdminAccountClosureCancelRequestSchema,
   CommunityAdminAccountClosureCreateResponseSchema,
@@ -76,21 +77,28 @@ export function registerHostAccountClosureRoutes(
 
   app.post('/host/accounts/:accountId/closure', async (c) => {
     const actor = await authority.require(c, 'accounts:close');
-    const body = await readJson(c, CommunityAdminAccountClosureRequestSchema);
-    const accountId = accountIdOf(c.req.param('accountId'));
-    if (actor.kind === 'api_key' && body.password !== undefined)
-      throw new ApiError(400, 'STATE_CONFLICT', 'A host API key does not send a password.');
-    if (actor.kind === 'person') {
-      // An operator who signs in only through single sign-on has no password to confirm. They
-      // use a key with this scope instead.
-      if (!(await hasPassword(actor.userId)))
-        throw new ApiError(403, 'PASSWORD_REQUIRED', 'Set a password in your account to do this.');
-      if (!body.password)
-        throw new ApiError(403, 'REAUTH_REQUIRED', 'Enter your password to take this action.');
-      await confirmPassword(c, actor.userId, body.password);
-    }
+    // A malformed id is logged as null: the line carries ids only, never what a caller typed.
+    const parsedId = CommunityAdminAccountIdSchema.safeParse(c.req.param('accountId'));
+    const loggedId = parsedId.success ? parsedId.data : null;
     let result: Awaited<ReturnType<typeof closeAccount>>;
     try {
+      const body = await readJson(c, CommunityAdminAccountClosureRequestSchema);
+      const accountId = accountIdOf(c.req.param('accountId'));
+      if (actor.kind === 'api_key' && body.password !== undefined)
+        throw new ApiError(400, 'STATE_CONFLICT', 'A host API key does not send a password.');
+      if (actor.kind === 'person') {
+        // An operator who signs in only through single sign-on has no password to confirm. They
+        // use a key with this scope instead.
+        if (!(await hasPassword(actor.userId)))
+          throw new ApiError(
+            403,
+            'PASSWORD_REQUIRED',
+            'Set a password in your account to do this.'
+          );
+        if (!body.password)
+          throw new ApiError(403, 'REAUTH_REQUIRED', 'Enter your password to take this action.');
+        await confirmPassword(c, actor.userId, body.password);
+      }
       result = await transaction(pool, (client) =>
         closeAccount(client, {
           accountId,
@@ -103,8 +111,16 @@ export function registerHostAccountClosureRoutes(
         })
       );
     } catch (error) {
-      if (error instanceof ApiError)
-        warn(accountClosureLogLine({ outcome: 'refused', accountId, actor, code: error.code }));
+      // Every refusal past authentication, a wrong password from a stolen session included. A
+      // body the schema refuses answers `400 STATE_CONFLICT` (http.ts), so it is logged so.
+      const code =
+        error instanceof ApiError
+          ? error.code
+          : error instanceof ZodError
+            ? 'STATE_CONFLICT'
+            : null;
+      if (code)
+        warn(accountClosureLogLine({ outcome: 'refused', accountId: loggedId, actor, code }));
       throw error;
     }
     // Logged once it has committed, so a host's alerting never hears of one that rolled back.
@@ -112,7 +128,7 @@ export function registerHostAccountClosureRoutes(
       warn(
         accountClosureLogLine({
           outcome: 'closed',
-          accountId,
+          accountId: result.closure.accountId,
           actor,
           closureId: result.closure.closureId,
         })

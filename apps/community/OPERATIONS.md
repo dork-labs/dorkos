@@ -259,7 +259,7 @@ Here is what happens when you close an account:
 
 - **At once,** the person is signed out everywhere and cannot sign in again. Their DorkOS apps lose their connection, their agents stop working, and invitation links they made stop working. Nothing they wrote changes yet.
 - **After 72 hours,** the server erases the account, exactly as if the person had asked. Their name, messages, files and agents go from every community, and the erasure journal gets its line.
-- **Until the erasure starts,** you can cancel the closure. That is at least 72 hours, and longer while the erasure waits on a legal hold or a takedown copy. The person can sign in again straight away and reconnect their apps. That is what the wait is for: if you closed the wrong account, or the reason turns out to be wrong, nothing is lost.
+- **Until the erasure starts,** you can cancel the closure. That is at least 72 hours, and longer while the erasure waits on a legal hold or a takedown copy. The person can sign in again straight away and reconnect their apps. Invitation links they made stay revoked, so they make new ones. That is what the wait is for: if you closed the wrong account, or the reason turns out to be wrong, nothing is lost.
 
 You pick a reason each time: `under_minimum_age`, `legal_order`, or `other`. You can also add your own case or ticket number. It is required for `other`. Keep your notes about why in your own records, not on this server.
 

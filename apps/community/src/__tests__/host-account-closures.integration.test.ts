@@ -187,6 +187,7 @@ describe('who may close an account', () => {
   // Purpose: fails if a host person can close without their password, or a key can send one.
   it('asks a host person for their password, and never a key', async () => {
     const s = await makeScene(h, operator.cookie, 'person');
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(
       (await errorOf(await close(s.p.userId, {}, { cookie: operator.cookie }), 403)).code
     ).toBe('REAUTH_REQUIRED');
@@ -199,6 +200,24 @@ describe('who may close an account', () => {
       ).code
     ).toBe('REAUTH_FAILED');
     expect((await close(s.p.userId, { password: PASSWORD })).status).toBe(400);
+    expect(
+      (await close('bad%20id', { password: PASSWORD }, { cookie: operator.cookie })).status
+    ).toBe(404);
+    // Every refusal before the closure is decided is logged too: a wrong password from a stolen
+    // session is what a host most needs to hear about.
+    const refusals = warned.mock.calls
+      .map(([line]) => String(line))
+      .filter((line) => line.includes('community.account.close'))
+      .map((line) => JSON.parse(line) as Record<string, string | null>);
+    warned.mockRestore();
+    expect(refusals.map((line) => [line.outcome, line.code, line.accountId, line.actorId])).toEqual(
+      [
+        ['refused', 'REAUTH_REQUIRED', s.p.userId, operatorUserId],
+        ['refused', 'REAUTH_FAILED', s.p.userId, operatorUserId],
+        ['refused', 'STATE_CONFLICT', s.p.userId, closeKey.id],
+        ['refused', 'NOT_FOUND', null, operatorUserId],
+      ]
+    );
     const { closure } = await closed(
       await close(s.p.userId, { password: PASSWORD }, { cookie: operator.cookie })
     );
@@ -729,9 +748,18 @@ describe('what the closure ends', () => {
         ).rows[0].count
       );
     const before = await grants();
-    const preview = async () =>
-      (await h.call(`${s.base}/invites/preview`, { body: { token: invite.token } })).status;
+    // Another admin's link, which the closure must leave alone.
+    const owners = (await (
+      await expectStatus(
+        await h.call(`${s.base}/invites`, { cookie: s.owner.cookie, body: { seats: 1 } }),
+        201,
+        'owner invite'
+      )
+    ).json()) as { token: string };
+    const preview = async (token = invite.token) =>
+      (await h.call(`${s.base}/invites/preview`, { body: { token } })).status;
     expect(await preview()).toBe(200);
+    expect(await preview(owners.token)).toBe(200);
 
     await closed(await close(s.p.userId));
     const polled = await expectStatus(
@@ -750,6 +778,7 @@ describe('what the closure ends', () => {
     ).toBe(409);
     expect(await grants()).toBe(before);
     expect(await preview()).toBe(403);
+    expect(await preview(owners.token)).toBe(200);
   });
 });
 
@@ -772,7 +801,15 @@ describe('the daily limit and the alert line', () => {
     const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const first = await closed(await close(users[0], {}, { bearer: key.secret }, other));
-      await closed(await close(users[1], {}, { bearer: key.secret }, other));
+      const replayKey = randomUUID();
+      await closed(
+        await close(users[1], { idempotencyKey: replayKey }, { bearer: key.secret }, other)
+      );
+      // A replay is not a new closure: it neither counts against the limit nor logs a line.
+      await closed(
+        await close(users[1], { idempotencyKey: replayKey }, { bearer: key.secret }, other),
+        200
+      );
       // Cancelling does not give the actor its closure back.
       await expectStatus(
         await other.call(`${path(users[1])}/cancel`, { bearer: key.secret, body: {} }),
@@ -832,8 +869,8 @@ describe('the daily limit and the alert line', () => {
     const idempotencyKey = randomUUID();
     const responses = await holdingLock(
       h,
-      `SELECT pg_advisory_xact_lock(hashtext('account-closure:' || $1))`,
-      [`api_key:${closeKey.id}`],
+      'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      [`account-closure:api_key:${closeKey.id}`],
       async (release, holderPid) => {
         const pending = [
           close(a.p.userId, { idempotencyKey }),

@@ -6860,6 +6860,7 @@
       "created": "2026-10-01",
       "extractedFrom": null,
       "specSlug": null,
+      "amends": ["260923-134616", "260924-215422"],
       "supersedes": null,
       "affects": [
         "apps/community/src/host/account-closures.ts",

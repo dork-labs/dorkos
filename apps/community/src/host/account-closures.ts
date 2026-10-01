@@ -45,7 +45,8 @@ const DAY_MS = 24 * 60 * 60_000;
  */
 export function accountClosureLogLine(event: {
   outcome: 'closed' | 'refused';
-  accountId: string;
+  /** Null when the route's id was malformed. */
+  accountId: string | null;
   actor: HostActor;
   closureId?: string;
   code?: string;
@@ -209,8 +210,8 @@ export async function closeAccount(
   input: AccountClosureRequest
 ): Promise<{ closure: AccountClosureProjection; replayed: boolean }> {
   const requester = hostActorRequester(input.actor);
-  await client.query(`SELECT pg_advisory_xact_lock(hashtext('account-closure:' || $1))`, [
-    requester,
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
+    `account-closure:${requester}`,
   ]);
   const account = await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR UPDATE', [
     input.accountId,
