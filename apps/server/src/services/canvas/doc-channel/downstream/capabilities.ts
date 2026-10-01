@@ -9,11 +9,23 @@ import {
 import {
   defineCapability,
   type CapabilityDefinition,
-  type CapabilityHandlerContext,
-} from '../../../core/capabilities/index.js';
+  type CapabilityDeps,
+} from '../../../core/capabilities/capability-definition.js';
+import type { CapabilityHandlerContext } from '../../../core/capabilities/registry.js';
 import { isServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import type { DocChannelActor } from '../authorization.js';
 import { DocChannelDownstream, DocDownstreamError } from './service.js';
+
+declare module '../../../core/capabilities/capability-definition.js' {
+  interface CapabilityDeps {
+    docChannelDownstream?: DocChannelDownstream;
+  }
+}
+function serviceFor(deps: CapabilityDeps, captured?: DocChannelDownstream): DocChannelDownstream {
+  const service = captured ?? deps.docChannelDownstream;
+  if (!service) throw new DocDownstreamError('DOC_CHANNEL_UNAVAILABLE', 503);
+  return service;
+}
 
 function actor(context: CapabilityHandlerContext): DocChannelActor {
   if (!isServerPrincipal(context.serverPrincipal))
@@ -22,7 +34,7 @@ function actor(context: CapabilityHandlerContext): DocChannelActor {
 }
 /** Build act-tier bodies over the authoritative service, without any runtime-specific SDK or direct registration. */
 export function createDocChannelDownstreamCapabilities(
-  service: DocChannelDownstream
+  service?: DocChannelDownstream
 ): CapabilityDefinition[] {
   return [
     defineCapability({
@@ -36,7 +48,7 @@ export function createDocChannelDownstreamCapabilities(
       input: CanvasChannelSendRequestSchema,
       output: z.object({ receipt: IngestReceiptSchema }).strict(),
       surfaces: { mcp: { toolName: 'canvas_send', servers: ['in-session', 'external'] } },
-      invoke: async (_deps, input, context) => service.send(input, actor(context)),
+      invoke: async (deps, input, context) => serviceFor(deps, service).send(input, actor(context)),
     }),
     defineCapability({
       id: 'ui.patch_canvas_state',
@@ -49,7 +61,8 @@ export function createDocChannelDownstreamCapabilities(
       input: CanvasChannelPatchStateRequestSchema,
       output: CanvasChannelPatchStateReceiptSchema,
       surfaces: { mcp: { toolName: 'canvas_patch_state', servers: ['in-session', 'external'] } },
-      invoke: async (_deps, input, context) => service.patchState(input, actor(context)),
+      invoke: async (deps, input, context) =>
+        serviceFor(deps, service).patchState(input, actor(context)),
     }),
   ];
 }

@@ -5,6 +5,8 @@ import { RoomRepoStore } from '../../../rooms/repo/room-repo-store.js';
 import { ApprovalService } from '../../../core/approvals/approval-service.js';
 import { linkSessionId, resetSessionKeys } from '../../../session/session-key-registry.js';
 import { randomUUID } from 'node:crypto';
+import { noopLogger } from '@dorkos/shared/logger';
+import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import { ConnectorRuntimePrincipalService } from '../../../connectors/principal/runtime-principal-service.js';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { createDocChannelHttpComposition } from '../http-composition.js';
@@ -197,4 +199,50 @@ describe('production explicit agent target binding', () => {
       n: 0,
     });
   });
+});
+
+it('binds declared UI capabilities to the production document services and refuses missing authority', async () => {
+  const deps = {
+    logger: noopLogger,
+    docChannelGrantDeps: { service: http.grants, authorization: http.authorization },
+    docChannelDownstream: http.downstream,
+  };
+  const context = { serverPrincipal: actor().principal };
+  const configure = uiDomain.capabilities.find((item) => item.id === 'ui.configure_doc_channel')!;
+  await expect(
+    configure.invoke(deps, { documentId, channel: { routes: [] } }, context)
+  ).resolves.toEqual({ configured: true });
+  const send = uiDomain.capabilities.find((item) => item.id === 'ui.send_canvas_event')!;
+  const eventId = randomUUID();
+  const sent = await send.invoke(
+    deps,
+    { documentId, eventId, type: 'app.reply', payload: { answer: true } },
+    context
+  );
+  expect(sent).toMatchObject({ receipt: { id: eventId } });
+  expect(http.channels.getEvent(documentId, eventId)?.payload).toEqual({ answer: true });
+  const patch = uiDomain.capabilities.find((item) => item.id === 'ui.patch_canvas_state')!;
+  await expect(
+    patch.invoke(
+      deps,
+      {
+        documentId,
+        eventId: randomUUID(),
+        expectedStateRev: 0,
+        operations: [{ op: 'set', path: '/answer', value: true }],
+      },
+      context
+    )
+  ).resolves.toMatchObject({ stateRev: 1 });
+  expect(http.channels.getChannel(documentId)?.state).toEqual({ answer: true });
+  await expect(
+    send.invoke(
+      { logger: noopLogger },
+      { documentId, eventId: randomUUID(), type: 'app.reply', payload: {} },
+      context
+    )
+  ).rejects.toThrow('DOC_CHANNEL_UNAVAILABLE');
+  await expect(
+    send.invoke(deps, { documentId, eventId: randomUUID(), type: 'app.reply', payload: {} }, {})
+  ).rejects.toThrow('CANVAS_DOCUMENT_NOT_FOUND');
 });

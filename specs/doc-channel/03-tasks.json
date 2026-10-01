@@ -17,7 +17,7 @@
       "dependencies": [],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "in_progress",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -35,7 +35,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -55,7 +55,7 @@
         "2.2"
       ],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -75,7 +75,7 @@
         "2.1"
       ],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -94,7 +94,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -113,7 +113,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -131,7 +131,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -195,7 +195,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -204,7 +204,7 @@
       "phase": 3,
       "phaseName": "v1 clients and proof",
       "subject": "[doc-channel] [P3] Deliver channel replay over shared scope streams",
-      "description": "Add canvas_event to session/room stream schemas and common projectors/delivery, with docSeq independent of stream sequence, room entry cursor and content revision. Notifications are not durable history; cold/idle session channels replay from document store without existing projector. Attach live buffer before capturing highWatermark, replay through it, then drain later buffered events. Reduce duplicates by docSeq; gaps fetch document replay. Room frames never advance room entry cursor. Expose resetRequired/current state/receipt summary/retention floor when history pruned and do not synthesize unavailable app events.\nApply existing subscriber backpressure and authorized scope filtering; document state/replies/status travel over SSE and WebSocket equivalently. Client use-doc-channel uses Transport/public barrels; keep identity data out of page projections. Preserve stable content/edit state when notifications arrive.\n\nAcceptance and verification:\nIntegration tests for SSE/WebSocket identical outcomes, replay/live race, duplicate/gap healing, room cursor independence, cold projector absence, slow subscriber reconnect and retained-history reset. Restart returns current state/receipts. Wrong scope receives no events or viewer IDs; live callbacks are post-commit.\n\nIntegration boundaries:\nOwn session/room stream discriminants/projectors/shared SSE+WebSocket delivery and client shared stream reducer; parent serializes schema barrels and Transport updates.\n\nImplement in an isolated checkout. Preserve runtime SDK confinement and client FSD public-barrel imports. Use temporary data and fake runtime callbacks; paid model paths remain unarmed. Run targeted tests and relevant package typecheck/lint, and run the browser suite with visual inspection for changed UI. Parent integrates shared-file edits and owns tracking.",
+      "description": "Add canvas_event as an explicit typed wire notification alongside durable session events, and to room schemas/common delivery. Do not fabricate SessionEvent.seq values or copy document history into transcript storage; dispatch channel frames before transcript cursor logic, with docSeq independent of stream sequence, room entry cursor and content revision. Notifications are not durable history; cold/idle session channels replay from document store without existing projector. Attach live buffer before capturing highWatermark, replay through it, then drain later buffered events. Reduce duplicates by docSeq; gaps fetch document replay. Room frames never advance room entry cursor. Expose resetRequired/current state/receipt summary/retention floor when history pruned and do not synthesize unavailable app events.\nApply existing subscriber backpressure and authorized scope filtering; document state/replies/status travel over SSE and WebSocket equivalently. Client use-doc-channel uses Transport/public barrels; keep identity data out of page projections. Preserve stable content/edit state when notifications arrive.\n\nAcceptance and verification:\nIntegration tests for SSE/WebSocket identical outcomes, replay/live race, duplicate/gap healing, room cursor independence, cold projector absence, slow subscriber reconnect and retained-history reset. Restart returns current state/receipts. Wrong scope receives no events or viewer IDs; live callbacks are post-commit.\n\nIntegration boundaries:\nOwn session/room stream discriminants/projectors/shared SSE+WebSocket delivery and client shared stream reducer; parent serializes schema barrels and Transport updates.\n\nImplement in an isolated checkout. Preserve runtime SDK confinement and client FSD public-barrel imports. Use temporary data and fake runtime callbacks; paid model paths remain unarmed. Run targeted tests and relevant package typecheck/lint, and run the browser suite with visual inspection for changed UI. Parent integrates shared-file edits and owns tracking.",
       "activeForm": "Delivering replay over shared streams",
       "size": "large",
       "priority": "high",
@@ -214,7 +214,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -262,7 +262,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },

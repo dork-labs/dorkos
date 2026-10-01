@@ -36,7 +36,10 @@ export type DocBatchSourceRef = Extract<
   { kind: 'document_event_batch' }
 >;
 /** Safe queue/runtime sentence; all page data travels only through structured fenced context. */
-export const DOC_BATCH_PLACEHOLDER = '[Document update]';
+export function docBatchPlaceholder(batch: DocBatchRow): string {
+  const count = batch.inputEventIds.length;
+  return `[Document update: ${count} ${count === 1 ? 'action' : 'actions'}]`;
+}
 /** Fixed source with no public Relay publication or alternate delivery ledger. */
 export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdapter<DocBatchSourceRef> {
   readonly kind = 'document_event_batch' as const;
@@ -72,7 +75,7 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
       originRuntime: authority.target.runtime!,
       originAgentPath: authority.target.agentPath!,
       originAuthorityDigest: docBatchDigest(authority),
-      queuePlaceholder: DOC_BATCH_PLACEHOLDER,
+      queuePlaceholder: docBatchPlaceholder(batch),
     };
   }
   /** Link actual shared receipt identity while the source/queue/receipt transaction remains open. */
@@ -114,7 +117,7 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
         sourceKind: this.kind,
         sourceId: receipt.sourceId,
         sourceGeneration: receipt.sourceGeneration,
-        content: DOC_BATCH_PLACEHOLDER,
+        content: docBatchPlaceholder(batch),
         docEvents: authority.context,
       };
     });
@@ -142,7 +145,7 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
       )
       .run().changes;
     if (changed !== 1) refuseDocBatch();
-    return { content: DOC_BATCH_PLACEHOLDER, docEvents: authority.context };
+    return { content: docBatchPlaceholder(batch), docEvents: authority.context };
   }
   /** Revalidate canonical grant authority against the old exact digest inside the ownership move. */
   rebindAccepted(

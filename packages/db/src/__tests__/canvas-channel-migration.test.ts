@@ -179,6 +179,7 @@ describe('canvas channel production migration', () => {
     expect(sessionMessageAcceptanceReceipts.sourceKind.enumValues).toEqual([
       'connector_agent_request',
       'connector_event',
+      'document_event_batch',
     ]);
     expect(db.$client.pragma('foreign_key_check')).toEqual([]);
   });

@@ -45,7 +45,7 @@ describe('fixed owning-session document source', () => {
     const f = fixture();
     const batch = f.batchId();
     const accepted = f.admission.admit(batch);
-    expect(accepted.queueRecord?.content).toBe('[Document update]');
+    expect(accepted.queueRecord?.content).toBe('[Document update: 1 action]');
     expect(JSON.stringify(f.db.select().from(sessionMessageQueue).all())).not.toContain('checked');
     expect(f.store.getBatch(batch)?.admissionReceiptId).toBe(accepted.receipt.id);
     expect(

@@ -65,7 +65,7 @@ describe('owning-session document dispatch', () => {
       expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
       expect(runtime.sendMessage).toHaveBeenCalledWith(
         'session-1',
-        '[Document update]',
+        '[Document update: 1 action]',
         expect.objectContaining({
           additionalContext: expect.arrayContaining([
             expect.objectContaining({

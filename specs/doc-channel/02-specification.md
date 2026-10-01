@@ -300,6 +300,15 @@ separate, granted upstream app events do. Agent sends, state patches, ordinary
 canvas updates and presence counts do not trigger turns. Host opened/closed
 events log by default and may wake only through an explicit grant.
 
+Scope streams carry document notifications through an explicit typed wire union
+beside durable session events. A document notification has docSeq, carries no
+session sequence or frame ID, and never advances the room entry cursor. The
+common delivery path subscribes before reading document high watermarks, replays
+from the document store even for cold or idle sessions, then drains buffered
+live notifications. The client handles these frames before transcript cursor
+logic and heals gaps through authorized document replay. Reconnect/reset state
+comes from durable per-document history, never from notification delivery alone.
+
 Coalescing is per doc/route, based on receivedAt. First event opens the window;
 later events do not postpone its deadline. Immediate means due now, not bypass
 busy admission or budgets. `none` logs a routed outcome without a turn. Mode and

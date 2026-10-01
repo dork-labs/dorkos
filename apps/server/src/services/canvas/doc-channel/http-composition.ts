@@ -37,6 +37,8 @@ import type { RoomRepoStore } from '../../rooms/repo/room-repo-store.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';
 import { canvasSourcePath } from '../document-key.js';
 import { parseScope } from '../scopes.js';
+import { DocChannelDownstream } from './downstream/service.js';
+import { createDocDownstreamAuthority } from './downstream/authority.js';
 import { DocChannelAuthorization, DocChannelNotFoundError } from './authorization.js';
 import { DocChannelStore } from './store.js';
 import { DocChannelService } from './service.js';
@@ -57,6 +59,7 @@ export function createDocChannelHttpComposition(deps: {
   revalidateRuntime?: (proof: ServerPrincipalProof) => Promise<boolean>;
 }): DocChannelHttp & {
   grants: DocChannelGrants;
+  downstream: DocChannelDownstream;
   channels: DocChannelStore;
   authorization: DocChannelAuthorization;
 } {
@@ -335,8 +338,18 @@ export function createDocChannelHttpComposition(deps: {
       },
     },
   });
+  const downstream = new DocChannelDownstream(
+    channels,
+    createDocDownstreamAuthority(channels, authorization, grants, {
+      principalCurrent,
+      ownsInstallation: sameOwner,
+      resolveScope: (scope) => deps.documents.lifecycle.resolveScope(scope),
+      revalidateRuntime: (proof) => deps.revalidateRuntime?.(proof) ?? Promise.resolve(false),
+    })
+  );
   return {
     grants,
+    downstream,
     channels,
     authorization,
     service: new DocChannelService(deps.documents, channels, authorization, {
