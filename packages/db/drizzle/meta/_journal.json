@@ -960,6 +960,13 @@
       "when": 1790887164510,
       "tag": "0137_canvas_channel",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "6",
+      "when": 1790889505613,
+      "tag": "0138_canvas_channel_accounting",
+      "breakpoints": true
     }
   ]
 }
