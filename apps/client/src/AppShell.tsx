@@ -456,7 +456,6 @@ export function AppShell() {
     dataUpdatedAt: configAnsweredAt,
     errorUpdatedAt: configFailedAt,
     error: configError,
-    fetchStatus: configFetchStatus,
   } = useConfig({ refetchOnMount: refetchUntilAnsweredThisLaunch });
   const answeredThisLaunch = configAnsweredAt > LAUNCH_STARTED_AT;
   const failedThisLaunch = configFailedAt > LAUNCH_STARTED_AT;
@@ -470,13 +469,12 @@ export function AppShell() {
   // deliberately far longer than the 3s escape, because the cost of being wrong
   // here is the boot sentinel's lesson: accusing a machine that was merely
   // slow. Fifteen seconds with nothing fresh in hand is no longer slow.
-  // It times a read that is actually out: silence is only evidence if we asked.
   const [hangDeadlinePassed, setHangDeadlinePassed] = useState(false);
   useEffect(() => {
-    if (answeredThisLaunch || configFetchStatus !== 'fetching') return;
+    if (answeredThisLaunch) return;
     const timer = setTimeout(() => setHangDeadlinePassed(true), SERVER_HANG_DEADLINE_MS);
     return () => clearTimeout(timer);
-  }, [answeredThisLaunch, configFetchStatus]);
+  }, [answeredThisLaunch]);
 
   // Either kind of evidence, and in all cases only while nothing fresh has
   // arrived — so a cockpit that IS talking to its server never sees this, and

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): ask the server once on every page load before calling it unreachable'
+  - 'fix(client): keep the server hang deadline running through paused and cancelled reads'
 ---
 
 ### Fixed

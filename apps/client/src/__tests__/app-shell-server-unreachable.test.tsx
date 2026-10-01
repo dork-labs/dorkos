@@ -18,7 +18,13 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientProvider,
+  focusManager,
+  onlineManager,
+  useQuery,
+} from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -655,6 +661,92 @@ describe('AppShell, after a quick reload', () => {
 
     renderAppShell(seedConfigFromJustBeforeAReload);
     await letTimePass(100);
+
+    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
+  });
+});
+
+describe('AppShell, when the config read stalls for reasons of its own', () => {
+  // **Why the hang deadline runs from mount and not from "a read is in
+  // flight".** Gating it on `fetchStatus === 'fetching'` looked tidier, but the
+  // config query has readers this shell does not control: a paused read (the
+  // browser thinks it is offline, the tab is hidden mid-retry) never reports
+  // `fetching`, and an optimistic settings write cancels the read and puts it
+  // back to `idle`. Each of those stopped or restarted the clock, so a server
+  // that never answered was never called unreachable — or was, three times
+  // late. The deadline is about what the SERVER has said this launch, so it
+  // only stops for an answer.
+  afterEach(() => {
+    onlineManager.setOnline(true);
+    focusManager.setFocused(undefined);
+  });
+
+  it('still says so when the browser is offline and another reader asked first', async () => {
+    // Several config readers keep TanStack's default `networkMode: 'online'`,
+    // and the onboarding gate mounts one before the shell's own. Offline, that
+    // read starts PAUSED and the shell's refetch joins it rather than starting
+    // its own, so the query never reads `fetching` at all.
+    vi.useFakeTimers();
+    onlineManager.setOnline(false);
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    const queryClient = makeQueryClient();
+    function OnlineModeReader() {
+      useQuery({
+        queryKey: configKeys.current(),
+        queryFn: () => transport.getConfig(),
+        staleTime: 30_000,
+      });
+      return null;
+    }
+    seedYesterdaysConfig(queryClient);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <TooltipProvider>
+            <OnlineModeReader />
+            <AppShell />
+          </TooltipProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    await letTimePass(HANG_DEADLINE_MS + 1000);
+
+    // The premise, so this case cannot pass for a different reason.
+    expect(queryClient.getQueryState(configKeys.current())?.fetchStatus).toBe('paused');
+    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
+  });
+
+  it('keeps its deadline when a settings write cancels the read mid-hang', async () => {
+    // The sidebar, composer, status bar, room limits and notification prefs all
+    // cancel the config read before writing optimistically, which sets it back
+    // to `idle` with nothing answered.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    const queryClient = makeQueryClient();
+
+    renderAppShell(seedYesterdaysConfig, queryClient);
+    await letTimePass(5000);
+    await act(async () => {
+      await queryClient.cancelQueries({ queryKey: configKeys.current() });
+    });
+    await letTimePass(HANG_DEADLINE_MS - 4000);
+
+    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
+  });
+
+  it('keeps its deadline when a retry pauses in a hidden tab', async () => {
+    // TanStack pauses a retry while the document is unfocused, and a paused
+    // retry is not `fetching` either.
+    vi.useFakeTimers();
+    focusManager.setFocused(false);
+    vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
+
+    renderAppShell(
+      seedYesterdaysConfig,
+      new QueryClient({ defaultOptions: { queries: { retry: 1 } } })
+    );
+    await letTimePass(HANG_DEADLINE_MS + 1000);
 
     expect(screen.getByText(HEADLINE)).toBeInTheDocument();
   });
