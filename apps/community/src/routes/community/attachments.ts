@@ -28,7 +28,11 @@ import {
   reserveManagedBlob,
   type BlobStore,
 } from '../../storage/index.js';
-import { cleanupBackoffSql } from '../../storage/pending-deletions.js';
+import {
+  BLOB_DELETE_TIMEOUT_MS,
+  cleanupBackoffSql,
+  communityFilesDeletable,
+} from '../../storage/pending-deletions.js';
 
 interface AttachmentRow {
   id: string;
@@ -144,7 +148,15 @@ async function* requestBytes(
   }
 }
 
-/** Delete a bounded page of old unbound blobs, leaving failures available for retry. */
+/**
+ * Delete a bounded page of old unbound blobs, leaving failures available for retry.
+ *
+ * An upload nobody posted is still a file someone put on the server, so a host legal hold
+ * keeps it like any other: a held community's uploads are not candidates (so they never fill a
+ * batch), and the hold is read again under the community row, held `FOR SHARE` through the
+ * delete, for a hold placed after that read. The row stays as it is and is swept once the hold
+ * is released. Nobody can post it meanwhile: posting takes only an upload under an hour old.
+ */
 export async function sweepExpiredAttachments(
   pool: Pool,
   blobStore: BlobStore,
@@ -152,8 +164,13 @@ export async function sweepExpiredAttachments(
 ): Promise<{ deleted: number; failed: number }> {
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100)
     throw new Error('Invalid attachment sweep batch size');
-  const candidates = await pool.query<{ id: string }>(
-    'SELECT id FROM attachments WHERE entry_id IS NULL AND uploaded_at<$1 AND cleanup_next_attempt_at<=now() ORDER BY cleanup_next_attempt_at,uploaded_at,id LIMIT $2',
+  const candidates = await pool.query<{ id: string; community_id: string }>(
+    `SELECT a.id,a.community_id FROM attachments a
+     WHERE a.entry_id IS NULL AND a.uploaded_at<$1 AND a.cleanup_next_attempt_at<=now()
+       AND NOT EXISTS(
+         SELECT 1 FROM communities c WHERE c.id=a.community_id AND c.legal_hold_at IS NOT NULL
+       )
+     ORDER BY a.cleanup_next_attempt_at,a.uploaded_at,a.id LIMIT $2`,
     [olderThan, batchSize]
   );
   let deleted = 0;
@@ -164,13 +181,16 @@ export async function sweepExpiredAttachments(
     };
     try {
       await transaction(pool, async (client) => {
+        if (!(await communityFilesDeletable(client, candidate.community_id))) return;
         const result = await client.query<{ blob_key: string }>(
           'SELECT blob_key FROM attachments WHERE id=$1 AND entry_id IS NULL AND uploaded_at<$2 AND cleanup_next_attempt_at<=now() FOR UPDATE',
           [candidate.id, olderThan]
         );
         if (!result.rows[0]) return;
         try {
-          await blobStore.delete(result.rows[0].blob_key);
+          await blobStore.delete(result.rows[0].blob_key, {
+            signal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
+          });
         } catch (error) {
           await client.query(
             `UPDATE attachments
