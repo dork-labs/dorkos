@@ -361,13 +361,22 @@ export function Admission({
             }}
           />
         ) : unadmitted && !inviteToken && !preview ? (
-          <div className="panel">
-            <h2 className="text-lg font-semibold">Your account has not joined yet.</h2>
-            <p className="muted mb-0">
-              Ask a member for a new invitation link, then open it in this browser. If your password
-              is lost, contact the person running this community.
-            </p>
-          </div>
+          <>
+            <div className="panel">
+              <h2 className="text-lg font-semibold">Your account has not joined yet.</h2>
+              <p className="muted mb-0">
+                Ask a member for a new invitation link, then open it in this browser. If your
+                password is lost, contact the person running this community.
+              </p>
+            </div>
+            {!isOwner && stage === 'account' && (
+              <ProviderButtons
+                providers={providers}
+                disabled={busy || (minimumAge !== null && !ageConfirmed)}
+                onChoose={(provider) => void social(provider)}
+              />
+            )}
+          </>
         ) : stage === 'initial' ? (
           <form className="panel" onSubmit={(event) => void preflight(event)}>
             {isOwner ? (

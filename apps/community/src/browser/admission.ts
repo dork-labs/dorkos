@@ -155,7 +155,9 @@ export function admissionIntro(page: {
   if (['failed', 'joining', 'reactivate'].includes(page.stage)) return null;
   if (page.lost && !page.hasPreview) return null;
   if (page.singleSignOn !== null && page.stage === 'account')
-    return `Continue with ${page.singleSignOn}. You don’t need a separate account here.`;
+    return page.hasPreview
+      ? `Continue with ${page.singleSignOn}. You don’t need a separate account here.`
+      : `Continue with ${page.singleSignOn}.`;
   if (page.hasPreview) return 'Create an account on this host, or sign in if you already have one.';
   if (page.hasInvite) return 'Check the invitation, then create or sign in to your account.';
   return 'Sign in to your account. To join for the first time, ask a member for an invitation.';

@@ -209,4 +209,27 @@ describe('the invitation page', () => {
     ).toBe(false);
     expect(screen.queryByText('Other ways to sign in')).toBeNull();
   });
+
+  it('keeps the sign-in buttons on the not-joined panel, with or without the hint', async () => {
+    // Purpose: fails if a signed-in account that has not joined loses the provider buttons it
+    // always had there (the panel must be exactly what it was before the hint existed).
+    for (const path of ['/join', `/join${HINT}`]) {
+      at(path);
+      mockFetch({ [OPTIONS]: options() });
+      render(<Admission {...props} resume={null} unadmitted />);
+      expect(await screen.findByText('Your account has not joined yet.')).toBeTruthy();
+      expect(await screen.findByRole('button', { name: 'Continue with DorkOS' })).toBeTruthy();
+      expect(screen.queryByText('Other ways to sign in')).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('promises no separate account when signing in without an invitation', async () => {
+    // Purpose: fails if a plain sign-in page (no invitation read) says nobody needs an account.
+    at(`/join${HINT}`);
+    mockFetch({ [OPTIONS]: options() });
+    render(<Admission {...props} resume={null} />);
+    expect(await screen.findByText('Continue with DorkOS.')).toBeTruthy();
+    expect(screen.queryByText(/separate account/u)).toBeNull();
+  });
 });
