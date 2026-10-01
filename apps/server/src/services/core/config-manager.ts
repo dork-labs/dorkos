@@ -3026,7 +3026,7 @@ export function seedFullPowerDecision(store: {
  * setting is a resource throttle rather than a capability, four is still inside
  * the range the schema has always enforced (1–10), the changelog names the
  * change in plain words, and the number is already in front of the person in
- * Settings -> Tools, one field away from being set back.
+ * Settings -> Advanced -> Tools, one field away from being set back.
  *
  * Additive + idempotent: only the exact value `1` moves, so a re-run changes
  * nothing and any other number — including one somebody lowered to `1` after

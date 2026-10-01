@@ -207,7 +207,7 @@ export interface CoreSlice {
    * right-panel and picture-in-picture layouts — clearing their localStorage
    * keys as it goes.
    *
-   * The clean slate, reachable only from Settings → Danger zone behind a
+   * The clean slate, reachable only from Settings → Advanced → Danger zone behind a
    * confirm. It leaves alone what is not a setting (recent folders, the current
    * session) and what is not local (config-backed preferences, which follow a
    * person between devices). The theme is reset alongside it by the caller.

@@ -22,7 +22,7 @@ import { configKeys } from '@/layers/entities/config';
  * conversation in front of you, including the two switches that came back from
  * the old Advanced tab (the message box, and watching for agents started
  * elsewhere); **Discovery** is the two rows about being shown something again.
- * The developer-panel switch left for Settings → Experiments, where a debugging
+ * The developer-panel switch left for Settings → Advanced → Experiments, where a debugging
  * aid belongs.
  *
  * Reads its own state from `useAppStore` directly, mirroring the inline body

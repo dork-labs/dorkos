@@ -207,7 +207,7 @@ vi.mock('../model/use-palette-items', () => ({
       { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
       {
         id: 'settings-danger',
-        label: 'Settings › Danger zone',
+        label: 'Danger zone — Settings',
         icon: 'Settings',
         action: 'openSettingsTab:danger',
       },
@@ -582,7 +582,7 @@ describe('Command Palette Integration', () => {
   // the same deep link a shared `?settings=` URL uses.
   it('selecting a Settings tab row opens Settings on that tab', () => {
     searchThen('danger');
-    const item = screen.getByText('Settings › Danger zone').closest('[data-slot="command-item"]');
+    const item = screen.getByText('Danger zone — Settings').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
     expect(mockOpenSettingsTab).toHaveBeenCalledWith('danger');

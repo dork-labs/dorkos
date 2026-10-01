@@ -29,7 +29,7 @@ export function settingsTabForAction(action: string): SettingsTab | null {
 }
 
 /**
- * One searchable row per Settings tab, straight to that tab by its deep link
+ * One searchable row per built-in Settings tab (extension tabs are not listed), straight to that tab by its deep link
  * (DOR-2629). It matters most for the five behind the Advanced fold — typing
  * "danger" or "room limits" should not depend on knowing where they are filed.
  * The rows only appear when searching; the zero-query palette is unchanged.
@@ -37,14 +37,17 @@ export function settingsTabForAction(action: string): SettingsTab | null {
 const PALETTE_SETTINGS_TABS: CommandPaletteContribution[] = SETTINGS_TAB_DIRECTORY.map(
   (tab, index) => ({
     id: `settings-${tab.id}`,
-    label: `Settings › ${tab.label}`,
+    // The tab's own name leads, so typing it lands here — and typing
+    // "settings" still finds the plain Settings row first, not sixteen tabs.
+    label: `${tab.label} — Settings`,
     icon: 'Settings',
     action: `${SETTINGS_TAB_ACTION_PREFIX}${tab.id}`,
     category: 'feature',
     // After every core feature, in sidebar order.
     priority: 20 + index,
-    // The group's name too, so "advanced" lists everything behind the fold.
-    keywords: ['settings', tab.group.toLowerCase()],
+    // The group's name, so "advanced" lists everything behind the fold. Not
+    // "settings": that word belongs to the plain Settings row.
+    keywords: [tab.group.toLowerCase()],
   })
 );
 

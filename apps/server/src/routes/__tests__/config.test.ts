@@ -386,7 +386,7 @@ describe('PATCH /api/config', () => {
       // The other half, and the one that decides whether the fix is usable.
       // Every surface that owns one of these writes through THIS route: the
       // Control Center's 'Warm agents' switch and its 'Scheduled runs at once'
-      // stepper, Settings → Tools for the four tool switches and the same
+      // stepper, Settings → Advanced → Tools for the four tool switches and the same
       // concurrency stepper, and `dorkos config set` for `uploads.*` and
       // `harness.autoSync`, which have no screen of their own. A guard that
       // refused everybody would break every one of them.
