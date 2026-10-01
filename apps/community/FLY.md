@@ -208,7 +208,7 @@ Guided setup gives you a running community. It does not give you a backup. The c
 What has been tried so far:
 
 - The same approach (pause writes, export the database, copy every file, restore both into Docker on your own computer) worked once on September 20, 2026, on a community set up by hand with the same three services: Fly, Neon and Tigris.
-- Steps 1 through 6 were followed on October 1, 2026 (UTC), on a community made with guided setup (v0.94.0), with the database role's real name — the correction below — folded in. From step 7, only `fly config save` (with its own correction below) and a redeploy of the same release (same image digest) were tried; the next release's manifest was not downloaded or checked, its `migrationCompatibilityId` was not compared, and no actual version upgrade was made.
+- Steps 1 through 6 were followed on October 1, 2026 (UTC), on a community made with guided setup (v0.94.0), with the database role's real name, the correction below, folded in. From step 7, only `fly config save` (with its own correction below) and a redeploy of the same release (same image digest) were tried; the next release's manifest was not downloaded or checked, its `migrationCompatibilityId` was not compared, and no actual version upgrade was made.
 - The cross-version upgrade in step 7, and the roll-back in step 8, are **not yet rehearsed on guided setup**.
 - Every `fly` and `neonctl` command in steps 1 through 6, plus `fly config save` and `fly deploy` of the same image in step 7, was checked against the help output of flyctl 0.4.104 and neonctl 5.0.0, the lowest versions the current release accepts, and also run live against flyctl 0.4.110 and neonctl 7.0.1. The Tigris CLI commands in step 4 were run live against Tigris CLI 3.14.0.
 
@@ -224,7 +224,7 @@ jq '{version: .recoveryContext.version, app: .recoveryContext.appName,
   bucket: .recoveryContext.bucketName, releaseDigest, imagePlatformDigest,
   neonProject: .resources.neonProjectId, neonBranch: .resources.neonBranchId,
   neonRole: .resources.neonRoleId}' "$journal"
-database_role="$(jq -er '.resources.neonRoleId' "$journal")"
+database_role="$(jq -er '.resources.neonRoleId // empty' "$journal")"
 ```
 
 Guided setup names this role `community_` plus a code of its own. A launch started before these codes existed used the fixed name `community_owner` instead. Either way, the journal holds whichever name yours got. The commands below call it `$database_role`.
@@ -263,7 +263,7 @@ Do steps 3 and 4 while the Machine is stopped.
 Guided setup made a Neon database named `community`, owned by `$database_role` from step 1. The app reaches it through the Fly secret `COMMUNITY_DATABASE_URL`, but Fly never shows a secret's value again. Ask Neon for the same direct address instead. The command writes it to a private file, so the password never lands in your shell history:
 
 ```bash
-: "${database_role:?Run step 1 first}"
+: "${database_role:?Run step 1 first}" && \
 neonctl connection-string <neon-branch-id> --project-id <neon-project-id> \
   --database-name community --role-name "$database_role" \
   --no-pooled --ssl require > "$backup_dir/database-url"
@@ -307,7 +307,7 @@ npm install -g @tigrisdata/cli
 tigris login oauth
 ```
 
-A roll-back (step 8) needs a key with write access instead: use `--role ReadWrite` in place of `--role ReadOnly` below. `tigris access-keys create --help` lists `ReadOnly`, `ReadWrite` and `Editor` as the role options; `Editor` also manages the bucket's own settings, which a backup or restore key does not need. Run `umask 077` first in the same shell, or `chmod 600` the file afterward, so only you can read it:
+A roll-back (step 8) needs write access instead: use `--role ReadWrite` in place of `--role ReadOnly` below, which is enough to put files back. Run `umask 077` first in the same shell, or `chmod 600` the file afterward, so only you can read it. Create a read-only key for this bucket:
 
 ```bash
 umask 077
