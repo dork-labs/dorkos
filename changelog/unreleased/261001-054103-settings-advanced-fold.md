@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): fold power-user Settings into one Advanced group'
   - 'fix(client): give the Advanced fold its own tab list, and reach every Settings tab from the palette'
+  - 'docs(site): recapture the DorkOS account shots with the new Settings grouping'
 ---
 
 ### Changed
