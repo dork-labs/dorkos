@@ -3,7 +3,7 @@ import { APIError, createAuthMiddleware } from 'better-auth/api';
 import type { Pool } from 'pg';
 import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
-import { accountErasureRunning } from './erasure/guards.js';
+import { signInRefusal } from './erasure/guards.js';
 import {
   AGE_CONFIRMATION_COOKIE,
   ageConfirmationMessage,
@@ -218,13 +218,11 @@ export function createCommunityAuth(
       session: {
         create: {
           // Every sign-in method ends here, including an OAuth callback whose account a
-          // request hook cannot see, so a running account erasure refuses them all at once.
+          // request hook cannot see, so a running account erasure, or a host's closure of the
+          // account, refuses them all at once.
           before: async (session) => {
-            if (await accountErasureRunning(pool, session.userId)) {
-              throw new APIError('FORBIDDEN', {
-                message: 'This account is being deleted.',
-              });
-            }
+            const refusal = await signInRefusal(pool, session.userId);
+            if (refusal) throw new APIError('FORBIDDEN', { message: refusal });
             return { data: session };
           },
         },

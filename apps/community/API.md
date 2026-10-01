@@ -53,7 +53,7 @@ Enrollment, recovery and rotation require a personal grant with `enroll-agent`; 
 
 ## Host routes and host API keys
 
-Host routes manage communities as records. They never return channels, messages, files, members, invitations, or the community's own audit trail. The one exception is the [erasure journal](#erasure-journal), which names erased members and accounts by ID only. A host operator's browser session holds every host permission. A program uses a host API key instead, sent as `Authorization: Bearer dkh_…`.
+Host routes manage communities as records. They never return channels, messages, files, members, invitations, or the community's own audit trail. The exceptions are the [erasure journal](#erasure-journal), which names erased members and accounts by ID only, and [account closure](#close-someones-account), which names one account by ID. A host operator's browser session holds every host permission. A program uses a host API key instead, sent as `Authorization: Bearer dkh_…`.
 
 | Area                | Routes                                                                                                                                                                                                                                                                              | Permission                                                  |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
@@ -69,6 +69,7 @@ Host routes manage communities as records. They never return channels, messages,
 | Takedowns           | `POST /api/v1/host/communities/:id/takedowns`; `GET /api/v1/host/takedowns?communityId=&after=&limit=`, `GET /api/v1/host/takedowns/:id`; `POST /api/v1/host/takedowns/:id/reverse`, `/evidence/retry`, `/release-held`                                                             | `communities:takedown`; `release-held` is session only      |
 | Erasure journal     | `GET /api/v1/host/erasure-journal?cursor=&limit=<1-1000>`                                                                                                                                                                                                                           | `communities:erasure_journal`                               |
 | Owner replacement   | `POST`, `GET /api/v1/host/communities/:id/owner-replacements`; `POST /api/v1/host/communities/:id/owner-replacements/:replacementId/cancel`, `/claim-token`                                                                                                                         | `communities:ownership`, which no other permission includes |
+| Account closure     | `POST /api/v1/host/accounts/lookup`; `GET`, `POST /api/v1/host/accounts/:accountId/closure`; `POST /api/v1/host/accounts/:accountId/closure/cancel`                                                                                                                                 | `accounts:close`, which no other permission includes        |
 
 A key is `dkh_` followed by 43 random characters. The server keeps only its SHA-256 hash, so the full key is shown once, in the response that creates it, with `Cache-Control: no-store`. The first 10 characters are kept as a `prefix` so people can tell keys apart.
 
@@ -188,6 +189,42 @@ The response is `{ lines, nextCursor, hasMore }` with `Cache-Control: no-store`.
 | `403`  | `FORBIDDEN`       | The key does not have `communities:erasure_journal`, or the session is not a host operator's                                                       |
 | `410`  | `CURSOR_STALE`    | The cursor was changed, came from another server, points past a restored backup, or names a line the server has since deleted: read from the start |
 
+### Close someone's account
+
+A host sometimes has to close someone else's account: for example when it learns the person is younger than its minimum age, or under a legal order. These routes do that. They need `accounts:close`, which no other permission includes, or a host operator's session. Nothing here returns a name, an email, or anything the person wrote.
+
+**Find the account.** `POST /api/v1/host/accounts/lookup` takes `{ issuer, subject }`: the identity this host's single sign-on gives the person. It answers `{ accountId }` only for an exact match from this host's own issuer (a trailing `/` on `issuer` is ignored). Any other identity is `404`; a host without single sign-on, or another issuer, is `409 STATE_CONFLICT`. It is a `POST` so the identity never lands in a URL or an access log.
+
+**Close it.** `POST /api/v1/host/accounts/:accountId/closure` takes (`CommunityAdminAccountClosureRequestSchema`):
+
+- `idempotencyKey`: 1 to 200 characters. The same key from the same key or person with the same request returns the first closure with `200` and `replayed: true`, even after the account is erased. The same key with a different request, or for another account, is `409 IDEMPOTENCY_CONFLICT`.
+- `reason`: `under_minimum_age`, `legal_order`, or `other`.
+- `reference`: your own case or ticket number, 1 to 80 letters, digits, spaces, and `._#-`, or `null`. Required when `reason` is `other`.
+- `password`: a host operator must send their own (`403 REAUTH_REQUIRED` without it, `403 REAUTH_FAILED` when wrong, `403 PASSWORD_REQUIRED` for an operator with no password, who uses a key instead). A key must not send one (`400`).
+
+A new closure answers `201` with `{ closure, replayed: false }`. In the same moment the person is signed out everywhere and cannot sign in ("This account has been closed."). Their DorkOS installations' connections, any pairing they approved but had not finished, their agents' credentials, and the invitation links they made stop working. Their memberships and everything they wrote stay as they are for now.
+
+The account is then erased after the same 72 hours a person's own request waits (`eraseAfter`), exactly as if they had asked. The wait is there so a mistaken closure can be cancelled before anything is lost. If the person had already asked to delete their account, the closure joins that request (`personRequested: true`) and keeps its date. While the person belongs to a community under a [legal hold](OPERATIONS.md#legal-holds), the erasure waits (`waitingOn: "legal_hold"`), and a hold placed after it started stops it before the next community. It also waits for a takedown copy you have not finished saving (`waitingOn: "takedown_evidence"`). A closure that joined the person's own request does not wait for a legal hold, because it is still their own erasure.
+
+One person or key may close at most `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY` accounts (default 10) in any 24 hours, cancelled ones included; the next is `429 RATE_LIMITED` with `Retry-After`, and nothing is written. Every new closure logs one warning line, `{"event":"community.account.close","outcome":"closed","accountId","actorKind","actorId","closureId"}`, and every refused one, a wrong or missing password included, `"outcome":"refused"` with its `code` instead of `closureId` (`accountId` is `null` when the id in the path is malformed). A replay logs nothing.
+
+**Read it.** `GET /api/v1/host/accounts/:accountId/closure` answers the account's open closure, or its newest one, or `404`. A closure is `{ closureId, accountId, state, reason, reference, personRequested, actor, closedAt, eraseAfter, waitingOn, cancelledAt, erasedAt }`. `state` is `closed` (waiting), `erasing` (started, no longer cancellable), `erased`, or `cancelled`. The server deletes a closure's record 30 days after it ends.
+
+**Cancel it.** `POST /api/v1/host/accounts/:accountId/closure/cancel` takes `{}` and answers the cancelled closure. The person can sign in again at once and connect their installations again. Invitation links they made stay revoked. The erasure the closure scheduled is cancelled; a request the person made themselves keeps waiting. Cancelling a cancelled closure returns it unchanged. Once the erasure has started, or finished, it answers `409 STATE_CONFLICT`.
+
+Each close and cancel writes one host audit row, `account.close` or `account.close.cancel`, naming the closure (`subject_account_closure_id`) and who acted, never the account.
+
+| Status | Code                     | When                                                                                                                                 |
+| ------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `400`  | `STATE_CONFLICT`         | A malformed body, an unknown reason, `other` without a reference, or a key that sent a password                                      |
+| `401`  | `UNAUTHENTICATED`        | No valid key or session, including a key from another host                                                                           |
+| `403`  | `FORBIDDEN`              | The key does not have `accounts:close`                                                                                               |
+| `404`  | `NOT_FOUND`              | No such account (or it was already erased), or no closure to read or cancel                                                          |
+| `409`  | `ACCOUNT_OWNS_COMMUNITY` | The account owns a community, named by ID in the message. Replace the owner or delete the community first                            |
+| `409`  | `STATE_CONFLICT`         | The account operates this host, is already closed, or is already being erased; or the erasure has started, so it cannot be cancelled |
+| `409`  | `IDEMPOTENCY_CONFLICT`   | The key was used for a different request                                                                                             |
+| `429`  | `RATE_LIMITED`           | This person or key has reached `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY`                                                                  |
+
 ### Replace an owner who has left
 
 These routes are the host's half of replacing a community owner who has left. The owner's and the new owner's routes are below them, and the browser pages behind the emailed links are `/keep-ownership` and `/owner-replacement`. The owner is told by email, in the community, and on their DorkOS connection. A host needs two things: mail set up (see [DEPLOYMENT.md](DEPLOYMENT.md)) and a host API key with `communities:ownership`, or a host operator with their password. Without mail, a request and sending a claim link again are both refused with `409 NOTICE_DELIVERY_UNAVAILABLE` ("This host can't send email, so it can't give the owner notice. Set up mail first."). `GET /api/v1/host/capabilities` reports whether mail is set up. Cancel and list always work.
@@ -258,7 +295,7 @@ Every route in this part counts against the caller's `COMMUNITY_BOOTSTRAP_ATTEMP
 
 ## Erase a membership or an account
 
-Only the person can ask, from their own signed-in browser session. Every erasure route refuses a bearer credential with `403`, and host authority has no erasure route. `POST /api/v1/account/erasures` takes `{ "kind": "membership", "communityId", "password" }` or `{ "kind": "account", "confirmEmail", "password" }`. An account with a password must send it. An account that signs in only through Google, GitHub or single sign-on sends no password, and its session must be less than 5 minutes old, or the answer is `403 REAUTH_REQUIRED`. A repeat while a request is open returns that request with `200`.
+Only the person can ask, from their own signed-in browser session. Every erasure route refuses a bearer credential with `403`. A host can instead [close someone's account](#close-someones-account), which ends in the same erasure. `POST /api/v1/account/erasures` takes `{ "kind": "membership", "communityId", "password" }` or `{ "kind": "account", "confirmEmail", "password" }`. An account with a password must send it. An account that signs in only through Google, GitHub or single sign-on sends no password, and its session must be less than 5 minutes old, or the answer is `403 REAUTH_REQUIRED`. A repeat while a request is open returns that request with `200`.
 
 A request waits 72 hours in `scheduled`. Nothing about the person changes until then, and `POST /api/v1/account/erasures/:id/cancel` undoes it. After `executeAfter`, cancel answers `409`. The owner of a community cannot erase that membership (`403`) or delete their account (`409`) until they transfer ownership or the community is deleted. An account that has ever operated the host cannot be deleted online (`403`).
 
@@ -421,6 +458,7 @@ The host tools add these codes, among others; each section above is the full ref
 | `SHORT_NAME_RESERVED`     | `409`                                         | The web address is reserved by the server or the host                                                       |
 | `COMMUNITY_HELD`          | `423`                                         | The host has put the community on hold                                                                      |
 | `LEGAL_HOLD_ACTIVE`       | `409`                                         | A legal hold stops a deletion, an abandon, cancelling an import, or releasing content held after a takedown |
+| `ACCOUNT_OWNS_COMMUNITY`  | `409`                                         | A host tried to close an account that still owns a community                                                |
 | `IMPORT_ARCHIVE_INVALID`  | `400` on upload, or an import's `failureCode` | Upload: the body does not match its size or digest. Import: the file is damaged or is not an owner export   |
 | `IMPORT_TOO_LARGE`        | `413` on upload, or an import's `failureCode` | Upload: the export or a part is over the size limit. Import: it holds more than an import may               |
 | `IMPORT_NOT_OWNER_EXPORT` | an import's `failureCode`                     | The file is a personal export, not the owner's export of the whole community                                |

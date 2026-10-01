@@ -148,6 +148,20 @@ const ROUTES: GuardedRoute[] = [
       }),
   },
   {
+    route: 'POST /host/accounts/:accountId/closure',
+    actor: 'operator',
+    call: (cookie, password) =>
+      h.call('/api/v1/host/accounts/someone/closure', {
+        cookie,
+        body: {
+          idempotencyKey: `guess-${password}`,
+          reason: 'under_minimum_age',
+          reference: null,
+          password,
+        },
+      }),
+  },
+  {
     route: 'POST /host/takedowns/:takedownId/reverse',
     actor: 'operator',
     call: (cookie, password) =>

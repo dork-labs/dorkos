@@ -41,6 +41,7 @@ import { registerHostRoutes } from './routes/host/host.js';
 import { registerMembershipRoutes } from './routes/account/memberships.js';
 import { registerHostLimitRoutes } from './routes/host/host-limits.js';
 import { registerHostLegalHoldRoutes } from './routes/host/host-legal-hold.js';
+import { registerHostAccountClosureRoutes } from './routes/host/host-account-closures.js';
 import { registerHostErasureJournalRoutes } from './routes/host/host-erasure-journal.js';
 import { registerHostLifecycleRoutes } from './routes/host/host-lifecycle.js';
 import { registerShortNameRoutes } from './routes/host/short-names.js';
@@ -443,6 +444,14 @@ export function createCommunityApp({
     now,
     limitAttempt: (c) =>
       limitAttempts(`owner-replacement:${peer(c)}`, config.limits.bootstrapAttemptsPerMinute),
+  });
+  registerHostAccountClosureRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword,
+    hasPassword: (userId) => accountHasPassword(pool, userId),
   });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
