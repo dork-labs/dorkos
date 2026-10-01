@@ -202,9 +202,11 @@ A host sometimes has to close someone else's account: for example when it learns
 - `reference`: your own case or ticket number, 1 to 80 letters, digits, spaces, and `._#-`, or `null`. Required when `reason` is `other`.
 - `password`: a host operator must send their own (`403 REAUTH_REQUIRED` without it, `403 REAUTH_FAILED` when wrong, `403 PASSWORD_REQUIRED` for an operator with no password, who uses a key instead). A key must not send one (`400`).
 
-A new closure answers `201` with `{ closure, replayed: false }`. In the same moment the person is signed out everywhere and cannot sign in ("This account has been closed."). Their DorkOS installations' connections and their agents' credentials stop working. Their memberships and everything they wrote stay as they are for now.
+A new closure answers `201` with `{ closure, replayed: false }`. In the same moment the person is signed out everywhere and cannot sign in ("This account has been closed."). Their DorkOS installations' connections, any pairing they approved but had not finished, their agents' credentials, and the invitation links they made stop working. Their memberships and everything they wrote stay as they are for now.
 
 The account is then erased after the same 72 hours a person's own request waits (`eraseAfter`), exactly as if they had asked. The wait is there so a mistaken closure can be cancelled before anything is lost. If the person had already asked to delete their account, the closure joins that request (`personRequested: true`) and keeps its date. While the person belongs to a community under a [legal hold](OPERATIONS.md#legal-holds), the erasure waits (`waitingOn: "legal_hold"`), and a hold placed after it started stops it before the next community. It also waits for a takedown copy you have not finished saving (`waitingOn: "takedown_evidence"`). A closure that joined the person's own request does not wait for a legal hold, because it is still their own erasure.
+
+One person or key may close at most `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY` accounts (default 10) in any 24 hours, cancelled ones included; the next is `429 RATE_LIMITED` with `Retry-After`, and nothing is written. Every new closure logs one warning line, `{"event":"community.account.close","outcome":"closed","accountId","actorKind","actorId","closureId"}`, and every refused one `"outcome":"refused"` with its `code` instead of `closureId`. A replay logs nothing.
 
 **Read it.** `GET /api/v1/host/accounts/:accountId/closure` answers the account's open closure, or its newest one, or `404`. A closure is `{ closureId, accountId, state, reason, reference, personRequested, actor, closedAt, eraseAfter, waitingOn, cancelledAt, erasedAt }`. `state` is `closed` (waiting), `erasing` (started, no longer cancellable), `erased`, or `cancelled`. The server deletes a closure's record 30 days after it ends.
 
@@ -221,6 +223,7 @@ Each close and cancel writes one host audit row, `account.close` or `account.clo
 | `409`  | `ACCOUNT_OWNS_COMMUNITY` | The account owns a community, named by ID in the message. Replace the owner or delete the community first                            |
 | `409`  | `STATE_CONFLICT`         | The account operates this host, is already closed, or is already being erased; or the erasure has started, so it cannot be cancelled |
 | `409`  | `IDEMPOTENCY_CONFLICT`   | The key was used for a different request                                                                                             |
+| `429`  | `RATE_LIMITED`           | This person or key has reached `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY`                                                                  |
 
 ### Replace an owner who has left
 

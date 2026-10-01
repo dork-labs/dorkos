@@ -257,9 +257,9 @@ Sometimes you have to close an account yourself: for example when you learn the 
 
 Here is what happens when you close an account:
 
-- **At once,** the person is signed out everywhere and cannot sign in again. Their DorkOS apps lose their connection, and their agents stop working. Nothing they wrote changes yet.
+- **At once,** the person is signed out everywhere and cannot sign in again. Their DorkOS apps lose their connection, their agents stop working, and invitation links they made stop working. Nothing they wrote changes yet.
 - **After 72 hours,** the server erases the account, exactly as if the person had asked. Their name, messages, files and agents go from every community, and the erasure journal gets its line.
-- **Until then,** you can cancel the closure. The person can sign in again straight away and reconnect their apps. That is what the wait is for: if you closed the wrong account, or the reason turns out to be wrong, nothing is lost.
+- **Until the erasure starts,** you can cancel the closure. That is at least 72 hours, and longer while the erasure waits on a legal hold or a takedown copy. The person can sign in again straight away and reconnect their apps. That is what the wait is for: if you closed the wrong account, or the reason turns out to be wrong, nothing is lost.
 
 You pick a reason each time: `under_minimum_age`, `legal_order`, or `other`. You can also add your own case or ticket number. It is required for `other`. Keep your notes about why in your own records, not on this server.
 
@@ -271,13 +271,15 @@ Some accounts cannot be closed:
 
 If the person belongs to a community under a [legal hold](#legal-holds), the erasure waits until you release the hold, and a hold placed while it runs stops it before the next community. It also waits for any takedown copy you have not finished saving. A person's own request is never held this way.
 
+A person or key can close at most `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY` accounts (10 by default) in any 24 hours, cancelled ones included, so a leaked key cannot quietly lock everyone out. The limit is per actor, so every extra key with `accounts:close` raises what a leak could do: issue them sparingly. Every closure, and every refused one, logs `{"event":"community.account.close",…}` with IDs only. Alert on it.
+
 If your sign-in service tells you who someone is, look up their account here by the identity it gives you (its issuer and the person's subject). Only an exact match answers, so the lookup cannot be used to list accounts.
 
 The server keeps each closure's record, with its reason and your reference, until 30 days after it ends. Your host audit trail keeps a row for every close and cancel, naming who did it but not whose account it was.
 
 ## Erasure requests
 
-People erase themselves. A member can erase their messages from one community, or delete their account and be erased from every community on this host. Each request waits 72 hours, then the server removes their name, handle, account link, messages, files, agents, and connections, and deletes every live export in that community. Host operators cannot cancel, speed up, or read a person's own erasure. The one thing a host can start is [closing someone's account](#closing-someones-account), which ends in the same erasure. If someone emails you because they cannot sign in to do it themselves, use [account recovery](RECOVERY.md) so they can sign in and erase themselves.
+People erase themselves. A member can erase their messages from one community, or delete their account and be erased from every community on this host. Each request waits 72 hours, then the server removes their name, handle, account link, messages, files, agents, and connections, and deletes every live export in that community. Host operators cannot cancel or speed up a person's own erasure, and cannot list anyone's. The one thing a host can start is [closing someone's account](#closing-someones-account), which ends in the same erasure. If you close an account whose owner has already asked to delete it, the closure tells you so (`personRequested`) and when their erasure starts (`eraseAfter`). That is the only way a host learns of a person's own request. If someone emails you because they cannot sign in to do it themselves, use [account recovery](RECOVERY.md) so they can sign in and erase themselves.
 
 An account that has ever been a host operator cannot be deleted online, because host audit records must keep naming who acted. That person can still erase each of their memberships.
 

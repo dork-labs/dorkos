@@ -10,7 +10,7 @@ import {
   ERASURE_WAITS_ON_LEGAL_HOLD_SQL,
   ERASURE_WAITS_ON_TAKEDOWN_SQL,
 } from '../erasure/guards.js';
-import { ApiError } from '../http.js';
+import { ApiError, RateLimited } from '../http.js';
 import {
   assertHostActor,
   hostActorRequester,
@@ -33,6 +33,32 @@ export interface AccountClosureRequest {
   reason: AccountClosureReason;
   reference: string | null;
   now: Date;
+  /** `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY`: closures one actor may make in any 24 hours. */
+  closuresPerDay: number;
+}
+
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * The warning line every closure, and every refused closure, logs for a host's alerting: ids
+ * and the refusal's code only, never the reason, the reference, or anything about the person.
+ */
+export function accountClosureLogLine(event: {
+  outcome: 'closed' | 'refused';
+  accountId: string;
+  actor: HostActor;
+  closureId?: string;
+  code?: string;
+}): string {
+  return JSON.stringify({
+    event: 'community.account.close',
+    outcome: event.outcome,
+    accountId: event.accountId,
+    actorKind: event.actor.kind,
+    actorId: event.actor.kind === 'person' ? event.actor.userId : event.actor.keyId,
+    ...(event.closureId ? { closureId: event.closureId } : {}),
+    ...(event.code ? { code: event.code } : {}),
+  });
 }
 
 interface ClosureRow {
@@ -131,9 +157,10 @@ async function readClosureById(client: PoolClient, id: string): Promise<AccountC
 
 /**
  * End every way the account reaches a community without signing in again: its sessions, its
- * installations' connection grants and unfinished pairings, and its agents' credentials. Agents
- * and memberships stay, so a cancelled closure leaves the person able to sign in and connect
- * again; the erasure removes the rest.
+ * installations' connection grants and unfinished pairings, the invitation links it issued (so
+ * nobody joins on the closed person's say-so), and its agents' credentials. Agents and
+ * memberships stay, so a cancelled closure leaves the person able to sign in, connect again, and
+ * issue new links; the erasure removes the rest.
  */
 async function endAccess(client: PoolClient, userId: string): Promise<void> {
   await client.query('DELETE FROM session WHERE "userId"=$1', [userId]);
@@ -149,6 +176,11 @@ async function endAccess(client: PoolClient, userId: string): Promise<void> {
     [userId]
   );
   await client.query(
+    `UPDATE invites SET revoked_at=now()
+     WHERE issuer_member_id IN (${mine}) AND revoked_at IS NULL AND expires_at>now()`,
+    [userId]
+  );
+  await client.query(
     `UPDATE agent_credentials SET revoked_at=now()
      WHERE agent_id IN (SELECT id FROM agents WHERE owner_member_id IN (${mine}))
        AND revoked_at IS NULL`,
@@ -159,8 +191,10 @@ async function endAccess(client: PoolClient, userId: string): Promise<void> {
 /**
  * Close an account, in the caller's transaction.
  *
- * It locks the account row first and then its member rows, the order a person's own account
- * erasure and an ownership transfer take them, so neither can race these checks. It refuses an
+ * It first takes a per-actor lock, so one actor's closures (and a key reused for two accounts) are
+ * decided one at a time, then the account row and then its member rows, the order a person's own
+ * account erasure and an ownership transfer take them, so neither can race these checks. It
+ * refuses an actor over its daily limit (`429`, nothing written), an
  * account that operates this host or still owns a community, and one already being erased. It
  * schedules the account's erasure after the ordinary window, or joins the person's own waiting
  * request, records the closure, ends the person's access, and writes one host audit row that
@@ -174,13 +208,14 @@ export async function closeAccount(
   client: PoolClient,
   input: AccountClosureRequest
 ): Promise<{ closure: AccountClosureProjection; replayed: boolean }> {
+  const requester = hostActorRequester(input.actor);
+  await client.query(`SELECT pg_advisory_xact_lock(hashtext('account-closure:' || $1))`, [
+    requester,
+  ]);
   const account = await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR UPDATE', [
     input.accountId,
   ]);
   await assertHostActor(client, input.actor, input.now);
-  // The account lock serializes every closure of one account; a replay of a closure whose
-  // account is already gone has nothing left to race.
-  const requester = hostActorRequester(input.actor);
   const hash = closurePayloadHash(input);
   const existing = await client.query<{ id: string; payload_hash: string }>(
     `SELECT id,payload_hash FROM account_closures
@@ -197,6 +232,21 @@ export async function closeAccount(
     return { closure: await readClosureById(client, existing.rows[0].id), replayed: true };
   }
   if (!account.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Account not found.');
+
+  // Cancelled closures count too: closing and cancelling cannot get round the limit.
+  const recent = await client.query<{ created_at: Date }>(
+    `SELECT created_at FROM account_closures
+     WHERE requested_by_host_actor=$1 AND created_at>$2::timestamptz - interval '24 hours'
+     ORDER BY created_at`,
+    [requester, input.now]
+  );
+  if (recent.rows.length >= input.closuresPerDay) {
+    const frees = recent.rows[recent.rows.length - input.closuresPerDay].created_at;
+    throw new RateLimited(
+      'You have closed as many accounts today as this host allows.',
+      Math.max(1, Math.ceil((frees.getTime() + DAY_MS - input.now.getTime()) / 1000))
+    );
+  }
 
   const operator = await client.query('SELECT 1 FROM host_operators WHERE user_id=$1', [
     input.accountId,

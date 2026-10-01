@@ -2,17 +2,18 @@
  * A host closing someone else's account (DOR-2557): the `accounts:close` scope, the reasons,
  * idempotency, the host audit row, the person's access ending at once, the erasure after the
  * ordinary window, cancelling it, legal holds, owners and host operators, the sign-on lookup, and
- * a cancel that races the worker. Every test drives the real routes on a real server and
+ * a cancel that races the worker, the per-actor daily limit and its log line, and the cleanup of
+ * finished closures. Every test drives the real routes on a real server and
  * database; the worker runs at an injected clock.
  */
-import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CommunityAdminAccountClosureCreateResponseSchema,
   CommunityAdminAccountClosureSchema,
   CommunityAdminHostApiKeyScopeSchema,
 } from '@dorkos/shared/community-admin-wire';
-import { sweepErasures } from '../erasure/worker.js';
+import { pruneErasureRequests, sweepErasures } from '../erasure/worker.js';
 import { runHostKeyCommand } from '../host-keys.js';
 import { hoursFromNow, PASSWORD, runErasures } from './member-erasure-fixture.js';
 import { bindInvite, makeScene, type Scene } from './member-erasure-scenes.js';
@@ -121,9 +122,14 @@ beforeAll(async () => {
       COMMUNITY_OIDC_ISSUER_URL: ISSUER,
       COMMUNITY_OIDC_CLIENT_ID: 'community-client',
       COMMUNITY_OIDC_CLIENT_SECRET: 'community-client-secret',
+      // One key closes many accounts across these tests; the limit is tested on `other`.
+      COMMUNITY_ACCOUNT_CLOSURES_PER_DAY: 1000,
     },
   });
-  other = await startTenancyHarness('closeacct_other');
+  // A low daily limit here, so the limit test can reach it; the main host never does.
+  other = await startTenancyHarness('closeacct_other', {
+    env: { COMMUNITY_ACCOUNT_CLOSURES_PER_DAY: 2 },
+  });
   operator = await bootstrapHost(h, 'Hana Host', 'hana@host.test');
   await bootstrapHost(other, 'Otto Host', 'otto@host.test');
   operatorUserId = (
@@ -670,5 +676,221 @@ describe('finding an account by its sign-in identity', () => {
     expect((await lookup({ issuer: ISSUER, subject }, { bearer: bare.secret }, other)).status).toBe(
       409
     );
+  });
+});
+
+describe('what the closure ends', () => {
+  // Purpose: fails if an installation the person approved but had not finished connecting can
+  // still collect its grant after the closure, or if an invitation link the person issued still
+  // lets someone join.
+  it('cancels an approved, unredeemed pairing and revokes the person’s invitations', async () => {
+    const s = await makeScene(h, operator.cookie, 'pairing');
+    const local = { origin: '' };
+    const verifier = randomBytes(32).toString('base64url');
+    const challenge = createHash('sha256').update(verifier).digest('base64url');
+    const { pairingId } = (await (
+      await expectStatus(
+        await h.call(`${s.base}/pairings/start`, {
+          headers: local,
+          body: { installName: 'late laptop', challenge, scopes: ['read'] },
+        }),
+        201,
+        'pairing start'
+      )
+    ).json()) as { pairingId: string };
+    await expectStatus(
+      await h.call(`${s.base}/pairings/approve`, { cookie: s.p.cookie, body: { pairingId } }),
+      200,
+      'pairing approve'
+    );
+    const { code } = (await (
+      await expectStatus(
+        await h.call(`${s.base}/pairings/poll`, { headers: local, body: { pairingId, verifier } }),
+        200,
+        'pairing poll'
+      )
+    ).json()) as { code: string };
+    // P may invite here only as an admin; promote them so the link is theirs.
+    await h.pool.query(`UPDATE members SET role='admin' WHERE id=$1`, [s.p.memberId]);
+    const invite = (await (
+      await expectStatus(
+        await h.call(`${s.base}/invites`, { cookie: s.p.cookie, body: { seats: 1 } }),
+        201,
+        'invite'
+      )
+    ).json()) as { token: string };
+    const grants = async () =>
+      Number(
+        (
+          await h.pool.query<{ count: string }>(
+            'SELECT count(*) FROM connection_grants WHERE member_id=$1',
+            [s.p.memberId]
+          )
+        ).rows[0].count
+      );
+    const before = await grants();
+    const preview = async () =>
+      (await h.call(`${s.base}/invites/preview`, { body: { token: invite.token } })).status;
+    expect(await preview()).toBe(200);
+
+    await closed(await close(s.p.userId));
+    const polled = await expectStatus(
+      await h.call(`${s.base}/pairings/poll`, { headers: local, body: { pairingId, verifier } }),
+      200,
+      'poll after closure'
+    );
+    expect(await polled.json()).toMatchObject({ status: 'cancelled' });
+    expect(
+      (
+        await h.call(`${s.base}/pairings/exchange`, {
+          headers: local,
+          body: { pairingId, code, verifier },
+        })
+      ).status
+    ).toBe(409);
+    expect(await grants()).toBe(before);
+    expect(await preview()).toBe(403);
+  });
+});
+
+describe('the daily limit and the alert line', () => {
+  // Purpose: fails if one actor can close more accounts in a day than the host allows, if a
+  // refused closure writes anything, if the limit is shared between actors, or if a closure or a
+  // refusal is not logged with ids only.
+  it('stops an actor at the limit and logs every closure and refusal', async () => {
+    const key = await issueKey(other, [SCOPE]);
+    const second = await issueKey(other, [SCOPE]);
+    const users: string[] = [];
+    for (let index = 0; index < 4; index++) {
+      const id = `bare-${randomUUID()}`;
+      await other.pool.query(
+        `INSERT INTO "user"(id,name,email,"emailVerified") VALUES($1,'Bare Person',$2,true)`,
+        [id, `${id}@x.test`]
+      );
+      users.push(id);
+    }
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const first = await closed(await close(users[0], {}, { bearer: key.secret }, other));
+      await closed(await close(users[1], {}, { bearer: key.secret }, other));
+      // Cancelling does not give the actor its closure back.
+      await expectStatus(
+        await other.call(`${path(users[1])}/cancel`, { bearer: key.secret, body: {} }),
+        200,
+        'cancel'
+      );
+      const limited = await close(users[2], {}, { bearer: key.secret }, other);
+      expect(limited.status).toBe(429);
+      expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0);
+      expect(
+        (await other.pool.query('SELECT 1 FROM account_closures WHERE user_id=$1', [users[2]]))
+          .rowCount
+      ).toBe(0);
+      await closed(await close(users[2], {}, { bearer: second.secret }, other));
+      expect((await close('nobody-here', {}, { bearer: second.secret }, other)).status).toBe(404);
+
+      const lines = warned.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.includes('community.account.close'))
+        .map((line) => JSON.parse(line) as Record<string, string>);
+      expect(lines).toHaveLength(5);
+      expect(lines[0]).toEqual({
+        event: 'community.account.close',
+        outcome: 'closed',
+        accountId: users[0],
+        actorKind: 'api_key',
+        actorId: key.id,
+        closureId: first.closure.closureId,
+      });
+      expect(lines.map((line) => [line.outcome, line.code ?? null])).toEqual([
+        ['closed', null],
+        ['closed', null],
+        ['refused', 'RATE_LIMITED'],
+        ['closed', null],
+        ['refused', 'NOT_FOUND'],
+      ]);
+      for (const line of lines)
+        expect(Object.keys(line).sort()).toEqual(
+          [
+            'accountId',
+            'actorId',
+            'actorKind',
+            'event',
+            'outcome',
+            line.code ? 'code' : 'closureId',
+          ].sort()
+        );
+    } finally {
+      warned.mockRestore();
+    }
+  });
+
+  // Purpose: fails if one key reused for two accounts at the same moment answers 500 rather
+  // than one closure and one idempotency conflict.
+  it('decides a key reused for two accounts at once one at a time', async () => {
+    const a = await makeScene(h, operator.cookie, 'samekey');
+    const idempotencyKey = randomUUID();
+    const responses = await holdingLock(
+      h,
+      `SELECT pg_advisory_xact_lock(hashtext('account-closure:' || $1))`,
+      [`api_key:${closeKey.id}`],
+      async (release, holderPid) => {
+        const pending = [
+          close(a.p.userId, { idempotencyKey }),
+          close(a.q.userId, { idempotencyKey }),
+        ];
+        await waitForBlockedBy(h, holderPid, 2);
+        await release();
+        return Promise.all(pending);
+      }
+    );
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
+    const conflict = responses.find((response) => response.status === 409)!;
+    expect((await conflict.json()).code).toBe('IDEMPOTENCY_CONFLICT');
+  });
+});
+
+// Last: it ages every closure in this database by a month.
+describe('cleaning up finished closures', () => {
+  // Purpose: fails if a finished or cancelled closure outlives its 30 days, if an open one is
+  // deleted, or if the host audit rows go with them.
+  it('deletes finished and cancelled closures after 30 days and keeps their audit rows', async () => {
+    const done = await makeScene(h, operator.cookie, 'prune1');
+    const kept = await makeScene(h, operator.cookie, 'prune2');
+    const erased = (await closed(await close(done.p.userId))).closure;
+    await h.pool.query(
+      `UPDATE erasure_requests SET execute_after=created_at,next_attempt_at=created_at WHERE id=$1`,
+      [(await erasureRequest(erased)).id]
+    );
+    await runErasures(h.pool, new Date());
+    const cancelled = (await closed(await close(done.q.userId))).closure;
+    await closureOf(await cancel(done.q.userId));
+    const open = (await closed(await close(kept.p.userId))).closure;
+    const ids = [erased.closureId, cancelled.closureId, open.closureId];
+    const states = async () =>
+      (
+        await h.pool.query<{ id: string; state: string }>(
+          'SELECT id,state FROM account_closures WHERE id=ANY($1::uuid[]) ORDER BY state',
+          [ids]
+        )
+      ).rows;
+    expect((await states()).map((row) => row.state)).toEqual(['cancelled', 'closed', 'completed']);
+
+    await pruneErasureRequests(h.pool, new Date(Date.now() + 29 * 24 * 3_600_000));
+    expect(await states()).toHaveLength(3);
+    await pruneErasureRequests(h.pool, new Date(Date.now() + 31 * 24 * 3_600_000));
+    expect(await states()).toEqual([{ id: open.closureId, state: 'closed' }]);
+    expect((await closureOf(await read(kept.p.userId))).state).toBe('closed');
+    const audit = await h.pool.query<{ subject_account_closure_id: string; action: string }>(
+      `SELECT subject_account_closure_id,action FROM host_audit_events
+       WHERE subject_account_closure_id=ANY($1::uuid[]) ORDER BY created_at`,
+      [ids]
+    );
+    expect(audit.rows.map((row) => [row.subject_account_closure_id, row.action])).toEqual([
+      [erased.closureId, 'account.close'],
+      [cancelled.closureId, 'account.close'],
+      [cancelled.closureId, 'account.close.cancel'],
+      [open.closureId, 'account.close'],
+    ]);
   });
 });

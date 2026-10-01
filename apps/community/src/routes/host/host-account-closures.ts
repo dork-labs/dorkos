@@ -12,6 +12,7 @@ import {
 import type { CommunityConfig } from '../../config.js';
 import { transaction } from '../../data.js';
 import {
+  accountClosureLogLine,
   cancelAccountClosure,
   closeAccount,
   findAccountBySignOn,
@@ -33,13 +34,15 @@ function accountIdOf(value: string | undefined): string {
  * Register the host's account closure routes (DOR-2557). Every one needs `accounts:close`, which
  * no other scope implies. A person closing an account proves it with their password; a key never
  * sends one. Nothing here returns a name, an email, or anything the person wrote: a closure is
- * ids, states, dates, the reason, and the host's own reference.
+ * ids, states, dates, the reason, and the host's own reference. Each actor may close at most
+ * `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY` accounts in any 24 hours, and every closure and every
+ * refused closure logs one warning line with ids only, for the host's alerting.
  */
 export function registerHostAccountClosureRoutes(
   app: Hono,
   deps: {
     pool: Pool;
-    config: Pick<CommunityConfig, 'oidc'>;
+    config: Pick<CommunityConfig, 'oidc' | 'limits'>;
     authority: HostAuthority;
     now: () => Date;
     confirmPassword: ConfirmPassword;
@@ -48,6 +51,7 @@ export function registerHostAccountClosureRoutes(
   }
 ): void {
   const { pool, config, authority, now, confirmPassword, hasPassword } = deps;
+  const warn = (line: string) => console.warn(line);
 
   // A POST, so the person's sign-in identity never lands in a URL or an access log.
   app.post('/host/accounts/lookup', async (c) => {
@@ -85,16 +89,34 @@ export function registerHostAccountClosureRoutes(
         throw new ApiError(403, 'REAUTH_REQUIRED', 'Enter your password to take this action.');
       await confirmPassword(c, actor.userId, body.password);
     }
-    const result = await transaction(pool, (client) =>
-      closeAccount(client, {
-        accountId,
-        actor,
-        idempotencyKey: body.idempotencyKey,
-        reason: body.reason,
-        reference: body.reference,
-        now: now(),
-      })
-    );
+    let result: Awaited<ReturnType<typeof closeAccount>>;
+    try {
+      result = await transaction(pool, (client) =>
+        closeAccount(client, {
+          accountId,
+          actor,
+          idempotencyKey: body.idempotencyKey,
+          reason: body.reason,
+          reference: body.reference,
+          now: now(),
+          closuresPerDay: config.limits.accountClosuresPerDay,
+        })
+      );
+    } catch (error) {
+      if (error instanceof ApiError)
+        warn(accountClosureLogLine({ outcome: 'refused', accountId, actor, code: error.code }));
+      throw error;
+    }
+    // Logged once it has committed, so a host's alerting never hears of one that rolled back.
+    if (!result.replayed)
+      warn(
+        accountClosureLogLine({
+          outcome: 'closed',
+          accountId,
+          actor,
+          closureId: result.closure.closureId,
+        })
+      );
     return json(
       c,
       CommunityAdminAccountClosureCreateResponseSchema,
