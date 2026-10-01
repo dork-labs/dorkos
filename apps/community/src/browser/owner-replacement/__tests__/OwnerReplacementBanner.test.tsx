@@ -299,8 +299,10 @@ describe('OwnerReplacementBanner, admins and members', () => {
     // Purpose: fails if the completion sentence is wrong, the dismissal is not remembered, or
     // it is remembered for a different completion.
     const completed = {
+      replacementId: 'replacement-1',
       newOwnerDisplayName: 'Riley Chen',
       completedAt: '2026-09-28T09:00:00.000Z',
+      wasYours: false,
     };
     const calls = mockFetch({ [READ]: { status: 200, body: { open: null, completed } } });
     const first = renderBanner();
@@ -340,7 +342,12 @@ describe('OwnerReplacementBanner, admins and members', () => {
         status: 200,
         body: {
           open: null,
-          completed: { newOwnerDisplayName: 'Riley Chen', completedAt: '2026-09-28T09:00:00.000Z' },
+          completed: {
+            replacementId: 'replacement-1',
+            newOwnerDisplayName: 'Riley Chen',
+            completedAt: '2026-09-28T09:00:00.000Z',
+            wasYours: false,
+          },
         },
       },
     });

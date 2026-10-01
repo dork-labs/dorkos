@@ -112,6 +112,7 @@ function noticeFor(role: Role): CommunityWireOwnerReplacementNoticeResponse {
           reference: 'CASE-12',
           claimReissuedAt: null,
           options: { keep: true, transfer: true, delete: true, needsPassword: false },
+          objectionCooldownDays: 90,
         },
         completed: null,
       }
