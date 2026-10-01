@@ -15,7 +15,9 @@ import {
   FLY_TIGRIS_TERMS_QUERY,
   createTigrisVariables,
   parseAppNameAvailableResponse,
+  parseFlyAppProvenanceOrNotFound,
   parseFlyAppProvenanceResponse,
+  type FLY_APP_NOT_FOUND,
   parseTigrisOnAppResponse,
   parseAppTigrisResponse,
   parseTigrisNameHeldResponse,
@@ -232,6 +234,27 @@ export class FlyTigrisGraphqlClient {
       FLY_APP_PROVENANCE_QUERY,
       { name: appName },
       parseFlyAppProvenanceResponse,
+      false
+    );
+  }
+
+  /**
+   * Read one app's provenance by its exact name, telling Fly's exact `NOT_FOUND` apart from any
+   * other null answer (see `parseFlyAppProvenanceOrNotFound`).
+   *
+   * @param appName - Planned app name.
+   * @returns The app's provenance, `FLY_APP_NOT_FOUND`, or `null` for any other null answer.
+   */
+  async readAppProvenanceOrNotFound(
+    appName: string
+  ): Promise<FlyAppProvenance | typeof FLY_APP_NOT_FOUND | null> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_APP_PROVENANCE_QUERY,
+      { name: appName },
+      parseFlyAppProvenanceOrNotFound,
       false
     );
   }

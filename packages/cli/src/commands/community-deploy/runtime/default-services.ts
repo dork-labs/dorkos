@@ -329,7 +329,8 @@ export function createDefaultCommunityCreationDependencies(input: {
           input.plan.fly.appName,
           input.plan.fly.organizationId,
           flyProvenanceNetwork(marker),
-          readAppProvenance
+          (appName) =>
+            useTigrisClient(input.options, (client) => client.readAppProvenanceOrNotFound(appName))
         );
         return {
           id: created.id,

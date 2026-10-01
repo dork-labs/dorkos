@@ -171,12 +171,13 @@ describe('uncertain removal command', () => {
   // Catches the clear ignoring the create window: a create cut off at its deadline can still land,
   // and deleting its journal then would lose the only marker that proves it.
   it.each([
-    ['inside the window', '2026-09-23T10:35:00.000Z', false],
-    ['one second before it closes', '2026-09-23T10:43:02.000Z', false],
-    ['as it closes', '2026-09-23T10:43:03.000Z', true],
+    ['inside the window', '2026-09-23T10:35:00.000Z', 483_000],
+    ['one second before it closes', '2026-09-23T10:43:02.000Z', 1_000],
+    ['as it closes', '2026-09-23T10:43:03.000Z', null],
   ] as const)(
     'clears an absent run only once its create window and margin have passed (%s)',
-    async (_label, now, cleared) => {
+    async (_label, now, waitMs) => {
+      const cleared = waitMs === null;
       // REQUESTED_AT is 10:31:03; the create deadline is two minutes, and the margin ten.
       await setup(shapeA('fly'));
       const { probe, state } = memoryProbe('fly');
@@ -190,6 +191,7 @@ describe('uncertain removal command', () => {
               provider: 'fly',
               cleared: false,
               clearableAfter: '2026-09-23T10:43:03.000Z',
+              clearableInMs: waitMs,
             }
       );
       expect(discard).toHaveBeenCalledTimes(cleared ? 1 : 0);

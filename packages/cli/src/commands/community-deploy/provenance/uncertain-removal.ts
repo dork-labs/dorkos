@@ -112,6 +112,8 @@ export type RemovalOutcome =
        * the time after which the same command clears it.
        */
       clearableAfter?: string;
+      /** With `clearableAfter`: how long from this check until then, in milliseconds. */
+      clearableInMs?: number;
     }
   | {
       outcome: 'unproved';
@@ -377,12 +379,14 @@ export async function runUncertainRemoval(
       requestedAt +
       (dependencies.createDeadlineMs ?? createDeadlineFor(provider)) +
       CLEAR_ABSENT_MARGIN_MS;
-    if (Date.parse(dependencies.now()) < clearableAt) {
+    const checkedAt = Date.parse(dependencies.now());
+    if (checkedAt < clearableAt) {
       return {
         outcome: 'absent',
         provider,
         cleared: false,
         clearableAfter: new Date(clearableAt).toISOString(),
+        clearableInMs: clearableAt - checkedAt,
       };
     }
     try {

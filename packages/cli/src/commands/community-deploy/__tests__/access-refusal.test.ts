@@ -1,5 +1,5 @@
 /** @vitest-environment node */
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,7 +8,11 @@ import {
   executeCommunityCreationPhase,
   type CommunityCreationDependencies,
 } from '../execute.js';
-import type { FlyAppProvenance } from '../fly-graphql-contract.js';
+import {
+  FLY_APP_NOT_FOUND,
+  parseFlyAppProvenanceOrNotFound,
+  type FlyAppProvenance,
+} from '../fly-graphql-contract.js';
 import { createFlyApp } from '../fly-mutate.js';
 import {
   initializeLaunchJournal,
@@ -180,7 +184,7 @@ esac`);
   };
   const createWith = async (
     listing: string[] | 'fail',
-    readProvenance: (name: string) => Promise<FlyAppProvenance | null>
+    readProvenance: (name: string) => Promise<FlyAppProvenance | typeof FLY_APP_NOT_FOUND | null>
   ) => {
     const { executable } = await refusingFly(listing);
     return createFlyApp(
@@ -192,18 +196,23 @@ esac`);
     );
   };
 
+  const NOT_FOUND = async () => FLY_APP_NOT_FOUND;
+
   // flyctl creates the app, then waits for it and reads it back; either can end in the same
-  // refusal after the app exists. Catches the refusal being trusted on the provenance read alone.
-  it('trusts a Fly refusal only when the provenance read and the org listing both lack the app', async () => {
-    await expect(createWith(['another-app'], async () => null)).rejects.toEqual(
+  // refusal after the app exists. Catches the refusal being trusted on less than both proofs.
+  it("trusts a Fly refusal only on Fly's exact NOT_FOUND and an org listing without the app", async () => {
+    await expect(createWith(['another-app'], NOT_FOUND)).rejects.toEqual(
       new ProviderMutationError('ACCESS_DENIED')
     );
-    // A null `app` can come from a server error; the listing still has the name.
-    await expect(createWith(['community-space'], async () => null)).rejects.toEqual(
+    // A null `app` without Fly's NOT_FOUND, even with an empty listing.
+    await expect(createWith([], async () => null)).rejects.toEqual(
       new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
     );
-    // The listing itself fails, so absence is unproved.
-    await expect(createWith('fail', async () => null)).rejects.toEqual(
+    // NOT_FOUND, but the listing still has the name, or the listing fails.
+    await expect(createWith(['community-space'], NOT_FOUND)).rejects.toEqual(
+      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
+    );
+    await expect(createWith('fail', NOT_FOUND)).rejects.toEqual(
       new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
     );
     await expect(
@@ -220,22 +229,37 @@ esac`);
     });
   });
 
-  // The reviewer's case: Fly refuses, then the provenance read answers `app: null` beside a server
-  // error. Catches "nothing created" being printed for an app that may exist.
-  it('keeps a refusal uncertain when the provenance read nulls the app beside a server error', async () => {
-    const { parseFlyAppProvenanceResponse } = await import('../fly-graphql-contract.js');
+  // Catches "nothing created" being printed for an app that may exist: Fly refuses, then the
+  // provenance read nulls `app` beside a server error, or without Fly's exact NOT_FOUND.
+  it.each([
+    ['a server error', [{ message: 'internal server error' }]],
+    ['no errors', undefined],
+    ['NOT_FOUND on another path', [{ path: ['viewer'], extensions: { code: 'NOT_FOUND' } }]],
+    [
+      'NOT_FOUND beside another error',
+      [{ path: ['app'], extensions: { code: 'NOT_FOUND' } }, { message: 'internal server error' }],
+    ],
+  ])('keeps a refusal uncertain when the read nulls the app with %s', async (_label, errors) => {
     const read = async () =>
-      parseFlyAppProvenanceResponse({
+      parseFlyAppProvenanceOrNotFound({
         data: { app: null },
-        errors: [{ message: 'internal server error' }],
+        ...(errors === undefined ? {} : { errors }),
       });
     await expect(read()).resolves.toBeNull();
-    await expect(createWith(['community-space'], read)).rejects.toEqual(
+    await expect(createWith([], read)).rejects.toEqual(
       new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
     );
-    await expect(createWith('fail', read)).rejects.toEqual(
-      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
-    );
+  });
+
+  // Catches the strict parse drifting from Fly's real not-found answer, which the L3 path needs.
+  it("reads Fly's recorded not-found answer as NOT_FOUND", async () => {
+    const missing = JSON.parse(
+      await readFile(new URL('./fixtures/fly/app-provenance-missing.json', import.meta.url), 'utf8')
+    ) as unknown;
+    expect(parseFlyAppProvenanceOrNotFound(missing)).toBe(FLY_APP_NOT_FOUND);
+    await expect(
+      createWith([], async () => parseFlyAppProvenanceOrNotFound(missing))
+    ).rejects.toEqual(new ProviderMutationError('ACCESS_DENIED'));
   });
 
   // Catches an unbounded stderr scan: only the start of the output is ever held.

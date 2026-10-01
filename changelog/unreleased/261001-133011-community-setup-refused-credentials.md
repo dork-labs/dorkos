@@ -3,6 +3,7 @@ covers:
   - 'fix(community): report a refused create as missing permission, not uncertain (DOR-2656)'
   - "fix(community): say when an exported key can't read the organization (DOR-2657)"
   - 'fix(community): prove a refused Fly create made nothing, and wait out the create window before clearing (DOR-2656)'
+  - "fix(community): require Fly's exact NOT_FOUND for a refused create, and say plainly when to clear (DOR-2656)"
 ---
 
 ### Fixed

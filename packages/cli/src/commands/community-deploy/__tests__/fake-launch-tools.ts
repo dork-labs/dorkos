@@ -202,7 +202,13 @@ export function fakeFlyGraphql(statePath: string, appName: string): FakeFlyGraph
         secrets: Record<string, unknown>;
       };
       if (!state.flyApp) {
-        return json({ data: { app: null }, errors: [{ message: 'Could not find App' }] });
+        // Fly's answer for an unknown app name, as in `fixtures/fly/app-provenance-missing.json`.
+        return json({
+          data: { app: null },
+          errors: [
+            { message: 'Could not find App', path: ['app'], extensions: { code: 'NOT_FOUND' } },
+          ],
+        });
       }
       return json({
         data: {
