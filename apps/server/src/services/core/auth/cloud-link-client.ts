@@ -308,14 +308,16 @@ function managedCloudNetworkError(
 }
 
 /** The most of a refusal body read before giving up on it; a real one is tiny. */
-const MANAGED_ERROR_BODY_LIMIT_BYTES = 16 * 1024;
+export const MANAGED_ERROR_BODY_LIMIT_BYTES = 16 * 1024;
 
 /**
  * Read at most {@link MANAGED_ERROR_BODY_LIMIT_BYTES} of a response body, then
  * let the rest go, so a proxy's multi-megabyte error page is never buffered.
  * A body cut off at the limit simply fails to parse as JSON.
+ *
+ * @internal Exported for tests.
  */
-async function readBoundedText(response: Response): Promise<string | undefined> {
+export async function readBoundedText(response: Response): Promise<string | undefined> {
   if (!response.body) return undefined;
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];

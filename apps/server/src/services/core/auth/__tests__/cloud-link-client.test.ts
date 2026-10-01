@@ -6,6 +6,8 @@ import {
   INSTANCE_CLIENT_ID,
   buildInstanceDescriptor,
   linkProofForKey,
+  MANAGED_ERROR_BODY_LIMIT_BYTES,
+  readBoundedText,
   executeManagedConnectorOperation,
   pollForToken,
   requestManagedConnectorExecutionReceipt,
@@ -942,5 +944,32 @@ describe('managed cloud refusals', () => {
     expect(warn.mock.calls[0][1]).toMatchObject({ kind: 'catalog', status: 200 });
     expect((warn.mock.calls[0][1] as { issuePaths: string[] }).issuePaths).toContain('toolkits');
     expect(JSON.stringify(warn.mock.calls)).not.toContain('SECRET_VALUE');
+  });
+});
+
+describe('the bounded refusal-body reader', () => {
+  /** A body that serves `chunkBytes`-sized chunks forever and records its cancel. */
+  function endlessBody(chunkBytes: number) {
+    const cancel = vi.fn();
+    const chunk = new Uint8Array(chunkBytes).fill(0x61);
+    const body = new ReadableStream<Uint8Array>(
+      { pull: (controller) => controller.enqueue(chunk), cancel },
+      { highWaterMark: 0 }
+    );
+    return { body, cancel };
+  }
+
+  it('releases the rest of the stream once it has read enough', async () => {
+    const { body, cancel } = endlessBody(1_024);
+    await readBoundedText(new Response(body, { status: 502 }));
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps exactly the limit when a chunk straddles it', async () => {
+    // 1,000 does not divide 16,384, so the seventeenth chunk crosses the limit.
+    const { body } = endlessBody(1_000);
+    const text = await readBoundedText(new Response(body, { status: 502 }));
+    expect(MANAGED_ERROR_BODY_LIMIT_BYTES).toBe(16 * 1024);
+    expect(text).toHaveLength(MANAGED_ERROR_BODY_LIMIT_BYTES);
   });
 });
