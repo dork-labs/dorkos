@@ -65,6 +65,7 @@ import {
   creditsWiringReport,
   primeCreditsInference,
 } from '../services/core/cloud/credits-inference.js';
+import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
 import { createCloudCommunitiesRouter } from './cloud-communities.js';
 
@@ -123,7 +124,10 @@ router.get('/status', (_req, res) => {
  * computer whose account was deleted comes back unlinked with its key cleared;
  * a service that cannot be reached keeps the link. Never an error.
  */
-router.post('/link/check', async (_req, res) => {
+router.post('/link/check', async (req, res) => {
+  // Person-only, like the deletion it follows: it reaches the service on this
+  // computer's key, and nothing an agent does needs it.
+  if (!clearsTheAgentBar(req, res)) return res.status(403).json(PERSON_ONLY_LINK_CHECK);
   res.json(await getCloudLinkManager().checkLink());
 });
 
@@ -249,6 +253,12 @@ interface WriteFailureWording {
    * both cases. Without it, such a refusal is passed through like any other.
    */
   absent?: string;
+  /**
+   * What to tell the person when the service gave no answer it could read (a
+   * timeout, a broken body) for a write that may have done something anyway.
+   * Without it, such a failure reads as the account being out of reach.
+   */
+  unconfirmed?: string;
 }
 
 /**
@@ -290,9 +300,26 @@ function cloudWriteFailed(res: Response, error: unknown, wording: WriteFailureWo
   logger.warn(`[Cloud] Could not ${wording.what}`, logError(error));
   return res.json({
     ok: false,
-    message: 'Couldn’t reach your DorkOS account. Try again shortly.',
+    message: wording.unconfirmed ?? 'Couldn’t reach your DorkOS account. Try again shortly.',
   } satisfies CloudWriteRefusal);
 }
+
+/** Refusal code for a DorkOS account action only the person may take. */
+export const PERSON_ONLY_CODE = 'person_only';
+
+/** Said, with 403, when anything but the person asks to delete the account. */
+const PERSON_ONLY_DELETION = {
+  ok: false,
+  code: PERSON_ONLY_CODE,
+  message: 'Only you can delete your DorkOS account, from the DorkOS app while signed in.',
+} as const;
+
+/** Said, with 403, when anything but the person asks for a link check. */
+const PERSON_ONLY_LINK_CHECK = {
+  ok: false,
+  code: PERSON_ONLY_CODE,
+  message: 'Only you can check this computer’s DorkOS account link, from the DorkOS app.',
+} as const;
 
 /** Said, with HTTP 200, by every cloud write while this instance is not linked. */
 const NOT_LINKED: CloudWriteRefusal = {
@@ -414,8 +441,12 @@ router.post('/account/export', async (_req, res) => {
  * Once it has, `POST /api/cloud/link/check` finds this computer unlinked.
  * A refusal answers 200, for the reason {@link cloudWriteFailed} gives.
  */
-router.post('/account/deletion', async (_req, res) => {
+router.post('/account/deletion', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+  // Only the person may ask to end their own account, never an agent: not one
+  // that names itself, not one holding an approval token, and, with login on,
+  // not one presenting the person's API key instead of a browser session.
+  if (!clearsTheAgentBar(req, res)) return res.status(403).json(PERSON_ONLY_DELETION);
   if (!isCloudLinked()) return res.json(NOT_LINKED);
   try {
     const deletion = await requestAccountDeletion();
@@ -432,6 +463,10 @@ router.post('/account/deletion', async (_req, res) => {
     return cloudWriteFailed(res, err, {
       what: 'ask to delete the account',
       absent: 'Deleting your account from the app isn’t available on your account yet.',
+      // The request may have reached the service, and the email gone, before
+      // the answer was lost, so "couldn't reach" could be untrue.
+      unconfirmed:
+        'We couldn’t confirm your request went through. A link may already be on its way, so check your email before asking again.',
     });
   }
 });

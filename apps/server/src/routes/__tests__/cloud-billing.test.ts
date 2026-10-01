@@ -20,10 +20,18 @@ import exportFixture from '@dork-labs/cloud-api/fixtures/v1/session/account-expo
 import deletionFixture from '@dork-labs/cloud-api/fixtures/v1/session/account-deletion.json' with { type: 'json' };
 import deletionConflictFixture from '@dork-labs/cloud-api/fixtures/v1/problem/account-deletion-conflict.json' with { type: 'json' };
 
-const config = vi.hoisted(() => ({ cloud: { instanceToken: 'tok_test' } as unknown }));
+const config = vi.hoisted(() => ({
+  cloud: { instanceToken: 'tok_test' } as unknown,
+  authEnabled: false,
+}));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
-    get: (section: string) => (section === 'cloud' ? config.cloud : undefined),
+    get: (section: string) =>
+      section === 'cloud'
+        ? config.cloud
+        : section === 'auth'
+          ? { enabled: config.authEnabled }
+          : undefined,
     onChange: () => () => {},
   },
 }));
@@ -44,8 +52,15 @@ vi.mock('../../services/core/auth/cloud-link.js', () => ({
 
 import cloudRouter from '../cloud.js';
 
+/** Who `sessionGate` resolved, as a test sets it; nobody by default (login off). */
+let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+
 const app = express();
 app.use(express.json());
+app.use((_req, res, next) => {
+  if (signedInUser) res.locals.user = signedInUser;
+  next();
+});
 app.use('/api/cloud', cloudRouter);
 const server = listeningServer(app);
 
@@ -85,6 +100,8 @@ function fakeAccount(routes: Record<string, { status: number; body: unknown }>) 
 describe('billing-page routes', () => {
   beforeEach(() => {
     config.cloud = { instanceToken: 'tok_test' };
+    config.authEnabled = false;
+    signedInUser = undefined;
     cloud.baseUrl = 'https://account.example.invalid';
   });
 
@@ -362,12 +379,71 @@ describe('billing-page routes', () => {
       expect(res.body).toEqual({ ok: false, problem: deletionConflictFixture });
     });
 
-    it('says the account could not be reached when the answer is unreadable', async () => {
-      fakeAccount({ '/v1/account/deletion': { status: 200, body: { requestedAt: 'soon' } } });
-      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
-      expect(res.body).toEqual({
+    it.each([
+      ['an unreadable answer', () => ({ status: 200, body: { requestedAt: 'soon' } })],
+      ['a broken body', () => ({ status: 502, body: 'Bad Gateway' })],
+    ])(
+      'says a link may already be on its way after %s, never that nothing was sent',
+      async (_shape, answer) => {
+        fakeAccount({ '/v1/account/deletion': answer() });
+        const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+        expect(res.body).toEqual({
+          ok: false,
+          message:
+            'We couldn’t confirm your request went through. A link may already be on its way, so check your email before asking again.',
+        });
+      }
+    );
+
+    describe('only the person may ask', () => {
+      const refused = {
         ok: false,
-        message: 'Couldn’t reach your DorkOS account. Try again shortly.',
+        code: 'person_only',
+        message: 'Only you can delete your DorkOS account, from the DorkOS app while signed in.',
+      };
+
+      it('refuses a caller that names itself an agent, and sends nothing', async () => {
+        const seen = fakeAccount({
+          '/v1/account/deletion': { status: 200, body: deletionFixture },
+        });
+        const res = await request(server)
+          .post('/api/cloud/account/deletion')
+          .set('x-dorkos-agent', 'agent-token-abc')
+          .expect(403);
+        expect(res.body).toEqual(refused);
+        expect(seen).toHaveLength(0);
+      });
+
+      it('refuses a caller holding an approval token, and sends nothing', async () => {
+        const seen = fakeAccount({
+          '/v1/account/deletion': { status: 200, body: deletionFixture },
+        });
+        await request(server)
+          .post('/api/cloud/account/deletion')
+          .set('x-dorkos-approval', 'approval-token-abc')
+          .expect(403);
+        expect(seen).toHaveLength(0);
+      });
+
+      it('with login on, refuses the person`s API key without a browser session', async () => {
+        config.authEnabled = true;
+        signedInUser = { userId: 'user_cli', credential: 'api-key' };
+        const seen = fakeAccount({
+          '/v1/account/deletion': { status: 200, body: deletionFixture },
+        });
+        const res = await request(server).post('/api/cloud/account/deletion').expect(403);
+        expect(res.body).toEqual(refused);
+        expect(seen).toHaveLength(0);
+      });
+
+      it('with login on, asks for a person signed in with a browser session', async () => {
+        config.authEnabled = true;
+        signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+        const seen = fakeAccount({
+          '/v1/account/deletion': { status: 200, body: deletionFixture },
+        });
+        await request(server).post('/api/cloud/account/deletion').expect(200);
+        expect(seen).toHaveLength(1);
       });
     });
 

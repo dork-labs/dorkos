@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Button,
   Input,
@@ -16,7 +16,7 @@ import { useCloudPlan } from '../model/use-cloud-plan';
 import { BillingNoticeView } from './BillingNoticeView';
 import { ExportAccountData } from './ExportAccountData';
 
-/** The word a person types to confirm. Plain, short, and the same in every language this ships in. */
+/** The word a person types to confirm. Plain and short. */
 export const DELETE_CONFIRM_WORD = 'delete';
 
 /**
@@ -40,35 +40,39 @@ function formatConfirmBy(iso: string): string | null {
  * account goes only when the person follows it, so the result this shows is
  * "check your email", never "deleted". Once the link is followed, the hook
  * behind this notices that the account no longer accepts this computer and
- * the tab returns to signed out.
+ * the tab returns to signed out. Past the link's deadline it says the link
+ * expired and offers a new one.
  *
  * Self-contained: renders nothing with no cloud account.
  */
 export function DeleteAccount() {
   const { data } = useCloudPlan();
-  const { state, request, reset } = useAccountDeletion();
+  const { sent, expired, attempt, request, reset } = useAccountDeletion();
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState('');
+  const confirmField = useRef<HTMLInputElement>(null);
+  const note = useRef<HTMLParagraphElement>(null);
 
   if (!data?.available) return null;
 
   const confirmed = typed.trim().toLowerCase() === DELETE_CONFIRM_WORD;
-  const requesting = state.kind === 'requesting';
+  const requesting = attempt.kind === 'requesting';
+  const failed = attempt.kind === 'failed' ? attempt.notice : null;
 
   const onOpenChange = (next: boolean) => {
     if (requesting) return;
     setOpen(next);
     if (!next) {
       setTyped('');
-      if (state.kind === 'failed') reset();
+      reset();
     }
   };
 
   const send = () => {
     if (!confirmed || requesting) return;
-    void request().then((next) => {
-      // A sent link closes the dialog; the section below says what happens next.
-      if (next.kind !== 'sent') return;
+    void request().then((wentOut) => {
+      // A sent link closes the dialog; the note below says what happens next.
+      if (!wentOut) return;
       setOpen(false);
       setTyped('');
     });
@@ -77,12 +81,28 @@ export function DeleteAccount() {
   return (
     <div className="space-y-2 border-t pt-4">
       <p className="text-sm font-medium">Delete your DorkOS account</p>
-      {state.kind === 'sent' ? (
-        <SentNotice
-          sentTo={state.deletion.confirmationSentTo}
-          confirmBy={state.deletion.confirmBy}
-          onResend={() => void request()}
-        />
+      {sent !== null ? (
+        <div className="space-y-2">
+          <p ref={note} role="status" tabIndex={-1} className="text-sm outline-none">
+            {expired ? (
+              'The link has expired, so nothing was deleted. Send a new one to carry on.'
+            ) : (
+              <SentText sentTo={sent.confirmationSentTo} confirmBy={sent.confirmBy} />
+            )}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={requesting}
+            aria-busy={requesting}
+            onClick={() => void request()}
+          >
+            {requesting ? 'Sending…' : 'Send a new link'}
+          </Button>
+          {/* A new link that could not be sent. The one already out still stands. */}
+          {failed !== null && <BillingNoticeView notice={failed} />}
+        </div>
       ) : (
         <>
           <p className="text-muted-foreground text-sm">
@@ -91,13 +111,25 @@ export function DeleteAccount() {
           <Button type="button" size="sm" variant="destructive" onClick={() => setOpen(true)}>
             Delete your DorkOS account…
           </Button>
-          {/* A new link that could not be sent, asked for outside the dialog. */}
-          {!open && state.kind === 'failed' && <BillingNoticeView notice={state.notice} />}
         </>
       )}
 
       <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-        <ResponsiveDialogContent className="min-h-0 sm:max-w-md">
+        <ResponsiveDialogContent
+          className="min-h-0 sm:max-w-md"
+          onOpenAutoFocus={(event) => {
+            // Straight to the one thing the dialog asks for.
+            event.preventDefault();
+            confirmField.current?.focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            // The button that opened it is gone once a link is out: land on the
+            // note that says what happens next instead.
+            if (note.current === null) return;
+            event.preventDefault();
+            note.current.focus();
+          }}
+        >
           <ResponsiveDialogHeader>
             <ResponsiveDialogTitle>Delete your DorkOS account?</ResponsiveDialogTitle>
             <ResponsiveDialogDescription>
@@ -129,6 +161,7 @@ export function DeleteAccount() {
                   Type <strong>{DELETE_CONFIRM_WORD}</strong> to confirm
                 </label>
                 <Input
+                  ref={confirmField}
                   id="delete-account-confirm"
                   data-testid="delete-account-confirm-input"
                   value={typed}
@@ -141,7 +174,7 @@ export function DeleteAccount() {
                   disabled={requesting}
                 />
               </div>
-              {state.kind === 'failed' && <BillingNoticeView notice={state.notice} />}
+              {failed !== null && <BillingNoticeView notice={failed} />}
             </div>
           </ResponsiveDialogBody>
           <ResponsiveDialogFooter>
@@ -165,32 +198,20 @@ export function DeleteAccount() {
   );
 }
 
-/** Props for {@link SentNotice}. */
-interface SentNoticeProps {
-  sentTo: string;
-  confirmBy: string | null;
-  onResend: () => void;
-}
-
 /**
- * What happens now that the link is out: where it went, until when, and that
- * nothing is gone yet.
+ * Where the link went, until when, and that nothing is gone yet.
  *
- * @param props - Where the link went, its deadline and a way to send a new one.
+ * @param props.sentTo - Where the link went, as the service showed it.
+ * @param props.confirmBy - When the link stops working, or `null`.
  */
-function SentNotice({ sentTo, confirmBy, onResend }: SentNoticeProps) {
+function SentText({ sentTo, confirmBy }: { sentTo: string; confirmBy: string | null }) {
   const until = confirmBy === null ? null : formatConfirmBy(confirmBy);
   return (
-    <div className="space-y-2">
-      <p role="status" className="text-sm">
-        Check your email. We sent a link to <span className="font-medium">{sentTo}</span>. Your
-        account is deleted only when you follow it
-        {until === null ? '.' : `, and the link works until ${until}.`} When you do, this computer
-        unlinks on its own.
-      </p>
-      <Button type="button" size="sm" variant="outline" onClick={onResend}>
-        Send a new link
-      </Button>
-    </div>
+    <>
+      Check your email. We sent a link to <span className="font-medium">{sentTo}</span>. Your
+      account is deleted only when you follow it
+      {until === null ? '.' : `, and the link works until ${until}.`} When you do, this computer
+      unlinks on its own.
+    </>
   );
 }

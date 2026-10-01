@@ -111,6 +111,13 @@ const KEY_CHECK_TIMEOUT_MS = 10_000;
  * way, and the scheduled heartbeat still runs.
  */
 const KEY_CHECK_COOLDOWN_MS = 5 * 60 * 1000;
+/**
+ * How long a link check's answer is reused for the same key. Several open
+ * windows each check on focus and once a minute; this keeps them to one
+ * heartbeat between them, while a deletion confirmed elsewhere still shows up
+ * within seconds.
+ */
+const LINK_CHECK_REUSE_MS = 15_000;
 let nextLinkGeneration = 0;
 
 interface LinkContext {
@@ -276,6 +283,9 @@ export class CloudLinkManager {
     { context: LinkContext; settled: Promise<void>; keptAt: number | undefined } | undefined;
   /** The link check in flight, shared by every caller that overlaps it. */
   private linkCheck: Promise<CloudLinkSummary> | undefined;
+  /** The last link check's answer, reused for {@link LINK_CHECK_REUSE_MS} under the same key. */
+  private lastLinkCheck:
+    { summary: CloudLinkSummary; at: number; token: string; generation: number } | undefined;
   private linkGeneration = ++nextLinkGeneration;
 
   constructor(private readonly options: CloudLinkManagerOptions = {}) {
@@ -584,13 +594,24 @@ export class CloudLinkManager {
    * unlinked on the web), a good answer keeps the link, and a transient
    * failure keeps the key. For a person waiting on something that ends the
    * link elsewhere, who should not wait for the next scheduled heartbeat.
-   * Calls that overlap share one heartbeat; it is bounded by
+   * Calls that overlap share one heartbeat, and a call within
+   * {@link LINK_CHECK_REUSE_MS} of the last answer for the same key gets that
+   * answer without asking again. The heartbeat is bounded by
    * {@link KEY_CHECK_TIMEOUT_MS}.
    */
   checkLink(): Promise<CloudLinkSummary> {
     if (this.linkCheck) return this.linkCheck;
     const token = this.config.getToken();
     if (!token) return Promise.resolve(this.getSummary());
+    const last = this.lastLinkCheck;
+    if (
+      last &&
+      last.token === token &&
+      last.generation === this.linkGeneration &&
+      this.now() - last.at < LINK_CHECK_REUSE_MS
+    ) {
+      return Promise.resolve(last.summary);
+    }
     const context = this.captureContext(token);
     const bound = new AbortController();
     const timer = setTimeout(() => bound.abort(), KEY_CHECK_TIMEOUT_MS);
@@ -605,7 +626,16 @@ export class CloudLinkManager {
       .catch((error: unknown) => {
         logger.error('[CloudLink] Could not apply the link check result', logError(error));
       })
-      .then(() => this.getSummary())
+      .then(() => {
+        const summary = this.getSummary();
+        this.lastLinkCheck = {
+          summary,
+          at: this.now(),
+          token,
+          generation: context.generation,
+        };
+        return summary;
+      })
       .finally(() => {
         clearTimeout(timer);
         this.linkCheck = undefined;

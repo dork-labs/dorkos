@@ -50,6 +50,15 @@ const mockCredits = vi.hoisted(() => ({
 }));
 vi.mock('../../services/core/cloud/credits-inference.js', () => mockCredits);
 
+// Whether login is on, for the person-only bar on the link check.
+const posture = vi.hoisted(() => ({ authEnabled: false }));
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'auth' ? { enabled: posture.authEnabled } : undefined),
+    onChange: () => () => {},
+  },
+}));
+
 import cloudRouter from '../cloud.js';
 
 const manager = mockManager;
@@ -169,6 +178,27 @@ describe('cloud routes', () => {
       const res = await request(server).post('/api/cloud/link/check').expect(200);
       expect(res.body).toEqual({ linked: false, accountLabel: null, lastHeartbeatAt: null });
       expect(manager.checkLink).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses an agent, which never needs it, and checks nothing', async () => {
+      manager.checkLink.mockClear();
+      await request(server)
+        .post('/api/cloud/link/check')
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .expect(403);
+      await request(server)
+        .post('/api/cloud/link/check')
+        .set('x-dorkos-approval', 'approval-token-abc')
+        .expect(403);
+      posture.authEnabled = true;
+      try {
+        // Login on and no browser session: an API key, or nothing at all.
+        const res = await request(server).post('/api/cloud/link/check').expect(403);
+        expect(res.body.code).toBe('person_only');
+      } finally {
+        posture.authEnabled = false;
+      }
+      expect(manager.checkLink).not.toHaveBeenCalled();
     });
   });
 

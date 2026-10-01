@@ -446,7 +446,7 @@ describe('CloudLinkManager', () => {
       expect(fetchImpl).not.toHaveBeenCalled();
     });
 
-    it('shares one heartbeat between checks that overlap', async () => {
+    it('shares one heartbeat between checks that overlap, and reuses its answer briefly', async () => {
       linked();
       const fetchImpl = routerFetch({
         heartbeat: () => ({
@@ -454,13 +454,38 @@ describe('CloudLinkManager', () => {
           body: { ok: true, instanceId: 'inst-1', lastSeenAt: '2026-10-01T00:00:00Z' },
         }),
       });
-      manager = new CloudLinkManager({ fetchImpl, sleep: noSleep });
+      let clock = 1_000_000;
+      manager = new CloudLinkManager({ fetchImpl, sleep: noSleep, now: () => clock });
 
       const [first, second] = await Promise.all([manager.checkLink(), manager.checkLink()]);
 
       expect(first).toEqual(second);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
-      // A later check asks again rather than answering with the settled one.
+      // Inside the reuse window: the last answer, with no new heartbeat.
+      clock += 14_999;
+      expect(await manager.checkLink()).toEqual(first);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      // Past it: the account is asked again.
+      clock += 1;
+      await manager.checkLink();
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    it('never reuses an answer given for a different key', async () => {
+      linked();
+      const fetchImpl = routerFetch({
+        heartbeat: () => ({
+          status: 200,
+          body: { ok: true, instanceId: 'inst-1', lastSeenAt: '2026-10-01T00:00:00Z' },
+        }),
+      });
+      manager = new CloudLinkManager({ fetchImpl, sleep: noSleep, now: () => 1_000_000 });
+      await manager.checkLink();
+      configManager.set('cloud', {
+        instanceToken: 'dork_inst_other',
+        instanceName: 'kai-mbp',
+        linkedAccountLabel: null,
+      });
       await manager.checkLink();
       expect(fetchImpl).toHaveBeenCalledTimes(2);
     });

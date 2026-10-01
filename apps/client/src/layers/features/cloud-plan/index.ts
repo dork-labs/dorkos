@@ -56,7 +56,7 @@ export type {
   OpenBillingPage,
 } from './model/use-billing-page';
 export { useAccountDeletion, DELETION_CHECK_INTERVAL_MS } from './model/use-account-deletion';
-export type { AccountDeletionControl, AccountDeletionState } from './model/use-account-deletion';
+export type { AccountDeletionAttempt, AccountDeletionControl } from './model/use-account-deletion';
 export { useLocalSpend } from './model/use-local-spend';
 export {
   describeDorkosAccountLine,

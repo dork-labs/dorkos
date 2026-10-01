@@ -111,6 +111,19 @@ describe('useCheckCloudLink', () => {
     expect(order[0]).toBe('cancel');
   });
 
+  it('never cancels a new link being made, even when the old one was expected to end', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.checkCloudLink).mockResolvedValue(UNLINKED);
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'pending' });
+    const queryClient = newClient();
+    const { result } = renderHook(() => useCheckCloudLink(), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+    await expect(result.current({ expected: true })).resolves.toEqual(UNLINKED);
+    expect(transport.cancelCloudLink).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(cloudStatusKey)).toEqual(UNLINKED);
+  });
+
   it('leaves the note alone for a link it did not expect to end', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.checkCloudLink).mockResolvedValue(UNLINKED);

@@ -3,12 +3,16 @@
  *
  * Asking deletes nothing. The service emails the account a link, and the
  * account goes only when the person follows it in their own browser, which
- * this app cannot see. So while a link is out, this asks the account whether
- * it still accepts this computer whenever the window comes back into focus
- * (the person returning from their email) and once a minute besides. The
- * answer that it no longer does is the deletion landing: this computer is
- * unlinked, the account's figures are dropped, and the person is told what
- * stayed.
+ * this app cannot see. So while a link is out and still works, this asks the
+ * account whether it still accepts this computer whenever the window comes
+ * back into focus (the person returning from their email) and once a minute
+ * besides. The answer that it no longer does is the deletion landing: this
+ * computer is unlinked, the account's figures are dropped, and the person is
+ * told what stayed. Once the link's deadline passes, the watch stops and the
+ * person is told to ask for a new one.
+ *
+ * The link that went out and the latest attempt are kept apart on purpose: a
+ * new link that could not be sent must not hide the one that already did.
  *
  * @module features/cloud-plan/model/use-account-deletion
  */
@@ -24,64 +28,85 @@ import { cloudPlanKeys } from './use-cloud-plan';
 /** How often to ask whether the account still accepts this computer while a link is out. */
 export const DELETION_CHECK_INTERVAL_MS = 60_000;
 
-/** Where a request to delete the account stands in this view. */
-export type AccountDeletionState =
-  | { kind: 'idle' }
-  | { kind: 'requesting' }
-  | { kind: 'sent'; deletion: CloudAccountDeletion }
-  | { kind: 'failed'; notice: BillingNotice };
+/** The largest delay a browser timer holds; a deadline further out is never reached by one. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/** The latest attempt to send a link. */
+export type AccountDeletionAttempt =
+  { kind: 'idle' } | { kind: 'requesting' } | { kind: 'failed'; notice: BillingNotice };
 
 /** What the delete control needs. */
 export interface AccountDeletionControl {
-  state: AccountDeletionState;
+  /** The last link that went out, or `null` while none has. Kept through a failed resend. */
+  sent: CloudAccountDeletion | null;
+  /** Whether that link's deadline has passed, so it no longer works. */
+  expired: boolean;
+  /** The latest attempt to send a link. */
+  attempt: AccountDeletionAttempt;
   /**
-   * Ask for the confirmation link (again). Resolves with where the request
-   * ended up; a call while one is in flight resolves with `requesting` and
-   * sends nothing.
+   * Ask for a confirmation link (again). Resolves with whether one went out;
+   * a call while one is in flight resolves `false` and sends nothing.
    */
-  request: () => Promise<AccountDeletionState>;
-  /** Forget a refusal, so the next attempt starts clean. */
+  request: () => Promise<boolean>;
+  /** Forget a failed attempt, so the next one starts clean. */
   reset: () => void;
 }
 
 /**
- * Ask for the account to be deleted, and say honestly where that stands: the
- * link is on its way, or why it could not be sent. While a link is out, watch
- * for the account to stop accepting this computer.
+ * Ask for the account to be deleted, and say honestly where that stands. While
+ * a link is out and still works, watch for the account to stop accepting this
+ * computer.
  */
 export function useAccountDeletion(): AccountDeletionControl {
   const transport = useTransport();
-  const [state, setState] = useState<AccountDeletionState>({ kind: 'idle' });
+  const [sent, setSent] = useState<CloudAccountDeletion | null>(null);
+  const [attempt, setAttempt] = useState<AccountDeletionAttempt>({ kind: 'idle' });
+  // The link whose deadline passed. Compared by identity, so a new link is
+  // never read as expired because an earlier one was.
+  const [expiredLink, setExpiredLink] = useState<CloudAccountDeletion | null>(null);
   const busy = useRef(false);
 
-  const request = useCallback(async (): Promise<AccountDeletionState> => {
-    if (busy.current) return { kind: 'requesting' };
+  const request = useCallback(async (): Promise<boolean> => {
+    if (busy.current) return false;
     busy.current = true;
-    setState({ kind: 'requesting' });
-    let next: AccountDeletionState;
+    setAttempt({ kind: 'requesting' });
     try {
       const answer = await transport.requestCloudAccountDeletion();
-      next = answer.ok
-        ? { kind: 'sent', deletion: answer.deletion }
-        : {
-            kind: 'failed',
-            notice: 'problem' in answer ? { problem: answer.problem } : { message: answer.message },
-          };
+      if (answer.ok) {
+        setSent(answer.deletion);
+        setAttempt({ kind: 'idle' });
+        return true;
+      }
+      setAttempt({
+        kind: 'failed',
+        notice: 'problem' in answer ? { problem: answer.problem } : { message: answer.message },
+      });
+      return false;
     } catch {
-      next = { kind: 'failed', notice: BILLING_UNREACHABLE };
+      setAttempt({ kind: 'failed', notice: BILLING_UNREACHABLE });
+      return false;
+    } finally {
+      busy.current = false;
     }
-    busy.current = false;
-    setState(next);
-    return next;
   }, [transport]);
 
   const reset = useCallback(() => {
-    if (!busy.current) setState({ kind: 'idle' });
+    if (!busy.current) setAttempt({ kind: 'idle' });
   }, []);
 
-  useWatchForDeletion(state.kind === 'sent');
+  // Mark the link expired at its deadline. A deadline already past fires at once.
+  useEffect(() => {
+    if (sent === null || sent.confirmBy === null) return;
+    const left = Date.parse(sent.confirmBy) - Date.now();
+    if (Number.isNaN(left) || left > MAX_TIMER_MS) return;
+    const timer = setTimeout(() => setExpiredLink(sent), Math.max(0, left));
+    return () => clearTimeout(timer);
+  }, [sent]);
 
-  return { state, request, reset };
+  const expired = sent !== null && expiredLink === sent;
+  useWatchForDeletion(sent !== null && !expired);
+
+  return { sent, expired, attempt, request, reset };
 }
 
 /**
@@ -89,7 +114,7 @@ export function useAccountDeletion(): AccountDeletionControl {
  * return to the window and once a minute. When it does not, settle every
  * account read and say so once.
  *
- * @param armed - Whether a deletion link is out.
+ * @param armed - Whether a working deletion link is out.
  */
 function useWatchForDeletion(armed: boolean): void {
   const queryClient = useQueryClient();

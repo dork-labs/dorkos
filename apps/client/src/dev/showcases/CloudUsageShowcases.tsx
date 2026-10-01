@@ -101,7 +101,7 @@ export function CloudUsageShowcases() {
       </PlaygroundSection>
       <PlaygroundSection
         title="Manage on the web"
-        description="The buttons that open the billing pages in the browser, what is on sale for an account on no plan (in the service's order, with its names and prices), and asking for a copy of the account's data. Here every billing button answers with a refusal, to show how the service's own words read, and the export answers as being prepared."
+        description="The buttons that open the billing pages in the browser, what is on sale for an account on no plan (in the service's order, with its names and prices), asking for a copy of the account's data, and deleting the account (what goes, what stays, a copy first, a typed word, then “check your email”). Here every billing button answers with a refusal, to show how the service's own words read, the export answers as being prepared, and a deletion request answers as sent while the account keeps accepting this computer."
       >
         <ShowcaseDemo responsive>
           <LinkedCard usage={{ available: true, usage: usageFixture as never }}>

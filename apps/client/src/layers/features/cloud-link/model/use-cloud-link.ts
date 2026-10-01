@@ -69,7 +69,8 @@ export interface CheckCloudLinkOptions {
   /**
    * Clear the server's "DorkOS revoked this computer's access" note before
    * anything shows it, because the person ended the link themselves (an
-   * account deletion they confirmed). The panel then reads signed out.
+   * account deletion they confirmed). The panel then reads signed out. A new
+   * link flow in progress is left alone.
    */
   expected?: boolean;
 }
@@ -101,8 +102,12 @@ export function useCheckCloudLink(): (
       }
       if (!summary.linked && options.expected) {
         // Before the summary moves, so the panel re-reads a flow state that
-        // no longer carries the note.
-        await transport.cancelCloudLink().catch(() => {});
+        // no longer carries the note. Never while a new link is being made:
+        // cancelling would throw away the code the person is about to approve.
+        const flow = await transport.getCloudLinkStatus().catch(() => null);
+        if (flow !== null && flow.state !== 'pending') {
+          await transport.cancelCloudLink().catch(() => {});
+        }
       }
       queryClient.setQueryData<CloudLinkSummary>(cloudStatusKey, summary);
       if (!summary.linked) await invalidateAccountReads(queryClient);

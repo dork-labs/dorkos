@@ -61,7 +61,15 @@ function linkedTransport(): Transport {
   return transport;
 }
 
-const SENT: CloudAccountDeletionResponse = { ok: true, deletion: deletionFixture };
+/**
+ * The fixture's link, with a deadline a day from now: the fixture's own date is
+ * fixed, and a link whose deadline has passed reads as expired.
+ */
+function sentLink(confirmBy: string | null = new Date(Date.now() + 86_400_000).toISOString()) {
+  return { ...deletionFixture, confirmBy };
+}
+
+const SENT = (): CloudAccountDeletionResponse => ({ ok: true, deletion: sentLink() });
 
 /** Open the dialog and return it. */
 async function openDialog() {
@@ -105,6 +113,12 @@ describe('deleting the DorkOS account', () => {
     ).toBeInTheDocument();
   });
 
+  it('puts focus in the confirm field when it opens', async () => {
+    renderDelete(linkedTransport());
+    const dialog = await openDialog();
+    await waitFor(() => expect(within(dialog).getByLabelText(/to confirm/i)).toHaveFocus());
+  });
+
   it('sends nothing until the word is typed', async () => {
     const transport = linkedTransport();
     renderDelete(transport);
@@ -121,7 +135,7 @@ describe('deleting the DorkOS account', () => {
 
   it('closes on a sent link and says to check the email, never that anything is gone', async () => {
     const transport = linkedTransport();
-    vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue(SENT);
+    vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue(SENT());
     renderDelete(transport);
     await confirmAndSend(await openDialog());
 
@@ -131,6 +145,8 @@ describe('deleting the DorkOS account', () => {
     expect(status).toHaveTextContent(/deleted only when you follow it/);
     expect(status).toHaveTextContent(/the link works until/);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // Focus lands on what happens next, not on the page.
+    await waitFor(() => expect(status).toHaveFocus());
     expect(screen.queryByText(/account is deleted\./i)).not.toBeInTheDocument();
     expect(transport.requestCloudAccountDeletion).toHaveBeenCalledTimes(1);
 
@@ -143,7 +159,7 @@ describe('deleting the DorkOS account', () => {
     const transport = linkedTransport();
     vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue({
       ok: true,
-      deletion: { ...deletionFixture, confirmBy: null },
+      deletion: sentLink(null),
     });
     renderDelete(transport);
     await confirmAndSend(await openDialog());
@@ -196,6 +212,71 @@ describe('deleting the DorkOS account', () => {
     );
   });
 
+  it('keeps the link that went out when a new one is refused, and says why', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue(SENT());
+    renderDelete(transport);
+    await confirmAndSend(await openDialog());
+    await screen.findByRole('status');
+
+    vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue({
+      ok: false,
+      problem: {
+        code: 'rate_limited',
+        status: 429,
+        title: 'You asked for a link a moment ago.',
+        retryAfterMs: 60_000,
+      } as never,
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Send a new link' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'You asked for a link a moment ago.'
+    );
+    // The first link still stands, and so does the watch on it.
+    expect(screen.getByRole('status')).toHaveTextContent('Check your email.');
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(transport.checkCloudLink).toHaveBeenCalled());
+  });
+
+  it('says the link expired at its deadline, stops watching, and offers a new one', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const transport = linkedTransport();
+    vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue({
+      ok: true,
+      deletion: sentLink(new Date(Date.now() + 5 * 60_000).toISOString()),
+    });
+    renderDelete(transport);
+    await confirmAndSend(await openDialog());
+    expect(await screen.findByRole('status')).toHaveTextContent('Check your email.');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000 + 1);
+    });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'The link has expired, so nothing was deleted.'
+    );
+    const checks = vi.mocked(transport.checkCloudLink).mock.calls.length;
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DELETION_CHECK_INTERVAL_MS * 2);
+    });
+    expect(transport.checkCloudLink).toHaveBeenCalledTimes(checks);
+
+    // A new link works again, and the watch comes back with it.
+    vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue(SENT());
+    await userEvent.click(screen.getByRole('button', { name: 'Send a new link' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Check your email.'));
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(transport.checkCloudLink).toHaveBeenCalledTimes(checks + 1));
+  });
+
   describe('noticing the deletion land', () => {
     it('asks nothing before a link is out', async () => {
       const transport = linkedTransport();
@@ -210,7 +291,7 @@ describe('deleting the DorkOS account', () => {
 
     it('on returning to the window, unlinks the view once the account no longer accepts this computer', async () => {
       const transport = linkedTransport();
-      vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue(SENT);
+      vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue(SENT());
       const cache = renderDelete(transport);
       cache.setQueryData(cloudStatusKey, LINKED);
       await confirmAndSend(await openDialog());
@@ -251,7 +332,7 @@ describe('deleting the DorkOS account', () => {
       // Real time still passes, so the clicks below run; the minute is skipped.
       vi.useFakeTimers({ shouldAdvanceTime: true });
       const transport = linkedTransport();
-      vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue(SENT);
+      vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue(SENT());
       renderDelete(transport);
       await confirmAndSend(await openDialog());
       await screen.findByRole('status');
