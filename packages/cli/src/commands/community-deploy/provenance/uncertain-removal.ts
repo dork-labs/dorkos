@@ -17,6 +17,7 @@ import {
 } from '../journal.js';
 import {
   classifyUncertainJournal,
+  createDeadlineFor,
   evaluateUncertainResource,
   precheckUncertainCreate,
   summary,
@@ -36,6 +37,13 @@ export * from './uncertain-verdict.js';
 
 /** How long a removal waits for the service to confirm the resource is gone. */
 export const DEFAULT_ABSENCE_DEADLINE_MS = 60_000;
+
+/**
+ * How long past its create window an absent create must be before its run is cleared. A create
+ * the launcher cut off at its deadline may still be under way at the service; until well after
+ * that, its marker in the journal is the only way to prove the resource later.
+ */
+export const CLEAR_ABSENT_MARGIN_MS = 10 * 60_000;
 
 const FIRST_POLL_DELAY_MS = 1_000;
 const MAX_POLL_DELAY_MS = 10_000;
@@ -99,6 +107,11 @@ export type RemovalOutcome =
       provider: RemovalProvider;
       /** The run made nothing else, so its journal was deleted and it is no longer listed. */
       cleared: boolean;
+      /**
+       * Set when the run would be cleared but its create is too recent to rule out a late landing:
+       * the time after which the same command clears it.
+       */
+      clearableAfter?: string;
     }
   | {
       outcome: 'unproved';
@@ -352,10 +365,26 @@ export async function runUncertainRemoval(
         ...pendingFlag,
       };
     }
-    // The one create this run tried is not there, and the run recorded nothing else, so nothing
-    // is left to resume, remove or track (DOR-2656). Its journal goes, so `--list-incomplete`
-    // stops listing it. A run that did make something keeps its journal, which points at it.
+    // The one create this run tried is not there, the run recorded nothing else, and the create
+    // is long past its window, so nothing is left to resume, remove or track (DOR-2656). Its
+    // journal goes, so `--list-incomplete` stops listing it. A run that did make something keeps
+    // its journal, which points at it.
     if (!journalRecordsNoResource(journal)) return { outcome: 'absent', provider, cleared: false };
+    // A create cut off at its deadline can still land. Keep its marker until well after the window.
+    const requestedAt = Date.parse(intent.requestedAt ?? '');
+    if (!Number.isFinite(requestedAt)) return { outcome: 'absent', provider, cleared: false };
+    const clearableAt =
+      requestedAt +
+      (dependencies.createDeadlineMs ?? createDeadlineFor(provider)) +
+      CLEAR_ABSENT_MARGIN_MS;
+    if (Date.parse(dependencies.now()) < clearableAt) {
+      return {
+        outcome: 'absent',
+        provider,
+        cleared: false,
+        clearableAfter: new Date(clearableAt).toISOString(),
+      };
+    }
     try {
       await dependencies.discard(journal.revision);
     } catch (error) {

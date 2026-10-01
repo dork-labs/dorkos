@@ -27,6 +27,7 @@ const APP = 'dorkos-community-test';
 const roots: string[] = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -214,7 +215,18 @@ describe('an ambiguous create stays uncertain, and --remove-uncertain can clear 
     const runId = String(journal!.runId);
     expect((await run(['--list-incomplete'])).printed).toContain(`${runId}  uncertain`);
 
+    // Straight away the create could still land, so the run is kept.
+    const early = await run(['--remove-uncertain', runId]);
+    expect(early.exitCode).toBe(0);
+    expect(early.printed).toContain('The create probably never landed.');
+    expect(early.printed).toContain('DorkOS keeps this run for now');
+    expect((await run(['--list-incomplete'])).printed).toContain(`${runId}  uncertain`);
+
+    // Well past the create window, the same command clears it.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 30 * 60_000);
     const removal = await run(['--remove-uncertain', runId]);
+    vi.useRealTimers();
     expect(removal.exitCode).toBe(0);
     expect(removal.printed).toContain('The create probably never landed.');
     expect(removal.printed).toContain('it no longer shows in --list-incomplete');
@@ -255,6 +267,7 @@ describe('a preflight read the service refuses (DOR-2657)', () => {
 
     expect(result.failure?.message).toBe(
       "The Fly token in FLY_API_TOKEN can't read organization dork-labs. " +
+        'It may have expired, or it may not have access there. ' +
         'Setup needs a token or sign-in that can create apps in it.'
     );
     expect(`${result.printed}\n${result.failure?.message}`).not.toContain(MARK);

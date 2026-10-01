@@ -10,7 +10,15 @@ import {
 } from '../execute.js';
 import type { FlyAppProvenance } from '../fly-graphql-contract.js';
 import { createFlyApp } from '../fly-mutate.js';
-import { LaunchJournalSchema, type LaunchJournal } from '../journal.js';
+import {
+  initializeLaunchJournal,
+  journalRecordsNoResource,
+  launchJournalPath,
+  LaunchJournalSchema,
+  readLaunchJournal,
+  type LaunchJournal,
+} from '../journal.js';
+import { stopForRefusedCreate } from '../runtime/refused-create.js';
 import { createNeonProject } from '../neon-mutate.js';
 import { createLaunchPlan } from '../plan.js';
 import { ProviderMutationError, runProviderMutation } from '../provider-mutation.js';
@@ -150,28 +158,101 @@ describe('access refusals at a create (DOR-2656)', () => {
     );
   });
 
-  // flyctl creates the app, then waits for it; the wait can end in the same refusal. Catches the
-  // refusal being trusted without the provenance read finding no app.
-  it('trusts a Fly refusal only when the provenance read then finds no app', async () => {
-    const { executable } = await failing(FLY_REFUSAL_OUTPUT);
-    const create = (readProvenance: (name: string) => Promise<FlyAppProvenance | null>) =>
-      createFlyApp(options(executable), 'community-space', 'dork-labs', network, readProvenance);
+  /**
+   * A fake `fly` that refuses `apps create`, and answers `apps list` with `listing`: a JSON array
+   * of app names, or `fail` to exit like a failed read.
+   */
+  const refusingFly = (listing: string[] | 'fail') => {
+    const apps =
+      listing === 'fail'
+        ? null
+        : listing.map((name) => ({
+            ID: name,
+            Name: name,
+            Status: 'pending',
+            Organization: { ID: 'org-id', Slug: 'dork-labs', Name: 'Dork Labs' },
+          }));
+    return fakeProvider(`case "$1 $2" in
+  "apps create") printf '%s\\n' '${FLY_REFUSAL_OUTPUT}' >&2; exit 1 ;;
+  "apps list") ${apps === null ? 'exit 1' : `printf '%s' '${JSON.stringify(apps)}'`} ;;
+  *) exit 9 ;;
+esac`);
+  };
+  const createWith = async (
+    listing: string[] | 'fail',
+    readProvenance: (name: string) => Promise<FlyAppProvenance | null>
+  ) => {
+    const { executable } = await refusingFly(listing);
+    return createFlyApp(
+      options(executable),
+      'community-space',
+      'dork-labs',
+      network,
+      readProvenance
+    );
+  };
 
-    await expect(create(async () => null)).rejects.toEqual(
+  // flyctl creates the app, then waits for it and reads it back; either can end in the same
+  // refusal after the app exists. Catches the refusal being trusted on the provenance read alone.
+  it('trusts a Fly refusal only when the provenance read and the org listing both lack the app', async () => {
+    await expect(createWith(['another-app'], async () => null)).rejects.toEqual(
       new ProviderMutationError('ACCESS_DENIED')
     );
+    // A null `app` can come from a server error; the listing still has the name.
+    await expect(createWith(['community-space'], async () => null)).rejects.toEqual(
+      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
+    );
+    // The listing itself fails, so absence is unproved.
+    await expect(createWith('fail', async () => null)).rejects.toEqual(
+      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
+    );
     await expect(
-      create(async () => {
+      createWith([], async () => {
         throw new Error('read failed');
       })
     ).rejects.toEqual(new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN'));
-    await expect(create(async () => provenance({ network: 'default' }))).rejects.toEqual(
+    await expect(createWith([], async () => provenance({ network: 'default' }))).rejects.toEqual(
       new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
     );
-    await expect(create(async () => provenance())).resolves.toMatchObject({
+    await expect(createWith(['community-space'], async () => provenance())).resolves.toMatchObject({
       id: 'community-space',
       organizationSlug: 'dork-labs',
     });
+  });
+
+  // The reviewer's case: Fly refuses, then the provenance read answers `app: null` beside a server
+  // error. Catches "nothing created" being printed for an app that may exist.
+  it('keeps a refusal uncertain when the provenance read nulls the app beside a server error', async () => {
+    const { parseFlyAppProvenanceResponse } = await import('../fly-graphql-contract.js');
+    const read = async () =>
+      parseFlyAppProvenanceResponse({
+        data: { app: null },
+        errors: [{ message: 'internal server error' }],
+      });
+    await expect(read()).resolves.toBeNull();
+    await expect(createWith(['community-space'], read)).rejects.toEqual(
+      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
+    );
+    await expect(createWith('fail', read)).rejects.toEqual(
+      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
+    );
+  });
+
+  // Catches an unbounded stderr scan: only the start of the output is ever held.
+  it('does not look for a refusal past the first 4 KB of error output', async () => {
+    const { executable } = await fakeProvider(
+      `i=0; while [ $i -lt 300 ]; do printf '%s\\n' 'progress: still working on the request' >&2; i=$((i+1)); done
+printf '%s\\n' '${FLY_REFUSAL_OUTPUT}' >&2
+exit 1`
+    );
+    await expect(
+      runProviderMutation({
+        ...options(executable),
+        args: [],
+        parse: () => 0,
+        refusalIsDefinite: true,
+      })
+    ).rejects.toEqual(new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN'));
   });
 });
 
@@ -270,4 +351,91 @@ describe('a refused create in the creation phase (DOR-2656)', () => {
       expect(persisted().completedSteps).toEqual(['planned', ...before]);
     }
   );
+});
+
+describe('what a refused create leaves behind (DOR-2656)', () => {
+  const RUN = '22222222-2222-4222-8222-222222222222';
+  const base = (update: Partial<LaunchJournal> = {}): LaunchJournal =>
+    LaunchJournalSchema.parse({
+      schemaVersion: 1,
+      runId: RUN,
+      revision: 0,
+      planHash: 'b'.repeat(64),
+      releaseDigest: `sha256:${'a'.repeat(64)}`,
+      state: 'planned',
+      pendingIntent: null,
+      resources: {},
+      verifiedBindings: [],
+      completedSteps: ['planned'],
+      lastSafeError: { category: 'authorization', code: 'ACCESS_DENIED' },
+      createdAt: '2026-09-21T00:00:00.000Z',
+      updatedAt: '2026-09-21T00:00:00.000Z',
+      ...update,
+    });
+  const removal = {
+    provider: 'fly' as const,
+    token: '4817203',
+    resourceName: 'dorkos-community-test',
+    proof: 'marker' as const,
+    requestedAt: '2026-09-21T00:00:00.000Z',
+  };
+  const intent = {
+    provider: 'fly' as const,
+    organizationId: 'dork-labs',
+    resourceName: 'dorkos-community-test',
+  };
+  // Each journal records something a person may still need, through exactly one field. Catches
+  // any one clause of `journalRecordsNoResource` being dropped.
+  const keeps: Array<[string, Partial<LaunchJournal>]> = [
+    ['a resource id', { resources: { flyAppId: 'app-id' } }],
+    ['a completed step', { completedSteps: ['planned', 'fly_app_created'] }],
+    ['a removal under way', { pendingRemoval: removal }],
+    ['a finished removal', { removals: [{ ...removal, removedAt: '2026-09-21T00:01:00.000Z' }] }],
+  ];
+
+  it('counts only a bare planned run as having recorded nothing', () => {
+    expect(journalRecordsNoResource(base())).toBe(true);
+    for (const [label, update] of keeps) {
+      expect(journalRecordsNoResource(base(update)), label).toBe(false);
+    }
+  });
+
+  async function stop(journal: LaunchJournal) {
+    const root = await mkdtemp(join(tmpdir(), 'dorkos-refused-stop-'));
+    temporaryDirectories.push(root);
+    const path = launchJournalPath(root, RUN);
+    await initializeLaunchJournal(path, journal);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const refusal = new CommunityCreationRefusedError('fly', 'dork-labs', 'dorkos-community-test');
+    let message = '';
+    let printed: string;
+    try {
+      await stopForRefusedCreate(refusal, journal, path, {}, () => 'RECOVERY TABLE');
+    } catch (error) {
+      message = (error as Error).message;
+    } finally {
+      printed = stderr.mock.calls.map(([value]) => String(value)).join('');
+      stderr.mockRestore();
+    }
+    return { message, printed, kept: await readLaunchJournal(path) };
+  }
+
+  it('deletes the journal of a run that made nothing, and prints no recovery', async () => {
+    const result = await stop(base());
+    expect(result.kept).toBeNull();
+    expect(result.printed).toBe('');
+    expect(result.message).toContain('Nothing was created');
+  });
+
+  // Catches the journal of a run that still records something being deleted on a refusal, for
+  // each clause, and for an unresolved intent (a create that may have made something).
+  it.each([...keeps, ['an unresolved create', { pendingIntent: intent }]] as Array<
+    [string, Partial<LaunchJournal>]
+  >)('keeps the journal and prints recovery when the run records %s', async (_label, update) => {
+    const journal = base(update);
+    const result = await stop(journal);
+    expect(result.kept).toEqual(journal);
+    expect(result.printed).toContain('RECOVERY TABLE');
+    expect(result.message).toContain('resume with the command above');
+  });
 });

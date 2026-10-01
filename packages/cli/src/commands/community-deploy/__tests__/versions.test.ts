@@ -47,7 +47,7 @@ describe('Community provider preflight guidance', () => {
         organization: 'personal',
       })
     ).toThrowError(
-      "Your Fly sign-in can't read organization personal. Setup needs a token or sign-in that can create apps in it."
+      "Your Fly sign-in can't read organization personal. It may have expired, or it may not have access there. Setup needs a token or sign-in that can create apps in it."
     );
     expect(() =>
       classifyCommunityProviderPreflightFailure('neon', new ProviderCommandError('EXIT'), {

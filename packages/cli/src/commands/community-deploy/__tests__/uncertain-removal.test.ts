@@ -168,6 +168,35 @@ describe('uncertain removal command', () => {
     await expect(readLaunchJournal(journalPath)).resolves.toBeNull();
   });
 
+  // Catches the clear ignoring the create window: a create cut off at its deadline can still land,
+  // and deleting its journal then would lose the only marker that proves it.
+  it.each([
+    ['inside the window', '2026-09-23T10:35:00.000Z', false],
+    ['one second before it closes', '2026-09-23T10:43:02.000Z', false],
+    ['as it closes', '2026-09-23T10:43:03.000Z', true],
+  ] as const)(
+    'clears an absent run only once its create window and margin have passed (%s)',
+    async (_label, now, cleared) => {
+      // REQUESTED_AT is 10:31:03; the create deadline is two minutes, and the margin ten.
+      await setup(shapeA('fly'));
+      const { probe, state } = memoryProbe('fly');
+      state.present = false;
+      const { dependencies, discard } = deps(probe, confirmWith('4817203'), { now: () => now });
+      await expect(runUncertainRemoval(dependencies)).resolves.toEqual(
+        cleared
+          ? { outcome: 'absent', provider: 'fly', cleared: true }
+          : {
+              outcome: 'absent',
+              provider: 'fly',
+              cleared: false,
+              clearableAfter: '2026-09-23T10:43:03.000Z',
+            }
+      );
+      expect(discard).toHaveBeenCalledTimes(cleared ? 1 : 0);
+      expect(await readLaunchJournal(journalPath)).toEqual(cleared ? null : shapeA('fly'));
+    }
+  );
+
   // Catches the clear racing a `--resume` that wrote the journal after the verdict was read.
   it('keeps the journal when it changed between the verdict and the clear', async () => {
     await setup(shapeA('fly'));

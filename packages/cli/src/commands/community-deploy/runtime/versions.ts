@@ -67,7 +67,11 @@ export class CommunityProviderPreflightError extends Error {
         : code === 'AUTH_REQUIRED'
           ? `${provider === 'fly' ? 'Fly' : 'Neon'} sign-in is required. Run ${help.command}, then retry. ${help.auth}`
           : code === 'ACCESS_DENIED' && access
-            ? `${describeCommunityCredential(provider, access.env)} can't read organization ${access.organization}. Setup needs a ${provider === 'fly' ? 'token' : 'key'} or sign-in that can create ${provider === 'fly' ? 'apps' : 'projects'} in it.`
+            ? provider === 'fly'
+              ? // Fly answers `unauthorized` both for a token without access and for one that has
+                // expired or was revoked, so the message names both.
+                `${describeCommunityCredential('fly', access.env)} can't read organization ${access.organization}. It may have expired, or it may not have access there. Setup needs a token or sign-in that can create apps in it.`
+              : `${describeCommunityCredential('neon', access.env)} can't read organization ${access.organization}. Setup needs a key or sign-in that can create projects in it.`
             : `${provider === 'fly' ? 'Fly' : 'Neon'} preflight is unavailable. Check provider status, CLI compatibility, and sign-in with ${help.command}, then retry. ${help.install}`;
     super(message);
     this.name = 'CommunityProviderPreflightError';
@@ -80,7 +84,8 @@ export class CommunityProviderPreflightError extends Error {
  * Convert a bounded provider-process failure into provider-specific preflight guidance.
  *
  * A read the service refused outright (see `isProviderAccessRefusal`) says so, naming the
- * credential and organization from `access`. Any other failure keeps the general message, which
+ * credential and organization from `access`. For Fly that refusal also covers an expired or
+ * revoked token, and the message says so. Any other failure keeps the general message, which
  * fits an outage, an old CLI or a missing sign-in.
  *
  * @param provider - The service whose read failed.

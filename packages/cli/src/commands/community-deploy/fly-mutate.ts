@@ -10,6 +10,7 @@ import type { FlySessionReadOptions, FlySecretInventoryItem } from './tigris-ses
 import type { FlyAppProvenance } from './fly-graphql-contract.js';
 import {
   FlyAppResponseSchema,
+  readFlyApps,
   toFlyAppIdentity,
   type FlyAppIdentity,
   type FlyRuntimeInventory,
@@ -44,9 +45,12 @@ export interface FlyMutationReceipt {
  * response naming a different app or organization is never adopted.
  *
  * A refusal (`Error: unauthorized`) is not taken on its word. flyctl creates the app and then
- * waits for it, and that wait can end in the same refusal after the app exists (fly-go
- * `flaps.WaitForApp` retries a 401). So it is `ACCESS_DENIED` only when the same provenance read
- * then finds no app by that name; anything else is uncertain, or adopted on a marker match.
+ * waits for it and reads it back, and either step can end in the same refusal after the app exists
+ * (fly-go `flaps.WaitForApp` retries a 401). So it is `ACCESS_DENIED` only when absence is proved
+ * the way `--remove-uncertain` proves it: the provenance read finds no app, AND the organization's
+ * app listing, an independent read, lacks the name too. A null `app` alone is not proof, since a
+ * server error can null it. A failed listing, or one that has the name, is uncertain; a marker
+ * match is adopted as above.
  *
  * @param options - Pinned Fly executable and bounded process settings.
  * @param appName - Planned app name.
@@ -103,7 +107,13 @@ export async function createFlyApp(
   const found = await readProvenance(app).catch(() => {
     throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
   });
-  if (refused && found === null) throw new ProviderMutationError('ACCESS_DENIED');
+  if (refused && found === null) {
+    const listed = await readFlyApps(options, organization).catch(() => null);
+    if (listed !== null && !listed.some((listedApp) => listedApp.name === app)) {
+      throw new ProviderMutationError('ACCESS_DENIED');
+    }
+    throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
+  }
   if (
     !found ||
     found.name !== app ||

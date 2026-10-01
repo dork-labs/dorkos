@@ -179,6 +179,16 @@ describe('--remove-uncertain output', () => {
       0,
       'it no longer shows in --list-incomplete',
     ],
+    [
+      {
+        outcome: 'absent' as const,
+        provider: 'fly' as const,
+        cleared: false,
+        clearableAfter: '2026-09-23T10:43:03.000Z',
+      },
+      0,
+      `Run dorkos community deploy --remove-uncertain ${RUN_ID} again after 2026-09-23T10:43:03.000Z`,
+    ],
     [{ outcome: 'unreachable' as const, provider: 'neon' as const }, 1, 'could not read Neon'],
     [{ outcome: 'changed' as const }, 1, 'nothing was removed'],
     [
