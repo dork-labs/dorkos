@@ -268,6 +268,8 @@ export class CloudLinkManager {
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   private pollController: AbortController | undefined;
   private pollTask: Promise<void> | undefined;
+  /** Settles once the current flow's token exchange has been applied, before any follow-up. */
+  private pollSettled: Promise<void> | undefined;
   private keyCheck:
     { context: LinkContext; settled: Promise<void>; keptAt: number | undefined } | undefined;
   private linkGeneration = ++nextLinkGeneration;
@@ -315,9 +317,12 @@ export class CloudLinkManager {
    * Begin the device flow: request a code, enter `pending`, and kick off the
    * background poll that carries the flow to `linked`/`denied`/`expired`. Returns
    * the codes for the human to enter; the client polls {@link getStatus} for the
-   * outcome.
+   * outcome. A flow already running is stopped first, keeping any key its
+   * token exchange in flight issues (see {@link drainPoll}).
    */
   async startLink(): Promise<StartLinkResult> {
+    const draining = this.drainPoll();
+    if (draining) await draining;
     const generation = this.advanceGeneration();
     this.cancelPoll();
     this.relinkOutcome = undefined;
@@ -341,7 +346,11 @@ export class CloudLinkManager {
     this.setState('pending');
     const controller = new AbortController();
     this.pollController = controller;
-    this.pollTask = this.runPoll(baseUrl, descriptor, codes, controller.signal, generation);
+    const exchange = this.runPoll(baseUrl, descriptor, codes, controller.signal, generation);
+    this.pollSettled = exchange.then(() => undefined);
+    this.pollTask = exchange.then((approved) =>
+      approved ? this.afterApproval(baseUrl, descriptor, approved) : undefined
+    );
 
     return {
       userCode: codes.user_code,
@@ -364,13 +373,24 @@ export class CloudLinkManager {
     this.config.clear({ previousLinkProof: this.previousLinkProof() });
   }
 
+  /**
+   * Run the device poll and apply its outcome. Resolves with the approved key
+   * once it is saved, so the follow-up work can run, else `undefined`.
+   *
+   * At token exchange the cloud issues the new key and retires the old one,
+   * so an approval is saved even when the flow was cancelled or restarted
+   * while its token request was in flight: a key the cloud issued is never
+   * thrown away by a local cancel or restart. Only a change of cloud URL,
+   * which makes the key belong to another service, drops it. Any other
+   * outcome is applied only while this flow is still the current one.
+   */
   private async runPoll(
     baseUrl: string,
     descriptor: InstanceDescriptor,
     codes: { device_code: string; interval: number; expires_in: number },
     signal: AbortSignal,
     generation: number
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     try {
       const result = await pollForToken({
         baseUrl,
@@ -383,17 +403,13 @@ export class CloudLinkManager {
         signal,
       });
       this.settlePoll(signal);
-      if (signal.aborted || generation !== this.linkGeneration || baseUrl !== resolveCloudBaseUrl())
-        return;
+      if (baseUrl !== resolveCloudBaseUrl()) return undefined;
       if (result.status === 'approved') {
         this.config.save({ instanceToken: result.accessToken, instanceName: descriptor.name });
-        const context = this.captureContext(result.accessToken, baseUrl);
         this.setState('linked');
-        await this.notifyManagedProviderSync();
-        if (!this.ownsContext(context)) return;
-        await this.heartbeat(baseUrl, descriptor, result.accessToken, generation);
-        if (this.ownsContext(context)) this.startHeartbeatSchedule();
-      } else {
+        return result.accessToken;
+      }
+      if (!signal.aborted && generation === this.linkGeneration) {
         this.settleUnfinished(result.status === 'denied' ? 'denied' : 'expired');
       }
     } catch (err) {
@@ -403,6 +419,39 @@ export class CloudLinkManager {
         this.settleUnfinished('failed');
       }
     }
+    return undefined;
+  }
+
+  /** Register the managed provider and start heartbeats for a newly saved key. */
+  private async afterApproval(
+    baseUrl: string,
+    descriptor: InstanceDescriptor,
+    accessToken: string
+  ): Promise<void> {
+    const context = this.captureContext(accessToken, baseUrl);
+    await this.notifyManagedProviderSync();
+    if (!this.ownsContext(context)) return;
+    await this.heartbeat(baseUrl, descriptor, accessToken, context.generation);
+    if (this.ownsContext(context)) this.startHeartbeatSchedule();
+  }
+
+  /**
+   * Stop the current flow. Polling stops at once between token requests; a
+   * token request already sent is allowed to finish, and a key it returns is
+   * saved before this resolves. With no flow running it returns nothing, so
+   * a caller that withdraws locally can do so before its first `await`.
+   */
+  private drainPoll(): Promise<void> | undefined {
+    const settled = this.pollSettled;
+    this.pollController?.abort();
+    if (!settled) {
+      this.cancelPoll();
+      return undefined;
+    }
+    return settled.then(() => {
+      // A newer flow may have started while this one settled; leave it alone.
+      if (this.pollSettled === settled) this.cancelPoll();
+    });
   }
 
   /**
@@ -422,14 +471,13 @@ export class CloudLinkManager {
 
   /**
    * Stop a link flow in progress, or dismiss the note a finished relink left.
-   * Advancing the generation means an approval already on its way is dropped
-   * rather than saved. Returns to `linked` while a key is held, else `idle`.
+   * A token exchange already in flight finishes first, and a key it issues is
+   * kept (see {@link drainPoll}). Settles in `linked` while a key is held,
+   * else `idle`.
    */
-  cancelLink(): CloudLinkStatus {
-    if (this.pollController) {
-      this.advanceGeneration();
-      this.cancelPoll();
-    }
+  async cancelLink(): Promise<CloudLinkStatus> {
+    const draining = this.drainPoll();
+    if (draining) await draining;
     this.relinkOutcome = undefined;
     this.setState(this.config.getToken() ? 'linked' : 'idle');
     return this.getStatus();
@@ -460,6 +508,10 @@ export class CloudLinkManager {
    * The revoke retains only the retiring credential and cannot affect a new link.
    */
   async unlink(): Promise<void> {
+    // An exchange in flight finishes first, so a key it issues is the one
+    // cleared and revoked below, never left live and unrecorded.
+    const draining = this.drainPoll();
+    if (draining) await draining;
     const token = this.config.getToken();
     const baseUrl = resolveCloudBaseUrl();
     this.advanceGeneration();
@@ -1020,6 +1072,7 @@ export class CloudLinkManager {
     this.pollController?.abort();
     this.pollController = undefined;
     this.pollTask = undefined;
+    this.pollSettled = undefined;
   }
 
   private setState(state: CloudLinkState): void {

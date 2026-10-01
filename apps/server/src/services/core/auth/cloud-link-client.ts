@@ -571,6 +571,24 @@ export async function requestDeviceCode(opts: {
   return (await res.json()) as DeviceCodeResponse;
 }
 
+/** Wait `ms`, or less if `signal` aborts first. */
+function sleepUnlessAborted(
+  sleep: (ms: number) => Promise<void>,
+  ms: number,
+  signal: AbortSignal | undefined
+): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    signal.addEventListener('abort', done, { once: true });
+    sleep(ms).then(done, done);
+  });
+}
+
 /**
  * Poll the device-token endpoint until the flow reaches a terminal state,
  * honoring the RFC 8628 `interval`, `slow_down` backoff, and the code's expiry.
@@ -604,7 +622,9 @@ export async function pollForToken(opts: {
 
   for (;;) {
     if (opts.signal?.aborted) return { status: 'expired' };
-    await sleep(intervalSeconds * 1000);
+    // An abort ends the wait at once. A token request already sent is never
+    // abandoned: the cloud issues the key when it answers.
+    await sleepUnlessAborted(sleep, intervalSeconds * 1000, opts.signal);
     if (opts.signal?.aborted) return { status: 'expired' };
     if (now() >= deadline) return { status: 'expired' };
 

@@ -3537,8 +3537,9 @@ registry.registerPath({
   tags: ['Cloud'],
   summary: 'Stop a link flow in progress, or dismiss the note a finished relink left',
   description:
-    'Drops any approval still on its way. Settles in `linked` while this instance still holds ' +
-    'its key, else `idle`, and answers that state.',
+    'Stops polling at once between token requests. A token request already sent finishes ' +
+    'first, and a key it issues is kept. Settles in `linked` while this instance holds a key, ' +
+    'else `idle`, and answers that state.',
   responses: {
     200: {
       description: 'The state the link flow settled in',

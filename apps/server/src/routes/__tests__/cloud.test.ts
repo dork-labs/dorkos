@@ -110,7 +110,7 @@ describe('cloud routes', () => {
 
   describe('POST /api/cloud/link/cancel', () => {
     it('stops the link flow and answers the state it settled in', async () => {
-      manager.cancelLink.mockReturnValue({ state: 'linked', accountLabel: 'kai@dork.dev' });
+      manager.cancelLink.mockResolvedValue({ state: 'linked', accountLabel: 'kai@dork.dev' });
       const res = await request(server).post('/api/cloud/link/cancel').expect(200);
       expect(res.body).toEqual({ state: 'linked', accountLabel: 'kai@dork.dev' });
       expect(manager.cancelLink).toHaveBeenCalledOnce();

@@ -598,74 +598,138 @@ describe('CloudLinkManager', () => {
       await manager.startLink();
       await manager.pendingLink;
       expect(manager.getStatus().relinkOutcome).toBe('expired');
-      manager.cancelLink();
+      await manager.cancelLink();
       expect(manager.getStatus().state).toBe('linked');
       expect(manager.getStatus().relinkOutcome).toBeUndefined();
     });
 
-    /** A cloud whose approval arrives only when the test says so. */
-    function approvalOnCue() {
-      let approve!: () => void;
-      const approval = new Promise<void>((resolve) => {
-        approve = resolve;
+    /**
+     * A cloud whose first token answer arrives only when the test says so.
+     * At token exchange the cloud issues the new key and retires the old one,
+     * so an answer that was already on its way must never be thrown away.
+     * Later token polls answer `expired_token`.
+     */
+    function exchangeOnCue(answer: 'approved' | 'denied') {
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
       });
-      const fetchImpl = vi.fn(async (url: string) => {
+      let tokenCalls = 0;
+      const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+        void init;
         const p = new URL(url).pathname;
         if (p.endsWith('/device/code')) return new Response(JSON.stringify(CODES.body));
         if (p.endsWith('/device/token')) {
-          await approval;
-          return new Response(JSON.stringify({ access_token: 'dork_inst_late' }));
+          tokenCalls += 1;
+          if (tokenCalls > 1) {
+            return new Response(JSON.stringify({ error: 'expired_token' }), { status: 400 });
+          }
+          await released;
+          return answer === 'approved'
+            ? new Response(JSON.stringify({ access_token: 'dork_inst_new' }))
+            : new Response(JSON.stringify({ error: 'access_denied' }), { status: 400 });
         }
         if (p.endsWith('/instances/heartbeat')) {
           return new Response(
             JSON.stringify({ ok: true, instanceId: 'i', lastSeenAt: '2026-09-30T00:00:00Z' })
           );
         }
+        if (p.endsWith('/instances/revoke')) return new Response(JSON.stringify({ ok: true }));
         throw new Error(`unexpected request: ${p}`);
       });
-      const polling = () =>
-        vi.waitFor(() =>
-          expect(fetchImpl.mock.calls.some((c) => String(c[0]).endsWith('/device/token'))).toBe(
-            true
-          )
-        );
-      return { fetchImpl, approve, polling };
+      const exchanging = () => vi.waitFor(() => expect(tokenCalls).toBeGreaterThanOrEqual(1));
+      return { fetchImpl, release, exchanging };
     }
 
-    it('cancels a first link back to idle, and a late approval saves nothing', async () => {
-      const { fetchImpl, approve, polling } = approvalOnCue();
-      manager = new CloudLinkManager({
-        fetchImpl,
-        sleep: noSleep,
+    function managerWith(fetchImpl: ReturnType<typeof vi.fn>, sleep = noSleep) {
+      return new CloudLinkManager({
+        fetchImpl: fetchImpl as never,
+        sleep,
         resolveTelemetryInstanceId: async () => undefined,
       });
+    }
+
+    it.each([
+      ['held', 'approved', 'dork_inst_new', 'linked'],
+      ['held', 'denied', 'dork_inst_held', 'linked'],
+      ['none', 'approved', 'dork_inst_new', 'linked'],
+      ['none', 'denied', null, 'idle'],
+    ] as const)(
+      'a cancel with a key %s while an exchange is in flight keeps an %s answer honest',
+      async (key, answer, token, state) => {
+        if (key === 'held') configManager.set('cloud', HELD);
+        const cloud = exchangeOnCue(answer);
+        manager = managerWith(cloud.fetchImpl);
+        await manager.startLink();
+        await cloud.exchanging();
+        let cancelled = false;
+        const cancelling = manager.cancelLink().then((status) => {
+          cancelled = true;
+          return status;
+        });
+        await Promise.resolve();
+        // The cancel waits for the answer already on its way.
+        expect(cancelled).toBe(false);
+        cloud.release();
+        const status = await cancelling;
+        expect(configManager.getDot('cloud.instanceToken')).toBe(token);
+        expect(status.state).toBe(state);
+        expect(status.relinkOutcome).toBeUndefined();
+        expect(manager.getStatus()).toEqual(status);
+      }
+    );
+
+    it('cancels at once between polls, without sending a token request', async () => {
+      configManager.set('cloud', HELD);
+      const cloud = exchangeOnCue('approved');
+      manager = managerWith(cloud.fetchImpl, () => new Promise<void>(() => {}));
       await manager.startLink();
-      const poll = manager.pendingLink;
-      await polling();
-      manager.cancelLink();
-      expect(manager.getStatus().state).toBe('idle');
-      approve();
-      await poll;
-      expect(manager.getStatus().state).toBe('idle');
-      expect(configManager.getDot('cloud.instanceToken')).toBeNull();
+      const status = await manager.cancelLink();
+      expect(status.state).toBe('linked');
+      expect(cloud.fetchImpl.mock.calls.some((c) => String(c[0]).endsWith('/device/token'))).toBe(
+        false
+      );
+      expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_held');
     });
 
-    it('never lets an approval that lands after a cancel replace the held key', async () => {
+    it('keeps a key issued while Link again restarts the flow, and proves the new key next', async () => {
       configManager.set('cloud', HELD);
-      const { fetchImpl, approve, polling } = approvalOnCue();
-      manager = new CloudLinkManager({
-        fetchImpl,
-        sleep: noSleep,
-        resolveTelemetryInstanceId: async () => undefined,
-      });
+      const cloud = exchangeOnCue('approved');
+      manager = managerWith(cloud.fetchImpl);
       await manager.startLink();
-      const poll = manager.pendingLink;
-      await polling();
-      manager.cancelLink();
-      approve();
-      await poll;
-      expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_held');
-      expect(manager.getStatus().state).toBe('linked');
+      await cloud.exchanging();
+      const restarting = manager.startLink();
+      cloud.release();
+      await restarting;
+      await manager.pendingLink;
+      expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_new');
+      const codeCalls = cloud.fetchImpl.mock.calls.filter((c) =>
+        String(c[0]).endsWith('/device/code')
+      );
+      expect(codeCalls).toHaveLength(2);
+      const secondScope = JSON.parse(
+        JSON.parse((codeCalls[1]![1] as RequestInit).body as string).scope
+      ) as Record<string, unknown>;
+      expect(secondScope.previousLinkProof).toBe(linkProofForKey('dork_inst_new'));
+    });
+
+    it('lets an exchange in flight finish before an unlink, then unlinks the key it issued', async () => {
+      configManager.set('cloud', HELD);
+      const cloud = exchangeOnCue('approved');
+      manager = managerWith(cloud.fetchImpl);
+      await manager.startLink();
+      await cloud.exchanging();
+      const unlinking = manager.unlink();
+      cloud.release();
+      await unlinking;
+      expect(configManager.getDot('cloud.instanceToken')).toBeNull();
+      expect(manager.getStatus().state).toBe('idle');
+      const revoke = cloud.fetchImpl.mock.calls.find((c) =>
+        String(c[0]).endsWith('/instances/revoke')
+      );
+      expect((revoke![1] as RequestInit).headers).toMatchObject({
+        authorization: 'Bearer dork_inst_new',
+      });
     });
   });
 
