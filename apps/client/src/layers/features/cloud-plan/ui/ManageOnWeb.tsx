@@ -193,7 +193,7 @@ export function ExportAccountData() {
   if (!data?.available) return null;
 
   return (
-    <div className="space-y-2 border-t pt-3">
+    <div className="space-y-2">
       <p className="text-sm font-medium">Your data</p>
       {state.kind === 'requested' ? (
         state.export.downloadUrl !== null ? (

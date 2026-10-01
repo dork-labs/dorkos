@@ -4,6 +4,7 @@ covers:
   - 'fix(cloud): review round for manage on the web (DOR-2632)'
   - 'fix(cloud): plain words for a plan no longer on sale, a missing account and a pending export (DOR-2632)'
   - 'fix(cloud): one plain sentence per action when the account answers not found (DOR-2632)'
+  - 'fix(client): drop the extra rule above Your data in Manage on the web (DOR-2632)'
 ---
 
 ### Added
