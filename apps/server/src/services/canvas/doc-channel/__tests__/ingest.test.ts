@@ -254,6 +254,24 @@ describe('compact pending coalescing', () => {
       ).toEqual([inputs[999]!.id])
     );
   });
+  it('preserves every comment ID even when the route declares comments coalescible', () => {
+    const f = fixture();
+    f.access.routes[0]!.route = { ...route, coalescibleTypes: ['task.comment'] };
+    const inputs = [
+      event('task.comment', { text: 'first' }, 'same'),
+      event('task.comment', { text: 'second' }, 'same'),
+    ];
+    for (const input of inputs) f.ingest.accept(input, f.authority);
+    const batch = f.store.getBatch(pending(f.db))!;
+    expect(batch.inputEventIds).toEqual(inputs.map((input) => input.id));
+    for (const input of inputs)
+      expect(f.store.listDeliveries('doc-1', input.id)[0]!.status).toBe('pending');
+    f.store.transaction((tx) =>
+      expect(
+        selectBatchSlice(f.store, tx, batch, 100, 'Tasks').context.events.map((input) => input.id)
+      ).toEqual(inputs.map((input) => input.id))
+    );
+  });
   it('does not replace comments, different types, or undeclared keys', () => {
     const f = fixture();
     const inputs = [

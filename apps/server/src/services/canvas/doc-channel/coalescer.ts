@@ -87,8 +87,13 @@ export function queueInput(
   }
   const batchId = batch?.batchId ?? randomUUID();
   let ids = batch?.inputEventIds ?? [];
-  // Type participates in identity: a comment can never replace a checkbox sharing its key.
-  if (event.coalesceKey && route.coalescibleTypes?.includes(event.type)) {
+  // Comments are append-only even if a declaration requests coalescing.
+  // Type also participates in identity so a checkbox cannot replace another event type.
+  if (
+    event.type.split('.').at(-1) !== 'comment' &&
+    event.coalesceKey &&
+    route.coalescibleTypes?.includes(event.type)
+  ) {
     ids = ids.filter((id) => {
       const prior = store.getEvent(event.documentId, id, tx)!;
       if (prior.type !== event.type || prior.coalesceKey !== event.coalesceKey) return true;

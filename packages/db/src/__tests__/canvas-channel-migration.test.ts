@@ -189,6 +189,8 @@ describe('canvas channel production migration', () => {
       canvas_doc_channels_scope_idx: ['scope', 'closed_at'],
       canvas_doc_events_sequence_unique: ['document_id', 'doc_seq'],
       canvas_doc_events_received_idx: ['document_id', 'received_at'],
+      canvas_doc_events_retention_idx: ['received_at', 'document_id', 'doc_seq'],
+      canvas_doc_events_unaccounted_idx: ['document_id', 'event_id'],
       canvas_doc_grants_document_id_unique: ['document_id', 'grant_id'],
       canvas_doc_grants_route_idx: ['document_id', 'route_id', 'revoked_at'],
       canvas_doc_batches_document_id_unique: ['document_id', 'batch_id'],
@@ -217,6 +219,9 @@ describe('canvas channel production migration', () => {
         )
       ).toEqual(columns);
     }
+    expect(schemaSql(db, 'canvas_doc_events_unaccounted_idx')).toContain(
+      'WHERE "canvas_doc_events"."envelope_bytes"=0 AND "canvas_doc_events"."payload_pruned_at" IS NULL'
+    );
     expect(schemaSql(db, 'canvas_doc_batches_pending_unique')).toContain(
       `WHERE "status" in ('pending', 'waiting')`
     );
