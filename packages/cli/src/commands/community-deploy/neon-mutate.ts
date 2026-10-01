@@ -29,7 +29,12 @@ function parseInput<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 
-/** Create one project without allowing the Neon CLI to print connection credentials. */
+/**
+ * Create one project without allowing the Neon CLI to print connection credentials.
+ *
+ * @throws ProviderMutationError `ACCESS_DENIED` when Neon refuses the key or sign-in outright, and
+ *   `CREATION_OUTCOME_UNCERTAIN` for any other failure after the command starts.
+ */
 export async function createNeonProject(
   options: NeonReadOptions,
   input: {
@@ -50,6 +55,9 @@ export async function createNeonProject(
   const { project } = await runProviderMutation({
     ...options,
     timeoutMs: writeDeadline(options.timeoutMs),
+    // `neonctl projects create` sends one request (neonctl `src/commands/projects.ts`), so Neon
+    // refusing it means no project was made.
+    refusalIsDefinite: true,
     args: [
       'projects',
       'create',

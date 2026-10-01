@@ -9,7 +9,12 @@
  *
  * @module commands/community-deploy/provenance/uncertain-removal
  */
-import { LaunchJournalConflictError, MAX_REMOVALS, type LaunchJournal } from '../journal.js';
+import {
+  journalRecordsNoResource,
+  LaunchJournalConflictError,
+  MAX_REMOVALS,
+  type LaunchJournal,
+} from '../journal.js';
 import {
   classifyUncertainJournal,
   evaluateUncertainResource,
@@ -61,6 +66,11 @@ export interface UncertainRemovalDependencies {
   readJournal(): Promise<LaunchJournal | null>;
   /** Persist one complete next revision; throws {@link LaunchJournalConflictError} on a race. */
   persist(next: LaunchJournal, expectedRevision: number): Promise<void>;
+  /**
+   * Delete the run's journal if it is still at this revision; throws
+   * {@link LaunchJournalConflictError} on a race.
+   */
+  discard(expectedRevision: number): Promise<void>;
   /** The probe for one service. Only the service in the intent is ever asked for. */
   probeFor(provider: RemovalProvider): UncertainResourceProbe;
   /** Show the proved resource and return the operator's answer. */
@@ -84,7 +94,12 @@ export type RemovalOutcome =
   | { outcome: 'resume-first' }
   | { outcome: 'not-a-create' }
   | { outcome: 'nothing-pending' }
-  | { outcome: 'absent'; provider: RemovalProvider }
+  | {
+      outcome: 'absent';
+      provider: RemovalProvider;
+      /** The run made nothing else, so its journal was deleted and it is no longer listed. */
+      cleared: boolean;
+    }
   | {
       outcome: 'unproved';
       provider: RemovalProvider;
@@ -328,9 +343,26 @@ export async function runUncertainRemoval(
   if (verdict.verdict === 'unreachable') return { outcome: 'unreachable', provider };
   const pendingFlag = restart ? { removalPending: true as const } : {};
   if (verdict.verdict === 'absent') {
-    return restart
-      ? { outcome: 'unproved', provider, reason: 'not-the-same', candidates: [], ...pendingFlag }
-      : { outcome: 'absent', provider };
+    if (restart) {
+      return {
+        outcome: 'unproved',
+        provider,
+        reason: 'not-the-same',
+        candidates: [],
+        ...pendingFlag,
+      };
+    }
+    // The one create this run tried is not there, and the run recorded nothing else, so nothing
+    // is left to resume, remove or track (DOR-2656). Its journal goes, so `--list-incomplete`
+    // stops listing it. A run that did make something keeps its journal, which points at it.
+    if (!journalRecordsNoResource(journal)) return { outcome: 'absent', provider, cleared: false };
+    try {
+      await dependencies.discard(journal.revision);
+    } catch (error) {
+      if (error instanceof LaunchJournalConflictError) return { outcome: 'changed' };
+      throw error;
+    }
+    return { outcome: 'absent', provider, cleared: true };
   }
   if (verdict.verdict === 'unproved') {
     return {

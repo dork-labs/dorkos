@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  deleteLaunchJournal,
   initializeLaunchJournal,
   launchJournalPath,
   readLaunchJournal,
@@ -74,9 +75,11 @@ function deps(
   const persist = vi.fn((next: LaunchJournal, expected: number) =>
     writeLaunchJournal(journalPath, next, expected)
   );
+  const discard = vi.fn((expected: number) => deleteLaunchJournal(journalPath, expected));
   const dependencies: UncertainRemovalDependencies = {
     readJournal: () => readLaunchJournal(journalPath),
     persist,
+    discard,
     probeFor: () => probe,
     confirm,
     now: () => '2026-09-23T11:00:00.000Z',
@@ -85,7 +88,7 @@ function deps(
     absenceDeadlineMs: 5_000,
     ...update,
   };
-  return { dependencies, confirm, persist };
+  return { dependencies, confirm, persist, discard };
 }
 
 const confirmWith = (token: string): RemovalAnswer => ({ kind: 'token', token });
@@ -126,21 +129,58 @@ describe('uncertain removal command', () => {
     expect(probeFor).not.toHaveBeenCalled();
   });
 
-  it('reports absent and unreachable without changing the journal', async () => {
-    await setup(shapeA('fly'));
-    const { probe, state } = memoryProbe('fly');
+  it('reports absent and unreachable without changing the journal of a run that made something', async () => {
+    // The Fly app exists, so the run must stay listed: its journal is what points at that app.
+    const journal = shapeA('neon');
+    await setup(journal);
+    const { probe, state } = memoryProbe('neon');
     state.present = false;
-    const { dependencies, persist } = deps(probe, confirmWith('4817203'));
+    const { dependencies, persist, discard } = deps(probe, confirmWith('project-1'));
     await expect(runUncertainRemoval(dependencies)).resolves.toEqual({
       outcome: 'absent',
-      provider: 'fly',
+      provider: 'neon',
+      cleared: false,
     });
     probe.find.mockRejectedValueOnce(new Error('server error'));
     await expect(runUncertainRemoval(dependencies)).resolves.toEqual({
       outcome: 'unreachable',
-      provider: 'fly',
+      provider: 'neon',
     });
     expect(persist).not.toHaveBeenCalled();
+    expect(discard).not.toHaveBeenCalled();
+    await expect(readLaunchJournal(journalPath)).resolves.toEqual(journal);
+  });
+
+  // DOR-2656: after `--remove-uncertain` said nothing exists, `--list-incomplete` still listed the
+  // run, and nothing could clear it. Catches the absent verdict leaving such a journal behind.
+  it('deletes the journal when the one create is absent and the run made nothing else', async () => {
+    await setup(shapeA('fly'));
+    const { probe, state } = memoryProbe('fly');
+    state.present = false;
+    const { dependencies, persist, discard } = deps(probe, confirmWith('4817203'));
+    await expect(runUncertainRemoval(dependencies)).resolves.toEqual({
+      outcome: 'absent',
+      provider: 'fly',
+      cleared: true,
+    });
+    expect(discard).toHaveBeenCalledExactlyOnceWith(0);
+    expect(persist).not.toHaveBeenCalled();
+    await expect(readLaunchJournal(journalPath)).resolves.toBeNull();
+  });
+
+  // Catches the clear racing a `--resume` that wrote the journal after the verdict was read.
+  it('keeps the journal when it changed between the verdict and the clear', async () => {
+    await setup(shapeA('fly'));
+    const { probe, state } = memoryProbe('fly');
+    state.present = false;
+    probe.find.mockImplementationOnce(async () => {
+      const current = (await readLaunchJournal(journalPath))!;
+      await writeLaunchJournal(journalPath, { ...current, revision: 1 }, 0);
+      return { kind: 'absent' } as const;
+    });
+    const { dependencies } = deps(probe, confirmWith('4817203'));
+    await expect(runUncertainRemoval(dependencies)).resolves.toEqual({ outcome: 'changed' });
+    await expect(readLaunchJournal(journalPath)).resolves.toMatchObject({ revision: 1 });
   });
 
   it('removes a proved Fly app with the right token and rewinds the journal for --resume', async () => {

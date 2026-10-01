@@ -248,7 +248,9 @@ export function formatRemovalOutcome(
     case 'absent':
       return done([
         `Nothing named ${shown(context.journal.pendingIntent?.resourceName)} exists in ${OWNER[outcome.provider]} ${shown(context.journal.pendingIntent?.organizationId)}. The create probably never landed.`,
-        'Nothing was changed. This run cannot be resumed; start a new launch instead.',
+        outcome.cleared
+          ? 'Nothing was changed there. This run made nothing else, so DorkOS removed its saved record and it no longer shows in --list-incomplete. Start a new launch instead.'
+          : 'Nothing was changed. This run cannot be resumed; start a new launch instead.',
       ]);
     case 'unproved':
       return done([

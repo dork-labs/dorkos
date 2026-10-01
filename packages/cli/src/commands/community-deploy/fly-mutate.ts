@@ -43,6 +43,11 @@ export interface FlyMutationReceipt {
  * created. `apps list` is never used for this, because it always reports an empty network. A
  * response naming a different app or organization is never adopted.
  *
+ * A refusal (`Error: unauthorized`) is not taken on its word. flyctl creates the app and then
+ * waits for it, and that wait can end in the same refusal after the app exists (fly-go
+ * `flaps.WaitForApp` retries a 401). So it is `ACCESS_DENIED` only when the same provenance read
+ * then finds no app by that name; anything else is uncertain, or adopted on a marker match.
+ *
  * @param options - Pinned Fly executable and bounded process settings.
  * @param appName - Planned app name.
  * @param organizationSlug - Planned organization slug.
@@ -59,9 +64,11 @@ export async function createFlyApp(
   const app = parseInput(ExternalIdentifierSchema, appName);
   const organization = parseInput(ExternalIdentifierSchema, organizationSlug);
   const networkName = parseInput(ExternalIdentifierSchema, network);
+  let refused = false;
   const created = await runProviderMutation({
     ...options,
     timeoutMs: writeDeadline(options.timeoutMs),
+    refusalIsDefinite: true,
     args: [
       'apps',
       'create',
@@ -87,11 +94,16 @@ export async function createFlyApp(
       }
       return toFlyAppIdentity(parsed.data);
     },
+  }).catch((error: unknown) => {
+    if (!(error instanceof ProviderMutationError) || error.code !== 'ACCESS_DENIED') throw error;
+    refused = true;
+    return null;
   });
   if (created) return created;
   const found = await readProvenance(app).catch(() => {
     throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
   });
+  if (refused && found === null) throw new ProviderMutationError('ACCESS_DENIED');
   if (
     !found ||
     found.name !== app ||

@@ -169,7 +169,16 @@ describe('--remove-uncertain output', () => {
     [{ outcome: 'nothing-pending' as const }, 0, 'This run has no unresolved resource.'],
     [{ outcome: 'resume-first' as const }, 0, `--resume ${RUN_ID}`],
     [{ outcome: 'not-a-create' as const }, 0, 'RECOVERY REPORT'],
-    [{ outcome: 'absent' as const, provider: 'fly' as const }, 0, 'probably never landed'],
+    [
+      { outcome: 'absent' as const, provider: 'fly' as const, cleared: false },
+      0,
+      'This run cannot be resumed',
+    ],
+    [
+      { outcome: 'absent' as const, provider: 'fly' as const, cleared: true },
+      0,
+      'it no longer shows in --list-incomplete',
+    ],
     [{ outcome: 'unreachable' as const, provider: 'neon' as const }, 1, 'could not read Neon'],
     [{ outcome: 'changed' as const }, 1, 'nothing was removed'],
     [

@@ -519,6 +519,56 @@ export async function writeLaunchJournal(
 }
 
 /**
+ * Whether a run never confirmed or removed anything: no resource identity, no step past `planned`, and
+ * no removal recorded or under way. Such a run's journal holds nothing a person needs to track,
+ * apart from any unresolved creation intent, which the caller must rule out itself.
+ *
+ * @param journal - The run's latest journal.
+ * @returns True when the run recorded no resource of any kind.
+ */
+export function journalRecordsNoResource(journal: LaunchJournal): boolean {
+  return (
+    Object.values(journal.resources).every((value) => value === undefined) &&
+    journal.completedSteps.every((step) => step === 'planned') &&
+    !journal.pendingRemoval &&
+    (journal.removals?.length ?? 0) === 0
+  );
+}
+
+/**
+ * Delete a run's journal, only if it is still at the revision the caller decided on.
+ *
+ * For a run that provably made nothing, so it stops showing in `--list-incomplete`. It takes the
+ * same locks as {@link writeLaunchJournal}, so a concurrent `--resume` either lands first and
+ * makes this a conflict, or finds no journal.
+ *
+ * @param filePath - Canonical path returned by {@link launchJournalPath}.
+ * @param expectedRevision - Revision the caller read.
+ */
+export async function deleteLaunchJournal(
+  filePath: string,
+  expectedRevision: number
+): Promise<void> {
+  await rejectSymlink(filePath);
+  await withFileLock(filePath, () =>
+    withCrossProcessLock(filePath, async () => {
+      const current = await readLaunchJournal(filePath);
+      const actualRevision = current?.revision ?? null;
+      if (actualRevision !== expectedRevision) {
+        throw new LaunchJournalConflictError(expectedRevision, actualRevision);
+      }
+      await unlink(filePath);
+      const directoryHandle = await open(dirname(filePath), 'r');
+      try {
+        await directoryHandle.sync();
+      } finally {
+        await directoryHandle.close();
+      }
+    })
+  );
+}
+
+/**
  * Create a journal without a read-modify-write transaction.
  *
  * Intended for tests and one-shot initialization where the caller already owns

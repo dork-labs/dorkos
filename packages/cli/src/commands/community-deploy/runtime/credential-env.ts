@@ -96,3 +96,21 @@ export function formatCommunityCredentialNotice(env: Env): string {
   const signIns = parts.length > 1 ? 'your saved sign-ins' : 'your saved sign-in';
   return `Using ${parts.join(' and ')} from your environment, not ${signIns}.${shadowed}\n`;
 }
+
+/**
+ * Name, for a sentence, the credential `fly` or `neonctl` acts with: an exported variable, or
+ * the saved sign-in. It names variables only, never a value.
+ *
+ * @param service - Which tool's credential to describe.
+ * @param env - The environment setup passes to `fly` and `neonctl`.
+ * @returns A sentence subject such as "The Neon key in NEON_API_KEY" or "Your Fly sign-in".
+ */
+export function describeCommunityCredential(service: 'fly' | 'neon', env: Env): string {
+  if (service === 'neon') {
+    return typeof env.NEON_API_KEY === 'string' && env.NEON_API_KEY !== ''
+      ? 'The Neon key in NEON_API_KEY'
+      : 'Your Neon sign-in';
+  }
+  const fly = flyCredentialEnvInUse(env);
+  return fly ? `The Fly token in ${fly}` : 'Your Fly sign-in';
+}
