@@ -575,7 +575,6 @@ async function main(): Promise<void> {
             }
             throw error;
           });
-          accessKeyLeft = cleanup.accessKeyLeftAtTigris;
           // The Fly and Neon inventories are re-read below; a storage bucket bills too, so it is
           // re-read here, while the session is still held. Only Fly's exact not-found answer counts as
           // gone; a bucket still there fails the gate before cleanup is called finished, so the
@@ -598,6 +597,8 @@ async function main(): Promise<void> {
               'the storage bucket still exists after cleanup'
             );
           }
+          // Only now, with the bucket proved gone, is its access key a leftover worth the steps.
+          accessKeyLeft = cleanup.accessKeyLeftAtTigris;
         } finally {
           credential.dispose();
         }

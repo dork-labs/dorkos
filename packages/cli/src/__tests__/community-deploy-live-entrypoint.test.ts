@@ -116,6 +116,24 @@ describe('credentialed live gate entrypoint', () => {
     expect(tigrisRecheck).toBeLessThan(main.indexOf('credential.dispose();', cleanup));
     expect(tigrisRecheck).toBeLessThan(cleanedUp);
     expect(main.slice(afterRead, afterRead + 400)).toContain('tigrisBucketFound,');
+    // DOR-2646: the bucket's Tigris access key outlives the bucket. Its delete steps print on every
+    // path once the bucket is proved gone: the success path records it only after the re-read
+    // (never while the bucket still exists), a cleanup that stopped after the delete records it from
+    // its error, and the failure path prints it before the failure that points back at it.
+    const keyFromCleanup = main.indexOf('accessKeyLeft = cleanup.accessKeyLeftAtTigris;');
+    expect(keyFromCleanup).toBeGreaterThan(main.indexOf('if (tigrisBucketFound) {', cleanup));
+    expect(keyFromCleanup).toBeLessThan(main.indexOf('credential.dispose();', cleanup));
+    expect(main.slice(cleanup, tigrisRecheck)).toMatch(
+      /\.catch\(\(error: unknown\) => \{[^}]*if \(error instanceof CommunityLiveGateCleanupError\) \{\s*accessKeyLeft = error\.accessKeyLeftAtTigris;/u
+    );
+    const failurePath = main.slice(
+      main.indexOf('const explained = await explainCommunityLiveGateFailure(')
+    );
+    expect(failurePath.indexOf('writeAccessKeySteps(process.stderr);')).toBeGreaterThan(0);
+    expect(failurePath.indexOf('writeAccessKeySteps(process.stderr);')).toBeLessThan(
+      failurePath.indexOf('throw withDorkosHostsContacted(')
+    );
+    expect(main).toMatch(/writeAccessKeySteps\(process\.stdout\);/u);
     expect(main).toMatch(
       /catch \(error\) \{\s*const explained = await explainCommunityLiveGateFailure\(\s*error,\s*\{ cleanedUp, recoveryCommand \}/u
     );
