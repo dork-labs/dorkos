@@ -1920,6 +1920,12 @@ export const ErrorEventSchema = z
     code: z.string().optional(),
     category: ErrorCategorySchema.optional(),
     details: z.string().optional(),
+    /**
+     * Why, for a code that has more than one cause: a `credits_unavailable`
+     * refusal says which (`folder-sign-in`, `off`, …), so the chat offers only
+     * the ways on that fit it.
+     */
+    reason: z.string().optional(),
   })
   .openapi('ErrorEvent');
 
@@ -3165,6 +3171,8 @@ export const ErrorPartSchema = z
      * failure without parsing `details`.
      */
     code: z.string().optional(),
+    /** The originating `error` event's `reason`, when it had one. */
+    reason: z.string().optional(),
   })
   .openapi('ErrorPart');
 

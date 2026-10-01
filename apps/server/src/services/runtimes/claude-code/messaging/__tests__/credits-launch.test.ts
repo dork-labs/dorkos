@@ -75,6 +75,8 @@ describe('the process env of a credits turn', () => {
       PATH: '/bin',
       DATABASE_URL: 'postgres://local',
       GITHUB_TOKEN: 'gh',
+      AWS_SECRET_ACCESS_KEY: 'aws',
+      GOOGLE_APPLICATION_CREDENTIALS: '/gcp.json',
       ANTHROPIC_BASE_URL: 'http://credits',
       ANTHROPIC_AUTH_TOKEN: 'tok',
     });
@@ -89,17 +91,22 @@ describe('which names route a turn or pay for one', () => {
     'CLAUDE_CODE_SKIP_SOMETHING_AUTH',
     'CLAUDE_CODE_OAUTH_TOKEN',
     '_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL',
+    'AWS_BEARER_TOKEN_BEDROCK',
+  ])('%s routes or pays', (name) => expect(routesOrPays(name)).toBe(true));
+
+  // The agent's own cloud tools keep their accounts: with every CLAUDE_CODE_USE_*
+  // switch blanked, these cannot route or pay for a Claude Code turn.
+  it.each([
+    'PATH',
+    'DATABASE_URL',
+    'GITHUB_TOKEN',
+    'MAX_THINKING_TOKENS',
+    'NODE_OPTIONS',
     'AWS_PROFILE',
     'GOOGLE_APPLICATION_CREDENTIALS',
     'CLOUDSDK_CONFIG',
     'AZURE_CLIENT_SECRET',
-    'VERTEX_REGION_CLAUDE_4_0_OPUS',
-  ])('%s routes or pays', (name) => expect(routesOrPays(name)).toBe(true));
-
-  it.each(['PATH', 'DATABASE_URL', 'GITHUB_TOKEN', 'MAX_THINKING_TOKENS', 'NODE_OPTIONS'])(
-    '%s does not',
-    (name) => expect(routesOrPays(name)).toBe(false)
-  );
+  ])('%s does not', (name) => expect(routesOrPays(name)).toBe(false));
 });
 
 describe('the launch’s own settings over a folder’s', () => {
@@ -135,7 +142,7 @@ describe('the launch’s own settings over a folder’s', () => {
     expect(env.NODE_EXTRA_CA_CERTS).toBe('');
     expect(env.NODE_TLS_REJECT_UNAUTHORIZED).toBe('');
     expect(env.ANTHROPIC_MODEL).toBe('');
-    expect(env.AWS_PROFILE).toBe('');
+    expect(env.AWS_PROFILE).toBeUndefined();
     expect(env.ANTHROPIC_API_KEY).toBe('');
     expect(env.ANTHROPIC_BASE_URL).toBe('http://credits');
   });
@@ -196,6 +203,7 @@ describe('a credits turn’s sign-in failure', () => {
         message: expect.stringContaining('DorkOS credits stopped working partway through'),
         code: 'credits_unavailable',
         category: 'execution_error',
+        reason: 'stopped',
         details: '401 invalid token',
       },
     });

@@ -795,6 +795,11 @@ export function creditsRefusalEvent(err: unknown): StreamEvent | null {
   if (!(err instanceof CreditsUnavailableError)) return null;
   return {
     type: 'error',
-    data: { message: err.message, code: err.code, category: 'execution_error' },
+    data: {
+      message: err.message,
+      code: err.code,
+      category: 'execution_error',
+      reason: err.reason,
+    },
   };
 }

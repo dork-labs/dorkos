@@ -1251,6 +1251,7 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
         onRetry={onRetry}
         sessionId={SESSION_ID}
         runtimeLabel="Claude Code"
+        reason="folder-sign-in"
       />,
       { keepCreditsOutOfProject }
     );
@@ -1258,6 +1259,26 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
     await waitFor(() => expect(onRetry).toHaveBeenCalledTimes(1));
     expect(keepCreditsOutOfProject).toHaveBeenCalledWith(SESSION_ID);
     expect(useAppStore.getState().retryAccount).toEqual({ id: 'work', sessionId: SESSION_ID });
+  });
+
+  it('offers keeping credits out of the project only when the folder has its own sign-in', () => {
+    renderBlock(
+      <ErrorMessageBlock
+        message={SENTENCE}
+        category="execution_error"
+        code="credits_unavailable"
+        reason="unreachable"
+        onRetry={vi.fn()}
+        sessionId={SESSION_ID}
+        runtimeLabel="Claude Code"
+      />
+    );
+    expect(
+      screen.getByRole('button', { name: 'Use your Claude Code sign-in' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Don’t use credits in this project' })
+    ).not.toBeInTheDocument();
   });
 
   it('says why when the folder is in no project, and retries nothing', async () => {
@@ -1277,6 +1298,7 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
         onRetry={onRetry}
         sessionId={SESSION_ID}
         runtimeLabel="Claude Code"
+        reason="folder-sign-in"
       />,
       { keepCreditsOutOfProject }
     );

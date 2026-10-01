@@ -134,6 +134,11 @@ interface ErrorMessageBlockProps {
    * live turn, when the open limit's banner speaks for it).
    */
   code?: string;
+  /**
+   * Why, for a code with more than one cause: a DorkOS credits refusal names
+   * which, so only the ways on that fit it are offered.
+   */
+  reason?: string;
   /** The timestamp of the message holding this error, ISO-8601. */
   at?: string;
 }
@@ -188,6 +193,7 @@ function ErrorCard({
   onSigninComplete,
   onChooseModel,
   code,
+  reason,
 }: ErrorMessageBlockProps) {
   const [showDetails, setShowDetails] = useState(false);
   // A turn refused because DorkOS credits could not pay for it: its own
@@ -329,6 +335,7 @@ function ErrorCard({
               onRetry={onRetry}
               sessionId={sessionId}
               runtimeLabel={runtimeLabel}
+              reason={reason}
             />
           )}
           {isAuthError && (

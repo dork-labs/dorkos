@@ -8,9 +8,9 @@
  * - **The process environment drops every name that routes or pays.** A credits
  *   turn carries the baseline names every child gets (paths, locale, proxies,
  *   certificates), DorkOS's own variables, the person's own inherit list minus
- *   anything that routes a turn or holds a credential, and the credits pair. No
- *   key, no OAuth token, no `CLAUDE_CODE_USE_*` routing switch and no cloud
- *   credential survives, whichever list carried it.
+ *   anything that routes a turn or holds its credential, and the credits pair.
+ *   No key, no OAuth token and no `CLAUDE_CODE_USE_*` routing switch
+ *   survives, whichever list carried it.
  * - **The flag-level settings pin the endpoint.** A project's or a folder's own
  *   `.claude/settings.json` / `settings.local.json` `env` OUTRANKS the process
  *   environment inside the CLI, so a folder could otherwise point
@@ -102,13 +102,20 @@ export const CREDITS_BLANKED_SETTINGS_NAMES = [
 const BLANKED = new Set<string>(CREDITS_BLANKED_SETTINGS_NAMES);
 
 /**
- * The name families that route a turn or hold a credential: Anthropic's own
- * variables, Claude Code's routing and auth-skipping switches, and the cloud
- * credential families a routed turn could pay with. A future variable in one
- * of these families is covered without an edit here.
+ * The name families that route a Claude Code turn or hold its credential:
+ * Anthropic's own variables and Claude Code's routing, auth-skipping and OAuth
+ * switches. A future variable in one of these families is covered without an
+ * edit here.
+ *
+ * The cloud families (`AWS_*`, `GOOGLE_*`, `CLOUDSDK_*`, `AZURE_*` and the
+ * like) are deliberately NOT here. With every `CLAUDE_CODE_USE_*` switch
+ * blanked, Claude Code never routes a turn to a cloud, so they cannot pay for
+ * one; blanking them would only point the agent's own `aws` or `gcloud`
+ * commands at a different account. The few cloud names Claude Code reads as
+ * its own key (`AWS_BEARER_TOKEN_BEDROCK`) are on the explicit list above.
  */
 const ROUTING_OR_PAYING_FAMILY =
-  /^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_SKIP_|CLAUDE_CODE_OAUTH|_CLAUDE_CODE_|AWS_|GOOGLE_|GCLOUD_|CLOUDSDK_|CLOUD_ML_|VERTEX_|AZURE_)/;
+  /^(ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_SKIP_|CLAUDE_CODE_OAUTH|_CLAUDE_CODE_)/;
 
 /**
  * Whether a variable routes a Claude Code turn or pays for one, so a credits
@@ -302,6 +309,7 @@ export function creditsStoppedEvent(details?: string): StreamEvent {
       message: refusal.message,
       code: refusal.code,
       category: 'execution_error',
+      reason: refusal.reason,
       ...(details ? { details } : {}),
     },
   };

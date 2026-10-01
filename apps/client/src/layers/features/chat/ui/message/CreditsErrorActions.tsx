@@ -14,7 +14,12 @@ interface CreditsErrorActionsProps {
   sessionId?: string;
   /** The runtime's display name, for "Use your Claude Code sign-in". */
   runtimeLabel?: string;
+  /** Why credits refused the turn (`folder-sign-in`, `off`, …), when the server said. */
+  reason?: string;
 }
+
+/** The refusal of a folder whose own settings name a sign-in, which credits can never run. */
+const FOLDER_SIGN_IN_REASON = 'folder-sign-in';
 
 /**
  * The ways on from a turn refused because DorkOS credits could not pay for it
@@ -27,7 +32,8 @@ interface CreditsErrorActionsProps {
  * the session has not launched (a refused credits turn never did).
  *
  * "Don't use credits in this project" is the way on for a folder with a
- * sign-in of its own, which credits can never run: it saves a project rule
+ * sign-in of its own, which credits can never run, so it is offered for that
+ * refusal only (a retry cannot help there, and nothing else needs a rule): it saves a project rule
  * without credits (Settings → Runtimes shows and undoes it), then retries on
  * whatever the server says the project runs on now.
  */
@@ -35,6 +41,7 @@ export function CreditsErrorActions({
   onRetry,
   sessionId,
   runtimeLabel,
+  reason,
 }: CreditsErrorActionsProps) {
   const setRetryAccount = useAppStore((s) => s.setRetryAccount);
   const keepOut = useKeepCreditsOutOfProject();
@@ -64,7 +71,7 @@ export function CreditsErrorActions({
             Use {runtimeLabel ? `your ${runtimeLabel}` : 'your own'} sign-in
           </Button>
         )}
-        {sessionId && (
+        {sessionId && reason === FOLDER_SIGN_IN_REASON && (
           <Button size="sm" variant="outline" onClick={keepCreditsOut} disabled={keepOut.isPending}>
             Don’t use credits in this project
           </Button>

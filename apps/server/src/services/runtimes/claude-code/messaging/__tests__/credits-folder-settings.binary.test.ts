@@ -20,7 +20,8 @@
  * `creditsSettingsEnv` in the launch's own settings — and the token must reach
  * only the credits server. The third gives the folder hooks of its own and
  * checks what they see: the folder's own variables, the server's PATH, and
- * nothing of the folder's that routes, pays or proxies. Skipped where the SDK's bundled binary is not
+ * nothing of the folder's that routes, pays or proxies,
+ * while its cloud tools' own account (`AWS_PROFILE`) survives. Skipped where the SDK's bundled binary is not
  * installed for this platform.
  */
 import http from 'node:http';
@@ -238,6 +239,8 @@ describe.skipIf(BINARY === null)('a folder’s settings cannot redirect the cred
     expect(hookEnv.HTTPS_PROXY ?? '').toBe('');
     expect(hookEnv.NODE_EXTRA_CA_CERTS ?? '').toBe('');
     expect(hookEnv.CLAUDE_CODE_USE_BEDROCK ?? '').toBe('');
-    expect(hookEnv.AWS_PROFILE ?? '').toBe('');
+    // The agent's own cloud tools keep the folder's account: with Bedrock pinned
+    // off, AWS_PROFILE cannot route or pay for this turn.
+    expect(hookEnv.AWS_PROFILE).toBe('folder');
   }, 60_000);
 });

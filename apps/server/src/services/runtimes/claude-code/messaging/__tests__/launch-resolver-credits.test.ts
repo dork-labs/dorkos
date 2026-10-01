@@ -156,7 +156,7 @@ describe('who pays for a Claude Code turn', () => {
       const env = options?.env ?? {};
       for (const name of Object.keys(env)) {
         expect(name, `${name} survived into a credits turn`).not.toMatch(
-          /^(CLAUDE_CODE_USE_|AWS_|ANTHROPIC_API_KEY|ANTHROPIC_AWS|CLAUDE_CODE_OAUTH)/
+          /^(CLAUDE_CODE_USE_|AWS_BEARER_TOKEN_BEDROCK|ANTHROPIC_API_KEY|ANTHROPIC_AWS|CLAUDE_CODE_OAUTH)/
         );
       }
       expect(env.ANTHROPIC_AUTH_TOKEN).toBe(token.token);
@@ -205,7 +205,7 @@ describe('who pays for a Claude Code turn', () => {
     const settingsEnv = (options?.settings as { env?: Record<string, string> }).env ?? {};
     expect(settingsEnv.ANTHROPIC_BASE_URL).toBe(token.endpoints.anthropicMessages);
     expect(settingsEnv.ANTHROPIC_SOMETHING_NEW).toBe('');
-    expect(settingsEnv.AWS_PROFILE).toBe('');
+    expect(settingsEnv).not.toHaveProperty('AWS_PROFILE');
     expect(settingsEnv.HTTPS_PROXY).toBe(options?.env?.HTTPS_PROXY ?? '');
     expect(settingsEnv.PATH).toBe(options?.env?.PATH);
     expect(settingsEnv.PATH).toBeTruthy();
@@ -226,6 +226,7 @@ describe('who pays for a Claude Code turn', () => {
       type: 'error',
       data: {
         code: 'credits_unavailable',
+        reason: 'folder-sign-in',
         message: expect.stringContaining('name their own sign-in'),
       },
     });
