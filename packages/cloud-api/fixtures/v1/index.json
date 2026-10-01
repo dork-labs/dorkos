@@ -108,6 +108,8 @@
     "communities/move-cancelled.json": "CommunityMoveSchema",
     "communities/move-claimed.json": "CommunityMoveSchema",
     "communities/moves.json": "CommunityMoveListResponseSchema",
-    "problem/community-name-reserved.json": "ProblemSchema"
+    "problem/community-name-reserved.json": "ProblemSchema",
+    "communities/sign-in.json": "CommunitySignInResponseSchema",
+    "communities/sign-in-none.json": "CommunitySignInResponseSchema"
   }
 }

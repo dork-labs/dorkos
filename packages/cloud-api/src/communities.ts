@@ -843,3 +843,66 @@ export const CommunityMoveStartResponseSchema = z
 
 /** The started move. */
 export type CommunityMoveStartResponse = z.infer<typeof CommunityMoveStartResponseSchema>;
+
+/**
+ * The address of a Community server and nothing more: scheme, host and port.
+ *
+ * Written the way the URL standard writes an origin (lower-case host, no
+ * default port, no trailing slash), so the app can compare it with
+ * `new URL(link).origin` as it is.
+ */
+const ServerOriginSchema = ServerUrlSchema.regex(
+  /^https?:\/\/[^/?#]+$/,
+  'must be an origin: no path, query or fragment'
+)
+  .refine((value) => new URL(value).origin === value, {
+    message: 'must be written as the URL standard writes an origin',
+  })
+  .describe(
+    'A Community server`s origin: scheme, host and port, written as the URL standard writes it. A runtime value.'
+  );
+
+/**
+ * One Community server where this account signs a person in.
+ *
+ * The server's own single sign-on is this account, so a person who opens one of
+ * its pages (an owner claim, an invitation, a connection approval) signs in with
+ * the account they already have instead of making a second one there.
+ */
+export const CommunitySignInServerSchema = z
+  .object({
+    origin: ServerOriginSchema,
+  })
+  .describe('A Community server whose single sign-on is this account.');
+
+/** One Community server where this account signs a person in. */
+export type CommunitySignInServer = z.infer<typeof CommunitySignInServerSchema>;
+
+/**
+ * `GET /v1/communities/sign-in` — the Community servers where this account
+ * signs a person in.
+ *
+ * The app reads it to open a server's pages with the hint that makes that
+ * server lead with its single sign-on (`?sign-in=single-sign-on`, which the
+ * public Community server honours), and to say "sign in with your DorkOS
+ * account" rather than "create an account there". It grants nothing: signing in
+ * still happens in the person's own browser, through the server's ordinary
+ * OpenID Connect sign-in, and the server still decides who may join.
+ *
+ * A server that is not listed keeps its own accounts, and the app sends people
+ * there exactly as it always has. That covers every server a person runs
+ * themselves. The list is empty, not absent, while the service offers this
+ * sign-in nowhere; a service that does not serve the route at all answers
+ * `not_found`, and the app reads both the same way.
+ */
+export const CommunitySignInResponseSchema = z
+  .object({
+    servers: z
+      .array(CommunitySignInServerSchema)
+      .max(100)
+      .describe('Every Community server whose single sign-on is this account. Often one.'),
+  })
+  .describe('The Community servers where this account signs a person in.');
+
+/** The Community servers where this account signs a person in. */
+export type CommunitySignInResponse = z.infer<typeof CommunitySignInResponseSchema>;

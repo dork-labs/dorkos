@@ -51,7 +51,7 @@ body is neither.
 | Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                                                 |
 | Seats, orgs and addresses | organizations, membership, invitations, agents and claims (an agent says whether a claim waits on approval, and which), seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event              |
 | Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation and its read, usage against the published limits, instance credentials, the command stream and its acknowledgement, event batches |
-| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, and moves: start, list, poll, cancel                                                    |
+| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, moves: start, list, poll, cancel, and the servers where the account signs a person in   |
 | Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                                                     |
 
 ### What is deliberately not in it
@@ -266,6 +266,13 @@ that server's single-use owner claim; it never owns one itself.
   communities shapes, or the conversion throws. The same holds for `OffersResponseSchema`, whose
   `interval` is tolerant, for `RemoteUsageResponseSchema`, whose `unit` and `state` are tolerant,
   and for `AgentSchema`, whose `claimStatus` is tolerant, all for the same reason.
+- **The account can sign a person in.** `GET /v1/communities/sign-in` lists the Community
+  servers whose own single sign-on is this account, as bare origins. The app opens an owner claim,
+  an invitation or a connection approval on a listed server with `?sign-in=single-sign-on`, which
+  makes the public Community server lead with that sign-in, so nobody makes a second account
+  there. The list grants nothing: the person still signs in in their own browser, and the server
+  still decides who may join. A server not listed keeps its own accounts, untouched. An empty
+  list and a `not_found` answer mean the same thing: open every page as before.
 
 Every link to a community is a runtime value.
 

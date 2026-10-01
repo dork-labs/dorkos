@@ -67,6 +67,8 @@ export const V1_ROUTES = {
   communities: '/v1/communities',
   communitiesNameCheck: '/v1/communities/name-check',
   communitiesMoves: '/v1/communities/moves',
+  /** The Community servers where this account signs a person in, answered with `CommunitySignInResponseSchema`. */
+  communitiesSignIn: '/v1/communities/sign-in',
 } as const;
 
 /** One of the fixed `/v1` paths. */
@@ -339,13 +341,13 @@ export const v1Path = {
 /**
  * The fixed segments that sit where a community identifier would.
  *
- * `/v1/communities/moves` and `/v1/communities/name-check` share a prefix with
- * `/v1/communities/{communityId}/…`, so a community identifier equal to one of
+ * `/v1/communities/moves`, `/v1/communities/name-check` and
+ * `/v1/communities/sign-in` share a prefix with `/v1/communities/{communityId}/…`, so a community identifier equal to one of
  * them would build a path a router could read as the other route. The service
  * issues opaque identifiers that are never these words, so one arriving here is
  * a caller bug, refused like a dot segment.
  */
-const COMMUNITY_FIXED_SEGMENTS: ReadonlySet<string> = new Set(['moves', 'name-check']);
+const COMMUNITY_FIXED_SEGMENTS: ReadonlySet<string> = new Set(['moves', 'name-check', 'sign-in']);
 
 /**
  * Encodes a community identifier, refusing one that names a fixed route.
