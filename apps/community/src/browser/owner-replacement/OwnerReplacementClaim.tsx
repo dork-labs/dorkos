@@ -267,23 +267,23 @@ export function OwnerReplacementClaim() {
           : 'Take ownership';
   const intro =
     stage === 'unavailable'
-      ? 'It may have been used, withdrawn, or replaced by a newer link. Ask the host for a new one.'
+      ? 'It may have been used, withdrawn, or replaced by a newer link. Ask the server admin for a new one.'
       : stage === 'missing'
         ? 'This page only works from the link you were sent. Open that link again.'
         : stage === 'early'
           ? early
           : stage === 'account'
             ? named
-              ? `Sign in, or create your account, with ${providers.oidc?.label ?? 'this host’s sign-in service'}. Only the account named in the request can take ownership.`
-              : 'Sign in, or create an account on this host, to take ownership.'
+              ? `Sign in, or create your account, with ${providers.oidc?.label ?? 'this server’s sign-in service'}. Only the account named in the request can take ownership.`
+              : 'Sign in, or create an account on this server, to take ownership.'
             : stage === 'confirm'
-              ? 'The current owner stays a member. Nothing else in the community changes.'
+              ? 'The current owner stays a member. Nothing else in the space changes.'
               : '';
 
   return (
     <div className="grid min-h-dvh place-items-center p-4">
       <main className="auth-card" aria-busy={busy || stage === 'checking'}>
-        <p className="eyebrow">DorkOS Community</p>
+        <p className="eyebrow">DorkOS Space</p>
         <h1 ref={heading} tabIndex={-1} className="mb-3">
           {title}
         </h1>
@@ -384,7 +384,7 @@ export function OwnerReplacementClaim() {
                 />
                 <span className="hint">
                   {mode === 'signin'
-                    ? 'Forgot your password? Ask the person running this host for help.'
+                    ? 'Forgot your password? Ask the person running this server for help.'
                     : `At least ${COMMUNITY_PASSWORD_MIN_LENGTH} characters.`}
                 </span>
               </div>
@@ -422,7 +422,7 @@ export function OwnerReplacementClaim() {
                   <span className="small muted block">{account.email}</span>
                 </span>
               ) : (
-                <span>You are signed in to this host.</span>
+                <span>You are signed in to this server.</span>
               )}
             </div>
             <Button
@@ -448,7 +448,7 @@ export function OwnerReplacementClaim() {
         )}
         {(stage === 'unavailable' || stage === 'missing') && (
           <Button asChild variant="outline">
-            <a href="/">Go to your communities</a>
+            <a href="/">Go to your spaces</a>
           </Button>
         )}
         {confirming && community && (

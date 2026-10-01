@@ -52,7 +52,7 @@ export async function isDeletedCommunity(db: Queryable, communityId: string): Pr
 
 /** The refusal every member and installation gets from a community its host took down. */
 export function communityTakenDown(): ApiError {
-  return new ApiError(423, 'COMMUNITY_TAKEN_DOWN', 'This community was removed by its host.');
+  return new ApiError(423, 'COMMUNITY_TAKEN_DOWN', 'This space was removed by its server admin.');
 }
 
 /**
@@ -107,28 +107,24 @@ export async function resolveCommunityContext(
       );
 
   if (!requested && result.rows.length > 1) {
-    throw new ApiError(
-      409,
-      'COMMUNITY_SELECTION_REQUIRED',
-      'Choose a community before continuing.'
-    );
+    throw new ApiError(409, 'COMMUNITY_SELECTION_REQUIRED', 'Choose a space before continuing.');
   }
   const community = result.rows[0];
   if (!community) {
     // Only a canonical path names one community, so only it can learn that one was deleted.
     if (canonicalId && (await isDeletedCommunity(db, canonicalId)))
-      throw new ApiError(410, 'COMMUNITY_DELETED', 'This community was deleted.');
-    throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      throw new ApiError(410, 'COMMUNITY_DELETED', 'This space was deleted.');
+    throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
   }
   if (community.lifecycle === 'pending_owner' && !options.allowPendingOwner) {
-    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is not ready yet.');
+    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This space is not ready yet.');
   }
   if (community.lifecycle === 'suspended' && !options.allowSuspended) {
-    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
+    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This space is suspended.');
   }
   if (community.taken_down && !options.allowDeletionPending) throw communityTakenDown();
   if (community.lifecycle === 'deletion_pending' && !options.allowDeletionPending) {
-    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');
+    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This space is being deleted.');
   }
   return {
     communityId: community.id,

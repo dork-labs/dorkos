@@ -46,7 +46,7 @@ export function registerHostLegalHoldRoutes(
       const at = now();
       await assertHostActor(client, actor, at);
       const row = locked.rows[0];
-      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       if (row.legal_hold_at) {
         // Already held: only the reference can change; the start time and holder stand.
         await client.query('UPDATE communities SET legal_hold_reference=$2 WHERE id=$1', [
@@ -95,9 +95,9 @@ export function registerHostLegalHoldRoutes(
       );
       await assertHostActor(client, actor, now());
       const row = locked.rows[0];
-      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       if (!row.legal_hold_at) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community has no legal hold.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'This space has no legal hold.');
       }
       await client.query(
         `UPDATE communities SET legal_hold_at=NULL,legal_hold_by_host_actor=NULL,

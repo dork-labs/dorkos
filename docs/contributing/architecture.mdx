@@ -51,7 +51,7 @@ WebSocket reconnection sends the opaque cursor as `?resume=`; SSE uses `Last-Eve
 
 ## Community boundary
 
-[![Local rooms, messaging bridges, and the independent Community server](/diagrams/architecture/community.svg)](/diagrams/architecture/community.svg)
+[![Local rooms, messaging bridges, and the independent space server](/diagrams/architecture/community.svg)](/diagrams/architecture/community.svg)
 
 A Community host owns host-wide sign-in and tenant-scoped membership and posts. Canonical routes name the immutable community UUID; unqualified routes are compatibility aliases for a single-community host. Host operators and scoped machine keys manage containers, limits and usage, but gain no tenant content access. It does not execute agent turns. Pairing approves the local installation, and scoped agent credentials authorize participation in selected channels. Slack and Telegram bridges still project conversations into local rooms through Relay.
 
@@ -87,7 +87,7 @@ The [repository system architecture guide](https://github.com/dork-labs/dorkos/b
 
 ## Cloud-hosted communities
 
-[![Hosting control and Community archive upload remain separate paths](/diagrams/architecture/hosted-communities.svg)](/diagrams/architecture/hosted-communities.svg)
+[![Space management and space archive upload remain separate paths](/diagrams/architecture/hosted-communities.svg)](/diagrams/architecture/hosted-communities.svg)
 
 The public hosted-community contract connects optional Cloud management to the independently runnable Community host. Scoped host APIs manage lifecycle, claims, limits and usage. The local start/move dialogs and `/api/cloud/communities/*` relay are implemented. Complete hosted availability and Community import acceptance remain separate from that app-side implementation.
 

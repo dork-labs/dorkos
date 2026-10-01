@@ -78,7 +78,7 @@ async function lockExportAuthority(
   );
   const lifecycle = community.rows[0]?.lifecycle ?? '';
   if (!(OWNER_EXPORT_LIFECYCLES as readonly string[]).includes(lifecycle))
-    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community cannot be exported now.');
+    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This space cannot be exported now.');
   const live = await client.query<{ role: Member['role'] }>(
     'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
     [member.id, member.community_id]
@@ -128,7 +128,7 @@ export function registerExportRoutes(
     );
     if (!current.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
     if (scope === 'owner' && current.rows[0].role !== 'owner')
-      throw new ApiError(403, 'FORBIDDEN', 'Only the owner can export the community.');
+      throw new ApiError(403, 'FORBIDDEN', 'Only the owner can export the space.');
     return transaction(pool, async (client) => {
       await lockExportAuthority(client, member, scope);
       // One creator at a time per community (owner) or member (personal).

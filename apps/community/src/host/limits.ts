@@ -14,13 +14,13 @@ type Queryable = Pick<Pool | PoolClient, 'query'>;
  * use removes nothing; it only refuses the next action that would grow past it.
  */
 export const memberLimitReached = () =>
-  new ApiError(409, 'MEMBER_LIMIT_REACHED', 'This community is full. Ask its owner to make room.');
+  new ApiError(409, 'MEMBER_LIMIT_REACHED', 'This space is full. Ask its owner to make room.');
 /** The community's counted file space would go past its host-set limit. */
 export const storageLimitReached = () =>
-  new ApiError(409, 'STORAGE_LIMIT_REACHED', 'This community is out of file space.');
+  new ApiError(409, 'STORAGE_LIMIT_REACHED', 'This space is out of storage.');
 /** The member's active agents are at their limit in this community. */
 export const agentLimitReached = () =>
-  new ApiError(409, 'AGENT_LIMIT_REACHED', 'You have reached your agent limit in this community.');
+  new ApiError(409, 'AGENT_LIMIT_REACHED', 'You have reached your agent limit in this space.');
 
 /**
  * Bytes that count against a storage limit: stored or committed attachments and icons.

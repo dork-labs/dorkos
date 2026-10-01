@@ -124,7 +124,7 @@ export function recovery(status: number) {
     case 429:
       return 'Too many requests. Wait a moment and try again.';
     case 503:
-      return 'The community is temporarily unavailable. Try again shortly.';
+      return 'The space is temporarily unavailable. Try again shortly.';
     default:
       return 'Something went wrong. Try again.';
   }

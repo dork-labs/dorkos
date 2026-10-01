@@ -22,7 +22,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const TARGETS: { value: TargetKind; label: string; idLabel?: string }[] = [
   { value: 'entry', label: 'A message', idLabel: 'Message ID' },
   { value: 'attachment', label: 'A file', idLabel: 'File ID' },
-  { value: 'icon', label: 'The community icon' },
+  { value: 'icon', label: 'The space icon' },
 ];
 
 /** The fields of a host community record the takedown section needs. */
@@ -418,7 +418,7 @@ function TakedownRow({
       </p>
       {held && legalHold && (
         <p className="small muted mt-1 mb-0">
-          It can’t be released while this community is under a legal hold.
+          It can’t be released while this space is under a legal hold.
         </p>
       )}
       {(state === 'failed' || (held && evidenceStore) || (held && !legalHold)) && (

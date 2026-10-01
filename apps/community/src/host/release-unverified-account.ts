@@ -49,8 +49,8 @@ export async function releaseUnverifiedAccount(pool: Pool, email: string): Promi
       [user.id]
     );
     const { memberships, operator, uses } = ties.rows[0];
-    if (memberships || uses) throw new Error('That account has joined a community, so it is kept.');
-    if (operator) throw new Error('That account has operated this host, so it is kept.');
+    if (memberships || uses) throw new Error('That account has joined a space, so it is kept.');
+    if (operator) throw new Error('That account has operated this server, so it is kept.');
     // A join attempt bound to this account and still live is someone joining right now; release
     // could race it. Expired ones are only leftovers.
     const joining = await client.query(
@@ -60,7 +60,7 @@ export async function releaseUnverifiedAccount(pool: Pool, email: string): Promi
     );
     if (joining.rowCount)
       throw new Error(
-        'That account is joining a community right now. Wait 10 minutes for the join attempt to expire, then try again.'
+        'That account is joining a space right now. Wait 10 minutes for the join attempt to expire, then try again.'
       );
     await client.query(
       'DELETE FROM pending_admissions WHERE account_id=$1 AND consumed_at IS NULL',

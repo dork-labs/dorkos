@@ -236,7 +236,7 @@ export function ChannelView({
           onChanged();
         }
       } catch {
-        setError('The live connection sent an invalid update.');
+        setError('The live feed sent an invalid update.');
         setErrorAction('reload');
       }
     };
@@ -536,8 +536,8 @@ export function ChannelView({
           </p>
           {readOnly ? (
             <Notice tone="info" className="mb-0">
-              {held ? 'While this community is on hold, history' : 'Archived history'} is available
-              only for channels you joined.
+              {held ? 'While this space is on hold, history' : 'Archived history'} is available only
+              for channels you joined.
             </Notice>
           ) : (
             <Button variant="default" onClick={() => void join()}>
@@ -570,7 +570,7 @@ export function ChannelView({
             )}
             {!nextCursor && importedAt && channel.createdAt <= importedAt && (
               <p className="small muted text-center" role="note">
-                History imported from another host on {new Date(importedAt).toLocaleDateString()}.
+                History imported from another server on {new Date(importedAt).toLocaleDateString()}.
               </p>
             )}
             {entries.length === 0 && (
@@ -630,8 +630,8 @@ export function ChannelView({
         <div className="composer" role="status">
           <p className="mb-0">
             {held
-              ? 'This community is on hold by its host, so no one can post.'
-              : 'Archived history is read-only. Restore the community to post again.'}
+              ? 'This space is on hold by its server admin, so no one can post.'
+              : 'Archived history is read-only. Restore the space to post again.'}
           </p>
         </div>
       ) : (

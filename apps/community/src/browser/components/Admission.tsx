@@ -301,14 +301,14 @@ export function Admission({
             ? `Join ${preview.communityName}`
             : 'Come on in.';
   const eyebrow = isOwner
-    ? 'Set up your community'
+    ? 'Set up your space'
     : hostSignIn
-      ? 'Your communities'
+      ? 'Your spaces'
       : preview
         ? 'Invitation'
         : community?.name
           ? `Join ${community.name}`
-          : 'Join community';
+          : 'Join space';
   // What the invitation is, or that the join attempt was lost: above whichever sign-in leads.
   const invitation = <InvitationHeading lost={resume?.kind === 'lost'} preview={preview} />;
   const intro = admissionIntro({
@@ -324,13 +324,13 @@ export function Admission({
     <div className="auth-wrap">
       <div className="auth-art">
         <div>
-          <p className="eyebrow">DorkOS Community</p>
+          <p className="eyebrow">DorkOS Space</p>
           <h2 className="mt-10 text-4xl font-semibold tracking-tight">A place to work together.</h2>
           <p className="mt-4 max-w-md text-lg text-[#d0e4d3]">
             People and agents in the same conversation, with clear access and room to focus.
           </p>
         </div>
-        <p className="text-sm text-[#aec4b1]">One community. Your channels. Your pace.</p>
+        <p className="text-sm text-[#aec4b1]">One space. Your channels. Your pace.</p>
       </div>
       <main className="auth-card" aria-busy={busy || stage === 'joining'}>
         <p className="eyebrow">{eyebrow}</p>
@@ -366,7 +366,7 @@ export function Admission({
               <h2 className="text-lg font-semibold">Your account has not joined yet.</h2>
               <p className="muted mb-0">
                 Ask a member for a new invitation link, then open it in this browser. If your
-                password is lost, contact the person running this community.
+                password is lost, contact the person running this space.
               </p>
             </div>
             {!isOwner && stage === 'account' && (
@@ -391,7 +391,7 @@ export function Admission({
                     onChange={(event) => setSecret(event.target.value)}
                     required
                   />
-                  <span className="hint">Provided by the person hosting this community.</span>
+                  <span className="hint">Provided by the person who runs this server.</span>
                 </Field>
               </>
             ) : (
@@ -429,7 +429,7 @@ export function Admission({
                     className="h-auto min-h-11 whitespace-normal md:min-h-9"
                     onClick={() => setMode('signup')}
                   >
-                    {isOwner ? 'Create account' : 'Create an account on this host'}
+                    {isOwner ? 'Create account' : 'Create an account on this server'}
                   </Button>
                   {!isOwner && (
                     <Button
@@ -439,7 +439,7 @@ export function Admission({
                       className="h-auto min-h-11 whitespace-normal md:min-h-9"
                       onClick={() => setMode('signin')}
                     >
-                      Sign in to this host
+                      Sign in to this server
                     </Button>
                   )}
                 </div>
@@ -481,7 +481,7 @@ export function Admission({
                 />
                 {mode === 'signin' ? (
                   <span className="hint">
-                    Forgot your password? Ask the person running this community for help.
+                    Forgot your password? Ask the person running this space for help.
                   </span>
                 ) : (
                   <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
@@ -491,7 +491,7 @@ export function Admission({
                 <>
                   <Separator className="my-4" />
                   <Field className="mb-4 gap-1.5">
-                    <FieldLabel htmlFor="community-name">Community name</FieldLabel>
+                    <FieldLabel htmlFor="community-name">Space name</FieldLabel>
                     <Input
                       id="community-name"
                       value={communityName}
@@ -522,9 +522,9 @@ export function Admission({
                 {busy
                   ? 'Working…'
                   : isOwner
-                    ? 'Create community'
+                    ? 'Create space'
                     : pendingAdmission
-                      ? 'Join community'
+                      ? 'Join space'
                       : 'Sign in'}
                 <KeyRound size={16} aria-hidden="true" />
               </Button>

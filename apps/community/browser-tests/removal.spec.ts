@@ -397,12 +397,12 @@ test("an admin removes a member's message but is offered nothing on the owner's"
     await page.getByRole('menuitem', { name: 'Remove', exact: true }).click();
     const dialog = page.getByRole('alertdialog', { name: 'Remove this message?' });
     await expect(dialog.getByRole('paragraph')).toHaveText([
-      'Everyone will see "This message was removed by a community admin." in its place. Its files are deleted too. This can\'t be undone.',
+      'Everyone will see "This message was removed by a space admin." in its place. Its files are deleted too. This can\'t be undone.',
       leftovers,
     ]);
     await shot(page, 'remove-dialog');
     await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
-    const removed = message(page, 'This message was removed by a community admin.');
+    const removed = message(page, 'This message was removed by a space admin.');
     await expect(removed).toHaveCount(1);
     await expect(removed.getByText('Mia Member')).toBeVisible();
     await expect(page.getByText('Buy cheap watches here')).toHaveCount(0);

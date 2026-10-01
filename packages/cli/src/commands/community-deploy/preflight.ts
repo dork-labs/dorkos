@@ -91,7 +91,7 @@ export class CommunityPreflightError extends Error {
 
   /** Create one secret-free preflight rejection. */
   constructor(code: CommunityPreflightError['code']) {
-    super(`Community launch preflight failed (${code})`);
+    super(`Space server launch preflight failed (${code})`);
     this.name = 'CommunityPreflightError';
     this.code = code;
   }

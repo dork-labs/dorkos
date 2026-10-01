@@ -98,17 +98,17 @@ describe('hostRowSentence', () => {
     [
       'withdrawn by suspension',
       { state: 'withdrawn', endedAt: '2026-09-22T09:00:00.000Z', withdrawnBecause: 'suspended' },
-      'Withdrawn on Tuesday, 22 September 2026 (UTC) because the community was suspended.',
+      'Withdrawn on Tuesday, 22 September 2026 (UTC) because the space was suspended.',
     ],
     [
       'withdrawn by deletion',
       { state: 'withdrawn', endedAt: '2026-09-22T09:00:00.000Z', withdrawnBecause: 'deletion' },
-      'Withdrawn on Tuesday, 22 September 2026 (UTC) because the community is being deleted.',
+      'Withdrawn on Tuesday, 22 September 2026 (UTC) because the space is being deleted.',
     ],
     [
       'superseded',
       { state: 'superseded', endedAt: '2026-09-22T09:00:00.000Z' },
-      'Ended on Tuesday, 22 September 2026 (UTC) because the owner handed the community to someone or asked to delete it.',
+      'Ended on Tuesday, 22 September 2026 (UTC) because the owner handed the space to someone or asked to delete it.',
     ],
     [
       'expired',

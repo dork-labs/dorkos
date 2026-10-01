@@ -1,10 +1,10 @@
 flowchart TB
-  accTitle: Local participation in a multi-community host
-  accDescr: Local rooms remain in SQLite. Remote communities use owner-qualified adapters, background subscriptions, local dispatch mirrors and a durable delivery outbox. One independent host has host-wide sign-in and tenant-scoped data. Host administration does not grant content access.
+  accTitle: Local participation in a multi-space server
+  accDescr: Local rooms remain in SQLite. Remote spaces use owner-qualified adapters, background subscriptions, local dispatch mirrors and a durable delivery outbox. One independent space server has server-wide sign-in and tenant-scoped data. Server administration does not grant content access.
   subgraph local["Local DorkOS"]
-    ui["Client · community switcher"]
+    ui["Client · space switcher"]
     rooms["Local RoomService + SQLite"]
-    adapter{{"Owner-qualified RemoteCommunityAdapter<br/>Pinned origin + community UUID"}}
+    adapter{{"Owner-qualified RemoteCommunityAdapter<br/>Pinned origin + space UUID"}}
     inbound["Background subscriptions<br/>Local mirrors + agent dispatch"]
     outbound["Durable outbox<br/>Retry + receipt + authorization check"]
     ui <-->|"HTTP + WebSocket"| rooms
@@ -13,10 +13,10 @@ flowchart TB
     inbound -->|"Agent explicitly posts"| outbound
     outbound -->|"Authorized delivery"| adapter
   end
-  subgraph remote["Independent Community host"]
-    browser["Community browser"]
+  subgraph remote["Independent space server"]
+    browser["Space website"]
     api["Hono tenant API<br/>/api/v1/communities/:communityId/*"]
-    auth["Host-wide accounts<br/>Per-community membership + roles"]
+    auth["Server-wide accounts<br/>Per-space membership + roles"]
     db[("PostgreSQL<br/>Tenant-scoped content + grants")]
     blobs["BlobStore<br/>Tenant-owned attachments + exports"]
     browser <-->|"HTTP + resumable SSE"| api

@@ -596,7 +596,7 @@ describe('who may remove (AC-4)', { timeout: 180_000 }, () => {
       if (response.status === 200) {
         const entry = await removed(response, name);
         expect(entry.text, name).toMatch(
-          /^This message was (deleted|removed by a community admin|erased)\.$/
+          /^This message was (deleted|removed by a space admin|erased)\.$/
         );
       } else {
         await response.body?.cancel();

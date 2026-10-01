@@ -310,7 +310,7 @@ test.describe('Community pairing approval @smoke', () => {
       );
       await page.getByRole('button', { name: 'Decline' }).click();
       await forbidden;
-      await expect(page.getByRole('alert')).toContainText('You have not joined this community.');
+      await expect(page.getByRole('alert')).toContainText('You have not joined this space.');
       await expect(page.getByRole('button', { name: 'Approve connection' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Decline' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Sign in and review' })).toHaveCount(0);

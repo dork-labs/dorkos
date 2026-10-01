@@ -54,9 +54,9 @@ export async function bootstrapCommunity(
   await page.getByLabel('Your name').fill(input.name);
   await page.getByLabel('Email').fill(input.email);
   await page.getByLabel('Password').fill('acceptance-password');
-  await page.getByLabel('Community name').fill(input.community);
+  await page.getByLabel('Space name').fill(input.community);
   await page.getByLabel('First channel').fill('general');
-  await page.getByRole('button', { name: 'Create community' }).click();
+  await page.getByRole('button', { name: 'Create space' }).click();
   await expect(page.getByText('#general')).toBeVisible();
 }
 

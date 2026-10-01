@@ -8,9 +8,9 @@ import { CopyableLink } from '../connect/CopyableLink.js';
 export function CommunityAddress({ address }: { address: string }) {
   return (
     <section className="panel">
-      <h3>Community address</h3>
+      <h3>Space address</h3>
       <p className="small muted">
-        Members open the community here. It doesn’t let anyone new in; use an invite for that.
+        Members open the space here. It doesn’t let anyone new in; use an invite for that.
       </p>
       <CopyableLink label="Address" link={address} />
     </section>

@@ -107,7 +107,7 @@ registerShortNamePages(app, {
 // own list; that address no longer opens the community, so say so where the host will see it.
 for (const bound of await reservedBoundShortNames(pool, config.reservedShortNames)) {
   console.warn(
-    `Community ${bound.communityId} has the web address /${bound.shortName}, which is now reserved and no longer opens it. Give the community another address on the host page.`
+    `Community ${bound.communityId} has the web address /${bound.shortName}, which is now reserved and no longer opens it. Give the community another address on the server admin page.`
   );
 }
 const shortNameHolds = {

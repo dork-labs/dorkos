@@ -64,15 +64,15 @@ export function hostTargetLabel(target: HostTakedown['target']): string {
     case 'attachment':
       return `File ${target.attachmentId}`;
     case 'icon':
-      return 'Community icon';
+      return 'Space icon';
     case 'community':
-      return 'Whole community';
+      return 'Whole space';
   }
 }
 
 /** What a notice is about, as the owner's list names it. */
 export function noticeTargetLabel(kind: TakedownNotice['targetKind']): string {
-  return kind === 'entry' ? 'A message' : kind === 'attachment' ? 'A file' : 'The community icon';
+  return kind === 'entry' ? 'A message' : kind === 'attachment' ? 'A file' : 'The space icon';
 }
 
 /** A takedown's day, as people read it. */
@@ -85,13 +85,13 @@ const AUTHOR_WHAT: Record<TakedownNotice['targetKind'], string> = {
   entry: 'one of your messages',
   attachment: 'one of your files',
   // An icon has no author; the notices route never marks one `yours`. Said plainly all the same.
-  icon: 'the community icon',
+  icon: 'the space icon',
 };
 
 /** The author's banner: what was removed, when, and why. */
 export function authorBannerText(notice: TakedownNotice): string {
   const what = AUTHOR_WHAT[notice.targetKind];
-  return `The host removed ${what} on ${takedownDate(notice.createdAt)}. ${categorySentence(notice.category)}`;
+  return `The server admin removed ${what} on ${takedownDate(notice.createdAt)}. ${categorySentence(notice.category)}`;
 }
 
 const SEEN_KEY = 'communityTakedownsSeen';

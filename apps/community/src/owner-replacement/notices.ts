@@ -97,12 +97,12 @@ function optionParagraphs(
   const paragraphs: string[] = [];
   if (options.transfer)
     paragraphs.push(
-      `If you can sign in, you can also hand the community to someone yourself from its Settings: ${communityUrl}`
+      `If you can sign in, you can also hand the space to someone yourself from its Settings: ${communityUrl}`
     );
   if (options.delete)
-    paragraphs.push('If you can sign in, you can also delete the community from its Settings.');
+    paragraphs.push('If you can sign in, you can also delete the space from its Settings.');
   if (options.needsPassword) paragraphs.push(addPasswordSentence(subject.lifecycle));
-  if (!options.transfer) paragraphs.push(`The community: ${communityUrl}`);
+  if (!options.transfer) paragraphs.push(`The space: ${communityUrl}`);
   return paragraphs;
 }
 
@@ -156,10 +156,10 @@ function composeOpenNotice(settings: Settings, kind: 'notice' | 'reminder' | 'cl
     const opening =
       kind === 'claim_reissued'
         ? [
-            `The host sent the link for the new owner again. Nothing else changed. The earliest date is still ${date}.`,
+            `The server admin sent the link for the new owner again. Nothing else changed. The earliest date is still ${date}.`,
           ]
         : [
-            `The host of ${subject.community_name} has been asked to make someone else its owner.`,
+            `The server admin for ${subject.community_name} has been asked to make someone else its owner.`,
             kind === 'reminder'
               ? reminderWhen(earliest, date, now)
               : `If you do nothing, that can happen on or after ${date}.`,
@@ -180,14 +180,14 @@ function composeEnded(settings: Settings): NoticeComposer {
     if (!subject) return null;
     const sentence =
       subject.state === 'withdrawn'
-        ? 'The host withdrew its request. Nothing changed.'
+        ? 'The server admin withdrew their request. Nothing changed.'
         : subject.state === 'expired'
           ? 'The request expired. Nothing changed.'
           : null;
     if (!sentence) return null;
     return plainTextMail(`The request to take over ${subject.community_name} has ended`, [
       sentence,
-      `The community: ${settings.publicUrl}/c/${notice.communityId}`,
+      `The space: ${settings.publicUrl}/c/${notice.communityId}`,
     ]);
   };
 }
@@ -199,7 +199,7 @@ function composeCompleted(settings: Settings): NoticeComposer {
     if (subject?.state !== 'completed' || !subject.new_owner_name) return null;
     return plainTextMail(`${subject.community_name} has a new owner`, [
       `${subject.new_owner_name} is now the owner of ${subject.community_name}. You are still a member.`,
-      `The community: ${settings.publicUrl}/c/${notice.communityId}`,
+      `The space: ${settings.publicUrl}/c/${notice.communityId}`,
     ]);
   };
 }

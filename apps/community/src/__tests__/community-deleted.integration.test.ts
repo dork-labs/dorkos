@@ -43,7 +43,7 @@ let goneOwner: TenancyMember;
 
 const tenant = (communityId: string) => `/api/v1/communities/${communityId}`;
 const NEVER_EXISTED = '5b0c4ad4-8a51-4a8e-9d53-0f6f7e2f1a11';
-const DELETED_BODY = { code: 'COMMUNITY_DELETED', message: 'This community was deleted.' };
+const DELETED_BODY = { code: 'COMMUNITY_DELETED', message: 'This space was deleted.' };
 
 /** Every community-scoped route family a DorkOS installation calls, with its own credential. */
 function routes(communityId: string, channelId: string, bearer: string, cookie: string) {

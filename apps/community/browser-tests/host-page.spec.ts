@@ -159,7 +159,7 @@ test('a host operator creates a key, sees it once, replaces it, and revokes it',
 
     // A wrong password creates nothing and says why.
     await section.getByLabel('Key name').fill('Provisioning script');
-    await section.getByLabel('Create communities').check();
+    await section.getByLabel('Create spaces').check();
     await section.getByLabel('Your password').fill('not-my-password');
     await section.getByRole('button', { name: 'Create key' }).click();
     await expect(section.getByRole('alert')).toContainText(
@@ -233,13 +233,13 @@ test('a host operator sets a community limit beside its current use, on a phone'
     });
     expect(signedIn.ok()).toBe(true);
     await page.goto(`${baseUrl}/host`);
-    const record = page.getByRole('article', { name: 'First Place community' });
+    const record = page.getByRole('article', { name: 'First Place space' });
     await record.getByText('Limits', { exact: true }).click();
     const form = record.getByRole('form', { name: 'First Place limits' });
     await expect(form).toContainText('1 now');
     await expect(form.getByLabel('Most members')).toHaveValue('');
     await form.getByLabel('Most members').fill('1');
-    await form.getByLabel('Most file space (MiB)').fill('5');
+    await form.getByLabel('Most storage (MiB)').fill('5');
     await form.getByRole('button', { name: 'Save limits' }).click();
     await expect(form).toContainText('Limits saved.');
     const stored = await pool.query(
@@ -249,7 +249,7 @@ test('a host operator sets a community limit beside its current use, on a phone'
     await shot(page, 'host-community-limits');
     // Empty means no limit again.
     await form.getByLabel('Most members').fill('');
-    await form.getByLabel('Most file space (MiB)').fill('');
+    await form.getByLabel('Most storage (MiB)').fill('');
     await form.getByRole('button', { name: 'Save limits' }).click();
     await expect
       .poll(async () => (await pool.query('SELECT max_active_members FROM community_limits')).rows)
@@ -287,7 +287,7 @@ test('an invitation to a full community says so before sign-up, and that the lin
     await page.goto(`${baseUrl}/c/${communityId}/join#invite=${encodeURIComponent(token)}`);
     await page.getByRole('button', { name: 'Continue' }).click();
     const alert = page.getByRole('alert');
-    await expect(alert).toContainText('This community is full. Ask its owner to make room.');
+    await expect(alert).toContainText('This space is full. Ask its owner to make room.');
     await expect(alert).toContainText(
       'Your invitation still works. Open it again once the owner has made room.'
     );
@@ -316,24 +316,24 @@ test('a host holds a community with a notice members can see, then deletes it af
     });
     expect(signedIn.ok()).toBe(true);
     await page.goto(`${baseUrl}/host`);
-    const record = page.getByRole('article', { name: 'First Place community' });
+    const record = page.getByRole('article', { name: 'First Place space' });
     await record.getByRole('button', { name: 'Hold', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Hold First Place?' });
     const notice = new Date(Date.now() + 20 * 24 * 60 * 60_000).toISOString().slice(0, 10);
     await dialog.getByLabel('Delete after (optional)').fill(notice);
-    await dialog.getByRole('button', { name: 'Hold community' }).click();
+    await dialog.getByRole('button', { name: 'Hold space' }).click();
     await expect(record).toContainText('On hold. Deletion notice:');
 
     // Members see the hold and the date on every channel, and cannot post.
     await page.goto(`${baseUrl}/c/${communityId}`);
     const banner = page.getByRole('status').filter({ hasText: 'You can read it but not post.' });
     await expect(banner).toContainText(
-      'This community is on hold by its host. You can read it but not post.'
+      'This space is on hold by its server admin. You can read it but not post.'
     );
-    await expect(banner).toContainText('The host plans to delete it after');
+    await expect(banner).toContainText('The server admin plans to delete it after');
     await expect(banner).toContainText('The owner can export it until then.');
     await expect(
-      page.getByText('This community is on hold by its host, so no one can post.')
+      page.getByText('This space is on hold by its server admin, so no one can post.')
     ).toBeVisible();
     await shot(page, 'held-community-banner');
 
@@ -343,8 +343,8 @@ test('a host holds a community with a notice members can see, then deletes it af
     await expect(
       page.getByText(/Archive, restore, and ownership transfer are unavailable/u)
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Export this community' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Archive community' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Export this space' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Archive space' })).toHaveCount(0);
     await shot(page, 'held-owner-settings');
 
     // Once the notice date has passed, the host can delete it, confirming the id's end.
@@ -355,13 +355,13 @@ test('a host holds a community with a notice members can see, then deletes it af
     await page.goto(`${baseUrl}/host`);
     await record.getByRole('button', { name: 'Delete', exact: true }).click();
     const confirm = page.getByRole('dialog', { name: 'Delete First Place?' });
-    await expect(confirm.getByRole('button', { name: 'Delete community' })).toBeDisabled();
+    await expect(confirm.getByRole('button', { name: 'Delete space' })).toBeDisabled();
     await confirm.getByLabel(/Type the last eight characters/u).fill(communityId.slice(-8));
-    await confirm.getByRole('button', { name: 'Delete community' }).click();
-    await expect(record).toContainText('Deletion requested by the host.');
+    await confirm.getByRole('button', { name: 'Delete space' }).click();
+    await expect(record).toContainText('Deletion requested by the server admin.');
     // The owner sees who started it, cannot cancel it, and is told export has ended.
     await page.goto(`${baseUrl}/c/${communityId}/deletion`);
-    await expect(page.getByText(/The host started this deletion/u)).toBeVisible();
+    await expect(page.getByText(/The server admin started this deletion/u)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancel deletion' })).toHaveCount(0);
     await shot(page, 'host-deletion-owner-view');
     await page.goto(`${baseUrl}/host`);
@@ -439,7 +439,7 @@ test('a hold turns an open channel read-only without a retry loop, and a release
     await approval.goto((await started.json()).approvalUrl);
     await expect(
       approval.getByText(
-        'The community is on hold, so this connection can only read. Connect again after the hold ends to post.'
+        'The space is on hold, so this connection can only read. Connect again after the hold ends to post.'
       )
     ).toBeVisible();
     await approval.close();
@@ -534,7 +534,7 @@ test('a host sees a legal hold and holds a suspended community in one step', asy
     expect(held.ok()).toBe(true);
 
     await page.goto(`${baseUrl}/host`);
-    const record = page.getByRole('article', { name: 'First Place community' });
+    const record = page.getByRole('article', { name: 'First Place space' });
     await expect(record).toContainText('Legal hold since');
     await expect(record).toContainText('(Case 42)');
     await expect(record).toContainText('can’t be deleted until the hold is released');
@@ -545,7 +545,7 @@ test('a host sees a legal hold and holds a suspended community in one step', asy
     const dialog = page.getByRole('dialog', { name: 'Hold First Place?' });
     await expect(dialog).toContainText('goes straight from suspended to on hold');
     await shot(page, 'hold-from-suspended-dialog');
-    await dialog.getByRole('button', { name: 'Hold community' }).click();
+    await dialog.getByRole('button', { name: 'Hold space' }).click();
     await expect(record).toContainText('On hold.');
     await record.getByRole('button', { name: 'Release hold' }).click();
     await expect(record.getByRole('button', { name: 'Hold', exact: true })).toBeVisible();
@@ -584,10 +584,10 @@ test('saving limits leaves a file-space limit set through the API exactly as it 
     });
     expect(signedIn.ok()).toBe(true);
     await page.goto(`${baseUrl}/host`);
-    const record = page.getByRole('article', { name: 'First Place community' });
+    const record = page.getByRole('article', { name: 'First Place space' });
     await record.getByText('Limits', { exact: true }).click();
     const form = record.getByRole('form', { name: 'First Place limits' });
-    await expect(form.getByLabel('Most file space (MiB)')).toHaveValue('9.54');
+    await expect(form.getByLabel('Most storage (MiB)')).toHaveValue('9.54');
     await form.getByLabel('Most members').fill('50');
     await form.getByRole('button', { name: 'Save limits' }).click();
     await expect(form).toContainText('Limits saved.');
@@ -669,7 +669,7 @@ test('a community opens at its short address, and an old address moves to the ne
 
     // The host names the first community from its record.
     await page.goto(`${baseUrl}/host`);
-    const record = page.getByRole('article', { name: 'First Place community' });
+    const record = page.getByRole('article', { name: 'First Place space' });
     await record.getByText('Web address', { exact: true }).click();
     const form = record.getByRole('form', { name: 'First Place web address' });
     await form.getByLabel('Short name').fill('First-Place');
@@ -735,7 +735,7 @@ test('a community opens at its short address, and an old address moves to the ne
     await expect(form).toContainText('Released /first-place.');
     await expect(retired).toHaveCount(0);
     await page.goto(`${baseUrl}/first-place`);
-    await expect(page.getByText('No community at this address.')).toBeVisible();
+    await expect(page.getByText('No space at this address.')).toBeVisible();
 
     // A lookup that fails for a reason other than "no such name" offers a retry, not the chooser.
     let failed = false;
@@ -749,15 +749,15 @@ test('a community opens at its short address, and an old address moves to the ne
       });
     });
     await page.goto(`${baseUrl}/first-place-two`);
-    await expect(page.getByRole('alert')).toContainText('Couldn’t open this community.');
-    await expect(page.getByText('No community at this address.')).toHaveCount(0);
+    await expect(page.getByRole('alert')).toContainText('Couldn’t open this space.');
+    await expect(page.getByText('No space at this address.')).toHaveCount(0);
     await page.getByRole('button', { name: 'Try again' }).click();
     await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
     await page.unroute('**/api/v1/community-names/*');
 
     // An address that leads nowhere says only that.
     await page.goto(`${baseUrl}/nobody-here`);
-    await expect(page.getByText('No community at this address.')).toBeVisible();
+    await expect(page.getByText('No space at this address.')).toBeVisible();
 
     // A signed-in person who is not a member goes back to the chooser, as at /c/<uuid>.
     const invite = await context.request.post(`${baseUrl}/api/v1/communities/${secondId}/invites`, {
@@ -791,7 +791,7 @@ test('a community opens at its short address, and an old address moves to the ne
     await outsiderPage.goto(`${baseUrl}/first-place-two`);
     await expect(outsiderPage).toHaveURL(`${baseUrl}/`);
     await expect(outsiderPage.getByRole('status')).toHaveText(
-      'That community is not available to this account.'
+      'That space is not available to this account.'
     );
 
     // A community suspended while someone has it open by its name sends them to the chooser.
@@ -803,7 +803,7 @@ test('a community opens at its short address, and an old address moves to the ne
     );
     await expect(page).toHaveURL(`${baseUrl}/`, { timeout: 15_000 });
     await expect(page.getByRole('status')).toHaveText(
-      'That community is not available to this account.'
+      'That space is not available to this account.'
     );
 
     // Server-minted links keep the UUID, never the name.
@@ -839,15 +839,15 @@ test('a host moves a community in from its owner’s export and watches it throu
     });
     expect(signedIn.ok()).toBe(true);
     await page.goto(`${baseUrl}/host`);
-    const section = page.getByRole('region', { name: 'Move a community here' });
-    await section.getByLabel('Name of the moved community').fill('Moved Place');
+    const section = page.getByRole('region', { name: 'Move a space here' });
+    await section.getByLabel('Name of the moved space').fill('Moved Place');
     // The file chooser is a button whose visible words are its name, and keyboard focus on it
     // shows a ring even though the file input inside it is invisible.
     const chooser = section.getByLabel('Choose export file');
     const shadow = () =>
       chooser.evaluate((input) => getComputedStyle(input.closest('label')!).boxShadow);
     const resting = await shadow();
-    await section.getByLabel('Name of the moved community').press('Tab');
+    await section.getByLabel('Name of the moved space').press('Tab');
     await expect(chooser).toBeFocused();
     await expect.poll(shadow).not.toBe(resting);
     await chooser.setInputFiles(
@@ -858,7 +858,7 @@ test('a host moves a community in from its owner’s export and watches it throu
     await expect(section).toContainText('Export received. It is being checked now.');
     // The upload details are still shown once, for anyone else who holds the file.
     await expect(section.getByLabel('Upload token')).toHaveValue(/.+/);
-    const card = page.getByRole('article', { name: 'Moved Place community' });
+    const card = page.getByRole('article', { name: 'Moved Place space' });
     await expect(card).toContainText('Import: Checking the export');
     await shot(page, 'host-import-checking');
 

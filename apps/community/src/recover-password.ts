@@ -130,7 +130,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const databaseUrl = process.env.COMMUNITY_DATABASE_URL;
   if (!email || args.length !== (keepLinked ? 2 : 1) || !databaseUrl || process.stdin.isTTY) {
     process.stderr.write(
-      'Stop the community service, then pipe a password to recover-password.js [--keep-linked] <email>. COMMUNITY_DATABASE_URL is required.\n'
+      'Stop the space service, then pipe a password to recover-password.js [--keep-linked] <email>. COMMUNITY_DATABASE_URL is required.\n'
     );
     process.exitCode = 1;
   } else {

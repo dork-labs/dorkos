@@ -13,7 +13,7 @@ export class CommunityConsentError extends Error {
 
   /** Create one secret-free consent refusal. */
   constructor(code: CommunityConsentError['code']) {
-    super(`Community launch consent failed (${code})`);
+    super(`Space server launch consent failed (${code})`);
     this.name = 'CommunityConsentError';
     this.code = code;
   }

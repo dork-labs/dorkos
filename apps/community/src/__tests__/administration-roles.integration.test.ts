@@ -1615,7 +1615,7 @@ const actions: Action<unknown>[] = [
     },
   }),
 
-  // ── Community settings ─────────────────────────────────────────────────────
+  // ── Space settings ─────────────────────────────────────────────────────
   define({
     rule: 'Read the settings projection: members by existing rules, never by host role alone',
     route: 'GET /settings',

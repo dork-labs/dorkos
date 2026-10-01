@@ -38,7 +38,7 @@ async function readHealthBody(response: Response, signal: AbortSignal): Promise<
 export class CommunityHealthError extends Error {
   /** Create a secret-free health failure. */
   constructor() {
-    super('Community health check did not pass');
+    super('Space server health check did not pass');
     this.name = 'CommunityHealthError';
   }
 }

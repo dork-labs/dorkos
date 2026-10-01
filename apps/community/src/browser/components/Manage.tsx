@@ -49,6 +49,16 @@ type Props = {
   /** The section a settings link asked for; ignored when this role or state cannot see it. */
   initialSection?: CommunitySettingsSection | null;
 };
+
+/** What each settings tab says. The keys are wire names the DorkOS app links to, not copy. */
+const SECTION_LABELS: Record<CommunitySettingsSection, string> = {
+  community: 'Space',
+  members: 'Members',
+  agents: 'Agents',
+  account: 'Account',
+  settings: 'Settings',
+};
+
 /** Manage channel, member, agent and account actions for the current role. */
 export function Manage({
   communityId,
@@ -231,7 +241,7 @@ export function Manage({
   async function leave() {
     if (
       !window.confirm(
-        `Leave ${communityName}? Your channels, installations and agents here stop working. Your account and your other communities stay.`
+        `Leave ${communityName}? Your channels, installations and agents here stop working. Your account and your other spaces stay.`
       )
     )
       return;
@@ -287,13 +297,13 @@ export function Manage({
   return (
     <div className="content-scroll">
       <main className="settings">
-        <p className="eyebrow">Community settings</p>
+        <p className="eyebrow">Space settings</p>
         <h2>{held ? 'On hold' : readOnly ? 'Archived history' : 'Make room for your people.'}</h2>
         <p className="muted">
           {held
-            ? 'The host has put this community on hold. History stays readable and the owner can still export it. Nothing can change until the host releases the hold.'
+            ? 'The server admin has put this space on hold. History stays readable and the owner can still export it. Nothing can change until the server admin releases the hold.'
             : readOnly
-              ? 'History and exports remain available. Restore this community before changing content or access.'
+              ? 'History and exports remain available. Restore this space before changing content or access.'
               : 'Manage channels and access without leaving the conversation.'}
         </p>
         <nav className="row mb-6" aria-label="Settings sections">
@@ -309,7 +319,7 @@ export function Manage({
                 void refresh();
               }}
             >
-              {item[0].toUpperCase() + item.slice(1)}
+              {SECTION_LABELS[item]}
             </Button>
           ))}
         </nav>
@@ -380,7 +390,7 @@ export function Manage({
                   <h3>Invite someone</h3>
                   {admissionClosed ? (
                     <Notice tone="info" className="mb-0">
-                      This community is closed to new members.{' '}
+                      This space is closed to new members.{' '}
                       {me.role === 'owner'
                         ? 'You can reopen it in Settings, under Access.'
                         : 'The owner can reopen it in Settings, under Access.'}
@@ -397,7 +407,7 @@ export function Manage({
                           value={inviteChannel}
                           onChange={(event) => setInviteChannel(event.target.value)}
                         >
-                          <option value="">Community access</option>
+                          <option value="">Space access</option>
                           {channels.map((channel) => (
                             <option key={channel.id} value={channel.id}>
                               #{channel.name}
@@ -607,7 +617,7 @@ export function Manage({
             </section>
             {moderator && (
               <section className="panel">
-                <h3>Community members</h3>
+                <h3>Space members</h3>
                 {directory.map((member) => (
                   <div
                     className="row justify-between border-b border-[var(--line)] py-2"
@@ -642,9 +652,9 @@ export function Manage({
                         <Button
                           variant="ghost"
                           disabled={busy}
-                          aria-label={`Remove ${member.displayName} from community`}
+                          aria-label={`Remove ${member.displayName} from space`}
                           onClick={() => {
-                            if (window.confirm(`Remove ${member.displayName} from this community?`))
+                            if (window.confirm(`Remove ${member.displayName} from this space?`))
                               void perform(
                                 () => request(`/api/v1/members/${member.memberId}`, 'DELETE'),
                                 'Member removed.'
@@ -888,17 +898,15 @@ export function Manage({
               {me.role === 'owner' && (
                 <>
                   <Separator className="my-4" />
-                  <h3>Community export</h3>
-                  <p className="small muted">
-                    Includes the whole community. Confirm your password.
-                  </p>
+                  <h3>Space export</h3>
+                  <p className="small muted">Includes the whole space. Confirm your password.</p>
                   <ExportPanel scope="owner" idPrefix="owner-export" />
                 </>
               )}
             </section>
             {!readOnly && (
               <section className="panel">
-                <h3>Leave community</h3>
+                <h3>Leave space</h3>
                 {me.role === 'owner' ? (
                   <p className="small muted">Transfer ownership before you leave.</p>
                 ) : (
@@ -908,9 +916,9 @@ export function Manage({
                       every installation and agent you connected here.
                     </p>
                     <p className="small muted" id="leave-scope-stays">
-                      <strong>Stays:</strong> your account, your other communities, this
-                      browser&rsquo;s sign-in, and your past messages. To remove your messages too,
-                      erase them here instead.
+                      <strong>Stays:</strong> your account, your other spaces, this browser’s
+                      sign-in, and your past messages. To remove your messages too, erase them here
+                      instead.
                     </p>
                     <div className="field">
                       <Label htmlFor="leave-community-name">Enter {communityName}</Label>
@@ -936,7 +944,7 @@ export function Manage({
                       disabled={busy || !password || leaveName !== communityName}
                       onClick={() => void leave()}
                     >
-                      Leave community
+                      Leave space
                     </Button>
                   </>
                 )}

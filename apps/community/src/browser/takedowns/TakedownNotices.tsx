@@ -63,7 +63,7 @@ export function RemovedByHost({
   if (!error && !notices?.length) return null;
   return (
     <section className="panel mt-4" aria-labelledby="removed-by-host-title">
-      <h3 id="removed-by-host-title">Removed by the host</h3>
+      <h3 id="removed-by-host-title">Removed by the server admin</h3>
       {error ? (
         <p className="small muted mb-0">{error}</p>
       ) : (

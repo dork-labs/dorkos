@@ -140,10 +140,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       }
     } catch (error) {
       // Driver errors can carry connection details. Name only a key the command could not find.
-      const notFound = error instanceof Error && error.message === 'Host API key not found.';
+      const notFound = error instanceof Error && error.message === 'Server API key not found.';
       process.stderr.write(
         notFound
-          ? 'No host API key has that id.\n'
+          ? 'No server API key has that id.\n'
           : 'The command failed. Check database access and that migrations are applied.\n'
       );
       process.exitCode = 1;

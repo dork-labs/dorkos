@@ -395,7 +395,7 @@ test('every membership surface passes axe at desktop and phone width, light and 
       await signIn(member, 'ria@access.test');
       const page = await member.newPage();
       await page.goto(baseUrl);
-      await expect(page.getByRole('heading', { name: 'Choose a community' })).toBeFocused();
+      await expect(page.getByRole('heading', { name: 'Choose a space' })).toBeFocused();
       await audit(page, 'chooser');
       await page.goto(`${baseUrl}/c/${firstId}/settings/account`);
       await expect(page.getByRole('heading', { name: 'Connected installations' })).toBeVisible();
@@ -423,21 +423,21 @@ test('every membership surface passes axe at desktop and phone width, light and 
       const page = await returning.newPage();
       await page.goto(baseUrl);
       await expect(
-        page.getByText('This account does not have a community membership yet.')
+        page.getByText('This account does not have a space membership yet.')
       ).toBeVisible();
       await audit(page, 'chooser with no membership');
       await page.goto(await invite(firstId));
       await page.getByRole('button', { name: 'Continue' }).click();
       await expect(page.getByRole('heading', { name: 'Rejoin First Place?' })).toBeFocused();
       await audit(page, 'invitation rejoin');
-      await page.getByRole('button', { name: 'Rejoin community' }).click();
+      await page.getByRole('button', { name: 'Rejoin space' }).click();
       await expect(page.getByRole('heading', { name: 'You’re in First Place.' })).toBeFocused();
       await audit(page, 'joined');
     } finally {
       await returning.close();
     }
 
-    // Host administration issues an owner claim; the intended owner opens it.
+    // Server administration issues an owner claim; the intended owner opens it.
     const operator = await browser.newContext();
     const owner = await browser.newContext();
     try {
@@ -445,7 +445,7 @@ test('every membership surface passes axe at desktop and phone width, light and 
       const hostPage = await operator.newPage();
       await hostPage.goto(`${baseUrl}/host`);
       await hostPage.getByLabel('Name', { exact: true }).fill('Third Place');
-      await hostPage.getByRole('button', { name: 'Create community' }).click();
+      await hostPage.getByRole('button', { name: 'Create space' }).click();
       await expect(hostPage.getByRole('status')).toContainText('Send the owner claim link');
       // Host API keys share this page but are host operations, not a membership surface.
       await audit(hostPage, 'host administration', '[aria-labelledby="host-api-keys-title"]');
@@ -488,7 +488,7 @@ test('a person joins and leaves by keyboard alone, with focus moved and every ch
     await page.keyboard.press('Enter');
     await expect(page.getByRole('heading', { name: 'You’re in First Place.' })).toBeFocused();
 
-    await tabTo(page, /^Open community$/);
+    await tabTo(page, /^Open space$/);
     await page.keyboard.press('Enter');
     await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
 
@@ -499,7 +499,7 @@ test('a person joins and leaves by keyboard alone, with focus moved and every ch
     await page.keyboard.press('Enter');
     await tabTo(page, /^Account$/);
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('heading', { name: 'Leave community' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Leave space' })).toBeVisible();
 
     // A wrong password is announced where the person is, and nothing changes.
     await tabTo(page, /^Enter First Place$/);
@@ -507,7 +507,7 @@ test('a person joins and leaves by keyboard alone, with focus moved and every ch
     await page.keyboard.press('Tab');
     await page.keyboard.type('not-my-password');
     page.once('dialog', (dialog) => void dialog.accept());
-    await tabTo(page, /^Leave community$/);
+    await tabTo(page, /^Leave space$/);
     await page.keyboard.press('Enter');
     await expect(page.getByRole('alert')).toContainText('You are still a member.');
     const still = await pool.query<{ active: boolean }>(
@@ -521,13 +521,13 @@ test('a person joins and leaves by keyboard alone, with focus moved and every ch
     await page.keyboard.press('ControlOrMeta+A');
     await page.keyboard.type(password);
     page.once('dialog', (dialog) => void dialog.accept());
-    await tabTo(page, /^Leave community$/);
+    await tabTo(page, /^Leave space$/);
     await page.keyboard.press('Enter');
     // Leaving routes to the chooser, focused on its heading, with the account still signed in.
     await expect(page).toHaveURL(`${baseUrl}/`);
-    await expect(page.getByRole('heading', { name: 'Choose a community' })).toBeFocused();
+    await expect(page.getByRole('heading', { name: 'Choose a space' })).toBeFocused();
     await expect(
-      page.getByText('This account does not have a community membership yet.')
+      page.getByText('This account does not have a space membership yet.')
     ).toBeVisible();
     const left = await pool.query<{ active: boolean }>(
       `SELECT m.active FROM members m JOIN "user" u ON u.id=m.user_id

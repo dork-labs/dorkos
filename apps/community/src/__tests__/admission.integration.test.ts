@@ -1917,7 +1917,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(suspendedChannels.status).toBe(503);
     expect(await suspendedChannels.json()).toEqual({
       code: 'COMMUNITY_SUSPENDED',
-      message: 'This community is suspended.',
+      message: 'This space is suspended.',
     });
     expect(
       (await (await call('/api/v1/memberships', 'GET', undefined, claimantCookie)).json())

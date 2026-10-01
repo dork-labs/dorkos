@@ -88,7 +88,7 @@ export function registerHostTakedownRoutes(
   ): { userId: string; password: string } | null => {
     if (actor.kind === 'api_key') {
       if (password !== undefined)
-        throw new ApiError(400, 'STATE_CONFLICT', 'A host API key does not send a password.');
+        throw new ApiError(400, 'STATE_CONFLICT', 'A server API key does not send a password.');
       return null;
     }
     if (!password)
@@ -233,7 +233,7 @@ export function registerHostTakedownRoutes(
     const actor = await authority.require(c, 'communities:takedown');
     // Releasing preserved material destroys it, so only a person may, with their password.
     if (actor.kind !== 'person')
-      throw new ApiError(403, 'FORBIDDEN', 'Only a host operator can release held content.');
+      throw new ApiError(403, 'FORBIDDEN', 'Only a server operator can release held content.');
     const body = await readJson(c, CommunityAdminTakedownReleaseHeldRequestSchema);
     const id = takedownId(c.req.param('takedownId'));
     const person = passwordToCheck(actor, body.password);

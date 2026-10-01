@@ -290,7 +290,7 @@ if (process.argv[2] === 'community') {
     });
     process.exit(exitCode);
   } catch (error) {
-    console.error(`Community setup failed: ${error instanceof Error ? error.message : 'unknown'}`);
+    console.error(`Space setup failed: ${error instanceof Error ? error.message : 'unknown'}`);
     process.exit(1);
   }
 }

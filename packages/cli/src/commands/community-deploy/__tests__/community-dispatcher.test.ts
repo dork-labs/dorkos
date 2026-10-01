@@ -131,7 +131,7 @@ describe('Community command dispatcher', () => {
     );
     expect(code).toBe(0);
     const rendered = output.mock.calls.map(([value]) => String(value)).join('');
-    expect(rendered).toContain('DorkOS Community 0.76.0');
+    expect(rendered).toContain('DorkOS space server 0.76.0');
     expect(rendered).toContain('fly-app-name: unknown');
     expect(rendered).toContain('Journal:');
     expect(rendered).not.toContain(`sha256:${'a'.repeat(64)}`);

@@ -124,9 +124,9 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.getByLabel('Your name').fill('Owner');
     await ownerPage.getByLabel('Email').fill('owner@ui.test');
     await ownerPage.getByLabel('Password').fill('password1234');
-    await ownerPage.getByLabel('Community name').fill('Gathering Place');
+    await ownerPage.getByLabel('Space name').fill('Gathering Place');
     await ownerPage.getByLabel('First channel').fill('general');
-    await ownerPage.getByRole('button', { name: 'Create community' }).click();
+    await ownerPage.getByRole('button', { name: 'Create space' }).click();
     await expect(ownerPage.getByRole('heading', { name: '# general' })).toBeVisible({
       timeout: 15000,
     });
@@ -142,17 +142,17 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     );
     await ownerPage.goto(`${baseUrl}/host`);
     await expect(ownerPage.getByRole('alert')).toContainText('temporarily unavailable');
-    await expect(ownerPage.getByText('No communities are available.')).toHaveCount(0);
+    await expect(ownerPage.getByText('No spaces are available.')).toHaveCount(0);
     await ownerPage.getByRole('button', { name: 'Try again' }).click();
-    await expect(ownerPage.getByRole('heading', { name: 'Communities' })).toBeVisible();
-    await expect(ownerPage.getByRole('link', { name: 'Deploy a new host' })).toHaveAttribute(
+    await expect(ownerPage.getByRole('heading', { name: 'Spaces' })).toBeVisible();
+    await expect(ownerPage.getByRole('link', { name: 'Set up a new server' })).toHaveAttribute(
       'href',
       'https://dorkos.ai/docs/self-hosting/space-server'
     );
-    await expect(ownerPage.getByLabel('Gathering Place community')).toContainText('Owner assigned');
-    await expect(ownerPage.getByText('Community members')).toHaveCount(0);
+    await expect(ownerPage.getByLabel('Gathering Place space')).toContainText('Owner assigned');
+    await expect(ownerPage.getByText('Space members')).toHaveCount(0);
     await ownerPage
-      .getByLabel('Gathering Place community')
+      .getByLabel('Gathering Place space')
       .getByRole('button', { name: 'Suspend' })
       .click();
     const suspendDialog = ownerPage.getByRole('dialog', { name: 'Suspend Gathering Place?' });
@@ -190,7 +190,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(ownerPage.getByRole('heading', { name: 'Presentation' })).toBeVisible();
     await ownerPage
       .getByRole('navigation', { name: 'Settings sections' })
-      .getByRole('button', { name: 'Community' })
+      .getByRole('button', { name: 'Space', exact: true })
       .click();
     await ownerPage.locator('#invite-channel').selectOption({ label: '#general' });
     await ownerPage.getByRole('button', { name: 'Create invite' }).click();
@@ -206,29 +206,27 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await memberPage.getByLabel('Your name').fill('Maya');
     await memberPage.getByLabel('Email').fill('maya@ui.test');
     await memberPage.getByLabel('Password').fill('password1234');
-    await memberPage.getByRole('button', { name: 'Join community' }).click();
+    await memberPage.getByRole('button', { name: 'Join space' }).click();
     await expect(
       memberPage.getByRole('heading', { name: 'You’re in Gathering Place.' })
     ).toBeVisible();
-    await expect(memberPage.getByText('Connect DorkOS to this community')).toBeVisible();
-    await expect(memberPage.getByLabel('This community’s link')).toHaveValue(
+    await expect(memberPage.getByText('Connect DorkOS to this space')).toBeVisible();
+    await expect(memberPage.getByLabel('This space’s link')).toHaveValue(
       new RegExp(`^${baseUrl}/c/[0-9a-f-]{36}$`, 'u')
     );
-    await memberPage.getByRole('button', { name: 'Open community' }).click();
+    await memberPage.getByRole('button', { name: 'Open space' }).click();
     await expect(memberPage.getByRole('button', { name: 'Open channel navigation' })).toBeVisible({
       timeout: 15000,
     });
     await memberPage.screenshot({ path: '/tmp/community-member-mobile.png', fullPage: true });
     await memberPage.getByRole('button', { name: 'Open channel navigation' }).click();
-    await expect(
-      memberPage.getByRole('complementary', { name: 'Community channels' })
-    ).toBeVisible();
+    await expect(memberPage.getByRole('complementary', { name: 'Space channels' })).toBeVisible();
     // The scrim deliberately sits below the open sidebar. Click its exposed
     // right gutter, as a person dismissing the mobile navigation would.
     await memberPage.mouse.click(380, 420);
-    await expect(
-      memberPage.getByRole('complementary', { name: 'Community channels' })
-    ).not.toHaveClass(/open/);
+    await expect(memberPage.getByRole('complementary', { name: 'Space channels' })).not.toHaveClass(
+      /open/
+    );
     await ownerPage
       .getByRole('navigation', { name: 'Settings sections' })
       .getByRole('button', { name: 'Settings', exact: true })
@@ -253,7 +251,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
           contentType: 'application/json',
           body: JSON.stringify({
             code: 'STATE_CONFLICT',
-            message: 'Community settings changed.',
+            message: 'Space settings changed.',
             current: {
               communityId: settingsCommunityId,
               name: 'Gathering Place',
@@ -284,7 +282,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
         'base64'
       ),
     });
-    await expect(ownerPage.getByAltText('Current community icon')).toBeVisible();
+    await expect(ownerPage.getByAltText('Current space icon')).toBeVisible();
     await expect(ownerPage.getByLabel('Name', { exact: true })).toHaveValue('Gathering Place');
     await expect(ownerPage.getByLabel('Description')).toHaveValue('Draft survives icon changes');
     await expect(ownerPage.getByLabel('Admission policy')).toHaveValue('closed');
@@ -294,16 +292,16 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       buffer: Buffer.from('not an image'),
     });
     await expect(ownerPage.getByRole('alert')).toContainText('Use a PNG, JPEG, GIF, or WebP icon.');
-    await expect(ownerPage.getByAltText('Current community icon')).toBeVisible();
+    await expect(ownerPage.getByAltText('Current space icon')).toBeVisible();
     await expect(ownerPage.getByLabel('Name', { exact: true })).toHaveValue('Gathering Place');
     await ownerPage.getByRole('button', { name: 'Remove icon' }).click();
-    await expect(ownerPage.getByAltText('Current community icon')).toHaveCount(0);
+    await expect(ownerPage.getByAltText('Current space icon')).toHaveCount(0);
     await expect(ownerPage.getByLabel('Name', { exact: true })).toHaveValue('Gathering Place');
     await expect(ownerPage.getByLabel('Description')).toHaveValue('Draft survives icon changes');
     await expect(ownerPage.getByLabel('Admission policy')).toHaveValue('closed');
     const exportPanel = ownerPage.getByRole('heading', { name: 'Export' }).locator('..');
     await exportPanel.getByLabel('Password').fill('password1234');
-    await exportPanel.getByRole('button', { name: 'Export this community' }).click();
+    await exportPanel.getByRole('button', { name: 'Export this space' }).click();
     // Prepared in the background: the panel says so and shows progress, then polls until ready.
     await expect(exportPanel.getByRole('status')).toContainText("We're preparing your export.");
     await expect(exportPanel.getByLabel('Export progress')).toBeVisible();
@@ -345,9 +343,9 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     );
     await settingsDownload.click();
     await expect(exportPanel.getByRole('status')).toContainText(
-      'deleted because someone in this community erased their data'
+      'deleted because someone in this space erased their data'
     );
-    await expect(exportPanel.getByRole('button', { name: 'Export this community' })).toBeVisible();
+    await expect(exportPanel.getByRole('button', { name: 'Export this space' })).toBeVisible();
     await ownerPage.setViewportSize({ width: 390, height: 844 });
     await ownerPage.getByRole('button', { name: 'Schedule deletion' }).click();
     const deletionDialog = ownerPage.getByRole('dialog', {
@@ -360,12 +358,12 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(deletionDialog.getByLabel('Type Gathering Place')).toBeFocused();
     await ownerPage.keyboard.press('Escape');
     await expect(deletionDialog).toBeHidden();
-    await ownerPage.getByRole('button', { name: 'Archive community' }).click();
+    await ownerPage.getByRole('button', { name: 'Archive space' }).click();
     const archiveDialog = ownerPage.getByRole('dialog', { name: 'Archive Gathering Place?' });
     await expect(archiveDialog.getByText('History stays available.')).toBeVisible();
     await archiveDialog.getByRole('button', { name: 'Cancel' }).click();
     await ownerPage.getByRole('button', { name: 'Open people' }).click();
-    await expect(ownerPage.getByRole('heading', { name: 'Community members' })).toBeVisible();
+    await expect(ownerPage.getByRole('heading', { name: 'Space members' })).toBeVisible();
     await ownerPage.setViewportSize({ width: 1440, height: 900 });
     const closeSettings = ownerPage.getByRole('button', { name: 'Close' });
     await closeSettings.focus();
@@ -454,8 +452,8 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await observerPage.getByLabel('Your name').fill('Niko');
     await observerPage.getByLabel('Email').fill('niko@ui.test');
     await observerPage.getByLabel('Password').fill('password1234');
-    await observerPage.getByRole('button', { name: 'Join community' }).click();
-    await observerPage.getByRole('button', { name: 'Open community' }).click();
+    await observerPage.getByRole('button', { name: 'Join space' }).click();
+    await observerPage.getByRole('button', { name: 'Open space' }).click();
     await expect(observerPage.getByRole('button', { name: 'Join channel' })).toBeVisible();
     // Closing admission replaces the invite controls with the reason, at every width.
     const sections = ownerPage.getByRole('navigation', { name: 'Settings sections' });
@@ -464,15 +462,15 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.getByLabel('Admission policy').selectOption('closed');
     await ownerPage.getByRole('button', { name: 'Save access' }).click();
     await expect(ownerPage.getByText('Access saved.')).toBeVisible();
-    await sections.getByRole('button', { name: 'Community' }).click();
-    await expect(ownerPage.getByText('This community is closed to new members.')).toBeVisible();
+    await sections.getByRole('button', { name: 'Space', exact: true }).click();
+    await expect(ownerPage.getByText('This space is closed to new members.')).toBeVisible();
     await expect(ownerPage.getByRole('button', { name: 'Create invite' })).toHaveCount(0);
     // The link created before closing was revoked with it, so it is no longer offered.
     await expect(ownerPage.getByLabel('One-time invite link')).toHaveCount(0);
     await ownerPage.setViewportSize({ width: 1440, height: 900 });
     await ownerPage.screenshot({ path: '/tmp/community-closed-desktop.png', fullPage: true });
     await ownerPage.setViewportSize({ width: 390, height: 844 });
-    const channelsNav = ownerPage.getByRole('complementary', { name: 'Community channels' });
+    const channelsNav = ownerPage.getByRole('complementary', { name: 'Space channels' });
     if (await channelsNav.evaluate((node) => node.classList.contains('open')))
       await ownerPage.mouse.click(380, 420);
     await expect(channelsNav).not.toHaveClass(/open/);
@@ -483,14 +481,14 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
         return box ? box.x + box.width : 0;
       })
       .toBeLessThanOrEqual(0);
-    await expect(ownerPage.getByText('This community is closed to new members.')).toBeVisible();
+    await expect(ownerPage.getByText('This space is closed to new members.')).toBeVisible();
     await ownerPage.screenshot({ path: '/tmp/community-closed-mobile.png', fullPage: true });
     if (viewport) await ownerPage.setViewportSize(viewport);
     await sections.getByRole('button', { name: 'Settings', exact: true }).click();
     await ownerPage.getByLabel('Admission policy').selectOption('invite_only');
     await ownerPage.getByRole('button', { name: 'Save access' }).click();
     await expect(ownerPage.getByText('Access saved.')).toBeVisible();
-    await sections.getByRole('button', { name: 'Community' }).click();
+    await sections.getByRole('button', { name: 'Space', exact: true }).click();
     await expect(ownerPage.getByRole('button', { name: 'Create invite' })).toBeVisible();
     expect(
       await observerPage.evaluate(
@@ -735,7 +733,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       'INSERT INTO agent_channel_members(community_id,channel_id,agent_id) VALUES($1,$2,$3)',
       [ids.communityId, ids.channelId, seededAgent.rows[0].id]
     );
-    // The DorkOS app's "Leave community" opens this exact path: settings, at
+    // The DorkOS app's "Leave space" opens this exact path: settings, at
     // the Account section, on the Community's own site.
     await memberPage.goto(`${baseUrl}${communitySettingsPath(ids.communityId, 'account')}`);
     await expect(
@@ -752,10 +750,10 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await memberPage.getByLabel('Enter Gathering Place').fill('Gathering Place');
     await memberPage.getByLabel('Confirm password').fill('password1234');
     memberPage.once('dialog', (dialog) => void dialog.accept());
-    await memberPage.getByRole('button', { name: 'Leave community' }).click();
-    await expect(memberPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+    await memberPage.getByRole('button', { name: 'Leave space' }).click();
+    await expect(memberPage.getByRole('heading', { name: 'Choose a space' })).toBeVisible();
     await expect(
-      memberPage.getByText('This account does not have a community membership yet.')
+      memberPage.getByText('This account does not have a space membership yet.')
     ).toBeVisible();
     await ownerPage.getByRole('button', { name: 'Manage' }).click();
     await ownerPage.getByRole('button', { name: 'Members' }).click();
@@ -769,8 +767,8 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.locator('#successor').selectOption(nikoId);
     await ownerPage.getByLabel('Confirm password').fill('password1234');
     await ownerPage.getByRole('button', { name: 'Transfer ownership' }).click();
-    await expect(ownerPage.getByRole('button', { name: 'Leave community' })).toBeVisible();
-    await expect(ownerPage.getByText('Community export')).toHaveCount(0);
+    await expect(ownerPage.getByRole('button', { name: 'Leave space' })).toBeVisible();
+    await expect(ownerPage.getByText('Space export')).toHaveCount(0);
     await expect(
       ownerPage
         .getByRole('navigation', { name: 'Settings sections' })
@@ -793,10 +791,10 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await ownerPage.getByLabel('Enter Gathering Place').fill('Gathering Place');
     await ownerPage.getByLabel('Confirm password').fill('password1234');
     ownerPage.once('dialog', (dialog) => void dialog.accept());
-    await ownerPage.getByRole('button', { name: 'Leave community' }).click();
-    await expect(ownerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+    await ownerPage.getByRole('button', { name: 'Leave space' }).click();
+    await expect(ownerPage.getByRole('heading', { name: 'Choose a space' })).toBeVisible();
     await expect(
-      ownerPage.getByText('This account does not have a community membership yet.')
+      ownerPage.getByText('This account does not have a space membership yet.')
     ).toBeVisible();
 
     await observerPage.goto(`${baseUrl}/c/${ids.communityId}`);
@@ -836,11 +834,11 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       const login = await signedOut.newPage();
       await login.goto(baseUrl);
       await expect(login.getByLabel('Email')).toBeVisible();
-      await expect(login.getByLabel('Community name')).toHaveCount(0);
+      await expect(login.getByLabel('Space name')).toHaveCount(0);
       await login.getByLabel('Email').fill('niko@ui.test');
       await login.getByLabel('Password').fill('password1234');
       await login.getByRole('button', { name: 'Sign in', exact: true }).last().click();
-      await expect(login.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+      await expect(login.getByRole('heading', { name: 'Choose a space' })).toBeVisible();
       await expect(login.getByRole('button', { name: /Second Place/ })).toBeVisible();
     } finally {
       await signedOut.close();
@@ -849,7 +847,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await memberPage.goto(`${baseUrl}/c/${ids.communityId}`);
     await expect(memberPage).toHaveURL(baseUrl + '/');
     await expect(
-      memberPage.getByText('This account does not have a community membership yet.')
+      memberPage.getByText('This account does not have a space membership yet.')
     ).toBeVisible();
 
     // An OAuth handoff uses the tenant-bound pending admission, never the raw invite.
@@ -889,8 +887,8 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       await oauth.close();
     }
 
-    await observerPage.getByRole('button', { name: 'Switch community' }).click();
-    await expect(observerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+    await observerPage.getByRole('button', { name: 'Switch space' }).click();
+    await expect(observerPage.getByRole('heading', { name: 'Choose a space' })).toBeVisible();
     await expect(observerPage.getByRole('button', { name: /Gathering Place/ })).toBeVisible();
     await observerPage.getByRole('button', { name: /Second Place/ }).click();
     await expect(observerPage).toHaveURL(`${baseUrl}/c/${secondCommunityId}`);
@@ -922,7 +920,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       .getByRole('navigation', { name: 'Settings sections' })
       .getByRole('button', { name: 'Settings', exact: true })
       .click();
-    await observerPage.getByRole('button', { name: 'Archive community' }).click();
+    await observerPage.getByRole('button', { name: 'Archive space' }).click();
     const finalArchive = observerPage.getByRole('dialog', { name: 'Archive Gathering Place?' });
     await finalArchive.getByLabel('Type Gathering Place').fill('Gathering Place');
     await finalArchive.getByLabel('Password').fill('password1234');
@@ -939,18 +937,18 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
         }),
       })
     );
-    await finalArchive.getByRole('button', { name: 'Archive community' }).click();
+    await finalArchive.getByRole('button', { name: 'Archive space' }).click();
     await expect(finalArchive.getByRole('alert')).toContainText(
       'Review the latest state and try again.'
     );
     await expect(finalArchive.getByLabel('Password')).toHaveValue('password1234');
-    await finalArchive.getByRole('button', { name: 'Archive community' }).click();
+    await finalArchive.getByRole('button', { name: 'Archive space' }).click();
     await expect(
       observerPage.getByRole('heading', { name: 'Archived', exact: true })
     ).toBeVisible();
     await expect(observerPage.getByText('Fresh read-only connections are available')).toBeVisible();
-    await observerPage.getByRole('button', { name: 'Switch community' }).click();
-    await expect(observerPage.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+    await observerPage.getByRole('button', { name: 'Switch space' }).click();
+    await expect(observerPage.getByRole('heading', { name: 'Choose a space' })).toBeVisible();
     const archivedChoice = observerPage.getByRole('button', { name: /Gathering Place/ });
     await expect(archivedChoice).toContainText('Read history');
     const archivedStreamRequests: string[] = [];
@@ -1020,7 +1018,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await observerPage.reload();
     await observerPage.getByRole('button', { name: 'Cancel deletion' }).click();
     const cancelDeletion = observerPage.getByRole('dialog', {
-      name: 'Cancel community deletion?',
+      name: 'Cancel space deletion?',
     });
     await cancelDeletion.getByLabel('Password').fill('password1234');
     await pool.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
@@ -1048,7 +1046,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
 
     await memberPage.goto(`${baseUrl}/c/${ids.communityId}/deletion`);
     await expect(memberPage.getByRole('alert')).toContainText(
-      'only available to this community’s owner'
+      'only available to this space’s owner'
     );
     await expect(memberPage.getByRole('button', { name: 'Schedule deletion' })).toHaveCount(0);
     await expect(memberPage.getByRole('button', { name: 'Cancel deletion' })).toHaveCount(0);
@@ -1057,11 +1055,11 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       "INSERT INTO communities(name,lifecycle) VALUES('Unclaimed Place','pending_owner')"
     );
     await ownerPage.goto(`${baseUrl}/host`);
-    const unclaimed = ownerPage.getByLabel('Unclaimed Place community');
-    await unclaimed.getByRole('button', { name: 'Abandon unclaimed community' }).click();
+    const unclaimed = ownerPage.getByLabel('Unclaimed Place space');
+    await unclaimed.getByRole('button', { name: 'Abandon unclaimed space' }).click();
     const abandonDialog = ownerPage.getByRole('dialog', { name: 'Abandon Unclaimed Place?' });
     await expect(abandonDialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
-    await expect(abandonDialog).toContainText('permanently removes the empty community');
+    await expect(abandonDialog).toContainText('permanently removes the empty space');
     await abandonDialog.getByRole('button', { name: 'Cancel' }).click();
 
     let committedCreateWasDropped = false;
@@ -1076,10 +1074,10 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     });
     await ownerPage.getByLabel('Name', { exact: true }).fill('Retry Community');
     await ownerPage.getByLabel('Description').fill('Created once after a lost response');
-    await ownerPage.getByRole('button', { name: 'Create community' }).click();
+    await ownerPage.getByRole('button', { name: 'Create space' }).click();
     await expect(ownerPage.getByRole('alert')).toBeVisible();
-    await ownerPage.getByRole('button', { name: 'Create community' }).click();
-    await expect(ownerPage.getByLabel('Retry Community community')).toHaveCount(1);
+    await ownerPage.getByRole('button', { name: 'Create space' }).click();
+    await expect(ownerPage.getByLabel('Retry Community space')).toHaveCount(1);
     await expect(ownerPage.getByRole('status')).toContainText('Use Reissue owner claim');
     await expect(ownerPage.getByLabel('Owner claim link')).toHaveCount(0);
     await ownerPage.unroute('**/api/v1/host/communities');

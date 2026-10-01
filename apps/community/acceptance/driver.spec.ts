@@ -84,18 +84,18 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       const inviteUrl = await pageA.getByLabel('One-time invite link').inputValue();
       await pageMemberA.goto(inviteUrl);
       await pageMemberA.getByRole('button', { name: 'Continue' }).click();
-      await pageMemberA.getByRole('button', { name: 'Create an account on this host' }).click();
+      await pageMemberA.getByRole('button', { name: 'Create an account on this server' }).click();
       await pageMemberA.getByLabel('Your name').fill('Casey Member');
       await pageMemberA.getByLabel('Email').fill('casey@acceptance.test');
       await pageMemberA.getByLabel('Password').fill('acceptance-password');
-      await pageMemberA.getByRole('button', { name: 'Join community' }).click();
+      await pageMemberA.getByRole('button', { name: 'Join space' }).click();
       // Admission pauses on a confirmation whose primary action opens the
       // community; connecting an installation is a separate next step
       // (specs/community-membership-journeys/02-specification.md, Management experience).
       await expect(
         pageMemberA.getByRole('heading', { name: 'You’re in Acceptance A.' })
       ).toBeVisible();
-      await pageMemberA.getByRole('button', { name: 'Open community' }).click();
+      await pageMemberA.getByRole('button', { name: 'Open space' }).click();
       await expect(pageMemberA.getByLabel(/Message #general/i)).toBeVisible();
 
       const connect = async (

@@ -267,7 +267,7 @@ export function createCommunityApp({
         throw new ApiError(
           409,
           'STATE_CONFLICT',
-          'First installation is unavailable on a host that already contains community state.'
+          'First installation is unavailable on a server that already contains space state.'
         );
       }
       await client.query(
@@ -313,7 +313,7 @@ export function createCommunityApp({
         throw new ApiError(
           409,
           'STATE_CONFLICT',
-          'First installation is unavailable on a host that already contains community state.'
+          'First installation is unavailable on a server that already contains space state.'
         );
       }
 
@@ -461,7 +461,7 @@ export function createCommunityApp({
     // Host authority manages communities as containers and never reaches their content.
     // Refuse a host API key here, before any tenant, credential, or unauthenticated route runs.
     if (isHostApiKeyBearer(c.req.header('authorization'))) {
-      throw new ApiError(401, 'UNAUTHENTICATED', 'Host API keys cannot reach community content.');
+      throw new ApiError(401, 'UNAUTHENTICATED', 'Server API keys cannot reach space content.');
     }
     if (c.req.param('communityId')) {
       await resolveCommunityContext(c, pool, {

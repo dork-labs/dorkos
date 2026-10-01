@@ -55,12 +55,12 @@ export class CommunityRuntimeSecrets {
 
   /** Redact string conversion. */
   toString(): string {
-    return '[REDACTED Community runtime secrets]';
+    return '[REDACTED space server runtime secrets]';
   }
 
   /** Redact JSON serialization. */
   toJSON(): string {
-    return '[REDACTED Community runtime secrets]';
+    return '[REDACTED space server runtime secrets]';
   }
 }
 

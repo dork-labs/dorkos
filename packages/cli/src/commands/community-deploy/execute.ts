@@ -76,7 +76,7 @@ export class CommunityCreationUncertainError extends Error {
 
   /** Create a secret-free uncertain stop. */
   constructor(service: CreationService) {
-    super(`Community creation outcome requires manual reconciliation (${service})`);
+    super(`Space server creation outcome requires manual reconciliation (${service})`);
     this.name = 'CommunityCreationUncertainError';
     this.service = service;
   }

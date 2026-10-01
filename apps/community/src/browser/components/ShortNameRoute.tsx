@@ -51,13 +51,13 @@ export function ShortNameRoute({ name, rest }: { name: string; rest: string }) {
     <main className="grid min-h-dvh place-items-center p-5">
       {failure ? (
         <Notice role="alert" tone="error" className="stack max-w-md">
-          <p>Couldn’t open this community. {failure}</p>
+          <p>Couldn’t open this space. {failure}</p>
           <Button type="button" variant="outline" onClick={() => setAttempt((n) => n + 1)}>
             Try again
           </Button>
         </Notice>
       ) : (
-        <p role="status">Opening community…</p>
+        <p role="status">Opening space…</p>
       )}
     </main>
   );

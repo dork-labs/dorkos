@@ -189,7 +189,7 @@ export function OwnerClaim() {
       if (cause instanceof RequestError && cause.status === 401) {
         setAccount(null);
         setStage('account');
-        setError('Your session ended. Sign in again to claim the community.');
+        setError('Your session ended. Sign in again to claim the space.');
         return null;
       }
       if (cause instanceof RequestError && (cause.status === 403 || cause.status === 409)) {
@@ -289,29 +289,29 @@ export function OwnerClaim() {
       : stage === 'unavailable'
         ? 'This owner claim can’t be used.'
         : stage === 'taken'
-          ? 'This community already has an owner.'
+          ? 'This space already has an owner.'
           : 'Become the owner.';
   const intro =
     stage === 'claimed'
-      ? 'Open the community to name your channels and invite people. Connecting a DorkOS installation is a separate step.'
+      ? 'Open the space to name your channels and invite people. Connecting a DorkOS installation is a separate step.'
       : stage === 'unavailable'
-        ? 'It may have expired, been replaced by a newer one, or been used already. Open the link again, or ask the host administrator for a new one.'
+        ? 'It may have expired, been replaced by a newer one, or been used already. Open the link again, or ask the server admin for a new one.'
         : stage === 'taken'
-          ? 'It is no longer waiting for an owner, so this claim can’t finish. If you expected to own it, ask the host administrator.'
+          ? 'It is no longer waiting for an owner, so this claim can’t finish. If you expected to own it, ask the server admin.'
           : stage === 'confirm'
-            ? 'You are about to become the owner of a new community on this host.'
+            ? 'You are about to become the owner of a new space on this server.'
             : stage === 'account'
               ? lead && lead !== 'loading'
-                ? `Sign in with ${lead.label} to claim the community.`
-                : 'Create an account on this host, or sign in, to claim the community.'
-              : 'The host administrator set up a new community for you. Claim it to become its owner.';
+                ? `Sign in with ${lead.label} to claim the space.`
+                : 'Create an account on this server, or sign in, to claim the space.'
+              : 'The server admin set up a new space for you. Claim it to become its owner.';
 
   return (
     <div className="auth-wrap">
       <div className="auth-art">
         <div>
-          <p className="eyebrow">DorkOS Community</p>
-          <h2 className="mt-10 text-4xl font-semibold tracking-tight">Start a new community.</h2>
+          <p className="eyebrow">DorkOS Space</p>
+          <h2 className="mt-10 text-4xl font-semibold tracking-tight">Start a new space.</h2>
           <p className="mt-4 max-w-md text-lg text-[#d0e4d3]">
             Claim it once, then invite the people and agents you want to work with.
           </p>
@@ -319,7 +319,7 @@ export function OwnerClaim() {
         <p className="text-sm text-[#aec4b1]">An owner claim works once and lasts 24 hours.</p>
       </div>
       <main className="auth-card" aria-busy={busy || stage === 'loading'}>
-        <p className="eyebrow">{stage === 'claimed' ? 'Ownership claimed' : 'Claim a community'}</p>
+        <p className="eyebrow">{stage === 'claimed' ? 'Ownership claimed' : 'Claim a space'}</p>
         <h1 ref={heading} tabIndex={-1}>
           {title}
         </h1>
@@ -355,7 +355,7 @@ export function OwnerClaim() {
                   required
                 />
                 <span id="owner-claim-hint" className="hint">
-                  Paste the link the host administrator sent you.
+                  Paste the link the server admin sent you.
                 </span>
               </div>
             )}
@@ -431,7 +431,7 @@ export function OwnerClaim() {
                   />
                   {mode === 'signin' ? (
                     <span className="hint">
-                      Forgot your password? Ask the person running this host for help.
+                      Forgot your password? Ask the person running this server for help.
                     </span>
                   ) : (
                     <span className="hint">
@@ -474,7 +474,7 @@ export function OwnerClaim() {
                   <span className="small muted block">{account.email}</span>
                 </span>
               ) : (
-                <span>You are signed in to this host.</span>
+                <span>You are signed in to this server.</span>
               )}
             </div>
             <Button
@@ -484,7 +484,7 @@ export function OwnerClaim() {
               disabled={busy}
               onClick={() => void confirm()}
             >
-              {busy ? 'Claiming…' : 'Claim community'}
+              {busy ? 'Claiming…' : 'Claim space'}
               <ArrowRight size={17} aria-hidden="true" />
             </Button>
             <Button
@@ -505,7 +505,7 @@ export function OwnerClaim() {
               type="button"
               onClick={() => window.location.assign(`/c/${claimed.id}`)}
             >
-              Open community
+              Open space
             </Button>
             <ConnectDorkOS
               link={communityLink(window.location.origin, claimed.id, claimed.shortName)}
@@ -518,7 +518,7 @@ export function OwnerClaim() {
               Use a different claim link
             </Button>
             <Button asChild variant="outline">
-              <a href="/">Go to your communities</a>
+              <a href="/">Go to your spaces</a>
             </Button>
           </div>
         )}

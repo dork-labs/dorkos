@@ -856,8 +856,8 @@ describe('everything that ends an open request (AC-9, AC-13)', () => {
 describe('what the owner is sent (AC-15)', () => {
   const sentences = {
     transfer:
-      'If you can sign in, you can also hand the community to someone yourself from its Settings:',
-    delete: 'If you can sign in, you can also delete the community from its Settings.',
+      'If you can sign in, you can also hand the space to someone yourself from its Settings:',
+    delete: 'If you can sign in, you can also delete the space from its Settings.',
     password: 'To hand it to someone or delete it, add a password to your account first.',
     deletePassword: 'To delete it, add a password to your account first.',
   };
@@ -901,7 +901,7 @@ describe('what the owner is sent (AC-15)', () => {
     const [notice, again, reminder] = mailsTo(c.ownerEmail);
     expect(notice.subject).toBe(`Someone asked to take over ${c.name}`);
     expect(notice.text).toContain(
-      `The host of ${c.name} has been asked to make someone else its owner.`
+      `The server admin for ${c.name} has been asked to make someone else its owner.`
     );
     expect(notice.text).toMatch(
       new RegExp(`If you do nothing, that can happen on or after ${DAY_NAME.source}\\.`, 'u')
@@ -911,7 +911,7 @@ describe('what the owner is sent (AC-15)', () => {
     );
     expect(again.text).toMatch(
       new RegExp(
-        `The host sent the link for the new owner again\\. Nothing else changed\\. The earliest date is still ${DAY_NAME.source}\\.`,
+        `The server admin sent the link for the new owner again\\. Nothing else changed\\. The earliest date is still ${DAY_NAME.source}\\.`,
         'u'
       )
     );
@@ -1022,9 +1022,11 @@ describe('what the owner is sent (AC-15)', () => {
     // The withdrawn request's notice is no longer true, so it is dropped unsent.
     expect(attempts.map((attempt) => attempt.errorClass)).toContain('NOTICE_OBSOLETE');
     const mails = mailsTo(c.ownerEmail);
-    const ended = mails.find((mail) => mail.text.includes('The host withdrew its request.'))!;
+    const ended = mails.find((mail) =>
+      mail.text.includes('The server admin withdrew their request.')
+    )!;
     expect(ended.subject).toBe(`The request to take over ${c.name} has ended`);
-    expect(ended.text).toContain('The host withdrew its request. Nothing changed.');
+    expect(ended.text).toContain('The server admin withdrew their request. Nothing changed.');
     const done = mails.find((mail) => mail.subject === `${c.name} has a new owner`)!;
     expect(done.text).toContain(
       `Nia New Owner is now the owner of ${c.name}. You are still a member.`
@@ -1219,7 +1221,7 @@ describe('review probes (R1, R2)', () => {
     await tick(clock());
     const stored = (await row(id)).claimable_after as Date;
     const [notice, again] = mailsTo(c.ownerEmail);
-    expect(again.text).toContain('The host sent the link for the new owner again.');
+    expect(again.text).toContain('The server admin sent the link for the new owner again.');
     expect(again.text).toContain(`The earliest date is still ${formatReplacementDate(stored)}.`);
     // Both emails name one date: the reissue repeats the notice's, not a day counted from now.
     expect(dateIn(notice.text)).toBe(formatReplacementDate(stored));

@@ -27,13 +27,13 @@ type HostImport = {
 };
 
 const FAILURES: Record<string, string> = {
-  IMPORT_ARCHIVE_INVALID: 'The file is damaged or is not a community export.',
-  IMPORT_NOT_OWNER_EXPORT: 'This is a personal export. Ask the owner for the community export.',
-  IMPORT_VERSION_UNSUPPORTED: 'This export comes from a version this host cannot read.',
+  IMPORT_ARCHIVE_INVALID: 'The file is damaged or is not a space export.',
+  IMPORT_NOT_OWNER_EXPORT: 'This is a personal export. Ask the owner for the space export.',
+  IMPORT_VERSION_UNSUPPORTED: 'This export comes from a version this server cannot read.',
   IMPORT_TOO_LARGE: 'This export is larger than an import can take.',
-  STORAGE_LIMIT_REACHED: 'The files do not fit this community’s file space limit.',
+  STORAGE_LIMIT_REACHED: 'The files do not fit this space’s storage limit.',
   IMPORT_CHECKSUM_MISMATCH: 'A file inside the export does not match. Export it again.',
-  IMPORT_STORAGE_UNAVAILABLE: 'This host could not store the files. Try again later.',
+  IMPORT_STORAGE_UNAVAILABLE: 'This server could not store the files. Try again later.',
 };
 
 const STATES: Record<ImportState, string> = {
@@ -126,14 +126,14 @@ export function HostImportForm({ onStarted }: { onStarted: () => void }) {
 
   return (
     <section className="panel mt-4" aria-labelledby="host-import-title">
-      <h2 id="host-import-title">Move a community here</h2>
+      <h2 id="host-import-title">Move a space here</h2>
       <p className="small muted">
-        Import a community’s history and files from its owner’s export. Everyone joins again
-        afterwards, and the owner claims it with a link.
+        Import a space’s history and files from its owner’s export. Everyone joins again afterwards,
+        and the owner claims it with a link.
       </p>
       <form onSubmit={(event) => void start(event)}>
         <div className="field">
-          <Label htmlFor="host-import-name">Name of the moved community</Label>
+          <Label htmlFor="host-import-name">Name of the moved space</Label>
           <Input
             id="host-import-name"
             value={name}
@@ -277,7 +277,7 @@ export function HostImportStatus({
           {report.shortened > 0 &&
             ` ${count(report.shortened, 'channel name or description', 'channel names or descriptions')} ${
               report.shortened === 1 ? 'was' : 'were'
-            } too long for this host and ${current.state === 'ready' ? 'have been' : 'will be'} shortened.`}
+            } too long for this server and ${current.state === 'ready' ? 'have been' : 'will be'} shortened.`}
         </p>
       )}
       <div className="row flex-wrap gap-2">

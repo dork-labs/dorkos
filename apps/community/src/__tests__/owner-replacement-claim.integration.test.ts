@@ -603,7 +603,7 @@ describe('refused claims change nothing and keep the cookie', () => {
     const before = await everything(plain, c, replacementId);
     const refused = await claim(plain, cookies(c.owner.cookie, claimCookie));
     expect(refused.status).toBe(409);
-    expect((await refused.json()).message).toBe('You already own this community.');
+    expect((await refused.json()).message).toBe('You already own this space.');
     expect(droppedCookie(refused)).toBe(false);
     expect(await everything(plain, c, replacementId)).toEqual(before);
   });
@@ -635,7 +635,7 @@ describe('refused claims change nothing and keep the cookie', () => {
       expect((await refused.json()).message, kind).toBe(
         kind === 'account'
           ? "This account is being deleted, so it can't take ownership."
-          : "You are leaving this community, so you can't take ownership."
+          : "You are leaving this space, so you can't take ownership."
       );
       expect(droppedCookie(refused)).toBe(false);
       expect(await everything(plain, c, replacementId)).toEqual(before);
@@ -779,7 +779,7 @@ describe('the named account (AC-7, claim half)', () => {
     const refused = await claim(ssoMoved, cookies(named, claimCookie));
     expect(refused.status).toBe(409);
     expect((await refused.json()).message).toBe(
-      "This host's sign-in service changed, so this claim can't be used. Ask the host for a new request."
+      "This server's sign-in service changed, so this claim can't be used. Ask the server admin for a new request."
     );
     expect(droppedCookie(refused)).toBe(false);
     expect(await everything(sso, c, replacementId)).toEqual(before);
@@ -793,7 +793,7 @@ describe('the named account (AC-7, claim half)', () => {
     const refused = await claim(plainNowSso, done.cookie);
     expect(refused.status).toBe(409);
     expect((await refused.json()).message).toBe(
-      'This host now uses a sign-in service, so the host must ask again.'
+      'This server now uses a sign-in service, so the server admin must ask again.'
     );
     expect(await everything(plain, done.c, done.replacementId)).toEqual(before);
 

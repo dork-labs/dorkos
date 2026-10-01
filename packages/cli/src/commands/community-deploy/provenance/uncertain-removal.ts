@@ -283,7 +283,7 @@ export async function runUncertainRemoval(
   dependencies: UncertainRemovalDependencies
 ): Promise<RemovalOutcome> {
   const journal = await dependencies.readJournal();
-  if (!journal) throw new Error('The selected Community launch journal was not found');
+  if (!journal) throw new Error('The selected space server launch journal was not found');
   const shape = classifyUncertainJournal(journal);
   if (shape.shape === 'resume-first') return { outcome: 'resume-first' };
   if (shape.shape === 'not-a-create') return { outcome: 'not-a-create' };

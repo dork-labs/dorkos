@@ -53,12 +53,12 @@ export function describeAdmissionFailure(
     if (cause.status === 423 && cause.code === 'COMMUNITY_HELD')
       return {
         title,
-        detail: 'This community is on hold. You can join when the hold ends.',
+        detail: 'This space is on hold. You can join when the hold ends.',
         recovery: 'wait-for-release',
       };
     if (cause.status === 409 && cause.code === 'MEMBER_LIMIT_REACHED')
       return { title, detail: cause.message, recovery: 'wait-for-room' };
-    if (cause.status === 409 && cause.message === 'This community is closed to new members.')
+    if (cause.status === 409 && cause.message === 'This space is closed to new members.')
       return { title, detail: cause.message, recovery: 'new-invitation' };
     if (cause.status === 403 && context.phase === 'join') {
       if (/another account/u.test(cause.message))
@@ -82,7 +82,7 @@ export function describeAdmissionFailure(
       ? cause.message
       : cause instanceof RequestError && cause.status === 0
         ? 'You appear to be offline. Check your connection.'
-        : 'The community did not respond.';
+        : 'The space did not respond.';
   return { title, detail, recovery: 'retry' };
 }
 
@@ -107,7 +107,7 @@ export function reactivationScope(channelName: string | null): {
 } {
   return {
     restored: [
-      'Your name and handle in this community.',
+      'Your name and handle in this space.',
       channelName ? `Access to #${channelName}, which this invitation includes.` : null,
     ].filter((line): line is string => line !== null),
     notRestored: [
@@ -158,7 +158,8 @@ export function admissionIntro(page: {
     return page.hasPreview
       ? `Continue with ${page.singleSignOn}. You don’t need a separate account here.`
       : `Continue with ${page.singleSignOn}.`;
-  if (page.hasPreview) return 'Create an account on this host, or sign in if you already have one.';
+  if (page.hasPreview)
+    return 'Create an account on this server, or sign in if you already have one.';
   if (page.hasInvite) return 'Check the invitation, then create or sign in to your account.';
   return 'Sign in to your account. To join for the first time, ask a member for an invitation.';
 }

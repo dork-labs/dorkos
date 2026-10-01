@@ -101,7 +101,7 @@ export function HostShortNames({
             />
             <span className="hint">
               {names.current
-                ? `People can open this community at ${address(names.current)}.`
+                ? `People can open this space at ${address(names.current)}.`
                 : 'No web address yet.'}{' '}
               3 to 32 lowercase letters, digits, and single hyphens, starting with a letter.
             </span>
@@ -140,7 +140,7 @@ export function HostShortNames({
         <FocusDialog title={`Release /${releasing}?`} onClose={() => setReleasing(null)}>
           <p>
             {address(releasing)} will stop leading to {name}. Anyone with an old link lands on “No
-            community at this address.” After the cool-off, another community can take it.
+            space at this address.” After the cool-off, another space can take it.
           </p>
           <div className="row justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setReleasing(null)}>
@@ -159,7 +159,7 @@ export function HostShortNames({
                       `/api/v1/host/communities/${communityId}/short-names/${shortName}`,
                       'DELETE'
                     ),
-                  `Released /${shortName}. No community can take it during the cool-off.`
+                  `Released /${shortName}. No space can take it during the cool-off.`
                 );
               }}
             >

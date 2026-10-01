@@ -65,7 +65,7 @@ export function formatCommunityPreflight(result: CommunityPreflightResult): stri
   const digest = `${plan.imageDigest.slice(0, 15)}…${plan.imageDigest.slice(-8)}`;
   const readiness = result.readiness.map(({ id, status }) => `  ${id}: ${status}`).join('\n');
   return [
-    `DorkOS Community ${plan.dorkosVersion} (${digest})`,
+    `DorkOS space server ${plan.dorkosVersion} (${digest})`,
     `Fly: ${plan.fly.appName} in ${plan.fly.organizationName} [${plan.fly.organizationId}], ${plan.fly.region}, one ${plan.fly.machineSize} Machine`,
     `Neon: ${plan.neon.projectName} in ${plan.neon.organizationName} [${plan.neon.organizationId}], ${plan.neon.region}, direct TLS`,
     `Tigris: ${plan.tigris.bucketName}, private`,

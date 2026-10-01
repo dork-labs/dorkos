@@ -94,14 +94,14 @@ async function lockPairingCommunity(
   // A held community pairs exactly as an archived one: read-only, history only.
   if (isReadOnlyLifecycle(lifecycle) && allowArchivedRead) return 'archived';
   if (lifecycle === 'archived')
-    throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'Archived communities accept read-only pairing.');
+    throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'Archived spaces accept read-only pairing.');
   if (lifecycle === 'held')
-    throw new ApiError(423, 'COMMUNITY_HELD', 'Held communities accept read-only pairing.');
+    throw new ApiError(423, 'COMMUNITY_HELD', 'Held spaces accept read-only pairing.');
   if (lifecycle === 'suspended')
-    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
+    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This space is suspended.');
   if (lifecycle === 'deletion_pending')
-    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');
-  throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
+    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This space is being deleted.');
+  throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This space is unavailable.');
 }
 
 async function requirePairingMember(
@@ -131,7 +131,7 @@ async function lockRevocationMember(
     [actor.community_id]
   );
   if (!community.rowCount)
-    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
+    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This space is unavailable.');
   const member = await client.query(
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
     [actor.id, actor.community_id]

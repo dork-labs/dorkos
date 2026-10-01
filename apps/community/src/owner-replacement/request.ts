@@ -84,7 +84,7 @@ export async function requestOwnerReplacement(
   );
   await assertHostActor(client, input.actor, input.now);
   const community = locked.rows[0];
-  if (!community) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+  if (!community) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
   if (input.noticeRefusal)
     throw new ApiError(409, 'NOTICE_DELIVERY_UNAVAILABLE', input.noticeRefusal);
 
@@ -116,16 +116,16 @@ export async function requestOwnerReplacement(
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      'This community has no owner yet. Reissue its owner claim instead.'
+      'This space has no owner yet. Reissue its owner claim instead.'
     );
   if (!['active', 'archived', 'held'].includes(community.lifecycle))
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      'Only an active, archived, or held community can have its owner replaced.'
+      'Only an active, archived, or held space can have its owner replaced.'
     );
   if (community.lifecycle_version !== input.lifecycleVersion)
-    throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'Space lifecycle changed.');
 
   const open = await client.query(
     `SELECT 1 FROM owner_replacements
@@ -173,7 +173,7 @@ export async function requestOwnerReplacement(
   );
   const prior = owner.rows[0];
   if (!prior?.user_id)
-    throw new ApiError(409, 'STATE_CONFLICT', 'This community has no owner to notify.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'This space has no owner to notify.');
 
   const inserted = await client.query<{ id: string }>(
     `INSERT INTO owner_replacements(
