@@ -490,7 +490,8 @@ export function CommunityApp() {
           memberId={me.member.memberId}
         />
         <OwnerReplacementBanner
-          key={`${community!.id}:${me.member.memberId}`}
+          // Its own key: a sibling sharing the takedown banner's key makes React render it twice.
+          key={`owner-replacement:${community!.id}:${me.member.memberId}`}
           communityId={community!.id}
           communityName={community!.name}
         />
