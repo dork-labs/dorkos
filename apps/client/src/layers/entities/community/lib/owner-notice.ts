@@ -69,9 +69,9 @@ export function ownerNoticeBanner(
 ): string[] {
   const { options } = notice;
   const lines = [
-    `The host has been asked to make someone else the owner of this community. Unless you keep ownership, that can happen ${when(notice, format)}.`,
+    `The host has been asked to make someone else the owner of this space. Unless you keep ownership, that can happen ${when(notice, format)}.`,
   ];
-  const can = ['Open the community to keep ownership.'];
+  const can = ['Open the space to keep ownership.'];
   if (options.transfer && options.delete)
     can.push('You can also hand it to someone yourself, or delete it.');
   else if (options.transfer) can.push('You can also hand it to someone yourself.');

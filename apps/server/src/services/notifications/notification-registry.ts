@@ -1281,7 +1281,7 @@ const ENTRIES: NotificationRegistryMap = {
         : `${p.newOwnerDisplayName} is now the owner of ${p.communityLabel}`,
     body: (p) =>
       p.phase === 'open'
-        ? `Unless you keep ownership, the host can make someone else its owner ${ownerReplacementWhen(p)}. Open the community to keep it.`
+        ? `Unless you keep ownership, the host can make someone else its owner ${ownerReplacementWhen(p)}. Open the space to keep it.`
         : 'You are still a member.',
     actions: () => OPEN_ACTION,
     dedupeKey: (p) => `owner-replacement:${p.ref}:${p.replacementId}:${p.phase}`,

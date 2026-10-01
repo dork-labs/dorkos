@@ -59,7 +59,7 @@ describe('the owner-replacement notification', () => {
     const payload = ownerNoticePayload('remote_a', 'Night shift', open);
     expect(entry.title(payload)).toBe('Someone asked to take over Night shift');
     expect(entry.body?.(payload)).toBe(
-      'Unless you keep ownership, the host can make someone else its owner on or after Sunday, October 4, 2026 (UTC). Open the community to keep it.'
+      'Unless you keep ownership, the host can make someone else its owner on or after Sunday, October 4, 2026 (UTC). Open the space to keep it.'
     );
     expect(
       entry.body?.(

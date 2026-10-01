@@ -40,7 +40,7 @@ export function CommunityOwnerNoticeBanner({
   );
   return (
     <section
-      aria-label="Request to take over this community"
+      aria-label="Request to take over this space"
       className="border-status-warning-border bg-status-warning-bg text-status-warning-fg flex flex-wrap items-start gap-x-3 gap-y-2 border-b px-4 py-3 text-sm"
     >
       <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -56,7 +56,7 @@ export function CommunityOwnerNoticeBanner({
         className="shrink-0"
         onClick={() => openExternalLink(communityPageUrl(connection))}
       >
-        Open community
+        Open space
         <ExternalLink className="size-3.5" aria-hidden />
       </Button>
     </section>

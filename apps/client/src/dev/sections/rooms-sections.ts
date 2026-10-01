@@ -254,6 +254,15 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     title: 'CommunityOwnerNoticeBanner',
     page: 'rooms',
     category: 'Delivery',
-    keywords: ['community', 'owner', 'take over', 'replace', 'keep ownership', 'host', 'warning'],
+    keywords: [
+      'community',
+      'space',
+      'owner',
+      'take over',
+      'replace',
+      'keep ownership',
+      'host',
+      'warning',
+    ],
   },
 ];

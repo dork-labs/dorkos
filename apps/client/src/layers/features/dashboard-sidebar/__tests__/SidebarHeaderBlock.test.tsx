@@ -974,7 +974,7 @@ describe('SidebarHeaderBlock', () => {
     expect(within(gamma as HTMLElement).queryByRole('img')).not.toBeInTheDocument();
     expect(
       within(alpha as HTMLElement).getByRole('img', {
-        name: 'Someone asked to take over this community',
+        name: 'Someone asked to take over this space',
       })
     ).toBeVisible();
     expect(within(beta as HTMLElement).queryByRole('img')).not.toBeInTheDocument();

@@ -383,8 +383,8 @@ export function CommunityContextSwitcher({
                       <span
                         role="img"
                         className="bg-status-warning-dot size-2 shrink-0 rounded-full"
-                        aria-label="Someone asked to take over this community"
-                        title="Someone asked to take over this community"
+                        aria-label="Someone asked to take over this space"
+                        title="Someone asked to take over this space"
                       />
                     )}
                     {mentions > 0 && (

@@ -96,17 +96,17 @@ describe('the owner banner on a community’s page', () => {
   it('tells the owner, above the page, and opens the community on its own host', async () => {
     renderPage();
     const banner = await screen.findByRole('region', {
-      name: 'Request to take over this community',
+      name: 'Request to take over this space',
     });
     expect(banner).toHaveTextContent(
-      'The host has been asked to make someone else the owner of this community. Unless you keep ownership, that can happen after a waiting period of at least 7 days.'
+      'The host has been asked to make someone else the owner of this space. Unless you keep ownership, that can happen after a waiting period of at least 7 days.'
     );
     expect(banner).toHaveTextContent(
-      'Open the community to keep ownership. You can also hand it to someone yourself, or delete it.'
+      'Open the space to keep ownership. You can also hand it to someone yourself, or delete it.'
     );
     // The page body is still there beneath it.
     expect(screen.getByText('No channel selected')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open community' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open space' }));
     expect(openExternalLink).toHaveBeenCalledWith('https://owner-ref.example/c/remote-owner-ref');
   });
 
@@ -116,8 +116,8 @@ describe('the owner banner on a community’s page', () => {
     await waitFor(() => expect(list).toHaveBeenCalled());
     expect(await screen.findByText('No channel selected')).toBeInTheDocument();
     expect(
-      screen.queryByRole('region', { name: 'Request to take over this community' })
+      screen.queryByRole('region', { name: 'Request to take over this space' })
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Open community' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open space' })).not.toBeInTheDocument();
   });
 });

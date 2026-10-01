@@ -93,7 +93,7 @@ export function CommunityOwnerNoticeShowcases() {
   return (
     <PlaygroundSection
       title="CommunityOwnerNoticeBanner"
-      description="What the owner of a community sees at the top of its page when someone asked the host to make someone else the owner. It names when that could happen and offers only what this owner can do, and its one button opens the community in the browser, where keeping ownership is one press. Only the owner’s own connection ever carries it. Check that (a) each option line matches the state, and (b) the button drops under the text at phone width."
+      description="What the owner of a space sees at the top of its page when someone asked the host to make someone else the owner. It names when that could happen and offers only what this owner can do, and its one button opens the space in the browser, where keeping ownership is one press. Only the owner’s own connection ever carries it. Check that (a) each option line matches the state, and (b) the button drops under the text at phone width."
     >
       <div className="space-y-6">
         {STATES.map((state) => (

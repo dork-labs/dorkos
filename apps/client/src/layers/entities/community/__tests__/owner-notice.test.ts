@@ -35,8 +35,8 @@ const completed: CommunityConnectionOwnerNotice = {
 describe('what the owner reads', () => {
   it('names the date and offers every option this owner has', () => {
     expect(ownerNoticeBanner(open, 'active', UTC)).toEqual([
-      'The host has been asked to make someone else the owner of this community. Unless you keep ownership, that can happen on or after Sunday, October 4, 2026.',
-      'Open the community to keep ownership. You can also hand it to someone yourself, or delete it.',
+      'The host has been asked to make someone else the owner of this space. Unless you keep ownership, that can happen on or after Sunday, October 4, 2026.',
+      'Open the space to keep ownership. You can also hand it to someone yourself, or delete it.',
     ]);
   });
 
@@ -48,7 +48,7 @@ describe('what the owner reads', () => {
       'archived',
       UTC
     );
-    expect(lines[1]).toBe('Open the community to keep ownership. You can also delete it.');
+    expect(lines[1]).toBe('Open the space to keep ownership. You can also delete it.');
   });
 
   it('tells an owner without a password what adding one would allow', () => {
@@ -57,10 +57,10 @@ describe('what the owner reads', () => {
       options: { keep: true as const, transfer: false, delete: false, needsPassword: true },
     };
     expect(ownerNoticeBanner(noPassword, 'active', UTC)[1]).toBe(
-      'Open the community to keep ownership. To hand it to someone or delete it, add a password to your account first.'
+      'Open the space to keep ownership. To hand it to someone or delete it, add a password to your account first.'
     );
     expect(ownerNoticeBanner(noPassword, 'archived', UTC)[1]).toBe(
-      'Open the community to keep ownership. To delete it, add a password to your account first.'
+      'Open the space to keep ownership. To delete it, add a password to your account first.'
     );
   });
 
