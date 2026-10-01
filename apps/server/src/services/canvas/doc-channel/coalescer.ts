@@ -209,7 +209,7 @@ export function selectBatchSlice(
     batch: {
       ...batch,
       inputEventIds: selected.map((event) => event.eventId),
-      effectivePayload: { eventIds: selected.map((event) => event.eventId) },
+      effectivePayload: { eventIds: selected.map((event) => event.eventId), documentLabel },
     },
     context: batchContext(batch, selected, documentLabel),
     overflowIds: inputs.slice(selected.length).map((event) => event.eventId),
@@ -243,16 +243,28 @@ export function admitBatchSlice<T>(
       )
     )
       throw new Error('Pending batch changed.');
+    // The callback may only persist admission. Its mutable view cannot redefine
+    // the selection against which committed source identity is checked.
+    const selectedIds = JSON.stringify(slice.batch.inputEventIds);
+    const selectedPayload = JSON.stringify(slice.batch.effectivePayload);
+    const overflowIds = [...slice.overflowIds];
+    freezeAdmissionData(slice);
     const result = admit(tx, slice);
     const accepted = store.getBatch(batchId, tx)!;
     if (
       accepted.generation !== original.generation ||
-      JSON.stringify(accepted.inputEventIds) !== JSON.stringify(slice.batch.inputEventIds)
+      accepted.documentId !== original.documentId ||
+      accepted.routeId !== original.routeId ||
+      accepted.grantId !== original.grantId ||
+      accepted.grantRevision !== original.grantRevision ||
+      accepted.dueAt !== original.dueAt ||
+      JSON.stringify(accepted.inputEventIds) !== selectedIds ||
+      JSON.stringify(accepted.effectivePayload) !== selectedPayload
     )
       throw new Error('Admission changed original input identity.');
     if (['pending', 'waiting'].includes(accepted.status))
       throw new Error('Admission did not release the pending slot.');
-    if (slice.overflowIds.length) {
+    if (overflowIds.length) {
       const overflowId = randomUUID();
       store.insertBatch(
         {
@@ -260,8 +272,8 @@ export function admitBatchSlice<T>(
           scope: accepted.scope,
           batchId: overflowId,
           generation: randomUUID(),
-          inputEventIds: slice.overflowIds,
-          effectivePayload: { eventIds: slice.overflowIds },
+          inputEventIds: overflowIds,
+          effectivePayload: { eventIds: overflowIds },
           attempt: 0,
           leaseUntil: null,
           relayMessageId: null,
@@ -280,11 +292,18 @@ export function admitBatchSlice<T>(
             eq(canvasDocDeliveries.documentId, original.documentId),
             eq(canvasDocDeliveries.routeId, original.routeId),
             eq(canvasDocDeliveries.batchId, batchId),
-            inArray(canvasDocDeliveries.eventId, slice.overflowIds)
+            inArray(canvasDocDeliveries.eventId, overflowIds)
           )
         )
         .run();
     }
     return result;
   });
+}
+
+/** Bounded stored JSON and batch metadata must remain immutable during admission. */
+function freezeAdmissionData(value: unknown): void {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return;
+  for (const child of Object.values(value)) freezeAdmissionData(child);
+  Object.freeze(value);
 }

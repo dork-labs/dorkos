@@ -75,6 +75,10 @@ it('overflow inherits final canonical scope and preserves its fixed deadline', (
   expect(f.store.getBatch(overflowId)!.scope).toBe('session:canonical');
   expect(f.store.getBatch(overflowId)!.dueAt).toBe(f.batch.dueAt);
   expect(f.store.getBatch(f.batch.batchId)!.generation).toBe(f.batch.generation);
+  expect(f.store.getBatch(f.batch.batchId)!.effectivePayload).toEqual({
+    eventIds: [f.inputs[0]!.id],
+    documentLabel: 'Tasks',
+  });
   expect(f.store.getBatch(f.batch.batchId)!.inputEventIds).toEqual([f.inputs[0]!.id]);
 });
 it('a callback cannot replace selected identity/generation and all changes roll back', () => {
@@ -125,4 +129,24 @@ it('rolls back async admission and prevents its delayed transaction mutation', a
   expect(
     f.db.get<{ count: number }>(sql`SELECT count(*) AS count FROM canvas_doc_batches`)?.count
   ).toBe(1);
+});
+
+it('rolls back a callback that rewrites its selected slice and matching persisted IDs', () => {
+  const f = fixture();
+  expect(() =>
+    admitBatchSlice(f.store, f.batch.batchId, 1, 'Tasks', f.now, (tx, slice) => {
+      slice.batch.inputEventIds.splice(0, 1, f.inputs[1]!.id);
+      slice.batch.effectivePayload = { eventIds: [f.inputs[1]!.id] };
+      tx.run(
+        sql`UPDATE canvas_doc_batches SET status='accepted',input_event_ids=${JSON.stringify(slice.batch.inputEventIds)},effective_payload=${JSON.stringify(slice.batch.effectivePayload)} WHERE batch_id=${f.batch.batchId}`
+      );
+    })
+  ).toThrow();
+  expect(f.store.getBatch(f.batch.batchId)).toEqual(f.batch);
+  for (const input of f.inputs)
+    expect(f.store.listDeliveries('doc', input.id)[0]).toMatchObject({
+      status: 'pending',
+      batchId: f.batch.batchId,
+    });
+  expect(f.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM canvas_doc_batches`)!.n).toBe(1);
 });
