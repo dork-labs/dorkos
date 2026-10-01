@@ -208,9 +208,9 @@ Guided setup gives you a running community. It does not give you a backup. The c
 What has been tried so far:
 
 - The same approach (pause writes, export the database, copy every file, restore both into Docker on your own computer) worked once on September 20, 2026, on a community set up by hand with the same three services: Fly, Neon and Tigris.
-- Steps 1 through 7 were followed on October 1, 2026, on a community made with guided setup (v0.94.0), with the two corrections already folded into the commands below: the database role's real name, and how `fly config save` writes its file. Step 7's redeploy used the release already running, not an upgrade to a new one.
-- Upgrading to a new release in step 7, and the roll-back in step 8, are **not yet rehearsed on guided setup**.
-- Every `fly` and `neonctl` command below was checked against the help output of flyctl 0.4.104 and neonctl 5.0.0, the lowest versions the current release accepts, and also run live against flyctl 0.4.110 and neonctl 7.0.1.
+- Steps 1 through 6 were followed on October 1, 2026 (UTC), on a community made with guided setup (v0.94.0), with the database role's real name — the correction below — folded in. From step 7, only `fly config save` (with its own correction below) and a redeploy of the same release (same image digest) were tried; the next release's manifest was not downloaded or checked, its `migrationCompatibilityId` was not compared, and no actual version upgrade was made.
+- The cross-version upgrade in step 7, and the roll-back in step 8, are **not yet rehearsed on guided setup**.
+- Every `fly` and `neonctl` command in steps 1 through 6, plus `fly config save` and `fly deploy` of the same image in step 7, was checked against the help output of flyctl 0.4.104 and neonctl 5.0.0, the lowest versions the current release accepts, and also run live against flyctl 0.4.110 and neonctl 7.0.1. The Tigris CLI commands in step 4 were run live against Tigris CLI 3.14.0.
 
 You need the same `fly`, `neonctl` and `gh` tools guided setup asked for, plus `jq`, PostgreSQL 17 client tools (`pg_dump`, `pg_restore`), an S3 command-line client such as the [AWS CLI](https://aws.amazon.com/cli/), and Docker for the restore rehearsal. Replace every `<placeholder>` with your own value.
 
@@ -224,10 +224,12 @@ jq '{version: .recoveryContext.version, app: .recoveryContext.appName,
   bucket: .recoveryContext.bucketName, releaseDigest, imagePlatformDigest,
   neonProject: .resources.neonProjectId, neonBranch: .resources.neonBranchId,
   neonRole: .resources.neonRoleId}' "$journal"
-database_role="$(jq -r '.resources.neonRoleId' "$journal")"
+database_role="$(jq -er '.resources.neonRoleId' "$journal")"
 ```
 
-Guided setup names this role `community_` plus a code of its own, not the fixed `community_owner` older setups used. The commands below call it `$database_role`.
+Guided setup names this role `community_` plus a code of its own. A launch started before these codes existed used the fixed name `community_owner` instead. Either way, the journal holds whichever name yours got. The commands below call it `$database_role`.
+
+`journal` and `database_role` are shell variables: they last only for this terminal. In any new terminal, re-run the `journal=` and `database_role=` lines above before steps 3, 6, 7 or 8.
 
 The journal describes the day of setup. After an upgrade, ask Fly what is running now:
 
@@ -261,6 +263,7 @@ Do steps 3 and 4 while the Machine is stopped.
 Guided setup made a Neon database named `community`, owned by `$database_role` from step 1. The app reaches it through the Fly secret `COMMUNITY_DATABASE_URL`, but Fly never shows a secret's value again. Ask Neon for the same direct address instead. The command writes it to a private file, so the password never lands in your shell history:
 
 ```bash
+: "${database_role:?Run step 1 first}"
 neonctl connection-string <neon-branch-id> --project-id <neon-project-id> \
   --database-name community --role-name "$database_role" \
   --no-pooled --ssl require > "$backup_dir/database-url"
@@ -297,21 +300,22 @@ Community keeps uploaded files in the private Tigris bucket named in the journal
 2. Create an access key limited to this bucket.
 3. Save the key in your password manager.
 
-**From the command line:** install the Tigris CLI and sign in with your Fly account:
+**From the command line:** install the Tigris CLI, then sign in with `tigris login oauth` (choose "Sign in with Fly"):
 
 ```bash
 npm install -g @tigrisdata/cli
 tigris login oauth
 ```
 
-Choose **Sign in with Fly**. Then create a read-only key for this bucket, written to a private file instead of your screen:
+A roll-back (step 8) needs a key with write access instead: use `--role ReadWrite` in place of `--role ReadOnly` below. `tigris access-keys create --help` lists `ReadOnly`, `ReadWrite` and `Editor` as the role options; `Editor` also manages the bucket's own settings, which a backup or restore key does not need. Run `umask 077` first in the same shell, or `chmod 600` the file afterward, so only you can read it:
 
 ```bash
+umask 077
 tigris access-keys create community-backup --bucket <bucket-name> --role ReadOnly \
   --env ~/.community-backup-tigris.env --for aws
 ```
 
-Copy the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values out of that file and into the credentials file below, then delete it: `rm ~/.community-backup-tigris.env`. If you would rather not keep a standing backup key, delete it from Tigris too once you are done: find its id with `tigris access-keys list` (it starts with `tid_`), then run `tigris access-keys delete <id>`.
+Copy the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values out of that file and into the credentials file below, then delete it: `rm ~/.community-backup-tigris.env`. Once this recovery set is complete and checked (through step 6), delete the key from Tigris too if you do not want to keep a standing one: find its id with `tigris access-keys list` (it starts with `tid_`), then run `tigris access-keys delete <id>`. The next recovery set needs a new key.
 
 Never make the bucket public to copy it. Put the key in a private credentials file outside the backup folder, then copy the bucket:
 
