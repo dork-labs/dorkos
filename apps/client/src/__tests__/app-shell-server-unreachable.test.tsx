@@ -24,6 +24,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 
 // ── Router: the shell mounts without a RouterProvider ──
 
@@ -378,6 +379,30 @@ function seedYesterdaysConfigAfterAnOldBlip(client: QueryClient) {
     ?.setState({ errorUpdateCount: 2, errorUpdatedAt: anHourAgo });
 }
 
+/**
+ * Put the clock a moment into THIS launch, and seed the config this tab read a
+ * moment before it reloaded.
+ *
+ * **The shape of a quick reload, which every seed above misses (DOR-2649).** A
+ * config read a few seconds before a reload is restored by the boot cache still
+ * inside its 30s `staleTime`, so TanStack sees nothing to refetch on mount — and
+ * an hour-old seed never exercised that, because an hour-old entry is stale and
+ * always refetched. Pinned to `LAUNCH_STARTED_AT` rather than `Date.now()`:
+ * that constant was sampled when this file was imported, and a seed dated
+ * relative to "now" could land AFTER it, reading as an answer from this launch
+ * and passing for the wrong reason.
+ *
+ * Needs fake timers already installed, since it sets the system time.
+ *
+ * @param client - The query client the shell will read from.
+ */
+function seedConfigFromJustBeforeAReload(client: QueryClient) {
+  vi.setSystemTime(LAUNCH_STARTED_AT + 2000);
+  client.setQueryData(configKeys.current(), settledConfig(), {
+    updatedAt: LAUNCH_STARTED_AT - 3000,
+  });
+}
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -585,6 +610,53 @@ describe('AppShell, when the server will not answer', () => {
 
     expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+  });
+});
+
+describe('AppShell, after a quick reload', () => {
+  it('does not call a healthy server unreachable when the remembered config is seconds old', async () => {
+    // **The flash this case exists for (DOR-2649).** Reload within 30s of the
+    // last config read and the boot cache restores a copy TanStack calls fresh,
+    // so nothing asked the server — and with nothing able to answer "this
+    // launch", the 15s hang deadline replaced the whole app with this screen
+    // over a server that was fine, wiping whatever was open until the screen's
+    // own retry brought it back.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockResolvedValue(settledConfig());
+
+    renderAppShell(seedConfigFromJustBeforeAReload);
+    await letTimePass(HANG_DEADLINE_MS + 1000);
+
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+    // And the reason it stayed away is that the server was actually asked —
+    // not that the deadline stopped looking.
+    expect(transport.getConfig).toHaveBeenCalled();
+  });
+
+  it('still says so when that reload’s own read hangs past the deadline', async () => {
+    // The other half: a fresh remembered copy must not DISARM the screen. The
+    // read this load sends goes unanswered, and that silence is evidence.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+
+    renderAppShell(seedConfigFromJustBeforeAReload);
+    await letTimePass(HANG_DEADLINE_MS - 1000);
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+
+    await letTimePass(1500);
+    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
+    expect(screen.queryByTestId('app-shell')).not.toBeInTheDocument();
+  });
+
+  it('still says so when that reload’s own read is refused', async () => {
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
+
+    renderAppShell(seedConfigFromJustBeforeAReload);
+    await letTimePass(100);
+
+    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
   });
 });
 

@@ -18,7 +18,7 @@ import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
 import { ServerErrorScreen } from './app/ServerErrorScreen';
-import { latestFailure } from './app/config-failure-memory';
+import { latestFailure, refetchUntilAnsweredThisLaunch } from './app/config-failure-memory';
 import {
   getAgentDisplayName,
   cn,
@@ -448,11 +448,16 @@ export function AppShell() {
   // which reports the reply and guesses at nothing further — not even that
   // DorkOS is what answered, since a tunnel edge with a dead origin replies 502
   // on its own account.
+  //
+  // **And "this launch" only means something if this launch ASKS** — a reload
+  // inside the 30s `staleTime` used to ask nothing, so the hang deadline below
+  // accused a healthy server (DOR-2649). Hence the refetch on mount.
   const {
     dataUpdatedAt: configAnsweredAt,
     errorUpdatedAt: configFailedAt,
     error: configError,
-  } = useConfig();
+    fetchStatus: configFetchStatus,
+  } = useConfig({ refetchOnMount: refetchUntilAnsweredThisLaunch });
   const answeredThisLaunch = configAnsweredAt > LAUNCH_STARTED_AT;
   const failedThisLaunch = configFailedAt > LAUNCH_STARTED_AT;
   const failure = latestFailure(configFailedAt, configError);
@@ -465,12 +470,13 @@ export function AppShell() {
   // deliberately far longer than the 3s escape, because the cost of being wrong
   // here is the boot sentinel's lesson: accusing a machine that was merely
   // slow. Fifteen seconds with nothing fresh in hand is no longer slow.
+  // It times a read that is actually out: silence is only evidence if we asked.
   const [hangDeadlinePassed, setHangDeadlinePassed] = useState(false);
   useEffect(() => {
-    if (answeredThisLaunch) return;
+    if (answeredThisLaunch || configFetchStatus !== 'fetching') return;
     const timer = setTimeout(() => setHangDeadlinePassed(true), SERVER_HANG_DEADLINE_MS);
     return () => clearTimeout(timer);
-  }, [answeredThisLaunch]);
+  }, [answeredThisLaunch, configFetchStatus]);
 
   // Either kind of evidence, and in all cases only while nothing fresh has
   // arrived — so a cockpit that IS talking to its server never sees this, and

@@ -115,3 +115,20 @@ export function latestFailure(failedAt: number, error: unknown): FailureFacts | 
   }
   return failedAt > LAUNCH_STARTED_AT ? lastSeenFailure : undefined;
 }
+
+/**
+ * The shell's `refetchOnMount` for the config read: always ask while nothing
+ * has answered THIS launch, otherwise defer to the shared `staleTime`.
+ *
+ * Without it, a reload inside the config's 30s `staleTime` restores a copy
+ * TanStack calls fresh and asks the server nothing — so no answer and no
+ * failure can ever be dated to this launch, and the shell's hang deadline
+ * accuses a healthy server (DOR-2649).
+ *
+ * @param query - The config query, as TanStack hands it to the option.
+ */
+export function refetchUntilAnsweredThisLaunch(query: {
+  state: { dataUpdatedAt: number };
+}): boolean | 'always' {
+  return query.state.dataUpdatedAt > LAUNCH_STARTED_AT ? true : 'always';
+}
