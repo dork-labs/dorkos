@@ -3557,6 +3557,119 @@ registry.registerPath({
   },
 });
 
+// --- Cloud billing pages (DOR-2632) ---
+
+/**
+ * Simplified documentation mirror of the `/v1` problem envelope
+ * (`ProblemSchema` in `@dork-labs/cloud-api`), passed through verbatim.
+ */
+const CloudProblemDocSchema = z
+  .object({
+    code: z.string(),
+    status: z.number().int(),
+    title: z.string(),
+    detail: z.string().optional(),
+    requiredPlanDisplayName: z.string().optional(),
+    actionUrl: z.string().optional(),
+    actionLabel: z.string().optional(),
+  })
+  .passthrough()
+  .openapi({ description: 'The service`s own refusal, in its own words.' });
+
+/** Simplified documentation mirror of `OffersResponseSchema` in `@dork-labs/cloud-api`. */
+const CloudOffersResponseDocSchema = z
+  .union([
+    z.object({ available: z.literal(false) }),
+    z.object({
+      available: z.literal(true),
+      offers: z.object({
+        offers: z.array(
+          z
+            .object({
+              skuId: z.string().openapi({ description: 'Send back unchanged to checkout.' }),
+              planId: z.string(),
+              displayName: z.string(),
+              interval: z.string(),
+              amountMicro: z.string(),
+              limits: z.record(z.string(), z.unknown()),
+            })
+            .passthrough()
+        ),
+        denomination: z.record(z.string(), z.unknown()).optional(),
+      }),
+    }),
+  ])
+  .openapi('CloudOffersResponse');
+
+const CloudBillingPageResponseDocSchema = z
+  .union([
+    z.object({
+      ok: z.literal(true),
+      url: z.string().openapi({ description: 'A short-lived https address to open.' }),
+    }),
+    z.object({ ok: z.literal(false), problem: CloudProblemDocSchema }),
+    z.object({ ok: z.literal(false), message: z.string() }),
+  ])
+  .openapi('CloudBillingPageResponse');
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/cloud/offers',
+  tags: ['Cloud'],
+  summary: 'What the DorkOS account will sell this account right now',
+  description:
+    'Passed through exactly as the service sent it, in its order. `available: false` when this ' +
+    'instance is not linked or the service does not serve offers; no request leaves the machine ' +
+    'in the first case.',
+  responses: {
+    200: {
+      description: 'The offers, or nothing to show',
+      content: { 'application/json': { schema: CloudOffersResponseDocSchema } },
+    },
+    502: {
+      description: 'Could not reach the DorkOS account',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/cloud/billing/{page}',
+  tags: ['Cloud'],
+  summary: 'Get the web address of a billing page to open in the browser',
+  description:
+    '`portal` is where a plan is changed or ended and invoices live, `checkout` starts one offer ' +
+    '(body `{ skuId }` from GET /api/cloud/offers), and `topup` buys credits. Only an address is ' +
+    'returned; nothing is paid in the app. A refusal answers 200 with the service`s own problem ' +
+    'envelope, or one plain sentence when the service could not be asked. Sent `no-store`.',
+  request: {
+    params: z.object({ page: z.enum(['portal', 'checkout', 'topup']) }),
+    body: {
+      required: false,
+      content: { 'application/json': { schema: z.object({ skuId: z.string().optional() }) } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The page address, or a refusal',
+      content: { 'application/json': { schema: CloudBillingPageResponseDocSchema } },
+    },
+    400: {
+      description: 'A checkout that names no offer',
+      content: {
+        'application/json': { schema: z.object({ ok: z.literal(false), message: z.string() }) },
+      },
+    },
+    404: {
+      description: 'Not a billing page this server opens',
+      content: {
+        'application/json': { schema: z.object({ ok: z.literal(false), message: z.string() }) },
+      },
+    },
+  },
+});
+
 // --- Shapes (DOR-355) ---
 
 /**

@@ -3,6 +3,7 @@ import { CloudEligibilityNote } from '@/layers/features/cloud-link';
 import { useCloudPlan } from '../model/use-cloud-plan';
 import { CreditsGauge } from './CreditsGauge';
 import { CreditsSource } from './CreditsSource';
+import { ManageOnWeb } from './ManageOnWeb';
 import { PlanCard } from './PlanCard';
 import { SeatManagement } from './SeatManagement';
 import { UpgradeNudge } from './UpgradeNudge';
@@ -61,6 +62,7 @@ export function CloudPlanPanel() {
       <PlanCard />
       <CreditsGauge />
       <CreditsSource />
+      <ManageOnWeb />
       <SeatManagement />
     </div>
   );

@@ -1,7 +1,8 @@
 /**
  * Cloud-plan feature — the plan-aware surfaces behind a DorkOS account
  * (DOR-2027): the plan card, the credits gauge with its per-agent breakdown and
- * local spend view, the upgrade nudge, and seat management.
+ * local spend view, the upgrade nudge, seat management, and the buttons that
+ * open the billing pages on the web (DOR-2632).
  *
  * Its sibling `features/cloud-link` owns the door — the device-link flow — and
  * this owns the room behind it. Settings composes both into one section.
@@ -27,6 +28,8 @@ export { CreditsGauge } from './ui/CreditsGauge';
 export { UpgradeNudge } from './ui/UpgradeNudge';
 export { SeatManagement } from './ui/SeatManagement';
 export { CreditsSource } from './ui/CreditsSource';
+export { ManageOnWeb, BillingPageButton, PlanOffers, BillingNoticeView } from './ui/ManageOnWeb';
+export type { BillingPageButtonProps, PlanOffersProps } from './ui/ManageOnWeb';
 export {
   cloudPlanKeys,
   useCloudCredits,
@@ -39,6 +42,8 @@ export {
   useSeatActions,
   useSelectCloudCredits,
 } from './model/use-cloud-plan';
+export { useCloudOffers, useOpenBillingPage } from './model/use-billing-page';
+export type { BillingNotice, BillingPageTarget, OpenBillingPage } from './model/use-billing-page';
 export { useLocalSpend } from './model/use-local-spend';
 export type { LocalSpend } from './model/use-local-spend';
 export { remainingFraction } from './lib/remaining-fraction';

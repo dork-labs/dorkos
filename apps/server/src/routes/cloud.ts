@@ -27,8 +27,10 @@
 import { Router, type Response } from 'express';
 import { z } from 'zod';
 import type {
+  CloudBillingPageResponse,
   CloudMembersResponse,
   CloudNudgeResponse,
+  CloudOffersResponse,
   CloudOrgsResponse,
   CloudPlanResponse,
   CloudSeatActionResponse,
@@ -48,6 +50,7 @@ import {
   type UsageGrouping,
 } from '../services/core/cloud/plan.js';
 import { isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
+import { openBillingPage, readOffers } from '../services/core/cloud/billing-pages.js';
 import {
   creditsFlagEnabled,
   creditsWiringReport,
@@ -257,6 +260,65 @@ router.post('/seats/:seatId/release', async (req, res) => {
     return res.json({ ok: true } satisfies CloudSeatActionResponse);
   } catch (err) {
     return seatWriteFailed(res, err);
+  }
+});
+
+/** GET /api/cloud/offers — what the service will sell this account, as it sent it. */
+router.get('/offers', async (_req, res) => {
+  try {
+    const offers = await readOffers();
+    const body: CloudOffersResponse =
+      offers === null ? { available: false } : { available: true, offers };
+    return res.json(body);
+  } catch (err) {
+    return cloudReadFailed(res, err, 'offers');
+  }
+});
+
+/** The pages `POST /api/cloud/billing/:page` opens. */
+const BillingPageSchema = z.enum(['portal', 'checkout', 'topup']);
+
+/** The body a checkout takes: one opaque offer identifier from `GET /api/cloud/offers`. */
+const CheckoutBodySchema = z.object({ skuId: z.string().min(1) });
+
+/**
+ * POST /api/cloud/billing/:page — the web address of one billing page.
+ *
+ * `portal` is where a plan is changed or ended and invoices live, `checkout`
+ * starts one offer, `topup` buys credits. The answer is only an address for
+ * the person's own browser; nothing is paid here. A refusal answers 200 with
+ * the service's own words, for the reason {@link seatWriteFailed} gives.
+ */
+router.post('/billing/:page', async (req, res) => {
+  const page = BillingPageSchema.safeParse(req.params.page);
+  if (!page.success) return res.status(404).json({ ok: false, message: 'Unknown billing page' });
+  let skuId: string | undefined;
+  if (page.data === 'checkout') {
+    const parsed = CheckoutBodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ ok: false, message: 'Choose an offer' });
+    skuId = parsed.data.skuId;
+  }
+  // A short-lived page address is not something to keep in any cache.
+  res.setHeader('Cache-Control', 'no-store');
+  if (!isCloudLinked()) {
+    return res.json({
+      ok: false,
+      message: 'This instance is not linked to a DorkOS account.',
+    } satisfies CloudBillingPageResponse);
+  }
+  try {
+    const url = await openBillingPage({ kind: page.data, skuId });
+    return res.json({ ok: true, url } satisfies CloudBillingPageResponse);
+  } catch (err) {
+    const problem = problemOf(err);
+    if (problem !== null) {
+      return res.json({ ok: false, problem } satisfies CloudBillingPageResponse);
+    }
+    logger.warn('[Cloud] Could not open a billing page', { page: page.data, ...logError(err) });
+    return res.json({
+      ok: false,
+      message: 'Couldn’t reach your DorkOS account. Try again shortly.',
+    } satisfies CloudBillingPageResponse);
   }
 });
 

@@ -6,8 +6,10 @@ import balanceFixture from '@dork-labs/cloud-api/fixtures/v1/billing/balance-den
 import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-denominated.json' with { type: 'json' };
 import usageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-denominated.json' with { type: 'json' };
 import usageWithOtherChargesFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-with-other-charges.json' with { type: 'json' };
+import offersFixture from '@dork-labs/cloud-api/fixtures/v1/billing/offers.json' with { type: 'json' };
+import refusalFixture from '@dork-labs/cloud-api/fixtures/v1/problem/entitlement-required-action.json' with { type: 'json' };
 import { TransportProvider } from '@/layers/shared/model';
-import { CreditsGauge, PlanCard } from '@/layers/features/cloud-plan';
+import { CreditsGauge, ManageOnWeb, PlanCard } from '@/layers/features/cloud-plan';
 import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -40,6 +42,10 @@ function LinkedCard({ usage, children }: { usage: CloudUsageResponse; children?:
         balance: balanceFixture,
       },
       getCloudUsage: usage,
+      getCloudOffers: { available: true, offers: offersFixture },
+      // The playground has no account to send anybody to, so every billing
+      // button answers with the service's refusal and shows how one reads.
+      getCloudBillingPage: { ok: false, problem: refusalFixture },
     };
     return new Proxy(base, {
       get(target, prop, receiver) {
@@ -78,6 +84,16 @@ export function CloudUsageShowcases() {
         <ShowcaseDemo responsive>
           <LinkedCard usage={{ available: true, usage: usageFixture as never }}>
             <PlanCard />
+          </LinkedCard>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+      <PlaygroundSection
+        title="Manage on the web"
+        description="The buttons that open the billing pages in the browser, and what is on sale, in the service's order with its names and prices. Here every button answers with a refusal, to show how the service's own words read."
+      >
+        <ShowcaseDemo responsive>
+          <LinkedCard usage={{ available: true, usage: usageFixture as never }}>
+            <ManageOnWeb />
           </LinkedCard>
         </ShowcaseDemo>
       </PlaygroundSection>
