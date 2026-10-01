@@ -18,7 +18,7 @@ import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitl
 import orgFixture from '@dork-labs/cloud-api/fixtures/v1/seats/org.json' with { type: 'json' };
 import seatFixture from '@dork-labs/cloud-api/fixtures/v1/seats/seat.json' with { type: 'json' };
 import { TransportProvider } from '@/layers/shared/model';
-import { readCreditsFor } from '../model/use-credits-for';
+import { errorReason, readCreditsFor } from '../model/use-credits-for';
 import { describeDorkosAccountLine, lowCreditsFigure } from '../model/use-dorkos-account-line';
 import { AccountContents } from '../ui/AccountContents';
 import { SeatManagement } from '../ui/SeatManagement';
@@ -31,6 +31,11 @@ const OFF: CloudCreditsStatus = {
 };
 const ARMED: CloudCreditsStatus = { ...OFF, enabled: true };
 const LIVE: CloudCreditsStatus = { ...ARMED, ready: true };
+
+/** An error shaped the way the HTTP transport throws one for a non-OK answer. */
+function serverError(status: number, message: string, body: object = { error: message }) {
+  return Object.assign(new Error(message), { status, body });
+}
 
 function renderWith(ui: ReactNode, transport: Transport) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -129,7 +134,9 @@ describe('Use credits for', () => {
   it('gives the reason a failed turn-on came back with', async () => {
     const transport = createMockTransport({
       getCloudCredits: vi.fn().mockResolvedValue(ARMED),
-      selectCloudCredits: vi.fn().mockRejectedValue(new Error('Your account is out of credits.')),
+      selectCloudCredits: vi
+        .fn()
+        .mockRejectedValue(serverError(402, 'Your account is out of credits.')),
     });
     renderWith(<UseCreditsFor />, transport);
     fireEvent.click(await screen.findByRole('switch', { name: 'Use credits for Claude' }));
@@ -162,6 +169,25 @@ describe('Use credits for', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('errorReason', () => {
+  it('passes through a sentence the server wrote', () => {
+    expect(
+      errorReason(serverError(502, 'Could not reach the DorkOS cloud. Try again shortly.'))
+    ).toBe('Could not reach the DorkOS cloud. Try again shortly.');
+  });
+
+  it.each([
+    ['a network failure', new Error('Failed to fetch')],
+    ['a Safari network failure', new Error('Load failed')],
+    ['a body-less status', serverError(500, 'HTTP 500', { error: undefined })],
+    ['a status text', serverError(502, 'Bad Gateway')],
+    ['a timeout with no answer', new Error('Request timed out after 30s. Check your network.')],
+    ['something not an Error', 'boom'],
+  ])('shows the fixed sentence for %s', (_case, error) => {
+    expect(errorReason(error)).toBe('Try again in a moment.');
   });
 });
 
