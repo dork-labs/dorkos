@@ -124,7 +124,9 @@ Then watch for failed notices. The server logs each attempt that does not delive
 
 ## Host API keys
 
-A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, `communities:takedown` to take down content by its ID, `communities:erasure_journal` to copy the [erasure journal](#erasure-requests) off the server, and `communities:ownership` to ask to replace an owner who has left (see [below](#replacing-an-owner-who-has-left)). No other permission includes `communities:ownership`, so a key that suspends communities cannot replace owners. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
+A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend, resume, hold, and delete a held community, `communities:import` to [bring a community in from another server](#imports), `communities:legal_hold` to place and release a [legal hold](#legal-holds), `communities:takedown` to take down content by its ID, `communities:erasure_journal` to copy the [erasure journal](#erasure-requests) off the server, and `communities:ownership` to ask to replace an owner who has left (see [below](#replacing-an-owner-who-has-left)). No other permission includes `communities:ownership`, so a key that suspends communities cannot replace owners. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
+
+Keep `communities:lifecycle` off a provisioning key. A program that creates communities and sets their limits needs `communities:read` and `communities:write`, nothing more. `communities:lifecycle` can suspend a community, which cuts off every member's DorkOS connections and agents at once, and it can delete a held community once its notice date passes. If a provisioning key leaks, the damage stays at new, unclaimed communities and changed limits. Give `communities:lifecycle` to a separate key, used by the few people or programs that decide when a community stops.
 
 To create the first key on a host without a browser, run the offline command with `COMMUNITY_DATABASE_URL` set. It prints the key once on standard output, so pipe it straight into your secret store:
 
@@ -133,7 +135,7 @@ docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
   node dist-server/host-keys.js issue --label "Provisioning" --scope communities:read --scope communities:write --expires-in-days 90
 ```
 
-`list` shows every key without its secret, and `revoke <id>` stops one at once. Anyone who can run these commands already controls the database, so treat that access like the database password. Each command writes a host audit row.
+Repeat `--scope` once per permission. Without `--expires-in-days` (1 to 365), the key never expires. `list` shows every key without its secret, one JSON line each, and `revoke <id>` stops one at once. Anyone who can run these commands already controls the database, so treat that access like the database password. Each command writes a host audit row.
 
 Failed key attempts are limited per network address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`). Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` (see the start of this guide); without it every caller shares the proxy's address and one limit, and a program that keeps sending a wrong key can briefly block other programs' failed attempts. Programs with a valid key are never blocked.
 
@@ -149,7 +151,9 @@ When a local DorkOS install asks to connect, the server keeps a pairing request 
 
 Each community record on the host page has **Limits**: the most active members and the most file space, each shown beside what the community uses now. Leave a field empty for no limit. A lower limit never removes anyone or anything; it only stops new members or new files once the community is at the limit, and people see "This community is full" or "out of file space" instead of a retry. Exports never count, so an owner can always take their data out.
 
-Agents are limited per person by `COMMUNITY_AGENTS_PER_OWNER` (20 by default, at most 100). A program with a `communities:write` key can raise or lower that for one member, up to 1,000, with `PUT /api/v1/host/communities/:id/members/:memberId/limits`. Ask the member or owner for the member id; no host route lists members.
+Agents are limited per person by `COMMUNITY_AGENTS_PER_OWNER` (20 by default, at most 100). A program with a `communities:write` key can raise or lower that for one member, up to 1,000, with `PUT /api/v1/host/communities/:id/members/:memberId/limits` and `{ "agentsPerMember": 50 }`; send `null` to go back to the host-wide number. Ask the member or owner for the member id; no host route lists members.
+
+A program with `communities:read` can read usage: `GET /api/v1/host/communities/:id/usage` for one community, or `GET /api/v1/host/usage` for every community, 100 at a time. Each answer counts active members and agents, file space by kind (attachments, the icon, exports, imports still being checked, and files waiting to be deleted or held after a takedown), the limits, and the day of the newest message. It never names anyone or shows any message or file. Only attachments and the icon count against the file-space limit.
 
 ## Holding and deleting a community
 
@@ -314,12 +318,26 @@ To return to a release from before background exports, first run `pnpm --filter 
 
 ## Imports
 
-A host can bring a community in from another server by importing its owner's export (see the [API](API.md#import-an-owner-export)). Exports up to 1 GiB can arrive in one upload; larger ones, up to `COMMUNITY_IMPORT_MAX_BYTES` (1 GiB unless you change it, at most 1 TiB), arrive in numbered parts of at most `COMMUNITY_EXPORT_SEGMENT_BYTES`, and a broken upload resumes from the last part received.
+A host can bring a community in from another server by importing its owner's export (see the [API](API.md#import-an-owner-export)). Ask the owner for the community export, not their personal one: only an owner export can be imported. An import makes a new community that nobody owns yet. You never see its messages or files.
+
+1. **Start.** On the host page, under **Move a community here**, enter the community's name. Choose the export file to send it from this browser, or leave it empty to get **Upload details** (an upload address and token) for whoever has the file. The token is shown once and works for `COMMUNITY_IMPORT_UPLOAD_HOURS`. A program does the same with a key that has `communities:import`.
+2. **Watch.** The import's line on its record shows where it stands: "Waiting for the export file", "Checking the export", "Checked. Ready to import.", "Importing", then "Imported. Send an owner claim to finish." While it is checking or importing, the page refreshes on its own. Once checked, it shows counts: channels, messages, files and their size, and past members and agents. A failed import says why, for example "This is a personal export. Ask the owner for the community export."
+3. **Commit.** Choose **Import now** once the export is checked. Nothing from the export is restored until you do, and an import left checked for seven days is cancelled on its own. A program can skip this step by starting the import with `autoCommit: true`.
+4. **Hand it over.** When it reads "Imported", choose **Reissue owner claim** and send the link to the owner. Whoever claims it takes over the old owner's place and past messages. Everyone else comes back only as former members, with their messages but no account, and joins again by invitation.
+
+**Cancel import** works at any point before the import finishes. The unfinished community and every uploaded file are then removed in the background. An upload window that closes, or a failure, ends the import the same way. Under a [legal hold](#legal-holds), cancelling is refused, and a failed or expired import keeps its files until you release the hold.
+
+Exports up to 1 GiB can arrive in one upload; larger ones, up to `COMMUNITY_IMPORT_MAX_BYTES` (1 GiB unless you change it, at most 1 TiB), arrive in numbered parts of at most `COMMUNITY_EXPORT_SEGMENT_BYTES`, and a broken upload resumes from the last part received.
 
 - **Time to upload.** Whoever holds the upload link has `COMMUNITY_IMPORT_UPLOAD_HOURS` (24 hours unless you change it, 1 to 168) from when the import was started. Raise it for very large exports on slow connections.
 - **Disk.** Each part being received is written to the temporary folder and then stored, so it can use up to twice its size there. A server receives at most `COMMUNITY_IMPORT_PART_CONCURRENCY` parts at once (8 unless you change it, 1 to 64) and at most four per import; others are asked to wait a few seconds. Plan for twice that many parts of free temporary space, beside the single uploads `COMMUNITY_IMPORT_UPLOADS` allows.
 - **Storage.** The uploaded parts show in usage as import staging and never count against a community's storage limit. They are deleted once the import is ready, cancelled, or failed.
 - **Restarts.** Checking and restoring run in the background. A server that stops part-way through a restore loses at most one batch of rows or one file, and any server carries on from there about five minutes later.
+- **Not a backup.** An import makes a new community with new IDs, and past members come back without accounts. Use it to move a community between servers, never to recover this one. Your own database and file backups are the recovery path (see [Back up both the database and files](#back-up-both-the-database-and-files)).
+
+## Your terms, privacy, and report links
+
+Three optional settings put your own pages in front of people: `COMMUNITY_TERMS_URL`, `COMMUNITY_PRIVACY_URL`, and `COMMUNITY_REPORT_ABUSE_URL` (see [the deployment guide](DEPLOYMENT.md#optional-terms-privacy-and-report-links)). Terms and privacy show under the sign-in form. All three show under **Settings**, **Account**, in a section called **This host**, and the report link also shows on each message. Leave one unset and nothing shows for it. A report reaches you with IDs only, so you can act on it without reading the content (see [Taking down illegal content](#taking-down-illegal-content)). Any program can read the same three links, without signing in, from `GET /api/v1/host-links`. Restart the service after changing one.
 
 ## Storage and hosting choices
 

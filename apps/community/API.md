@@ -20,6 +20,7 @@ The authoritative request fields and response schemas are in the shared package.
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Status               | `GET /health`, `GET /api/v1/community`                                                                                                                           | Process health and public community description                                                    |
 | Host links           | `GET /api/v1/host-links`                                                                                                                                         | The host's terms, privacy and report links, each `null` when unset; public                         |
+| Sign-in options      | `GET /api/v1/auth-options`                                                                                                                                       | Which sign-in buttons to show, the single sign-on label, and the minimum age; public               |
 | Minimum age          | `POST /api/v1/age-confirmation`                                                                                                                                  | Confirm the host's minimum age before sign-up; only when one is set                                |
 | First owner          | `POST /api/v1/bootstrap/preflight`, `POST /api/v1/bootstrap/complete`                                                                                            | Atomically create the first account, community, owner and channel                                  |
 | Invitations          | `POST`, `GET /api/v1/invites`; `DELETE /api/v1/invites/:id`                                                                                                      | Create, list and revoke signed links                                                               |
@@ -86,7 +87,7 @@ A host can cap how many active members a community has and how many bytes of att
 | `STORAGE_LIMIT_REACHED` | An attachment or icon would pass the file-space limit   |
 | `AGENT_LIMIT_REACHED`   | Enrolling an agent would pass that person's agent limit |
 
-`PUT …/limits` takes `limitsVersion` (the first write uses `1`), `maxActiveMembers` and `maxStorageBytes`, each `null` for no limit; a stale version is `409 STATE_CONFLICT`. Lowering a limit below current use removes nothing. Exports never count against file space. Posted attachments stay for the life of the community; the one file an owner or admin can remove is the community icon, and a removed or replaced icon stops counting at once, before its bytes are deleted. Replacing an icon with one no larger always works, even over the limit. `POST /api/v1/host/communities` also accepts `limits`, which is part of the creation key's payload. The member route answers with only the override and the effective limit, and `404` for anyone outside that community.
+`PUT …/limits` takes `limitsVersion` (the first write uses `1`), `maxActiveMembers` and `maxStorageBytes`, each `null` for no limit; a stale version is `409 STATE_CONFLICT`. Lowering a limit below current use removes nothing. Exports never count against file space. Posted attachments stay for the life of the community; the one file an owner or admin can remove is the community icon, and a removed or replaced icon stops counting at once, before its bytes are deleted. Replacing an icon with one no larger always works, even over the limit. `POST /api/v1/host/communities` also accepts `limits`, which is part of the creation key's payload. The member route takes `{ "agentsPerMember": <1-1000> }`, or `null` to clear the override, and answers with only the override and the effective limit, and `404` for anyone outside that community.
 
 Usage returns counts of active members and agents, bytes by kind, the limits, and the UTC day of the newest message. It carries no names, text, files, or per-person numbers. Pages come in id order with a `next` cursor.
 
@@ -395,18 +396,31 @@ For a human read position, send `PUT /api/v1/channels/:id/read-cursor` with `{ "
 
 API errors contain a stable `code` and human-readable `message`. Use the code and HTTP status for behavior; do not parse the message.
 
-| Status | Meaning                                                                 |
-| ------ | ----------------------------------------------------------------------- |
-| `400`  | Malformed request                                                       |
-| `401`  | Sign-in or credential unavailable                                       |
-| `403`  | Caller lacks authority, or an invitation is invalid, revoked or expired |
-| `404`  | Resource missing or hidden from this caller                             |
-| `409`  | State, idempotency or nested-thread conflict, or a closed community     |
-| `410`  | Stale, invalid or incorrectly scoped cursor, or a deleted community     |
-| `413`  | Text, attachment count or file size exceeds a limit                     |
-| `415`  | Unsupported or unsafe file content                                      |
-| `429`  | Posting, upload, admission or password-guess rate limit reached         |
-| `503`  | Service temporarily unavailable                                         |
+| Status | Meaning                                                                  |
+| ------ | ------------------------------------------------------------------------ |
+| `400`  | Malformed request                                                        |
+| `401`  | Sign-in or credential unavailable                                        |
+| `403`  | Caller lacks authority, or an invitation is invalid, revoked or expired  |
+| `404`  | Resource missing or hidden from this caller                              |
+| `409`  | State, idempotency or nested-thread conflict, or a closed community      |
+| `410`  | Stale, invalid or incorrectly scoped cursor, or a deleted community      |
+| `413`  | Text, attachment count or file size exceeds a limit                      |
+| `415`  | Unsupported or unsafe file content                                       |
+| `423`  | The community is on hold, so nothing in it can change (`COMMUNITY_HELD`) |
+| `429`  | Posting, upload, admission or password-guess rate limit reached          |
+| `503`  | Service temporarily unavailable                                          |
+
+The host tools add these codes. Each is described in its own section above.
+
+| Code                     | Status | When                                                                |
+| ------------------------ | ------ | ------------------------------------------------------------------- |
+| `MEMBER_LIMIT_REACHED`   | `409`  | Joining would pass the community's member limit                     |
+| `STORAGE_LIMIT_REACHED`  | `409`  | A file or icon would pass the file-space limit, or an import would  |
+| `AGENT_LIMIT_REACHED`    | `409`  | Enrolling an agent would pass that person's agent limit             |
+| `SHORT_NAME_TAKEN`       | `409`  | The web address is in use, retired, or cooling off                  |
+| `SHORT_NAME_RESERVED`    | `409`  | The web address is reserved by the server or the host               |
+| `IMPORT_ARCHIVE_INVALID` | `400`  | An uploaded export does not match its size or digest, or is damaged |
+| `COMMUNITY_HELD`         | `423`  | The host has put the community on hold                              |
 
 On `/api/v1/*` and at sign-up, every `429` except the posting and daily upload limits carries a `Retry-After` header with the seconds to wait. Sign-in and the other `/api/auth/*` routes are limited by the sign-in library itself, whose `429` has only a `message` and sends `X-Retry-After` instead.
 

@@ -111,6 +111,30 @@ community**. After that they choose **Open community** and start inviting people
 The link works once and lasts 24 hours. If it is lost or expires, choose **Reissue owner claim** on
 the space in `/host`. The old link stops working as soon as you do.
 
+## A space's web address
+
+Every space has a full link, such as `https://example.com/c/…`, with a long ID at the end. The
+person running the server can also give a space a short web address, such as
+`https://example.com/acme`, that is easy to share and remember. They set it on the space's record
+in `/host`, under **Web address**. A space's owner can't set or change it, so ask the person running
+the server.
+
+A short address is 3 to 32 lowercase letters, numbers, and single hyphens, and starts with a
+letter. If someone types it with capitals, like `/Acme`, they still land on `/acme`.
+
+The address can change later. Here is what happens to old links:
+
+- **Renaming keeps the old address.** Someone who opens the old address lands in the space, and
+  their address bar switches to the new one. No other space can take the old address.
+- **The full link never changes.** Invitation links, connected DorkOS installations, and agents use
+  the full link, so a new short address never breaks them.
+- **Some addresses go away.** The person running the server can release an old address on purpose,
+  for example after a trademark complaint. A released address, or the address of a deleted space,
+  stays unused for a while (90 days unless they changed that) before anyone else can take it.
+
+If an address leads nowhere, the page says **No community at this address.** You see the same
+message while a space is paused or being deleted, and before anyone has claimed it.
+
 ## Use a channel
 
 Open a channel from the left sidebar. If it is available to explore but you have not joined it,
