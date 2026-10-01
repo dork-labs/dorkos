@@ -62,24 +62,24 @@ export function resolveCommunityOwner(req: Request, res: Response): string | nul
     return null;
   }
   if (!res.locals.user && !isLocalCaller(req)) {
-    res.status(403).json({ error: 'Manage community connections from this machine.' });
+    res.status(403).json({ error: 'Manage space connections from this machine.' });
     return null;
   }
   let caller;
   try {
     caller = resolveCaller(req, res);
   } catch {
-    res.status(403).json({ error: 'An agent cannot manage community connections.' });
+    res.status(403).json({ error: 'An agent cannot manage space connections.' });
     return null;
   }
   if (!getRoomService().authorRegistry.isOwner(caller.id, readOwnerAccount()?.id ?? null)) {
-    res.status(403).json({ error: 'Only this install’s owner can manage community connections.' });
+    res.status(403).json({ error: 'Only this install’s owner can manage space connections.' });
     return null;
   }
   const expectedOwner = req.get('x-dorkos-community-owner');
   if (expectedOwner && expectedOwner !== caller.id) {
     res.status(409).json({
-      error: 'The local owner changed. Reload Community data for the current account.',
+      error: 'The local owner changed. Reload to see spaces for the current account.',
       code: 'COMMUNITY_OWNER_CHANGED',
     });
     return null;
@@ -98,12 +98,12 @@ function failure(res: Response, error: unknown): void {
   } else if (error instanceof RemoteCommunitySelectionRequiredError) {
     res.status(409).json({
       code: 'COMMUNITY_SELECTION_REQUIRED',
-      error: 'Choose a specific community from this host and use its community link.',
+      error: 'That address has more than one space on it. Use the link for the one you want.',
     });
   } else if (error instanceof RemoteCommunityNameNotFoundError) {
     res.status(404).json({
       code: 'COMMUNITY_NAME_NOT_FOUND',
-      error: 'No community uses that short address on this host. Check the spelling.',
+      error: 'No space uses that short address there. Check the spelling.',
     });
   } else if (error instanceof RemoteCommunityRateLimitedError) {
     // The host's own wait, passed on so the person is told how long, not left to guess.
@@ -111,32 +111,32 @@ function failure(res: Response, error: unknown): void {
     if (retryAfterSeconds !== undefined) res.set('Retry-After', String(retryAfterSeconds));
     res.status(429).json({
       code: 'COMMUNITY_RATE_LIMITED',
-      error: `This DorkOS has tried that community too many times in a short while. Wait ${describeCommunityRetryWait(retryAfterSeconds)}, then try again.`,
+      error: `This DorkOS has tried that space too many times in a short while. Wait ${describeCommunityRetryWait(retryAfterSeconds)}, then try again.`,
       ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
     });
   } else if (error instanceof RemoteCommunityUpgradeRequiredError) {
     res.status(426).json({
       code: 'COMMUNITY_UPGRADE_REQUIRED',
-      error: 'This community’s server is too old to connect. Ask whoever runs it to update it.',
+      error: 'This space’s server is too old to connect. Ask whoever runs it to update it.',
     });
   } else if (error instanceof RemoteConnectionAuthorizationError) {
     res.status(409).json({
-      error: 'Reconnect this community to continue.',
+      error: 'Reconnect this space to continue.',
       code: 'COMMUNITY_RECONNECT_REQUIRED',
     });
   } else if (error instanceof RemoteConnectionNotFoundError) {
-    res.status(404).json({ error: 'Community connection not found.' });
+    res.status(404).json({ error: 'Space connection not found.' });
   } else if (error instanceof PinnedOriginError) {
     res
       .status(error.code === 'INVALID_ORIGIN' || error.code === 'UNSAFE_ADDRESS' ? 400 : 502)
       .json({
         error:
           error.code === 'INVALID_ORIGIN' || error.code === 'UNSAFE_ADDRESS'
-            ? 'Enter an accessible HTTPS community address.'
-            : 'The community could not complete this connection request.',
+            ? 'Enter an accessible HTTPS space address.'
+            : 'The space could not complete this connection request.',
       });
   } else {
-    res.status(502).json({ error: 'The community connection is unavailable.' });
+    res.status(502).json({ error: 'The space connection is unavailable.' });
   }
 }
 
@@ -230,7 +230,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const parsed = CommunityConnectionStartRequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Enter a valid community address and install name.' });
+      res.status(400).json({ error: 'Enter a valid space address and install name.' });
       return;
     }
     try {
@@ -259,7 +259,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const parsed = CommunityNavigationMoveRequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Choose a connected community and move direction.' });
+      res.status(400).json({ error: 'Choose a connected space and move direction.' });
       return;
     }
     try {
@@ -296,7 +296,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const parsed = CommunityNavigationRememberRequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Choose a valid Community destination.' });
+      res.status(400).json({ error: 'Choose a valid space to open.' });
       return;
     }
     try {
@@ -312,7 +312,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     try {
@@ -330,7 +330,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     attentionCache.retainOwner(owner);
@@ -353,7 +353,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     try {
@@ -369,7 +369,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     try {
@@ -386,7 +386,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     try {
@@ -404,7 +404,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     try {

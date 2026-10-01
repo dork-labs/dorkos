@@ -25,9 +25,9 @@ for (const viewport of [
     await mockCommunities(page, [GONE]);
     await page.goto(`/channels?community=${GONE.ref}&id=${ROOM}`);
 
-    await expect(page.getByText('This community seems to be gone')).toBeVisible();
+    await expect(page.getByText('This space seems to be gone')).toBeVisible();
     await expect(
-      page.getByText(/Since September 1, 2026, Gamma has said this community doesn’t exist/)
+      page.getByText(/Since September 1, 2026, Gamma has said this space doesn’t exist/)
     ).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`seems-gone-${viewport.name}.png`) });
 
@@ -53,8 +53,8 @@ for (const viewport of [
     await mockCommunities(page, [TAKEN_DOWN]);
     await page.goto(`/channels?community=${TAKEN_DOWN.ref}&id=${ROOM}`);
 
-    await expect(page.getByText('The host took this community down')).toBeVisible();
-    await expect(page.getByText(/The host of Delta took it down/)).toBeVisible();
+    await expect(page.getByText('This space was taken down')).toBeVisible();
+    await expect(page.getByText(/Whoever runs Delta took it down/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Remove from DorkOS' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`taken-down-${viewport.name}.png`) });
   });

@@ -29,8 +29,7 @@ export const LIST_ROOMS_TIMEOUT_MS = 2_000;
  * status is required to carry one, and this is what a surface renders if a
  * backend forgets rather than rendering nothing at all.
  */
-const NOT_ADMITTED_FALLBACK =
-  'You are not in this community yet. Ask whoever runs it to let you in.';
+const NOT_ADMITTED_FALLBACK = 'You are not in this space yet. Ask whoever runs it to let you in.';
 
 /**
  * A community that did not answer inside its budget.

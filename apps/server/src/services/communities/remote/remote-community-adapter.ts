@@ -479,17 +479,17 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     } catch (error) {
       if (error instanceof PinnedHttpError && error.status === 401) {
         await this.requireReconnect();
-        return { status: 'unauthorized', error: 'The stored community grant was rejected.' };
+        return { status: 'unauthorized', error: 'The stored space grant was rejected.' };
       }
       if (error instanceof RemoteConnectionAuthorizationError)
-        return { status: 'unauthorized', error: 'Reconnect this community to continue.' };
+        return { status: 'unauthorized', error: 'Reconnect this space to continue.' };
       if (error instanceof PinnedHttpError)
         return {
           status: 'unreachable',
-          error: `The community returned HTTP ${error.status}.`,
+          error: `The space returned HTTP ${error.status}.`,
         };
       if (error instanceof PinnedOriginError) return { status: 'unreachable', error: error.code };
-      return { status: 'unauthorized', error: 'The stored community grant is unavailable.' };
+      return { status: 'unauthorized', error: 'The stored space grant is unavailable.' };
     }
   }
 

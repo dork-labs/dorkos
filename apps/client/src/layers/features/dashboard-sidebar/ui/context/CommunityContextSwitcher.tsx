@@ -45,13 +45,13 @@ import {
   COMMUNITY_DEPLOY_GUIDE_URL,
 } from './community-context-actions';
 import { communityRowState, navigationDescriptor } from './community-row-state';
-import { DisconnectCommunityDialog, JoinCommunityDialog } from './CommunityActionDialogs';
+import { DisconnectCommunityDialog } from './CommunityActionDialogs';
 import { ConnectCommunityDialog, type ConnectCommunityRequest } from './ConnectCommunityDialog';
 import { SheetActionsMenu } from './SheetActionsMenu';
 import { useContextSelection } from './use-context-selection';
 import { useSwitchContextShortcut } from '../../model/use-switch-context-shortcut';
 
-/** Props for the route-owned Community context trigger. */
+/** Props for the route-owned context trigger (this DorkOS, or a space). */
 export interface CommunityContextSwitcherProps {
   /** Extra trigger classes supplied by its persistent chrome. */
   triggerClassName?: string;
@@ -83,7 +83,8 @@ function lowerFirst(text: string): string {
 }
 
 /**
- * Select the local installation or one owner-authorized Community.
+ * Select the local installation or one owner-authorized space (a "community"
+ * in code).
  *
  * The route stays on the old context until the target destination has been
  * reauthorized. A failed request therefore leaves both the old label and old
@@ -124,10 +125,9 @@ export function CommunityContextSwitcher({
   } = useContextSelection({ trigger, selectedRef });
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState(false);
-  const [joinOpen, setJoinOpen] = useState(false);
   const [connectRequest, setConnectRequest] = useState<ConnectCommunityRequest | null>(null);
   const [disconnecting, setDisconnecting] = useState<CommunityConnectionDescriptor | null>(null);
-  // Hosted communities: `null` while this DorkOS is not linked to an account,
+  // Spaces on DorkOS: `null` while this DorkOS is not linked to an account,
   // and then no row is drawn and nothing is asked of the account.
   const hosting = useCommunityHostingEntry();
   const [hostingDialog, setHostingDialog] = useState<CommunityHostingDialog>(null);
@@ -165,8 +165,7 @@ export function CommunityContextSwitcher({
     onOpenSettings: () => selected && openOnCommunity(selected),
     onLeave: () => selected && openOnCommunity(selected, 'account'),
     onDisconnect: () => setDisconnecting(selected),
-    onConnect: () => setConnectRequest({ ref: null }),
-    onJoin: () => setJoinOpen(true),
+    onJoin: () => setConnectRequest({ ref: null }),
     creationOrigins: communityCreationOrigins(destinations),
     // The pinned origin again: the only host these connections talked to.
     onCreate: (origin) => openExternalLink(new URL(COMMUNITY_HOST_ADMIN_PATH, origin).toString()),
@@ -174,8 +173,7 @@ export function CommunityContextSwitcher({
     hosting: hosting
       ? {
           onStart: () => setHostingDialog({ kind: 'start' }),
-          onMove: () => setHostingDialog({ kind: 'move', moveId: hosting.unfinishedMoveId }),
-          onOpenHosted: hosting.hasHosted ? () => setHostingDialog({ kind: 'hosted' }) : null,
+          onOpenYourSpaces: () => setHostingDialog({ kind: 'hosted' }),
         }
       : null,
   });
@@ -185,7 +183,7 @@ export function CommunityContextSwitcher({
   const installationLabelPending = menu.nameUnknown;
   const targetPending = selectedRef !== undefined && connections.data === undefined;
   const labelPending = selectedRef === undefined ? installationLabelPending : targetPending;
-  const label = selectedRef === undefined ? installationLabel : (selected?.label ?? 'Community');
+  const label = selectedRef === undefined ? installationLabel : (selected?.label ?? 'Space');
   const visibleDestinations =
     isMobile && destinations.length >= 8 && filter.trim().length > 0
       ? destinations.filter((connection) =>
@@ -313,8 +311,8 @@ export function CommunityContextSwitcher({
                 type="search"
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
-                placeholder="Find a community"
-                aria-label="Find a community"
+                placeholder="Find a space"
+                aria-label="Find a space"
               />
             </div>
           )}
@@ -407,7 +405,6 @@ export function CommunityContextSwitcher({
         installName={installationLabelPending ? 'My DorkOS' : installationLabel}
         onConnected={(ref) => void selectConnected(ref)}
       />
-      <JoinCommunityDialog open={joinOpen} onOpenChange={setJoinOpen} />
       <CommunityHostingDialogs
         entry={hosting}
         dialog={hostingDialog}

@@ -182,24 +182,24 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   },
   // CommunityHostingShowcases
   {
-    id: 'start-a-community',
-    title: 'Start a community',
+    id: 'start-a-space',
+    title: 'Start a space',
     page: 'home-inbox',
-    category: 'Communities',
+    category: 'Spaces',
     keywords: ['community', 'hosted', 'start', 'claim', 'web address', 'cloud'],
   },
   {
-    id: 'move-a-community-here',
-    title: 'Move a community here',
+    id: 'move-a-space-here',
+    title: 'Move a space here',
     page: 'home-inbox',
-    category: 'Communities',
+    category: 'Spaces',
     keywords: ['community', 'hosted', 'move', 'import', 'export', 'upload', 'failure'],
   },
   {
-    id: 'hosted-communities',
-    title: 'Hosted communities',
+    id: 'your-spaces',
+    title: 'Your spaces',
     page: 'home-inbox',
-    category: 'Communities',
+    category: 'Spaces',
     keywords: ['community', 'hosted', 'hold', 'keep', 'restore', 'deletion', 'notice'],
   },
   // ConnectionsShowcases

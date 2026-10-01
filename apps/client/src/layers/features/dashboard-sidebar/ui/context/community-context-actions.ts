@@ -1,25 +1,29 @@
 /**
  * The context switcher's lifecycle actions, as data.
  *
+ * Code calls a space a "community"; every word a person reads here says
+ * "space" (spec D6, DOR-2631). The identifiers stay until DOR-2639.
+ *
  * Every action goes to the one place that has the authority to do it, and none
  * of them is decided here (spec, "Lifecycle and action routing"):
  *
  * - **This installation's own connection** — connecting, and disconnecting —
  *   is local, so it stays in the DorkOS app.
- * - **Membership and the Community's own settings** — inviting, leaving,
- *   changing settings — need the person's own Community sign-in (leaving needs
- *   their password), so they open on the Community's own site, which checks
- *   the person's role again before showing anything.
- * - **Joining** opens the invitation link the person was sent; **running your
- *   own server** opens the guide. Neither pairs this installation, and neither
- *   creates a Community on a host someone else runs.
- * - **Creating** a Community opens a host's own administration page, and only
- *   for a host that just told this installation its person runs it. The page
- *   signs them in and checks host authority again before creating anything.
- * - **Starting or moving a hosted community** asks the person's DorkOS
- *   account, through this DorkOS's own server. Those rows exist only while
- *   this DorkOS is linked to an account; unlinked, they are not drawn at all
- *   (community-host-operator-api P5).
+ * - **Membership and the space's own settings** — inviting, leaving,
+ *   changing settings — need the person's own sign-in there (leaving needs
+ *   their password), so they open on the space's own site, which checks the
+ *   person's role again before showing anything.
+ * - **Joining** is one dialog: an address connects this installation, and an
+ *   invitation link opens on the space's own site, then the dialog stays on
+ *   Connect with the space's address filled in.
+ * - **Starting a space, and "Your spaces"** (with moving one here) ask the
+ *   person's DorkOS account, through this DorkOS's own server. Those rows exist
+ *   only while this DorkOS is linked to an account; unlinked, they are not
+ *   drawn at all (community-host-operator-api P5).
+ * - **Advanced** keeps the self-run paths out of the way: creating a space on a
+ *   server the person runs opens that server's own administration page, only
+ *   for a server that just told this installation its person runs it; running
+ *   your own server opens the guide.
  *
  * A hidden action is a courtesy, never the check: each destination rechecks.
  *
@@ -31,13 +35,12 @@ import {
   BookOpen,
   CirclePlus,
   Building2,
-  PackageOpen,
-  Sparkles,
-  Link2,
+  LogIn,
   LogOut,
   Plus,
+  Server,
   Settings,
-  Ticket,
+  Sparkles,
   Unplug,
   UserPlus,
   UsersRound,
@@ -45,15 +48,14 @@ import {
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
 
-/** Where "Run your own community" leads: the CLI guide's community server section. */
-export const COMMUNITY_DEPLOY_GUIDE_URL =
-  'https://dorkos.ai/docs/guides/cli-usage#community-server';
+/** Where "Run your own space server" leads: the CLI guide's space server section. */
+export const COMMUNITY_DEPLOY_GUIDE_URL = 'https://dorkos.ai/docs/guides/cli-usage#space-server';
 
 /**
- * The hosts on which the person may be offered "Create a community": each
- * distinct origin, in the given order, that at least one connection's host
+ * The servers on which the person may be offered "Create a space": each
+ * distinct origin, in the given order, that at least one connection's server
  * just confirmed they run (`hostOperator`, set only on a verified
- * connection). A host that is offline, too old to say, or says no is left out.
+ * connection). A server that is offline, too old to say, or says no is left out.
  *
  * @param connections - The owner's connections, in switcher order.
  * @returns The hosts' pinned origins, each once.
@@ -124,9 +126,7 @@ export interface CommunityContextActionsModel {
   onLeave: () => void;
   /** Ask to disconnect this installation from the selected Community. */
   onDisconnect: () => void;
-  /** Ask for a Community's address, to pair this installation with it. */
-  onConnect: () => void;
-  /** Ask for an invitation link to open. */
+  /** Ask for a space's address or invitation link: the one Join dialog. */
   onJoin: () => void;
   /** Hosts the person runs, from {@link communityCreationOrigins}; empty offers no creation. */
   creationOrigins: readonly string[];
@@ -135,14 +135,13 @@ export interface CommunityContextActionsModel {
   /** Open the guide to running a community server. */
   onDeploy: () => void;
   /**
-   * The hosted-community entry points, or `null` when this DorkOS is not linked
-   * to a DorkOS account (then none of their rows is drawn).
+   * The entry points for spaces that run on DorkOS, or `null` when this DorkOS
+   * is not linked to a DorkOS account (then none of their rows is drawn).
    */
   hosting: {
     onStart: () => void;
-    onMove: () => void;
-    /** Open the account's hosted-community list; `null` when it has nothing to show. */
-    onOpenHosted: (() => void) | null;
+    /** Open "Your spaces", which also offers moving one here. */
+    onOpenYourSpaces: () => void;
   } | null;
 }
 
@@ -155,46 +154,8 @@ function hostName(origin: string): string {
 }
 
 /**
- * The hosted-community rows, or none when this DorkOS is not linked.
- *
- * @param hosting - The entry points' handlers, or `null` while unlinked.
- */
-function hostingNodes(hosting: CommunityContextActionsModel['hosting']): SidebarMenuNode[] {
-  if (hosting === null) return [];
-  const nodes: SidebarMenuNode[] = [
-    {
-      kind: 'action',
-      id: 'add-community-start',
-      label: 'Start a community',
-      icon: Sparkles,
-      opensInput: true,
-      run: hosting.onStart,
-    },
-    {
-      kind: 'action',
-      id: 'add-community-move',
-      label: 'Move a community here',
-      icon: PackageOpen,
-      opensInput: true,
-      run: hosting.onMove,
-    },
-  ];
-  if (hosting.onOpenHosted) {
-    nodes.push({
-      kind: 'action',
-      id: 'add-community-hosted',
-      label: 'Hosted communities',
-      icon: Building2,
-      guardsFocus: true,
-      run: hosting.onOpenHosted,
-    });
-  }
-  return nodes;
-}
-
-/**
- * Build the switcher's lifecycle rows: the selected Community's own actions,
- * then "Add community".
+ * Build the switcher's lifecycle rows: the selected space's own actions, then
+ * "Add a space".
  *
  * @param model - The selection and its handlers.
  */
@@ -220,7 +181,7 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
       items.push({
         kind: 'action',
         id: 'community-settings',
-        label: 'Community settings',
+        label: 'Space settings',
         icon: Settings,
         external,
         run: model.onOpenSettings,
@@ -255,9 +216,9 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
       items.push({
         kind: 'action',
         id: 'community-leave',
-        label: 'Leave community',
+        label: 'Leave space',
         icon: LogOut,
-        // Not drawn as destructive: choosing it only opens the Community's own
+        // Not drawn as destructive: choosing it only opens the space's own
         // page, which asks for the password and confirms before anything ends.
         // The ellipsis says more is asked for; the mark says where.
         opensInput: true,
@@ -272,55 +233,78 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
       items,
     });
   }
+  // Start and Join first: the two things most people come here for. The
+  // self-run paths sit behind Advanced, one step away (spec §4).
+  const advanced: SidebarMenuNode[] = [
+    // One row per server the person runs. With one there is nothing to tell
+    // apart, so the row keeps the short name; the server is in its accessible
+    // name and its external mark either way.
+    ...model.creationOrigins.map((origin): SidebarMenuNode => ({
+      kind: 'action',
+      id:
+        model.creationOrigins.length === 1
+          ? 'add-community-create'
+          : `add-community-create-${hostName(origin)}`,
+      label:
+        model.creationOrigins.length === 1
+          ? 'Create a space on your server'
+          : `Create a space on ${hostName(origin)}`,
+      icon: CirclePlus,
+      opensInput: true,
+      external: { host: hostName(origin) },
+      run: () => model.onCreate(origin),
+    })),
+    {
+      kind: 'action',
+      id: 'add-community-deploy',
+      label: 'Run your own space server',
+      icon: BookOpen,
+      run: model.onDeploy,
+    },
+  ];
+  const add: SidebarMenuNode[] = [];
+  if (model.hosting)
+    add.push({
+      kind: 'action',
+      id: 'add-community-start',
+      label: 'Start a space',
+      icon: Sparkles,
+      opensInput: true,
+      run: model.hosting.onStart,
+    });
+  add.push({
+    kind: 'action',
+    id: 'add-community-join',
+    label: 'Join a space',
+    icon: LogIn,
+    opensInput: true,
+    run: model.onJoin,
+  });
+  if (model.hosting)
+    add.push({
+      kind: 'action',
+      id: 'add-community-yours',
+      label: 'Your spaces',
+      icon: Building2,
+      guardsFocus: true,
+      run: model.hosting.onOpenYourSpaces,
+    });
+  add.push(
+    { kind: 'separator', id: 'add-community-sep-advanced' },
+    {
+      kind: 'submenu',
+      id: 'add-community-advanced',
+      label: 'Advanced',
+      icon: Server,
+      items: advanced,
+    }
+  );
   nodes.push({
     kind: 'submenu',
     id: 'add-community',
-    label: 'Add community',
+    label: 'Add a space',
     icon: Plus,
-    items: [
-      {
-        kind: 'action',
-        id: 'add-community-connect',
-        label: 'Connect a community',
-        icon: Link2,
-        opensInput: true,
-        run: model.onConnect,
-      },
-      {
-        kind: 'action',
-        id: 'add-community-join',
-        label: 'Join with an invitation',
-        icon: Ticket,
-        opensInput: true,
-        run: model.onJoin,
-      },
-      // One row per host the person runs. With one there is nothing to tell
-      // apart, so the row keeps the short name; the host is in its accessible
-      // name and its external mark either way.
-      ...model.creationOrigins.map((origin): SidebarMenuNode => ({
-        kind: 'action',
-        id:
-          model.creationOrigins.length === 1
-            ? 'add-community-create'
-            : `add-community-create-${hostName(origin)}`,
-        label:
-          model.creationOrigins.length === 1
-            ? 'Create a community'
-            : `Create a community on ${hostName(origin)}`,
-        icon: CirclePlus,
-        opensInput: true,
-        external: { host: hostName(origin) },
-        run: () => model.onCreate(origin),
-      })),
-      ...hostingNodes(model.hosting),
-      {
-        kind: 'action',
-        id: 'add-community-deploy',
-        label: 'Run your own community',
-        icon: BookOpen,
-        run: model.onDeploy,
-      },
-    ],
+    items: add,
   });
   return nodes;
 }

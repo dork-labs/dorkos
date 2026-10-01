@@ -108,23 +108,23 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         // that already-authenticated browser cookie into the local browser so
         // this test can activate the local app's own approval link.
         await localContext.addCookies(await ownerPage.context().cookies(origin));
-        // Connect lives in the sidebar's community switcher, under Add community.
+        // Connect lives in the sidebar's context switcher, under Add a space › Join a space.
         await localPage.goto(env.local);
         const switcher = localPage.getByTestId('sidebar-header-block');
         await expect(switcher).toBeVisible();
         await switcher.click();
         await localPage.locator('[data-menu-item-id="add-community"]').hover();
-        await localPage.getByRole('menuitem', { name: 'Connect a community…' }).click();
-        const dialog = localPage.getByRole('dialog', { name: 'Connect a community' });
+        await localPage.getByRole('menuitem', { name: 'Join a space…' }).click();
+        const dialog = localPage.getByRole('dialog', { name: 'Join a space' });
         await expect(dialog).toBeVisible();
-        await dialog.getByLabel('Community address').fill(origin);
+        await dialog.getByLabel('Space address or invitation link').fill(origin);
         await dialog.getByLabel('Name for this installation').fill(installName);
         const startedResponse = localPage.waitForResponse(
           (response) =>
             response.request().method() === 'POST' &&
             new URL(response.url()).pathname === '/api/community-connections'
         );
-        await dialog.getByRole('button', { name: 'Connect community', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
         const started = await startedResponse;
         expect(started.ok(), `local connection start returned ${started.status()}`).toBe(true);
         const connection = (await started.json()) as { connection: { ref: string } };

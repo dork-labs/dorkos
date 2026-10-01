@@ -39,7 +39,7 @@ export type CommunityRefusalAction = 'enroll-agent';
 const NOT_FOUND: CommunityRefusal = {
   status: 404,
   code: 'COMMUNITY_NOT_FOUND',
-  error: 'That isn’t available in this community.',
+  error: 'That isn’t available in this space.',
 };
 
 const STALE: CommunityRefusal = {
@@ -51,13 +51,13 @@ const STALE: CommunityRefusal = {
 const DELETED: CommunityRefusal = {
   status: 410,
   code: 'COMMUNITY_DELETED',
-  error: 'This community was deleted.',
+  error: 'This space was deleted.',
 };
 
 const TAKEN_DOWN: CommunityRefusal = {
   status: 423,
   code: 'COMMUNITY_TAKEN_DOWN',
-  error: 'The host took this community down.',
+  error: 'This space was taken down.',
 };
 
 /**
@@ -74,14 +74,13 @@ export function communityGoneRefusal(lifecycle: string | undefined): CommunityRe
   return null;
 }
 
-const REJECTED = 'The community didn’t accept that request.';
+const REJECTED = 'The space didn’t accept that request.';
 
 /** The caps a Community sets, as `409` codes, in the app's own words. */
 const LIMIT_MESSAGES: Partial<Record<string, string>> = {
-  AGENT_LIMIT_REACHED:
-    'You’ve reached your agent limit in this community. Remove one to add another.',
-  MEMBER_LIMIT_REACHED: 'This community is full. Ask its owner to make room.',
-  STORAGE_LIMIT_REACHED: 'This community is out of file space.',
+  AGENT_LIMIT_REACHED: 'You’ve reached your agent limit in this space. Remove one to add another.',
+  MEMBER_LIMIT_REACHED: 'This space is full. Ask its owner to make room.',
+  STORAGE_LIMIT_REACHED: 'This space is out of file space.',
 };
 
 /**
@@ -116,13 +115,13 @@ export function communityRefusal(
     return {
       status: 409,
       code: 'COMMUNITY_UNSUPPORTED',
-      error: 'This community doesn’t support that.',
+      error: 'This space doesn’t support that.',
     };
   if (!(error instanceof PinnedHttpError)) return null;
   const { status, remoteCode } = error;
   // A suspension arrives as 503, but it is the Community's decision, not an outage.
   if (remoteCode === 'COMMUNITY_SUSPENDED')
-    return { status: 423, code: 'COMMUNITY_SUSPENDED', error: 'This community is suspended.' };
+    return { status: 423, code: 'COMMUNITY_SUSPENDED', error: 'This space is suspended.' };
   if (status < 400 || status >= 500) return null;
   switch (status) {
     case 401:
@@ -130,7 +129,7 @@ export function communityRefusal(
       return {
         status: 403,
         code: 'COMMUNITY_ACCESS_DENIED',
-        error: 'The community didn’t allow that.',
+        error: 'The space didn’t allow that.',
       };
     case 404:
       return NOT_FOUND;
@@ -148,12 +147,12 @@ export function communityRefusal(
         return {
           status: 409,
           code: 'COMMUNITY_CONFLICT',
-          error: 'This community isn’t open right now.',
+          error: 'This space isn’t open right now.',
         };
       return {
         status: 409,
         code: 'COMMUNITY_CONFLICT',
-        error: 'That no longer matches the community. Refresh and try again.',
+        error: 'That no longer matches the space. Refresh and try again.',
       };
     }
     case 410:
@@ -162,13 +161,13 @@ export function communityRefusal(
       return {
         status: 413,
         code: 'COMMUNITY_TOO_LARGE',
-        error: 'That’s too large for this community.',
+        error: 'That’s too large for this space.',
       };
     case 415:
       return {
         status: 415,
         code: 'COMMUNITY_UNSUPPORTED_FILE',
-        error: 'This community doesn’t accept that type of file.',
+        error: 'This space doesn’t accept that type of file.',
       };
     case 423:
       if (remoteCode === 'COMMUNITY_HELD')
@@ -176,14 +175,14 @@ export function communityRefusal(
           status: 423,
           code: 'COMMUNITY_HELD',
           error:
-            'The host has put this community on hold. You can read it, but no one can post. Its owner can still export it.',
+            'This space is on hold. You can read it, but no one can post. Its owner can still export it.',
         };
       return remoteCode === 'COMMUNITY_DELETION_PENDING'
-        ? { status: 423, code: 'COMMUNITY_READ_ONLY', error: 'This community is being deleted.' }
+        ? { status: 423, code: 'COMMUNITY_READ_ONLY', error: 'This space is being deleted.' }
         : {
             status: 423,
             code: 'COMMUNITY_READ_ONLY',
-            error: 'This community is archived, so it’s read-only.',
+            error: 'This space is archived, so it’s read-only.',
           };
     case 429:
       // Community servers from before DOR-2254 answered the agent cap with 429 RATE_LIMITED.
@@ -193,8 +192,8 @@ export function communityRefusal(
         code: 'COMMUNITY_LIMIT_REACHED',
         error:
           action === 'enroll-agent'
-            ? 'You’ve reached this community’s limit on active agents. Remove one to add another.'
-            : 'This community’s limit was reached. Try again later.',
+            ? 'You’ve reached this space’s limit on active agents. Remove one to add another.'
+            : 'This space’s limit was reached. Try again later.',
       };
     default:
       return { status, code: 'COMMUNITY_REJECTED', error: REJECTED };

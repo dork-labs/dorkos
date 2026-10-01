@@ -31,7 +31,7 @@ export interface HostedCommunityActions {
 
 /** The preview changed under the person: say so and show the fresh list. */
 const PREVIEW_CHANGED: HostingNotice = {
-  message: 'Your communities changed since this list loaded. Check the list again, then choose.',
+  message: 'Your spaces changed since this list loaded. Check the list again, then choose.',
 };
 
 /** Drive keep and reopen for the hosted-community list. */

@@ -66,7 +66,7 @@ const progressHandlers = {
  */
 function expectEligibilityLineBefore(commitButton: HTMLElement) {
   const line = screen.getByText(
-    /Paid plans, and communities that DorkOS hosts for you, are for people in the United States who are 18 or older\./
+    /Paid plans, and spaces that run on DorkOS for you, are for people in the United States who are 18 or older\./
   );
   const link = within(line).getByRole('link', { name: 'Who can buy a plan?' });
   expect(link).toHaveAttribute('href', 'https://dorkos.ai/pricing#faq');
@@ -98,19 +98,19 @@ describe('Start a community: the form', () => {
   it('shows the web address grammar as a hint, and nothing about allowance it was not told', () => {
     show(startForm());
     expect(screen.getByText(/Lower-case letters, numbers and single hyphens/)).toBeInTheDocument();
-    expect(screen.queryByText(/more communit/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start community' })).toBeEnabled();
+    expect(screen.queryByText(/more spaces?\./)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start space' })).toBeEnabled();
   });
 
   it('says how many more communities the account can start, when the service says', () => {
     show(startForm({ allowance: { maxCommunities: 3, usedCommunities: 1 } }));
-    expect(screen.getByText('You can start 2 more communities.')).toBeInTheDocument();
+    expect(screen.getByText('You can start 2 more spaces.')).toBeInTheDocument();
   });
 
   it('puts a taken web address on the field and blocks the start', () => {
     show(startForm({ webAddress: 'acme', webAddressStatus: { kind: 'taken' } }));
     expect(screen.getByText('That web address is taken.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start community' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Start space' })).toBeDisabled();
   });
 
   it('says a reserved web address can’t be used', () => {
@@ -120,13 +120,13 @@ describe('Start a community: the form', () => {
 
   it('says who can have a community hosted, with a link, before Start community', () => {
     show(startForm());
-    expectEligibilityLineBefore(screen.getByRole('button', { name: 'Start community' }));
+    expectEligibilityLineBefore(screen.getByRole('button', { name: 'Start space' }));
   });
 
   it('locks while submitting', () => {
     show(startForm({ submitting: true }));
     expect(screen.getByRole('button', { name: 'Starting…' })).toBeDisabled();
-    expect(screen.getByLabelText('Community name')).toBeDisabled();
+    expect(screen.getByLabelText('Space name')).toBeDisabled();
   });
 
   // Purpose: an entitlement refusal is the service's own text plus its link.
@@ -152,7 +152,7 @@ describe('Start a community: the form', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Couldn’t reach your DorkOS account. Try again.'
     );
-    expect(screen.getByLabelText('Community name')).toHaveValue('Night shift');
+    expect(screen.getByLabelText('Space name')).toHaveValue('Night shift');
   });
 
   it('treats a service title as text, never as markup', () => {
@@ -251,16 +251,16 @@ describe('claim and connect', () => {
   it('says it is done, and selected', () => {
     show(claimConnectStep({ ...base, state: { kind: 'done', ref: 'r' } }));
     expect(screen.getByRole('heading', { name: 'Night shift is ready' })).toBeInTheDocument();
-    expect(screen.getByText('It’s selected in your community list.')).toBeInTheDocument();
+    expect(screen.getByText('It’s selected in your list of spaces.')).toBeInTheDocument();
   });
 });
 
-describe('Move a community here', () => {
+describe('Move a space here', () => {
   it('explains what moves and how to export', () => {
     show(moveExplainStep(noop, noop));
     expect(
       screen.getByText(
-        'Moving copies your community’s history and files. Everyone joins again and reconnects their DorkOS. Your old community keeps running until you delete it.'
+        'Moving copies your space’s history and files to DorkOS. Everyone joins again and reconnects their DorkOS. Your old space keeps running until you delete it.'
       )
     ).toBeInTheDocument();
     expect(screen.getByText('Confirm with your password.')).toBeInTheDocument();
@@ -324,7 +324,7 @@ describe('Move a community here', () => {
     const second = show(moveProgressStep(failedWith('rejected') as never, progressHandlers));
     expect(screen.queryByRole('button', { name: 'Send again' })).not.toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: 'The new host didn’t accept the file' })
+      screen.getByRole('heading', { name: 'DorkOS didn’t accept the file' })
     ).toBeInTheDocument();
     second.unmount();
     const lost = moveStepOf(move({ state: 'awaiting_upload', upload: null }));
@@ -432,7 +432,7 @@ describe('Move a community here', () => {
   });
 });
 
-describe('Hosted communities', () => {
+describe('Your spaces', () => {
   const actions = {
     confirmingKeep: null as string | null,
     busyId: null,
@@ -486,10 +486,10 @@ describe('Hosted communities', () => {
     } as HostedCommunity;
     list([held]);
     expect(
-      screen.getByText('The host put this community on hold. People can still read it.')
+      screen.getByText('DorkOS put this space on hold. People can still read it.')
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/The host may delete it after .*You can export it until then\./)
+      screen.getByText(/DorkOS may delete it after .*You can export it until then\./)
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reopen' })).not.toBeInTheDocument();
     // A whole-day date reads the same in every time zone.
@@ -548,6 +548,6 @@ describe('Hosted communities', () => {
       />
     );
     expect(screen.getByText('Part of this export is damaged.')).toBeInTheDocument();
-    expect(screen.getByText('You don’t host any communities yet.')).toBeInTheDocument();
+    expect(screen.getByText('You don’t have any spaces on DorkOS yet.')).toBeInTheDocument();
   });
 });

@@ -275,12 +275,12 @@ export async function lifecycleSteps(w: World): Promise<void> {
   }
 
   await step(
-    '26 Leave community from the Manage menu opens the Community’s own page; leaving ends B’s access',
+    '26 Leave space from the Manage menu opens the Community’s own page; leaving ends B’s access',
     async () => {
       await openGeneral(b, refB);
       const before = (await externalOpens(b)).length;
       await openManageMenu(b, COMMUNITY);
-      await b.page.getByRole('menuitem', { name: /^Leave community/ }).click();
+      await b.page.getByRole('menuitem', { name: /^Leave space/ }).click();
       await expect.poll(async () => (await externalOpens(b)).length).toBe(before + 1);
       const opened = (await externalOpens(b))[before]!;
       assert.equal(

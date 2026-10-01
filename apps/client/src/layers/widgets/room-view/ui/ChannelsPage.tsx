@@ -78,7 +78,7 @@ function ChannelsPageBody() {
         <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 p-10 text-center text-sm">
           <MessagesSquare className="text-muted-foreground/50 size-10" aria-hidden />
           <p className="text-foreground font-medium">No channel selected</p>
-          <p className="max-w-sm">Choose an available channel from this community.</p>
+          <p className="max-w-sm">Choose an available channel from this space.</p>
         </div>
       </CommunityGoneGuard>
     );

@@ -98,6 +98,6 @@ export class CommunityOutboxPolicy implements RoomMirrorWritePolicy {
 function unavailableDelivery(): RoomError {
   return new RoomError(
     'COMMUNITY_DELIVERY_UNAVAILABLE',
-    'This agent cannot send to the community until its access is restored.'
+    'This agent cannot send to the space until its access is restored.'
   );
 }

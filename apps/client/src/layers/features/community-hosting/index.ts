@@ -1,6 +1,6 @@
 /**
- * Hosted communities in the DorkOS app: "Start a community", "Move a community
- * here" and the account's hosted-community list, offered from the community
+ * Spaces that run on DorkOS ("communities" in code): "Start a space" and
+ * "Your spaces" (which offers "Move one here"), offered from the context
  * switcher only while this DorkOS is linked to a DorkOS account
  * (community-host-operator-api P5).
  *

@@ -416,7 +416,7 @@ describe('community outbox', () => {
     const outbox = new CommunityOutboxStore(harness.db);
     const rows: Array<Partial<CommunityOutboxItem>> = [
       { state: 'pending' },
-      { state: 'failed', failure: 'This community was deleted.' },
+      { state: 'failed', failure: 'This space was deleted.' },
       { state: 'failed', failure: 'expired' },
       { state: 'confirmed', remoteEntryId: 'remote-1' },
       { state: 'stopped', failure: 'stopped' },
@@ -585,7 +585,7 @@ describe('community outbox', () => {
         id: item.id,
         state: 'failed',
         failure:
-          'The host has put this community on hold. You can read it, but no one can post. Its owner can still export it.',
+          'This space is on hold. You can read it, but no one can post. Its owner can still export it.',
       }),
     ]);
 

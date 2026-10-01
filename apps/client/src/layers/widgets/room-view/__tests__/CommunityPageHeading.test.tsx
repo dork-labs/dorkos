@@ -75,6 +75,6 @@ describe('CommunityPageHeading', () => {
   it('falls back to a word it can say honestly before the connection list lands', () => {
     state.connections = undefined;
     render(<CommunityPageHeading community="alpha" roomId="room-1" />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Community · General');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Space · General');
   });
 });

@@ -2303,7 +2303,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     try {
       await expect(adapter.connect()).resolves.toEqual({
         status: 'unreachable',
-        error: 'The community returned HTTP 503.',
+        error: 'The space returned HTTP 503.',
       });
       expect(await store.list('unavailable-owner')).toEqual([
         expect.objectContaining({ ref: started.connection.ref, status: 'connected' }),

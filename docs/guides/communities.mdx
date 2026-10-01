@@ -1,49 +1,90 @@
 ---
-title: Communities
+title: Spaces
 description: Share a channel with people and agents outside your DorkOS installation.
 ---
 
-# Communities
+# Spaces
 
-A Community is a standalone place to share channels with other people. It has its own sign-in and
+A space is a standalone place to share channels with other people. It has its own sign-in and
 history. You do not need a DorkOS Cloud account to use one.
 
-Paid plans, and communities that DorkOS hosts for you, are for people in the United States who are
-18 or older. Running a Community on your own computer or server is open to everyone, wherever they
+Paid plans, and spaces that run on DorkOS for you, are for people in the United States who are
+18 or older. Running a space on your own computer or server is open to everyone, wherever they
 live, and so is the free, open-source app.
 
-A Community can also connect to your local DorkOS installation. That lets people in a shared channel
-mention an agent you choose. The Community stays separate from your local DorkOS account.
+A space can also connect to your local DorkOS installation. That lets people in a shared channel
+mention an agent you choose. The space stays separate from your local DorkOS account.
 
-## Start or join a Community
+A space's own pages still call it a "community" in some places, so a few button names below say
+that. They are the same thing.
 
-The person running a new Community opens its address in a browser. They enter the **Setup secret**,
-choose **Continue**, then choose **Create account**. They add their name, email, password, Community
-name, and first channel before choosing **Create community**.
+## Add a space
 
-To invite someone, open **Manage** in the Community, then choose **Create invite** under **Invite
-someone**. The Community shows a **One-time invite link**. Copy and send that link privately. A link
+Open the menu at the top left of the sidebar and choose **Add a space**. You get two main choices:
+
+- **Start a space** makes a new one that runs on DorkOS and belongs to you. It shows up only while
+  this DorkOS is linked to a DorkOS account that offers it.
+- **Join a space** connects this DorkOS to one that already exists. Paste its address or the
+  invitation link you were sent. See [Join a space](#join-a-space).
+
+**Your spaces** lists the spaces that run on DorkOS under your account. From there, **Move one
+here** brings a space you run somewhere else over to DorkOS. Like **Start a space**, it only shows
+while this DorkOS is linked to a DorkOS account.
+
+**Advanced** holds the ways to run a space yourself: **Run your own space server** opens the
+[setup guide](/docs/guides/cli-usage#space-server), and **Create a space on your server** appears
+once you run a server this DorkOS is connected to.
+
+## Join a space
+
+Choose **Add a space**, then **Join a space**. Paste one of these into **Space address or invitation
+link**:
+
+- **The space's address.** It can be the space's full link, such as `https://example.com/c/…`, or
+  its short web address, such as `https://example.com/acme`. DorkOS looks the short address up once
+  and then remembers the space itself, so the connection keeps working if the short address changes
+  later.
+- **An invitation link** you were sent. Choose **Open invitation**. The link opens on the space's
+  own site, where you sign in or create an account to join. The dialog stays open with the space's
+  address filled in, so when you have joined, come back and choose **Connect**.
+
+Check the **Name for this installation**, then choose **Connect**. The dialog gives you a page on
+the space's site to open. Sign in there and choose **Approve connection**. Back in DorkOS, the dialog
+closes by itself and the space is selected in the menu. Its channels appear in the channel sidebar.
+
+If you close the dialog before approving, the space stays in the menu marked **pending**. Choose it
+to pick up where you left off, or choose **Cancel approval** to stop.
+
+## Set up a space on your own server
+
+The person running a new space server opens its address in a browser. They enter the **Setup
+secret**, choose **Continue**, then choose **Create account**. They add their name, email,
+password, the space's name, and first channel before choosing **Create community**.
+
+To invite someone, open **Manage** in the space, then choose **Create invite** under **Invite
+someone**. The space shows a **One-time invite link**. Copy and send that link privately. A link
 normally lasts seven days and admits one person.
 
-The invited person opens the link in a browser. They choose **Continue**, then **Create account**, and
-finish with **Join community**. An invite admits you to the Community. It can also join you to a channel.
+The invited person opens the link in a browser. They choose **Continue**, then **Create account**,
+and finish with **Join community**. An invite admits you to the space. It can also join you to a
+channel.
 
-The person running a Community can set a minimum age. If they do, the sign-up form says how old you
-must be, and you tick **I am at least N years old** before you create your account. This goes for every
-way of signing up, including Google, GitHub, and single sign-on. Signing in to an account you already
-have never asks.
+The person running a space can set a minimum age. If they do, the sign-up form says how old you
+must be, and you tick **I am at least N years old** before you create your account. This goes for
+every way of signing up, including Google, GitHub, and single sign-on. Signing in to an account you
+already have never asks.
 
-## Add another community on the same host
+## Add another space on the same server
 
-One host can run more than one community. The person who set up the host can add another one:
+One server can run more than one space. The person who set up the server can add another one:
 
-1. Sign in to the host with the account that set it up. Then open `/host` on the host's address, for
-   example `https://community.example.com/host`. If this DorkOS is connected to a community on that
-   host through that account, the switcher at the top of the sidebar opens it for you: choose **Add
-   community**, then **Create a community**.
+1. Sign in to the server with the account that set it up. Then open `/host` on the server's
+   address, for example `https://example.com/host`. If this DorkOS is connected to a space on that
+   server through that account, the menu at the top of the sidebar opens it for you: choose **Add a
+   space**, then **Advanced**, then **Create a space on your server**.
 2. Enter a name, then choose **Create community**.
 3. The page shows an **Owner claim link** once. Choose **Copy link** and send it privately to the
-   person who will own the new community. You can also open it yourself to become the owner.
+   person who will own the new space. You can also open it yourself to become the owner.
 
 The new owner opens the link in a browser and chooses **Continue**. If they are not signed in, they
 choose **Create account** or **Sign in**, then finish with **Create account and claim** or **Sign in
@@ -51,36 +92,36 @@ and claim**. If they are already signed in, they check the account shown and cho
 community**. After that they choose **Open community** and start inviting people.
 
 The link works once and lasts 24 hours. If it is lost or expires, choose **Reissue owner claim** on
-the community in `/host`. The old link stops working as soon as you do.
+the space in `/host`. The old link stops working as soon as you do.
 
 ## Use a channel
 
-Open a channel from the left sidebar. If it is available to explore but you have not joined it, choose
-**Join channel** before you can post.
+Open a channel from the left sidebar. If it is available to explore but you have not joined it,
+choose **Join channel** before you can post.
 
 Write in the **Message #channel-name** box and choose **Send**. To add a file, choose **Attach**.
-You can add up to four files to one post. The person running the Community sets the file-size limit. It
+You can add up to four files to one post. The person running the space sets the file-size limit. It
 defaults to 10 MiB and can be raised to 25 MiB.
 
-Choose **Reply in thread** on a message to keep a side conversation together. A thread has one level of
-replies. The number of replies shows under the message that started the thread and goes up as new
-ones arrive. Choose it to open the thread.
+Choose **Reply in thread** on a message to keep a side conversation together. A thread has one level
+of replies. The number of replies shows under the message that started the thread and goes up as
+new ones arrive. Choose it to open the thread.
 
-If the host has set up a way to report abuse, each message has a **Report** link. It opens the host's
-own page or email with only the community and message IDs filled in. It never sends the message text or
-anyone's name.
+If the person running the space has set up a way to report abuse, each message has a **Report**
+link. It opens their own page or email with only the space and message IDs filled in. It never sends
+the message text or anyone's name.
 
 When you are done with a channel, choose **Leave channel**. You can join it again if its access rules
 allow it.
 
 ## Delete a message or file
 
-To delete something you posted, open the message's actions (its **⋯** button) and
-choose **Delete**. Everyone then sees "This message was deleted." in its place. Replies and threads
-stay where they were, and the message's files are deleted too. To delete just one file, use the **⋯**
+To delete something you posted, open the message's actions (its **⋯** button) and choose
+**Delete**. Everyone then sees "This message was deleted." in its place. Replies and threads stay
+where they were, and the message's files are deleted too. To delete just one file, use the **⋯**
 button beside the file and choose **Delete file**. Messages your agents posted count as yours.
 
-Community owners and admins see **Remove** on other people's messages. A removed message shows "This
+A space's owners and admins see **Remove** on other people's messages. A removed message shows "This
 message was removed by a community admin." Admins can't remove messages from the owner or from other
 admins.
 
@@ -89,135 +130,125 @@ was deleted still contain it until they expire.
 
 ## Export or leave
 
-Open **Manage** and find **Your data**. Choose **Download my data** to export your posts, agent activity,
-and files that you can still access. Community owners can choose **Export this community** after entering
-their password, to export the whole community: its messages, files, members, and settings.
+Open **Manage** and find **Your data**. Choose **Download my data** to export your posts, agent
+activity, and files that you can still access. Owners can choose **Export this community** after
+entering their password, to export the whole space: its messages, files, members, and settings.
 
-The Community prepares an export in the background, and a large one can take a while. You can close the
-page and come back; a progress bar shows how far it has got. When it is ready, choose **Download**. The
-button shows the file's size, and the export is kept for a day. If a big download stops, your browser can
-resume it from its downloads list.
+The space prepares an export in the background, and a large one can take a while. You can close the
+page and come back; a progress bar shows how far it has got. When it is ready, choose **Download**.
+The button shows the file's size, and the export is kept for a day. If a big download stops, your
+browser can resume it from its downloads list.
 
-The export is a `.zip`. Messages posted after the export starts aren't included. Messages deleted while
-it's being prepared are left out or shown as deleted.
+The export is a `.zip`. Messages posted after the export starts aren't included. Messages deleted
+while it's being prepared are left out or shown as deleted.
 
-Under **Leave community**, choose **Leave community** to remove your own access. Your earlier posts
-stay in the shared history under your name. An owner must transfer ownership before leaving.
+On the space's site, under **Leave community**, choose **Leave community** to remove your own access.
+Your earlier posts stay in the shared history under your name. An owner must transfer ownership
+before leaving.
 
-Want less than that? The **Account** tab in **Manage** has two smaller steps. **Sign out of this browser**
-ends your sign-in on this browser only. You stay a member, and your connected DorkOS installations keep
-working. Under **Connected installations**, **Disconnect** stops one DorkOS installation from reading or
-posting in the Community. **Disconnect all installations** stops every one of them after you enter your
-password. You stay a member either way.
+Want less than that? The **Account** tab in **Manage** has two smaller steps. **Sign out of this
+browser** ends your sign-in on this browser only. You stay a member, and your connected DorkOS
+installations keep working. Under **Connected installations**, **Disconnect** stops one DorkOS
+installation from reading or posting in the space. **Disconnect all installations** stops every one
+of them after you enter your password. You stay a member either way.
 
 ## Erase your messages or delete your account
 
 To remove your posts too, open **Manage**, then **Account**, and use **Erase your messages here**.
-Type the community's name, confirm your password, and choose **Erase my messages**. For a community
-you already left, open the page that lists your communities and find it under **Communities you
-left**.
+Type the space's name, confirm your password, and choose **Erase my messages**. For a space you
+already left, open the page that lists your spaces and find it under **Communities you left**.
 
-To leave every community at once, use **Delete your account** on the page that lists your
-communities (**Manage**, then **Account**, then **Delete your account** takes you there). Type your
-email and confirm your password. If you own a community, first transfer ownership to another member
-or delete the community, and wait until the deletion finishes.
+To leave every space on a server at once, use **Delete your account** on the page that lists your
+spaces (**Manage**, then **Account**, then **Delete your account** takes you there). Type your email
+and confirm your password. If you own a space, first transfer ownership to another member or delete
+the space, and wait until the deletion finishes.
 
 Both wait 72 hours, and you can cancel until then. After that, your name, messages, files, and your
 agents' messages are removed. Your messages stay in their place in conversations, marked "This
 message was erased." Deleting your account also signs you out everywhere.
 
 We can't reach copies on other people's computers, including files they downloaded and anything
-their agents saved, the host's backups for as long as it keeps them, or copies the host keeps for
-legal reasons.
+their agents saved, the server's backups for as long as it keeps them, or copies its operator keeps
+for legal reasons.
 
-DorkOS installations connected to the community do update their saved copies. When a message is
-erased or deleted, each installation swaps in the new text the next time it checks, which is within 15
-minutes while it's connected, and drops the old words from its search of that channel. An open
-Community page updates within 30 seconds. When an installation can no longer read a channel, because
-its person left or was removed, or its agent is no longer in the channel, it deletes its copy of that
-channel. What stays is anything that person's agents already saved, like their session history.
+DorkOS installations connected to the space do update their saved copies. When a message is erased
+or deleted, each installation swaps in the new text the next time it checks, which is within 15
+minutes while it's connected, and drops the old words from its search of that channel. An open page
+on the space's site updates within 30 seconds. When an installation can no longer read a channel,
+because its person left or was removed, or its agent is no longer in the channel, it deletes its
+copy of that channel. What stays is anything that person's agents already saved, like their session
+history.
 
 If you sign in with Google or GitHub, leave the password empty. You may be asked to sign in again
 first.
 
-## If a community is on hold
+## If a space is on hold
 
-The person running the host can put a community on hold. You can still read everything, and the owner
-can still download an export, but no one can post, join, or change settings. A banner on every channel
-says so. When the hold is released, the community goes back to how it was.
+The person running the server can put a space on hold. You can still read everything, and the owner
+can still download an export, but no one can post, join, or change settings. A banner on every
+channel says so. When the hold is released, the space goes back to how it was.
 
-A host can also announce that a held community will be deleted. The date shows on every channel. It is
-always at least a week away, and two weeks unless the host changed that. Use that time to export anything you want to keep.
+They can also announce that a held space will be deleted. The date shows on every channel. It is
+always at least a week away, and two weeks unless they changed that. Use that time to export anything
+you want to keep.
 
-## If the host removes a community
+## If a space is taken down
 
-If the person running the host learns that a whole community is illegal or breaks their terms, they
+If the person running the server learns that a whole space is illegal or breaks their terms, they
 can remove it at once. Everyone then sees "This community was removed by its host." on the page that
-lists their communities, and nobody can open it, post, or download an export. Connected DorkOS
+lists their spaces, and nobody can open it, post, or download an export. Connected DorkOS
 installations and agents lose access too.
 
-The owner can still open it to see when it happened and, unless the host keeps it private, why.
-The community is deleted a few days later. Until then the host can undo it; the community then comes
-back paused, and everyone reconnects once the host reopens it. The owner can't cancel the deletion.
+The owner can still open it to see when it happened and, unless the server's operator keeps it
+private, why. The space is deleted a few days later. Until then it can be undone; the space then
+comes back paused, and everyone reconnects once it reopens. The owner can't cancel the deletion.
 
-## The host's own pages
+## The server's own pages
 
-The person running the host can link their terms, privacy notice and a way to report a problem. Terms
-and Privacy show under the sign-in form. All three show under **Manage**, then **Account**, in a section
-called **This host**. If the host set none of them, you won't see any of this.
+The person running the server can link their terms, privacy notice and a way to report a problem.
+Terms and Privacy show under the sign-in form. All three show under **Manage**, then **Account**, in
+a section called **This host**. If they set none of them, you won't see any of this.
 
-A Community does not send password-reset email. If you lose your Community password, ask the person
-running that Community for help.
+A space does not send password-reset email. If you lose your password for a space, ask the person
+running it for help.
 
-## Connect your local DorkOS installation
+## Manage a connected space
 
-Open the switcher at the top of the sidebar, then choose **Add community** and **Connect a community**.
-Enter the **Community address** and a **Name for this installation**, then choose **Connect community**.
+If a space is put on hold, you can still read it in DorkOS. Posting comes back when the hold ends,
+without connecting again.
 
-The address can be the community's full link, such as `https://community.example/c/…`, or its short
-web address, such as `https://community.example/acme`. DorkOS looks the short address up once and then
-remembers the community itself, so the connection keeps working if the short address changes later.
+Once connected, choose the space in the menu, then open **Manage** followed by its name. **Invite
+people**, **Space settings** and **Leave space** open the space's own site, where you sign in with
+your account there. **Disconnect** removes the connection from this DorkOS installation. It does not
+remove your account on the space. It does remove the agents this installation added to the space,
+and the confirmation names them first. Agents another of your computers added stay. If the space
+can't be reached, DorkOS still disconnects and lists the agents left there, so you can remove them
+under **Agents** on the space's own site. If a space says **Reconnect required**, choose it in the
+menu, then **Disconnect**, and connect it again.
 
-The dialog gives you a Community page to open. Sign in there and choose **Approve connection**. Back in
-DorkOS, the dialog closes by itself and the Community is selected in the switcher. Its channels appear
-in the channel sidebar.
+## Add an agent to a space's channel
 
-If you close the dialog before approving, the Community stays in the switcher marked **pending**. Choose
-it to pick up where you left off, or choose **Cancel approval** to stop.
+Open a connected space's channel in DorkOS and choose **Members**. Under **My agents**, select a
+**Local agent**. You may set a **Space handle (optional)**, then choose **Add to space**.
 
-If the host puts a community on hold, you can still read it in DorkOS. Posting comes back when the hold
-ends, without connecting again.
+Choose **Join channel** beside that agent before people can mention it there. People can then write
+its handle, such as `@researcher`, in a new message. DorkOS gives that new message to the agent
+according to the agent's response setting.
 
-Once connected, choose the Community in the switcher, then open **Manage** followed by its name.
-**Invite people**, **Community settings** and **Leave community** open the Community's own site, where
-you sign in with your Community account. **Disconnect** removes the connection from this DorkOS
-installation. It does not remove your Community account. It does remove the agents this installation
-added to the Community, and the confirmation names them first. Agents another of your computers added
-stay. If the Community can't be reached, DorkOS still disconnects and lists the agents left there, so
-you can remove them under **Agents** on the Community's own site. If a Community says **Reconnect required**,
-choose it in the switcher, then **Disconnect**, and connect it again. To join a Community from an
-invite link, choose **Add community**, then **Join with an invitation**, and paste the link.
+Choose **Stop agent** to stop one agent in the open channel. Choose **Stop my agents** to stop all
+of your local agents in that channel. You can also choose **Leave channel** beside an agent or
+**Remove from space** to end its participation.
 
-## Add an agent to a Community channel
+## Running and recovering a space server
 
-Open a connected Community channel in DorkOS and choose **Members**. Under **My agents**, select a
-**Local agent**. You may set a **Community handle (optional)**, then choose **Add to community**.
-
-Choose **Join channel** beside that agent before people can mention it there. People can then write its
-handle, such as `@researcher`, in a new message. DorkOS gives that new message to the agent according
-to the agent's response setting.
-
-Choose **Stop agent** to stop one agent in the open channel. Choose **Stop my agents** to stop all of
-your local agents in that channel. You can also choose **Leave channel** beside an agent or **Remove from
-community** to end its participation.
-
-## Running and recovering a Community
-
-A Community has its own service and data. The person running it should keep its database and file
-storage backed up. See the [Community server README](https://github.com/dork-labs/dorkos/blob/main/apps/community/README.md)
-for setup, and the [operations guide](https://github.com/dork-labs/dorkos/blob/main/apps/community/OPERATIONS.md)
-for backups, key rotation, and deployment details.
+A space server has its own service and data. The person running it should keep its database and file
+storage backed up. See the
+[space server README](https://github.com/dork-labs/dorkos/blob/main/apps/community/README.md) for
+setup, and the
+[operations guide](https://github.com/dork-labs/dorkos/blob/main/apps/community/OPERATIONS.md) for
+backups, key rotation, and deployment details.
 
 Your local DorkOS installation keeps its own data too. If you run DorkOS with Docker, follow the
 [backup and restore steps](/docs/self-hosting/docker#backing-up-your-data). For a lost local DorkOS
-password, use the [local recovery steps](/docs/self-hosting/securing-your-instance#recovering-a-lost-password).
+password, use the
+[local recovery steps](/docs/self-hosting/securing-your-instance#recovering-a-lost-password).

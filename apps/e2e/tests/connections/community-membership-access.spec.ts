@@ -190,12 +190,12 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
     await expect(page).not.toHaveURL(/\/connections/);
     await axeBothSchemes(page, '[role="dialog"]', 'reconnect-desktop', testInfo);
     await reconnect.getByRole('button', { name: 'Disconnect', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Connect a community' });
+    const dialog = page.getByRole('dialog', { name: 'Join a space' });
     await expect(dialog.getByRole('status')).toHaveText(
       'Delta is disconnected. Connect again to continue.'
     );
     expect(deltaRemoved).toBe(true);
-    const address = dialog.getByLabel('Community address');
+    const address = dialog.getByLabel('Space address or invitation link');
     await expect(address).toBeFocused();
     await axeBothSchemes(page, '[role="dialog"]', 'connect-desktop', testInfo);
 
@@ -228,7 +228,7 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
     await page.goto('/tasks');
     await new BasePage(page).waitForAppReady();
     await page.getByTestId('sidebar-header-block').click();
-    await page.getByRole('menuitem', { name: 'Connect a community…' }).click();
+    await page.getByRole('menuitem', { name: 'Join a space…' }).click();
     await expect(dialog).toBeVisible();
     await expect(page.locator('[role="dialog"]', { hasText: 'Switch context' })).toHaveCount(0);
     await axeBothSchemes(page, '[role="dialog"]', 'connect-phone', testInfo);
@@ -242,21 +242,27 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
     { name: 'desktop', width: 1440, height: 900 },
     { name: 'phone', width: 390, height: 844 },
   ] as const) {
-    test(`join with an invitation, ${viewport.name}: focus, announced refusal, axe`, async ({
+    test(`join a space with an invitation, ${viewport.name}: focus, address filled, axe`, async ({
       page,
     }, testInfo) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await mockCommunities(page, [ALPHA]);
+      // The invitation opens on the space's own site, in a new tab.
+      await page
+        .context()
+        .route('https://alpha.example.test/**', (route) =>
+          route.fulfill({ contentType: 'text/html', body: '<title>Alpha</title><h1>Alpha</h1>' })
+        );
       await page.goto('/tasks');
       await new BasePage(page).waitForAppReady();
       await page.getByTestId('sidebar-header-block').click();
       if (viewport.name === 'desktop') {
         await page.locator('[data-menu-item-id="add-community"]').hover();
       }
-      await page.getByRole('menuitem', { name: 'Join with an invitation…' }).click();
-      const dialog = page.getByRole('dialog', { name: 'Join with an invitation' });
+      await page.getByRole('menuitem', { name: 'Join a space…' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Join a space' });
       await expect(dialog).toBeVisible();
-      const field = dialog.getByLabel('Invitation link');
+      const field = dialog.getByLabel('Space address or invitation link');
       // Desktop starts in the field. The phone sheet (vaul, `autoFocus` off)
       // does not raise the software keyboard on open; its focus trap takes the
       // very first Tab instead, so a keyboard user is inside it in one press.
@@ -273,14 +279,20 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
       }
       await axeBothSchemes(page, '[role="dialog"]', `join-${viewport.name}`, testInfo);
 
-      // A link that is not an invitation is refused out loud, tied to the field.
-      await page.keyboard.type('https://alpha.example.test/c/remote-alpha');
+      // An invitation opens on the space's site; the dialog stays on Connect
+      // with the space's address filled in, the invite itself left out.
+      const link = 'https://alpha.example.test/c/remote-alpha/join#invite=one-time';
+      await page.keyboard.type(link);
+      await expect(dialog.getByRole('button', { name: 'Open invitation' })).toBeVisible();
+      const opened = page.context().waitForEvent('page');
       await page.keyboard.press('Enter');
-      const refusal = dialog.getByRole('alert');
-      await expect(refusal).toContainText('That isn’t an invitation link.');
-      await expect(field).toHaveAttribute('aria-invalid', 'true');
-      await expect(field).toHaveAccessibleDescription(/That isn’t an invitation link/);
-      await axeBothSchemes(page, '[role="dialog"]', `join-refused-${viewport.name}`, testInfo);
+      expect((await opened).url()).toBe(link);
+      await expect(field).toHaveValue('https://alpha.example.test/c/remote-alpha');
+      await expect(field).toHaveAccessibleDescription(
+        /Finish joining on alpha\.example\.test in the tab that opened/
+      );
+      await expect(dialog.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+      await axeBothSchemes(page, '[role="dialog"]', `join-filled-${viewport.name}`, testInfo);
       if (viewport.name === 'phone')
         expect(await shortTargets(dialog, 'button, input', TOUCH_FLOOR)).toEqual([]);
 
@@ -308,7 +320,7 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
     await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('menuitem', { name: 'Invite people' })).toBeFocused();
     // Rows that leave the app say where they go, in words.
-    await expect(page.getByRole('menuitem', { name: 'Leave community…' })).toHaveAccessibleName(
+    await expect(page.getByRole('menuitem', { name: 'Leave space…' })).toHaveAccessibleName(
       /opens on alpha\.example\.test$/
     );
     await axeBothSchemes(page, '[role="menu"]', 'manage-desktop', testInfo);

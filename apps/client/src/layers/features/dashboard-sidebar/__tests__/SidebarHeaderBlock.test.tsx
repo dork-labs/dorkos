@@ -387,15 +387,13 @@ describe('SidebarHeaderBlock', () => {
       'true'
     );
     expect(screen.getByRole('radio', { name: /Alpha/ })).toBeInTheDocument();
-    // "Add community" is a menu of distinct paths, flattened into a named
+    // "Add a space" is a menu of distinct paths, flattened into a named
     // group on a phone rather than a second popup over the sheet.
-    const add = screen.getByRole('group', { name: 'Add community' });
-    expect(within(add).getByRole('menuitem', { name: /Connect a community/ })).toBeInTheDocument();
+    const add = screen.getByRole('group', { name: 'Add a space' });
+    expect(within(add).getByRole('menuitem', { name: /Join a space…/ })).toBeInTheDocument();
+    expect(within(add).getByRole('group', { name: 'Advanced' })).toBeInTheDocument();
     expect(
-      within(add).getByRole('menuitem', { name: /Join with an invitation…/ })
-    ).toBeInTheDocument();
-    expect(
-      within(add).getByRole('menuitem', { name: /Run your own community/ })
+      within(add).getByRole('menuitem', { name: /Run your own space server/ })
     ).toBeInTheDocument();
   });
 
@@ -433,7 +431,7 @@ describe('SidebarHeaderBlock', () => {
     }));
     renderMobileSwitcher();
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const search = await screen.findByRole('searchbox', { name: 'Find a community' });
+    const search = await screen.findByRole('searchbox', { name: 'Find a space' });
     const manage = screen.getByRole('group', { name: 'Manage Community 4' });
     expect(within(manage).getByRole('menuitem', { name: /Move down/ })).toBeInTheDocument();
     fireEvent.click(within(manage).getByRole('menuitem', { name: /Move up/ }));
@@ -443,7 +441,7 @@ describe('SidebarHeaderBlock', () => {
     });
 
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    fireEvent.change(await screen.findByRole('searchbox', { name: 'Find a community' }), {
+    fireEvent.change(await screen.findByRole('searchbox', { name: 'Find a space' }), {
       target: { value: 'Community 7' },
     });
     expect(screen.getByRole('radio', { name: /Community 7/ })).toBeInTheDocument();
@@ -1187,14 +1185,14 @@ describe('the context switcher’s lifecycle actions', () => {
     mockConnections = [alpha()];
     const manage = await openManageAlpha();
     // Every row that leaves the app says where, in its accessible name.
-    for (const name of ['Invite people', 'Community settings', 'Leave community…'])
+    for (const name of ['Invite people', 'Space settings', 'Leave space…'])
       expect(
         within(manage).getByRole('menuitem', { name: `${name}, opens on a.example.com` })
       ).toBeInTheDocument();
     // Disconnect stays in the app, so it carries no such cue.
     expect(within(manage).getByRole('menuitem', { name: 'Disconnect…' })).toBeInTheDocument();
 
-    fireEvent.click(within(manage).getByRole('menuitem', { name: /Community settings/ }));
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Space settings/ }));
     expect(mockOpenExternalLink).toHaveBeenLastCalledWith(
       'https://a.example.com/c/remote-a/settings'
     );
@@ -1212,7 +1210,7 @@ describe('the context switcher’s lifecycle actions', () => {
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     fireEvent.click(
       within(await screen.findByRole('group', { name: 'Manage Alpha' })).getByRole('menuitem', {
-        name: /Leave community/,
+        name: /Leave space/,
       })
     );
     expect(mockOpenExternalLink).toHaveBeenLastCalledWith(
@@ -1268,9 +1266,7 @@ describe('the context switcher’s lifecycle actions', () => {
     ];
     const manage = await openManageAlpha();
     expect(within(manage).queryByRole('menuitem', { name: /Invite/ })).not.toBeInTheDocument();
-    expect(
-      within(manage).getByRole('menuitem', { name: /Community settings/ })
-    ).toBeInTheDocument();
+    expect(within(manage).getByRole('menuitem', { name: /^Space settings/ })).toBeInTheDocument();
   });
 
   it('shows no Community actions while this DorkOS is selected', async () => {
@@ -1279,7 +1275,7 @@ describe('the context switcher’s lifecycle actions', () => {
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     await screen.findByRole('dialog');
     expect(screen.queryByRole('group', { name: /Manage/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Add community' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Add a space' })).toBeInTheDocument();
   });
 
   it('confirms before disconnecting, and then leaves only the Community it disconnected', async () => {
@@ -1503,55 +1499,73 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('connects a community in place and sends running your own server to the guide', async () => {
+  it('connects a space in place and sends running your own server to the guide', async () => {
     renderMobileSwitcher();
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const add = within(await screen.findByRole('group', { name: 'Add community' }));
-    fireEvent.click(add.getByRole('menuitem', { name: /Connect a community…/ }));
+    const add = within(await screen.findByRole('group', { name: 'Add a space' }));
+    fireEvent.click(add.getByRole('menuitem', { name: /Join a space…/ }));
     // The form opens here; nothing sends the person to Connections.
-    expect(await screen.findByLabelText('Community address')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Space address or invitation link')).toBeInTheDocument();
     expect(screen.getByLabelText('Name for this installation')).toBeInTheDocument();
     expect(mockOpenConnections).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() =>
-      expect(screen.queryByLabelText('Community address')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Space address or invitation link')).not.toBeInTheDocument()
     );
 
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     fireEvent.click(
-      within(await screen.findByRole('group', { name: 'Add community' })).getByRole('menuitem', {
-        name: /Run your own community/,
+      within(await screen.findByRole('group', { name: 'Add a space' })).getByRole('menuitem', {
+        name: /Run your own space server/,
       })
     );
     expect(mockOpenExternalLink).toHaveBeenCalledWith(
-      'https://dorkos.ai/docs/guides/cli-usage#community-server'
+      'https://dorkos.ai/docs/guides/cli-usage#space-server'
     );
   });
 
   // Purpose: an install with no DorkOS account must neither show the hosted
   // entry points nor ask the account anything (spec P5). Fails if the rows
   // render inert or the list is read anyway.
-  it('offers no hosted community rows, and asks nothing, while unlinked', async () => {
+  it('offers no Start or Your spaces rows, and asks nothing, while unlinked', async () => {
     renderMobileSwitcher();
     await waitFor(() => expect(mockGetCloudStatus).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const add = within(await screen.findByRole('group', { name: 'Add community' }));
-    expect(add.getByRole('menuitem', { name: /Connect a community/ })).toBeInTheDocument();
-    expect(add.queryByRole('menuitem', { name: /Start a community/ })).not.toBeInTheDocument();
-    expect(add.queryByRole('menuitem', { name: /Move a community here/ })).not.toBeInTheDocument();
+    const add = within(await screen.findByRole('group', { name: 'Add a space' }));
+    expect(add.getByRole('menuitem', { name: /Join a space/ })).toBeInTheDocument();
+    expect(add.queryByRole('menuitem', { name: /Start a space/ })).not.toBeInTheDocument();
+    expect(add.queryByRole('menuitem', { name: /Your spaces/ })).not.toBeInTheDocument();
     expect(mockListHostedCommunities).not.toHaveBeenCalled();
   });
 
-  it('offers Start and Move while linked, and Start opens its form', async () => {
+  // Purpose: linked, Start and Join lead and Your spaces carries the move
+  // (spec §4). Fails if Move comes back as its own row, Your spaces hides
+  // behind having a space already, or Start stops opening its form.
+  it('offers Start and Your spaces while linked; Your spaces offers Move one here', async () => {
     mockCloudLinked = true;
     renderMobileSwitcher();
     await waitFor(() => expect(mockListHostedCommunities).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const add = within(await screen.findByRole('group', { name: 'Add community' }));
-    expect(add.getByRole('menuitem', { name: /Move a community here…/ })).toBeInTheDocument();
-    fireEvent.click(add.getByRole('menuitem', { name: /Start a community…/ }));
-    expect(await screen.findByLabelText('Community name')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start community' })).toBeDisabled();
+    const add = within(await screen.findByRole('group', { name: 'Add a space' }));
+    expect(add.getAllByRole('menuitem').map((row) => row.textContent)).toEqual([
+      'Start a space…',
+      'Join a space…',
+      'Your spaces',
+      'Run your own space server',
+    ]);
+    fireEvent.click(add.getByRole('menuitem', { name: /Start a space…/ }));
+    expect(await screen.findByLabelText('Space name')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start space' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: 'Add a space' })).getByRole('menuitem', {
+        name: 'Your spaces',
+      })
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Move one here' }));
+    expect(await screen.findByText('First, get an export of the old space:')).toBeInTheDocument();
   });
 
   it('offers nothing when the linked account does not host communities', async () => {
@@ -1560,42 +1574,46 @@ describe('the context switcher’s lifecycle actions', () => {
     renderMobileSwitcher();
     await waitFor(() => expect(mockListHostedCommunities).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const add = within(await screen.findByRole('group', { name: 'Add community' }));
-    expect(add.queryByRole('menuitem', { name: /Start a community/ })).not.toBeInTheDocument();
+    const add = within(await screen.findByRole('group', { name: 'Add a space' }));
+    expect(add.queryByRole('menuitem', { name: /Start a space/ })).not.toBeInTheDocument();
+    expect(add.queryByRole('menuitem', { name: /Your spaces/ })).not.toBeInTheDocument();
   });
 
-  it('opens an invitation link on its own site, and refuses anything else', async () => {
+  // Purpose: Join is one flow (spec §4). An invitation opens on the space's
+  // site and the form stays on Connect with the space's address filled in,
+  // the invite left out; an address connects. Fails if an invitation pairs
+  // nothing and closes, if the invite is kept, or if a lookalike link opens.
+  it('opens an invitation on its own site, then stays on Connect with the address filled', async () => {
     renderMobileSwitcher();
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     fireEvent.click(
-      within(await screen.findByRole('group', { name: 'Add community' })).getByRole('menuitem', {
-        name: /Join with an invitation…/,
+      within(await screen.findByRole('group', { name: 'Add a space' })).getByRole('menuitem', {
+        name: /Join a space…/,
       })
     );
-    const field = await screen.findByLabelText('Invitation link');
-    for (const refused of [
+    const field = await screen.findByLabelText('Space address or invitation link');
+    // Not invitations: plain http off this machine, and a link carrying a sign-in.
+    // Each is treated as an address, so it is never opened as an invite.
+    for (const notInvite of [
       'http://a.example.com/c/remote-a/join#invite=secret',
       'https://someone:pw@a.example.com/c/remote-a/join#invite=secret',
     ]) {
-      fireEvent.change(field, { target: { value: refused } });
-      expect(screen.queryByText(/^Opens on/)).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
-      expect(await screen.findByRole('alert')).toHaveTextContent('That isn’t an invitation link.');
+      fireEvent.change(field, { target: { value: notInvite } });
+      expect(screen.queryByRole('button', { name: 'Open invitation' })).not.toBeInTheDocument();
     }
-    fireEvent.change(field, { target: { value: 'https://a.example.com/c/remote-a' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('That isn’t an invitation link.');
     expect(mockOpenExternalLink).not.toHaveBeenCalled();
 
     const link = 'https://a.example.com/c/remote-a/join#invite=secret';
     fireEvent.change(field, { target: { value: link } });
-    // Where it will open is said before it opens.
-    expect(screen.getByText('Opens on a.example.com')).toBeInTheDocument();
-    expect(field).toHaveAccessibleDescription('Opens on a.example.com');
     fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
     expect(mockOpenExternalLink).toHaveBeenCalledWith(link);
-    await waitFor(() => expect(screen.queryByLabelText('Invitation link')).not.toBeInTheDocument());
-    // Joining is not pairing: nothing here connected this installation.
+    // Back on Connect: the space's own address, never the invite.
+    expect(field).toHaveValue('https://a.example.com/c/remote-a');
+    expect(field).toHaveAccessibleDescription(
+      'Finish joining on a.example.com in the tab that opened, then come back and connect.'
+    );
+    // Connect waits for this DorkOS's owner, which this test never confirms.
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
     expect(mockOpenConnections).not.toHaveBeenCalled();
   });
 
@@ -1631,27 +1649,28 @@ describe('the context switcher’s lifecycle actions', () => {
     );
   });
 
-  it('offers Create a community only for a host that says the person runs it', async () => {
+  it('offers Create a space, under Advanced, only for a server that says the person runs it', async () => {
     mockConnections = [alpha()];
     renderMobileSwitcher();
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    let add = within(await screen.findByRole('group', { name: 'Add community' }));
-    expect(add.queryByRole('menuitem', { name: /Create a community/ })).not.toBeInTheDocument();
+    let add = within(await screen.findByRole('group', { name: 'Add a space' }));
+    expect(add.queryByRole('menuitem', { name: /Create a space/ })).not.toBeInTheDocument();
     cleanup();
 
     mockConnections = [alpha({ hostOperator: true })];
     renderMobileSwitcher();
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    add = within(await screen.findByRole('group', { name: 'Add community' }));
-    // In the spec's order: connect, join, create, then run your own.
+    add = within(await screen.findByRole('group', { name: 'Add a space' }));
+    // In the spec's order: join, then the self-run paths under Advanced.
     expect(add.getAllByRole('menuitem').map((row) => row.textContent)).toEqual([
-      'Connect a community…',
-      'Join with an invitation…',
-      'Create a community…, opens on a.example.com',
-      'Run your own community',
+      'Join a space…',
+      'Create a space on your server…, opens on a.example.com',
+      'Run your own space server',
     ]);
     fireEvent.click(
-      add.getByRole('menuitem', { name: 'Create a community…, opens on a.example.com' })
+      add.getByRole('menuitem', {
+        name: 'Create a space on your server…, opens on a.example.com',
+      })
     );
     // The host's own administration page, on the connection's pinned origin.
     expect(mockOpenExternalLink).toHaveBeenCalledWith('https://a.example.com/host');
@@ -1678,21 +1697,21 @@ describe('the context switcher’s lifecycle actions', () => {
     ];
     renderMobileSwitcher();
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const add = within(await screen.findByRole('group', { name: 'Add community' }));
+    const add = within(await screen.findByRole('group', { name: 'Add a space' }));
     expect(
       add
-        .getAllByRole('menuitem', { name: /^Create a community/ })
+        .getAllByRole('menuitem', { name: /^Create a space/ })
         .map((row) => row.getAttribute('data-menu-item-id'))
     ).toEqual(['add-community-create-a.example.com', 'add-community-create-b.example.com']);
     fireEvent.click(
       add.getByRole('menuitem', {
-        name: 'Create a community on b.example.com…, opens on b.example.com',
+        name: 'Create a space on b.example.com…, opens on b.example.com',
       })
     );
     expect(mockOpenExternalLink).toHaveBeenCalledWith('https://b.example.com/host');
   });
 
-  it('reaches Create a community from the keyboard in the desktop menu', async () => {
+  it('reaches Create a space from the keyboard in the desktop menu, through Advanced', async () => {
     mockSearch = { community: 'a' };
     mockConnections = [alpha({ hostOperator: true })];
     renderBlock();
@@ -1702,12 +1721,18 @@ describe('the context switcher’s lifecycle actions', () => {
     const manage = screen.getByRole('menuitem', { name: /Manage Alpha/ });
     fireEvent.keyDown(selected, { key: 'ArrowDown' });
     await waitFor(() => expect(manage).toHaveFocus());
-    const add = screen.getByRole('menuitem', { name: /Add community/ });
+    const add = screen.getByRole('menuitem', { name: /Add a space/ });
     fireEvent.keyDown(manage, { key: 'ArrowDown' });
     await waitFor(() => expect(add).toHaveFocus());
     fireEvent.keyDown(add, { key: 'ArrowRight' });
+    const join = await screen.findByRole('menuitem', { name: /Join a space…/ });
+    await waitFor(() => expect(join).toHaveFocus());
+    const advanced = screen.getByRole('menuitem', { name: 'Advanced' });
+    fireEvent.keyDown(join, { key: 'ArrowDown' });
+    await waitFor(() => expect(advanced).toHaveFocus());
+    fireEvent.keyDown(advanced, { key: 'ArrowRight' });
     const create = await screen.findByRole('menuitem', {
-      name: 'Create a community…, opens on a.example.com',
+      name: 'Create a space on your server…, opens on a.example.com',
     });
     fireEvent.keyDown(create, { key: 'Enter' });
     expect(mockOpenExternalLink).toHaveBeenCalledWith('https://a.example.com/host');
@@ -1726,7 +1751,7 @@ describe('the context switcher’s lifecycle actions', () => {
     fireEvent.keyDown(selected, { key: 'ArrowDown' });
     await waitFor(() => expect(trigger).toHaveFocus());
     fireEvent.keyDown(trigger, { key: 'ArrowRight' });
-    const settings = await screen.findByRole('menuitem', { name: /Community settings/ });
+    const settings = await screen.findByRole('menuitem', { name: /^Space settings/ });
     fireEvent.keyDown(settings, { key: 'Enter' });
     expect(mockOpenExternalLink).toHaveBeenCalledWith('https://a.example.com/c/remote-a/settings');
   });

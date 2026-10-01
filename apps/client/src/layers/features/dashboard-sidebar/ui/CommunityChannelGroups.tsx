@@ -17,13 +17,13 @@ export function CommunityChannelGroups() {
   if (connections.isPending)
     return (
       <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
-        Loading community…
+        Loading space…
       </p>
     );
   if (connections.isError)
     return (
       <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
-        Communities could not be loaded.{' '}
+        Spaces could not be loaded.{' '}
         <Button variant="ghost" size="sm" onClick={() => void connections.refetch()}>
           Retry
         </Button>
@@ -33,13 +33,13 @@ export function CommunityChannelGroups() {
   if (!connection)
     return (
       <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
-        This community is no longer connected.
+        This space is no longer connected.
       </p>
     );
   if (connection.status !== 'connected')
     return (
       <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
-        Reconnect this community to open its channels.
+        Reconnect this space to open its channels.
       </p>
     );
   return <CommunityChannels connection={connection} />;
@@ -75,7 +75,7 @@ function CommunityChannels({ connection }: { connection: CommunityConnectionDesc
       )}
       {access.verified && rooms.isError && (
         <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
-          Community unavailable.{' '}
+          Space unavailable.{' '}
           <Button variant="ghost" size="sm" onClick={() => void rooms.refetch()}>
             Retry
           </Button>

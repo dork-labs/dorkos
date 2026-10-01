@@ -130,12 +130,12 @@ function fail(
   if (error instanceof RemoteConnectionAuthorizationError) {
     res.status(409).json({
       code: 'COMMUNITY_RECONNECT_REQUIRED',
-      error: 'Reconnect this community to continue.',
+      error: 'Reconnect this space to continue.',
     });
     return;
   }
   if (error instanceof RemoteConnectionNotFoundError) {
-    res.status(404).json({ error: 'Community connection not found.' });
+    res.status(404).json({ error: 'Space connection not found.' });
     return;
   }
   const refusal = communityRefusal(error, action);
@@ -143,12 +143,12 @@ function fail(
     res.status(refusal.status).json({ code: refusal.code, error: refusal.error });
     return;
   }
-  res.status(502).json({ error: 'Community unavailable.' });
+  res.status(502).json({ error: 'Space unavailable.' });
 }
 
 class RemoteConnectionCapabilityError extends Error {
   constructor() {
-    super('This community connection does not allow that action.');
+    super('This space connection does not allow that action.');
     this.name = 'RemoteConnectionCapabilityError';
   }
 }
@@ -175,7 +175,7 @@ async function verifiedConnection(
   const gone = communityGoneRefusal(connection.access?.lastKnown?.lifecycle);
   if (gone) throw new RemoteCommunityGoneError(gone);
   if (!connection.access || connection.access.state !== 'verified')
-    throw new Error('Community unavailable');
+    throw new Error('Space unavailable');
   if (!connection.access.effective[capability]) throw new RemoteConnectionCapabilityError();
   return connection;
 }
@@ -244,7 +244,7 @@ export function createRemoteCommunitiesRouter(): Router {
       const adapter = getRemoteCommunityAdapter(ref.data, owner);
       const connected = await adapter.connect();
       if (connected.status === 'unauthorized') throw new RemoteConnectionAuthorizationError();
-      if (connected.status !== 'connected') throw new Error('Community unavailable');
+      if (connected.status !== 'connected') throw new Error('Space unavailable');
       const rooms = (await adapter.listRooms()).map((room) =>
         remoteRoom(room, connection.remoteCommunityId, connection.access!)
       );
@@ -563,7 +563,7 @@ export function createRemoteCommunitiesRouter(): Router {
     const roomId = z.string().min(1).max(128).safeParse(req.params.roomId);
     const idempotencyKey = z.string().min(1).max(128).safeParse(req.params.idempotencyKey);
     if (!ref.success || !roomId.success || !idempotencyKey.success) {
-      res.status(400).json({ error: 'Use valid community, room, and delivery identifiers.' });
+      res.status(400).json({ error: 'Use valid space, room, and delivery identifiers.' });
       return;
     }
     try {
@@ -674,7 +674,7 @@ export function createRemoteCommunitiesRouter(): Router {
     if (!owner || !ref.success) return;
     const input = RemoteCommunityEnrollRequestSchema.safeParse(req.body ?? {});
     if (!input.success) {
-      res.status(400).json({ error: 'Use a valid community handle.' });
+      res.status(400).json({ error: 'Use a valid space handle.' });
       return;
     }
     try {

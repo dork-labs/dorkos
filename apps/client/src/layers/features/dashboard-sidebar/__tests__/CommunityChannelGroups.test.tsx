@@ -116,7 +116,7 @@ describe('community channel discovery', () => {
   it('contains a selected community failure without drawing another community', async () => {
     const transport = mount('a', true);
     await waitFor(() => expect(transport.listRemoteCommunityRooms).toHaveBeenCalledWith('a'));
-    expect(await screen.findByText(/Community unavailable/)).toBeInTheDocument();
+    expect(await screen.findByText(/Space unavailable/)).toBeInTheDocument();
     expect(transport.listRemoteCommunityRooms).not.toHaveBeenCalledWith('b');
   });
 });

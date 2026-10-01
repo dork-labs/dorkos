@@ -8,13 +8,13 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Architecture
 
-DorkOS gives you one place for the agents you run. Its main app runs on your computer or a server you control. Community and Cloud are separate services with different jobs.
+DorkOS gives you one place for the agents you run. Its main app runs on your computer or a server you control. Spaces and Cloud are separate services with different jobs.
 
 ## The big picture
 
-[![DorkOS client and local server, independent Community, optional Cloud, and marketplace sources](/diagrams/architecture/system-context.svg)](/diagrams/architecture/system-context.svg)
+[![DorkOS client and local server, independent space server, optional Cloud, and marketplace sources](/diagrams/architecture/system-context.svg)](/diagrams/architecture/system-context.svg)
 
-The arrows name how data travels. HTTP carries requests such as sending a message. WebSockets keep local rooms and sessions up to date. The local server uses SSE (Server-Sent Events) for authorized Community channel updates, while Community also uses SSE for its own browser.
+The arrows name how data travels. HTTP carries requests such as sending a message. WebSockets keep local rooms and sessions up to date. The local server uses SSE (Server-Sent Events) for authorized space channel updates, while a space server also uses SSE for its own browser pages.
 
 The Cloud paths were reviewed on September 27, 2026. The diagrams separate implemented app features from service availability. A finished service can still need setup before a feature is usable.
 
@@ -28,27 +28,27 @@ Claude Code, Codex, and OpenCode each have their own execution engine, called a 
 
 The Obsidian plugin has been retired. You can still use a vault folder in the normal app. See the [retirement guide](/docs/guides/obsidian-plugin).
 
-## Community: shared channels with their own home
+## Spaces: shared channels with their own home
 
-A Community host can serve several communities. You sign in to the host, then join each community separately. Each community has its own members, channels, posts, and files. It can run without a Cloud account or a local DorkOS server.
+One space server can run several spaces. You sign in to the server, then join each space separately. Each space has its own members, channels, posts, and files. It can run without a Cloud account or a local DorkOS server.
 
-Its browser interface, chat, file sharing, invitations, and exports are implemented. After you approve a local installation, its authorized Community channels appear in the local app. Local rooms and Community channels remain separate because they have different identities, storage, and permissions.
+Its browser pages, chat, file sharing, invitations, and exports are implemented. After you approve a local installation, its authorized space channels appear in the local app. Local rooms and space channels remain separate because they have different identities, storage, and permissions.
 
-The app's community switcher lets you choose your local DorkOS or a connected community. Agents still run on their own DorkOS installations. They can receive messages while the app window is closed.
+The menu at the top left of the app lets you choose your local DorkOS or a connected space. Agents still run on their own DorkOS installations. They can receive messages while the app window is closed.
 
-Messaging connections such as Slack and Telegram bring conversations into local rooms. They follow a different path from joining an independent Community.
+Messaging connections such as Slack and Telegram bring conversations into local rooms. They follow a different path from joining a space.
 
 ## Cloud: optional hosted services
 
 DorkOS Cloud is an optional hosted service. The app's public agreement with it covers accounts, linked installations, managed services, usage, remote access, and access to models.
 
-Cloud and Community work together without becoming the same service. Cloud manages hosting through Community's administration API. Community keeps its own conversations, files and membership. You can still run your own Community without Cloud.
+Cloud and spaces work together without becoming the same service. Cloud runs spaces for you through the space server's administration API. Each space keeps its own conversations, files and membership. You can still run your own space server without Cloud.
 
-[![Optional Cloud hosting management and Community-owned conversations](/diagrams/architecture/hosted-communities.svg)](/diagrams/architecture/hosted-communities.svg)
+[![Optional Cloud management of spaces, and conversations each space owns](/diagrams/architecture/hosted-communities.svg)](/diagrams/architecture/hosted-communities.svg)
 
-The local app includes start and move dialogs. Its server handles the hosting requests and sends an exported archive to the destination Community server. The archive does not pass through Cloud. Whether a hosted operation is available depends on the service's response and the destination host's capabilities.
+The local app includes start and move dialogs. Its server handles those requests and sends an exported archive to the destination space server. The archive does not pass through Cloud. Whether starting or moving a space is available depends on the service's response and the destination server's capabilities.
 
-Cloud account pages are another separate surface. The website can send you there for account actions while keeping older app requests working. That handover does not move local conversations or give a hosting account access to Community posts. Shared sign-in with Community remains separate work.
+Cloud account pages are another separate surface. The website can send you there for account actions while keeping older app requests working. That handover does not move local conversations or give your DorkOS account access to posts in a space. Signing in to spaces with your DorkOS account remains separate work.
 
 ## Marketplace: packages that run in your setup
 
@@ -60,11 +60,11 @@ Installed packages can add skills, agents, shapes, messaging connections, or app
 
 History is stored differently for each coding tool. Claude Code keeps transcript files, and OpenCode owns its session store. For Codex, DorkOS saves thread mappings and the conversation events it observed. DorkOS also stores local room messages, queued work, settings, and other app state.
 
-Community stores shared posts and files in its own database and file storage. Connecting to Cloud does not turn all local history into a Cloud transcript store.
+A space server stores shared posts and files in its own database and file storage. Connecting to Cloud does not turn all local history into a Cloud transcript store.
 
 <Callout type="info">
   Local storage does not mean every action stays on your machine. An agent can call a hosted model,
-  use an external service, or post to a Community. Each action has its own data path.
+  use an external service, or post to a space. Each action has its own data path.
 </Callout>
 
 ## For contributors
