@@ -770,3 +770,58 @@ it('never lets held files fill the pending-deletion sweep’s batch', async () =
   expect(await storedKeys([heldKey, otherKey])).toEqual([heldKey]);
   await expectStatus(await legalHold('DELETE', held.id), 200, 'release');
 });
+
+it('still refuses leaving an archived, suspended, or deleting community', async () => {
+  // Purpose: a hold lets a member leave (DOR-2588), and only a hold. Fails if leaving stops
+  // checking the community's state at all, which would let a member leave an archived
+  // community or one being deleted.
+  const withMember = async () => {
+    const c = await community();
+    const member = await admit(h, c.id, c.owner.cookie, {
+      name: 'Member',
+      email: `${randomUUID()}@legal.test`,
+    });
+    return { c, member };
+  };
+  const leave = async ({ c, member }: Awaited<ReturnType<typeof withMember>>) => {
+    const response = await h.call(`${tenant(c.id)}/me/leave`, {
+      cookie: member.cookie,
+      body: { password: TENANCY_PASSWORD, communityName: c.name },
+    });
+    return { status: response.status, code: ((await response.json()) as { code: string }).code };
+  };
+  const stillMember = async ({ c, member }: Awaited<ReturnType<typeof withMember>>) =>
+    (
+      await h.pool.query<{ active: boolean }>(
+        'SELECT active FROM members WHERE id=$1 AND community_id=$2',
+        [member.memberId, c.id]
+      )
+    ).rows[0].active;
+
+  const archived = await withMember();
+  await expectStatus(
+    await h.call(`${tenant(archived.c.id)}/owner/lifecycle`, {
+      cookie: archived.c.owner.cookie,
+      body: {
+        action: 'archive',
+        lifecycleVersion: (await state(archived.c.id)).lifecycle_version,
+        password: TENANCY_PASSWORD,
+        confirmName: archived.c.name,
+      },
+    }),
+    200,
+    'owner archives'
+  );
+  expect(await leave(archived)).toEqual({ status: 423, code: 'COMMUNITY_ARCHIVED' });
+  expect(await stillMember(archived)).toBe(true);
+
+  const suspended = await withMember();
+  await expectStatus(await host(suspended.c.id, 'suspend'), 200, 'suspend');
+  expect(await leave(suspended)).toEqual({ status: 503, code: 'COMMUNITY_SUSPENDED' });
+  expect(await stillMember(suspended)).toBe(true);
+
+  const deleting = await withMember();
+  await ownerDeletesAndItIsDue(deleting.c);
+  expect(await leave(deleting)).toEqual({ status: 423, code: 'COMMUNITY_DELETION_PENDING' });
+  expect(await stillMember(deleting)).toBe(true);
+});

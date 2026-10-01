@@ -291,7 +291,7 @@ export function Manage({
         <h2>{held ? 'On hold' : readOnly ? 'Archived history' : 'Make room for your people.'}</h2>
         <p className="muted">
           {held
-            ? 'The host has put this community on hold. History stays readable and the owner can still export it. Nothing can change until the host releases the hold.'
+            ? 'The host has put this community on hold. History stays readable and the owner can still export it. Nothing else can change until the host releases the hold, but members can still leave.'
             : readOnly
               ? 'History and exports remain available. Restore this community before changing content or access.'
               : 'Manage channels and access without leaving the conversation.'}
