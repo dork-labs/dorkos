@@ -1,3 +1,4 @@
+import { createDocChannelHttpComposition } from './services/canvas/doc-channel/http-composition.js';
 import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import path from 'path';
@@ -1839,6 +1840,7 @@ async function start() {
   const readCursorService = new ReadCursorService(new ReadCursorStore(db));
   setReadCursorService(readCursorService);
 
+  const docChannelRuntimePrincipals: { current?: ConnectorRuntimePrincipalService } = {};
   const roomAttachmentBytes = new LocalRoomAttachmentStore(dorkHome);
   // Both the worker and native stream lifecycle must remain inert until Mesh
   // has reconciled the on-disk manifest registry for this process boot.
@@ -1853,8 +1855,11 @@ async function start() {
     authors: roomAuthors,
     bridges: roomBridges,
     welcomeBack: welcomeBackGreeter,
+    canvasDocuments,
   } = createRoomSubsystem({
     db,
+    runtimePrincipalCurrent: (proof) =>
+      docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
     readCursors: readCursorService,
     createMirrorRuntime: ({ store, authors, attachments }) => {
       remoteCommunityRuntime = new CommunityOutboxRuntime({
@@ -3148,6 +3153,19 @@ async function start() {
       );
     },
   });
+  app.locals.docChannelHttp = createDocChannelHttpComposition({
+    db,
+    documents: canvasDocuments,
+    rooms: roomService,
+    roomStore,
+    roomRepos: roomRepoStore,
+    approvals: approvalService,
+    installationId: connectorInstallationId,
+    runtimePrincipalCurrent: (proof) =>
+      docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
+    revalidateRuntime: (proof) =>
+      docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
+  });
   // An answer given after the in-session hold gave up has to reach the agent that
   // asked, or a person ends up relaying it by hand — which is the bug DOR-1931
   // reports. The subscription lives for the life of the process; its listener does
@@ -3564,6 +3582,7 @@ async function start() {
       })
     : undefined;
   if (connectorRuntimePrincipals) await connectorRuntimePrincipals.initializeBoot();
+  docChannelRuntimePrincipals.current = connectorRuntimePrincipals;
   let connectorAgentRequests: ConnectorAgentRequestService | undefined;
   let recoverAcceptedPrivateSessions: (() => void) | undefined;
   let acceptedPrivateSessionCursor: string | undefined;

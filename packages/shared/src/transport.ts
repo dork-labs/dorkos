@@ -1,3 +1,8 @@
+import type {
+  PageEvent,
+  CanvasChannelEventReceipt,
+  CanvasChannelReplayResponse,
+} from './canvas-channel-schemas.js';
 /**
  * Transport interface — the hexagonal architecture port that decouples the React client
  * from its backend. The supported `HttpTransport` uses HTTP/SSE to Express.
@@ -1077,6 +1082,16 @@ export interface Transport
    * @param filePath - File path, absolute or relative to `cwd`.
    */
   mediaUrl(cwd: string, filePath: string): string | null;
+
+  /** Record a document event; its receipt does not imply a completed agent turn. */
+  ingestCanvasEvent(documentId: string, event: PageEvent): Promise<CanvasChannelEventReceipt>;
+  /** Read a bounded document event page and current state. Honor resetRequired before retrying old inputs. */
+  getCanvasChannel(
+    documentId: string,
+    query?: { since?: number; limit?: number }
+  ): Promise<CanvasChannelReplayResponse>;
+  /** Inspect a retained event receipt without replaying or launching work. */
+  getCanvasEventReceipt(documentId: string, eventId: string): Promise<CanvasChannelEventReceipt>;
 
   // --- Session canvas (server-owned; spec `canvas-agent-seat` §1.6) ---
 
