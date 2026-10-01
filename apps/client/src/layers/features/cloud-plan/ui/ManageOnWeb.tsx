@@ -3,8 +3,9 @@ import { ExternalLink } from 'lucide-react';
 import { formatMoney } from '@dork-labs/cloud-api/display';
 import type { CloudBillingPage } from '@dorkos/shared/cloud-schemas';
 import { openExternalLink } from '@/layers/shared/lib';
-import { Badge, Button, FieldCard, FieldCardContent } from '@/layers/shared/ui';
+import { Button, FieldCard, FieldCardContent } from '@/layers/shared/ui';
 import {
+  useAccountExport,
   useCloudOffers,
   useOpenBillingPage,
   type BillingNotice,
@@ -20,7 +21,7 @@ const INTERVAL_WORDING: Record<string, string> = {
 
 /**
  * Where money changes: the billing portal, buying credits and changing plan,
- * each a page in the person's own browser.
+ * each a page in the person's own browser; and a copy of the account's data.
  *
  * Self-contained so it can sit wherever account settings live. It owns one
  * {@link useOpenBillingPage} and shares it with every button inside, so only
@@ -54,6 +55,7 @@ export function ManageOnWeb() {
         </div>
         <PlanOffers billing={billing} currentPlanId={data.entitlements.planId} />
         <BillingNoticeView notice={billing.notice} />
+        <ExportAccountData />
       </FieldCardContent>
     </FieldCard>
   );
@@ -95,17 +97,25 @@ export function BillingPageButton({ billing, page, children }: BillingPageButton
 export interface PlanOffersProps {
   /** The shared opener, from {@link useOpenBillingPage}. */
   billing: OpenBillingPage;
-  /** The account's current plan, to mark it instead of offering it again. */
+  /** The account's current plan, as the entitlement names it. */
   currentPlanId: string;
 }
 
 /**
- * What the account could switch to, each with a button to its checkout page.
+ * Changing plan.
  *
- * In the order the service sent, never re-sorted, with nothing marked as
- * recommended: the list is the service's and so is its order. A price the app
- * cannot read is left out rather than guessed; the checkout page shows it.
- * Nothing on sale renders nothing.
+ * **An account already on something the service sells changes plan in the
+ * billing portal, never through checkout.** Checkout starts a new
+ * subscription, so offering it beside a live one would bill the person twice.
+ * Whether the account is on one is read from the offers themselves: the
+ * current plan's `planId` appears among them (once per interval, so a month
+ * and a year row share it).
+ *
+ * Only an account on none of them sees the offers, each with a button to its
+ * checkout page, in the order the service sent and never re-sorted, with
+ * nothing marked as recommended. A price the app cannot read is left out
+ * rather than guessed; the checkout page shows it. Nothing on sale, or no
+ * answer yet, renders nothing.
  *
  * @param props - The opener and the current plan.
  */
@@ -114,14 +124,27 @@ export function PlanOffers({ billing, currentPlanId }: PlanOffersProps) {
   if (!data?.available || data.offers.offers.length === 0) return null;
   const { offers, denomination } = data.offers;
 
+  if (offers.some((offer) => offer.planId === currentPlanId)) {
+    return (
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Change plan</p>
+        <p className="text-muted-foreground text-sm">
+          Switch to another plan, or end yours, on the billing page.
+        </p>
+        <BillingPageButton billing={billing} page="portal">
+          Change plan
+        </BillingPageButton>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium">Change plan</p>
+      <p className="text-sm font-medium">Choose a plan</p>
       <ul className="divide-y rounded-md border">
         {offers.map((offer) => {
           const price = denomination ? formatMoney(offer.amountMicro, denomination) : null;
           const interval = INTERVAL_WORDING[offer.interval];
-          const current = offer.planId === currentPlanId;
           const opening = billing.pending?.skuId === offer.skuId;
           return (
             <li
@@ -136,26 +159,69 @@ export function PlanOffers({ billing, currentPlanId }: PlanOffersProps) {
                   </p>
                 )}
               </div>
-              {current ? (
-                <Badge variant="secondary">Your plan</Badge>
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={billing.pending !== null}
-                  aria-busy={opening}
-                  aria-label={`Choose ${offer.displayName}${interval ? `, billed ${interval}` : ''}`}
-                  onClick={() => billing.open({ page: 'checkout', skuId: offer.skuId })}
-                >
-                  {opening ? 'Opening…' : 'Choose'}
-                  <ExternalLink className="size-3.5" aria-hidden />
-                </Button>
-              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={billing.pending !== null}
+                aria-busy={opening}
+                aria-label={`Choose ${offer.displayName}${interval ? `, billed ${interval}` : ''}`}
+                onClick={() => billing.open({ page: 'checkout', skuId: offer.skuId })}
+              >
+                {opening ? 'Opening…' : 'Choose'}
+                <ExternalLink className="size-3.5" aria-hidden />
+              </Button>
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Ask for a copy of everything the DorkOS account holds, and say where it
+ * stands: being prepared (the account gets an email when it is ready), ready
+ * with its download, or why it could not be asked for.
+ *
+ * Self-contained: it owns its own request and renders nothing with no cloud
+ * account.
+ */
+export function ExportAccountData() {
+  const { data } = useCloudPlan();
+  const { state, request, download } = useAccountExport();
+  if (!data?.available) return null;
+
+  return (
+    <div className="space-y-2 border-t pt-3">
+      <p className="text-sm font-medium">Your data</p>
+      {state.kind === 'requested' ? (
+        state.export.downloadUrl !== null ? (
+          <div className="space-y-2">
+            <p className="text-sm">Your export is ready.</p>
+            <Button type="button" size="sm" variant="outline" onClick={download}>
+              Download your data
+              <ExternalLink className="size-3.5" aria-hidden />
+            </Button>
+          </div>
+        ) : (
+          <p role="status" className="text-sm">
+            Your export is being prepared. We’ll email you a link when it’s ready.
+          </p>
+        )
+      ) : (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={state.kind === 'requesting'}
+          aria-busy={state.kind === 'requesting'}
+          onClick={request}
+        >
+          {state.kind === 'requesting' ? 'Asking…' : 'Export your account data'}
+        </Button>
+      )}
+      {state.kind === 'failed' && <BillingNoticeView notice={state.notice} />}
     </div>
   );
 }

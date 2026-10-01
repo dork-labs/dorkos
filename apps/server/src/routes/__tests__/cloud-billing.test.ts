@@ -16,6 +16,7 @@ import hostedPageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/hosted-p
 import offersFixture from '@dork-labs/cloud-api/fixtures/v1/billing/offers.json' with { type: 'json' };
 import offersEmptyFixture from '@dork-labs/cloud-api/fixtures/v1/billing/offers-empty.json' with { type: 'json' };
 import refusalFixture from '@dork-labs/cloud-api/fixtures/v1/problem/entitlement-required-action.json' with { type: 'json' };
+import exportFixture from '@dork-labs/cloud-api/fixtures/v1/session/account-export.json' with { type: 'json' };
 
 const config = vi.hoisted(() => ({ cloud: { instanceToken: 'tok_test' } as unknown }));
 vi.mock('../../services/core/config-manager.js', () => ({
@@ -23,6 +24,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
     get: (section: string) => (section === 'cloud' ? config.cloud : undefined),
     onChange: () => () => {},
   },
+}));
+
+// Where this instance reaches its DorkOS account. A real https origin by
+// default; a test that needs a service on this machine says so.
+const cloud = vi.hoisted(() => ({ baseUrl: 'https://account.example.invalid' }));
+vi.mock('../../services/core/auth/cloud-link-client.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/cloud-link-client.js')>()),
+  resolveCloudBaseUrl: () => cloud.baseUrl,
 }));
 
 // The link flow itself is not under test here; only its accessor is imported.
@@ -74,6 +83,7 @@ function fakeAccount(routes: Record<string, { status: number; body: unknown }>) 
 describe('billing-page routes', () => {
   beforeEach(() => {
     config.cloud = { instanceToken: 'tok_test' };
+    cloud.baseUrl = 'https://account.example.invalid';
   });
 
   afterEach(() => {
@@ -151,17 +161,138 @@ describe('billing-page routes', () => {
     it.each([
       ['plain http', 'http://pay.example.invalid/page'],
       ['a script', 'javascript:alert(1)'],
+      ['a data address', 'data:text/html,<script>alert(1)</script>'],
+      [
+        'plain http on this machine, to an account that is not on this machine',
+        'http://localhost:7000/hosted/portal',
+      ],
     ])('never hands the browser %s as a payment page', async (_label, url) => {
       fakeAccount({ '/v1/portal': { status: 200, body: { url } } });
       const res = await request(server).post('/api/cloud/billing/portal').expect(200);
       expect(res.body.ok).toBe(false);
       expect(JSON.stringify(res.body)).not.toContain(url);
     });
+
     it('lets a service on this machine answer over plain http, for local development', async () => {
+      cloud.baseUrl = 'http://localhost:7000';
       const url = 'http://localhost:7000/hosted/portal';
       fakeAccount({ '/v1/portal': { status: 200, body: { url } } });
       const res = await request(server).post('/api/cloud/billing/portal').expect(200);
       expect(res.body).toEqual({ ok: true, url });
+    });
+
+    it('hands on the address as the URL parser reads it', async () => {
+      fakeAccount({
+        '/v1/portal': { status: 200, body: { url: 'HTTPS://Pay.Example.Invalid/a b' } },
+      });
+      const res = await request(server).post('/api/cloud/billing/portal').expect(200);
+      expect(res.body).toEqual({ ok: true, url: 'https://pay.example.invalid/a%20b' });
+    });
+
+    it.each([
+      ['portal', '/v1/portal', 'Billing isn’t available on your account yet.'],
+      ['checkout', '/v1/checkout', 'Changing plan isn’t available on your account yet.'],
+      ['topup', '/v1/topup', 'Adding credits isn’t available on your account yet.'],
+    ])(
+      'says plainly that %s is not available, instead of the service`s own not-found prose',
+      async (page, v1Path, sentence) => {
+        const notFound = {
+          code: 'not_found',
+          status: 404,
+          title: 'Route not served',
+          detail: 'Developer prose about a route.',
+        };
+        fakeAccount({ [v1Path]: { status: 404, body: notFound } });
+        const res = await request(server)
+          .post(`/api/cloud/billing/${page}`)
+          .send({ skuId: 'sku_opaque_0001' })
+          .expect(200);
+        expect(res.body).toEqual({ ok: false, message: sentence });
+      }
+    );
+
+    it('treats a route that is not deployed at all the same way', async () => {
+      fakeAccount({ '/v1/topup': { status: 404, body: 'Not Found' } });
+      const res = await request(server).post('/api/cloud/billing/topup').expect(200);
+      expect(res.body).toEqual({
+        ok: false,
+        message: 'Adding credits isn’t available on your account yet.',
+      });
+    });
+  });
+
+  describe('POST /api/cloud/account/export', () => {
+    it('asks for the export with an email when it is ready, and says it is being prepared', async () => {
+      const seen = fakeAccount({ '/v1/account/export': { status: 200, body: exportFixture } });
+      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      expect(res.body).toEqual({
+        ok: true,
+        export: { requestedAt: exportFixture.requestedAt, readyAt: null, downloadUrl: null },
+      });
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(seen[0]).toMatchObject({
+        method: 'POST',
+        path: '/v1/account/export',
+        body: { notifyEmail: true },
+        authorization: 'Bearer tok_test',
+      });
+    });
+
+    it('passes on the download link once the export is ready', async () => {
+      const ready = {
+        ...exportFixture,
+        readyAt: '2026-09-15T12:05:00.000Z',
+        downloadUrl: 'https://files.example.invalid/exp_0001',
+      };
+      fakeAccount({ '/v1/account/export': { status: 200, body: ready } });
+      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      expect(res.body.export).toEqual({
+        requestedAt: ready.requestedAt,
+        readyAt: ready.readyAt,
+        downloadUrl: ready.downloadUrl,
+      });
+    });
+
+    it('drops a download link this app would not open, so the export reads as not ready', async () => {
+      const ready = {
+        ...exportFixture,
+        readyAt: '2026-09-15T12:05:00.000Z',
+        downloadUrl: 'http://files.example.invalid/x',
+      };
+      fakeAccount({ '/v1/account/export': { status: 200, body: ready } });
+      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      expect(res.body.export).toMatchObject({ readyAt: null, downloadUrl: null });
+    });
+
+    it('says plainly when exporting is not available on the account', async () => {
+      fakeAccount({
+        '/v1/account/export': {
+          status: 404,
+          body: { code: 'not_found', status: 404, title: 'Route not served' },
+        },
+      });
+      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      expect(res.body).toEqual({
+        ok: false,
+        message: 'Exporting your data isn’t available on your account yet.',
+      });
+    });
+
+    it('passes any other refusal through in the service`s own words', async () => {
+      fakeAccount({ '/v1/account/export': { status: 403, body: refusalFixture } });
+      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      expect(res.body).toEqual({ ok: false, problem: refusalFixture });
+    });
+
+    it('sends nothing while this instance is not linked', async () => {
+      config.cloud = undefined;
+      const seen = fakeAccount({});
+      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      expect(res.body).toEqual({
+        ok: false,
+        message: 'This instance is not linked to a DorkOS account.',
+      });
+      expect(seen).toHaveLength(0);
     });
   });
 

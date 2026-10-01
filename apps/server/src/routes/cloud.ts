@@ -26,8 +26,11 @@
  */
 import { Router, type Response } from 'express';
 import { z } from 'zod';
+import type { Problem } from '@dork-labs/cloud-api';
 import type {
-  CloudBillingPageResponse,
+  CloudAccountExportResponse,
+  CloudBillingPage,
+  CloudBillingSessionResponse,
   CloudMembersResponse,
   CloudNudgeResponse,
   CloudOffersResponse,
@@ -49,8 +52,12 @@ import {
   releaseSeat,
   type UsageGrouping,
 } from '../services/core/cloud/plan.js';
-import { isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
-import { openBillingPage, readOffers } from '../services/core/cloud/billing-pages.js';
+import { isAbsent, isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
+import {
+  openBillingPage,
+  readOffers,
+  requestAccountExport,
+} from '../services/core/cloud/billing-pages.js';
 import {
   creditsFlagEnabled,
   creditsWiringReport,
@@ -201,13 +208,32 @@ const SeatAssignBodySchema = z.object({
   subject: z.object({ kind: z.enum(['agent', 'user']), id: z.string().min(1) }),
 });
 
+/** What a refusal envelope looks like on the wire, whichever write produced it. */
+type CloudWriteRefusal = { ok: false; problem: Problem } | { ok: false; message: string };
+
+/** How one write words the refusals the service did not describe. */
+interface WriteFailureWording {
+  /** What was being done, for the log line. */
+  what: string;
+  /**
+   * What to tell the person when the service does not serve this write at all
+   * (a 404, or a route that is not deployed). Without it, such a refusal is
+   * passed through like any other.
+   */
+  absent?: string;
+}
+
 /**
- * Answer a seat write, translating a refusal the service described into the
- * problem envelope the client renders verbatim.
+ * Answer a failed cloud write: the service's own refusal verbatim, or one plain
+ * sentence of ours.
  *
  * This is the whole reason the app can say "this needs a plan change" without
  * knowing a single plan: the words, including `requiredPlanDisplayName`, are the
  * service's.
+ *
+ * A write the service does not serve is the exception. Its refusal is written
+ * for developers, not people, so a write that can meet one names its own plain
+ * sentence in `wording.absent`, and that is what the person reads.
  *
  * **It answers 200, and that is not sloppiness.** A refusal a plan change would
  * lift is an ANSWER this route succeeded in obtaining, not a failure of this
@@ -221,45 +247,51 @@ const SeatAssignBodySchema = z.object({
  *
  * @param res - The Express response to answer on.
  * @param error - The value the write rejected with.
+ * @param wording - What was being done, and what to say when it is not served.
  */
-function seatWriteFailed(res: Response, error: unknown) {
+function cloudWriteFailed(res: Response, error: unknown, wording: WriteFailureWording) {
+  if (wording.absent !== undefined && isAbsent(error)) {
+    return res.json({ ok: false, message: wording.absent } satisfies CloudWriteRefusal);
+  }
   const problem = problemOf(error);
   if (problem !== null) {
-    return res.json({ ok: false, problem } satisfies CloudSeatActionResponse);
+    return res.json({ ok: false, problem } satisfies CloudWriteRefusal);
   }
-  logger.warn('[Cloud] Seat action failed', logError(error));
+  logger.warn(`[Cloud] Could not ${wording.what}`, logError(error));
   return res.json({
     ok: false,
-    message: 'Could not reach the DorkOS cloud. Try again shortly.',
-  } satisfies CloudSeatActionResponse);
+    message: 'Couldn’t reach your DorkOS account. Try again shortly.',
+  } satisfies CloudWriteRefusal);
 }
+
+/** Said, with HTTP 200, by every cloud write while this instance is not linked. */
+const NOT_LINKED: CloudWriteRefusal = {
+  ok: false,
+  message: 'This instance is not linked to a DorkOS account.',
+};
 
 /** POST /api/cloud/seats/:seatId/assign — give a seat to a person or an agent. */
 router.post('/seats/:seatId/assign', async (req, res) => {
-  // 200 with a refusal envelope, for the reason {@link seatWriteFailed} gives.
-  if (!isCloudLinked()) {
-    return res.json({ ok: false, message: 'This instance is not linked to a DorkOS account.' });
-  }
+  // 200 with a refusal envelope, for the reason {@link cloudWriteFailed} gives.
+  if (!isCloudLinked()) return res.json(NOT_LINKED);
   const parsed = SeatAssignBodySchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, message: 'Unknown subject' });
   try {
     const seat = await assignSeat(req.params.seatId, parsed.data.subject);
     return res.json({ ok: true, seat } satisfies CloudSeatActionResponse);
   } catch (err) {
-    return seatWriteFailed(res, err);
+    return cloudWriteFailed(res, err, { what: 'change a seat' });
   }
 });
 
 /** POST /api/cloud/seats/:seatId/release — hand a seat back. */
 router.post('/seats/:seatId/release', async (req, res) => {
-  if (!isCloudLinked()) {
-    return res.json({ ok: false, message: 'This instance is not linked to a DorkOS account.' });
-  }
+  if (!isCloudLinked()) return res.json(NOT_LINKED);
   try {
     await releaseSeat(req.params.seatId);
     return res.json({ ok: true } satisfies CloudSeatActionResponse);
   } catch (err) {
-    return seatWriteFailed(res, err);
+    return cloudWriteFailed(res, err, { what: 'change a seat' });
   }
 });
 
@@ -281,13 +313,21 @@ const BillingPageSchema = z.enum(['portal', 'checkout', 'topup']);
 /** The body a checkout takes: one opaque offer identifier from `GET /api/cloud/offers`. */
 const CheckoutBodySchema = z.object({ skuId: z.string().min(1) });
 
+/** What each billing page is called when it is not available on this account. */
+const BILLING_ABSENT: Record<CloudBillingPage, string> = {
+  portal: 'Billing isn’t available on your account yet.',
+  checkout: 'Changing plan isn’t available on your account yet.',
+  topup: 'Adding credits isn’t available on your account yet.',
+};
+
 /**
- * POST /api/cloud/billing/:page — the web address of one billing page.
+ * POST /api/cloud/billing/:page — start a session on one billing page and
+ * answer with its web address.
  *
  * `portal` is where a plan is changed or ended and invoices live, `checkout`
  * starts one offer, `topup` buys credits. The answer is only an address for
- * the person's own browser; nothing is paid here. A refusal answers 200 with
- * the service's own words, for the reason {@link seatWriteFailed} gives.
+ * the person's own browser; nothing is paid here. A refusal answers 200, for
+ * the reason {@link cloudWriteFailed} gives.
  */
 router.post('/billing/:page', async (req, res) => {
   const page = BillingPageSchema.safeParse(req.params.page);
@@ -300,25 +340,38 @@ router.post('/billing/:page', async (req, res) => {
   }
   // A short-lived page address is not something to keep in any cache.
   res.setHeader('Cache-Control', 'no-store');
-  if (!isCloudLinked()) {
-    return res.json({
-      ok: false,
-      message: 'This instance is not linked to a DorkOS account.',
-    } satisfies CloudBillingPageResponse);
-  }
+  if (!isCloudLinked()) return res.json(NOT_LINKED);
   try {
     const url = await openBillingPage({ kind: page.data, skuId });
-    return res.json({ ok: true, url } satisfies CloudBillingPageResponse);
+    return res.json({ ok: true, url } satisfies CloudBillingSessionResponse);
   } catch (err) {
-    const problem = problemOf(err);
-    if (problem !== null) {
-      return res.json({ ok: false, problem } satisfies CloudBillingPageResponse);
-    }
-    logger.warn('[Cloud] Could not open a billing page', { page: page.data, ...logError(err) });
-    return res.json({
-      ok: false,
-      message: 'Couldn’t reach your DorkOS account. Try again shortly.',
-    } satisfies CloudBillingPageResponse);
+    return cloudWriteFailed(res, err, {
+      what: `open the ${page.data} page`,
+      absent: BILLING_ABSENT[page.data],
+    });
+  }
+});
+
+/**
+ * POST /api/cloud/account/export — ask for a copy of everything the account
+ * holds. The service emails the account when it is ready; when the answer
+ * already carries a download link, it is here. Sent `no-store`.
+ */
+router.post('/account/export', async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!isCloudLinked()) return res.json(NOT_LINKED);
+  try {
+    const job = await requestAccountExport();
+    const body: CloudAccountExportResponse = {
+      ok: true,
+      export: { requestedAt: job.requestedAt, readyAt: job.readyAt, downloadUrl: job.downloadUrl },
+    };
+    return res.json(body);
+  } catch (err) {
+    return cloudWriteFailed(res, err, {
+      what: 'request an account export',
+      absent: 'Exporting your data isn’t available on your account yet.',
+    });
   }
 });
 

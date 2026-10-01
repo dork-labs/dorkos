@@ -28,7 +28,13 @@ export { CreditsGauge } from './ui/CreditsGauge';
 export { UpgradeNudge } from './ui/UpgradeNudge';
 export { SeatManagement } from './ui/SeatManagement';
 export { CreditsSource } from './ui/CreditsSource';
-export { ManageOnWeb, BillingPageButton, PlanOffers, BillingNoticeView } from './ui/ManageOnWeb';
+export {
+  ManageOnWeb,
+  BillingPageButton,
+  PlanOffers,
+  BillingNoticeView,
+  ExportAccountData,
+} from './ui/ManageOnWeb';
 export type { BillingPageButtonProps, PlanOffersProps } from './ui/ManageOnWeb';
 export {
   cloudPlanKeys,
@@ -42,7 +48,7 @@ export {
   useSeatActions,
   useSelectCloudCredits,
 } from './model/use-cloud-plan';
-export { useCloudOffers, useOpenBillingPage } from './model/use-billing-page';
+export { useAccountExport, useCloudOffers, useOpenBillingPage } from './model/use-billing-page';
 export type { BillingNotice, BillingPageTarget, OpenBillingPage } from './model/use-billing-page';
 export { useLocalSpend } from './model/use-local-spend';
 export type { LocalSpend } from './model/use-local-spend';

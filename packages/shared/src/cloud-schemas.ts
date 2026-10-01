@@ -151,16 +151,35 @@ export type CloudOffersResponse =
 export type CloudBillingPage = 'portal' | 'checkout' | 'topup';
 
 /**
- * The answer to `POST /api/cloud/billing/:page`: a short-lived web address to
- * open in the person's own browser, or a refusal.
+ * The answer to `POST /api/cloud/billing/:page`: the web address of a billing
+ * session just started, to open in the person's own browser, or a refusal.
  *
  * Nothing is paid inside the app. A refusal is the service's own problem
  * envelope, or the local server's one plain sentence when the service could
- * not be asked (not linked, unreachable). It answers HTTP 200 either way, for
- * the reason `CloudSeatActionResponse` gives.
+ * not be asked (not linked, unreachable) or does not offer this page to the
+ * account. It answers HTTP 200 either way, for the reason
+ * `CloudSeatActionResponse` gives.
  */
-export type CloudBillingPageResponse =
+export type CloudBillingSessionResponse =
   { ok: true; url: string } | { ok: false; problem: Problem } | { ok: false; message: string };
+
+/**
+ * Where an account export stands, as the service answered.
+ *
+ * `downloadUrl` is null until the export is ready (the service emails the
+ * account then); once present it is a short-lived https link.
+ */
+export interface CloudAccountExport {
+  requestedAt: string;
+  readyAt: string | null;
+  downloadUrl: string | null;
+}
+
+/** `POST /api/cloud/account/export` — the export just asked for, or a refusal. */
+export type CloudAccountExportResponse =
+  | { ok: true; export: CloudAccountExport }
+  | { ok: false; problem: Problem }
+  | { ok: false; message: string };
 
 /**
  * Why a seat write answers `200` even when it refused.

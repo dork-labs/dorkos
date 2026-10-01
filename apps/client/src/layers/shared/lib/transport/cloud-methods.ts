@@ -13,7 +13,8 @@
  */
 import type {
   CloudBillingPage,
-  CloudBillingPageResponse,
+  CloudAccountExportResponse,
+  CloudBillingSessionResponse,
   CloudCommunityClaimLinkResponse,
   CloudCommunityKeepResponse,
   CloudCommunityMovePollResponse,
@@ -116,12 +117,21 @@ export function createCloudMethods(baseUrl: string) {
       return fetchJSON<CloudOffersResponse>(baseUrl, '/cloud/offers');
     },
 
-    getCloudBillingPage(page: CloudBillingPage, skuId?: string): Promise<CloudBillingPageResponse> {
-      return fetchJSON<CloudBillingPageResponse>(
+    createCloudBillingSession(
+      page: CloudBillingPage,
+      skuId?: string
+    ): Promise<CloudBillingSessionResponse> {
+      return fetchJSON<CloudBillingSessionResponse>(
         baseUrl,
         `/cloud/billing/${encodeURIComponent(page)}`,
         { method: 'POST', body: JSON.stringify(skuId === undefined ? {} : { skuId }) }
       );
+    },
+
+    requestCloudAccountExport(): Promise<CloudAccountExportResponse> {
+      return fetchJSON<CloudAccountExportResponse>(baseUrl, '/cloud/account/export', {
+        method: 'POST',
+      });
     },
 
     getCloudCredits(): Promise<CloudCreditsStatus> {

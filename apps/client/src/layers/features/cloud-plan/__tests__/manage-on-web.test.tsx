@@ -13,7 +13,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type { CloudBillingPageResponse } from '@dorkos/shared/cloud-schemas';
+import type { CloudBillingSessionResponse } from '@dorkos/shared/cloud-schemas';
 import { formatMoney } from '@dork-labs/cloud-api/display';
 import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-denominated.json' with { type: 'json' };
 import hostedPageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/hosted-page.json' with { type: 'json' };
@@ -82,7 +82,7 @@ describe('manage on the web', () => {
     await waitFor(() => expect(transport.getCloudPlan).toHaveBeenCalled());
     expect(screen.queryByText(/manage on the web/i)).not.toBeInTheDocument();
     expect(transport.getCloudOffers).not.toHaveBeenCalled();
-    expect(transport.getCloudBillingPage).not.toHaveBeenCalled();
+    expect(transport.createCloudBillingSession).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -90,15 +90,15 @@ describe('manage on the web', () => {
     ['Add credits', 'topup'],
   ])('"%s" opens the window in the press, then sends it to the address', async (label, page) => {
     const transport = linkedTransport();
-    const answer = deferred<CloudBillingPageResponse>();
-    vi.mocked(transport.getCloudBillingPage).mockReturnValue(answer.promise);
+    const answer = deferred<CloudBillingSessionResponse>();
+    vi.mocked(transport.createCloudBillingSession).mockReturnValue(answer.promise);
     renderManage(transport);
 
     await userEvent.click(await screen.findByRole('button', { name: label }));
     // The window is already open before the address comes back.
     expect(mockOpenLater).toHaveBeenCalledOnce();
     expect(mockWindowGo).not.toHaveBeenCalled();
-    expect(transport.getCloudBillingPage).toHaveBeenCalledWith(page, undefined);
+    expect(transport.createCloudBillingSession).toHaveBeenCalledWith(page, undefined);
 
     answer.resolve({ ok: true, url: hostedPageFixture.url });
     await waitFor(() => expect(mockWindowGo).toHaveBeenCalledWith(hostedPageFixture.url));
@@ -122,7 +122,7 @@ describe('manage on the web', () => {
 
   it('sends a chosen offer to checkout by its own identifier', async () => {
     const transport = linkedTransport();
-    vi.mocked(transport.getCloudBillingPage).mockResolvedValue({
+    vi.mocked(transport.createCloudBillingSession).mockResolvedValue({
       ok: true,
       url: hostedPageFixture.url,
     });
@@ -130,31 +130,154 @@ describe('manage on the web', () => {
     const list = await screen.findByRole('list');
     const second = within(list).getAllByRole('listitem')[1];
     await userEvent.click(within(second).getByRole('button', { name: /choose/i }));
-    expect(transport.getCloudBillingPage).toHaveBeenCalledWith(
+    expect(transport.createCloudBillingSession).toHaveBeenCalledWith(
       'checkout',
       offersFixture.offers[1].skuId
     );
     await waitFor(() => expect(mockWindowGo).toHaveBeenCalledWith(hostedPageFixture.url));
   });
 
-  it('marks the plan the account is on instead of offering it again', async () => {
+  it('sends an account already on a plan to the billing page to change it, never to checkout', async () => {
     const transport = linkedTransport();
+    // Month and year of the plan the account is on share one planId.
     vi.mocked(transport.getCloudOffers).mockResolvedValue({
       available: true,
       offers: {
         ...offersFixture,
-        offers: [{ ...offersFixture.offers[0], planId: entitlementsFixture.planId }],
+        offers: offersFixture.offers.map((offer) => ({
+          ...offer,
+          planId: entitlementsFixture.planId,
+        })),
       } as never,
     });
+    vi.mocked(transport.createCloudBillingSession).mockResolvedValue({
+      ok: true,
+      url: hostedPageFixture.url,
+    });
     renderManage(transport);
-    const list = await screen.findByRole('list');
-    expect(within(list).getByText('Your plan')).toBeInTheDocument();
-    expect(within(list).queryByRole('button')).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Change plan' }));
+    expect(transport.createCloudBillingSession).toHaveBeenCalledWith('portal', undefined);
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /choose/i })).not.toBeInTheDocument();
+    for (const offer of offersFixture.offers) {
+      expect(screen.queryByText(offer.displayName)).not.toBeInTheDocument();
+    }
+  });
+
+  it('refreshes the plan when the person comes back from a billing page', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.createCloudBillingSession).mockResolvedValue({
+      ok: true,
+      url: hostedPageFixture.url,
+    });
+    renderManage(transport);
+    await userEvent.click(await screen.findByRole('button', { name: 'Add credits' }));
+    await waitFor(() => expect(mockWindowGo).toHaveBeenCalled());
+    const before = vi.mocked(transport.getCloudPlan).mock.calls.length;
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() =>
+      expect(vi.mocked(transport.getCloudPlan).mock.calls.length).toBeGreaterThan(before)
+    );
+    // Once: a second return does not refresh again.
+    const after = vi.mocked(transport.getCloudPlan).mock.calls.length;
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(vi.mocked(transport.getCloudPlan).mock.calls.length).toBe(after);
+  });
+
+  it('does not refresh on focus when no page was opened', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.createCloudBillingSession).mockResolvedValue({
+      ok: false,
+      message: 'Adding credits isn’t available on your account yet.',
+    });
+    renderManage(transport);
+    await userEvent.click(await screen.findByRole('button', { name: 'Add credits' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Adding credits isn’t available on your account yet.'
+    );
+    const before = vi.mocked(transport.getCloudPlan).mock.calls.length;
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(vi.mocked(transport.getCloudPlan).mock.calls.length).toBe(before);
+  });
+
+  describe('exporting the account data', () => {
+    it('says the export is being prepared, and asks for an email, while it has no link', async () => {
+      const transport = linkedTransport();
+      vi.mocked(transport.requestCloudAccountExport).mockResolvedValue({
+        ok: true,
+        export: { requestedAt: '2026-09-15T12:00:00.000Z', readyAt: null, downloadUrl: null },
+      });
+      renderManage(transport);
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Export your account data' })
+      );
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Your export is being prepared. We’ll email you a link when it’s ready.'
+      );
+      expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+    });
+
+    it('offers the download once the export is ready, opening it only from a press', async () => {
+      const transport = linkedTransport();
+      const link = 'https://example.invalid/exports/exp_0001';
+      vi.mocked(transport.requestCloudAccountExport).mockResolvedValue({
+        ok: true,
+        export: {
+          requestedAt: '2026-09-15T12:00:00.000Z',
+          readyAt: '2026-09-15T12:05:00.000Z',
+          downloadUrl: link,
+        },
+      });
+      renderManage(transport);
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Export your account data' })
+      );
+      expect(await screen.findByText('Your export is ready.')).toBeInTheDocument();
+      expect(mockOpenExternalLink).not.toHaveBeenCalled();
+      await userEvent.click(screen.getByRole('button', { name: 'Download your data' }));
+      expect(mockOpenExternalLink).toHaveBeenCalledWith(link);
+    });
+
+    it('says why it could not be asked for, and lets the person try again', async () => {
+      const transport = linkedTransport();
+      vi.mocked(transport.requestCloudAccountExport).mockResolvedValue({
+        ok: false,
+        message: 'Exporting your data isn’t available on your account yet.',
+      });
+      renderManage(transport);
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Export your account data' })
+      );
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Exporting your data isn’t available on your account yet.'
+      );
+      expect(screen.getByRole('button', { name: 'Export your account data' })).not.toBeDisabled();
+    });
+
+    it('says the account could not be reached when the request fails', async () => {
+      const transport = linkedTransport();
+      vi.mocked(transport.requestCloudAccountExport).mockRejectedValue(new Error('offline'));
+      renderManage(transport);
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Export your account data' })
+      );
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Couldn’t reach your DorkOS account. Try again.'
+      );
+    });
   });
 
   it('shows a refusal in the service`s own words and closes the waiting window', async () => {
     const transport = linkedTransport();
-    vi.mocked(transport.getCloudBillingPage).mockResolvedValue({
+    vi.mocked(transport.createCloudBillingSession).mockResolvedValue({
       ok: false,
       problem: refusalFixture as never,
     });
@@ -172,7 +295,7 @@ describe('manage on the web', () => {
 
   it('says plainly when the account could not be reached', async () => {
     const transport = linkedTransport();
-    vi.mocked(transport.getCloudBillingPage).mockRejectedValue(new Error('offline'));
+    vi.mocked(transport.createCloudBillingSession).mockRejectedValue(new Error('offline'));
     renderManage(transport);
     await userEvent.click(await screen.findByRole('button', { name: 'Add credits' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -183,7 +306,7 @@ describe('manage on the web', () => {
 
   it('passes on the local server`s own sentence when it could not ask', async () => {
     const transport = linkedTransport();
-    vi.mocked(transport.getCloudBillingPage).mockResolvedValue({
+    vi.mocked(transport.createCloudBillingSession).mockResolvedValue({
       ok: false,
       message: 'This instance is not linked to a DorkOS account.',
     });
@@ -200,13 +323,13 @@ describe('manage on the web', () => {
     renderManage(transport);
     await userEvent.click(await screen.findByRole('button', { name: 'Billing and invoices' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/allow pop-ups/i);
-    expect(transport.getCloudBillingPage).not.toHaveBeenCalled();
+    expect(transport.createCloudBillingSession).not.toHaveBeenCalled();
   });
 
   it('opens one page at a time', async () => {
     const transport = linkedTransport();
-    const answer = deferred<CloudBillingPageResponse>();
-    vi.mocked(transport.getCloudBillingPage).mockReturnValue(answer.promise);
+    const answer = deferred<CloudBillingSessionResponse>();
+    vi.mocked(transport.createCloudBillingSession).mockReturnValue(answer.promise);
     renderManage(transport);
     await userEvent.click(await screen.findByRole('button', { name: 'Billing and invoices' }));
     expect(screen.getByRole('button', { name: /add credits/i })).toBeDisabled();
@@ -214,13 +337,13 @@ describe('manage on the web', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Add credits' })).not.toBeDisabled()
     );
-    expect(transport.getCloudBillingPage).toHaveBeenCalledOnce();
+    expect(transport.createCloudBillingSession).toHaveBeenCalledOnce();
   });
 
   it('ignores a second press made before the first one re-rendered', async () => {
     const transport = linkedTransport();
-    const answer = deferred<CloudBillingPageResponse>();
-    vi.mocked(transport.getCloudBillingPage).mockReturnValue(answer.promise);
+    const answer = deferred<CloudBillingSessionResponse>();
+    vi.mocked(transport.createCloudBillingSession).mockReturnValue(answer.promise);
     const queryClient = new QueryClient();
     const { result } = renderHook(() => useOpenBillingPage(), {
       wrapper: ({ children }) => (
@@ -235,7 +358,7 @@ describe('manage on the web', () => {
       result.current.open({ page: 'topup' });
     });
     expect(mockOpenLater).toHaveBeenCalledOnce();
-    expect(transport.getCloudBillingPage).toHaveBeenCalledOnce();
+    expect(transport.createCloudBillingSession).toHaveBeenCalledOnce();
     await act(async () => answer.resolve({ ok: true, url: hostedPageFixture.url }));
     expect(result.current.pending).toBeNull();
   });

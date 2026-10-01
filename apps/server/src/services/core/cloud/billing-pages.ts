@@ -1,6 +1,7 @@
 /**
  * The web pages where money changes: the billing portal (change or end a plan,
- * payment method, invoices), checkout for one offer, and buying credits.
+ * payment method, invoices), checkout for one offer, and buying credits; and
+ * asking for a copy of everything the account holds.
  *
  * The app never takes a payment and never names what anything costs. Each call
  * here asks the service for a short-lived page address and hands back only
@@ -16,11 +17,14 @@
  * @module services/core/cloud/billing-pages
  */
 import {
+  AccountExportResponseSchema,
   HostedPageResponseSchema,
   OffersResponseSchema,
   V1_ROUTES,
+  type AccountExport,
   type OffersResponse,
 } from '@dork-labs/cloud-api';
+import { resolveCloudBaseUrl } from '../auth/cloud-link-client.js';
 import { createCloudV1Client, readOrNull } from './v1-client.js';
 
 /** Which hosted page to open. */
@@ -63,37 +67,90 @@ export async function openBillingPage(
   request: BillingPageRequest,
   signal?: AbortSignal
 ): Promise<string> {
-  const client = createCloudV1Client();
-  if (client === null) throw new Error('This instance is not linked to a DorkOS account.');
+  const client = requireClient();
   const route = { portal: V1_ROUTES.portal, checkout: V1_ROUTES.checkout, topup: V1_ROUTES.topup }[
     request.kind
   ];
   const body = request.kind === 'checkout' ? { skuId: request.skuId } : {};
   const page = await client.post(route, HostedPageResponseSchema, { body, signal });
-  if (!isSafePageUrl(page.url)) {
+  const url = safePageUrl(page.url);
+  if (url === null) {
     throw new Error('The DorkOS account answered with a page address that is not https.');
   }
-  return page.url;
+  return url;
+}
+
+/**
+ * Ask for a copy of everything the account holds.
+ *
+ * The service assembles it as a job and emails the account when it is ready,
+ * which is asked for explicitly here because the contract publishes no route
+ * to check on a job later. When the answer already carries a download link,
+ * that link is held to the same rule as a billing page; one that fails it is
+ * dropped, so the export reads as still being prepared rather than offering a
+ * link this app would not open.
+ *
+ * @param signal - Aborts the request.
+ * @throws When this instance is not linked, or when the service refuses.
+ */
+export async function requestAccountExport(signal?: AbortSignal): Promise<AccountExport> {
+  const client = requireClient();
+  const job = await client.post(V1_ROUTES.accountExport, AccountExportResponseSchema, {
+    body: { notifyEmail: true },
+    signal,
+  });
+  const downloadUrl = job.downloadUrl === null ? null : safePageUrl(job.downloadUrl);
+  return { ...job, downloadUrl, readyAt: downloadUrl === null ? null : job.readyAt };
 }
 
 /** Hosts a local development service may answer from over plain http. */
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
- * Whether a page address is one this app will send a person to.
+ * Whether a parsed address is plain http on this machine.
  *
- * The contract types the address as any URL, which would let a `javascript:`
- * or plain-http payment page through. Only https passes, plus http on a
- * loopback host, which is a service running on the developer's own machine.
+ * @param url - The parsed address.
+ */
+function isLoopbackHttp(url: URL): boolean {
+  return url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname);
+}
+
+/**
+ * A page address this app will send a person to, normalised, or `null`.
+ *
+ * The contract types the address as any URL, which would let a `javascript:`,
+ * `data:` or plain-http page through. Only https passes. Plain http passes
+ * only on a loopback host, and only while this instance itself talks to a
+ * DorkOS account on a loopback host: that is a developer running the service
+ * on their own machine, and nothing else.
  *
  * @param url - The address the service answered with.
  */
-export function isSafePageUrl(url: string): boolean {
+export function safePageUrl(url: string): string | null {
+  let parsed: URL;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol === 'https:') return true;
-    return parsed.protocol === 'http:' && LOOPBACK_HOSTS.has(parsed.hostname);
+    parsed = new URL(url);
   } catch {
-    return false;
+    return null;
   }
+  if (parsed.protocol === 'https:') return parsed.href;
+  if (!isLoopbackHttp(parsed)) return null;
+  let service: URL;
+  try {
+    service = new URL(resolveCloudBaseUrl());
+  } catch {
+    return null;
+  }
+  return isLoopbackHttp(service) ? parsed.href : null;
+}
+
+/**
+ * A live `/v1` client, or a loud failure.
+ *
+ * @throws When this instance holds no cloud credential.
+ */
+function requireClient() {
+  const client = createCloudV1Client();
+  if (client === null) throw new Error('This instance is not linked to a DorkOS account.');
+  return client;
 }

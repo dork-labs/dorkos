@@ -45,7 +45,11 @@ function LinkedCard({ usage, children }: { usage: CloudUsageResponse; children?:
       getCloudOffers: { available: true, offers: offersFixture },
       // The playground has no account to send anybody to, so every billing
       // button answers with the service's refusal and shows how one reads.
-      getCloudBillingPage: { ok: false, problem: refusalFixture },
+      createCloudBillingSession: { ok: false, problem: refusalFixture },
+      requestCloudAccountExport: {
+        ok: true,
+        export: { requestedAt: '2026-09-15T12:00:00.000Z', readyAt: null, downloadUrl: null },
+      },
     };
     return new Proxy(base, {
       get(target, prop, receiver) {
@@ -89,7 +93,7 @@ export function CloudUsageShowcases() {
       </PlaygroundSection>
       <PlaygroundSection
         title="Manage on the web"
-        description="The buttons that open the billing pages in the browser, and what is on sale, in the service's order with its names and prices. Here every button answers with a refusal, to show how the service's own words read."
+        description="The buttons that open the billing pages in the browser, what is on sale for an account on no plan (in the service's order, with its names and prices), and asking for a copy of the account's data. Here every billing button answers with a refusal, to show how the service's own words read, and the export answers as being prepared."
       >
         <ShowcaseDemo responsive>
           <LinkedCard usage={{ available: true, usage: usageFixture as never }}>

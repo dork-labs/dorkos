@@ -221,7 +221,8 @@ import type {
   CloudPlanResponse,
   CloudSeatActionResponse,
   CloudBillingPage,
-  CloudBillingPageResponse,
+  CloudBillingSessionResponse,
+  CloudAccountExportResponse,
   CloudOffersResponse,
   CloudSeatsResponse,
   CloudUsageResponse,
@@ -2936,15 +2937,24 @@ export interface Transport
    */
   getCloudOffers(): Promise<CloudOffersResponse>;
   /**
-   * Ask for the web address of one billing page, to open in the person's own
-   * browser: the billing portal (change or end a plan, invoices), checkout for
-   * one offer, or buying credits. Nothing is paid in the app. A refusal comes
-   * back as the service's own problem envelope, never as a thrown error.
+   * Start a session on one billing page and get its web address, to open in
+   * the person's own browser: the billing portal (change or end a plan,
+   * invoices), checkout for one offer, or buying credits. Nothing is paid in
+   * the app. A refusal comes back as a value, never as a thrown error.
    *
    * @param page - Which page to open.
    * @param skuId - The offer to check out, from {@link getCloudOffers}. Checkout only.
    */
-  getCloudBillingPage(page: CloudBillingPage, skuId?: string): Promise<CloudBillingPageResponse>;
+  createCloudBillingSession(
+    page: CloudBillingPage,
+    skuId?: string
+  ): Promise<CloudBillingSessionResponse>;
+  /**
+   * Ask for a copy of everything the DorkOS account holds. The service emails
+   * the account when it is ready; the answer carries the download link only
+   * when it already is. A refusal comes back as a value.
+   */
+  requestCloudAccountExport(): Promise<CloudAccountExportResponse>;
   /**
    * Read whether DorkOS credits are armed as an inference source on this
    * server. Carries no credential — only whether the path is on and which

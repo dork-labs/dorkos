@@ -3601,7 +3601,7 @@ const CloudOffersResponseDocSchema = z
   ])
   .openapi('CloudOffersResponse');
 
-const CloudBillingPageResponseDocSchema = z
+const CloudBillingSessionResponseDocSchema = z
   .union([
     z.object({
       ok: z.literal(true),
@@ -3610,7 +3610,7 @@ const CloudBillingPageResponseDocSchema = z
     z.object({ ok: z.literal(false), problem: CloudProblemDocSchema }),
     z.object({ ok: z.literal(false), message: z.string() }),
   ])
-  .openapi('CloudBillingPageResponse');
+  .openapi('CloudBillingSessionResponse');
 
 registry.registerPath({
   method: 'get',
@@ -3637,12 +3637,13 @@ registry.registerPath({
   method: 'post',
   path: '/api/cloud/billing/{page}',
   tags: ['Cloud'],
-  summary: 'Get the web address of a billing page to open in the browser',
+  summary: 'Start a billing session and get its web address to open in the browser',
   description:
     '`portal` is where a plan is changed or ended and invoices live, `checkout` starts one offer ' +
     '(body `{ skuId }` from GET /api/cloud/offers), and `topup` buys credits. Only an address is ' +
     'returned; nothing is paid in the app. A refusal answers 200 with the service`s own problem ' +
-    'envelope, or one plain sentence when the service could not be asked. Sent `no-store`.',
+    'envelope, or one plain sentence when the service could not be asked or does not offer the ' +
+    'page to this account. Sent `no-store`.',
   request: {
     params: z.object({ page: z.enum(['portal', 'checkout', 'topup']) }),
     body: {
@@ -3653,7 +3654,7 @@ registry.registerPath({
   responses: {
     200: {
       description: 'The page address, or a refusal',
-      content: { 'application/json': { schema: CloudBillingPageResponseDocSchema } },
+      content: { 'application/json': { schema: CloudBillingSessionResponseDocSchema } },
     },
     400: {
       description: 'A checkout that names no offer',
@@ -3666,6 +3667,41 @@ registry.registerPath({
       content: {
         'application/json': { schema: z.object({ ok: z.literal(false), message: z.string() }) },
       },
+    },
+  },
+});
+
+const CloudAccountExportResponseDocSchema = z
+  .union([
+    z.object({
+      ok: z.literal(true),
+      export: z.object({
+        requestedAt: z.string(),
+        readyAt: z.string().nullable(),
+        downloadUrl: z
+          .string()
+          .nullable()
+          .openapi({ description: 'A short-lived https link, null until the export is ready.' }),
+      }),
+    }),
+    z.object({ ok: z.literal(false), problem: CloudProblemDocSchema }),
+    z.object({ ok: z.literal(false), message: z.string() }),
+  ])
+  .openapi('CloudAccountExportResponse');
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/cloud/account/export',
+  tags: ['Cloud'],
+  summary: 'Ask for a copy of everything the DorkOS account holds',
+  description:
+    'The service assembles the export and emails the account when it is ready; the answer ' +
+    'carries the download link only when it already is. A refusal answers 200 with the ' +
+    'service`s own problem envelope, or one plain sentence. Sent `no-store`.',
+  responses: {
+    200: {
+      description: 'Where the export stands, or a refusal',
+      content: { 'application/json': { schema: CloudAccountExportResponseDocSchema } },
     },
   },
 });
