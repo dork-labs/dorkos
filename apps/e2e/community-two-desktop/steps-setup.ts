@@ -3,6 +3,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { expect, type Page } from '@playwright/test';
 import {
+  channelEntries,
   PASSWORD,
   composer,
   connectDesktop,
@@ -281,10 +282,9 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
       destination?: { scrollAnchorEntryId?: string };
     };
     const anchorId = body.scrollAnchorEntryId ?? body.destination?.scrollAnchorEntryId;
-    const entries = await json<{ entries: Entry[] }>(
-      `${local.origin}/api/communities/${ref}/rooms/${room.roomId}/entries?limit=100`
-    );
-    const anchorText = entries.entries.find((e) => e.id === anchorId)?.text;
+    // The whole history: in a held community the remembered row can be older than any one page.
+    const entries = await channelEntries<Entry>(local, ref, room.roomId);
+    const anchorText = entries.find((e) => e.id === anchorId)?.text;
     assert(anchorText && anchorText !== newest, `remembered a mid-history row (${anchorText})`);
     return { anchorText, body };
   }

@@ -26,7 +26,12 @@ vi.mock('@/lib/connectors/managed/request-context', () => ({
     ),
 }));
 
-vi.mock('@/lib/connectors/managed/discovery-service', () => ({
+vi.mock('@/lib/connectors/managed/discovery-service', async (importOriginal) => ({
+  // The real request-shape tag, so a route can tell a caller's bad request
+  // from its own failure exactly as it does in production.
+  ManagedRequestShapeError: (
+    await importOriginal<typeof import('@/lib/connectors/managed/discovery-service')>()
+  ).ManagedRequestShapeError,
   listManagedConnectorCatalog: mocks.listCatalog,
   listManagedOperationSchemas: mocks.listOperations,
   listManagedConnections: mocks.listConnections,
@@ -40,6 +45,9 @@ vi.mock('@/lib/connectors/managed/usage-service', () => ({
   ManagedUsageNotFoundError: class ManagedUsageNotFoundError extends Error {},
 }));
 
+import { ZodError } from 'zod';
+import type { ComposioOperationClient } from '@dorkos/connector-providers/composio';
+import type { ManagedConnectorConfig } from '@/lib/connectors/managed/config';
 import { GET as getCatalog } from '../catalog/route';
 import { GET as getConnection } from '../connections/[managedConnectionId]/route';
 import { GET as getConnections } from '../connections/route';
@@ -149,6 +157,73 @@ describe('managed discovery route boundaries', () => {
     const body = await response.text();
     expect(body).toContain('managed_connectors_unavailable');
     expect(body).not.toContain('private provider response');
+  });
+
+  it('answers a Gmail-shaped catalog page instead of failing on the app’s own extra details', async () => {
+    const actual = await vi.importActual<
+      typeof import('@/lib/connectors/managed/discovery-service')
+    >('@/lib/connectors/managed/discovery-service');
+    const config: ManagedConnectorConfig = {
+      enabled: true,
+      liveReady: true,
+      projectApiKey: 'project-fixture',
+      callbackOrigin: 'https://dorkos.example',
+      authConfigByToolkit: { gmail: 'ac_gmail' },
+    };
+    const operations = {
+      listToolkitPage: async () => ({
+        status: 'ok' as const,
+        truncated: false,
+        toolkits: [
+          {
+            slug: 'gmail',
+            displayName: 'Gmail',
+            authKind: 'oauth2' as const,
+            logoUrl: 'https://logos.composio.dev/api/gmail',
+            description: 'Send and read email.',
+          },
+        ],
+      }),
+    } as unknown as ComposioOperationClient;
+    mocks.resolveContext.mockResolvedValueOnce({ ...context, config, operations });
+    mocks.listCatalog.mockImplementationOnce(actual.listManagedConnectorCatalog);
+    const response = await getCatalog(
+      new Request('https://dorkos.test/api/instances/connectors/catalog?version=1&limit=25')
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.toolkits[0]).toMatchObject({ slug: 'gmail', displayName: 'Gmail' });
+    expect(JSON.stringify(body)).not.toContain('logos.composio.dev');
+  });
+
+  it('answers a malformed request 400 and its own mapping failure 500, never the reverse', async () => {
+    const actual = await vi.importActual<
+      typeof import('@/lib/connectors/managed/discovery-service')
+    >('@/lib/connectors/managed/discovery-service');
+    mocks.listCatalog.mockImplementationOnce(actual.listManagedConnectorCatalog);
+    const malformed = await getCatalog(
+      new Request('https://dorkos.test/api/instances/connectors/catalog?version=1&limit=1000')
+    );
+    expect(malformed.status).toBe(400);
+    expect(await malformed.json()).toEqual({ error: 'invalid_request' });
+
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.listOperations.mockRejectedValueOnce(new ZodError([]));
+    const internal = await getOperations(
+      new Request(
+        'https://dorkos.test/api/instances/connectors/toolkits/gmail/operations?version=1&toolkitVersion=20260902_00&limit=100'
+      ),
+      { params: Promise.resolve({ toolkit: 'gmail' }) }
+    );
+    expect(internal.status).toBe(500);
+    expect(await internal.json()).toEqual({ error: 'internal_error' });
+    expect(logged).toHaveBeenCalledWith(
+      '[managed-discovery] internal wire-mapping failure',
+      'ZodError',
+      'GET',
+      '/api/instances/connectors/toolkits/gmail/operations'
+    );
+    logged.mockRestore();
   });
 
   it('returns the explicit permission-upgrade response before route work', async () => {

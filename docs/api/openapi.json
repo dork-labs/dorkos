@@ -29288,6 +29288,67 @@
                     },
                     "lastHeartbeatAt": {
                       "type": "string"
+                    },
+                    "relinkOutcome": {
+                      "type": "string",
+                      "enum": [
+                        "denied",
+                        "expired",
+                        "failed"
+                      ],
+                      "description": "Present while linked after a relink ended without replacing the key: this computer stayed linked."
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cloud/link/cancel": {
+      "post": {
+        "tags": [
+          "Cloud"
+        ],
+        "summary": "Stop a link flow in progress, or dismiss the note a finished relink left",
+        "description": "Stops polling at once between token requests. A token request already sent finishes first, and a key it issues is kept. Settles in `linked` while this instance holds a key, else `idle`, and answers that state.",
+        "responses": {
+          "200": {
+            "description": "The state the link flow settled in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "idle",
+                        "pending",
+                        "linked",
+                        "expired",
+                        "denied",
+                        "unlinked"
+                      ]
+                    },
+                    "accountLabel": {
+                      "type": "string"
+                    },
+                    "lastHeartbeatAt": {
+                      "type": "string"
+                    },
+                    "relinkOutcome": {
+                      "type": "string",
+                      "enum": [
+                        "denied",
+                        "expired",
+                        "failed"
+                      ],
+                      "description": "Present while linked after a relink ended without replacing the key: this computer stayed linked."
                     }
                   },
                   "required": [

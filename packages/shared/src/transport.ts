@@ -2865,6 +2865,11 @@ export interface Transport
    * while the flow transitions from `pending` to a terminal state.
    */
   getCloudLinkStatus(): Promise<CloudLinkStatus>;
+  /**
+   * Stop a link flow in progress, or dismiss the note a finished relink left.
+   * Resolves with the state it settled in: `linked` while a key is held, else `idle`.
+   */
+  cancelCloudLink(): Promise<CloudLinkStatus>;
   /** Unlink this instance from its DorkOS account (best-effort server-side revoke). */
   unlinkCloud(): Promise<{ ok: boolean }>;
   /** Read the settled linked/unlinked summary for the Settings panel's initial render. */

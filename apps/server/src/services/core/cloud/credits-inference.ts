@@ -166,7 +166,10 @@ export async function primeCreditsInferenceWithContext(
       minted = null;
     }
     // Even schema errors can quote response values; keep credentials out of logs.
-    logger.warn('[Cloud] Could not obtain an inference token', { status });
+    logger.warn('[Cloud] Could not obtain an inference token', {
+      status,
+      code: problemOf(error)?.code,
+    });
     return false;
   }
 }

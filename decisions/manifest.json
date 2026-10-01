@@ -6835,6 +6835,22 @@
         "apps/server/src/lib/logger.ts",
         "apps/server/src/services/core/lifecycle/"
       ]
+    },
+    {
+      "id": "260930-210144",
+      "slug": "managed-wire-explicit-mapping-and-error-body",
+      "title": "Build managed wire responses by explicit mapping and share one legacy error body",
+      "status": "draft",
+      "created": "2026-09-30",
+      "extractedFrom": "managed-cloud-error-honesty",
+      "specSlug": "managed-cloud-error-honesty",
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/connector-managed-schemas.ts",
+        "packages/shared/src/connector-managed-discovery-schemas.ts",
+        "apps/server/src/services/core/auth/cloud-link-client.ts",
+        "apps/site/src/lib/connectors/managed/"
+      ]
     }
   ]
 }

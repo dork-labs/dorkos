@@ -25,6 +25,7 @@ import {
 import {
   ManagedConnectorAuthorityCommandSchema,
   ManagedConnectorAuthorityCommandStatusSchema,
+  ManagedConnectorErrorBodySchema,
   ManagedConnectorExecutionReceiptStatusSchema,
   ManagedConnectorExecutionRequestSchema,
   ManagedConnectorExecutionResponseSchema,
@@ -68,7 +69,8 @@ import {
   ManagedConnectorEventAckResponseSchema,
 } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectorEventPageRequest } from '@dorkos/shared/connector-events';
-import type { ZodType } from 'zod';
+import { ZodError, type ZodType } from 'zod';
+import { logger } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 
@@ -152,20 +154,55 @@ export type ManagedConnectorCloudErrorCode =
   | 'permission_upgrade_required'
   | 'not_found'
   | 'conflict'
+  | 'unavailable'
   | 'network_error'
   | 'request_failed'
   | 'invalid_response';
 
-/** Safe managed-cloud error that never includes a hosted response body or token. */
+/** What one managed-cloud refusal carries beside its category, for logs and route mapping. */
+export interface ManagedConnectorCloudErrorOptions extends ErrorOptions {
+  /** The HTTP status the cloud answered with, when it answered at all. */
+  status?: number;
+  /** The cloud's own `error` code from its refusal body. */
+  cloudCode?: string;
+  /** The cloud's own `reason`, capped at 200 characters and never put in `message`. */
+  reason?: string;
+  /** The HTTP method of the refused request. */
+  method?: string;
+  /** No query string; a cursor or token must never reach a log line. */
+  path?: string;
+  /** `invalid_response` only. Zod issue paths, never the values that failed. */
+  issuePaths?: string[];
+}
+
+/** Safe managed-cloud error whose message never includes a hosted response body or token. */
 export class ManagedConnectorCloudError extends Error {
+  /** The stable refusal category. */
+  readonly code: ManagedConnectorCloudErrorCode;
+  /** The HTTP status the cloud answered with, when it answered at all. */
+  readonly status?: number;
+  /** The cloud's own `error` code from its refusal body. */
+  readonly cloudCode?: string;
+  /** The cloud's own `reason`, capped at 200 characters. */
+  readonly reason?: string;
+  /** The HTTP method of the refused request. */
+  readonly method?: string;
+  /** The refused request's path, without its query string. */
+  readonly path?: string;
+  /** Zod issue paths for an `invalid_response`, never the values that failed. */
+  readonly issuePaths?: string[];
+
   /** Construct one typed managed-cloud refusal. */
-  constructor(
-    readonly code: ManagedConnectorCloudErrorCode,
-    readonly status?: number,
-    options?: ErrorOptions
-  ) {
+  constructor(code: ManagedConnectorCloudErrorCode, options?: ManagedConnectorCloudErrorOptions) {
     super(managedConnectorCloudErrorMessage(code), options);
     this.name = 'ManagedConnectorCloudError';
+    this.code = code;
+    this.status = options?.status;
+    this.cloudCode = options?.cloudCode;
+    this.reason = options?.reason?.slice(0, 200);
+    this.method = options?.method;
+    this.path = options?.path?.split('?')[0];
+    this.issuePaths = options?.issuePaths;
   }
 }
 
@@ -188,6 +225,8 @@ function managedConnectorCloudErrorMessage(code: ManagedConnectorCloudErrorCode)
       return 'DorkOS’s servers couldn’t find this request.';
     case 'conflict':
       return 'DorkOS’s servers turned this down because it clashed with another change.';
+    case 'unavailable':
+      return 'DorkOS’s servers aren’t answering right now.';
     case 'network_error':
       return 'Couldn’t reach DorkOS’s servers.';
     case 'invalid_response':
@@ -197,48 +236,190 @@ function managedConnectorCloudErrorMessage(code: ManagedConnectorCloudErrorCode)
   }
 }
 
-async function throwManagedConnectorCloudError(response: Response): Promise<never> {
-  if (response.status === 401) {
-    throw new ManagedConnectorCloudError('unauthorized', response.status);
+/** Which managed-cloud call refused, for the one log line each refusal writes. */
+interface ManagedCloudRequest {
+  /** A short label naming the calling function, e.g. `catalog`. */
+  kind: string;
+  method: string;
+  path: string;
+}
+
+/**
+ * Write the one log line a managed-cloud refusal gets. Never throws. The path
+ * loses its query string and the reason is capped, so a cursor, token, or long
+ * hosted message never reaches the log.
+ */
+function logManagedCloudRefusal(details: {
+  kind: string;
+  method: string;
+  path: string;
+  status?: number;
+  cloudCode?: string;
+  reason?: string;
+  code: ManagedConnectorCloudErrorCode;
+}): void {
+  try {
+    logger.warn('[CloudLink] Managed cloud request refused', {
+      ...details,
+      path: details.path.split('?')[0],
+      reason: details.reason?.slice(0, 200),
+    });
+  } catch {
+    // Logging must never turn a refusal into a different failure.
   }
-  if (response.status === 403) {
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch {
-      body = undefined;
+}
+
+/** Log and build the error for a success status whose body failed its schema. */
+function unexpectedManagedCloudAnswer(
+  error: unknown,
+  response: Response,
+  request: ManagedCloudRequest
+): ManagedConnectorCloudError {
+  const issuePaths =
+    error instanceof ZodError ? error.issues.map((issue) => issue.path.join('.')) : undefined;
+  try {
+    logger.warn('[CloudLink] Managed cloud answered something unexpected', {
+      kind: request.kind,
+      status: response.status,
+      issuePaths,
+    });
+  } catch {
+    // Logging must never turn a refusal into a different failure.
+  }
+  return new ManagedConnectorCloudError('invalid_response', {
+    status: response.status,
+    issuePaths,
+    method: request.method,
+    path: request.path,
+  });
+}
+
+/** Log and build the error for a request that never got an answer. */
+function managedCloudNetworkError(
+  error: unknown,
+  request: ManagedCloudRequest
+): ManagedConnectorCloudError {
+  logManagedCloudRefusal({ ...request, code: 'network_error' });
+  return new ManagedConnectorCloudError('network_error', {
+    method: request.method,
+    path: request.path,
+    cause: error,
+  });
+}
+
+/** The most of a refusal body read before giving up on it; a real one is tiny. */
+export const MANAGED_ERROR_BODY_LIMIT_BYTES = 16 * 1024;
+
+/**
+ * Read at most {@link MANAGED_ERROR_BODY_LIMIT_BYTES} of a response body, then
+ * let the rest go, so a proxy's multi-megabyte error page is never buffered.
+ * A body cut off at the limit simply fails to parse as JSON.
+ *
+ * @internal Exported for tests.
+ */
+export async function readBoundedText(response: Response): Promise<string | undefined> {
+  if (!response.body) return undefined;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size < MANAGED_ERROR_BODY_LIMIT_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.byteLength;
     }
-    if (
-      typeof body === 'object' &&
-      body !== null &&
-      'code' in body &&
-      body.code === 'permission_upgrade_required'
-    ) {
-      throw new ManagedConnectorCloudError('permission_upgrade_required', response.status);
-    }
-    throw new ManagedConnectorCloudError('request_failed', response.status);
+  } catch {
+    return undefined;
+  } finally {
+    reader.cancel().catch(() => undefined);
   }
-  if (response.status === 404) {
-    throw new ManagedConnectorCloudError('not_found', response.status);
+  const bytes = new Uint8Array(Math.min(size, MANAGED_ERROR_BODY_LIMIT_BYTES));
+  let offset = 0;
+  for (const chunk of chunks) {
+    const room = bytes.byteLength - offset;
+    if (room <= 0) break;
+    bytes.set(chunk.subarray(0, room), offset);
+    offset += Math.min(chunk.byteLength, room);
   }
-  if (response.status === 409) {
-    throw new ManagedConnectorCloudError('conflict', response.status);
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Read the cloud's `{error, reason?}` refusal body. The exact shape is the
+ * shared schema; anything past it is read field by field, so one oversize or
+ * malformed field never costs the refusal its code. Both strings are capped.
+ */
+function readManagedErrorBody(text: string | undefined): {
+  cloudCode?: string;
+  reason?: string;
+} {
+  if (!text) return {};
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return {};
   }
-  throw new ManagedConnectorCloudError('request_failed', response.status);
+  const parsed = ManagedConnectorErrorBodySchema.safeParse(json);
+  if (parsed.success) return { cloudCode: parsed.data.error, reason: parsed.data.reason };
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return {};
+  const body = json as { error?: unknown; reason?: unknown };
+  return {
+    cloudCode:
+      typeof body.error === 'string' && body.error.length > 0
+        ? body.error.slice(0, 100)
+        : undefined,
+    reason: typeof body.reason === 'string' ? body.reason.slice(0, 200) : undefined,
+  };
+}
+
+/** Map a non-2xx cloud answer to its category, carrying the cloud's own code and reason. */
+async function throwManagedConnectorCloudError(
+  response: Response,
+  request: ManagedCloudRequest
+): Promise<never> {
+  const { cloudCode, reason } = readManagedErrorBody(await readBoundedText(response));
+  const common = {
+    status: response.status,
+    cloudCode,
+    reason,
+    method: request.method,
+    path: request.path.split('?')[0],
+  };
+  const code: ManagedConnectorCloudErrorCode =
+    response.status === 401
+      ? 'unauthorized'
+      : response.status === 403
+        ? cloudCode === 'permission_upgrade_required'
+          ? 'permission_upgrade_required'
+          : 'request_failed'
+        : response.status === 404
+          ? 'not_found'
+          : response.status === 409
+            ? 'conflict'
+            : response.status >= 500
+              ? 'unavailable'
+              : 'request_failed';
+  logManagedCloudRefusal({ kind: request.kind, code, ...common });
+  throw new ManagedConnectorCloudError(code, common);
 }
 
 async function parseManagedAuthorityStatus(
-  response: Response
+  response: Response,
+  request: ManagedCloudRequest
 ): Promise<ManagedConnectorAuthorityCommandStatus> {
-  if (!response.ok) await throwManagedConnectorCloudError(response);
+  if (!response.ok) await throwManagedConnectorCloudError(response, request);
   try {
     return ManagedConnectorAuthorityCommandStatusSchema.parse(await response.json());
-  } catch {
-    throw new ManagedConnectorCloudError('invalid_response', response.status);
+  } catch (error) {
+    throw unexpectedManagedCloudAnswer(error, response, request);
   }
 }
 
 async function requestManagedConnectorResource<T>(opts: {
+  /** A short label naming the calling function, carried into the refusal log line. */
+  kind: string;
   baseUrl: string;
   accessToken: string;
   path: string;
@@ -257,6 +438,11 @@ async function requestManagedConnectorResource<T>(opts: {
     ? opts.timeoutSignal(timeoutMs)
     : AbortSignal.timeout(timeoutMs);
   const signal = AbortSignal.any([opts.signal, timeout]);
+  const request: ManagedCloudRequest = {
+    kind: opts.kind,
+    method: opts.method ?? 'GET',
+    path: opts.path.split('?')[0],
+  };
   let response: Response;
   try {
     response = await fetchImpl(`${opts.baseUrl}${opts.path}`, {
@@ -273,13 +459,13 @@ async function requestManagedConnectorResource<T>(opts: {
     });
   } catch (error) {
     if (opts.signal.aborted) throw opts.signal.reason;
-    throw new ManagedConnectorCloudError('network_error', undefined, { cause: error });
+    throw managedCloudNetworkError(error, request);
   }
-  if (!response.ok) await throwManagedConnectorCloudError(response);
+  if (!response.ok) await throwManagedConnectorCloudError(response, request);
   try {
     return opts.schema.parse(await response.json());
-  } catch {
-    throw new ManagedConnectorCloudError('invalid_response', response.status);
+  } catch (error) {
+    throw unexpectedManagedCloudAnswer(error, response, request);
   }
 }
 
@@ -386,6 +572,49 @@ export async function requestDeviceCode(opts: {
 }
 
 /**
+ * How long one device-token request may take. Its own bound, never the
+ * cancel signal: once sent, a token request is allowed to finish, so this is
+ * what keeps a cancel from waiting on a request that hangs. A timeout reads
+ * as a failed poll.
+ */
+export const DEVICE_TOKEN_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Read a JSON body, giving up when `signal` aborts. The race is explicit
+ * rather than left to the fetch implementation, so a body that stalls after
+ * its headers ends at the bound whichever fetch delivered it.
+ */
+function readJsonUntil(res: Response, signal: AbortSignal): Promise<unknown> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    res
+      .json()
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
+
+/** Wait `ms`, or less if `signal` aborts first. */
+function sleepUnlessAborted(
+  sleep: (ms: number) => Promise<void>,
+  ms: number,
+  signal: AbortSignal | undefined
+): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    signal.addEventListener('abort', done, { once: true });
+    sleep(ms).then(done, done);
+  });
+}
+
+/**
  * Poll the device-token endpoint until the flow reaches a terminal state,
  * honoring the RFC 8628 `interval`, `slow_down` backoff, and the code's expiry.
  *
@@ -418,29 +647,48 @@ export async function pollForToken(opts: {
 
   for (;;) {
     if (opts.signal?.aborted) return { status: 'expired' };
-    await sleep(intervalSeconds * 1000);
+    // An abort ends the wait at once. A token request already sent is never
+    // abandoned: the cloud issues the key when it answers.
+    await sleepUnlessAborted(sleep, intervalSeconds * 1000, opts.signal);
     if (opts.signal?.aborted) return { status: 'expired' };
     if (now() >= deadline) return { status: 'expired' };
 
-    const res = await fetchImpl(`${opts.baseUrl}/api/auth/device/token`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        grant_type: DEVICE_GRANT_TYPE,
-        device_code: opts.deviceCode,
-        client_id: INSTANCE_CLIENT_ID,
-      }),
-    });
+    const timeout = new AbortController();
+    const timer = setTimeout(
+      () => timeout.abort(new Error('Device-token request timed out')),
+      DEVICE_TOKEN_REQUEST_TIMEOUT_MS
+    );
+    // The bound covers the body read too: a response that sends its headers and
+    // then stalls must not hold the poll (and every drain waiting on it) open.
+    let res: Response;
+    let body: { access_token?: string; error?: string };
+    try {
+      res = await fetchImpl(`${opts.baseUrl}/api/auth/device/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          grant_type: DEVICE_GRANT_TYPE,
+          device_code: opts.deviceCode,
+          client_id: INSTANCE_CLIENT_ID,
+        }),
+        signal: timeout.signal,
+      });
+      body = res.ok
+        ? ((await readJsonUntil(res, timeout.signal)) as { access_token?: string })
+        : res.status === 400
+          ? ((await readJsonUntil(res, timeout.signal).catch(() => ({}))) as { error?: string })
+          : {};
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (res.ok) {
-      const body = (await res.json()) as { access_token?: string };
       if (!body.access_token)
         throw new Error('Cloud approved the link but returned no access token');
       return { status: 'approved', accessToken: body.access_token };
     }
 
     if (res.status === 400) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
       switch (body.error) {
         case 'authorization_pending':
           continue;
@@ -532,6 +780,11 @@ export async function submitManagedConnectorAuthorityCommand(opts: {
 }): Promise<ManagedConnectorAuthorityCommandStatus> {
   const fetchImpl = opts.fetchImpl ?? defaultFetch;
   const command = ManagedConnectorAuthorityCommandSchema.parse(opts.command);
+  const request: ManagedCloudRequest = {
+    kind: 'authority_submit',
+    method: 'POST',
+    path: '/api/instances/connectors/authority-commands',
+  };
   let response: Response;
   try {
     response = await fetchImpl(`${opts.baseUrl}/api/instances/connectors/authority-commands`, {
@@ -545,9 +798,9 @@ export async function submitManagedConnectorAuthorityCommand(opts: {
     });
   } catch (error) {
     if (opts.signal?.aborted) throw opts.signal.reason;
-    throw new ManagedConnectorCloudError('network_error', undefined, { cause: error });
+    throw managedCloudNetworkError(error, request);
   }
-  return parseManagedAuthorityStatus(response);
+  return parseManagedAuthorityStatus(response, request);
 }
 
 /**
@@ -564,21 +817,23 @@ export async function readManagedConnectorAuthorityCommand(opts: {
   signal?: AbortSignal;
 }): Promise<ManagedConnectorAuthorityCommandStatus> {
   const fetchImpl = opts.fetchImpl ?? defaultFetch;
+  const request: ManagedCloudRequest = {
+    kind: 'authority_read',
+    method: 'GET',
+    path: `/api/instances/connectors/authority-commands/${encodeURIComponent(opts.commandId)}`,
+  };
   let response: Response;
   try {
-    response = await fetchImpl(
-      `${opts.baseUrl}/api/instances/connectors/authority-commands/${encodeURIComponent(opts.commandId)}`,
-      {
-        method: 'GET',
-        headers: { authorization: `Bearer ${opts.accessToken}` },
-        signal: opts.signal,
-      }
-    );
+    response = await fetchImpl(`${opts.baseUrl}${request.path}`, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${opts.accessToken}` },
+      signal: opts.signal,
+    });
   } catch (error) {
     if (opts.signal?.aborted) throw opts.signal.reason;
-    throw new ManagedConnectorCloudError('network_error', undefined, { cause: error });
+    throw managedCloudNetworkError(error, request);
   }
-  return parseManagedAuthorityStatus(response);
+  return parseManagedAuthorityStatus(response, request);
 }
 
 /** Read one account-free managed toolkit page through the linked instance key. */
@@ -598,6 +853,7 @@ export function requestManagedConnectorCatalog(opts: {
   });
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'catalog',
     path: `/api/instances/connectors/catalog?${query}`,
     schema: ManagedConnectorCatalogPageSchema,
     catalogAuthenticationSetup: true,
@@ -614,6 +870,7 @@ export function requestManagedConnectorToolkitVersion(opts: {
 }): Promise<ManagedConnectorToolkitVersionResponse> {
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'toolkit_version',
     path: `/api/instances/connectors/toolkits/${encodeURIComponent(opts.request.toolkit)}/version?version=1`,
     schema: ManagedConnectorToolkitVersionResponseSchema,
   });
@@ -635,6 +892,7 @@ export function requestManagedConnectorOperationSchemas(opts: {
   });
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'operation_schemas',
     path: `/api/instances/connectors/toolkits/${encodeURIComponent(opts.request.toolkit)}/operations?${query}`,
     schema: ManagedConnectorOperationPageResponseSchema,
   });
@@ -656,6 +914,7 @@ export function requestManagedConnectorAccounts(opts: {
   });
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'accounts',
     path: `/api/instances/connectors/connections?${query}`,
     schema: ManagedConnectorAccountListResponseSchema,
   });
@@ -671,6 +930,7 @@ export function requestManagedConnectorAccount(opts: {
 }): Promise<ManagedConnectorAccountResponse> {
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'account',
     path: `/api/instances/connectors/connections/${encodeURIComponent(opts.managedConnectionId)}?version=1`,
     schema: ManagedConnectorAccountResponseSchema,
   });
@@ -688,6 +948,7 @@ export function requestManagedConnectorAuthentication(opts: {
   const request = ManagedConnectorAuthenticationCreateRequestSchema.parse(opts.request);
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'authentication_start',
     method: 'POST',
     body: request,
     path: '/api/instances/connectors/authentication-flows',
@@ -706,6 +967,7 @@ export function requestManagedConnectorAuthenticationState(opts: {
 }): Promise<ManagedConnectorAuthenticationState> {
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'authentication_state',
     path: `/api/instances/connectors/authentication-flows/${encodeURIComponent(opts.flowId)}`,
     schema: ManagedConnectorAuthenticationStateSchema,
   });
@@ -722,6 +984,7 @@ export function executeManagedConnectorOperation(opts: {
   const request = ManagedConnectorExecutionRequestSchema.parse(opts.request);
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'execution',
     method: 'POST',
     body: request,
     path: '/api/instances/connectors/executions',
@@ -739,6 +1002,7 @@ export function requestManagedConnectorExecutionReceipt(opts: {
 }): Promise<ManagedConnectorExecutionReceiptStatus> {
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'execution_receipt',
     path: `/api/instances/connectors/executions/${encodeURIComponent(opts.attemptId)}`,
     schema: ManagedConnectorExecutionReceiptStatusSchema,
   });
@@ -762,6 +1026,7 @@ export function requestManagedConnectorUsage(opts: {
   });
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'usage',
     path: `/api/instances/connectors/usage?${query}`,
     schema: ManagedConnectorUsageResponseSchema,
   });
@@ -816,6 +1081,7 @@ export function requestManagedConnectorEventDefinitions(opts: {
   });
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'event_definitions',
     path: `/api/instances/connectors/toolkits/${encodeURIComponent(opts.request.toolkit)}/events?${query}`,
     schema: ManagedConnectorEventDefinitionPageSchema,
   });
@@ -831,6 +1097,7 @@ export function requestManagedConnectorEventPull(opts: {
 }) {
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'event_pull',
     path: '/api/instances/connectors/events/pull',
     method: 'POST',
     body: ManagedConnectorEventPullRequestSchema.parse({ limit: opts.limit }),
@@ -848,6 +1115,7 @@ export function requestManagedConnectorEventAck(opts: {
 }) {
   return requestManagedConnectorResource({
     ...opts,
+    kind: 'event_ack',
     path: '/api/instances/connectors/events/ack',
     method: 'POST',
     body: ManagedConnectorEventAckRequestSchema.parse({ events: opts.events }),

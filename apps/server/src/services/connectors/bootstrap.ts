@@ -293,6 +293,16 @@ function isLinkRefusal(err: unknown): boolean {
   return err instanceof ManagedConnectorCloudError && err.code === 'permission_upgrade_required';
 }
 
+/**
+ * The category and status a managed-cloud refusal carries, as a log suffix, so
+ * a failed check names what refused instead of only its generic message.
+ */
+function managedCloudDetail(err: unknown): string {
+  return err instanceof ManagedConnectorCloudError
+    ? ` (code=${err.code}, status=${err.status ?? 'n/a'})`
+    : '';
+}
+
 /** Strip a `file:` prefix down to the credential-store name. */
 function credentialNameOf(ref: string): string {
   return ref.replace(/^file:/, '');
@@ -538,7 +548,7 @@ export class ConnectorProviderBootstrapper {
       logger.error(
         `[Connectors] DorkOS managed provider recovery check failed: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }${managedCloudDetail(error)}`
       );
       this._managedWayFailed(error);
     }
@@ -561,7 +571,7 @@ export class ConnectorProviderBootstrapper {
       logger.error(
         `[Connectors] DorkOS managed provider failed its connection check: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }${managedCloudDetail(error)}`
       );
       this._managedWayFailed(error);
     }
@@ -681,7 +691,9 @@ export class ConnectorProviderBootstrapper {
       this._registry.unregisterProviderInstance(instanceId);
       this._instanceBySpecType.delete(spec.type);
       this._lastError.set(spec.type, keyCheckFailure(spec, err));
-      logger.error(`[Connectors] ${spec.logLabel} stopped answering: ${message}`);
+      logger.error(
+        `[Connectors] ${spec.logLabel} stopped answering: ${message}${managedCloudDetail(err)}`
+      );
       this._ownKeyWayFailed(spec, err);
     }
   }
@@ -699,7 +711,7 @@ export class ConnectorProviderBootstrapper {
       logger.error(
         `[Connectors] DorkOS managed provider stopped answering: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }${managedCloudDetail(error)}`
       );
       this._managedWayFailed(error);
     }
@@ -1034,13 +1046,15 @@ export class ConnectorProviderBootstrapper {
       const message = err instanceof Error ? err.message : String(err);
       this._lastError.set(spec.type, keyCheckFailure(spec, err));
       if (spec.isRefusal(err)) {
-        logger.error(`[Connectors] ${spec.logLabel} refused: ${message}`);
+        logger.error(`[Connectors] ${spec.logLabel} refused: ${message}${managedCloudDetail(err)}`);
         this._clearRecheck(spec.type);
       } else {
         // The connection check failed (or the factory hit a transport error).
         // Record it and leave the provider unregistered; the server keeps
         // booting either way.
-        logger.error(`[Connectors] ${spec.logLabel} failed its connection check: ${message}`);
+        logger.error(
+          `[Connectors] ${spec.logLabel} failed its connection check: ${message}${managedCloudDetail(err)}`
+        );
         this._ownKeyWayFailed(spec, err);
       }
     }

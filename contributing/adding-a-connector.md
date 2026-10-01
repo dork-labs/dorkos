@@ -215,6 +215,21 @@ Invariants:
 
 Tests: `services/connectors/__tests__/agent-request-service.test.ts`, the test-mode scenario `services/runtimes/test-mode/connection-request-scenarios.ts`, the browser module `apps/e2e/tests/connections/chat-connect-card.ts`, and the credentialed eval `packages/evals/src/suite/connection-request.ts`.
 
+## Managed-cloud errors
+
+A managed-connector call the control plane refuses throws `ManagedConnectorCloudError` (`apps/server/src/services/core/auth/cloud-link-client.ts`), never a bare `Error`. It carries the refusal's category (`code`), the HTTP `status`, the cloud's own `cloudCode` from its `{error, reason?}` body, a `reason` capped at 200 characters, and the method and path without a query string. Each refusal writes exactly one log line from that file; do not log it again further up.
+
+Every route that can reach the managed cloud maps it through `sendManagedCloudError` (`apps/server/src/routes/managed-cloud-error.ts`) to an honest HTTP status and a stable `code` the client branches on:
+
+| Error `code`                                                  | Status | Route `code`              |
+| ------------------------------------------------------------- | ------ | ------------------------- |
+| `unauthorized`                                                | 401    | `cloud_link_required`     |
+| `permission_upgrade_required`                                 | 409    | `cloud_link_needs_update` |
+| `unavailable`, `network_error`                                | 503    | `cloud_unavailable`       |
+| `request_failed`, `invalid_response`, `not_found`, `conflict` | 502    | `cloud_refused`           |
+
+Never let a managed-cloud error fall through to a route's own generic 500 or outage answer (the connector events router checks it before its `events_unavailable` fallback): call `sendManagedCloudError(res, error)` before any catch-all. A service that wraps the error (as the app-actions listing does) keeps it as `cause`, and its route checks the cause first. The client reads the same `code` through `cloudFailure()` (`apps/client/src/layers/entities/connectors/lib/cloud-failure.ts`), and `LoadFailedState` (or its `RelinkButton`) shows it. For the two link codes the button opens Settings › Access with the `SETTINGS_RELINK_SECTION` section, and the account panel starts a new link itself: a link that needs updating is still linked, so landing on the panel alone would leave nothing to press.
+
 ## Common mistakes
 
 - Using provider `type` as the configured instance key.

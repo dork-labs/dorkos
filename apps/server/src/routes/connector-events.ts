@@ -21,6 +21,7 @@ import type {
   ManagedEventConsentAuthority,
 } from '../services/connectors/events/grant-port.js';
 import type { ConnectorEventSettingsService } from '../services/connectors/events/settings-service.js';
+import { sendManagedCloudError } from './managed-cloud-error.js';
 import {
   resolveConnectorOperator,
   type ConnectorOwnerBoundaryDeps,
@@ -137,6 +138,8 @@ export function createConnectorEventsRouter(deps: ConnectorEventsRouterDeps): Ro
         });
         return;
       }
+      // A DorkOS account refusal says which one, before the generic outage.
+      if (sendManagedCloudError(res, error)) return;
       if (!(error instanceof ConnectorSubscriptionError)) {
         res.status(503).json({
           code: 'events_unavailable',

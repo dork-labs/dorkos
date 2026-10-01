@@ -6,6 +6,7 @@ import {
   ManagedConnectorCatalogPageSchema,
   ManagedConnectorCatalogRequestSchema,
   ManagedConnectorOperationPageResponseSchema,
+  ManagedConnectorOperationSchema,
 } from '../connector-managed-discovery-schemas.js';
 
 describe('managed connector discovery wire', () => {
@@ -98,6 +99,35 @@ describe('managed connector discovery wire', () => {
         operations: [{ ...operation, externalAccountRef: 'ca_private' }],
         truncated: false,
       }).success
+    ).toBe(false);
+  });
+
+  it('accepts optional display hints on an operation and stays strict otherwise', () => {
+    const operation = {
+      providerInstanceId: 'managed:composio',
+      toolkit: 'gmail',
+      hostedRevisionId: '11111111-1111-4111-8111-111111111111',
+      operationSlug: 'gmail.messages.list',
+      toolkitVersion: '20260901_00',
+      schemaHash: 'sha256:schema',
+      capabilityClassification: 'read',
+      retryPolicy: 'never',
+      inputSchema: { type: 'object' },
+    };
+    expect(
+      ManagedConnectorOperationSchema.parse({
+        ...operation,
+        displayName: 'List messages',
+        important: true,
+      })
+    ).toMatchObject({ displayName: 'List messages', important: true });
+    expect(ManagedConnectorOperationSchema.parse(operation)).toEqual(operation);
+    expect(
+      ManagedConnectorOperationSchema.safeParse({ ...operation, providerRevisionRef: 'private' })
+        .success
+    ).toBe(false);
+    expect(
+      ManagedConnectorOperationSchema.safeParse({ ...operation, displayName: '' }).success
     ).toBe(false);
   });
 

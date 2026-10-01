@@ -212,6 +212,7 @@ function isManagedCloudError(
       'permission_upgrade_required',
       'not_found',
       'conflict',
+      'unavailable',
       'network_error',
       'request_failed',
       'invalid_response',
@@ -2082,6 +2083,8 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         return 'DorkOS’s servers didn’t answer in time.';
       case 'invalid_response':
         return 'DorkOS’s servers sent back an answer that didn’t make sense.';
+      case 'unavailable':
+        return 'DorkOS’s servers had a problem.';
       case 'request_failed':
       case 'not_found':
         return failure.status !== undefined && failure.status >= 500

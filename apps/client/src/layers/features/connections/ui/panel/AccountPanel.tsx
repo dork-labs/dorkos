@@ -26,13 +26,13 @@ import {
   AlertDialogTitle,
   Button,
   ExternalLinkAnchor,
-  QueryErrorState,
   Skeleton,
 } from '@/layers/shared/ui';
 import { accountChangeError } from '../../lib/account-change-error';
 import { accountAppName } from '../../lib/app-list';
 import { retryLine, tryItPrompts, usageLine } from '../../lib/app-panel-copy';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
+import { LoadFailedState } from '../LoadFailedState';
 import { AccountPanelMore } from './AccountPanelMore';
 import { PanelFix, PanelSection } from './panel-parts';
 
@@ -73,7 +73,8 @@ export function AccountPanel(props: AccountPanelProps) {
   }
   if (detail.isError) {
     return (
-      <QueryErrorState
+      <LoadFailedState
+        error={detail.error}
         title="Couldn’t load this app"
         description="Try again. Nothing about it was changed."
         onRetry={() => void detail.refetch()}
