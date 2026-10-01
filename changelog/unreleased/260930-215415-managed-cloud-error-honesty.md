@@ -13,6 +13,7 @@ covers:
   - 'fix(server): name the cloud code and status when managed recovery fails (DOR-2622)'
   - 'fix(site): cap an upstream version reason at the wire limit (DOR-2622)'
   - "fix(cloud-link): keep a linked computer linked when a relink doesn't finish (DOR-2622)"
+  - "fix(connectors): keep the provider error's cause when discovery wraps it (DOR-2622)"
 ---
 
 ### Fixed
