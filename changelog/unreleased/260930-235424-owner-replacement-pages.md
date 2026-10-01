@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): show the owner replacement in the Community browser app (DOR-2542)'
+  - 'fix(community): give the owner-replacement banner its own React key (DOR-2542)'
 ---
 
 ### Added
