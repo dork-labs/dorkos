@@ -13,12 +13,16 @@
  *
  * The service rounds `units` to three decimal places, so that is all this shows;
  * trailing zeros are dropped. `en-US`, like the contract's own formatter, so
- * every figure in the section reads with one decimal point.
+ * every figure in the section reads with one decimal point. A quantity too small
+ * to round to 0.001 arrives as `0`; when it was still charged for, it reads
+ * `<0.001` rather than a zero beside a real amount.
  *
  * @param units - How much was charged for.
  * @param unit - What `units` counts, exactly as the service sent it.
+ * @param chargedMicro - What was charged for it, in integer micro-units as a string.
  */
-export function formatUnits(units: number, unit: string): string {
+export function formatUnits(units: number, unit: string, chargedMicro: string): string {
+  if (units === 0 && BigInt(chargedMicro) > 0n) return `<0.001 ${unit}`;
   return `${units.toLocaleString('en-US', { maximumFractionDigits: 3 })} ${unit}`;
 }
 

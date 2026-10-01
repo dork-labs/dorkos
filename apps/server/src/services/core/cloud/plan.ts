@@ -35,11 +35,12 @@ import {
   type Member,
   type Nudge,
   type Org,
+  type OtherCharges,
   type Seat,
   type UsageResponse,
 } from '@dork-labs/cloud-api';
 import { z } from 'zod';
-import { logger } from '../../../lib/logger.js';
+import { logger, logError } from '../../../lib/logger.js';
 import { createCloudV1Client, readOrNull } from './v1-client.js';
 
 /** How a usage window may be grouped. Mirrors the contract's own vocabulary. */
@@ -57,8 +58,25 @@ export interface PlanOverview {
   balance: Balance | null;
 }
 
-/** The default usage window: the last 30 days, ending now. */
+/** One day, in milliseconds. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The inference window: the last 30 days, ending now. */
 const USAGE_WINDOW_DAYS = 30;
+
+/**
+ * How far back to look for charges that are not inference, in days.
+ *
+ * The contract lists a billing period only in a window it STARTED in, and a
+ * period appears only once it has ended and settled. So the inference window
+ * can never hold one: by the time a month-long period exists, it started more
+ * than 30 days ago. A period lasts at most 31 days, and the latest settled one
+ * ended no more than one period ago, so it started within the last 62 days.
+ * One day more covers the short wait between a period ending and settling.
+ * Periods last at least 28 days, so this holds at most two of each charge,
+ * and {@link latestPeriods} keeps the later one.
+ */
+const CHARGES_WINDOW_DAYS = 63;
 
 /**
  * The plan card's read: entitlements, and the balance beside it.
@@ -101,27 +119,98 @@ export async function listMembers(orgId: string, signal?: AbortSignal): Promise<
 }
 
 /**
- * One usage window, grouped as asked.
+ * The credits gauge's usage read: the last 30 days of inference, grouped as
+ * asked, and the latest settled period of each charge that is not inference.
  *
  * `groupBy: 'seat'` is what the credits gauge's per-agent breakdown reads: each
  * row's `displayName` is the label, `key` is opaque, and the two price figures
  * ride along so the difference between them is visible without a second call.
- * A malformed `otherCharges` block is dropped by the contract and logged here
- * once, so a charge that could not be shown still leaves a trace.
+ *
+ * The two halves come from two windows, because the contract places a billing
+ * period in the window it started in (see {@link CHARGES_WINDOW_DAYS}). The
+ * response's `from`, `to`, `rows` and `totals` describe the 30-day inference
+ * window; its `otherCharges` holds the latest settled period of each charge,
+ * whose own `periodStart` and `periodEnd` say which days it covers. A malformed
+ * `otherCharges` block is dropped by the contract and logged here once, so a
+ * charge that could not be shown still leaves a trace, and a charges read that
+ * fails is logged and left out rather than taking the breakdown down with it.
  *
  * @param grouping - How to group the rows.
- * @param signal - Aborts the request.
+ * @param signal - Aborts both requests.
  */
 export async function readUsage(
   grouping: UsageGrouping,
   signal?: AbortSignal
 ): Promise<UsageResponse | null> {
   const to = new Date();
-  const from = new Date(to.getTime() - USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const [usage, otherCharges] = await Promise.all([
+    readUsageWindow(daysBefore(to, USAGE_WINDOW_DAYS), to, grouping, signal),
+    readOtherCharges(daysBefore(to, CHARGES_WINDOW_DAYS), to, grouping, signal),
+  ]);
+  if (usage === null) return null;
+  // Whatever the inference window carried under `otherCharges` is replaced, not
+  // merged: a period that started inside it has not settled, so it holds none.
+  const { otherCharges: _inferenceWindowCharges, ...inference } = usage;
+  return otherCharges === undefined ? inference : { ...inference, otherCharges };
+}
+
+/**
+ * The instant a whole number of days before another.
+ *
+ * @param at - The later instant.
+ * @param days - How many days earlier.
+ */
+function daysBefore(at: Date, days: number): Date {
+  return new Date(at.getTime() - days * DAY_MS);
+}
+
+/**
+ * One `/v1/usage` window, exactly as the contract parses it.
+ *
+ * @param from - The window's start, inclusive.
+ * @param to - The window's end, exclusive.
+ * @param grouping - How to group the rows.
+ * @param signal - Aborts the request.
+ * @param schema - The schema to parse the body with.
+ */
+function readUsageWindow(
+  from: Date,
+  to: Date,
+  grouping: UsageGrouping,
+  signal: AbortSignal | undefined,
+  schema: z.ZodType<UsageResponse> = UsageResponseSchema
+): Promise<UsageResponse | null> {
+  return readOrNull((client) =>
+    client.get(V1_ROUTES.usage, schema, {
+      query: { from: from.toISOString(), to: to.toISOString(), groupBy: grouping },
+      signal,
+    })
+  );
+}
+
+/**
+ * The latest settled period of each charge that is not inference, read over
+ * the longer charges window.
+ *
+ * Answers `undefined` when the service sent no such charges, when it sent a
+ * block this release could not read, and when the read itself failed. The last
+ * two are logged: each hides a charge the account may have been billed for.
+ *
+ * @param from - The window's start, inclusive.
+ * @param to - The window's end, exclusive.
+ * @param grouping - The grouping the request carries; these charges ignore it.
+ * @param signal - Aborts the request.
+ */
+async function readOtherCharges(
+  from: Date,
+  to: Date,
+  grouping: UsageGrouping,
+  signal: AbortSignal | undefined
+): Promise<OtherCharges | undefined> {
   // The contract drops a malformed `otherCharges` block rather than failing the
-  // read, so the inference rows still arrive. That keeps the card up, but it
-  // also hides a charge the account was billed for — so note whether the raw
-  // body carried the block, and leave a trace when the parse let it go.
+  // read. That keeps the card up, but it also hides a charge the account was
+  // billed for — so note whether the raw body carried the block, and leave a
+  // trace when the parse let it go.
   let sentOtherCharges = false;
   const schema = z.preprocess((raw) => {
     sentOtherCharges =
@@ -130,19 +219,52 @@ export async function readUsage(
       (raw as Record<string, unknown>).otherCharges !== undefined;
     return raw;
   }, UsageResponseSchema);
-  const usage = await readOrNull((client) =>
-    client.get(V1_ROUTES.usage, schema, {
-      query: { from: from.toISOString(), to: to.toISOString(), groupBy: grouping },
-      signal,
-    })
-  );
+  let usage: UsageResponse | null;
+  try {
+    usage = await readUsageWindow(from, to, grouping, signal, schema);
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    logger.warn(
+      '[Cloud] Could not read the charges that are not inference; showing usage without them',
+      logError(err)
+    );
+    return undefined;
+  }
   if (usage !== null && sentOtherCharges && usage.otherCharges === undefined) {
     logger.warn(
       '[Cloud] usage carried an otherCharges block this release could not read; it was dropped and the inference rows kept',
       { groupBy: grouping }
     );
   }
-  return usage;
+  return usage?.otherCharges === undefined ? undefined : latestPeriods(usage.otherCharges);
+}
+
+/**
+ * Keep only the latest period of each charge, and total what is kept.
+ *
+ * A charge is told apart by the service's own `displayName` and `unit`, so a
+ * second kind of charge the service adds later keeps its own latest period
+ * rather than being hidden behind another's. The block's total is recomputed
+ * from the rows kept, exactly, as integer micro-units.
+ *
+ * @param block - The charges in the longer window.
+ * @returns The latest period of each charge, with their total.
+ */
+function latestPeriods(block: OtherCharges): OtherCharges {
+  const latest = new Map<string, OtherCharges['rows'][number]>();
+  for (const row of block.rows) {
+    const kind = JSON.stringify([row.displayName, row.unit]);
+    const held = latest.get(kind);
+    if (held === undefined || Date.parse(row.periodStart) > Date.parse(held.periodStart)) {
+      latest.set(kind, row);
+    }
+  }
+  // Keep the service's order among the rows that remain.
+  const kept = new Set(latest.values());
+  const rows = block.rows.filter((row) => kept.has(row));
+  if (rows.length === block.rows.length) return block;
+  const total = rows.reduce((sum, row) => sum + BigInt(row.dorkosPriceMicro), 0n);
+  return { rows, dorkosPriceMicro: total.toString() };
 }
 
 /**

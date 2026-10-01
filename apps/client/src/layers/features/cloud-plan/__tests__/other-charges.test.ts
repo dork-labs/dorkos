@@ -21,7 +21,18 @@ describe('formatPeriod', () => {
 
 describe('formatUnits', () => {
   it('keeps up to three decimals and the service`s own unit', () => {
-    expect(formatUnits(3.719, 'GB-month')).toBe('3.719 GB-month');
-    expect(formatUnits(1234.5, 'widget-days')).toBe('1,234.5 widget-days');
+    expect(formatUnits(3.719, 'GB-month', '42')).toBe('3.719 GB-month');
+    expect(formatUnits(1234.5, 'widget-days', '42')).toBe('1,234.5 widget-days');
+  });
+
+  // The service rounds `units` to three places, so a sliver that was still
+  // charged for arrives as 0. "0 GB-month" beside a real amount reads as a
+  // charge for nothing.
+  it('reads <0.001 for a quantity that rounded to zero but was still charged for', () => {
+    expect(formatUnits(0, 'GB-month', '7')).toBe('<0.001 GB-month');
+  });
+
+  it('reads 0 for a quantity of zero that cost nothing', () => {
+    expect(formatUnits(0, 'GB-month', '0')).toBe('0 GB-month');
   });
 });

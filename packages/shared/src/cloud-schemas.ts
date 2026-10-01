@@ -105,7 +105,15 @@ import type {
 export type CloudPlanResponse =
   { available: false } | { available: true; entitlements: Entitlements; balance: Balance | null };
 
-/** `GET /api/cloud/usage` — one grouped usage window for the credits gauge. */
+/**
+ * `GET /api/cloud/usage` — what the credits gauge reads.
+ *
+ * `usage` is the last 30 days of inference, grouped as asked; its `from` and
+ * `to` describe that window. Its `otherCharges`, when present, is the latest
+ * settled billing period of each charge that is not inference, read over a
+ * longer window because a period appears only in a window it started in. Each
+ * of those rows carries its own `periodStart` and `periodEnd`.
+ */
 export type CloudUsageResponse = { available: false } | { available: true; usage: UsageResponse };
 
 /**
