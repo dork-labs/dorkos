@@ -2914,6 +2914,9 @@
           },
           "code": {
             "type": "string"
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "required": [
@@ -4360,6 +4363,9 @@
               },
               "details": {
                 "type": "string"
+              },
+              "reason": {
+                "type": "string"
               }
             },
             "required": [
@@ -5028,6 +5034,9 @@
             "$ref": "#/components/schemas/ErrorCategory"
           },
           "details": {
+            "type": "string"
+          },
+          "reason": {
             "type": "string"
           }
         },
@@ -18716,6 +18725,9 @@
                           "$ref": "#/components/schemas/ErrorCategory"
                         },
                         "details": {
+                          "type": "string"
+                        },
+                        "reason": {
                           "type": "string"
                         }
                       },
