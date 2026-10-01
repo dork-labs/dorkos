@@ -43,9 +43,10 @@ import {
 } from '@/layers/shared/lib';
 import { SETTINGS_RELINK_SECTION, useNow, useSettingsDeepLink } from '@/layers/shared/model';
 import { useCloudLink, type CloudLinkView } from '../model/use-cloud-link';
-
-type CloudLinkRelinkOutcome = Extract<CloudLinkView, { kind: 'linked' }>['relinkOutcome'];
 import { msUntilExpiry, spokenExpiry, visibleExpiry } from '../lib/code-expiry';
+
+/** How a relink that did not replace the link ended, as the linked view carries it. */
+type CloudLinkRelinkOutcome = Extract<CloudLinkView, { kind: 'linked' }>['relinkOutcome'];
 
 /**
  * DorkOS account section for the Settings dialog — links or unlinks this
