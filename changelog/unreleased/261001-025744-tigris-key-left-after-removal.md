@@ -1,6 +1,9 @@
 ---
 covers:
   - '#2431'
+  - "fix(cli): say a removed Tigris bucket's access key is still active, and how to delete it (DOR-2646)"
+  - 'fix(cli): print the Tigris key steps on every path after cleanup, and keep the key out of retained (DOR-2646)'
+  - 'fix(cli): show the Tigris key steps only once the bucket is proved gone (DOR-2646)'
 ---
 
 ### Fixed
