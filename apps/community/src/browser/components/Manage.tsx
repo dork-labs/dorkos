@@ -896,7 +896,9 @@ export function Manage({
                 </>
               )}
             </section>
-            {!readOnly && (
+            {/* A member may leave a held community too; an owner must transfer first, and a
+                hold allows no transfer, so the owner sees this section only when active. */}
+            {(!readOnly || (held && me.role !== 'owner')) && (
               <section className="panel">
                 <h3>Leave community</h3>
                 {me.role === 'owner' ? (
