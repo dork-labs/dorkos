@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "260919-175501",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-09-30T10:45:58Z; the verdict is computed on 2026-10-01.",
- "computed_at": "2026-09-30T11:03:28.075Z",
+ "verdict": "partial",
+ "reason": "gate.wf.credential-free-build.credential-free-build.failure_rate@merge_group moved from 0.04 to 0.0227, 69% of the way to the target of 0.015, but did not reach it.",
+ "computed_at": "2026-10-01T11:30:05.253Z",
  "hypothesis_hash": "8f5e34ebba61a075",
  "metric": "gate.wf.credential-free-build.credential-free-build.failure_rate@merge_group",
  "anchor": "2026-09-23T10:45:58Z",
