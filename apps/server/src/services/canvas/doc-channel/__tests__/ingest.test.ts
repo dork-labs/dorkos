@@ -160,6 +160,27 @@ describe('document event acceptance', () => {
       'DOC_EVENT_BACKLOG_FULL'
     );
   });
+  it('refuses asynchronous payload validation before allocating accepted input', async () => {
+    const f = fixture();
+    const input = event();
+    let finished = false;
+    // @ts-expect-error Deliberately exercise an unsafe asynchronous port at runtime.
+    f.access.validatePayload = async () => {
+      await Promise.resolve();
+      finished = true;
+      throw new Error('late schema refusal');
+    };
+    expect(() => f.ingest.accept(input, f.authority)).toThrow('INVALID_DOC_EVENT_PAYLOAD');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(finished).toBe(true);
+    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(1);
+    expect(f.store.getEvent('doc-1', input.id)).toBeUndefined();
+    expect(f.store.listDeliveries('doc-1', input.id)).toEqual([]);
+    expect(
+      f.db.get<{ count: number }>(sql`SELECT count(*) AS count FROM canvas_doc_batches`)!.count
+    ).toBe(0);
+  });
   it('rejects invalid payload schemas and envelopes without receipt allocation', () => {
     const f = fixture();
     f.access.validatePayload = () => {
