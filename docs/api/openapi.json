@@ -5904,6 +5904,144 @@
           "content": {
             "$ref": "#/components/schemas/UiCanvasContent"
           },
+          "channel": {
+            "type": "object",
+            "properties": {
+              "routes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "on": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                    },
+                    "to": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "log"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "agent:owner"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "room:self"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "maxLength": 206,
+                          "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                        }
+                      ]
+                    },
+                    "turn": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "none"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "mode"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "immediate"
+                              ]
+                            },
+                            "maxBatch": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "maxBatch"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "coalesce"
+                              ]
+                            },
+                            "windowMs": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "maxBatch": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "windowMs",
+                            "maxBatch"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "coalescibleTypes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                      },
+                      "maxItems": 128
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "on",
+                    "to",
+                    "turn"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 16
+              }
+            },
+            "required": [
+              "routes"
+            ],
+            "additionalProperties": false
+          },
           "title": {
             "type": "string"
           },
@@ -13486,6 +13624,144 @@
                 "description": "What to show. One of the fourteen canvas shapes."
               }
             ]
+          },
+          "channel": {
+            "type": "object",
+            "properties": {
+              "routes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "on": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                    },
+                    "to": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "log"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "agent:owner"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "room:self"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "maxLength": 206,
+                          "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                        }
+                      ]
+                    },
+                    "turn": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "none"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "mode"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "immediate"
+                              ]
+                            },
+                            "maxBatch": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "maxBatch"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "coalesce"
+                              ]
+                            },
+                            "windowMs": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "maxBatch": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "windowMs",
+                            "maxBatch"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "coalescibleTypes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                      },
+                      "maxItems": 128
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "on",
+                    "to",
+                    "turn"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 16
+              }
+            },
+            "required": [
+              "routes"
+            ],
+            "additionalProperties": false
           },
           "pinned": {
             "type": "boolean",
