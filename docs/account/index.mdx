@@ -9,7 +9,9 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Your DorkOS Account
 
-A **DorkOS account** is a free sign-in at [dorkos.ai](https://dorkos.ai). Link a computer to it and you get one page that lists every machine you run DorkOS on, with a pulse for each: which version it runs and when it last checked in. You never need an account. Everything else in these docs works without one.
+A **DorkOS account** is your sign-in at [dorkos.ai](https://dorkos.ai). Creating one is free. Link a computer to it and the **DorkOS account** tab in Settings shows your plan, your credits and your seats, and dorkos.ai lists every computer you run DorkOS on.
+
+You don't need an account to run DorkOS. Your agents, sessions, channels and connections all work without one. Two things do need an account: starting a space that runs on DorkOS, and running agents on DorkOS credits.
 
 Your account is separate from the optional [login](/docs/self-hosting/securing-your-instance) that protects DorkOS on one computer. The login guards that one machine. The account is what your computers _attach_ to. You can have a login with no account, an account with no login, or both.
 
@@ -20,16 +22,24 @@ Your account is separate from the optional [login](/docs/self-hosting/securing-y
 
 ## What linking does today
 
-Linking a computer to your DorkOS account **today** gives you:
+Once this computer is linked, the **DorkOS account** tab in Settings shows:
 
-- A **list** of your linked computers at [dorkos.ai/account/instances](https://dorkos.ai/account/instances): name, platform, DorkOS version, and when each was last seen.
+- **Your plan** and what it includes. If the account has no plan yet, the tab says so.
+- **Your credits**: how many are left, when included credits renew, and where they went.
+- **Use credits for**: one switch per runtime that can run on your DorkOS credits. This shows only on a computer where credits are turned on.
+- **What's on your account**: the runtimes on your credits, the apps you connected through this account, and the spaces that run on it.
+- **Seats**, when your account has an organization: who each seat is assigned to.
+- **Manage on the web**: buttons that open **Billing and invoices** and **Add credits** on dorkos.ai in your browser, a way to choose or change your plan, and **Export your account data**. Payments always happen on the DorkOS website, never in the app.
+
+At [dorkos.ai/account/instances](https://dorkos.ai/account/instances) you also get:
+
+- A **list** of your linked computers: name, platform, DorkOS version, and when each was last seen.
 - A **check-in**: while linked, DorkOS checks in when it starts and every 15 minutes, so the list shows what is running.
 - **Removal**: take a computer off your account from that page at any time.
 
 <Callout type="warn">
-  Linking lays the track; the trains come later. Relay, notifications, and remote access will ride
-  this connection in future releases, and they are **not** available yet. Link today to claim your
-  account and add your computers to it.
+  Relay, notifications and remote access do not use your DorkOS account yet. Reaching DorkOS from
+  your phone still goes through [your own tunnel](/docs/self-hosting/tunnel-setup).
 </Callout>
 
 ## Creating a DorkOS account
@@ -113,7 +123,7 @@ Click **Link this computer**. The panel shows the same 8-character code, an **Op
 <Step>
 ### Approve, and watch it flip
 
-Approve at `/activate`. The tab updates **in place**, from _pending_ to _signed in_, showing the linked account and when it last synced, then your plan, your credits, what is on your account, and your seats. **Unlink this computer** is at the bottom, and **Link again** sits beside the account name. An expired code offers **Generate a new code**.
+Approve at `/activate`. The tab updates **in place**, from _pending_ to _signed in_, showing the linked account and when it last synced. Below that come the sections listed in [What linking does today](#what-linking-does-today); each one appears only when your account has something to show for it. **Unlink this computer** is at the bottom, and **Link again** sits beside the account name. An expired code offers **Generate a new code**.
 
 <ProductShot
   id="accounts-linked"
