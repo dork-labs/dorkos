@@ -1,4 +1,5 @@
-import { FieldCard, FieldCardContent, SettingRow, Switch } from '@/layers/shared/ui';
+import { RefreshCw } from 'lucide-react';
+import { Button, FieldCard, FieldCardContent, SettingRow, Switch } from '@/layers/shared/ui';
 import { useCreditsFor, type CreditsForRow } from '../model/use-credits-for';
 
 /**
@@ -12,7 +13,7 @@ import { useCreditsFor, type CreditsForRow } from '../model/use-credits-for';
  * nothing would be a lie about where somebody's money goes.
  */
 export function UseCreditsFor() {
-  const { rows, pending, failed, setOn } = useCreditsFor();
+  const { rows, pending, failed, setOn, refresh } = useCreditsFor();
 
   if (rows.length === 0) return null;
 
@@ -30,6 +31,14 @@ export function UseCreditsFor() {
             />
           </SettingRow>
         ))}
+        {refresh !== null && (
+          // The pass credits run on expires. Getting a fresh one is the only
+          // thing this build can do to keep them on, so it stays one press away.
+          <Button size="sm" variant="outline" disabled={pending} onClick={refresh}>
+            <RefreshCw className="mr-1.5 size-3.5" aria-hidden />
+            Refresh
+          </Button>
+        )}
         {failed && (
           <p className="text-destructive text-sm" role="alert">
             Couldn’t reach DorkOS credits. Nothing changed. Try again in a moment.
@@ -49,10 +58,11 @@ export function UseCreditsFor() {
 function rowDescription(row: CreditsForRow): string {
   if (!row.on) return `${row.name} uses its own sign-in.`;
   if (!row.canTurnOff) {
-    // The true answer for a build where credits are one process-wide token:
-    // nothing here can hand the runtime back, and pretending otherwise would
-    // leave somebody paying for turns they thought had stopped.
-    return `${row.name} runs on your DorkOS credits until DorkOS restarts or you unlink this computer.`;
+    // The true answer for a build where credits are one process-wide token
+    // held in memory: nothing here can hand the runtime back, the token expires
+    // on its own, and pretending otherwise would mislead somebody about who
+    // pays for their next turn.
+    return `${row.name} runs on your DorkOS credits for now. That stops when the current pass expires, when DorkOS restarts, or when you unlink this computer. Refresh gets a new pass; if it has already stopped, turn it on again.`;
   }
   return row.previousSignIn === null
     ? `${row.name} runs on your DorkOS credits.`

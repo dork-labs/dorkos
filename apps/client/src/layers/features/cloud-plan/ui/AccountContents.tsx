@@ -33,8 +33,8 @@ export function AccountContents() {
         </p>
         {empty ? (
           <p className="text-muted-foreground text-sm">
-            Nothing yet. Runtimes on your credits, apps you connect through this account and
-            communities that run on it will show up here.
+            Nothing yet. Runtimes on your credits, apps you connect through this account and spaces
+            that run on it will show up here.
           </p>
         ) : (
           <dl className="space-y-3 text-sm">
@@ -43,10 +43,7 @@ export function AccountContents() {
               <Contents label="Connected apps" items={apps.map((app) => app.name)} />
             )}
             {communities.length > 0 && (
-              <Contents
-                label="Communities"
-                items={communities.map((community) => community.name)}
-              />
+              <Contents label="Spaces" items={communities.map((community) => community.name)} />
             )}
           </dl>
         )}

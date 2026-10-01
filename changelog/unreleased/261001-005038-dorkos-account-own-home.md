@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): give the DorkOS account its own home, one move from the team-name menu (DOR-2628)'
+  - 'fix(client): point every "Settings › Access" message at its new tab, and tighten the account home (DOR-2628)'
 ---
 
 ### Changed

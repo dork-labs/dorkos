@@ -57,7 +57,7 @@ export function SecurityPanel() {
         {/* No heading here: the Settings dialog draws the panel's own
             ("Login & security"). This is its explainer. */}
         <p className="text-muted-foreground text-sm">
-          Require an owner login to reach this instance. Exposing DorkOS beyond localhost (a tunnel
+          Require an owner login to reach this computer. Exposing DorkOS beyond localhost (a tunnel
           or non-loopback bind) always requires login.
         </p>
       </div>
@@ -68,8 +68,8 @@ export function SecurityPanel() {
             label="Require login"
             description={
               authEnabled
-                ? 'An owner account is required to use this instance.'
-                : 'Off. This instance starts with no login (localhost only).'
+                ? 'An owner account is required to use DorkOS on this computer.'
+                : 'Off. DorkOS on this computer starts with no login (localhost only).'
             }
           >
             <Switch
@@ -121,7 +121,7 @@ export function SecurityPanel() {
           <DialogHeader>
             <DialogTitle>Create an owner account</DialogTitle>
             <DialogDescription>
-              This becomes the login for this instance. Email is a local identifier only.
+              This becomes the login for this computer. Email is a local identifier only.
             </DialogDescription>
           </DialogHeader>
           <OwnerSetupScreen

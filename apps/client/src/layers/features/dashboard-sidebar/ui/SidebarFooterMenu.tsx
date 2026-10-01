@@ -58,11 +58,13 @@ export const FOOTER_LABELLED_ROW = cn(
 /**
  * What the fold is called once it has room for a name.
  *
- * Named for what is behind it rather than for the fact that it is a fold: your
- * account first, then Settings, the theme, help and feedback. "More" is what a
- * control is called when nobody has decided what it holds.
+ * Named for what is behind it rather than for the fact that it is a fold: who
+ * you are logged in as (and signing out), then the theme. "More" is what a
+ * control is called when nobody has decided what it holds. It never says
+ * "account": that word means the DorkOS account, which has its own row at the
+ * top of the You tab (DOR-2628).
  */
-const ACCOUNT_MENU_LABEL = 'Account and settings';
+const ACCOUNT_MENU_LABEL = 'Login and theme';
 
 /** The cycle the theme item walks. */
 const THEME_ORDER: Theme[] = ['light', 'dark', 'system'];

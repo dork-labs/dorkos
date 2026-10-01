@@ -320,6 +320,14 @@ describe('useSettingsDeepLink', () => {
     expect(result.current.section).toBeNull();
   });
 
+  it('sends an old Access link that named its login half to Login & security', async () => {
+    harness = buildHarness('/?settings=access&settingsSection=security');
+    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    expect(result.current.activeTab).toBe('security');
+  });
+
   it('keeps an explicit settingsSection on a retired id', async () => {
     harness = buildHarness('/?settings=access&settingsSection=plan');
     const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });

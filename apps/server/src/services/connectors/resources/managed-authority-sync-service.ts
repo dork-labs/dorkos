@@ -2057,7 +2057,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   private rejectionReason(code?: ManagedAuthorityRejectionCode): string {
     switch (code) {
       case 'permission_upgrade_required':
-        return 'Your DorkOS account link needs updating. Link this computer again in Settings › Access.';
+        return 'Your DorkOS account link needs updating. Link this computer again in Settings › DorkOS account.';
       case 'revision_unavailable':
         return 'One or more selected actions are no longer available.';
       case 'scope_conflict':
@@ -2071,7 +2071,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   private failureReason(failure: DeliveryFailure): string {
     switch (failure.code) {
       case 'permission_upgrade_required':
-        return 'Your DorkOS account link needs updating. Link this computer again in Settings › Access.';
+        return 'Your DorkOS account link needs updating. Link this computer again in Settings › DorkOS account.';
       case 'unauthorized':
         return 'This computer isn’t linked to your DorkOS account anymore.';
       case 'conflict':

@@ -424,7 +424,7 @@ function unreachedDirectoryMessage(
     case 'dorkos_account_unlinked':
       return (
         `DorkOS cannot check ${app} right now: the person's DorkOS account isn't linked ` +
-        'anymore. They can link it again in Settings › Access in the DorkOS app, or add their ' +
+        'anymore. They can link it again in Settings › DorkOS account in the DorkOS app, or add their ' +
         'own key in Settings › Connections; then ask again.'
       );
     case 'dorkos_account_unavailable':

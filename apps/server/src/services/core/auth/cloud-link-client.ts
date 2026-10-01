@@ -183,7 +183,7 @@ function managedConnectorCloudErrorMessage(code: ManagedConnectorCloudErrorCode)
     case 'unauthorized':
       return 'This computer isn’t linked to your DorkOS account anymore.';
     case 'permission_upgrade_required':
-      return 'Your DorkOS account link needs updating. Link this computer again in Settings › Access.';
+      return 'Your DorkOS account link needs updating. Link this computer again in Settings › DorkOS account.';
     case 'not_found':
       return 'DorkOS’s servers couldn’t find this request.';
     case 'conflict':

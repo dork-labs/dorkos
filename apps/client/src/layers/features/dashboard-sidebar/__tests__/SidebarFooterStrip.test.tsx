@@ -501,8 +501,8 @@ describe('SidebarFooterStrip', () => {
     it('says what the fold holds instead of calling itself "More"', () => {
       renderStrip();
       const trigger = screen.getByTestId('sidebar-footer-menu-trigger');
-      expect(trigger).toHaveAccessibleName('Account and settings');
-      expect(trigger.textContent).toContain('Account and settings');
+      expect(trigger).toHaveAccessibleName('Login and theme');
+      expect(trigger.textContent).toContain('Login and theme');
       expect(trigger.className).toContain('min-h-11');
     });
 

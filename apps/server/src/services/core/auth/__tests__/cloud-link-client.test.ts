@@ -449,7 +449,7 @@ describe('managed connector authority commands', () => {
     ).rejects.toMatchObject({
       code: 'permission_upgrade_required',
       message:
-        'Your DorkOS account link needs updating. Link this computer again in Settings › Access.',
+        'Your DorkOS account link needs updating. Link this computer again in Settings › DorkOS account.',
     });
     await expect(
       submitManagedConnectorAuthorityCommand({

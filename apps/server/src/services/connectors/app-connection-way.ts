@@ -139,7 +139,7 @@ export function agentAppSetupNote(problem: AppReachProblem, app: string): string
     case 'dorkos_account_unlinked':
       return (
         `The person's DorkOS account isn't linked anymore, so DorkOS cannot reach ${app}. ` +
-        'They can link it again in Settings › Access in the DorkOS app, or use their own key, ' +
+        'They can link it again in Settings › DorkOS account in the DorkOS app, or use their own key, ' +
         `and then connect ${app}. You can still request it.`
       );
     case 'dorkos_account_unavailable':

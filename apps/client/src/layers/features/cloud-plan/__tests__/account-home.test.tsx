@@ -16,6 +16,7 @@ import type { CloudCreditsStatus, CloudPlanResponse } from '@dorkos/shared/cloud
 import balanceFixture from '@dork-labs/cloud-api/fixtures/v1/billing/balance-denominated.json' with { type: 'json' };
 import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-denominated.json' with { type: 'json' };
 import orgFixture from '@dork-labs/cloud-api/fixtures/v1/seats/org.json' with { type: 'json' };
+import seatFixture from '@dork-labs/cloud-api/fixtures/v1/seats/seat.json' with { type: 'json' };
 import { TransportProvider } from '@/layers/shared/model';
 import { readCreditsFor } from '../model/use-credits-for';
 import { describeDorkosAccountLine, lowCreditsFigure } from '../model/use-dorkos-account-line';
@@ -105,7 +106,27 @@ describe('Use credits for', () => {
     const toggle = await screen.findByRole('switch', { name: 'Use credits for Claude' });
     expect(toggle).toBeChecked();
     expect(toggle).toBeDisabled();
-    expect(screen.getByText(/until DorkOS restarts or you unlink this computer/)).toBeVisible();
+    expect(screen.getByText(/when the current pass expires, when DorkOS restarts/)).toBeVisible();
+  });
+
+  it('keeps a way to get a fresh pass while credits are on', async () => {
+    const transport = createMockTransport({
+      getCloudCredits: vi.fn().mockResolvedValue(LIVE),
+      selectCloudCredits: vi.fn().mockResolvedValue(LIVE),
+    });
+    renderWith(<UseCreditsFor />, transport);
+    fireEvent.click(await screen.findByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(transport.selectCloudCredits).toHaveBeenCalledTimes(1));
+  });
+
+  it('offers turning it on again once the pass has run out', async () => {
+    // An expired token reads as not ready: the switch is off and usable again.
+    const transport = createMockTransport({ getCloudCredits: vi.fn().mockResolvedValue(ARMED) });
+    renderWith(<UseCreditsFor />, transport);
+    const toggle = await screen.findByRole('switch', { name: 'Use credits for Claude' });
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument();
   });
 
   it('says so when the server could not start credits', async () => {
@@ -213,5 +234,23 @@ describe('Seats', () => {
     await waitFor(() => expect(transport.getCloudSeats).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByText('Seats')).not.toBeInTheDocument());
     expect(screen.queryByText(/No seats yet/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the organization picker when the first organization holds no seats', async () => {
+    const second = { ...orgFixture, id: `${orgFixture.id}-b`, name: 'Second org' };
+    const transport = createMockTransport({
+      getCloudOrgs: vi.fn().mockResolvedValue({ available: true, orgs: [orgFixture, second] }),
+      getCloudSeats: vi.fn((orgId: string) =>
+        Promise.resolve({
+          available: true as const,
+          seats: orgId === second.id ? [seatFixture as never] : [],
+        })
+      ),
+    });
+    renderWith(<SeatManagement />, transport);
+    const picker = await screen.findByRole('combobox', { name: 'Organization' });
+    expect(await screen.findByText('No seats in this organization.')).toBeInTheDocument();
+    fireEvent.change(picker, { target: { value: second.id } });
+    expect(await screen.findByText(seatFixture.address.canonical)).toBeInTheDocument();
   });
 });
