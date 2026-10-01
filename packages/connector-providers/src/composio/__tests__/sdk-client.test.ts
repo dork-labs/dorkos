@@ -935,6 +935,13 @@ describe('ComposioSdkClient', () => {
     expect(local.requests).toHaveLength(1);
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).not.toContain('private-catalog-sentinel');
+    // The wrapper keeps what it wrapped, so a log can name the cause's class,
+    // while its own message stays fixed.
+    expect((failure as Error).message).toBe(
+      'Composio catalog discovery failed. Check the provider status.'
+    );
+    expect((failure as Error).cause).toBeInstanceOf(Error);
+    expect((failure as Error).cause).not.toBe(failure);
   });
 
   it('returns unknown after an execute 500 and never retries the write', async () => {

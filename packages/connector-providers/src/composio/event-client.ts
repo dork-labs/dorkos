@@ -119,8 +119,10 @@ export class ComposioEventClient implements ConnectorEventCapability {
         ),
         ...(page.next_cursor && { nextCursor: page.next_cursor }),
       };
-    } catch {
-      throw new ComposioCatalogError('Event discovery failed. Check the connection status.');
+    } catch (error) {
+      throw new ComposioCatalogError('Event discovery failed. Check the connection status.', {
+        cause: error,
+      });
     }
   }
 
