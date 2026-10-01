@@ -227,26 +227,11 @@ The full guide, including setup for the `claude`, `codex` and `opencode` command
 
 #### Space server
 
-{/* Released apps link to this section by its old anchor, below; it keeps them landing here. */}
+{/* Released apps link to this section by its old anchor, below; it keeps them landing here. The full guide moved to self-hosting/space-server. */}
 
 <span id="community-server" />
 
-**`dorkos community deploy`** (early): set up your own space server on Fly, with a Neon database and a private Tigris bucket for files. It shows the whole plan first, including which accounts may be charged, and creates nothing until you type the app name it will use. If setup stops partway, it keeps everything it made and tells you how to pick up where it left off. It never deletes anything that costs money on its own. It does not start DorkOS or need a DorkOS Cloud account.
-
-```bash
-dorkos community deploy --help              # Every option, and the tools you need signed in first
-dorkos community deploy --fly-org <org> --fly-region <region> \
-  --neon-org <org-id> --neon-region <region> --app-name <name> --dry-run   # Show the plan. Creates nothing
-dorkos community deploy --list-incomplete   # Setups that stopped and can be resumed
-dorkos community deploy ... --resume <run-id>   # Pick one back up with the same choices
-dorkos community deploy --remove-uncertain <run-id>   # Check, and maybe remove, what a stopped setup left behind
-```
-
-If setup stopped without knowing whether something was created, `--remove-uncertain` checks that one thing. It removes it only when it can prove your setup made it and you type the id it shows. Otherwise it removes nothing and tells you why. After a removal, `--resume` carries on. If it removes a Tigris bucket, Fly leaves the bucket's access key working in Tigris, so DorkOS tells you and shows you how to delete it.
-
-It uses your saved `fly` and `neonctl` sign-ins. If you export `FLY_API_TOKEN` (or `FLY_ACCESS_TOKEN`) or `NEON_API_KEY` first, it uses that token instead, tells you so, and never writes it down. Setup creates a new Fly app and a new Neon project, so each token has to be allowed to do that: a Fly organization token, not a deploy token, and a Neon organization key, not a project key. Setup has not yet been tested end to end with a limited Fly token; `fly auth login` is the tested path. The guide linked below has the details.
-
-The step-by-step guide, including the manual recipe, is [`apps/community/FLY.md`](https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md).
+**`dorkos community deploy`** (early): set up your own space server on Fly, with a Neon database and private file storage. It shows the whole plan before it creates anything. The full guide is [Run Your Own Space Server](/docs/self-hosting/space-server).
 
 #### Agent files
 

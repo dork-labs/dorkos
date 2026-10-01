@@ -219,7 +219,7 @@ export function HostAdministration() {
       </p>
       <p className="muted">
         Need a separate host?{' '}
-        <a href="https://dorkos.ai/docs/self-hosting/deployment">Deploy a new host</a>. Deployment
+        <a href="https://dorkos.ai/docs/self-hosting/space-server">Deploy a new host</a>. Deployment
         does not create a community on this host.
       </p>
       {error && (

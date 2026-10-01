@@ -136,7 +136,7 @@ export const SHOTS: readonly Shot[] = [
   // global") row for the same package. Embedded in docs/marketplace/index.mdx.
   { id: 'marketplace-installed', kind: 'still', frame: 'desktop', consumers: ['docs'] },
   // Settings → DorkOS account, pending and linked states from one device-flow
-  // drive (capture-cloud-link-stub). Embedded in docs/self-hosting/dorkos-accounts.mdx.
+  // drive (capture-cloud-link-stub). Embedded in docs/account/index.mdx.
   { id: 'accounts-pending', kind: 'still', frame: 'desktop', consumers: ['docs'] },
   { id: 'accounts-linked', kind: 'still', frame: 'desktop', consumers: ['docs'] },
   // --- Desktop stills (the power surfaces) ---

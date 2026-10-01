@@ -147,7 +147,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(ownerPage.getByRole('heading', { name: 'Communities' })).toBeVisible();
     await expect(ownerPage.getByRole('link', { name: 'Deploy a new host' })).toHaveAttribute(
       'href',
-      'https://dorkos.ai/docs/self-hosting/deployment'
+      'https://dorkos.ai/docs/self-hosting/space-server'
     );
     await expect(ownerPage.getByLabel('Gathering Place community')).toContainText('Owner assigned');
     await expect(ownerPage.getByText('Community members')).toHaveCount(0);

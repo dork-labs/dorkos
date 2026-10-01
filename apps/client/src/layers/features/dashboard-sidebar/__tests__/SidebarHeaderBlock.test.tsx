@@ -1578,7 +1578,7 @@ describe('the context switcher’s lifecycle actions', () => {
       })
     );
     expect(mockOpenExternalLink).toHaveBeenCalledWith(
-      'https://dorkos.ai/docs/guides/cli-usage#space-server'
+      'https://dorkos.ai/docs/self-hosting/space-server'
     );
   });
 

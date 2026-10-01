@@ -1,35 +1,35 @@
 ---
-title: DorkOS Accounts & Linking Instances
-description: Create a DorkOS account, link a self-hosted instance from the CLI or Settings, and manage linked instances at dorkos.ai
+title: Your DorkOS Account
+description: Create a DorkOS account, link this computer from the app or the command line, and see every computer you have linked at dorkos.ai
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
-# DorkOS Accounts & Linking Instances
+# Your DorkOS Account
 
-Link a self-hosted instance to a free DorkOS account and you get one page that lists every machine you run DorkOS on, with a pulse for each: what version it runs and when it last checked in. And to be clear up front: you never need an account. Everything else in these docs works without one.
+A **DorkOS account** is a free sign-in at [dorkos.ai](https://dorkos.ai). Link a computer to it and you get one page that lists every machine you run DorkOS on, with a pulse for each: which version it runs and when it last checked in. You never need an account. Everything else in these docs works without one.
 
-A **DorkOS account** is an identity at [dorkos.ai](https://dorkos.ai). It is separate from the optional [login](/docs/self-hosting/securing-your-instance) on a self-hosted instance: the login protects one machine, while the account is what your instances _attach_ to. The two are independent. You can run a local login with no account, hold an account with no login, or both.
+Your account is separate from the optional [login](/docs/self-hosting/securing-your-instance) that protects DorkOS on one computer. The login guards that one machine. The account is what your computers _attach_ to. You can have a login with no account, an account with no login, or both.
 
 <Callout type="info">
-  A DorkOS account and a local login are **never merged**. Linking registers an instance with your
-  account; it does not move your local login into the cloud or vice versa.
+  A DorkOS account and a login on one computer are **never merged**. Linking adds this computer to
+  your account. It does not move your login to dorkos.ai, or the other way round.
 </Callout>
 
 ## What linking does today
 
-Linking an instance to your DorkOS account **today** gives you:
+Linking a computer to your DorkOS account **today** gives you:
 
-- A **registry** of your instances at [dorkos.ai/account/instances](https://dorkos.ai/account/instances): name, platform, DorkOS version, and when each was last seen.
-- A **heartbeat**: while linked, an instance checks in on startup and every 15 minutes, so the registry shows what is live.
-- **Revocation**: unlink an instance from the dashboard at any time.
+- A **list** of your linked computers at [dorkos.ai/account/instances](https://dorkos.ai/account/instances): name, platform, DorkOS version, and when each was last seen.
+- A **check-in**: while linked, DorkOS checks in when it starts and every 15 minutes, so the list shows what is running.
+- **Removal**: take a computer off your account from that page at any time.
 
 <Callout type="warn">
   Linking lays the track; the trains come later. Relay, notifications, and remote access will ride
   this connection in future releases, and they are **not** available yet. Link today to claim your
-  account and register your instances.
+  account and add your computers to it.
 </Callout>
 
 ## Creating a DorkOS account
@@ -57,7 +57,7 @@ You land on [dorkos.ai/account](https://dorkos.ai/account): your profile, verifi
 </Step>
 </Steps>
 
-## Linking an instance from the CLI
+## Linking from the command line
 
 `dorkos cloud login` runs a device-authorization flow (the same short-code pairing streaming apps use) directly against the cloud. It needs no running server, and it works even on a machine with no browser:
 
@@ -76,17 +76,17 @@ The CLI prints an **8-character code** and opens [dorkos.ai/activate](https://do
 <Step>
 ### Approve at dorkos.ai/activate
 
-Sign in if you are not already, confirm the code matches, and **Approve**. The page shows the instance's name and platform before you approve.
+Sign in if you are not already, confirm the code matches, and **Approve**. The page shows the computer's name and platform before you approve.
 
 </Step>
 
 <Step>
 ### Linked
 
-The CLI stores a **scoped instance key** and starts heartbeating. Check the link anytime:
+The command saves a key that only this computer can use, and DorkOS starts checking in. Check the link anytime:
 
 ```bash
-dorkos cloud status      # linked account and instance name, or "not linked"
+dorkos cloud status      # linked account and computer name, or "not linked"
 dorkos cloud logout      # clear the local link
 ```
 
@@ -105,7 +105,7 @@ Click **Link this computer**. The panel shows the same 8-character code, an **Op
 
 <ProductShot
   id="accounts-pending"
-  alt="Settings → Access, DorkOS account section, showing the 8-character link code and the 'Open the approval page' button, waiting for approval"
+  alt="Settings, DorkOS account tab, showing the 8-character link code, the 'Open the approval page' button, and 'Waiting for you to approve'"
 />
 
 </Step>
@@ -113,34 +113,34 @@ Click **Link this computer**. The panel shows the same 8-character code, an **Op
 <Step>
 ### Approve, and watch it flip
 
-Approve at `/activate`. The tab updates **in place**, from _pending_ to _signed in_, showing the linked account and when it last synced, then your plan, your credits, what is on your account, and your seats. **Unlink this computer** is at the bottom. An expired code offers **Generate a new code**.
+Approve at `/activate`. The tab updates **in place**, from _pending_ to _signed in_, showing the linked account and when it last synced, then your plan, your credits, what is on your account, and your seats. **Unlink this computer** is at the bottom, and **Link again** sits beside the account name. An expired code offers **Generate a new code**.
 
 <ProductShot
   id="accounts-linked"
-  alt="The same Settings panel flipped to Linked — a green dot, the linked account, and 'Last synced just now'"
+  alt="The same tab after approval: 'Signed in', the account name, 'Last synced just now', what is on your account, and an Unlink button"
 />
 
 </Step>
 </Steps>
 
-## The instance registry
+## Your linked computers
 
-[dorkos.ai/account/instances](https://dorkos.ai/account/instances) lists every linked instance with its name, platform, DorkOS version, last-seen time, and linked date.
+[dorkos.ai/account/instances](https://dorkos.ai/account/instances) lists every linked computer with its name, platform, DorkOS version, last-seen time, and linked date.
 
-## Revoking an instance
+## Removing a computer
 
 <Steps>
 <Step>
 ### Revoke from the dashboard
 
-On [/account/instances](https://dorkos.ai/account/instances), click **Revoke** next to an instance and confirm. This deletes the instance's key server-side.
+On [/account/instances](https://dorkos.ai/account/instances), click **Revoke** next to a computer and confirm. This deletes that computer's key on dorkos.ai.
 
 </Step>
 
 <Step>
-### The instance unlinks itself
+### The computer unlinks itself
 
-On its next heartbeat the instance gets a `401`, clears its stored key, and shows **"This computer was unlinked."** Re-link anytime with `dorkos cloud login` or the Settings panel.
+The next time that computer checks in, it is turned away, clears its saved key, and shows **"This computer was unlinked."** Re-link anytime with `dorkos cloud login` or the Settings panel.
 
 Revoking only removes the cloud link. Running sessions, agents, and everything stored on that machine keep working, untouched. The one thing it does end is any app that machine connected through your DorkOS account: those apps are signed out at the service too, so none stays signed in with no way left to reach it.
 
@@ -148,7 +148,7 @@ Revoking only removes the cloud link. Running sessions, agents, and everything s
 </Steps>
 
 <Callout type="info">
-  For local dev against a self-hosted copy of the site, point an instance at it with the
+  Developing against your own copy of the dorkos.ai site? Point DorkOS at it with the
   `DORKOS_CLOUD_URL` environment variable (default `https://dorkos.ai`).
 </Callout>
 
@@ -156,8 +156,8 @@ Revoking only removes the cloud link. Running sessions, agents, and everything s
 
 <Callout type="error">
   Linking to a DorkOS account **never** touches, proxies, or stores your Anthropic or Claude
-  credentials. An instance sends only a name, platform, and version to the cloud. Your Claude quota
-  and API keys stay entirely on your machine.
+  credentials. A linked computer sends only a name, platform, and version to dorkos.ai. Your Claude
+  quota and API keys stay entirely on your machine.
 </Callout>
 
 ## Next Steps
