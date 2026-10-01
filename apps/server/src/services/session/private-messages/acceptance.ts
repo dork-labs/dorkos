@@ -21,6 +21,8 @@ import {
   type DbTransaction,
   type SessionMessageAcceptanceReceipt,
 } from '@dorkos/db';
+import { rebindAcceptedReceipt } from './receipt-rebind.js';
+import { documentReceiptReady } from './document-receipt-guard.js';
 import type { MessageQueueStore, QueuedMessageRecord } from '../message-queue-store.js';
 
 let sharedService: PrivateSessionMessageAcceptanceService | undefined;
@@ -93,6 +95,13 @@ export interface PrivateSessionMessageSourceAdapter<
     prepared: PreparedPrivateSessionMessage,
     now: string
   ): void;
+  /** Source-owned exact authority rebind; absence refuses canonical movement. */
+  rebindAccepted?(
+    tx: DbTransaction,
+    receipt: SessionMessageAcceptanceReceipt,
+    toSessionId: string,
+    now: string
+  ): string | undefined;
   /** Record an observed turn start while its queue row is retired atomically. */
   onTurnStarted?(
     tx: DbTransaction,
@@ -266,6 +275,23 @@ export class PrivateSessionMessageAcceptanceService {
     });
   }
 
+  /** Rebind only an accepted, unclaimed source through its registered authority validator. */
+  rebindAccepted(
+    tx: DbTransaction,
+    receiptId: string,
+    fromSessionId: string,
+    toSessionId: string
+  ): boolean {
+    return rebindAcceptedReceipt(tx, receiptId, fromSessionId, toSessionId, (receipt) =>
+      this.adapterFor(receipt.sourceKind).rebindAccepted?.(
+        tx,
+        receipt,
+        toSessionId,
+        this.now().toISOString()
+      )
+    );
+  }
+
   /** Resolve minimized protected content in memory before the final claim. */
   async prepare(receiptId: string): Promise<PreparedPrivateSessionMessage> {
     const receipt = this.requireReceipt(receiptId);
@@ -306,6 +332,11 @@ export class PrivateSessionMessageAcceptanceService {
           'The prepared private message does not match its durable source receipt.'
         );
       }
+      if (!documentReceiptReady(tx, receipt.id))
+        throw new PrivateSessionMessageRefusalError(
+          'document_identity_blocked',
+          'This document message is not available for dispatch.'
+        );
       this.adapterFor(receipt.sourceKind).revalidate(tx, receipt, prepared, now);
       const dispatchAttemptId = randomUUID();
       const changed = tx

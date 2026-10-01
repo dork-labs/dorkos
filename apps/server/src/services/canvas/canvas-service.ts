@@ -346,8 +346,7 @@ export class CanvasService {
 
     if (plan.kind === 'close') {
       const closed = plan.existing;
-      this.documents.remove(scope, closed.id);
-      this.publish(scope, { type: 'canvas', documentId: closed.id, closed: true });
+      this.remove(scope, closed.id);
       input.record?.({
         change: 'closed',
         documentId: closed.id,
@@ -835,7 +834,10 @@ export class CanvasService {
       // to says nothing. The mark stays for a healthier pass.
       if (degraded.size > 0) continue;
       this.orphanedSessions.delete(sessionId);
-      deleted += this.documents.removeScope(`session:${sessionId}`);
+      const scope = `session:${sessionId}`;
+      const removed = this.documents.identities(scope);
+      deleted += this.documents.removeScope(scope);
+      for (const row of removed) this.notifyRemoved(scope, row.id);
     }
     return deleted;
   }
@@ -1013,7 +1015,7 @@ export class CanvasService {
       return this.publishDocument(scope, row, 'updated');
     }
     const row: CanvasDocumentRow = {
-      id: canvasDocumentId(scope, plan.sourceKey),
+      id: this.documents.freshDocumentId(canvasDocumentId(scope, plan.sourceKey)),
       scope,
       // The invariant, applied in the one place a row is born.
       roomId: roomIdForScope(scope),
@@ -1091,9 +1093,23 @@ export class CanvasService {
    * hears about an eviction exactly as it hears about a close.
    */
   private remove(scope: string, documentId: string): void {
-    this.documents.remove(scope, documentId);
-    this.publish(scope, { type: 'canvas', documentId, closed: true });
-    for (const listener of this.removalListeners) listener(scope, documentId);
+    if (this.documents.remove(scope, documentId)) this.notifyRemoved(scope, documentId);
+  }
+
+  /** Notification failures cannot undo a committed authority closure. */
+  private notifyRemoved(scope: string, documentId: string): void {
+    try {
+      this.publish(scope, { type: 'canvas', documentId, closed: true });
+    } catch (error) {
+      logger.warn('[canvas] closure publication failed', { documentId, error });
+    }
+    for (const listener of this.removalListeners) {
+      try {
+        listener(scope, documentId);
+      } catch (error) {
+        logger.warn('[canvas] removal observer failed', { documentId, error });
+      }
+    }
   }
 
   /** Fan one frame out to this scope's live readers. */
