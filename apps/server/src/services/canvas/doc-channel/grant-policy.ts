@@ -21,6 +21,8 @@ export interface DocGrantTarget {
   agentId: string | null;
   sessionId: string | null;
   runtime: string | null;
+  /** Frozen server-resolved execution path, null only for a log destination. */
+  agentPath: string | null;
   scope: string;
 }
 /** Lifecycle and identity ports supplied at composition, with synchronous final checks. */
@@ -100,16 +102,33 @@ export function validateDocGrantTarget(
 ): void {
   if (target.scope !== scope) throw new DocRouteGrantError('TARGET_SCOPE_MISMATCH');
   if (route.to === 'log') {
-    if (target.agentId !== null || target.sessionId !== null || target.runtime !== null)
+    if (
+      target.agentId !== null ||
+      target.sessionId !== null ||
+      target.runtime !== null ||
+      target.agentPath !== null
+    )
       throw new DocRouteGrantError('TARGET_IDENTITY_MISMATCH');
     return;
   }
   if (route.to === 'room:self') {
-    if (!scope.startsWith('room:') || !target.agentId || !target.sessionId || !target.runtime)
+    if (
+      !scope.startsWith('room:') ||
+      !target.agentId ||
+      !target.sessionId ||
+      !target.runtime ||
+      !target.agentPath
+    )
       throw new DocRouteGrantError('ROOM_ROUTE_UNAVAILABLE');
     return;
   }
   const expected = route.to === 'agent:owner' ? opener : route.to.slice('agent:'.length);
-  if (!expected || target.agentId !== expected || !target.sessionId || !target.runtime)
+  if (
+    !expected ||
+    target.agentId !== expected ||
+    !target.sessionId ||
+    !target.runtime ||
+    !target.agentPath
+  )
     throw new DocRouteGrantError('TARGET_IDENTITY_MISMATCH');
 }
