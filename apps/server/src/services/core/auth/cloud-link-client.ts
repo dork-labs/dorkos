@@ -579,6 +579,23 @@ export async function requestDeviceCode(opts: {
  */
 export const DEVICE_TOKEN_REQUEST_TIMEOUT_MS = 30_000;
 
+/**
+ * Read a JSON body, giving up when `signal` aborts. The race is explicit
+ * rather than left to the fetch implementation, so a body that stalls after
+ * its headers ends at the bound whichever fetch delivered it.
+ */
+function readJsonUntil(res: Response, signal: AbortSignal): Promise<unknown> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    res
+      .json()
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
+
 /** Wait `ms`, or less if `signal` aborts first. */
 function sleepUnlessAborted(
   sleep: (ms: number) => Promise<void>,
@@ -641,7 +658,10 @@ export async function pollForToken(opts: {
       () => timeout.abort(new Error('Device-token request timed out')),
       DEVICE_TOKEN_REQUEST_TIMEOUT_MS
     );
+    // The bound covers the body read too: a response that sends its headers and
+    // then stalls must not hold the poll (and every drain waiting on it) open.
     let res: Response;
+    let body: { access_token?: string; error?: string };
     try {
       res = await fetchImpl(`${opts.baseUrl}/api/auth/device/token`, {
         method: 'POST',
@@ -653,19 +673,22 @@ export async function pollForToken(opts: {
         }),
         signal: timeout.signal,
       });
+      body = res.ok
+        ? ((await readJsonUntil(res, timeout.signal)) as { access_token?: string })
+        : res.status === 400
+          ? ((await readJsonUntil(res, timeout.signal).catch(() => ({}))) as { error?: string })
+          : {};
     } finally {
       clearTimeout(timer);
     }
 
     if (res.ok) {
-      const body = (await res.json()) as { access_token?: string };
       if (!body.access_token)
         throw new Error('Cloud approved the link but returned no access token');
       return { status: 'approved', accessToken: body.access_token };
     }
 
     if (res.status === 400) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
       switch (body.error) {
         case 'authorization_pending':
           continue;

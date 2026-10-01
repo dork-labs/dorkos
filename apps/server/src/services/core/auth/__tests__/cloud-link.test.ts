@@ -782,6 +782,46 @@ describe('CloudLinkManager', () => {
       }
     );
 
+    it.each([200, 400])(
+      'bounds the token request body too, when a %i arrives and its body stalls',
+      async (status) => {
+        vi.useFakeTimers();
+        try {
+          configManager.set('cloud', HELD);
+          let tokenRequests = 0;
+          const fetchImpl = vi.fn(async (url: string) => {
+            const p = new URL(url).pathname;
+            if (p.endsWith('/device/code')) return new Response(JSON.stringify(CODES.body));
+            if (p.endsWith('/device/token')) {
+              tokenRequests += 1;
+              if (tokenRequests > 1) {
+                return new Response(JSON.stringify({ error: 'expired_token' }), { status: 400 });
+              }
+              // Headers now, then a body that never ends and ignores every signal.
+              return new Response(new ReadableStream({ start() {} }), { status });
+            }
+            throw new Error(`unexpected request: ${p}`);
+          });
+          manager = managerWith(fetchImpl);
+          await manager.startLink();
+          for (let i = 0; i < 20 && tokenRequests === 0; i++) await vi.advanceTimersByTimeAsync(0);
+          expect(tokenRequests).toBe(1);
+          let settled = false;
+          const cancelling = manager.cancelLink().then(() => {
+            settled = true;
+          });
+          await vi.advanceTimersByTimeAsync(DEVICE_TOKEN_REQUEST_TIMEOUT_MS - 1);
+          expect(settled).toBe(false);
+          await vi.advanceTimersByTimeAsync(1);
+          expect(settled).toBe(true);
+          await cancelling;
+          expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_held');
+        } finally {
+          vi.useRealTimers();
+        }
+      }
+    );
+
     it('keeps a key issued after stop, but starts nothing for it', async () => {
       vi.useFakeTimers();
       try {
