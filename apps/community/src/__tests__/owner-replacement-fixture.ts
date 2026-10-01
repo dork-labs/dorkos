@@ -71,7 +71,7 @@ export function oidcEnv(issuer: FakeIssuer, issuerUrl = issuer.issuer): Record<s
 }
 
 /**
- * Start a host with mail and owner replacements on. With `sharesDatabaseOf` it is the same host
+ * Start a host with mail and the worker's notice composers. With `sharesDatabaseOf` it is the same host
  * restarted with other settings: same database, operator, and key.
  */
 export async function startReplacementHost(
@@ -80,14 +80,12 @@ export async function startReplacementHost(
   options: {
     env?: Record<string, unknown>;
     sharesDatabaseOf?: ReplacementHost;
-    ownerReplacementOpen?: boolean;
   } = {}
 ): Promise<ReplacementHost> {
   const h = await startTenancyHarness(label, {
     now: clock.now,
     env: { ...ENV, ...options.env },
     noticeComposers: COMPOSERS,
-    ownerReplacementOpen: options.ownerReplacementOpen ?? true,
     sharesDatabaseOf: options.sharesDatabaseOf?.h,
   });
   if (options.sharesDatabaseOf)

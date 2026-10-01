@@ -266,7 +266,6 @@ test.beforeAll(async () => {
     blobStore,
     hooks: { now: clock.now },
     noticeComposers: COMPOSERS,
-    ownerReplacementOpen: true,
   });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));

@@ -33,7 +33,7 @@ For a deployment outside Docker, stop all web processes and run `node dist-serve
 
 ## An owner who has left
 
-Password recovery never changes who owns a community. To give a community a new owner when its owner has left, use the online request in [Replacing an owner who has left](OPERATIONS.md#replacing-an-owner-who-has-left) first: it emails the owner, waits, lets them keep ownership with one click, and records every step. Changing the owner by editing the database is the last resort, for when that request cannot run: the owner is never told, and members see no record of it.
+Password recovery never changes who owns a community. To give a community a new owner when its owner has left, use the online request in [Replacing an owner who has left](OPERATIONS.md#replacing-an-owner-who-has-left) first: it emails the owner, waits, lets them keep ownership with one click, and records every step. It needs mail set up on this host and a host API key with the `communities:ownership` permission (or a host operator's password). Changing the owner by editing the database is the last resort, for when that request cannot run: the owner is never told, and members see no record of it.
 
 ## An account that holds someone else's email
 
