@@ -208,22 +208,26 @@ Guided setup gives you a running community. It does not give you a backup. The c
 What has been tried so far:
 
 - The same approach (pause writes, export the database, copy every file, restore both into Docker on your own computer) worked once on September 20, 2026, on a community set up by hand with the same three services: Fly, Neon and Tigris.
-- The exact commands below have not yet been followed on a community made with guided setup.
-- The upgrade and roll-back steps are **not yet rehearsed on guided setup**.
-- Every `fly` and `neonctl` command below was checked against the help output of flyctl 0.4.104 and neonctl 5.0.0, the lowest versions the current release accepts.
+- Steps 1 through 7 were followed on October 1, 2026, on a community made with guided setup (v0.94.0), with the two corrections already folded into the commands below: the database role's real name, and how `fly config save` writes its file. Step 7's redeploy used the release already running, not an upgrade to a new one.
+- Upgrading to a new release in step 7, and the roll-back in step 8, are **not yet rehearsed on guided setup**.
+- Every `fly` and `neonctl` command below was checked against the help output of flyctl 0.4.104 and neonctl 5.0.0, the lowest versions the current release accepts, and also run live against flyctl 0.4.110 and neonctl 7.0.1.
 
 You need the same `fly`, `neonctl` and `gh` tools guided setup asked for, plus `jq`, PostgreSQL 17 client tools (`pg_dump`, `pg_restore`), an S3 command-line client such as the [AWS CLI](https://aws.amazon.com/cli/), and Docker for the restore rehearsal. Replace every `<placeholder>` with your own value.
 
 ### 1. Find what is running
 
-Guided setup keeps a record of what it made, called the setup journal. It printed the journal's path when it started. The file is `launches/community/<run-id>.json` inside your DorkOS data directory: `~/.dork` for a normal install, or wherever `DORK_HOME` points. The journal holds names and IDs, never secrets. List what you need from it:
+Guided setup keeps a record of what it made, called the setup journal. It printed the journal's path when it started. The file is `launches/community/<run-id>.json` inside your DorkOS data directory: `~/.dork` for a normal install, or wherever `DORK_HOME` points. The journal holds names and IDs, never secrets. List what you need from it, including the database role guided setup created:
 
 ```bash
 journal=~/.dork/launches/community/<run-id>.json
 jq '{version: .recoveryContext.version, app: .recoveryContext.appName,
   bucket: .recoveryContext.bucketName, releaseDigest, imagePlatformDigest,
-  neonProject: .resources.neonProjectId, neonBranch: .resources.neonBranchId}' "$journal"
+  neonProject: .resources.neonProjectId, neonBranch: .resources.neonBranchId,
+  neonRole: .resources.neonRoleId}' "$journal"
+database_role="$(jq -r '.resources.neonRoleId' "$journal")"
 ```
+
+Guided setup names this role `community_` plus a code of its own, not the fixed `community_owner` older setups used. The commands below call it `$database_role`.
 
 The journal describes the day of setup. After an upgrade, ask Fly what is running now:
 
@@ -233,7 +237,7 @@ fly machine list --app <app-name> --json \
   | jq -r '.[] | "\(.id) \(.state) \(.image_ref.digest)"'
 ```
 
-Expect exactly one Machine. Two digests name the same release. `releaseDigest` covers the whole release image, for every kind of computer. Fly reports the digest of the one piece that runs on its Machines (Linux on Intel-compatible chips); the journal saves that as `imagePlatformDigest`. Write down the version, both digests and the Machine ID. They belong with your backup.
+Expect exactly one Machine. Two digests name the same release. `releaseDigest` covers the whole release image, for every kind of computer. Fly reports the digest of the one piece that runs on its Machines (Linux on Intel-compatible chips); the journal saves that as `imagePlatformDigest`. Write down the version, both digests, the database role and the Machine ID. They belong with your backup.
 
 ### 2. Pause writes
 
@@ -254,11 +258,11 @@ Do steps 3 and 4 while the Machine is stopped.
 
 ### 3. Export the database
 
-Guided setup made a Neon database named `community`, owned by the role `community_owner`. The app reaches it through the Fly secret `COMMUNITY_DATABASE_URL`, but Fly never shows a secret's value again. Ask Neon for the same direct address instead. The command writes it to a private file, so the password never lands in your shell history:
+Guided setup made a Neon database named `community`, owned by `$database_role` from step 1. The app reaches it through the Fly secret `COMMUNITY_DATABASE_URL`, but Fly never shows a secret's value again. Ask Neon for the same direct address instead. The command writes it to a private file, so the password never lands in your shell history:
 
 ```bash
 neonctl connection-string <neon-branch-id> --project-id <neon-project-id> \
-  --database-name community --role-name community_owner \
+  --database-name community --role-name "$database_role" \
   --no-pooled --ssl require > "$backup_dir/database-url"
 ```
 
@@ -270,12 +274,12 @@ A password typed into a command can be seen by other programs on your computer w
 database_url="$(cat "$backup_dir/database-url")"
 database_password="${database_url#*://*:}"; database_password="${database_password%%@*}"
 database_host="${database_url#*@}"; database_host="${database_host%%/*}"
-printf '%s:5432:community:community_owner:%s\n' "$database_host" "$database_password" \
+printf '%s:5432:community:%s:%s\n' "$database_host" "$database_role" "$database_password" \
   > "$backup_dir/pgpass"
 unset database_url database_password
 export PGPASSFILE="$backup_dir/pgpass"
 pg_dump --format=custom --file="$backup_dir/database.dump" \
-  --dbname="postgresql://community_owner@$database_host/community?sslmode=require&channel_binding=require"
+  --dbname="postgresql://$database_role@$database_host/community?sslmode=require&channel_binding=require"
 pg_restore --list "$backup_dir/database.dump" > /dev/null
 ```
 
@@ -285,11 +289,29 @@ Your `pg_dump` must be version 17 or newer, because guided setup creates a Postg
 
 ### 4. Copy every file
 
-Community keeps uploaded files in the private Tigris bucket named in the journal. The app's own keys are the Fly secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, and Fly will not show them again. Make a separate key for backups instead:
+Community keeps uploaded files in the private Tigris bucket named in the journal. The app's own keys are the Fly secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, and Fly will not show them again. Make a separate key for backups instead, from the dashboard or the command line. Read-only access is enough for a backup; a roll-back (step 8) needs write access.
+
+**From the dashboard:**
 
 1. Run `fly storage dashboard <bucket-name>` to open the bucket in the Tigris dashboard.
-2. Create an access key limited to this bucket. Read-only access is enough for a backup. A roll-back (step 8) needs write access.
+2. Create an access key limited to this bucket.
 3. Save the key in your password manager.
+
+**From the command line:** install the Tigris CLI and sign in with your Fly account:
+
+```bash
+npm install -g @tigrisdata/cli
+tigris login oauth
+```
+
+Choose **Sign in with Fly**. Then create a read-only key for this bucket, written to a private file instead of your screen:
+
+```bash
+tigris access-keys create community-backup --bucket <bucket-name> --role ReadOnly \
+  --env ~/.community-backup-tigris.env --for aws
+```
+
+Copy the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values out of that file and into the credentials file below, then delete it: `rm ~/.community-backup-tigris.env`. If you would rather not keep a standing backup key, delete it from Tigris too once you are done: find its id with `tigris access-keys list` (it starts with `tid_`), then run `tigris access-keys delete <id>`.
 
 Never make the bucket public to copy it. Put the key in a private credentials file outside the backup folder, then copy the bucket:
 
@@ -328,7 +350,7 @@ A backup you have never restored is a guess. Follow [Rehearse a restore](OPERATI
 
 - Check out the release that was running: `git checkout v<version>`.
 - Pack the copied files into the archive that section expects: `tar -C "$backup_dir/files" -czf "$backup_dir/blobs.tar.gz" .`
-- Add `--no-owner --no-acl` to its `pg_restore` command. The dump belongs to `community_owner`, a role the local database does not have.
+- Add `--no-owner --no-acl` to its `pg_restore` command. The dump belongs to `$database_role` from step 1, a role the local database does not have.
 - Use fresh random values for the three secrets. Guided setup made the sign-in and invitation secrets itself and stored them only in Fly.
 
 Fresh secrets change a few things in the copy. Passwords still work, because they do not depend on those secrets. Browser sessions from the live community will not carry over, and unused invitation links will not open. The same is true if you ever restore onto a new Fly app.
@@ -368,7 +390,7 @@ If its `migrationCompatibilityId` differs from the next release's, the upgrade c
 Next, save the configuration Fly holds for your app. Guided setup deployed with a temporary configuration file and deleted it afterward, so this is how you get one:
 
 ```bash
-fly config save --app <app-name> --config "$backup_dir/fly.toml"
+(cd "$backup_dir" && fly config save --app <app-name>)
 ```
 
 Check that the file still has one `[[vm]]` section, `COMMUNITY_STORAGE_DRIVER = "s3"` and your bucket name. Deploy the new release by its exact digest, the way guided setup does, and keep one Machine:
