@@ -320,43 +320,25 @@ export class ConnectorRuntimePrincipalService
     return { status: 'resolved', principal: createServerPrincipal(claims) };
   }
 
-  /** Recheck an already authenticated runtime principal before another provider attempt. */
-  async revalidatePrincipal(principal: ServerPrincipalProof): Promise<boolean> {
+  /** Check the authentic current boot binding and its live turn owner without awaiting. */
+  isPrincipalCurrent(principal: ServerPrincipalProof): boolean {
     if (!isServerPrincipal(principal) || principal.claims.kind !== 'runtime') return false;
     const claims = principal.claims;
-    if (this.revokedBindingIds.has(claims.bindingId)) return false;
-    const row = this.db
-      .select()
-      .from(connectorRuntimeBindings)
-      .where(eq(connectorRuntimeBindings.id, claims.bindingId))
-      .get();
-    if (
-      !row ||
-      !this.bootEpoch ||
-      row.bootEpoch !== this.bootEpoch ||
-      row.revokedAt ||
-      Date.parse(row.expiresAt) <= this.now().getTime() ||
-      row.runtime !== claims.runtime ||
-      row.canonicalSessionId !== claims.canonicalSessionId ||
-      row.agentId !== claims.agentId ||
-      row.agentPath !== claims.agentPath ||
-      (row.canonicalCwd ?? undefined) !== claims.canonicalCwd ||
-      row.ownerKind !== claims.owner.kind ||
-      row.ownerId !== ownerColumns(claims.owner).ownerId
-    ) {
-      return false;
-    }
-    if (!this.hasCurrentOwner(claims.bindingId)) return false;
-    if (await this.authority.revalidateTurn(claims)) {
-      const current = this.bindingRow(claims.bindingId);
-      return Boolean(
-        current &&
-        !this.bindingRefusal(current) &&
-        this.bindingMatchesPrincipal(current, claims) &&
-        this.hasCurrentOwner(claims.bindingId)
-      );
-    }
-    this.denyForAuthorityChange(row.id);
+    const row = this.bindingRow(claims.bindingId);
+    return Boolean(
+      row &&
+      !this.bindingRefusal(row) &&
+      this.bindingMatchesPrincipal(row, claims) &&
+      this.hasCurrentOwner(claims.bindingId)
+    );
+  }
+
+  /** Recheck live authority and repeat the synchronous gate after it awaits. */
+  async revalidatePrincipal(principal: ServerPrincipalProof): Promise<boolean> {
+    if (!this.isPrincipalCurrent(principal) || principal.claims.kind !== 'runtime') return false;
+    const claims = principal.claims;
+    if (await this.authority.revalidateTurn(claims)) return this.isPrincipalCurrent(principal);
+    this.denyForAuthorityChange(claims.bindingId);
     return false;
   }
 

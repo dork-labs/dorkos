@@ -1,4 +1,7 @@
-import { isServerPrincipal } from '../connectors/principal/server-principal.js';
+import {
+  isServerPrincipal,
+  type ServerPrincipalProof,
+} from '../connectors/principal/server-principal.js';
 /**
  * Rooms subsystem barrel + factory (spec `rooms`, ADR 260726-170125).
  *
@@ -453,6 +456,7 @@ export function createRoomSubsystem(opts: {
   budget?: RoomTurnBudget;
   readCursors?: ReadCursorService;
   canvasNow?: () => number;
+  runtimePrincipalCurrent?: (proof: ServerPrincipalProof) => boolean;
   mirrorAccess?: RoomMirrorAccess;
   mirrorWrites?: RoomMirrorWritePolicy;
   createMirrorRuntime?: (deps: {
@@ -487,7 +491,8 @@ export function createRoomSubsystem(opts: {
         if (
           authorId !== SESSION_AGENT_AUTHOR ||
           !isServerPrincipal(principal) ||
-          principal.claims.kind !== 'runtime'
+          principal.claims.kind !== 'runtime' ||
+          opts.runtimePrincipalCurrent?.(principal) !== true
         )
           return null;
         const claims = principal.claims;
