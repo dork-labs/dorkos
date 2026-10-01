@@ -225,3 +225,39 @@ describe('an ambiguous create stays uncertain, and --remove-uncertain can clear 
     );
   });
 });
+
+describe('a preflight read the service refuses (DOR-2657)', () => {
+  // Catches the generic "check provider status … neonctl auth" message reaching a person whose
+  // exported key just lacks permission, and any echo of the key itself.
+  it('says the Neon key in NEON_API_KEY cannot read the organization', async () => {
+    const { launch, journals } = await harness(
+      { neonOrgs: 'refuse' },
+      { NEON_API_KEY: `napi_${MARK}_project_scoped` }
+    );
+
+    const result = await launch();
+
+    expect(result.failure?.message).toBe(
+      "The Neon key in NEON_API_KEY can't read organization org-dorian. " +
+        'Setup needs a key or sign-in that can create projects in it.'
+    );
+    expect(`${result.printed}\n${result.failure?.message}`).not.toContain(MARK);
+    expect(await journals()).toEqual([]);
+  });
+
+  it('says the Fly token in FLY_API_TOKEN cannot read the organization', async () => {
+    const { launch, journals } = await harness(
+      { flyOrgs: 'refuse' },
+      { FLY_API_TOKEN: `FlyV1 fm2_${MARK}_other_org` }
+    );
+
+    const result = await launch();
+
+    expect(result.failure?.message).toBe(
+      "The Fly token in FLY_API_TOKEN can't read organization dork-labs. " +
+        'Setup needs a token or sign-in that can create apps in it.'
+    );
+    expect(`${result.printed}\n${result.failure?.message}`).not.toContain(MARK);
+    expect(await journals()).toEqual([]);
+  });
+});
