@@ -38,8 +38,11 @@
     },
     {
       "guide": "system-architecture.md",
-      "description": "Deployment boundaries, protocols, ports, main request admission, workspace lifecycle, Community recovery, Cloud and marketplace; diagrams",
+      "description": "Deployment boundaries, protocols, ports, Projects/extensions, account eligibility, main request admission, Spaces recovery, Cloud and marketplace; diagrams",
       "patterns": [
+        "apps/server/src/services/projects/",
+        "apps/server/src/services/extensions/",
+        "specs/shutdown-handoff-outcomes/",
         "apps/server/src/services/workspace/",
         "specs/central-workspace-disposal/",
         "specs/managed-remote-app-consumer/",
