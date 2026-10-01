@@ -17,6 +17,7 @@ import gitRoutes from './routes/git.js';
 import workspaceRoutes from './routes/workspaces.js';
 import projectRoutes from './routes/projects.js';
 import roomRoutes from './routes/rooms.js';
+import canvasDocEventRoutes, { canvasDocJsonParser } from './routes/canvas-doc-events.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import readCursorRoutes from './routes/read-cursors.js';
@@ -283,6 +284,8 @@ export function createApp(options: {
   // 1 MB limit would 413 the submission first. Path-scoped, so nothing else
   // gains the larger ceiling.
   app.use('/api/feedback', feedbackJsonParser);
+  // Page envelopes have a smaller wire ceiling than ordinary API requests.
+  app.use('/api/canvas/docs', canvasDocJsonParser);
   app.use(express.json({ limit: '1mb' }));
   app.use(requestLogger);
 
@@ -314,6 +317,7 @@ export function createApp(options: {
   app.use('/api/workspaces', workspaceRoutes);
   app.use('/api/projects', projectRoutes);
   app.use('/api/rooms', roomRoutes);
+  app.use('/api/canvas/docs', canvasDocEventRoutes);
   app.use('/api/community-connections', createCommunityConnectionsRouter());
   app.use('/api/communities', createRemoteCommunitiesRouter());
   app.use('/api/read-cursors', readCursorRoutes);

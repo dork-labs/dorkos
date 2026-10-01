@@ -715,6 +715,30 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // how a pending id becomes the server's — so a fixed answer would replace
     // every document a test opened with the same unrelated one, and the test
     // would be measuring the fixture.
+    ingestCanvasEvent: vi.fn().mockImplementation((_documentId: string, event: { id: string }) =>
+      Promise.resolve({
+        receipt: { id: event.id, status: 'recorded', docSeq: 1 },
+        deliveries: [],
+      })
+    ),
+    getCanvasEventReceipt: vi.fn().mockImplementation((_documentId: string, eventId: string) =>
+      Promise.resolve({
+        receipt: { id: eventId, status: 'recorded', docSeq: 1 },
+        deliveries: [],
+        payloadAvailable: true,
+      })
+    ),
+    getCanvasChannel: vi.fn().mockResolvedValue({
+      events: [],
+      receipts: [],
+      state: {},
+      stateRev: 0,
+      highWatermark: 0,
+      retentionFloor: 1,
+      receiptRetentionFloor: 1,
+      resetRequired: false,
+      health: { status: 'ready', reasons: [] },
+    }),
     listSessionCanvas: vi.fn().mockResolvedValue([]),
     getSessionCanvasDocument: vi.fn().mockResolvedValue(null),
     openSessionCanvasDocument: vi
