@@ -1,6 +1,6 @@
 /**
  * Shared set-up for the owner-replacement route tests (specs/community-owner-replacement, task
- * 2.4): hosts with mail and owner replacements switched on, communities with an owner, requests,
+ * 2.4): hosts with mail and the worker's notice composers, communities with an owner, requests,
  * and the real timeline to move them. Real PostgreSQL through the tenancy harness.
  */
 import { randomUUID } from 'node:crypto';
@@ -52,7 +52,7 @@ export class TestClock {
   }
 }
 
-/** A running host with owner replacements switched on, its operator, and an ownership key. */
+/** A running host with mail and the worker's notice composers, its operator, and an ownership key. */
 export interface ReplacementHost {
   h: TenancyHarness;
   clock: TestClock;

@@ -9,6 +9,7 @@
  * own community and reads only its own owner's mail.
  */
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CommunityAdminOwnerReplacementCreateResponseSchema } from '@dorkos/shared/community-admin-wire';
 import { queueNotice } from '../mail/outbox.js';
@@ -1096,10 +1097,26 @@ describe('object-only links through a lost reply (AC-19)', () => {
 });
 
 describe('requests are open on a host with mail', () => {
-  it('takes a request on a host started as main.ts starts one, and the owner gets the email', async () => {
+  it("main.ts gives the app the worker's composers and nothing else, and runs mail and the timeline", async () => {
+    // Purpose: fails if main.ts puts a rollout switch (or any other option) back between a host
+    // and a request, gives the app other composers than the mail worker's, or stops starting the
+    // mail worker or the timeline. The next test runs the app built the same way.
+    const startup = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
+    expect(startup).toContain(
+      'const noticeComposers: NoticeComposers = { ...ownerReplacementComposers(config) };'
+    );
+    expect(startup).toMatch(
+      /createCommunityApp\(\{\s*config,\s*pool,\s*blobStore,\s*noticeComposers,\s*\}\)/u
+    );
+    expect(startup).toContain('startMailDelivery({ config, pool, composers: noticeComposers })');
+    expect(startup).toContain('startOwnerReplacementTimeline({ pool, config })');
+    expect(startup).not.toContain('ownerReplacementOpen');
+  });
+
+  it('takes a request on a host built as main.ts builds the app, and the owner gets the email', async () => {
     // Purpose: fails if anything but mail and the worker's composers stands between a host and a
-    // request, such as a rollout switch left off, or if the accepted request does not reach the
-    // owner by email with a working keep-ownership link.
+    // request, or if the accepted request does not reach the owner by email with a working
+    // keep-ownership link.
     const c = await ownedCommunity(asMain, asMainOperator);
     const created = await requestReplacement(c, {}, asMain, asMainOwnership);
     const id = created.replacement.replacementId;
