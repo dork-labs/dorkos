@@ -1,3 +1,8 @@
+import {
+  CanvasChannelDeclarationSchema,
+  type CanvasChannelDeclaration,
+} from '@dorkos/shared/canvas-channel-schemas';
+import { hashApprovalInput } from '../../core/approvals/approval-input-hash.js';
 /** Atomic document closure and recoverable canonical ownership movement. */
 import { randomUUID } from 'node:crypto';
 import {
@@ -33,6 +38,11 @@ export interface DocChannelLifecycleOptions {
   receipts?: DocChannelReceiptRebinder;
   /** Future token storage must revoke inside this same closure transaction. */
   revokeTokens?: (tx: DbTransaction, documentId: string, now: string) => void;
+}
+/** Server-derived origin and optional declaration for a fresh physical document only. */
+export interface DocChannelInitialization {
+  declaration?: CanvasChannelDeclaration;
+  openerAgentId?: string | null;
 }
 /** Private identity data sufficient for closure, including unreadable document content. */
 export interface DocChannelDocumentIdentity {
@@ -93,10 +103,24 @@ export class DocChannelLifecycle {
   }
 
   /** Initialize log identity with the physical document in one transaction. */
-  opened(tx: DbTransaction, document: DocChannelDocumentIdentity): void {
+  opened(
+    tx: DbTransaction,
+    document: DocChannelDocumentIdentity,
+    initialization: DocChannelInitialization = {}
+  ): void {
     const now = this.now();
+    const declaration = initialization.declaration
+      ? CanvasChannelDeclarationSchema.parse(initialization.declaration)
+      : undefined;
     const channel = this.store.initialize(
-      { documentId: document.id, scope: document.scope, createdAt: now, updatedAt: now },
+      {
+        documentId: document.id,
+        scope: document.scope,
+        createdAt: now,
+        updatedAt: now,
+        openerAgentId: initialization.openerAgentId ?? null,
+        ...(declaration ? { declaration, declarationHash: hashApprovalInput(declaration) } : {}),
+      },
       tx
     );
     if (channel.closedAt !== null || channel.scope !== document.scope)

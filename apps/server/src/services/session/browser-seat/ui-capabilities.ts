@@ -135,6 +135,7 @@ function callerOf(context: CapabilityHandlerContext): UiCallerContext {
   return {
     ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
     ...(context.cwd !== undefined ? { cwd: context.cwd } : {}),
+    ...(context.serverPrincipal ? { principal: context.serverPrincipal } : {}),
     ...(context.serverPrincipal?.claims.kind === 'runtime' ? { fromRuntimeSurface: true } : {}),
   };
 }
