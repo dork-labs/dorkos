@@ -432,6 +432,10 @@
     "./community-navigation": {
       "types": "./src/community-navigation.ts",
       "default": "./dist/community-navigation.js"
+    },
+    "./canvas-channel-schemas": {
+      "types": "./src/canvas-channel-schemas.ts",
+      "default": "./dist/canvas-channel-schemas.js"
     }
   },
   "scripts": {

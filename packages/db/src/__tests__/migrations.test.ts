@@ -149,6 +149,16 @@ describe('Database Migrations', () => {
       // Opaque author identities keyed on (kind, natural_key) — an agent's
       // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
       'authors',
+      // Durable document channels, route authority, input outcomes and recovery
+      // evidence (spec `doc-channel`, migration 0137). These survive physical
+      // document removal so closure and accepted delivery history stay intact.
+      'canvas_doc_batches',
+      'canvas_doc_channels',
+      'canvas_doc_deliveries',
+      'canvas_doc_events',
+      'canvas_doc_grants',
+      'canvas_doc_identity_intents',
+      'canvas_doc_write_intents',
       // The documents a room's members have put on its shared canvas — server
       // owned, so every viewer sees one table (spec `room-canvas`, migration
       // 0096). Cascades with its room; archiving one keeps the rows and freezes

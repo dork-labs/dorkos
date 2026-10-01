@@ -2,7 +2,7 @@
 
 Generated: 2026-10-01T20:11:19.260645Z
 
-Canonical task records: `03-tasks.json`. Mode: full. All 22 tasks are pending. Full v1/v1.1/v2 delivery is included. Parent owns tracking, promotion, integration and aggregate release readiness; each implementation runs in an isolated checkout.
+Canonical task records: `03-tasks.json`. Mode: full. Task 1.1 is in progress; 21 tasks remain pending. Full v1/v1.1/v2 delivery is included. Parent owns tracking, promotion, integration and aggregate release readiness; each implementation runs in an isolated checkout.
 
 The natural xl boundaries are 2.6 (room admission) and 4.3 (checkbox write coordination). They are promoted through the tracker adapter as DOR-2669 and DOR-2670, with parent DOR-2665; they stay unready until their canonical prerequisites pass.
 
@@ -14,7 +14,7 @@ Shared app/composition mounts, export barrels, migrations and Transport integrat
 
 ### Task 1.1: [doc-channel] [P1] Define channel contracts and durable storage
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: none
