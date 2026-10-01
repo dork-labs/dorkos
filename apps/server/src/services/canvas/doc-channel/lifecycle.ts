@@ -361,6 +361,11 @@ export class DocChannelLifecycle {
         )
         .all();
       for (const grant of grants) {
+        const source = tx
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, fromId))
+          .get();
         const target = tx
           .select()
           .from(sessionMetadata)
@@ -370,7 +375,10 @@ export class DocChannelLifecycle {
           ? tx.select().from(agents).where(eq(agents.id, grant.targetAgentId)).get()
           : undefined;
         if (
+          !source ||
           !target ||
+          source.runtime !== grant.targetRuntime ||
+          source.agentPath !== target.agentPath ||
           target.runtime !== grant.targetRuntime ||
           !agent ||
           agent.status !== 'active' ||
