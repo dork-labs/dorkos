@@ -58,6 +58,21 @@ function setup(extra: Partial<DocChannelAuthorityPorts> = {}) {
 }
 
 describe('private document scope authority', () => {
+  it('returns the current canonical write identity after rekey during asynchronous authority', async () => {
+    const h = setup();
+    const original = h.authorization.require.bind(h.authorization);
+    vi.spyOn(h.authorization, 'require').mockImplementation(async (...args) => {
+      const identity = await original(...args);
+      queueMicrotask(() => h.documents.rekeyScope(FROM, 'session:canonical'));
+      return identity;
+    });
+    expect(await h.service.requireWrite(h.doc.id, actor())).toEqual({
+      id: h.doc.id,
+      scope: 'session:canonical',
+    });
+    expect(h.store.getChannel(h.doc.id)?.scope).toBe('session:canonical');
+  });
+
   it('refuses a runtime proof when live principal authority is not wired', () => {
     const h = setup({ principalCurrent: undefined });
     expect(() => h.authorization.requireCurrent(h.doc.id, actor())).toThrow(
