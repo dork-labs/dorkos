@@ -3,7 +3,7 @@ import { openFromCommandPalette } from './command-palette';
 
 /**
  * Page Object Model for the local-login (Better Auth) surface:
- * - the Settings → Access panel ("Require login" toggle, sign-out),
+ * - the Settings → Login & security panel ("Require login" toggle, sign-out),
  * - the owner-setup dialog, and
  * - the full-bleed LoginScreen that the AuthGuard renders when a session is
  *   required.
@@ -18,12 +18,10 @@ export class AuthPage {
   }
 
   /**
-   * Open Settings from the command palette and switch to the Access tab.
-   *
-   * "Access" since DOR-1758: the Security and DorkOS account tabs answered one
-   * question and became two sections of one tab.
+   * Open Settings from the command palette and switch to the Login & security
+   * tab — the local half of what was the Access tab (DOR-2628).
    */
-  async openAccessTab() {
+  async openLoginSecurityTab() {
     // Idempotent: the open dialog writes `?settings=…` into the URL, so a
     // `page.reload()` mid-test comes back with Settings already up — and the
     // command-palette button is then behind a modal that swallows the click.
@@ -31,22 +29,22 @@ export class AuthPage {
       await openFromCommandPalette(this.page, 'Settings');
       await this.settingsDialog.waitFor({ state: 'visible' });
     }
-    await this.settingsDialog.getByRole('tab', { name: /^access$/i }).click();
+    await this.settingsDialog.getByRole('tab', { name: /^login & security$/i }).click();
   }
 
-  /** The "Require login" toggle in Settings → Access. */
+  /** The "Require login" toggle in Settings → Login & security. */
   get requireLoginSwitch() {
     return this.settingsDialog.getByRole('switch', { name: /require login/i });
   }
 
-  /** The "Sign out" control shown in Settings → Access when signed in. */
+  /** The "Sign out" control shown in Settings → Login & security when signed in. */
   get signOutButton() {
     return this.settingsDialog.getByRole('button', { name: /sign out/i });
   }
 
-  // ---------- API keys (Settings → Access) ----------
+  // ---------- API keys (Settings → Login & security) ----------
 
-  /** The "API keys" block inside Settings → Access. */
+  /** The "API keys" block inside Settings → Login & security. */
   get apiKeysHeading() {
     return this.settingsDialog.getByText('API keys', { exact: true });
   }

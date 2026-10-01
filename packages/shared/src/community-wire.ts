@@ -250,6 +250,8 @@ export const CommunityWireOwnerReplacementOwnerNoticeSchema = z.strictObject({
   reference: z.string().regex(COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN).nullable(),
   claimReissuedAt: timestamp.nullable(),
   options: CommunityWireOwnerReplacementOptionsSchema,
+  /** How many days after the owner keeps ownership the host must wait to ask again. */
+  objectionCooldownDays: z.int().min(1),
 });
 /**
  * `GET /owner-replacement` for one member. The owner and admins see an open request (the owner
@@ -276,10 +278,15 @@ export const CommunityWireOwnerReplacementObjectionRequestSchema = z.strictObjec
 export const CommunityWireOwnerReplacementObjectRequestSchema = z.strictObject({
   token: ownerReplacementToken,
 });
-/** A live object-only link reveals only the community's name and the earliest claim date. */
+/**
+ * A live object-only link reveals only the community's name, the earliest claim date, and the
+ * host's cooling-off after an objection, so the page can say when the host may ask again.
+ */
 export const CommunityWireOwnerReplacementObjectPreflightResponseSchema = z.strictObject({
   communityName: z.string().min(1),
   claimableAfter: timestamp.nullable(),
+  /** How many days after the owner keeps ownership the host must wait to ask again. */
+  objectionCooldownDays: z.int().min(1),
 });
 /**
  * The object-only link's answer: `kept` when the request is now objected (including a replay of

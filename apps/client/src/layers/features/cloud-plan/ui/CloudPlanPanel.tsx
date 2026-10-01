@@ -1,19 +1,19 @@
 import { Skeleton } from '@/layers/shared/ui';
-import { CloudEligibilityNote } from '@/layers/features/cloud-link';
 import { useCloudPlan } from '../model/use-cloud-plan';
+import { AccountContents } from './AccountContents';
 import { CreditsGauge } from './CreditsGauge';
-import { CreditsSource } from './CreditsSource';
 import { PlanCard } from './PlanCard';
 import { SeatManagement } from './SeatManagement';
 import { UpgradeNudge } from './UpgradeNudge';
+import { UseCreditsFor } from './UseCreditsFor';
 
 /**
- * The plan-aware section of Settings — everything this DorkOS account is
- * entitled to, what it has spent, and the seats it holds.
+ * The signed-in half of Settings › DorkOS account — what the account includes,
+ * what it has, what runs on it, and the seats it holds, in that order: Plan,
+ * Credits, Use credits for, What's on your account, Seats.
  *
- * It sits directly under the account-link panel, which is the point: the device
- * link is the door, and this is the room behind it. Before anybody walks
- * through, this renders one plain line instead of four empty cards.
+ * It renders only once this computer is linked (the link panel around it shows
+ * the signed-out page otherwise), so nothing here has to say "link first".
  *
  * The whole section is catalog-blind. It knows no plan names and no prices; the
  * heading on the card, the words on a refusal and every figure on screen are
@@ -22,16 +22,13 @@ import { UpgradeNudge } from './UpgradeNudge';
 export function CloudPlanPanel() {
   const { data, isError, isPending } = useCloudPlan();
 
-  // NOTHING is known until the read settles, and "not known yet" is not "not
-  // linked". Deciding before then flashes "link this instance to a DorkOS
-  // account" at somebody who linked months ago, on every single Settings open —
-  // a sentence that is not merely premature but false. A skeleton says the one
-  // true thing available: the answer is coming.
+  // NOTHING is known until the read settles. A skeleton says the one true
+  // thing available: the answer is coming.
   if (isPending) return <Skeleton className="h-40 w-full" />;
 
-  // An outage is NOT "you have no account". Telling a linked, paying person to
-  // link their account because the service was briefly unwell is worse than
-  // saying nothing, so the two states are separate branches.
+  // An outage is NOT "you have no account". Telling a linked, paying person
+  // anything else because the service was briefly unwell is worse than saying
+  // nothing, so the two states are separate branches.
   if (isError) {
     return (
       <p className="text-muted-foreground text-sm">
@@ -40,27 +37,24 @@ export function CloudPlanPanel() {
     );
   }
 
-  if (!data?.available) {
-    return (
-      <div className="space-y-2">
-        <p className="text-muted-foreground text-sm">
-          Link this instance to a DorkOS account above to see what it includes, what you have spent,
-          and the seats you hold.
-        </p>
-        {/* Said before anybody links in order to buy, not after. */}
-        <CloudEligibilityNote />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
-      {/* Above the cards, with no action of its own — it never stands between
-          somebody and paying. */}
-      <UpgradeNudge />
-      <PlanCard />
-      <CreditsGauge />
-      <CreditsSource />
+      {data.available ? (
+        <>
+          {/* Above the cards, with no action of its own — it never stands
+              between somebody and paying. */}
+          <UpgradeNudge />
+          <PlanCard />
+          <CreditsGauge />
+        </>
+      ) : (
+        // Linked, but the service has no plan to describe for this account.
+        <p className="text-muted-foreground text-sm">
+          Your DorkOS account has no plan details to show yet.
+        </p>
+      )}
+      <UseCreditsFor />
+      <AccountContents />
       <SeatManagement />
     </div>
   );

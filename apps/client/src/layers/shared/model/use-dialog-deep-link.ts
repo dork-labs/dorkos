@@ -29,6 +29,15 @@ type AnySearchUpdater = (prev: Record<string, unknown>) => Record<string, unknow
  * says which params the URL half is made of; every close path builds its patch
  * from {@link clearedDialogSearch} rather than listing params again (DOR-839).
  */
+/**
+ * The DorkOS account tab section that asks the account panel to start linking
+ * this computer again. The panel starts the link once, then clears the
+ * section so reopening Settings does not start another. A link that needs updating is
+ * still linked, so without this a person would land on a panel with no way
+ * forward.
+ */
+export const SETTINGS_RELINK_SECTION = 'relink';
+
 const DIALOG_SEARCH_PARAMS = {
   settings: ['settings', 'settingsSection'],
   tasks: ['tasks'],
@@ -81,6 +90,13 @@ export interface SettingsTabTarget {
   tab: SettingsTab;
   /** Section anchor inside that tab, when the id named one half of it. */
   section?: string;
+  /**
+   * For a retired id that SPLIT into several tabs: the tab each of its old
+   * section anchors now lives on. An old `?settings=access&settingsSection=security`
+   * link names the half it was about, and this sends it to that half's tab
+   * rather than to {@link tab}.
+   */
+  sectionTabs?: Record<string, SettingsTab>;
 }
 
 /** Where a resolved `?settings=` id points: a dialog tab, or a route. */
@@ -99,17 +115,19 @@ export type SettingsDeepLinkTarget = SettingsTabTarget | SettingsRouteTarget;
  * still reachable from inside the dialog until it is deleted; what changes
  * here is where an old *link* lands.
  *
- * `security` and `account` were two tabs answering one question — who may get
- * into this install, and as whom — so they became one Access tab with a section
- * each, and each id keeps its own half (DOR-1758). `advanced` is that batch's
- * rename: the tab holds only the destructive actions now and is named after
- * them.
+ * `access` is the tab that briefly held both local login and the DorkOS
+ * account (DOR-1758). They are their own tabs again — `security` ("Login &
+ * security") and `account` ("DorkOS account") — because "account" had come to
+ * mean four things and the DorkOS account needed one home (DOR-2628). Every
+ * in-app door into `access` was a door to its account half, so that is where a
+ * bare `access` link lands; one that still names its `security` section lands
+ * on Login & security. `advanced` is the DOR-1758 rename: the tab holds only
+ * the destructive actions now and is named after them.
  */
 const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsDeepLinkTarget> = {
   channels: { kind: 'route', path: '/connections' },
   integrations: { kind: 'route', path: '/connections' },
-  security: { kind: 'tab', tab: 'access', section: 'security' },
-  account: { kind: 'tab', tab: 'access', section: 'account' },
+  access: { kind: 'tab', tab: 'account', sectionTabs: { security: 'security' } },
   advanced: 'danger',
 };
 
@@ -126,7 +144,8 @@ const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsDeepLinkTarg
  */
 export function resolveDeepLinkTarget(
   raw: string | undefined,
-  legacyMap: Record<string, SettingsTab | SettingsDeepLinkTarget>
+  legacyMap: Record<string, SettingsTab | SettingsDeepLinkTarget>,
+  section?: string
 ): SettingsDeepLinkTarget | null {
   if (!raw || raw === 'open') return null;
   // `legacyMap[raw]` alone would also return inherited prototype members —
@@ -136,14 +155,28 @@ export function resolveDeepLinkTarget(
   // (`toString`, `hasOwnProperty`, …) still falls through to the plain-tab case.
   if (Object.hasOwn(legacyMap, raw)) {
     const legacy = legacyMap[raw];
-    return typeof legacy === 'string' ? { kind: 'tab', tab: legacy } : legacy;
+    if (typeof legacy === 'string') return { kind: 'tab', tab: legacy };
+    // A split tab: the section the old link named decides which new tab it
+    // meant. Own keys only, for the prototype reason above.
+    if (
+      legacy.kind === 'tab' &&
+      legacy.sectionTabs !== undefined &&
+      section !== undefined &&
+      Object.hasOwn(legacy.sectionTabs, section)
+    ) {
+      return { kind: 'tab', tab: legacy.sectionTabs[section]! };
+    }
+    return legacy;
   }
   return { kind: 'tab', tab: raw };
 }
 
 /** Resolve a raw `?settings=` value against the production legacy map. */
-function resolveSettingsDeepLink(raw: string | undefined): SettingsDeepLinkTarget | null {
-  return resolveDeepLinkTarget(raw, LEGACY_SETTINGS_TAB_MAP);
+function resolveSettingsDeepLink(
+  raw: string | undefined,
+  section: string | undefined
+): SettingsDeepLinkTarget | null {
+  return resolveDeepLinkTarget(raw, LEGACY_SETTINGS_TAB_MAP, section);
 }
 
 /**
@@ -183,7 +216,9 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
   const storeOpen = useAppStore((s) => s.settingsOpen);
 
-  const resolved = navigate ? resolveSettingsDeepLink(search.settings) : null;
+  const resolved = navigate
+    ? resolveSettingsDeepLink(search.settings, search.settingsSection)
+    : null;
   const routeTarget = resolved?.kind === 'route' ? resolved : null;
   // A link whose destination left the dialog should not also flash the dialog
   // open on its way out, so the route case reads as closed here and the effect
@@ -192,8 +227,8 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   const activeTab = resolved?.kind === 'tab' ? resolved.tab : null;
   // An explicit `?settingsSection=` wins; a legacy id that named one half of a
   // merged tab supplies its own when the URL carries none, so a bookmark to
-  // `?settings=account` still lands ON the account section rather than at the
-  // top of the tab that absorbed it.
+  // the absorbed tab still lands ON its section rather than at the top of the
+  // tab that absorbed it.
   const section = navigate
     ? (search.settingsSection ?? (resolved?.kind === 'tab' ? (resolved.section ?? null) : null))
     : null;

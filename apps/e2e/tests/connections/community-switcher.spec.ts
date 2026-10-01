@@ -202,9 +202,11 @@ test('Community switcher supports keyboard selection and a narrow accessible men
   const alpha = page.getByRole('radio', { name: /Alpha/ });
   await expect(alpha).toBeVisible();
   await expect(alpha).toHaveAccessibleName(/Alpha.*1 mention.*1 other unread/);
-  // The phone sheet is this menu's only home on a phone, so it keeps the
-  // settings row and the version line below the destinations (BC-44).
-  await expect(page.getByRole('menuitem', { name: /Workspace settings/ })).toBeVisible();
+  // The phone sheet is this menu's only home on a phone, so it keeps you, your
+  // DorkOS account and Settings above the destinations and the version line
+  // below them (BC-44, DOR-2628).
+  await expect(page.getByRole('menuitem', { name: 'Settings', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /DorkOS account/ })).toBeVisible();
   await expect(
     page.getByRole('menuitem', { name: /beta/ }).or(page.getByText('Development build'))
   ).toBeVisible();

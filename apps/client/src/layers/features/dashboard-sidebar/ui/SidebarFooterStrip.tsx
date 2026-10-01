@@ -138,7 +138,7 @@ export function SidebarFooterStrip() {
           <AskDorkBotButton labelled={isMobile} />
         </div>
       </div>
-      {/* On a phone the fold is "Account and settings", which is not where
+      {/* On a phone the fold holds only the theme (and sign-out), which is not where
           anyone looks to report a problem, so help and feedback sit here in
           plain sight as rows of their own (DOR-2232). */}
       {isMobile && (

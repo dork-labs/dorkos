@@ -859,6 +859,7 @@ describe('what the owner is sent (AC-15)', () => {
       'If you can sign in, you can also hand the community to someone yourself from its Settings:',
     delete: 'If you can sign in, you can also delete the community from its Settings.',
     password: 'To hand it to someone or delete it, add a password to your account first.',
+    deletePassword: 'To delete it, add a password to your account first.',
   };
 
   function expectPlain(mail: Mail, c: Owned) {
@@ -943,16 +944,19 @@ describe('what the owner is sent (AC-15)', () => {
   });
 
   it.each([
-    ['active', true, { transfer: true, delete: true, password: false }],
-    ['archived', true, { transfer: false, delete: true, password: false }],
-    ['held', true, { transfer: false, delete: true, password: false }],
-    ['active', false, { transfer: false, delete: false, password: true }],
-    ['held', false, { transfer: false, delete: false, password: true }],
+    ['active', true, { transfer: true, delete: true, password: null }],
+    ['archived', true, { transfer: false, delete: true, password: null }],
+    ['held', true, { transfer: false, delete: true, password: null }],
+    ['active', false, { transfer: false, delete: false, password: 'password' }],
+    // Only an active community can be handed on, so a password would open deletion alone.
+    ['held', false, { transfer: false, delete: false, password: 'deletePassword' }],
+    ['archived', false, { transfer: false, delete: false, password: 'deletePassword' }],
   ] as const)(
     'offers an owner of a %s community (password: %s) only what they can do',
     async (lifecycle, hasPassword, offered) => {
       // Purpose: fails if the notice offers a transfer outside `active` or without a password,
-      // a deletion without a password, or leaves a password-less owner without the way forward.
+      // a deletion without a password, leaves a password-less owner without the way forward,
+      // or promises them a transfer that adding a password would not give them.
       const c = await ownedCommunity();
       if (lifecycle !== 'active')
         await h.pool.query(
@@ -972,7 +976,10 @@ describe('what the owner is sent (AC-15)', () => {
       expectPlain(notice, c);
       expect(notice.text.includes(sentences.transfer)).toBe(offered.transfer);
       expect(notice.text.includes(sentences.delete)).toBe(offered.delete);
-      expect(notice.text.includes(sentences.password)).toBe(offered.password);
+      expect(notice.text.includes(sentences.password)).toBe(offered.password === 'password');
+      expect(notice.text.includes(sentences.deletePassword)).toBe(
+        offered.password === 'deletePassword'
+      );
     }
   );
 

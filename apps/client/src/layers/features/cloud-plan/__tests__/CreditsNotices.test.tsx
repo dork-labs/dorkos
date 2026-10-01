@@ -1,9 +1,8 @@
 /**
  * @vitest-environment jsdom
  *
- * "Use credits for" and the notices about credits choices (ADR
- * 261001-000811): a switch per runtime that declares credits, a calm line about
- * who chose them, and one notice per choice DorkOS made for the person.
+ * The notices about credits choices (ADR 261001-000811): one per choice DorkOS
+ * made for the person, each worded calmly, each settled by the person.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
@@ -13,7 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { CreditsSource } from '../ui/CreditsSource';
+import { CreditsNotices } from '../ui/CreditsNotices';
 
 const { openSettings } = vi.hoisted(() => ({ openSettings: vi.fn() }));
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
@@ -42,54 +41,17 @@ function renderSource(status: Partial<CloudCreditsStatus>) {
   render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <CreditsSource />
+        <CreditsNotices />
       </TransportProvider>
     </QueryClientProvider>
   );
   return transport;
 }
 
-describe('CreditsSource', () => {
+describe('CreditsNotices', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
-  });
-
-  it('gives each runtime that declares credits a switch, and names the rest in words', async () => {
-    const user = userEvent.setup();
-    const transport = renderSource({});
-    const toggle = await screen.findByRole('switch', {
-      name: 'Use DorkOS credits for Claude Code',
-    });
-    expect(toggle).not.toBeChecked();
-    // Display names, never raw runtime ids.
-    expect(screen.getByText('Codex and OpenCode run on their own sign-in for now.')).toBeVisible();
-    await user.click(toggle);
-    await waitFor(() =>
-      expect(transport.setCloudCreditsDefault).toHaveBeenCalledWith('claude-code', true)
-    );
-  });
-
-  it('says calmly when DorkOS turned credits on, and turning off goes back to the own sign-in', async () => {
-    const user = userEvent.setup();
-    const transport = renderSource({
-      defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'default' } },
-    });
-    const toggle = await screen.findByRole('switch', {
-      name: 'Use DorkOS credits for Claude Code',
-    });
-    expect(toggle).toBeChecked();
-    expect(screen.getByText(/DorkOS turned this on when you linked/)).toBeVisible();
-    await user.click(toggle);
-    await waitFor(() =>
-      expect(transport.setCloudCreditsDefault).toHaveBeenCalledWith('claude-code', false)
-    );
-  });
-
-  it('renders nothing on a computer that is not linked', async () => {
-    const transport = renderSource({ linked: false, enabled: false });
-    await waitFor(() => expect(transport.getCloudCredits).toHaveBeenCalled());
-    expect(screen.queryByRole('switch')).toBeNull();
   });
 
   it('announces the gaps a new link filled, with Change and Undo all', async () => {

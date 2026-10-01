@@ -77,7 +77,7 @@ export function FirstConnectStep({ reason, onLeave }: FirstConnectStepProps) {
           className="w-full"
           onClick={() => {
             onLeave?.();
-            settings.open('access', 'account');
+            settings.open('account');
           }}
         >
           Link my DorkOS account again

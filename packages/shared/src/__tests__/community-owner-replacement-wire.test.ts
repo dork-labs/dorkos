@@ -55,6 +55,8 @@ const replacement = {
   endedAt: null,
   withdrawnBecause: null,
   cooldownUntil: null,
+  afterObjection: false,
+  afterWithdrawal: false,
 } as const;
 
 const adminNotice = {
@@ -73,6 +75,7 @@ const ownerNotice = {
   reference: 'ABC-123',
   claimReissuedAt: null,
   options: { keep: true, transfer: false, delete: true, needsPassword: false },
+  objectionCooldownDays: 90,
 } as const;
 
 const projection = {
@@ -131,7 +134,7 @@ const strictSchemas: [string, z.ZodType, Record<string, unknown>][] = [
   [
     'object preflight',
     CommunityWireOwnerReplacementObjectPreflightResponseSchema,
-    { communityName: 'Acme', claimableAfter: null },
+    { communityName: 'Acme', claimableAfter: null, objectionCooldownDays: 90 },
   ],
   ['object response', CommunityWireOwnerReplacementObjectResponseSchema, { outcome: 'kept' }],
   ['claim preflight', CommunityWireOwnerReplacementPreflightRequestSchema, { token: 'token' }],

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryOptions } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { configKeys, CONFIG_STALE_TIME_MS } from '../api/query-keys';
@@ -16,9 +16,17 @@ import { configKeys, CONFIG_STALE_TIME_MS } from '../api/query-keys';
  *   read has not succeeded (`BootBlockedScreen`, behind both the unreachable and
  *   the error screen) keeps asking without minting a second query for the same
  *   fact. Every observer shares one cache entry, so the answer it eventually
- *   gets is the answer every other reader gets.
+ *   gets is the answer every other reader gets. `refetchOnMount` overrides the
+ *   shared `staleTime` for THIS observer's mount only, which is how the shell
+ *   makes sure each page load asks the server at least once even when the boot
+ *   cache restored a copy young enough to count as fresh.
  */
-export function useConfig(options: { refetchInterval?: number } = {}) {
+export function useConfig(
+  options: {
+    refetchInterval?: number;
+    refetchOnMount?: UseQueryOptions<ServerConfig>['refetchOnMount'];
+  } = {}
+) {
   const transport = useTransport();
   return useQuery<ServerConfig>({
     queryKey: configKeys.current(),
@@ -34,5 +42,6 @@ export function useConfig(options: { refetchInterval?: number } = {}) {
     // nothing to go on either.
     networkMode: 'always',
     ...(options.refetchInterval === undefined ? {} : { refetchInterval: options.refetchInterval }),
+    ...(options.refetchOnMount === undefined ? {} : { refetchOnMount: options.refetchOnMount }),
   });
 }

@@ -620,7 +620,7 @@ export const CONNECTION_READINESS_COPY: Readonly<
       'DorkOS account can bring it back, unless its earlier link was removed from that account. Otherwise, connect it again.',
     agent:
       'It was connected through the person’s DorkOS account, which isn’t linked anymore. Linking this computer again with the ' +
-      'same DorkOS account (Settings › Access in the DorkOS app) can bring it back, unless its earlier link was removed from ' +
+      'same DorkOS account (Settings › DorkOS account in the DorkOS app) can bring it back, unless its earlier link was removed from ' +
       'that account. A different account, or a link made on another computer, does not bring it back: then ask the person to ' +
       `connect this app again ${READINESS_ASK_ON_CONNECTIONS}.`,
   },
@@ -876,7 +876,7 @@ export const KEY_CHECK_COPY = {
  * because this computer's DorkOS account link is gone.
  */
 export const LINK_NEEDED_TO_CHANGE_ACCESS_COPY =
-  'DorkOS can’t change who uses this account until this computer is linked to your DorkOS account again. Link it in Settings › Access, then try again.';
+  'DorkOS can’t change who uses this account until this computer is linked to your DorkOS account again. Link it in Settings › DorkOS account, then try again.';
 
 /**
  * What a person reads when a sign-in can't start or doesn't finish. The

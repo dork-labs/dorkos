@@ -4,6 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { expect } from '@playwright/test';
 import {
+  channelEntries,
   composer,
   connections,
   destinations,
@@ -59,6 +60,7 @@ export async function switchingSteps(w: World): Promise<void> {
     ATTACH_BODY,
     ISOLATED_MSG,
     fillers,
+    seeNewest,
     scrollUpAndRemember,
     resize,
     noLocalLookups,
@@ -103,15 +105,19 @@ export async function switchingSteps(w: World): Promise<void> {
   );
 
   await step('11 both people post in the channel and each sees the other live', async () => {
+    const liveWaitMs: Record<string, number> = {};
     for (const [sender, receiver, message] of [
       [a, b, MSG_A],
       [b, a, MSG_B],
     ] as const) {
-      await send(composer(sender), message);
-      await expect(feed(sender)).toContainText(message, { timeout: 30_000 });
-      await expect(feed(receiver)).toContainText(message, { timeout: 30_000 });
+      liveWaitMs[sender.name] = (await send(composer(sender), message)).liveWaitMs;
+      // A held community keeps earlier runs' messages and the feed is virtualized,
+      // so read the newest end of it, never the whole feed's text.
+      await seeNewest(sender, message);
+      await seeNewest(receiver, message);
     }
     return {
+      liveWaitMs,
       a: await shot(a.page, '11-desktop-a-general'),
       b: await shot(b.page, '11-desktop-b-general'),
     };
@@ -120,11 +126,17 @@ export async function switchingSteps(w: World): Promise<void> {
   await step(
     '12 B replies in a thread on A’s message; A opens the thread and sees it',
     async () => {
+      await seeNewest(b, MSG_A);
       await messageRow(feed(b), MSG_A).getByRole('button', { name: 'Reply in thread' }).click();
       await expect(threadFeed(b)).toBeVisible();
-      await send(composer(b, /Reply in thread/), THREAD_B);
+      const reply = await send(composer(b, /Reply in thread/), THREAD_B);
       await expect(threadFeed(b)).toContainText(THREAD_B, { timeout: 30_000 });
-      await expect(feed(a)).not.toContainText(THREAD_B); // replies stay out of the channel
+      // The Community filed the reply under A's message, not in the channel.
+      const rootA = (await channelEntries<Entry>(a, refA, room.roomId)).find(
+        (e) => e.text === MSG_A
+      );
+      assert(rootA, 'A’s message is in the channel’s history');
+      assert.equal(reply.entry.threadRootEntryId, rootA.id, 'the reply is in A’s message’s thread');
       await messageRow(feed(a), MSG_A)
         .getByRole('button', { name: /Reply in thread|Open thread/ })
         .first()
@@ -138,7 +150,18 @@ export async function switchingSteps(w: World): Promise<void> {
         await local.page.getByRole('button', { name: 'Back to channel', exact: true }).click();
         await expect(feed(local)).toBeVisible();
       }
-      return evidence;
+      // Replies stay out of the channel. Checked only now that A's app has the reply
+      // (A just read it in the thread), so the check cannot pass by arriving too early:
+      // the channel's top-level history lacks it, and so do A's newest rows, where a
+      // stray reply would land.
+      assert(
+        !(await channelEntries<Entry>(a, refA, room.roomId)).some((e) => e.text === THREAD_B),
+        'the thread reply is in the channel’s top-level history'
+      );
+      await expect(feed(a), 'A’s channel feed is on screen').toBeVisible();
+      await seeNewest(a, MSG_B);
+      await expect(feed(a)).not.toContainText(THREAD_B);
+      return { ...evidence, liveWaitMs: reply.liveWaitMs };
     }
   );
 
@@ -152,15 +175,17 @@ export async function switchingSteps(w: World): Promise<void> {
       const fileChooser = await chooser;
       if (fileChooser) await fileChooser.setFiles(file);
       else await a.page.locator('input[type="file"]').first().setInputFiles(file);
-      await send(composer(a), ATTACH_TEXT);
-      await expect(feed(b)).toContainText(ATTACH_TEXT, { timeout: 60_000 });
-      await expect(feed(b).getByRole('button', { name: ATTACH_NAME, exact: true })).toBeVisible({
+      const { liveWaitMs } = await send(composer(a), ATTACH_TEXT);
+      await seeNewest(b, ATTACH_TEXT);
+      // Scoped to this run's row: an earlier run in a held community left a file of the same name.
+      await expect(
+        messageRow(feed(b), ATTACH_TEXT).getByRole('button', { name: ATTACH_NAME, exact: true })
+      ).toBeVisible({
         timeout: 60_000,
       });
-      const entries = await json<{ entries: Entry[] }>(
-        `${b.origin}/api/communities/${refB}/rooms/${room.roomId}/entries`
+      const entry = (await channelEntries<Entry>(b, refB, room.roomId)).find(
+        (e) => e.text === ATTACH_TEXT
       );
-      const entry = entries.entries.find((e) => e.text === ATTACH_TEXT);
       assert(entry && entry.attachments.length === 1 && entry.attachments[0]!.name === ATTACH_NAME);
       const bytes = await fetch(
         `${b.origin}/api/communities/${refB}/rooms/${room.roomId}/attachments/${entry.attachments[0]!.id}`
@@ -168,6 +193,7 @@ export async function switchingSteps(w: World): Promise<void> {
       assert(bytes.ok, `B attachment download ${bytes.status}`);
       assert.equal(await bytes.text(), ATTACH_BODY, 'attachment bytes intact');
       return {
+        liveWaitMs,
         b: await shot(b.page, '13-desktop-b-attachment'),
         attachmentId: entry.attachments[0]!.id,
       };
@@ -238,11 +264,9 @@ export async function switchingSteps(w: World): Promise<void> {
       await expect
         .poll(
           async () =>
-            JSON.stringify(
-              await json(
-                `${a.origin}/api/communities/${refA}/rooms/${room.roomId}/entries?limit=100`
-              )
-            ).includes(fillers.at(-1)!),
+            (await channelEntries<Entry>(a, refA, room.roomId)).some(
+              (e) => e.text === fillers.at(-1)
+            ),
           { timeout: 60_000 }
         )
         .toBe(true);
@@ -308,7 +332,7 @@ export async function switchingSteps(w: World): Promise<void> {
         for (const text of [MSG_A, MSG_B, ATTACH_TEXT])
           await expect(a.page.locator('main, body').first()).not.toContainText(text);
         await send(composer(a), ISOLATED_MSG);
-        await expect(feed(a)).toContainText(ISOLATED_MSG, { timeout: 30_000 });
+        await seeNewest(a, ISOLATED_MSG);
         const isoShot = await shot(a.page, '16a-desktop-a-isolation');
         await switchTo(a, COMMUNITY);
         await expect(feed(a)).toBeVisible();
@@ -316,12 +340,8 @@ export async function switchingSteps(w: World): Promise<void> {
         await expect(feed(a)).toContainText(new RegExp(`History filler \\d\\d ${stamp}`));
         await expect(feed(a)).not.toContainText(ISOLATED_MSG);
         await expect(feed(b)).not.toContainText(ISOLATED_MSG);
-        const bEntries = JSON.stringify(
-          await json(`${b.origin}/api/communities/${refB}/rooms/${room.roomId}/entries`)
-        );
-        const aEntries = JSON.stringify(
-          await json(`${a.origin}/api/communities/${refA}/rooms/${room.roomId}/entries`)
-        );
+        const bEntries = JSON.stringify(await channelEntries(b, refB, room.roomId));
+        const aEntries = JSON.stringify(await channelEntries(a, refA, room.roomId));
         assert(
           !bEntries.includes(ISOLATED_MSG) && !aEntries.includes(ISOLATED_MSG),
           'isolation text leaked'

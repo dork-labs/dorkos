@@ -1,8 +1,8 @@
 import { FieldCard, FieldCardContent } from '@/layers/shared/ui';
 import { CloudEligibilityNote } from '@/layers/features/cloud-link';
 import type { Entitlements } from '@dork-labs/cloud-api';
-import { formatCharge, formatCreditsWithMoney, formatPosition } from '@dork-labs/cloud-api/display';
-import { isReadableDenomination, withCreditUnit } from '../lib/credits';
+import { formatCreditsWithMoney } from '@dork-labs/cloud-api/display';
+import { isReadableDenomination } from '../lib/credits';
 import { useCloudPlan } from '../model/use-cloud-plan';
 import { UnreadableFigures } from './UnreadableFigures';
 
@@ -46,12 +46,10 @@ const SUPPORT_WORDING: Record<Entitlements['limits']['support'], string> = {
  * render an account on any plan, including one that did not exist when it was
  * written.
  *
- * Credit figures are rendered by `@dork-labs/cloud-api/display` in the unit each
- * response served: included credits and credits bought are positions (rounded
- * down) with their money value beside them, worked out from the rounded count
- * so the two always agree; the allowance left is a position; anything owed is
- * a charge. A response without a unit shows the "couldn't read" line in place
- * of its figures, never a guessed number.
+ * The included-credits figure is rendered by `@dork-labs/cloud-api/display` in
+ * the unit the plan served, as a position (rounded down) with its money value
+ * beside it. What is LEFT of any of it is the Credits card's, not this one's:
+ * the plan says what the account includes, the credits card what it has.
  *
  * With no cloud account it renders nothing at all — the panel above it draws the
  * empty state once, for the whole section.
@@ -64,25 +62,11 @@ export function PlanCard() {
 
   if (!data?.available) return null;
 
-  const { entitlements, balance } = data;
+  const { entitlements } = data;
   const { limits, seats } = entitlements;
   const planUnit = entitlements.denomination;
-  const balanceUnit = balance?.denomination;
   const includedCredits = formatCreditsWithMoney(limits.includedCreditsMicro, planUnit, 'position');
-  const allowanceLeft = withCreditUnit(
-    formatPosition(balance?.allowance.remainingMicro, balanceUnit)
-  );
-  const purchasedLeft = formatCreditsWithMoney(
-    balance?.purchased.remainingMicro,
-    balanceUnit,
-    'position'
-  );
-  // A charge reads exactly "0" only for an exact zero, so any debt at all —
-  // even a sliver that reads "<1" — gets its line.
-  const owedFigure = formatCharge(balance?.owedMicro, balanceUnit);
-  const owed = owedFigure === '0' ? null : withCreditUnit(owedFigure);
-  const unreadable =
-    !isReadableDenomination(planUnit) || (balance !== null && !isReadableDenomination(balanceUnit));
+  const unreadable = !isReadableDenomination(planUnit);
 
   return (
     <FieldCard>
@@ -110,19 +94,6 @@ export function PlanCard() {
           <Fact label="Custom address" value={CUSTOM_ADDRESS_WORDING[limits.customAddress]} />
           <Fact label="Support" value={SUPPORT_WORDING[limits.support]} />
         </dl>
-
-        {balance !== null && (
-          <div className="border-t pt-3">
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
-              {allowanceLeft !== null && <Fact label="Allowance left" value={allowanceLeft} />}
-              {purchasedLeft !== null && <Fact label="Credits bought" value={purchasedLeft} />}
-              {/* Debt carried from a turn that overran its reservation. It is
-                  never folded quietly into a smaller balance — when it exists it
-                  gets its own line. */}
-              {owed !== null && <Fact label="Owed" value={owed} />}
-            </dl>
-          </div>
-        )}
 
         {unreadable && <UnreadableFigures />}
 

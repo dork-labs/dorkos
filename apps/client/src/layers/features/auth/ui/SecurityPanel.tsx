@@ -19,13 +19,14 @@ import { ApiKeysSection } from './ApiKeysSection';
 import { useCurrentUser, useSignOut } from '../model/use-auth-session';
 
 /**
- * Security section for the Settings dialog — the single entry point to local
+ * Settings › Login & security — the single entry point to local
  * login. Progressive disclosure: when login is off, only the "Require login"
  * toggle shows (no user, no sign-out, no API keys). Enabling it walks the user
  * through owner-account creation, then flips `auth.enabled`.
  *
- * Composed into the Settings dialog's Access tab (a `features/settings` UI
- * that renders this `features/auth` panel — sibling UI composition).
+ * Registered as the Settings dialog's `security` tab directly (DOR-2628): the
+ * Access tab that used to wrap it beside the DorkOS account is gone, and the
+ * dialog draws the panel's heading.
  */
 export function SecurityPanel() {
   const { data: config } = useConfig();
@@ -53,10 +54,10 @@ export function SecurityPanel() {
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        {/* No heading here: the Access tab draws the section heading this
-            sits under ("On this machine"). This is its explainer. */}
+        {/* No heading here: the Settings dialog draws the panel's own
+            ("Login & security"). This is its explainer. */}
         <p className="text-muted-foreground text-sm">
-          Require an owner login to reach this instance. Exposing DorkOS beyond localhost (a tunnel
+          Require an owner login to reach this computer. Exposing DorkOS beyond localhost (a tunnel
           or non-loopback bind) always requires login.
         </p>
       </div>
@@ -67,8 +68,8 @@ export function SecurityPanel() {
             label="Require login"
             description={
               authEnabled
-                ? 'An owner account is required to use this instance.'
-                : 'Off. This instance starts with no login (localhost only).'
+                ? 'An owner account is required to use DorkOS on this computer.'
+                : 'Off. DorkOS on this computer starts with no login (localhost only).'
             }
           >
             <Switch
@@ -120,7 +121,7 @@ export function SecurityPanel() {
           <DialogHeader>
             <DialogTitle>Create an owner account</DialogTitle>
             <DialogDescription>
-              This becomes the login for this instance. Email is a local identifier only.
+              This becomes the login for this computer. Email is a local identifier only.
             </DialogDescription>
           </DialogHeader>
           <OwnerSetupScreen

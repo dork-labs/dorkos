@@ -84,6 +84,16 @@ describe('hostBelongsToSite', () => {
     expect(hostBelongsToSite('gist.github.com', 'github.com')).toBe(true);
     expect(hostBelongsToSite('notgithub.com', 'github.com')).toBe(false);
   });
+
+  it('ignores trailing dots, and stays linear on a long run of dots mid-host', () => {
+    expect(hostBelongsToSite('github.com...', 'github.com')).toBe(true);
+    // `/\.+$/` backtracked quadratically on a run of dots that is not at the
+    // end (CodeQL js/polynomial-redos); a cookie domain comes from a file.
+    const host = `a${'.'.repeat(100_000)}b`;
+    const started = performance.now();
+    expect(hostBelongsToSite(host, 'github.com')).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });
 
 describe('summarizeStorageState', () => {

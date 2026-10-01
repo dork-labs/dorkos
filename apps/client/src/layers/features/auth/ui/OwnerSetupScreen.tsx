@@ -28,7 +28,7 @@ interface OwnerSetupScreenProps {
 
 /**
  * First-run owner-account creation form (email + password + confirm). Reused by
- * the Settings → Access "Require login" flow and the tunnel exposure flow.
+ * the Settings → Login & security "Require login" flow and the tunnel exposure flow.
  * The email is a local identifier only — never verified, no email is ever sent.
  */
 export function OwnerSetupScreen({

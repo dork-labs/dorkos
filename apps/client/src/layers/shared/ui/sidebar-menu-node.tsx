@@ -124,6 +124,18 @@ export interface SidebarMenuActionNode {
    */
   hint?: string;
   /**
+   * A second, quieter line under the label — the state the row opens onto
+   * ("Signed in · Dorian"), never a second action.
+   */
+  description?: string;
+  /**
+   * Drawn in place of {@link icon} — a person's own face on a "you" row. Still
+   * nothing Radix-shaped: an element, not a slot, so every menu family draws it
+   * the same way. `icon` stays required, because a flat consumer (the palette)
+   * has no room for a face and falls back to the glyph.
+   */
+  leading?: ReactNode;
+  /**
    * The action leaves the app for another site. The row gets a trailing
    * external-link mark, and its accessible name says where it goes, so
    * nobody chooses it expecting to stay put.
@@ -562,8 +574,25 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
             variant={node.destructive ? 'destructive' : undefined}
             onClick={node.run}
           >
-            <Icon className="mr-2 size-4" />
-            {node.opensInput ? `${node.label}…` : node.label}
+            {node.leading !== undefined ? (
+              <span className="mr-2 flex shrink-0">{node.leading}</span>
+            ) : (
+              <Icon className="mr-2 size-4" />
+            )}
+            {node.description !== undefined ? (
+              <span className="min-w-0 flex-1 text-left">
+                <span className="block truncate">
+                  {node.opensInput ? `${node.label}…` : node.label}
+                </span>
+                <span className="text-muted-foreground block truncate text-xs">
+                  {node.description}
+                </span>
+              </span>
+            ) : node.opensInput ? (
+              `${node.label}…`
+            ) : (
+              node.label
+            )}
             {node.external !== undefined && (
               <>
                 <span className="sr-only">, opens on {node.external.host}</span>

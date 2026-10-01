@@ -31,6 +31,7 @@ import {
   ConnectorEventAccessError,
   type ConnectorEventAccessQueryService,
 } from '../services/connectors/events/access-query-service.js';
+import { sendManagedCloudError } from './managed-cloud-error.js';
 
 const AgentQuerySchema = z.object({ agentId: z.string().min(1) }).strict();
 const AgentUsageQuerySchema = z
@@ -165,6 +166,7 @@ function sendProgramError(res: Response, error: unknown): void {
     res.status(code === 'CONNECTOR_GRANT_REQUIRED' ? 403 : 409).json(payload);
     return;
   }
+  if (sendManagedCloudError(res, error)) return;
   throw error;
 }
 

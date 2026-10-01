@@ -84,32 +84,16 @@ describe('the plan-aware surfaces', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => cleanup());
 
-  it('shows one line, and asks for nothing else, on an install with no cloud account', async () => {
+  it('says so plainly when the linked account has no plan to describe', async () => {
     const transport = createMockTransport();
     renderPanel(transport);
-    expect(
-      await screen.findByText(/link this instance to a dorkos account above/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/has no plan details to show yet/i)).toBeInTheDocument();
     // No card, no gauge, no seat list — nothing to hide, because nothing rendered.
     expect(screen.queryByText(/your plan/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/credits/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Included')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /release/i })).not.toBeInTheDocument();
-    // And it really did ask for nothing else: the plan read is the ONE request
-    // an unlinked install makes, and every other surface is gated behind it.
-    expect(transport.getCloudPlan).toHaveBeenCalled();
-    expect(transport.getCloudUsage).not.toHaveBeenCalled();
-    expect(transport.getCloudNudge).not.toHaveBeenCalled();
-    expect(transport.getCloudOrgs).not.toHaveBeenCalled();
-    expect(transport.getCloudSeats).not.toHaveBeenCalled();
-    expect(transport.getCloudCredits).not.toHaveBeenCalled();
-  });
-
-  it('says who can buy a plan before anybody links an account to buy one', async () => {
-    renderPanel(createMockTransport());
-    const line = await findEligibilityLine();
-    expect(line.previousElementSibling).toHaveTextContent(
-      /link this instance to a dorkos account above/i
-    );
+    // Never "link first": this panel only renders once linked.
+    expect(screen.queryByText(/link this/i)).not.toBeInTheDocument();
   });
 
   it('says who can buy a plan on the plan card of a linked account', async () => {
@@ -126,7 +110,7 @@ describe('the plan-aware surfaces', () => {
 
   it('says nothing about linking until the read has settled', async () => {
     // The regression this pins: deciding linked-vs-unlinked before the answer
-    // arrives flashes "link this instance" at somebody who linked months ago,
+    // arrives flashes the wrong state at somebody who linked months ago,
     // on every Settings open. A never-resolving read holds the panel in exactly
     // that window for the length of the assertion.
     const transport = createMockTransport();
@@ -134,9 +118,7 @@ describe('the plan-aware surfaces', () => {
     renderPanel(transport);
 
     await waitFor(() => expect(screen.queryByText(/your plan/i)).not.toBeInTheDocument());
-    expect(
-      screen.queryByText(/link this instance to a dorkos account above/i)
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/no plan details/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/couldn’t reach your dorkos account/i)).not.toBeInTheDocument();
   });
 
@@ -145,7 +127,7 @@ describe('the plan-aware surfaces', () => {
     vi.mocked(transport.getCloudPlan).mockRejectedValue(new Error('502'));
     renderPanel(transport);
     expect(await screen.findByText(/couldn’t reach your dorkos account/i)).toBeInTheDocument();
-    expect(screen.queryByText(/link this instance/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no plan details/i)).not.toBeInTheDocument();
   });
 
   it('renders the plan by the name the service gave it, and the figures it sent', async () => {
@@ -161,7 +143,7 @@ describe('the plan-aware surfaces', () => {
     expect(screen.getByText('Bring your own tunnel')).toBeInTheDocument();
     // Credit figures in the unit the service served: 612,345 micro at the
     // fixture's placeholder 250 per credit is 2,449 credits, rounded down.
-    expect(screen.getByText('2,449 credits')).toBeInTheDocument();
+    expect(screen.getByText('2,449 of 3,000 credits left')).toBeInTheDocument();
   });
 
   it('breaks credits down by the labels the service supplied, never by its keys', async () => {

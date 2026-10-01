@@ -5,7 +5,7 @@ import type { ClaimedNotice, NoticeComposer, NoticeComposers } from '../mail/wor
 import { accountHasPassword } from '../routes/account/account-password.js';
 import { formatReplacementDate } from './dates.js';
 import { mintObjectToken } from './object-tokens.js';
-import { ownerReplacementOptions } from './options.js';
+import { addPasswordSentence, ownerReplacementOptions } from './options.js';
 import {
   OPEN_REPLACEMENT_STATES,
   replacementWait,
@@ -101,8 +101,7 @@ function optionParagraphs(
     );
   if (options.delete)
     paragraphs.push('If you can sign in, you can also delete the community from its Settings.');
-  if (options.needsPassword)
-    paragraphs.push('To hand it to someone or delete it, add a password to your account first.');
+  if (options.needsPassword) paragraphs.push(addPasswordSentence(subject.lifecycle));
   if (!options.transfer) paragraphs.push(`The community: ${communityUrl}`);
   return paragraphs;
 }

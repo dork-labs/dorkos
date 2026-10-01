@@ -198,7 +198,7 @@ const AUTH_REQUIRED_CODE = 'AUTH_REQUIRED';
  */
 function buildUnauthorizedMessage(presentedKey: boolean): string {
   const where =
-    'Create one in DorkOS under Settings → Access → API keys, then either ' +
+    'Create one in DorkOS under Settings → Login & security → API keys, then either ' +
     `set ${API_KEY_ENV_VAR}=<your key> or save the key in ${apiKeyFilePath()} ` +
     '(and run `chmod 600` on it).';
   if (presentedKey) {

@@ -6,13 +6,7 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import type { ServiceLogo } from '@/layers/entities/connectors';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
-import {
-  Button,
-  QueryErrorState,
-  SegmentedControl,
-  SegmentedControlItem,
-  Skeleton,
-} from '@/layers/shared/ui';
+import { Button, SegmentedControl, SegmentedControlItem, Skeleton } from '@/layers/shared/ui';
 import {
   agentHeldAccess,
   cardDecision,
@@ -29,6 +23,7 @@ import {
 import { selectionsFromPreview } from '../../lib/reconciliation-selection';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
 import { AppActions } from '../AppActions';
+import { LoadFailedState } from '../LoadFailedState';
 import { AccessCardFrame, type AccessCardVariant } from './AccessCardFrame';
 import { AccessOutcome } from './AccessOutcome';
 import { AccountChoice } from './AccountChoice';
@@ -280,7 +275,8 @@ function AccessStep(
         </div>
       ) : access.loadFailed ? (
         <div className="space-y-2">
-          <QueryErrorState
+          <LoadFailedState
+            error={access.loadError}
             title="Couldn’t load who can use it"
             description="Nothing changed. Try loading the current access again."
             onRetry={access.refresh}

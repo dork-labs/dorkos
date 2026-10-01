@@ -8,7 +8,7 @@ import {
   Unplug,
   X,
 } from 'lucide-react';
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +23,7 @@ import {
   Checkbox,
   FieldCard,
   FieldCardContent,
+  SettingRow,
   Skeleton,
   Spinner,
 } from '@/layers/shared/ui';
@@ -41,42 +42,80 @@ import {
   useCopyFeedback,
   useRenderSlot,
 } from '@/layers/shared/lib';
-import { useNow } from '@/layers/shared/model';
-import { useCloudLink, type CloudLinkView } from '../model/use-cloud-link';
+import { SETTINGS_RELINK_SECTION, useNow, useSettingsDeepLink } from '@/layers/shared/model';
+import { useCloudLink, useCloudStatus, type CloudLinkView } from '../model/use-cloud-link';
 import { msUntilExpiry, spokenExpiry, visibleExpiry } from '../lib/code-expiry';
 
+/** How a relink that did not replace the link ended, as the linked view carries it. */
+type CloudLinkRelinkOutcome = Extract<CloudLinkView, { kind: 'linked' }>['relinkOutcome'];
+
+/** Props for {@link CloudLinkPanel}. */
+export interface CloudLinkPanelProps {
+  /**
+   * The page shown before this computer is linked — what an account would add
+   * here — drawn above the link controls. The caller owns it because only the
+   * caller knows which benefits the server reports as wired.
+   */
+  signedOut?: ReactNode;
+  /**
+   * The signed-in sections, drawn between the account line and "Unlink this
+   * computer" once linked.
+   */
+  children?: ReactNode;
+}
+
 /**
- * DorkOS account section for the Settings dialog — links or unlinks this
- * instance to a DorkOS account. Always available: local login and the cloud link
- * are independent systems, so this panel never gates on the auth session.
+ * The DorkOS account, from not linked to linked: the device-link flow and its
+ * recovery states before, the account line, "Link again" and "Unlink this
+ * computer" after, with the caller's own content in each half. Always
+ * available: local login and the account link are independent systems, so
+ * this never gates on the auth session.
  *
- * All flow state lives in {@link useCloudLink}; this component only renders the
- * current view and wires the buttons. Composed into the Settings dialog's Access
- * tab (sibling UI composition).
+ * All flow state lives in {@link useCloudLink}, and this is its ONE caller on
+ * screen — the signed-in content arrives as children rather than reading the
+ * flow a second time, so two copies of the poll can never race.
+ *
+ * Composed into Settings › DorkOS account (sibling UI composition).
+ *
+ * @param props - The two halves' content. See {@link CloudLinkPanelProps}.
  */
-export function CloudLinkPanel() {
-  const { view, start, unlink, starting, unlinking, startError } = useCloudLink();
+export function CloudLinkPanel({ signedOut, children }: CloudLinkPanelProps) {
+  const { view, start, unlink, cancel, starting, unlinking, startError } = useCloudLink();
+  useRelinkRequest(view, start);
+  // A relink keeps this computer linked while its code is showing, so the
+  // signed-out page (what an account WOULD add) is not drawn over it.
+  const alreadyLinked = useCloudStatus().data?.linked === true;
+
+  if (view.kind === 'loading') return <Skeleton className="h-24 w-full" />;
+
+  if (view.kind === 'linked') {
+    return (
+      <div className="space-y-4">
+        <LinkedState
+          view={view}
+          start={start}
+          starting={starting}
+          startError={startError}
+          dismiss={cancel}
+        />
+        {children}
+        <UnlinkSection unlink={unlink} unlinking={unlinking} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1">
-        {/* No heading here: the Access tab draws the section heading this
-            sits under ("DorkOS account"). This is its explainer. */}
-        <p className="text-muted-foreground text-sm">
-          Link this instance to a DorkOS account to reach it from dorkos.ai and receive updates.
-          Linking is independent of local login.
-        </p>
-      </div>
-
+      {!alreadyLinked && signedOut}
       <FieldCard>
         <FieldCardContent>
           <CloudLinkBody
             view={view}
             start={start}
-            unlink={unlink}
+            cancel={cancel}
             starting={starting}
-            unlinking={unlinking}
             startError={startError}
+            relinking={alreadyLinked}
           />
         </FieldCardContent>
       </FieldCard>
@@ -84,28 +123,47 @@ export function CloudLinkPanel() {
   );
 }
 
-interface BodyProps {
-  view: CloudLinkView;
-  start: () => Promise<void>;
-  unlink: () => Promise<void>;
-  starting: boolean;
-  unlinking: boolean;
-  startError: string | null;
+/**
+ * Start linking again when Settings was opened to do that (from a "Link my
+ * DorkOS account again" button elsewhere), so one click gets a person to a
+ * fresh link code. Acts once the panel knows its state, never while a code is
+ * already showing, and clears the section so the request is spent.
+ */
+function useRelinkRequest(view: CloudLinkView, start: () => Promise<void>): void {
+  const { section, setSection } = useSettingsDeepLink();
+  const handled = useRef(false);
+  const requested = section === SETTINGS_RELINK_SECTION;
+  useEffect(() => {
+    if (!requested) {
+      handled.current = false;
+      return;
+    }
+    if (handled.current || view.kind === 'loading') return;
+    handled.current = true;
+    setSection(null);
+    if (view.kind !== 'pending') void start();
+  }, [requested, view.kind, start, setSection]);
 }
 
-/** Render the state-specific body for the current {@link CloudLinkView}. */
-function CloudLinkBody({ view, start, unlink, starting, unlinking, startError }: BodyProps) {
+interface BodyProps {
+  view: Exclude<CloudLinkView, { kind: 'loading' } | { kind: 'linked' }>;
+  start: () => Promise<void>;
+  cancel: () => Promise<void>;
+  starting: boolean;
+  startError: string | null;
+  /** This computer is still linked: the code on screen is for a NEW link. */
+  relinking: boolean;
+}
+
+/** Render the state-specific body for a not-yet-linked {@link CloudLinkView}. */
+function CloudLinkBody({ view, start, cancel, starting, startError, relinking }: BodyProps) {
   switch (view.kind) {
-    case 'loading':
-      return <Skeleton className="h-9 w-40" />;
     case 'idle':
       return <IdleState start={start} starting={starting} startError={startError} />;
     case 'pending':
       // Keyed by the code so a fresh code starts a fresh countdown and clears
       // any error left over from the last one.
-      return <PendingState key={view.userCode} view={view} />;
-    case 'linked':
-      return <LinkedState view={view} unlink={unlink} unlinking={unlinking} />;
+      return <PendingState key={view.userCode} view={view} cancel={cancel} relinking={relinking} />;
     case 'expired':
       return (
         <RecoveryState
@@ -129,8 +187,8 @@ function CloudLinkBody({ view, start, unlink, starting, unlinking, startError }:
     case 'revoked':
       return (
         <RecoveryState
-          title="This instance was unlinked"
-          description="DorkOS revoked this instance’s access. Link again to reconnect it to your account."
+          title="This computer was unlinked"
+          description="DorkOS revoked this computer’s access. Link again to reconnect it to your account."
           actionLabel="Link again"
           onAction={start}
           pending={starting}
@@ -200,10 +258,6 @@ function IdleState({
 
   return (
     <div className="space-y-4">
-      <p className="text-muted-foreground text-sm">
-        This instance is not linked to a DorkOS account.
-      </p>
-
       <div className="flex items-start gap-2.5">
         <Checkbox
           id={checkboxId}
@@ -224,7 +278,7 @@ function IdleState({
 
       <Button onClick={() => void handleLink()} disabled={busy}>
         {busy ? <Spinner className="mr-1.5" /> : <Link2 className="mr-1.5 size-(--size-icon-sm)" />}
-        {busy ? 'Starting…' : 'Link this instance'}
+        {busy ? 'Starting…' : 'Link this computer'}
       </Button>
       {(consentError ?? startError) && (
         <p className="text-destructive text-sm" role="alert">
@@ -240,7 +294,15 @@ const OPEN_FAILED_MESSAGE =
   'We could not open the approval page. Copy the code and open it in your browser.';
 
 /** A device flow is in progress — show the code, the approval-page button, and the time left. */
-function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending' }> }) {
+function PendingState({
+  view,
+  cancel,
+  relinking,
+}: {
+  view: Extract<CloudLinkView, { kind: 'pending' }>;
+  cancel: () => Promise<void>;
+  relinking: boolean;
+}) {
   const { copied, failed, copy } = useCopyFeedback();
   const [openError, setOpenError] = useState<string | null>(null);
 
@@ -265,6 +327,13 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
 
   return (
     <div className="space-y-4">
+      {/* A relink never takes the account away while it waits; say so, or the
+          code reads like the computer was signed out. */}
+      {relinking && (
+        <p className="text-muted-foreground text-sm">
+          This computer stays linked until you approve the new code.
+        </p>
+      )}
       <div className="space-y-2">
         <p className="text-sm font-medium">Enter this code to link</p>
         <div className="flex items-center gap-2">
@@ -288,10 +357,16 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
       </div>
 
       <div className="space-y-2">
-        <Button variant="outline" onClick={handleOpen}>
-          <ExternalLink className="mr-1.5 size-4" />
-          Open the approval page
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={handleOpen}>
+            <ExternalLink className="mr-1.5 size-4" />
+            Open the approval page
+          </Button>
+          {/* Stops waiting. A computer that was already linked stays linked. */}
+          <Button variant="ghost" onClick={() => void cancel()}>
+            Cancel
+          </Button>
+        </div>
         {openError && (
           <p className="text-destructive text-sm" role="alert">
             {openError}
@@ -327,24 +402,31 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
   );
 }
 
-/** Linked — show the account, last sync, and the unlink action. */
+/**
+ * Linked — who this computer is signed in as, when it last heard from the
+ * account, and "Link again". Linking again keeps this computer linked until the
+ * new link is approved, and is how a link that needs updating picks up the
+ * update. Unlinking is the page's last section, not a button up here.
+ */
 function LinkedState({
   view,
-  unlink,
-  unlinking,
+  start,
+  starting,
+  startError,
+  dismiss,
 }: {
   view: Extract<CloudLinkView, { kind: 'linked' }>;
-  unlink: () => Promise<void>;
-  unlinking: boolean;
+  start: () => Promise<void>;
+  starting: boolean;
+  startError: string | null;
+  dismiss: () => Promise<void>;
 }) {
   return (
     <div className="space-y-4">
+      {view.relinkOutcome && <RelinkNote outcome={view.relinkOutcome} dismiss={dismiss} />}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="size-2 shrink-0 rounded-full bg-green-500" aria-hidden />
-            <p className="text-sm font-medium">Linked</p>
-          </div>
+          <p className="text-sm font-medium">Signed in</p>
           {view.accountLabel ? (
             <p className="text-foreground truncate text-sm">{view.accountLabel}</p>
           ) : (
@@ -356,22 +438,86 @@ function LinkedState({
             </p>
           )}
         </div>
-
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={unlinking}
-              aria-label="Unlink this instance"
-            >
-              <Unplug className={cn('mr-1.5 size-3.5', unlinking && 'animate-pulse')} />
-              {unlinking ? 'Unlinking…' : 'Unlink'}
-            </Button>
-          </AlertDialogTrigger>
-          <UnlinkConfirm unlink={unlink} />
-        </AlertDialog>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={() => void start()}
+          disabled={starting}
+        >
+          {starting ? <Spinner className="mr-1.5" /> : <RefreshCw className="mr-1.5 size-3.5" />}
+          Link again
+        </Button>
       </div>
+      {startError && (
+        <p role="alert" className="text-destructive text-sm">
+          {startError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The last thing on the signed-in page: taking this computer off the account. */
+function UnlinkSection({ unlink, unlinking }: { unlink: () => Promise<void>; unlinking: boolean }) {
+  return (
+    <FieldCard>
+      <FieldCardContent>
+        <SettingRow
+          label="Unlink this computer"
+          description="This computer stops using your DorkOS account. You can link it again at any time."
+        >
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={unlinking}
+                aria-label="Unlink this computer"
+              >
+                <Unplug className={cn('mr-1.5 size-3.5', unlinking && 'animate-pulse')} />
+                {unlinking ? 'Unlinking…' : 'Unlink'}
+              </Button>
+            </AlertDialogTrigger>
+            <UnlinkConfirm unlink={unlink} />
+          </AlertDialog>
+        </SettingRow>
+      </FieldCardContent>
+    </FieldCard>
+  );
+}
+
+const RELINK_NOTE: Record<NonNullable<CloudLinkRelinkOutcome>, string> = {
+  denied: 'The new link was turned down on dorkos.ai.',
+  expired: 'The code for the new link timed out.',
+  failed: 'The new link couldn’t finish.',
+};
+
+/**
+ * Why a relink didn't finish, on a computer that never stopped being linked.
+ * Quiet on purpose: nothing is broken, so it reads as a note, not an alarm.
+ */
+function RelinkNote({
+  outcome,
+  dismiss,
+}: {
+  outcome: NonNullable<CloudLinkRelinkOutcome>;
+  dismiss: () => Promise<void>;
+}) {
+  return (
+    <div role="status" className="bg-muted/40 flex items-start gap-2 rounded-lg p-3 text-sm">
+      <p className="min-w-0 flex-1">
+        {RELINK_NOTE[outcome]} This computer is still linked. Use Link again to try once more.
+      </p>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Dismiss"
+        className="-my-1 shrink-0"
+        onClick={() => void dismiss()}
+      >
+        <X className="size-3.5" />
+      </Button>
     </div>
   );
 }
@@ -388,10 +534,9 @@ function UnlinkConfirm({ unlink }: { unlink: () => Promise<void> }) {
   return (
     <AlertDialogContent>
       <AlertDialogHeader>
-        <AlertDialogTitle>Unlink this instance?</AlertDialogTitle>
+        <AlertDialogTitle>Unlink this computer?</AlertDialogTitle>
         <AlertDialogDescription>
-          This instance will stop reporting to your DorkOS account. You can link it again at any
-          time.
+          This computer will stop using your DorkOS account. You can link it again at any time.
         </AlertDialogDescription>
       </AlertDialogHeader>
       {connections.isPending ? (

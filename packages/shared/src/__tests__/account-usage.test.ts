@@ -524,6 +524,17 @@ describe('ledgerSlug and modelWindowKey', () => {
   it('slugs a provider id for credits:<slug> keys', () => {
     expect(ledgerSlug('Open Router')).toBe('open-router');
   });
+
+  it('trims every trailing dash, and stays linear on a long run of them mid-name', () => {
+    expect(ledgerSlug('model---')).toBe('model');
+    expect(ledgerSlug('---')).toBeNull();
+    // `/-+$/` backtracked quadratically here: a run of dashes that is not at
+    // the end fails `$` once per starting position (CodeQL js/polynomial-redos).
+    const name = `a${'-'.repeat(100_000)}b`;
+    const started = performance.now();
+    expect(ledgerSlug(name)).toBe(name);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });
 
 describe('codexObservations', () => {

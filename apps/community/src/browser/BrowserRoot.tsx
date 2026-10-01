@@ -6,6 +6,9 @@ import { HostAdministration } from './components/host/HostAdministration.js';
 import { OwnerClaim } from './components/OwnerClaim.js';
 import { Pairing } from './components/Pairing.js';
 import { OWNER_CLAIM_PATH } from './owner-claim.js';
+import { KeepOwnership } from './owner-replacement/KeepOwnership.js';
+import { OwnerReplacementClaim } from './owner-replacement/OwnerReplacementClaim.js';
+import { KEEP_OWNERSHIP_PATH, OWNER_REPLACEMENT_CLAIM_PATH } from './owner-replacement/links.js';
 import { ShortNameRoute } from './components/ShortNameRoute.js';
 import { COMMUNITY_RESERVED_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
 import { parseShortNamePath } from '../short-names/path.js';
@@ -24,6 +27,8 @@ export function BrowserRoot({
   if (pairing) return <Pairing search={search} />;
   if (pathname === COMMUNITY_HOST_ADMIN_PATH) return <HostAdministration />;
   if (pathname === OWNER_CLAIM_PATH) return <OwnerClaim />;
+  if (pathname === KEEP_OWNERSHIP_PATH) return <KeepOwnership />;
+  if (pathname === OWNER_REPLACEMENT_CLAIM_PATH) return <OwnerReplacementClaim />;
   const deletion = /^\/c\/([^/]+)\/deletion$/u.exec(pathname);
   if (deletion) return <DeletionRecovery communityId={deletion[1]} />;
   if (pathname === '/') return <CommunityChooser signedOut={() => <CommunityApp />} />;

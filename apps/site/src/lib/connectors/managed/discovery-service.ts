@@ -19,14 +19,102 @@ import {
   ManagedConnectorToolkitVersionRequestSchema,
   ManagedConnectorToolkitVersionResponseSchema,
   type ManagedConnectorAccount,
+  type ManagedConnectorOperation,
+  type ManagedConnectorToolkit,
+  type ManagedConnectorToolkitVersionResponse,
 } from '@dorkos/shared/connector-managed-discovery-schemas';
-import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
+import type {
+  ConnectorOperationPage,
+  ConnectorProviderInstanceId,
+  ConnectorToolkitVersionResult,
+  ConnectorUnsupportedResult,
+} from '@dorkos/shared/connector-schemas';
 import { and, asc, eq, gt } from 'drizzle-orm';
+import type { z } from 'zod';
 
 import { schema } from '@/db/client';
 import type { ManagedConnectorDatabase, ManagedConnectorPrincipal } from './authority-service';
 import { HOSTED_COMPOSIO_PROVIDER_INSTANCE_ID } from './request-context';
 import { managedCapabilityAvailability, type ManagedConnectorConfig } from './config';
+
+/** A malformed managed-connector request: always the caller's fault, always 400. */
+export class ManagedRequestShapeError extends Error {
+  /** Wrap the request-shape parse failure as its cause. */
+  constructor(cause: unknown) {
+    super('Malformed managed-connector request.', { cause });
+    this.name = 'ManagedRequestShapeError';
+  }
+}
+
+/**
+ * Parse the caller's request, tagging a failure as the caller's fault so a
+ * route never confuses it with a failure to build its own answer.
+ */
+function parseRequestShape<T>(schema: z.ZodType<T>, rawRequest: unknown): T {
+  try {
+    return schema.parse(rawRequest);
+  } catch (error) {
+    throw new ManagedRequestShapeError(error);
+  }
+}
+
+/**
+ * Map one provider toolkit onto the strict wire field by field. A provider
+ * toolkit carries more than the wire allows (its logo and description), and
+ * a spread would forward those and fail the whole page.
+ */
+function toWireToolkit(toolkit: ConnectorToolkit): ManagedConnectorToolkit {
+  const trimmed = toolkit.displayName.trim().slice(0, 200);
+  return {
+    slug: toolkit.slug,
+    displayName: trimmed.length > 0 ? trimmed : toolkit.slug,
+    authKind: toolkit.authKind,
+    ...(toolkit.authenticationSetup !== undefined && {
+      authenticationSetup: toolkit.authenticationSetup,
+    }),
+    ...(toolkit.authentication !== undefined && { authentication: toolkit.authentication }),
+    ...(toolkit.maxAccountsPerUser !== undefined && {
+      maxAccountsPerUser: toolkit.maxAccountsPerUser,
+    }),
+  };
+}
+
+/** Map one resolved toolkit version onto the strict wire field by field, capping its reason. */
+function toWireToolkitVersion(
+  result: ConnectorToolkitVersionResult | ConnectorUnsupportedResult
+): ManagedConnectorToolkitVersionResponse {
+  return result.status === 'unsupported'
+    ? { version: 1, status: 'unsupported', reason: result.reason.slice(0, 1_000) }
+    : {
+        version: 1,
+        status: 'ok',
+        toolkit: result.toolkit,
+        toolkitVersion: result.toolkitVersion,
+      };
+}
+
+/** Map one discovered operation onto the strict wire field by field. */
+function toWireOperation(
+  operation: ConnectorOperationPage['operations'][number],
+  hostedRevisionId: string
+): ManagedConnectorOperation {
+  return {
+    hostedRevisionId,
+    providerInstanceId: operation.providerInstanceId,
+    toolkit: operation.toolkit,
+    operationSlug: operation.operationSlug,
+    toolkitVersion: operation.toolkitVersion,
+    schemaHash: operation.schemaHash,
+    capabilityClassification: operation.capabilityClassification,
+    retryPolicy: operation.retryPolicy,
+    // The provider's type is a plain record; the page's own wire parse checks
+    // it is JSON before anything leaves this process.
+    inputSchema: operation.inputSchema as ManagedConnectorOperation['inputSchema'],
+    // displayName/important stay off the wire until every supported app
+    // accepts them; providerRevisionRef is private upstream identity and never
+    // leaves this process.
+  };
+}
 
 function configuredAuthentication(
   config: ManagedConnectorConfig,
@@ -115,7 +203,7 @@ export async function listManagedConnectorCatalog(input: {
   rawRequest: unknown;
   signal: AbortSignal;
 }) {
-  const request = ManagedConnectorCatalogRequestSchema.parse(input.rawRequest);
+  const request = parseRequestShape(ManagedConnectorCatalogRequestSchema, input.rawRequest);
   const result = await input.operations.listToolkitPage({
     ...(request.query !== undefined && { query: request.query }),
     ...(request.cursor !== undefined && { cursor: request.cursor }),
@@ -131,15 +219,17 @@ export async function listManagedConnectorCatalog(input: {
         input.includeAuthenticationSetup === true
       );
       const availability = authenticationAvailability(input.config, toolkit);
-      return projectConnectorAuthentication(
-        {
-          ...toolkit,
-          authentication:
-            availability.status === 'available'
-              ? { status: 'available' as const }
-              : { status: 'unsupported' as const, reason: availability.reason },
-        },
-        input.includeAuthenticationSetup === true
+      return toWireToolkit(
+        projectConnectorAuthentication(
+          {
+            ...toolkit,
+            authentication:
+              availability.status === 'available'
+                ? { status: 'available' as const }
+                : { status: 'unsupported' as const, reason: availability.reason },
+          },
+          input.includeAuthenticationSetup === true
+        )
       );
     }),
     ...(result.nextCursor !== undefined && { nextCursor: result.nextCursor }),
@@ -153,9 +243,9 @@ export async function resolveManagedToolkitVersion(input: {
   rawRequest: unknown;
   signal: AbortSignal;
 }) {
-  const request = ManagedConnectorToolkitVersionRequestSchema.parse(input.rawRequest);
+  const request = parseRequestShape(ManagedConnectorToolkitVersionRequestSchema, input.rawRequest);
   const result = await input.operations.resolveToolkitVersion(request.toolkit, input.signal);
-  return ManagedConnectorToolkitVersionResponseSchema.parse({ version: 1, ...result });
+  return ManagedConnectorToolkitVersionResponseSchema.parse(toWireToolkitVersion(result));
 }
 
 /** Discover and persist one immutable exact-version operation page. */
@@ -166,7 +256,7 @@ export async function listManagedOperationSchemas(input: {
   rawRequest: unknown;
   signal: AbortSignal;
 }) {
-  const request = ManagedConnectorOperationPageRequestSchema.parse(input.rawRequest);
+  const request = parseRequestShape(ManagedConnectorOperationPageRequestSchema, input.rawRequest);
   const result = await input.operations.listOperationSchemas(
     HOSTED_COMPOSIO_PROVIDER_INSTANCE_ID as ConnectorProviderInstanceId,
     {
@@ -198,7 +288,7 @@ export async function listManagedOperationSchemas(input: {
         )
       )
       .for('update');
-    const discovered = [];
+    const discovered: ManagedConnectorOperation[] = [];
     for (const operation of result.page.operations) {
       const [current] = await tx
         .select()
@@ -219,7 +309,7 @@ export async function listManagedOperationSchemas(input: {
         )
         .limit(1);
       if (current?.classification === operation.capabilityClassification) {
-        discovered.push({ ...operation, hostedRevisionId: current.id });
+        discovered.push(toWireOperation(operation, current.id));
         continue;
       }
       if (current) {
@@ -255,7 +345,7 @@ export async function listManagedOperationSchemas(input: {
           inputSchema: operation.inputSchema,
         })
         .returning();
-      discovered.push({ ...operation, hostedRevisionId: revision.id });
+      discovered.push(toWireOperation(operation, revision.id));
     }
     return discovered;
   });

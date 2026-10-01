@@ -20,6 +20,7 @@ import { ManagedCloudConnectorProvider, type ManagedConnectorCloudPort } from '.
 
 import { ManagedConnectorCloudError } from '../../../../core/auth/cloud-link-client.js';
 import { CloudLinkManager } from '../../../../core/auth/cloud-link.js';
+import { logger } from '../../../../../lib/logger.js';
 
 const instanceId = 'managed:cloud' as ConnectorProviderInstanceId;
 
@@ -308,7 +309,7 @@ describe('ManagedCloudConnectorProvider', () => {
       code: 'MANAGED_LINK_REQUIRED',
       retryable: false,
       message:
-        'This computer isn’t linked to a DorkOS account, so nothing was sent. Ask the person to link it in Settings › Access in the DorkOS app.',
+        'This computer isn’t linked to a DorkOS account, so nothing was sent. Ask the person to link it in Settings › DorkOS account in the DorkOS app.',
     });
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(manager.getSummary().linked).toBe(false);
@@ -364,13 +365,30 @@ describe('ManagedCloudConnectorProvider', () => {
 
   it('does not mistake a remote unauthorized response for local token absence', async () => {
     vi.mocked(cloud.executeManagedConnectorOperation).mockRejectedValue(
-      new ManagedConnectorCloudError('unauthorized', 401)
+      new ManagedConnectorCloudError('unauthorized', { status: 401 })
     );
     expect(await provider(cloud).execute(command())).toMatchObject({
       status: 'outcome_unknown',
       code: 'MANAGED_EXECUTION_OUTCOME_UNKNOWN',
     });
     expect(cloud.executeManagedConnectorOperation).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs the cloud code and status when an execution outcome is unknown', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    vi.mocked(cloud.executeManagedConnectorOperation).mockRejectedValueOnce(
+      new ManagedConnectorCloudError('unavailable', {
+        status: 503,
+        cloudCode: 'managed_connectors_unavailable',
+      })
+    );
+    await provider(cloud).execute(command());
+    expect(warn).toHaveBeenCalledWith('[ManagedCloud] Execution outcome unknown', {
+      code: 'unavailable',
+      status: 503,
+      cloudCode: 'managed_connectors_unavailable',
+    });
+    warn.mockRestore();
   });
 
   it('never retries a thrown response or accepts receipt evidence for another attempt', async () => {

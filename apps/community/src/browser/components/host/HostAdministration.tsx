@@ -9,6 +9,11 @@ import { HostHoldControls } from './HostHoldControls.js';
 import { HostShortNames } from './HostShortNames.js';
 import { HostTakedowns } from '../../takedowns/HostTakedowns.js';
 import { HostImportForm, HostImportStatus } from './HostImports.js';
+import {
+  HostOwnerReplacement,
+  useReplacementAbilities,
+  type ReplaceableCommunity,
+} from '../../owner-replacement/HostOwnerReplacement.js';
 
 type Lifecycle =
   'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
@@ -28,6 +33,7 @@ type Community = {
   importId: string | null;
   importState: string | null;
   takedownId?: string | null;
+  ownerReplacement: ReplaceableCommunity['ownerReplacement'];
   createdAt: string;
 };
 type Claim = { grantId: string; ownerClaimToken: string; expiresAt: string };
@@ -111,6 +117,7 @@ export function HostAdministration() {
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<HostConfirmation | null>(null);
   const [noticeDays, setNoticeDays] = useState(14);
+  const { capabilities, hasPassword } = useReplacementAbilities();
   const creationAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const refresh = useCallback(async () => {
@@ -391,6 +398,14 @@ export function HostAdministration() {
                     )}
                     {community.lifecycle !== 'deletion_pending' && (
                       <HostCommunityLimits communityId={community.id} name={community.name} />
+                    )}
+                    {community.lifecycle !== 'pending_owner' && (
+                      <HostOwnerReplacement
+                        community={community}
+                        capabilities={capabilities}
+                        hasPassword={hasPassword}
+                        onChanged={refresh}
+                      />
                     )}
                     {community.lifecycle !== 'pending_owner' && (
                       <HostTakedowns community={community} />

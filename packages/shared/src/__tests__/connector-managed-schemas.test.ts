@@ -3,13 +3,49 @@ import {
   MANAGED_CONNECTOR_AUTHORITY_PERMISSIONS,
   MANAGED_CONNECTOR_EXECUTION_PERMISSIONS,
   MANAGED_CONNECTOR_INSTANCE_KEY_PERMISSIONS,
+  MANAGED_CONNECTOR_ERROR_CODES,
   MANAGED_CONNECTOR_USAGE_PERMISSIONS,
   ManagedConnectorAuthorityCommandSchema,
+  ManagedConnectorErrorBodySchema,
   ManagedConnectorAuthorityCommandStatusSchema,
   ManagedConnectorExecutionReceiptSchema,
   ManagedConnectorExecutionRequestSchema,
   ManagedConnectorExecutionResponseSchema,
 } from '../connector-managed-schemas.js';
+
+describe('managed connector error body', () => {
+  it('parses the legacy refusal body the control plane sends', () => {
+    expect(
+      ManagedConnectorErrorBodySchema.parse({
+        error: MANAGED_CONNECTOR_ERROR_CODES.permissionUpgradeRequired,
+      })
+    ).toEqual({ error: 'permission_upgrade_required' });
+    expect(
+      ManagedConnectorErrorBodySchema.parse({
+        error: 'managed_connectors_unavailable',
+        reason: 'toolkit temporarily down',
+      })
+    ).toEqual({ error: 'managed_connectors_unavailable', reason: 'toolkit temporarily down' });
+  });
+
+  it('tolerates a key the cloud adds later instead of failing the refusal', () => {
+    expect(ManagedConnectorErrorBodySchema.parse({ error: 'conflict', requestId: 'r-1' })).toEqual({
+      error: 'conflict',
+      requestId: 'r-1',
+    });
+  });
+
+  it('rejects a body without an error code and bounds every string', () => {
+    expect(ManagedConnectorErrorBodySchema.safeParse({}).success).toBe(false);
+    expect(ManagedConnectorErrorBodySchema.safeParse({ error: 'x'.repeat(101) }).success).toBe(
+      false
+    );
+    expect(
+      ManagedConnectorErrorBodySchema.safeParse({ error: 'conflict', reason: 'x'.repeat(1_001) })
+        .success
+    ).toBe(false);
+  });
+});
 
 describe('managed connector wire schemas', () => {
   it('exports the exact linked-instance connector permissions without wildcards', () => {

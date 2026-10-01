@@ -21,7 +21,7 @@
 import { Resend } from 'resend';
 
 import { env } from '@/env';
-import { escapeHtml } from '@/lib/html/escape-html';
+import { escapeHtml, escapeHtmlAttribute } from '@/lib/html/escape-html';
 import { formatShippedVersionLabel } from '@/lib/feedback/version-label';
 
 /** Arguments shared by every DorkOS account email. */
@@ -211,11 +211,11 @@ export async function sendFeedbackShipped(
   { message, shippedVersion, changelogUrl }: FeedbackShippedDetails
 ): Promise<void> {
   const versionLabel = shippedVersion ? formatShippedVersionLabel(shippedVersion) : undefined;
-  // `changelogUrl` lands in an href, and escapeHtml is text-content-only, so
-  // this relies on the caller passing a URL the codebase built (the webhook
-  // route passes a module constant). Never pass user input here.
+  // `changelogUrl` lands in an href, so it is escaped for an attribute: the
+  // webhook route passes a module constant today, and a quote in whatever a
+  // later caller passes must not be able to close the attribute.
   const changelogLink = changelogUrl
-    ? `<a href="${escapeHtml(changelogUrl)}">See what changed</a>`
+    ? `<a href="${escapeHtmlAttribute(changelogUrl)}">See what changed</a>`
     : '';
 
   try {

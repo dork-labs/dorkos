@@ -18,7 +18,7 @@ import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
 import { ServerErrorScreen } from './app/ServerErrorScreen';
-import { latestFailure } from './app/config-failure-memory';
+import { latestFailure, refetchUntilAnsweredThisLaunch } from './app/config-failure-memory';
 import {
   getAgentDisplayName,
   cn,
@@ -448,11 +448,15 @@ export function AppShell() {
   // which reports the reply and guesses at nothing further — not even that
   // DorkOS is what answered, since a tunnel edge with a dead origin replies 502
   // on its own account.
+  //
+  // **And "this launch" only means something if this launch ASKS** — a reload
+  // inside the 30s `staleTime` used to ask nothing, so the hang deadline below
+  // accused a healthy server (DOR-2649). Hence the refetch on mount.
   const {
     dataUpdatedAt: configAnsweredAt,
     errorUpdatedAt: configFailedAt,
     error: configError,
-  } = useConfig();
+  } = useConfig({ refetchOnMount: refetchUntilAnsweredThisLaunch });
   const answeredThisLaunch = configAnsweredAt > LAUNCH_STARTED_AT;
   const failedThisLaunch = configFailedAt > LAUNCH_STARTED_AT;
   const failure = latestFailure(configFailedAt, configError);

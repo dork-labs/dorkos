@@ -32,3 +32,4 @@ export {
 } from './ui/MoveCommunityDialog';
 export { HostedCommunityList } from './ui/HostedCommunitiesDialog';
 export { moveStepOf } from './model/use-move-community';
+export { useHostedCommunities } from './model/hosted-communities';

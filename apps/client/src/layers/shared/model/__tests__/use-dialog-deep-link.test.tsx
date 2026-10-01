@@ -196,12 +196,12 @@ describe('resolveDeepLinkTarget', () => {
   // the surviving tab loses the half the link was about (DOR-1758).
   it('carries a section from a legacy id that named one half of a merged tab', () => {
     const mapWithSection: Record<string, SettingsTab | SettingsDeepLinkTarget> = {
-      account: { kind: 'tab', tab: 'access', section: 'account' },
+      access: { kind: 'tab', tab: 'security', section: 'api-keys' },
     };
-    expect(resolveDeepLinkTarget('account', mapWithSection)).toEqual({
+    expect(resolveDeepLinkTarget('access', mapWithSection)).toEqual({
       kind: 'tab',
-      tab: 'access',
-      section: 'account',
+      tab: 'security',
+      section: 'api-keys',
     });
   });
 
@@ -286,21 +286,30 @@ describe('useSettingsDeepLink', () => {
     expect(harness.actions).not.toContain('PUSH');
   });
 
+  // The DorkOS account and local login are their own tabs again (DOR-2628),
+  // so the two addresses people already had are real tab ids now and land on
+  // their tab's top, not on a section of a merged one.
   it.each([
     ['security', 'security'],
     ['account', 'account'],
-  ])(
-    'lands the retired settings=%s link on the Access tab, at its own section',
-    async (retiredId, section) => {
-      harness = buildHarness(`/?settings=${retiredId}`);
-      const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-      await harness.waitForRouterReady();
+  ])('opens settings=%s on its own tab', async (id, tab) => {
+    harness = buildHarness(`/?settings=${id}`);
+    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
 
-      expect(result.current.isOpen).toBe(true);
-      expect(result.current.activeTab).toBe('access');
-      expect(result.current.section).toBe(section);
-    }
-  );
+    expect(result.current.isOpen).toBe(true);
+    expect(result.current.activeTab).toBe(tab);
+    expect(result.current.section).toBeNull();
+  });
+
+  it('sends the retired settings=access link to the DorkOS account tab', async () => {
+    harness = buildHarness('/?settings=access');
+    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    expect(result.current.isOpen).toBe(true);
+    expect(result.current.activeTab).toBe('account');
+  });
 
   it('sends the retired settings=advanced link to the Danger zone tab', async () => {
     harness = buildHarness('/?settings=advanced');
@@ -311,13 +320,21 @@ describe('useSettingsDeepLink', () => {
     expect(result.current.section).toBeNull();
   });
 
-  it('lets an explicit settingsSection beat the one a legacy id carries', async () => {
-    harness = buildHarness('/?settings=security&settingsSection=account');
+  it('sends an old Access link that named its login half to Login & security', async () => {
+    harness = buildHarness('/?settings=access&settingsSection=security');
     const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
 
-    expect(result.current.activeTab).toBe('access');
-    expect(result.current.section).toBe('account');
+    expect(result.current.activeTab).toBe('security');
+  });
+
+  it('keeps an explicit settingsSection on a retired id', async () => {
+    harness = buildHarness('/?settings=access&settingsSection=plan');
+    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    expect(result.current.activeTab).toBe('account');
+    expect(result.current.section).toBe('plan');
   });
 
   it('returns section when settingsSection is set', async () => {

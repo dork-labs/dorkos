@@ -210,6 +210,19 @@ describe('mailer (Resend seam)', () => {
       expect(payload.subject).toBe('Your DorkOS report shipped in <img src=x onerror=alert(1)>');
     });
 
+    it('escapes the changelog link for its attribute, so a quote cannot close the href', async () => {
+      await sendFeedbackShipped(TO, {
+        message: 'Add dark mode',
+        changelogUrl: 'https://dorkos.ai/x" onmouseover="alert(1)',
+      });
+
+      const payload = sendMock.mock.calls[0][0] as { html: string };
+      expect(payload.html).toContain(
+        '<a href="https://dorkos.ai/x&quot; onmouseover=&quot;alert(1)">See what changed</a>'
+      );
+      expect(payload.html).not.toContain('" onmouseover="');
+    });
+
     it('renders a versionless email with no link at all when none is passed', async () => {
       await sendFeedbackShipped(TO, { message: 'Add dark mode' });
 

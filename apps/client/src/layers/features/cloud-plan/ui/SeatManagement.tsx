@@ -47,6 +47,11 @@ export function SeatManagement() {
     return <p className="text-muted-foreground text-sm">Couldn’t read your seats just now.</p>;
   }
   if (!seats?.available) return null;
+  // Seats are shown only when the account holds some: an empty "Seats" card on
+  // a one-organization account is furniture with nothing in it. With more than
+  // one organization the card stays, because its picker is the way to the
+  // organization that does hold seats.
+  if (seats.seats.length === 0 && available.length <= 1) return null;
 
   const candidates = members?.available ? members.members : [];
 
@@ -106,7 +111,7 @@ export function SeatManagement() {
         </div>
 
         {seats.seats.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No seats yet.</p>
+          <p className="text-muted-foreground text-sm">No seats in this organization.</p>
         ) : (
           <ul className="divide-y">
             {seats.seats.map((seat) => (

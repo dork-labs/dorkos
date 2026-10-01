@@ -32,6 +32,24 @@ const TERMINAL_STATES = new Set<CloudLinkState>(['linked', 'denied', 'expired', 
 export const cloudStatusKey = ['cloud', 'status'] as const;
 
 /**
+ * The settled linked/unlinked summary (`GET /api/cloud/status`) on its own,
+ * without the device flow behind it.
+ *
+ * For a surface that only needs to SAY whether this computer is signed in —
+ * the header menu's account row — and must not start polling or a mount-time
+ * flow read the way {@link useCloudLink} does. Both read one cache entry, so a
+ * link or unlink in Settings is seen everywhere at once.
+ */
+export function useCloudStatus() {
+  const transport = useTransport();
+  return useQuery<CloudLinkSummary>({
+    queryKey: cloudStatusKey,
+    queryFn: () => transport.getCloudStatus(),
+    staleTime: 30_000,
+  });
+}
+
+/**
  * The rendered view of the account-link panel — a single discriminated union so
  * the UI never has to reconcile the summary and the live flow state itself.
  */
@@ -39,7 +57,13 @@ export type CloudLinkView =
   | { kind: 'loading' }
   | { kind: 'idle' }
   | { kind: 'pending'; userCode: string; verificationUri: string; expiresAt: string }
-  | { kind: 'linked'; accountLabel: string | null; lastHeartbeatAt: string | null }
+  | {
+      kind: 'linked';
+      accountLabel: string | null;
+      lastHeartbeatAt: string | null;
+      /** How a relink ended when it did not replace the link; this computer stayed linked. */
+      relinkOutcome?: CloudLinkStatus['relinkOutcome'];
+    }
   | { kind: 'expired' }
   | { kind: 'denied' }
   | { kind: 'revoked' };
@@ -49,8 +73,10 @@ export interface UseCloudLink {
   view: CloudLinkView;
   /** Begin the device flow (or restart it after expiry/denial). */
   start: () => Promise<void>;
-  /** Unlink this instance from its DorkOS account. */
+  /** Unlink this computer from its DorkOS account. */
   unlink: () => Promise<void>;
+  /** Stop a link in progress, or dismiss the note a relink that didn't finish left. */
+  cancel: () => Promise<void>;
   starting: boolean;
   unlinking: boolean;
   /** Friendly message when `start` fails (e.g. the cloud was unreachable). */
@@ -71,11 +97,7 @@ export function useCloudLink(): UseCloudLink {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
-  const summary = useQuery<CloudLinkSummary>({
-    queryKey: cloudStatusKey,
-    queryFn: () => transport.getCloudStatus(),
-    staleTime: 30_000,
-  });
+  const summary = useCloudStatus();
 
   const [flow, setFlow] = useState<StartLinkResult | null>(null);
   const [linkStatus, setLinkStatus] = useState<CloudLinkStatus | null>(null);
@@ -159,6 +181,20 @@ export function useCloudLink(): UseCloudLink {
     }
   }, [transport, startPolling]);
 
+  const cancel = useCallback(async () => {
+    stopPolling();
+    setFlow(null);
+    flowActiveRef.current = false;
+    setStartError(null);
+    try {
+      setLinkStatus(await transport.cancelCloudLink());
+    } catch {
+      // The server keeps its own state; the next status read reconciles it.
+      setLinkStatus(null);
+    }
+    await queryClient.invalidateQueries({ queryKey: cloudStatusKey });
+  }, [transport, queryClient, stopPolling]);
+
   const unlink = useCallback(async () => {
     setUnlinking(true);
     try {
@@ -208,6 +244,7 @@ export function useCloudLink(): UseCloudLink {
         kind: 'linked',
         accountLabel: linkStatus?.accountLabel ?? summary.data?.accountLabel ?? null,
         lastHeartbeatAt: linkStatus?.lastHeartbeatAt ?? summary.data?.lastHeartbeatAt ?? null,
+        ...(linkStatus?.relinkOutcome ? { relinkOutcome: linkStatus.relinkOutcome } : {}),
       };
     }
 
@@ -223,5 +260,5 @@ export function useCloudLink(): UseCloudLink {
     return { kind: 'idle' };
   }, [flow, linkStatus, summary.data, summary.isLoading]);
 
-  return { view, start, unlink, starting, unlinking, startError };
+  return { view, start, unlink, cancel, starting, unlinking, startError };
 }
