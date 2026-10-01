@@ -291,9 +291,20 @@ describe('fixed owning-session document source', () => {
       const f = fixture();
       const original = f.admission.source[hook];
       let lateRejected = false;
+      let nativeLateRejected = false;
       const late = async (tx: Parameters<typeof original>[0]) => {
         const lateRun = tx.update(canvasDocGrants).set({ revokedAt: NOW }).run;
+        const nativeRun = (
+          tx as unknown as {
+            session: { client: { prepare(sql: string): { run(): unknown } } };
+          }
+        ).session.client.prepare("UPDATE canvas_doc_grants SET revoked_at = 'late'").run;
         await Promise.resolve();
+        try {
+          nativeRun();
+        } catch {
+          nativeLateRejected = true;
+        }
         try {
           lateRun();
         } catch {
@@ -320,6 +331,7 @@ describe('fixed owning-session document source', () => {
       await Promise.resolve();
       await Promise.resolve();
       expect(lateRejected).toBe(true);
+      expect(nativeLateRejected).toBe(true);
       expect(f.store.getGrant(f.grantId)?.revokedAt).toBeNull();
     }
   );

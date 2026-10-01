@@ -34,7 +34,7 @@ export class DocBatchAdmission {
   /** Register the document source beside existing protected sources, on their existing queue. */
   constructor(private readonly options: DocBatchAdmissionOptions) {
     this.now = options.now ?? (() => new Date());
-    this.source = new DocumentEventBatchSource(options.store, options.grants);
+    this.source = new DocumentEventBatchSource(options.store, options.grants, this.now);
     this.acceptance = new PrivateSessionMessageAcceptanceService(
       options.db,
       options.queue,
