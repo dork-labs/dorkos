@@ -1,0 +1,66 @@
+{
+  "spec": "specs/served-document-isolation/02-specification.md",
+  "slug": "served-document-isolation",
+  "generatedAt": "2026-10-01T20:19:09.060523+00:00",
+  "mode": "full",
+  "tasks": [
+    {
+      "id": "1.1",
+      "subject": "[served-document-isolation] Reproduce direct navigation and missing headers",
+      "status": "completed",
+      "dependencies": [],
+      "phase": 1,
+      "phaseName": "Response isolation",
+      "description": "Reproduce direct navigation and missing headers",
+      "activeForm": "Reproduce direct navigation and missing headers",
+      "size": "small",
+      "priority": "high",
+      "parallelWith": []
+    },
+    {
+      "id": "1.2",
+      "subject": "[served-document-isolation] Add response isolation and trusted embedding policy",
+      "status": "completed",
+      "dependencies": [
+        "1.1"
+      ],
+      "phase": 1,
+      "phaseName": "Response isolation",
+      "description": "Add response isolation and trusted embedding policy",
+      "activeForm": "Add response isolation and trusted embedding policy",
+      "size": "small",
+      "priority": "high",
+      "parallelWith": []
+    },
+    {
+      "id": "1.3",
+      "subject": "[served-document-isolation] Verify browser behavior and package gates",
+      "status": "completed",
+      "dependencies": [
+        "1.2"
+      ],
+      "phase": 1,
+      "phaseName": "Response isolation",
+      "description": "Verify browser behavior and package gates",
+      "activeForm": "Verify browser behavior and package gates",
+      "size": "small",
+      "priority": "high",
+      "parallelWith": []
+    },
+    {
+      "id": "1.4",
+      "subject": "[served-document-isolation] Independent review and delivery",
+      "status": "pending",
+      "dependencies": [
+        "1.3"
+      ],
+      "phase": 1,
+      "phaseName": "Response isolation",
+      "description": "Independent review and delivery",
+      "activeForm": "Independent review and delivery",
+      "size": "small",
+      "priority": "high",
+      "parallelWith": []
+    }
+  ]
+}

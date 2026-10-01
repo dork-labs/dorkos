@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261001-201851",
+      "slug": "served-document-isolation",
+      "title": "Isolate signed served documents in direct navigation",
+      "created": "2026-10-01",
+      "status": "implemented",
+      "linearIssue": "DOR-2663"
+    },
+    {
       "id": "261001-184500",
       "slug": "doc-channel",
       "title": "Two-way events between canvas documents and agents",
