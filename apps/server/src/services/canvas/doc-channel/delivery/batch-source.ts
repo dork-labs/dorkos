@@ -47,7 +47,8 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
   /** Compose exact grant authority on the same channel transaction connection. */
   constructor(
     private readonly store: DocChannelStore,
-    private readonly grants: DocChannelGrants
+    private readonly grants: DocChannelGrants,
+    private readonly now: () => Date = () => new Date()
   ) {}
 
   /** Commit any observed manifest suspension before admission/prepare starts its transaction. */
@@ -57,29 +58,11 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
       refuseDocBatch('document_batch_changed');
     this.grants.refreshGrantedAuthority(batch.grantId);
   }
-  /** Consume only selected pending originals under current exact authority, then freeze their label. */
-  consume(tx: DbTransaction, ref: DocBatchSourceRef, now: string): PrivateSessionMessageDraft {
+  /** Consume only selected pending originals under current exact authority. */
+  consume(tx: DbTransaction, ref: DocBatchSourceRef): PrivateSessionMessageDraft {
     const batch = this.requireBatch(tx, ref, ['pending', 'waiting']);
     if (batch.admissionReceiptId) refuseDocBatch('document_batch_already_accepted');
     const authority = readDocBatchAuthority(this.store, this.grants, tx, batch);
-    const frozen = tx
-      .update(canvasDocBatches)
-      .set({
-        effectivePayload: {
-          eventIds: batch.inputEventIds,
-          documentLabel: authority.context.documentLabel,
-        },
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(canvasDocBatches.batchId, batch.batchId),
-          eq(canvasDocBatches.generation, batch.generation),
-          isNull(canvasDocBatches.admissionReceiptId)
-        )
-      )
-      .run().changes;
-    if (frozen !== 1) refuseDocBatch();
     return {
       sourceKind: this.kind,
       sourceId: batch.batchId,
@@ -200,7 +183,7 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
       )
         refuseDocBatch();
       tx.update(canvasDocGrants)
-        .set({ revokedAt: new Date().toISOString() })
+        .set({ revokedAt: this.now().toISOString() })
         .where(
           and(
             eq(canvasDocGrants.grantId, evidence.grantId),
