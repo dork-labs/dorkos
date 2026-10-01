@@ -66,6 +66,10 @@ export const canvasDocEvents = sqliteTable(
     primaryKey({ columns: [table.documentId, table.eventId] }),
     uniqueIndex('canvas_doc_events_sequence_unique').on(table.documentId, table.docSeq),
     index('canvas_doc_events_received_idx').on(table.documentId, table.receivedAt),
+    index('canvas_doc_events_retention_idx').on(table.receivedAt, table.documentId, table.docSeq),
+    index('canvas_doc_events_unaccounted_idx')
+      .on(table.documentId, table.eventId)
+      .where(sql`${table.envelopeBytes}=0 AND ${table.payloadPrunedAt} IS NULL`),
   ]
 );
 
