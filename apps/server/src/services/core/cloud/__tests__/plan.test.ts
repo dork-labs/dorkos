@@ -370,19 +370,56 @@ describe('the latest settled charge', () => {
 
   it('keeps the latest period of each charge, and totals only what it keeps', async () => {
     // Early in October the window reaches back past August 1, so it holds two
-    // storage periods; only September's is shown.
+    // storage periods; only September's is shown. A second charge last seen in
+    // August stays only while August can still be its latest period.
     vi.setSystemTime(new Date('2026-10-01T03:00:00.000Z'));
+    const ARCHIVE = { displayName: 'Archive space', unit: 'widget-days' };
     stubContractUsage([
       { ...AUG, micro: '300' },
       { ...SEP, micro: '500' },
-      { ...AUG, displayName: 'Archive space', unit: 'widget-days', micro: '7' },
+      { ...month('2026-08-15T00:00:00.000Z', '2026-09-15T00:00:00.000Z'), ...ARCHIVE, micro: '7' },
     ]);
     const usage = await readUsage('seat');
     expect(usage?.otherCharges?.rows.map((r) => [r.displayName, r.periodStart])).toEqual([
       ['Extra storage', SEP.start],
-      ['Archive space', AUG.start],
+      ['Archive space', '2026-08-15T00:00:00.000Z'],
     ]);
     expect(usage?.otherCharges?.dorkosPriceMicro).toBe('507');
+  });
+
+  it('shows no charge once the month after a charged one has ended with none', async () => {
+    // September was charged; October charged nothing, so it sent no row.
+    // September still started inside the window, but it is not the latest
+    // charge any more.
+    stubContractUsage([SEP]);
+    vi.setSystemTime(new Date('2026-10-31T12:00:00.000Z'));
+    expect(await shownPeriods()).toEqual(['2026-09-01T00:00:00.000Z → 2026-10-01T00:00:00.000Z']);
+    vi.setSystemTime(new Date('2026-11-02T12:00:00.000Z'));
+    expect(await readUsage('seat')).not.toHaveProperty('otherCharges');
+  });
+
+  it('drops an older period of one charge but keeps the current period of another', async () => {
+    vi.setSystemTime(new Date('2026-10-15T12:00:00.000Z'));
+    stubContractUsage([
+      { ...month('2026-08-14T00:00:00.000Z', '2026-09-13T00:00:00.000Z'), micro: '40' },
+      { ...SEP, displayName: 'Archive space', unit: 'widget-days', micro: '9' },
+    ]);
+    const usage = await readUsage('seat');
+    expect(usage?.otherCharges?.rows.map((r) => r.displayName)).toEqual(['Archive space']);
+    expect(usage?.otherCharges?.dorkosPriceMicro).toBe('9');
+  });
+
+  it('keeps both rows when one charge has two for the same period', async () => {
+    // August is in the window too, so the total is recomputed, not passed on.
+    vi.setSystemTime(new Date('2026-10-01T03:00:00.000Z'));
+    stubContractUsage([
+      { ...AUG, micro: '50' },
+      { ...SEP, micro: '100' },
+      { ...SEP, micro: '200' },
+    ]);
+    const usage = await readUsage('seat');
+    expect(usage?.otherCharges?.rows.map((r) => r.dorkosPriceMicro)).toEqual(['100', '200']);
+    expect(usage?.otherCharges?.dorkosPriceMicro).toBe('300');
   });
 
   it('still reads inference over the last 30 days, and says so on the response', async () => {

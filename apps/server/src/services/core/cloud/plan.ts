@@ -68,15 +68,29 @@ const USAGE_WINDOW_DAYS = 30;
  * How far back to look for charges that are not inference, in days.
  *
  * The contract lists a billing period only in a window it STARTED in, and a
- * period appears only once it has ended and settled. So the inference window
- * can never hold one: by the time a month-long period exists, it started more
- * than 30 days ago. A period lasts at most 31 days, and the latest settled one
- * ended no more than one period ago, so it started within the last 62 days.
- * One day more covers the short wait between a period ending and settling.
- * Periods last at least 28 days, so this holds at most two of each charge,
- * and {@link latestPeriods} keeps the later one.
+ * period appears only once it has ended and settled. So a month-long period
+ * is never in the 30-day inference window: by the time it exists, it started
+ * more than 30 days ago. A period lasts at most 31 days, and the latest
+ * settled one ended no more than one period ago, so it started within the last
+ * 62 days. The extra day allows for the time between a period ending and
+ * settling; if settling ever takes longer, the card shows no charge until it
+ * settles. The window can hold more than one period of a charge, and
+ * {@link latestPeriods} keeps the latest.
  */
 const CHARGES_WINDOW_DAYS = 63;
+
+/**
+ * How long after a period ends it stops being the current charge, in days.
+ *
+ * A month with nothing to charge sends no row, so the latest row in the window
+ * can be an older month. By 32 days after a period ends, the period after it
+ * (31 days at most) has ended too. If that one sent no row, it charged nothing,
+ * and showing the older month as the latest charge would be wrong. Dropping a
+ * row any sooner would hide a real charge while the next period is still
+ * running, so after a shorter free month the older charge still shows for up
+ * to the few days the free month was short by.
+ */
+const CHARGE_CURRENT_DAYS = 32;
 
 /**
  * The plan card's read: entitlements, and the balance beside it.
@@ -149,7 +163,8 @@ export async function readUsage(
   ]);
   if (usage === null) return null;
   // Whatever the inference window carried under `otherCharges` is replaced, not
-  // merged: a period that started inside it has not settled, so it holds none.
+  // merged: the charges window contains the inference window, so any period
+  // listed there is listed again in the charges window.
   const { otherCharges: _inferenceWindowCharges, ...inference } = usage;
   return otherCharges === undefined ? inference : { ...inference, otherCharges };
 }
@@ -192,7 +207,8 @@ function readUsageWindow(
  * The latest settled period of each charge that is not inference, read over
  * the longer charges window.
  *
- * Answers `undefined` when the service sent no such charges, when it sent a
+ * Answers `undefined` when the service sent no such charges or none is still
+ * current (see {@link CHARGE_CURRENT_DAYS}), when it sent a
  * block this release could not read, and when the read itself failed. The last
  * two are logged: each hides a charge the account may have been billed for.
  *
@@ -236,32 +252,41 @@ async function readOtherCharges(
       { groupBy: grouping }
     );
   }
-  return usage?.otherCharges === undefined ? undefined : latestPeriods(usage.otherCharges);
+  return usage?.otherCharges === undefined ? undefined : latestPeriods(usage.otherCharges, to);
 }
 
 /**
- * Keep only the latest period of each charge, and total what is kept.
+ * Keep only the latest period of each charge that is still current, and total
+ * what is kept.
  *
  * A charge is told apart by the service's own `displayName` and `unit`, so a
  * second kind of charge the service adds later keeps its own latest period
- * rather than being hidden behind another's. The block's total is recomputed
- * from the rows kept, exactly, as integer micro-units.
+ * rather than being hidden behind another's. Every row of that latest period
+ * is kept: the contract allows two rows for one charge and period. A period
+ * that ended {@link CHARGE_CURRENT_DAYS} or more days ago is dropped, because
+ * the period after it has ended with no charge. The block's total is
+ * recomputed from the rows kept, exactly, as integer micro-units.
  *
  * @param block - The charges in the longer window.
- * @returns The latest period of each charge, with their total.
+ * @param now - The instant the window ends at.
+ * @returns The latest current period of each charge, with their total, or
+ *   `undefined` when none is current.
  */
-function latestPeriods(block: OtherCharges): OtherCharges {
-  const latest = new Map<string, OtherCharges['rows'][number]>();
-  for (const row of block.rows) {
-    const kind = JSON.stringify([row.displayName, row.unit]);
-    const held = latest.get(kind);
-    if (held === undefined || Date.parse(row.periodStart) > Date.parse(held.periodStart)) {
-      latest.set(kind, row);
-    }
+function latestPeriods(block: OtherCharges, now: Date): OtherCharges | undefined {
+  const currentFrom = daysBefore(now, CHARGE_CURRENT_DAYS).getTime();
+  const current = block.rows.filter((row) => Date.parse(row.periodEnd) > currentFrom);
+  const kindOf = (row: OtherCharges['rows'][number]) => JSON.stringify([row.displayName, row.unit]);
+  const latestStart = new Map<string, number>();
+  for (const row of current) {
+    const start = Date.parse(row.periodStart);
+    const held = latestStart.get(kindOf(row));
+    if (held === undefined || start > held) latestStart.set(kindOf(row), start);
   }
   // Keep the service's order among the rows that remain.
-  const kept = new Set(latest.values());
-  const rows = block.rows.filter((row) => kept.has(row));
+  const rows = current.filter(
+    (row) => Date.parse(row.periodStart) === latestStart.get(kindOf(row))
+  );
+  if (rows.length === 0) return undefined;
   if (rows.length === block.rows.length) return block;
   const total = rows.reduce((sum, row) => sum + BigInt(row.dorkosPriceMicro), 0n);
   return { rows, dorkosPriceMicro: total.toString() };
