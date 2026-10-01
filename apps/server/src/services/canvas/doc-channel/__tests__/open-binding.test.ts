@@ -15,7 +15,9 @@ import {
   createServerPrincipal,
   isServerPrincipal,
   type ConnectorRuntime,
+  type ServerPrincipalProof,
 } from '../../../connectors/principal/server-principal.js';
+import { ConnectorRuntimePrincipalService } from '../../../connectors/principal/runtime-principal-service.js';
 import { ApprovalService } from '../../../core/approvals/approval-service.js';
 import {
   DocChannelAuthorization,
@@ -29,6 +31,7 @@ import { parseScope, SESSION_OWNER_AUTHOR } from '../../scopes.js';
 
 vi.mock('../../../core/config-manager.js', () => ({ configManager: { get: vi.fn(() => null) } }));
 vi.mock('../../../session/browser-seat/session-reach.js', () => ({ emitToSession: () => true }));
+let runtimeCurrent: (proof: ServerPrincipalProof) => boolean = isServerPrincipal;
 let db: Db;
 let rooms: RoomSubsystem;
 let channels: DocChannelStore;
@@ -78,7 +81,8 @@ function actor(id: string, runtime: ConnectorRuntime = 'claude-code'): DocChanne
 beforeEach(() => {
   db = createDb(':memory:');
   runMigrations(db);
-  rooms = createRoomSubsystem({ db });
+  runtimeCurrent = isServerPrincipal;
+  rooms = createRoomSubsystem({ db, runtimePrincipalCurrent: (proof) => runtimeCurrent(proof) });
   setRoomService(rooms.service);
   channels = new DocChannelStore(db);
   uiTurnFacts.clear();
@@ -280,6 +284,45 @@ describe('common canvas open origin binding', () => {
     );
     expect(channels.getChannel(stale.id)?.openerAgentId).toBeNull();
   });
+  it('binds only a real live runtime turn and refuses a fresh origin after its owner ends', async () => {
+    seed('one');
+    let live = true;
+    const principals = new ConnectorRuntimePrincipalService({
+      db,
+      authority: {
+        authorizeTurn: async () => ({ owner, agentId: 'one' }),
+        revalidateTurn: async () => live,
+      },
+    });
+    await principals.initializeBoot();
+    const opened = await principals.openTurn(
+      {
+        runtime: 'claude-code',
+        canonicalSessionId: 'session-one',
+        agentPath: '/agents/one',
+        signal: new AbortController().signal,
+      },
+      { isCurrent: () => live }
+    );
+    const resolved = await principals.resolve({
+      bearer: opened.bearer,
+      expectedRuntime: 'claude-code',
+    });
+    if (resolved.status !== 'resolved') throw new Error('Expected authenticated turn');
+    runtimeCurrent = (proof) => principals.isPrincipalCurrent(proof);
+    const first = await controlUi(
+      { action: 'open_canvas', content },
+      { sessionId: 'session-one', principal: resolved.principal }
+    );
+    expect(channels.getChannel(first.documentId as string)?.openerAgentId).toBe('one');
+    live = false;
+    const second = await controlUi(
+      { action: 'open_canvas', content: { ...content, url: 'https://example.test/second' } },
+      { sessionId: 'session-one', principal: resolved.principal }
+    );
+    expect(channels.getChannel(second.documentId as string)?.openerAgentId).toBeNull();
+  });
+
   it('refuses a previously valid runtime proof after its current session binding changes', async () => {
     seed('one');
     seed('two');
