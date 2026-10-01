@@ -1,5 +1,5 @@
 import { FieldCard, FieldCardContent, Progress } from '@/layers/shared/ui';
-import { formatCharge, formatPosition } from '@dork-labs/cloud-api/display';
+import { formatCharge, formatCreditsWithMoney, formatPosition } from '@dork-labs/cloud-api/display';
 import { isReadableDenomination, withCreditUnit } from '../lib/credits';
 import { remainingFraction } from '../lib/remaining-fraction';
 import { useCloudPlan, useCloudUsage } from '../model/use-cloud-plan';
@@ -13,8 +13,9 @@ import { UnreadableFigures } from './UnreadableFigures';
  *
  * Three honest halves, kept visibly apart:
  *
- * 1. The allowance bar, drawn only when there is a denominator to draw it
- *    against.
+ * 1. The two numbers somebody has — included this period, and added on top —
+ *    with the allowance bar under them, drawn only when there is a denominator
+ *    to draw it against, and anything owed on its own line.
  * 2. The per-agent breakdown, straight from the grouped usage rows. Each row's
  *    label is the service's `displayName`; its key is opaque and never rendered.
  *    Charges that are not inference (storage, say) follow as their own list
@@ -48,6 +49,12 @@ export function CreditsGauge() {
   const balanceUnit = balance?.denomination;
   const remaining = formatPosition(balance?.allowance.remainingMicro, balanceUnit);
   const granted = withCreditUnit(formatPosition(balance?.allowance.grantedMicro, balanceUnit));
+  const added = formatCreditsWithMoney(balance?.purchased.remainingMicro, balanceUnit, 'position');
+  // A charge reads exactly "0" only for an exact zero, so any debt at all —
+  // even a sliver that reads "<1" — gets its line.
+  const owedFigure = formatCharge(balance?.owedMicro, balanceUnit);
+  const owed = owedFigure === null || owedFigure === '0' ? null : withCreditUnit(owedFigure);
+  const renews = balance ? renewalDate(balance.allowance.resetsAt) : null;
   const rows = usage?.available ? usage.usage.rows : [];
   const usageUnit = usage?.available ? usage.usage.denomination : undefined;
   const usageReadable = isReadableDenomination(usageUnit);
@@ -61,21 +68,45 @@ export function CreditsGauge() {
       <FieldCardContent className="space-y-4">
         <p className="text-muted-foreground text-xs tracking-wide uppercase">Credits</p>
 
-        {balance !== null && fraction !== null && (
-          <div className="space-y-1">
-            <Progress value={fraction * 100} />
-            {!isReadableDenomination(balanceUnit) ? (
-              <UnreadableFigures />
-            ) : (
-              remaining !== null &&
-              granted !== null && (
-                <p className="text-muted-foreground text-xs">
-                  {remaining} of {granted} left in this period
-                </p>
-              )
-            )}
-          </div>
-        )}
+        {balance !== null &&
+          (!isReadableDenomination(balanceUnit) ? (
+            <UnreadableFigures />
+          ) : (
+            <div className="space-y-2">
+              {/* The two numbers somebody has: what the plan put in for this
+                  period, and what they added on top. Never summed into one,
+                  because only one of them renews. */}
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                {remaining !== null && granted !== null && (
+                  <div>
+                    <dt className="text-muted-foreground text-xs">Included</dt>
+                    <dd className="font-medium">
+                      {remaining} of {granted} left
+                    </dd>
+                  </div>
+                )}
+                {added !== null && (
+                  <div>
+                    <dt className="text-muted-foreground text-xs">Added</dt>
+                    <dd className="font-medium">{added}</dd>
+                  </div>
+                )}
+                {/* Debt carried from a turn that overran its reservation. It is
+                    never folded quietly into a smaller balance — when it exists
+                    it gets its own line. */}
+                {owed !== null && (
+                  <div>
+                    <dt className="text-muted-foreground text-xs">Owed</dt>
+                    <dd className="font-medium">{owed}</dd>
+                  </div>
+                )}
+              </dl>
+              {fraction !== null && <Progress value={fraction * 100} aria-label="Included left" />}
+              {renews !== null && (
+                <p className="text-muted-foreground text-xs">Included credits renew {renews}.</p>
+              )}
+            </div>
+          ))}
 
         {rows.length > 0 && (
           <div className="space-y-2">
@@ -125,4 +156,16 @@ export function CreditsGauge() {
       </FieldCardContent>
     </FieldCard>
   );
+}
+
+/**
+ * When the included credits renew, as a date a person reads ("on 3 Oct").
+ *
+ * @param resetsAt - The allowance's `resetsAt`, an ISO timestamp.
+ * @returns The phrase, or `null` for a timestamp that will not parse.
+ */
+function renewalDate(resetsAt: string): string | null {
+  const at = new Date(resetsAt);
+  if (Number.isNaN(at.getTime())) return null;
+  return `on ${at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
 }

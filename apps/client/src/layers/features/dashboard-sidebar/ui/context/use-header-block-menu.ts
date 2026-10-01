@@ -1,24 +1,30 @@
 /**
- * The header block menu's live inputs: the installation's name and the
- * account/settings/version rows that sit under the context list.
+ * The header block menu's live inputs: the installation's name, the identity
+ * rows above the context list (you, your DorkOS account, Settings) and the
+ * version line below it.
  *
  * One hook, called by the context switcher itself, so the desktop header and
  * the phone's top bar show the same rows. Before it existed the phone trigger
- * was handed an empty list, and phones lost Workspace settings, Account and the
+ * was handed an empty list, and phones lost Settings, the account rows and the
  * version line, which is that number's one home in the chrome (BC-44).
  *
  * @module features/dashboard-sidebar/ui/context/use-header-block-menu
  */
-import { useCallback } from 'react';
+import { createElement, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
+import { OPERATOR_FALLBACK_DISPLAY_NAME, type TeamMember } from '@dorkos/shared/team-schemas';
 import { isNewer } from '@/layers/shared/lib';
 import { useProfileDeepLink, useSettingsDeepLink, useTransport } from '@/layers/shared/model';
-import type { SidebarMenuNode } from '@/layers/shared/ui';
-import { useTeamRoster } from '@/layers/entities/team';
+import { IdentityAvatar, type SidebarMenuNode } from '@/layers/shared/ui';
+import { teamMemberFace, useTeamRoster } from '@/layers/entities/team';
 import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
-import { buildHeaderBlockMenuNodes } from '../header-block-menu';
+import { describeDorkosAccountLine, useDorkosAccountLine } from '@/layers/features/cloud-plan';
+import {
+  buildHeaderBlockIdentityNodes,
+  buildHeaderBlockVersionNodes,
+  type HeaderBlockIdentityModel,
+} from '../header-block-menu';
 
 /**
  * What this installation is called.
@@ -29,6 +35,25 @@ export function teamNameFor(displayName: string | null): string {
   const trimmed = displayName?.trim() ?? '';
   if (trimmed.length === 0 || trimmed === OPERATOR_FALLBACK_DISPLAY_NAME) return 'Your team';
   return trimmed.endsWith('s') ? `${trimmed}’ team` : `${trimmed}’s team`;
+}
+
+/**
+ * Your own face, at the size its row draws it.
+ *
+ * @param member - Your roster row.
+ * @param size - The avatar size.
+ */
+function avatarFor(member: TeamMember, size: 'xs' | 'sm') {
+  const face = teamMemberFace(member);
+  return createElement(IdentityAvatar, {
+    size,
+    kind: face.kind,
+    color: face.color,
+    emoji: face.emoji,
+    imageUrl: face.imageUrl,
+    fallback: face.fallback,
+    origin: face.origin,
+  });
 }
 
 /** What the header block menu shows. */
@@ -46,10 +71,44 @@ export interface HeaderBlockMenu {
    */
   nameUnknown: boolean;
   /**
-   * The unguarded rows: the context's lifecycle rows, then settings, account
-   * and version. The switcher arms the close-focus guard over all of them.
+   * The rows above the context list: you, your DorkOS account, Settings.
+   * Unguarded; the switcher arms the close-focus guard over every row.
+   */
+  identityNodes: SidebarMenuNode[];
+  /**
+   * The rows below the context list: the selected context's lifecycle rows,
+   * then the version line. Unguarded, like {@link identityNodes}.
    */
   nodes: SidebarMenuNode[];
+}
+
+/**
+ * Who you are, whether this computer is signed in to a DorkOS account, and the
+ * doors behind both — the model the header menu's identity rows and the phone's
+ * You tab are both drawn from, so the two cannot say different things.
+ *
+ * @param size - The face's size: the menu row's icon size, or the You tab's.
+ */
+export function useIdentityModel(size: 'xs' | 'sm' = 'xs'): HeaderBlockIdentityModel {
+  const roster = useTeamRoster();
+  const { open: openSettings } = useSettingsDeepLink();
+  const { open: openProfile } = useProfileDeepLink();
+  const accountLine = useDorkosAccountLine();
+  const self = roster.data?.members.find((member) => member.isSelf) ?? null;
+
+  return {
+    you:
+      self === null
+        ? null
+        : {
+            name: self.displayName,
+            face: avatarFor(self, size),
+            onOpen: () => openProfile(self.id),
+          },
+    accountStatus: describeDorkosAccountLine(accountLine),
+    onOpenAccount: () => openSettings('account'),
+    onOpenSettings: () => openSettings(),
+  };
 }
 
 /**
@@ -63,8 +122,7 @@ export function useHeaderBlockMenu(contextNodes: SidebarMenuNode[] = []): Header
   const roster = useTeamRoster();
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const { open: openSettings } = useSettingsDeepLink();
-  const { open: openProfile } = useProfileDeepLink();
+  const identity = useIdentityModel();
 
   const self = roster.data?.members.find((member) => member.isSelf) ?? null;
 
@@ -97,12 +155,10 @@ export function useHeaderBlockMenu(contextNodes: SidebarMenuNode[] = []): Header
   return {
     teamName: teamNameFor(self?.displayName ?? null),
     nameUnknown: roster.isPending,
+    identityNodes: buildHeaderBlockIdentityNodes(identity),
     nodes: [
       ...contextNodes,
-      ...(contextNodes.length > 0 ? [{ kind: 'separator' as const, id: 'sep-context' }] : []),
-      ...buildHeaderBlockMenuNodes({
-        onOpenSettings: () => openSettings(),
-        onOpenAccount: self === null ? null : () => openProfile(self.id),
+      ...buildHeaderBlockVersionNodes({
         version: serverConfig?.version ?? null,
         isDevMode: serverConfig?.isDevMode ?? false,
         onCheckForUpdates: () => void handleCheckForUpdates(),

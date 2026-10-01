@@ -84,6 +84,7 @@ describe('isCloudAccountPath', () => {
   it.each([
     '/signin',
     '/signup',
+    '/early-access',
     '/reset-password',
     '/reset-password/confirm',
     '/verify-email',
@@ -113,6 +114,7 @@ describe('isCloudAccountPath', () => {
     '/accounts',
     '/administrator',
     '/signin-help',
+    '/early-access-faq',
     '/docs/account',
     '/api/instances/connectors/catalog',
     '/api/instances/connectors/events/pull',
@@ -155,7 +157,13 @@ describe('decideCloudAccountsForward', () => {
   });
 
   it('redirects every account page, even when fetched by the client router', () => {
-    for (const path of ['/signin', '/account/instances', '/admin', '/reset-password/confirm']) {
+    for (const path of [
+      '/signin',
+      '/early-access',
+      '/account/instances',
+      '/admin',
+      '/reset-password/confirm',
+    ]) {
       const decision = decideCloudAccountsForward(
         req(`${path}?_rsc=abc&next=%2Faccount`, { headers: { 'sec-fetch-mode': 'cors' } }),
         SERVICE

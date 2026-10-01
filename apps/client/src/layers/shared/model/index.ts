@@ -179,6 +179,7 @@ export {
   useOpenConnections,
   clearedDialogSearch,
   isDualSignalDialog,
+  SETTINGS_RELINK_SECTION,
   takeProfileOpener,
   clearProfileOpener,
   type DialogDeepLink,

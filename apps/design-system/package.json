@@ -32,6 +32,6 @@
     "vitest": "^4.1.11",
     "tailwindcss": "^4.3.3",
     "@tailwindcss/vite": "^4.3.3",
-    "eslint": "^10.10.0"
+    "eslint": "^10.11.0"
   }
 }

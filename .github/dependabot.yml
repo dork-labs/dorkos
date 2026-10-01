@@ -122,6 +122,13 @@ updates:
       - dependency-name: '@anthropic-ai/sdk'
       - dependency-name: '@openai/codex*'
       - dependency-name: '@opencode-ai/*'
+      # Known-bad versions, held until the ticket named on each entry closes.
+      # These are NOT families (see the block above) — one package, one version.
+      # Each one has a hold in contributing/dependency-overrides.md with its drop condition.
+      - dependency-name: '@a2a-js/sdk'
+        versions: ['1.2.1'] # DOR-2641 (seen in #2364): v1.0 JSON-RPC calls return -32601 method not found
+      - dependency-name: 'turbo'
+        versions: ['2.11.x'] # DOR-2645 (seen in #2429): 2.11 writes a turborepo-agent-rules block into AGENTS.md
     # The queue merges it; nobody needs a review ping for a patch bump that
     # 13,000 tests are about to vet anyway.
     open-pull-requests-limit: 5

@@ -4,6 +4,7 @@ import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission, type AdmissionResume } from './components/Admission.js';
 import { ChannelView } from './components/Channel.js';
 import { HoldBanner } from './components/HoldBanner.js';
+import { OwnerReplacementBanner } from './owner-replacement/OwnerReplacementBanner.js';
 import { Manage } from './components/Manage.js';
 import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
@@ -487,6 +488,13 @@ export function CommunityApp() {
           key={`${community!.id}:${me.member.memberId}`}
           communityId={community!.id}
           memberId={me.member.memberId}
+        />
+        <OwnerReplacementBanner
+          // Its own key: a sibling sharing the takedown banner's key makes React render it twice.
+          key={`owner-replacement:${community!.id}:${me.member.memberId}`}
+          communityId={community!.id}
+          communityName={community!.name}
+          lifecycle={communityLifecycle}
         />
         {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
         {settings ? (

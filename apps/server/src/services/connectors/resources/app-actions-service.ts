@@ -51,9 +51,9 @@ export class ConnectorAppActionsError extends Error {
   /** Stable machine-readable refusal. */
   readonly code: 'provider_not_found' | 'actions_unavailable';
 
-  /** Construct one safe action-list error. */
-  constructor(code: ConnectorAppActionsError['code'], message: string) {
-    super(message);
+  /** Construct one safe action-list error, keeping what caused it for the route to map. */
+  constructor(code: ConnectorAppActionsError['code'], message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'ConnectorAppActionsError';
     this.code = code;
   }
@@ -293,8 +293,8 @@ export class ConnectorAppActionsService {
       const resolved = await provider.resolveToolkitVersion(target.toolkit, signal);
       if (resolved.status === 'unsupported') return { ...base, status: 'unlisted' };
       toolkitVersion = resolved.toolkitVersion;
-    } catch {
-      throw unavailable();
+    } catch (error) {
+      throw unavailable(error);
     }
     // A version's action list never changes, so a complete list of the same
     // version only needs its date moved on. This is also why a later partial
@@ -321,10 +321,10 @@ export class ConnectorAppActionsService {
           limit: PAGE_SIZE,
           signal,
         });
-      } catch {
+      } catch (error) {
         // Nothing read yet is a failure. A listing that stops part way keeps
         // what it read and says so; it is never passed off as whole.
-        if (actions.length === 0) throw unavailable();
+        if (actions.length === 0) throw unavailable(error);
         completeness = 'interrupted';
         break;
       }
@@ -459,10 +459,11 @@ function keyOf(target: ListTarget): string {
   return `${wayDir(target.providerInstanceId)}/${hash(`${target.generation}\n${target.toolkit}`)}`;
 }
 
-function unavailable(): ConnectorAppActionsError {
+function unavailable(cause?: unknown): ConnectorAppActionsError {
   return new ConnectorAppActionsError(
     'actions_unavailable',
-    'DorkOS could not list this app’s actions just now. Try again.'
+    'DorkOS could not list this app’s actions just now. Try again.',
+    { cause }
   );
 }
 

@@ -144,6 +144,7 @@ describe('what members read (GET /owner-replacement)', () => {
         reference: 'CASE-2541',
         claimReissuedAt: (row.claim_reissued_at as Date).toISOString(),
         options: { keep: true, transfer: true, delete: true, needsPassword: false },
+        objectionCooldownDays: 90,
       },
       completed: null,
     });
@@ -448,6 +449,7 @@ describe('the object-only link (AC-19, route half)', () => {
     expect(await preflight.json()).toEqual({
       communityName: c.name,
       claimableAfter: (row.claimable_after as Date).toISOString(),
+      objectionCooldownDays: 90,
     });
     expect(await replacementRow(host, replacementId)).toEqual(row);
   });

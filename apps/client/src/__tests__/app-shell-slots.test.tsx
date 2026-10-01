@@ -209,6 +209,7 @@ vi.mock('@/layers/features/dashboard-sidebar', async () => {
       <button data-testid="mobile-community-switcher">Context</button>
     ),
     SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
+    YouRows: () => <div data-testid="you-rows">You rows</div>,
     // The panel's one bottom card. Stubbed at the same seam as the strip: this
     // suite is about WHICH cockpit the shell mounts, and the slot's own
     // arbitration is `shared/ui/__tests__/bottom-slot.test.tsx`.

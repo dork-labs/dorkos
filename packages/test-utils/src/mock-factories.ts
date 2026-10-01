@@ -1367,6 +1367,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     }),
     getCloudLinkStatus: vi.fn().mockResolvedValue({ state: 'idle' }),
+    cancelCloudLink: vi.fn().mockResolvedValue({ state: 'idle' }),
     unlinkCloud: vi.fn().mockResolvedValue({ ok: true }),
     getCloudStatus: vi
       .fn()

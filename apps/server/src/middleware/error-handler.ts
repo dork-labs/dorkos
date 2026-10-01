@@ -4,7 +4,7 @@ import { logger } from '../lib/logger.js';
 import { RuntimeNotRegisteredError } from '../services/core/runtime-registry.js';
 
 /** Global Express error handler that logs the error and returns a JSON response. */
-export function errorHandler(err: Error, _req: Request, res: Response, next: NextFunction): void {
+export function errorHandler(err: Error, req: Request, res: Response, next: NextFunction): void {
   // If the response is already streaming/flushed (e.g. the durable session SSE
   // stream), the headers are sent and we can't write a JSON error body. Express 5
   // auto-forwards async rejections here, so a post-flush rejection would otherwise
@@ -15,7 +15,15 @@ export function errorHandler(err: Error, _req: Request, res: Response, next: Nex
     return;
   }
 
-  logger.error('[DorkOS Error]', err.message, err.stack);
+  const code = (err as { code?: unknown }).code;
+  const status = (err as { status?: unknown }).status;
+  logger.error('[DorkOS Error]', err.message, {
+    method: req.method,
+    path: req.path,
+    ...(typeof code === 'string' ? { code } : {}),
+    ...(typeof status === 'number' ? { status } : {}),
+    stack: err.stack,
+  });
 
   // A runtime registration mismatch is a configuration error, not a 500. A
   // session persisted as runtime X on a server that no longer has X registered

@@ -8,6 +8,7 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
+import { isEntryPostFor, readAllEntries, type EntryPage } from './entries.js';
 
 /**
  * The two packaged apps and the moves a person makes in them: launch (and
@@ -388,16 +389,95 @@ export const messageRow = (scope: Locator, text: string) =>
     .filter({ has: scope.page().getByRole('button', { name: /Reply in thread|Open thread/ }) })
     .last();
 
+/** The line a Community channel shows while its live stream is still starting. */
+export const CONNECTING_LINE = 'Connecting to the community…';
+
 /**
- * Type a message into a composer and send it with Enter.
+ * Type a message into a Community composer, send it with Enter, and confirm
+ * the app actually posted it.
  *
- * @param box - The composer.
+ * The composer ignores Enter until the channel's live stream is up: a page
+ * that has just loaded shows "Connecting to the community…", greys Send, and
+ * an Enter pressed then leaves the words in the box and posts nothing
+ * (DOR-2650). So this waits for that line to go and for Send to be enabled,
+ * and after Enter waits for the app's own 201 `POST …/entries` carrying this
+ * text, failing with a message that says which of those never happened.
+ *
+ * @param box - The composer (a channel's or a thread's).
  * @param text - What to send.
+ * @returns How long the channel took to become ready for the post, and the
+ *   entry the Community confirmed, so a step can record a slow connect and
+ *   check where the message landed.
  */
-export async function send(box: Locator, text: string): Promise<void> {
+export async function send(box: Locator, text: string): Promise<SendReceipt> {
+  const page = box.page();
+  const preview = JSON.stringify(text.length > 60 ? `${text.slice(0, 60)}…` : text);
+  const waitStarted = Date.now();
+  await expect(
+    page.getByText(CONNECTING_LINE, { exact: true }),
+    `the channel was still connecting to the community, so ${preview} could not be sent`
+  ).toBeHidden({ timeout: 60_000 });
   await box.click();
   await box.fill(text);
+  // Close the @mention completion if it opened, so Enter sends rather than picks.
+  if (text.includes('@') && (await page.getByRole('listbox').isVisible()))
+    await box.press('Escape');
+  // Send appears once the box holds text, and stays disabled until the channel can take a post.
+  const sendButton = box
+    .locator('xpath=ancestor::*[.//button[@aria-label="Send message"]][1]')
+    .getByRole('button', { name: 'Send message', exact: true });
+  await expect(
+    sendButton,
+    `Send never became enabled for ${preview}: the channel is not ready for posts`
+  ).toBeEnabled({ timeout: 60_000 });
+  const liveWaitMs = Date.now() - waitStarted;
+  const posted = page.waitForResponse(
+    (r) => isEntryPostFor(r.request().method(), r.url(), r.request().postData(), text),
+    { timeout: 30_000 }
+  );
   await box.press('Enter');
+  const response = await posted.catch(async () => {
+    const left = await box.inputValue().catch(() => '(composer gone)');
+    throw new Error(
+      `Enter did not post ${preview}: no POST …/entries for it within 30 s; the composer still holds ${JSON.stringify(left)}`
+    );
+  });
+  assert.equal(response.status(), 201, `posting ${preview} answered ${response.status()}, not 201`);
+  const { entry } = (await response.json()) as { entry: PostedEntry };
+  return { liveWaitMs, entry };
+}
+
+/** The confirmed entry a send's 201 carries; only the fields the steps read. */
+export interface PostedEntry {
+  id: string;
+  text: string;
+  /** The entry at the head of this entry's thread, or `null` when top-level. */
+  threadRootEntryId: string | null;
+}
+
+/** What {@link send} reports about one confirmed post. */
+export interface SendReceipt {
+  /** From the start of the send until the channel was live and Send enabled. */
+  liveWaitMs: number;
+  entry: PostedEntry;
+}
+
+/**
+ * A channel's whole top-level history through an app's connection, oldest
+ * first, following the cursor to the end (see {@link readAllEntries}).
+ *
+ * @param local - The app whose connection reads.
+ * @param ref - That app's connection ref.
+ * @param roomId - The channel.
+ */
+export function channelEntries<T>(local: Desktop, ref: string, roomId: string): Promise<T[]> {
+  return readAllEntries((cursor) =>
+    json<EntryPage<T>>(
+      `${local.origin}/api/communities/${ref}/rooms/${roomId}/entries?limit=100${
+        cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''
+      }`
+    )
+  );
 }
 
 /**

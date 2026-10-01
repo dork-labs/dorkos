@@ -132,7 +132,7 @@ const SYSTEM_LOCK_REASON = 'DorkBot’s name, face and description are part of D
 
 /** Why your email is not editable here. */
 const EMAIL_LOCK_REASON =
-  'Your email comes from the account you signed in with. Change it in Settings › Security.';
+  'Your email comes from the account you signed in with. Change it in Settings › Login & security.';
 
 /**
  * One room, written the way the rest of the cockpit writes it.

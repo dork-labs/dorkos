@@ -50,7 +50,7 @@ Sometimes setup cannot tell whether a create worked, for example when a request 
 dorkos community deploy --remove-uncertain <run-id>
 ```
 
-It reads the one unresolved resource, a Fly app, a Neon project or a Tigris file bucket, and removes it only when DorkOS can prove your launch made it. For an app or a project, the proof is the code that setup saved before the create, read back from that resource, plus a creation time within a few minutes of the request. A bucket has no code of its own. Instead, it must be attached to your launch's Fly app, and that app must still carry your launch's code. When DorkOS can prove it, it shows the resource, its owner, when it was made and what it holds, and asks you to type the resource's id: for a Fly app, its internal id (never its name); for a Neon project, the project id; for a bucket, the add-on id. Removing a bucket deletes every file in it, and also removes the bucket's two access keys (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`) from your Fly app. The files cannot be recovered. Just before deleting, it checks everything again. When it cannot prove it, it removes nothing and prints the reason with the commands to check and remove it yourself. A launch started before these codes existed can never be proved. Outside a terminal, add `--confirm <id>` with the id it printed; the same checks still apply. After a removal, `--resume` continues the same launch. If Fly is still releasing the app name, wait a few minutes and resume again.
+It reads the one unresolved resource, a Fly app, a Neon project or a Tigris file bucket, and removes it only when DorkOS can prove your launch made it. For an app or a project, the proof is the code that setup saved before the create, read back from that resource, plus a creation time within a few minutes of the request. A bucket has no code of its own. Instead, it must be attached to your launch's Fly app, and that app must still carry your launch's code. When DorkOS can prove it, it shows the resource, its owner, when it was made and what it holds, and asks you to type the resource's id: for a Fly app, its internal id (never its name); for a Neon project, the project id; for a bucket, the add-on id. Just before deleting, it checks everything again. Removing a bucket deletes every file in it, and takes the bucket's access key (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`) off your Fly app. The files cannot be recovered. Tigris keeps the access key itself, and it still works: Fly does not delete it with the bucket, and DorkOS cannot. After the removal, DorkOS shows you how to delete it. Run `fly storage dashboard --org <your-org>`, open Access Keys, and delete the key named after the bucket (usually `<bucket>_access_key`). Or use the Tigris command-line tool: `tigris login oauth` (choose "Sign in with Fly"), `tigris access-keys list` to find the key's id (it starts with `tid_`), then `tigris access-keys delete <id>`. When it cannot prove it, it removes nothing and prints the reason with the commands to check and remove it yourself. A launch started before these codes existed can never be proved. Outside a terminal, add `--confirm <id>` with the id it printed; the same checks still apply. After a removal, `--resume` continues the same launch. If Fly is still releasing the app name, wait a few minutes and resume again.
 
 Fly may require you to accept the Tigris terms separately. The command checks the current terms state and pauses for an explicit second confirmation before creating the bucket. Owner signup remains in Community's own browser page. After signup, the command applies a replacement Setup secret and asks you to confirm one post and one private attachment round trip.
 
@@ -208,22 +208,28 @@ Guided setup gives you a running community. It does not give you a backup. The c
 What has been tried so far:
 
 - The same approach (pause writes, export the database, copy every file, restore both into Docker on your own computer) worked once on September 20, 2026, on a community set up by hand with the same three services: Fly, Neon and Tigris.
-- The exact commands below have not yet been followed on a community made with guided setup.
-- The upgrade and roll-back steps are **not yet rehearsed on guided setup**.
-- Every `fly` and `neonctl` command below was checked against the help output of flyctl 0.4.104 and neonctl 5.0.0, the lowest versions the current release accepts.
+- Steps 1 through 6 were followed on October 1, 2026 (UTC), on a community made with guided setup (v0.94.0), with the database role's real name, the correction below, folded in. From step 7, only `fly config save` (with its own correction below) and a redeploy of the same release (same image digest) were tried; the next release's manifest was not downloaded or checked, its `migrationCompatibilityId` was not compared, and no actual version upgrade was made.
+- The cross-version upgrade in step 7, and the roll-back in step 8, are **not yet rehearsed on guided setup**.
+- Every `fly` and `neonctl` command in steps 1 through 6, plus `fly config save` and `fly deploy` of the same image in step 7, was checked against the help output of flyctl 0.4.104 and neonctl 5.0.0, the lowest versions the current release accepts, and also run live against flyctl 0.4.110 and neonctl 7.0.1. The Tigris CLI commands in step 4 were run live against Tigris CLI 3.14.0.
 
 You need the same `fly`, `neonctl` and `gh` tools guided setup asked for, plus `jq`, PostgreSQL 17 client tools (`pg_dump`, `pg_restore`), an S3 command-line client such as the [AWS CLI](https://aws.amazon.com/cli/), and Docker for the restore rehearsal. Replace every `<placeholder>` with your own value.
 
 ### 1. Find what is running
 
-Guided setup keeps a record of what it made, called the setup journal. It printed the journal's path when it started. The file is `launches/community/<run-id>.json` inside your DorkOS data directory: `~/.dork` for a normal install, or wherever `DORK_HOME` points. The journal holds names and IDs, never secrets. List what you need from it:
+Guided setup keeps a record of what it made, called the setup journal. It printed the journal's path when it started. The file is `launches/community/<run-id>.json` inside your DorkOS data directory: `~/.dork` for a normal install, or wherever `DORK_HOME` points. The journal holds names and IDs, never secrets. List what you need from it, including the database role guided setup created:
 
 ```bash
 journal=~/.dork/launches/community/<run-id>.json
 jq '{version: .recoveryContext.version, app: .recoveryContext.appName,
   bucket: .recoveryContext.bucketName, releaseDigest, imagePlatformDigest,
-  neonProject: .resources.neonProjectId, neonBranch: .resources.neonBranchId}' "$journal"
+  neonProject: .resources.neonProjectId, neonBranch: .resources.neonBranchId,
+  neonRole: .resources.neonRoleId}' "$journal"
+database_role="$(jq -er '.resources.neonRoleId // empty' "$journal")"
 ```
+
+Guided setup names this role `community_` plus a code of its own. A launch started before these codes existed used the fixed name `community_owner` instead. Either way, the journal holds whichever name yours got. The commands below call it `$database_role`.
+
+`journal` and `database_role` are shell variables: they last only for this terminal. In any new terminal, re-run the `journal=` and `database_role=` lines above before steps 3, 6, 7 or 8.
 
 The journal describes the day of setup. After an upgrade, ask Fly what is running now:
 
@@ -233,7 +239,7 @@ fly machine list --app <app-name> --json \
   | jq -r '.[] | "\(.id) \(.state) \(.image_ref.digest)"'
 ```
 
-Expect exactly one Machine. Two digests name the same release. `releaseDigest` covers the whole release image, for every kind of computer. Fly reports the digest of the one piece that runs on its Machines (Linux on Intel-compatible chips); the journal saves that as `imagePlatformDigest`. Write down the version, both digests and the Machine ID. They belong with your backup.
+Expect exactly one Machine. Two digests name the same release. `releaseDigest` covers the whole release image, for every kind of computer. Fly reports the digest of the one piece that runs on its Machines (Linux on Intel-compatible chips); the journal saves that as `imagePlatformDigest`. Write down the version, both digests, the database role and the Machine ID. They belong with your backup.
 
 ### 2. Pause writes
 
@@ -254,11 +260,12 @@ Do steps 3 and 4 while the Machine is stopped.
 
 ### 3. Export the database
 
-Guided setup made a Neon database named `community`, owned by the role `community_owner`. The app reaches it through the Fly secret `COMMUNITY_DATABASE_URL`, but Fly never shows a secret's value again. Ask Neon for the same direct address instead. The command writes it to a private file, so the password never lands in your shell history:
+Guided setup made a Neon database named `community`, owned by `$database_role` from step 1. The app reaches it through the Fly secret `COMMUNITY_DATABASE_URL`, but Fly never shows a secret's value again. Ask Neon for the same direct address instead. The command writes it to a private file, so the password never lands in your shell history:
 
 ```bash
+: "${database_role:?Run step 1 first}" && \
 neonctl connection-string <neon-branch-id> --project-id <neon-project-id> \
-  --database-name community --role-name community_owner \
+  --database-name community --role-name "$database_role" \
   --no-pooled --ssl require > "$backup_dir/database-url"
 ```
 
@@ -270,12 +277,12 @@ A password typed into a command can be seen by other programs on your computer w
 database_url="$(cat "$backup_dir/database-url")"
 database_password="${database_url#*://*:}"; database_password="${database_password%%@*}"
 database_host="${database_url#*@}"; database_host="${database_host%%/*}"
-printf '%s:5432:community:community_owner:%s\n' "$database_host" "$database_password" \
+printf '%s:5432:community:%s:%s\n' "$database_host" "$database_role" "$database_password" \
   > "$backup_dir/pgpass"
 unset database_url database_password
 export PGPASSFILE="$backup_dir/pgpass"
 pg_dump --format=custom --file="$backup_dir/database.dump" \
-  --dbname="postgresql://community_owner@$database_host/community?sslmode=require&channel_binding=require"
+  --dbname="postgresql://$database_role@$database_host/community?sslmode=require&channel_binding=require"
 pg_restore --list "$backup_dir/database.dump" > /dev/null
 ```
 
@@ -285,11 +292,30 @@ Your `pg_dump` must be version 17 or newer, because guided setup creates a Postg
 
 ### 4. Copy every file
 
-Community keeps uploaded files in the private Tigris bucket named in the journal. The app's own keys are the Fly secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, and Fly will not show them again. Make a separate key for backups instead:
+Community keeps uploaded files in the private Tigris bucket named in the journal. The app's own keys are the Fly secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, and Fly will not show them again. Make a separate key for backups instead, from the dashboard or the command line. Read-only access is enough for a backup; a roll-back (step 8) needs write access.
+
+**From the dashboard:**
 
 1. Run `fly storage dashboard <bucket-name>` to open the bucket in the Tigris dashboard.
-2. Create an access key limited to this bucket. Read-only access is enough for a backup. A roll-back (step 8) needs write access.
+2. Create an access key limited to this bucket.
 3. Save the key in your password manager.
+
+**From the command line:** install the Tigris CLI, then sign in with `tigris login oauth` (choose "Sign in with Fly"):
+
+```bash
+npm install -g @tigrisdata/cli
+tigris login oauth
+```
+
+A roll-back (step 8) needs write access instead: use `--role ReadWrite` in place of `--role ReadOnly` below, which is enough to put files back. Run `umask 077` first in the same shell, or `chmod 600` the file afterward, so only you can read it. Create a read-only key for this bucket:
+
+```bash
+umask 077
+tigris access-keys create community-backup --bucket <bucket-name> --role ReadOnly \
+  --env ~/.community-backup-tigris.env --for aws
+```
+
+Copy the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values out of that file and into the credentials file below, then delete it: `rm ~/.community-backup-tigris.env`. Once this recovery set is complete and checked (through step 6), delete the key from Tigris too if you do not want to keep a standing one: find its id with `tigris access-keys list` (it starts with `tid_`), then run `tigris access-keys delete <id>`. The next recovery set needs a new key.
 
 Never make the bucket public to copy it. Put the key in a private credentials file outside the backup folder, then copy the bucket:
 
@@ -328,7 +354,7 @@ A backup you have never restored is a guess. Follow [Rehearse a restore](OPERATI
 
 - Check out the release that was running: `git checkout v<version>`.
 - Pack the copied files into the archive that section expects: `tar -C "$backup_dir/files" -czf "$backup_dir/blobs.tar.gz" .`
-- Add `--no-owner --no-acl` to its `pg_restore` command. The dump belongs to `community_owner`, a role the local database does not have.
+- Add `--no-owner --no-acl` to its `pg_restore` command. The dump belongs to `$database_role` from step 1, a role the local database does not have.
 - Use fresh random values for the three secrets. Guided setup made the sign-in and invitation secrets itself and stored them only in Fly.
 
 Fresh secrets change a few things in the copy. Passwords still work, because they do not depend on those secrets. Browser sessions from the live community will not carry over, and unused invitation links will not open. The same is true if you ever restore onto a new Fly app.
@@ -368,7 +394,7 @@ If its `migrationCompatibilityId` differs from the next release's, the upgrade c
 Next, save the configuration Fly holds for your app. Guided setup deployed with a temporary configuration file and deleted it afterward, so this is how you get one:
 
 ```bash
-fly config save --app <app-name> --config "$backup_dir/fly.toml"
+(cd "$backup_dir" && fly config save --app <app-name>)
 ```
 
 Check that the file still has one `[[vm]]` section, `COMMUNITY_STORAGE_DRIVER = "s3"` and your bucket name. Deploy the new release by its exact digest, the way guided setup does, and keep one Machine:

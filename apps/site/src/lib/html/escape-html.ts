@@ -20,8 +20,7 @@
  * not safe to drop into an unquoted or single-quoted attribute value. Nothing
  * here needs that today: every attribute either carries a value the codebase
  * constructed (a `resolveBaseURL()` origin, a row id) or a module constant.
- * If you ever need to interpolate stranger-supplied text into an attribute,
- * escape the quotes at that call site and say why in a comment.
+ * For an attribute value, use {@link escapeHtmlAttribute}.
  *
  * The ampersand is replaced first on purpose: replacing `<` before `&` would
  * turn an already-escaped `&lt;` into `&amp;lt;` on the next pass.
@@ -30,4 +29,19 @@
  */
 export function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Escape a value for a double- or single-quoted HTML attribute.
+ *
+ * Everything {@link escapeHtml} does, plus both quote characters, so the value
+ * cannot close the attribute it sits in. Use it for every interpolated
+ * attribute, including values the codebase built itself: the escaping costs
+ * nothing, and it keeps the safety of the markup from resting on what a caller
+ * promises to pass.
+ *
+ * @param value - Text destined for a quoted attribute value.
+ */
+export function escapeHtmlAttribute(value: string): string {
+  return escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }

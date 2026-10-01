@@ -88,7 +88,8 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
       )
       .toBe(true);
     await page.keyboard.press('Home');
-    await expect(rows.first()).toBeFocused();
+    // The menu's first row is you (DOR-2628), above the destinations.
+    await expect(menu.getByRole('menuitem').first()).toBeFocused();
     // Typeahead finds a row by its visible label.
     await page.keyboard.type('Bet');
     await expect(menu.getByRole('menuitemradio', { name: /^Beta/ })).toBeFocused();

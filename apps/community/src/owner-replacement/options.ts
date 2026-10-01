@@ -27,3 +27,14 @@ export function ownerReplacementOptions(input: {
     needsPassword: !input.hasPassword,
   };
 }
+
+/**
+ * What an owner without a password is told to do, in the email and the banner. Only an `active`
+ * community can be handed to someone, so elsewhere a password opens deletion alone, and the
+ * sentence promises nothing more.
+ */
+export function addPasswordSentence(lifecycle: string): string {
+  return lifecycle === 'active'
+    ? 'To hand it to someone or delete it, add a password to your account first.'
+    : 'To delete it, add a password to your account first.';
+}

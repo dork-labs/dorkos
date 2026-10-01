@@ -638,7 +638,7 @@ describe('ManagedAuthoritySyncService', () => {
       authoritySync: {
         status: 'failed',
         reason:
-          'Your DorkOS account link needs updating. Link this computer again in Settings › Access.',
+          'Your DorkOS account link needs updating. Link this computer again in Settings › DorkOS account.',
       },
       applied: false,
       externalCleanup: 'not_required',
@@ -647,7 +647,7 @@ describe('ManagedAuthoritySyncService', () => {
     expect(row).toMatchObject({
       state: 'rejected',
       safeReason:
-        'Your DorkOS account link needs updating. Link this computer again in Settings › Access.',
+        'Your DorkOS account link needs updating. Link this computer again in Settings › DorkOS account.',
       nextAttemptAt: null,
     });
     expect(JSON.stringify(row)).not.toContain('secret hosted');

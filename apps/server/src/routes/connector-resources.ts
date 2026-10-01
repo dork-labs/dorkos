@@ -40,6 +40,8 @@ import {
   type ConnectorSessionAccessService,
 } from '../services/connectors/resources/session-access-service.js';
 import type { SignInRefresher } from '../services/connectors/resources/sign-in-refresh.js';
+import { logError, logger } from '../lib/logger.js';
+import { sendManagedCloudError } from './managed-cloud-error.js';
 
 const CatalogQuerySchema = z
   .object({
@@ -116,6 +118,9 @@ function sendResourceError(res: Response, error: unknown): void {
     return;
   }
   if (error instanceof ConnectorAppActionsError) {
+    // A listing that failed because the managed cloud refused says which
+    // refusal; a genuine provider outage keeps its own 502.
+    if (error.code === 'actions_unavailable' && sendManagedCloudError(res, error.cause)) return;
     res
       .status(error.code === 'provider_not_found' ? 404 : 502)
       .json({ error: error.message, code: error.code });
@@ -131,6 +136,8 @@ function sendResourceError(res: Response, error: unknown): void {
       .json({ error: error.message, code: error.code });
     return;
   }
+  if (sendManagedCloudError(res, error)) return;
+  logger.error('[Connectors] Connection request failed', logError(error));
   res.status(500).json({ error: 'DorkOS could not complete this connection request. Try again.' });
 }
 

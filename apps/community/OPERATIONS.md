@@ -163,7 +163,7 @@ A suspended community can be put on hold directly. It goes from suspended to on 
 
 Sometimes the person who owns a community leaves, and nobody can manage it any more. If they can still sign in, ask them to hand it over themselves from the community's Settings.
 
-This server has both sides of replacing an owner (`POST /api/v1/host/communities/:id/owner-replacements`, see [the API](API.md#replace-an-owner-who-has-left)): the host's request, and the routes the owner uses to keep ownership and the new owner uses to take it. The pages those emailed links open are not built yet, so until they are, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE`, even with mail set up. Nothing changes for any community.
+This server has both sides of replacing an owner (`POST /api/v1/host/communities/:id/owner-replacements`, see [the API](API.md#replace-an-owner-who-has-left)): the host's request, and the routes the owner uses to keep ownership and the new owner uses to take it. The pages those emailed links open are in place, but the owner is not yet told on their DorkOS connection, so until they are, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE`, even with mail set up. Nothing changes for any community.
 
 Once requests open, the server emails the owner, waits at least 7 days (30 whenever the notice could not be delivered, the address was never confirmed by a sign-in service, the owner kept ownership before, or the reason is that the owner left the group), reminds them 2 days before the end, and then gives the new owner 14 days before the request expires. What you can prepare now:
 

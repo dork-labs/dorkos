@@ -272,10 +272,12 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
   it('arms the guard inside the context switcher, so no caller can bypass it', () => {
     const switcher = SOURCE.get(SWITCHER) ?? '';
     // The switcher builds the real rows itself — its lifecycle rows handed to
-    // the header menu, which appends settings, account and version — and
-    // guards the combined list once.
+    // the header menu, which adds you, the DorkOS account and Settings above
+    // and the version line below — and guards the combined list once.
     expect(count(switcher, /useHeaderBlockMenu\(contextNodes\)/)).toBe(1);
-    expect(count(switcher, /useGuardedMenuNodes\(menu\.nodes\)/)).toBe(1);
+    expect(
+      count(switcher, /useGuardedMenuNodes\(\[\.\.\.menu\.identityNodes, \.\.\.menu\.nodes\]\)/)
+    ).toBe(1);
     // Every content it renders restores focus through the guard and draws the
     // guarded list, never a raw one.
     const contents = count(switcher, /<ResponsiveDropdownMenuContent\b/);
@@ -286,8 +288,13 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
     expect(switcher).toMatch(
       /function handleCloseAutoFocus\(event: Event\) \{\n\s*guarded\.onCloseAutoFocus\(event\);/
     );
-    expect(count(switcher, /<SidebarMenuNodes\b/)).toBe(contents);
-    expect(count(switcher, /nodes=\{guarded\.nodes\}/)).toBe(contents);
+    // Two runs of rows (above and below the destinations), each drawn from a
+    // slice of the ONE guarded list, never from the raw one.
+    expect(count(switcher, /<SidebarMenuNodes\b/)).toBe(2 * contents);
+    expect(count(switcher, /= guarded\.nodes\.slice\(/)).toBe(2);
+    expect(count(switcher, /nodes=\{identityNodes\}/)).toBe(contents);
+    expect(count(switcher, /nodes=\{actionNodes\}/)).toBe(contents);
+    expect(switcher).not.toMatch(/nodes=\{menu\./);
     // Its props take no rows and no close handler, so a caller has nothing to
     // pass that could replace them.
     const props = /export interface CommunityContextSwitcherProps \{([\s\S]*?)\n\}/.exec(switcher);

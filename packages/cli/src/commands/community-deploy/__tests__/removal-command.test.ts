@@ -12,7 +12,11 @@ import {
   type LaunchJournal,
 } from '../journal.js';
 import { runRemoveUncertainCommand } from '../provenance/removal-command.js';
-import { formatRemovalOutcome, unprovedReasonText } from '../provenance/removal-output.js';
+import {
+  formatRemovalOffer,
+  formatRemovalOutcome,
+  unprovedReasonText,
+} from '../provenance/removal-output.js';
 import type { UncertainResourceProbe } from '../provenance/uncertain-removal.js';
 
 const RUN_ID = '3f2c9a1e-1111-4111-8111-111111111111';
@@ -194,6 +198,94 @@ describe('--remove-uncertain output', () => {
     const result = formatRemovalOutcome(outcome, context);
     expect(result.exitCode).toBe(exitCode);
     expect(result.text).toContain(phrase);
+  });
+
+  // DOR-2646: Fly deletes the bucket but leaves its Tigris access key active. The bucket and its app
+  // have different names here, so a key name taken from the app instead of the bucket goes red.
+  describe('a removed Tigris bucket', () => {
+    const bucket = {
+      provider: 'tigris' as const,
+      token: 'addon-5',
+      resourceName: 'files-acme',
+      organization: 'acme',
+      proof: 'binding' as const,
+      appName: 'community-acme',
+    };
+
+    it('says the access key is still active in Tigris and how to delete it', () => {
+      const { text, exitCode } = formatRemovalOutcome(
+        { outcome: 'removed', target: bucket, nameReleased: null },
+        context
+      );
+      expect(exitCode).toBe(0);
+      expect(text).toContain(
+        'Removed Tigris bucket files-acme (add-on id addon-5) and took its access key off app community-acme.'
+      );
+      expect(text).toContain(
+        'Tigris still has the access key Fly made for bucket files-acme, and it still works.'
+      );
+      expect(text).toContain('fly storage dashboard --org acme');
+      expect(text).toContain(
+        'The key is named after the bucket, usually files-acme_access_key: look for it in the list and delete it.'
+      );
+      expect(text).toContain('tigris login oauth            (choose "Sign in with Fly")');
+      expect(text).toContain('its id starts with tid_');
+      expect(text).toContain('tigris access-keys delete <id>');
+      expect(text).not.toContain('community-acme_access_key');
+      // Never claims the key itself was removed.
+      expect(text).not.toMatch(/and its (two )?access keys?/iu);
+      expect(text).not.toMatch(/provider|adapter|connector|integration/iu);
+    });
+
+    it('says on the confirmation screen that Tigris keeps the key', () => {
+      const text = formatRemovalOffer(
+        {
+          ...bucket,
+          createdAt: '2026-09-23T10:31:07Z',
+          proofValue: `dorkos-${MARKER}`,
+          contents: 'no files',
+        },
+        [],
+        context
+      );
+      expect(text).toContain(
+        'Removing it deletes this bucket and every file in it, and takes its access key off app community-acme. Tigris keeps the key itself until you delete it, and DorkOS shows you how once the bucket is gone.'
+      );
+      expect(text).not.toMatch(/removes its (two )?access keys?/iu);
+    });
+
+    it('names the access key in the steps for removing the bucket by hand', () => {
+      const { text } = formatRemovalOutcome(
+        {
+          outcome: 'unproved',
+          provider: 'tigris',
+          reason: 'no-match',
+          candidates: [],
+        },
+        {
+          ...context,
+          journal: journal({
+            pendingIntent: {
+              provider: 'tigris',
+              organizationId: 'acme',
+              resourceName: 'files-acme',
+              requestedAt: '2026-09-23T10:31:03.000Z',
+            },
+          }),
+        }
+      );
+      expect(text).toContain('Remove:  fly storage destroy files-acme');
+      expect(text).toContain('usually files-acme_access_key');
+      expect(text).not.toContain('community-acme_access_key');
+    });
+
+    it('leaves Fly apps and Neon projects without the access-key steps', () => {
+      const { text } = formatRemovalOutcome(
+        { outcome: 'removed', target, nameReleased: true },
+        context
+      );
+      expect(text).not.toContain('access key');
+    });
   });
 
   it('keeps the retired nouns out of every reason', () => {

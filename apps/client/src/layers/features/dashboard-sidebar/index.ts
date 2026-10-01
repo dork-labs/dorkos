@@ -27,6 +27,7 @@ export { useSwitchContextShortcut } from './model/use-switch-context-shortcut';
 // retired `SidebarNavHeader`, tour anchor and all, so the tour-anchor guard
 // mounts THIS at both widths for the reason it always mounted that.
 export { SidebarFooterStrip, useAskDorkBot } from './ui/SidebarFooterStrip';
+export { YouRows } from './ui/context/YouRows';
 // The panel's one bottom card — arbitrated, pinned above the footer, and
 // mounted by the phone cockpit's Home panel too (spec `sidebar-simplification`
 // D4).
@@ -100,7 +101,10 @@ export {
 // The chrome menus as data, for the same reason: the playground shows the
 // header block's menu at three rows and at six, and the New menu at both fleet
 // sizes, without standing up a roster and a router behind them.
-export { buildHeaderBlockMenuNodes } from './ui/header-block-menu';
+export {
+  buildHeaderBlockIdentityNodes,
+  buildHeaderBlockVersionNodes,
+} from './ui/header-block-menu';
 export { buildNewMenuNodes, NewMenu } from './ui/NewMenu';
 // The two halves of the header block, exported so the Dev Playground shows the
 // REAL controls rather than a copy of their markup. A showcase that draws a

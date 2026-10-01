@@ -52,6 +52,7 @@ import {
   SidebarFooterStrip,
   SidebarHeaderBlock,
   SidebarZones,
+  YouRows,
   useAskDorkBot,
   useLegacyPinMigration,
   useLiveRegionText,
@@ -277,6 +278,9 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
         <MobileTabPanel id="you" active={active === 'you'}>
           <PageContainer width="full" className="px-3 py-4">
             <h1 className="text-foreground px-2 pb-2 text-sm font-semibold">You</h1>
+            {/* You, then your DorkOS account: the header menu's first two
+                rows, at the top of the tab that holds who you are. */}
+            <YouRows />
             {/* The same strip the desktop panel's footer carries, and the same
                 one implementation of the four places DorkOS goes — including
                 the `nav-agents` anchor, which would otherwise exist only at

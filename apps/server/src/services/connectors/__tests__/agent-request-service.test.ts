@@ -851,7 +851,7 @@ describe('ConnectorAgentRequestService', () => {
     });
 
     it.each([
-      ['dorkos_account_unlinked', "isn't linked anymore", 'Settings › Access'],
+      ['dorkos_account_unlinked', "isn't linked anymore", 'Settings › DorkOS account'],
       ['dorkos_account_unavailable', 'is linked but cannot reach apps', 'Try again later'],
       ['own_key_unavailable', "isn't set up or didn't answer", 'Settings › Connections'],
     ] as const)(

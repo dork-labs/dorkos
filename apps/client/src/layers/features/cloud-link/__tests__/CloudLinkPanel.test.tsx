@@ -18,7 +18,9 @@ function renderPanel(transport: Transport) {
   render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <CloudLinkPanel />
+        <CloudLinkPanel signedOut={<p>What an account adds here</p>}>
+          <p>Plan sections</p>
+        </CloudLinkPanel>
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -44,9 +46,10 @@ describe('CloudLinkPanel', () => {
     renderPanel(transport);
     // The section and its entry point render off the transport alone. The
     // panel does not title itself — the Settings dialog draws that heading
-    // (DOR-918) — so the explainer is what identifies the section here.
-    expect(screen.getByText(/link this instance to a dorkos account/i)).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /link this instance/i })).toBeInTheDocument();
+    // (DOR-918) — and the explainer is its caller's, drawn above the button.
+    expect(await screen.findByText('What an account adds here')).toBeInTheDocument();
+    expect(screen.queryByText('Plan sections')).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /link this computer/i })).toBeInTheDocument();
   });
 
   it('link flow: shows the user code + activation link, then the account label in place when linked', async () => {
@@ -63,7 +66,7 @@ describe('CloudLinkPanel', () => {
     cache.setQueryData(connectorKeys.providers(), []);
 
     await flush();
-    const linkBtn = screen.getByRole('button', { name: /link this instance/i });
+    const linkBtn = screen.getByRole('button', { name: /link this computer/i });
 
     // Subsequent status polls report the linked outcome.
     vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
@@ -79,6 +82,8 @@ describe('CloudLinkPanel', () => {
 
     // Pending: the code and the activation link are shown.
     expect(screen.getByText('WXYZ7890')).toBeInTheDocument();
+    // A first link: nothing is linked yet, so no "stays linked" line.
+    expect(screen.queryByText(/stays linked until you approve/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /open the approval page/i })).toBeInTheDocument();
 
     // Poll fires → linked. Same panel instance updates in place.
@@ -107,12 +112,12 @@ describe('CloudLinkPanel', () => {
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 
-  it('revoked: renders "This instance was unlinked" and a re-link action', async () => {
+  it('revoked: renders "This computer was unlinked" and a re-link action', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'unlinked' });
     renderPanel(transport);
 
-    expect(await screen.findByText(/this instance was unlinked/i)).toBeInTheDocument();
+    expect(await screen.findByText(/this computer was unlinked/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /link again/i })).toBeInTheDocument();
   });
 
@@ -129,11 +134,15 @@ describe('CloudLinkPanel', () => {
     cache.setQueryData(connectorKeys.catalog('gmail'), { pages: [] });
     cache.setQueryData(connectorKeys.providers(), []);
 
-    // Linked view from the settled summary.
+    // Linked view from the settled summary: the account line, the caller's
+    // signed-in sections, and no signed-out page.
     expect(await screen.findByText('kai@dork.dev')).toBeInTheDocument();
+    expect(screen.getByText('Signed in')).toBeInTheDocument();
+    expect(screen.getByText('Plan sections')).toBeInTheDocument();
+    expect(screen.queryByText('What an account adds here')).not.toBeInTheDocument();
 
     // Open the confirmation and confirm.
-    await user.click(screen.getByRole('button', { name: /unlink this instance/i }));
+    await user.click(screen.getByRole('button', { name: /unlink this computer/i }));
     const confirm = await screen.findByRole('button', { name: /^unlink$/i });
     await user.click(confirm);
 
@@ -141,7 +150,7 @@ describe('CloudLinkPanel', () => {
     expect(cache.getQueryState(connectorKeys.catalog('gmail'))?.isInvalidated).toBe(true);
     expect(cache.getQueryState(connectorKeys.providers())?.isInvalidated).toBe(true);
     // Returns to the unlinked/idle entry point.
-    expect(await screen.findByRole('button', { name: /link this instance/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /link this computer/i })).toBeInTheDocument();
   });
 
   it('linked: the unlink confirm lists every app that stops and carries the count', async () => {
@@ -217,7 +226,7 @@ describe('CloudLinkPanel', () => {
     vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
     renderPanel(transport);
 
-    await user.click(await screen.findByRole('button', { name: /unlink this instance/i }));
+    await user.click(await screen.findByRole('button', { name: /unlink this computer/i }));
     const confirm = await screen.findByRole('button', { name: 'Unlink and stop 2 apps' });
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveTextContent('These 2 apps will stop working for every agent:');
@@ -243,7 +252,7 @@ describe('CloudLinkPanel', () => {
     vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
     renderPanel(transport);
 
-    await user.click(await screen.findByRole('button', { name: /link this instance/i }));
+    await user.click(await screen.findByRole('button', { name: /link this computer/i }));
     await user.click(await screen.findByRole('button', { name: /open the approval page/i }));
 
     expect(openSpy).toHaveBeenCalledTimes(1);
@@ -271,7 +280,7 @@ describe('CloudLinkPanel', () => {
     expect(checkbox).not.toBeChecked();
 
     await user.click(checkbox);
-    await user.click(screen.getByRole('button', { name: /link this instance/i }));
+    await user.click(screen.getByRole('button', { name: /link this computer/i }));
 
     // The flag was persisted with the opt-in value.
     await waitFor(() =>
@@ -297,7 +306,7 @@ describe('CloudLinkPanel', () => {
     });
     renderPanel(transport);
 
-    await user.click(await screen.findByRole('button', { name: /link this instance/i }));
+    await user.click(await screen.findByRole('button', { name: /link this computer/i }));
 
     await waitFor(() =>
       expect(transport.updateConfig).toHaveBeenCalledWith({
@@ -314,7 +323,7 @@ describe('CloudLinkPanel', () => {
     vi.mocked(transport.updateConfig).mockRejectedValue(new Error('write failed'));
     renderPanel(transport);
 
-    await user.click(await screen.findByRole('button', { name: /link this instance/i }));
+    await user.click(await screen.findByRole('button', { name: /link this computer/i }));
 
     // The failure surfaces honestly and the handshake NEVER fires — proceeding
     // would act on the stale persisted flag (worst case: a withdrawal that
@@ -322,7 +331,7 @@ describe('CloudLinkPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t save your choice/i);
     expect(transport.startCloudLink).not.toHaveBeenCalled();
     // The user stays on the idle entry point, free to retry.
-    expect(screen.getByRole('button', { name: /link this instance/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /link this computer/i })).toBeInTheDocument();
   });
 
   it('shows a friendly error when starting the link fails', async () => {
@@ -333,7 +342,7 @@ describe('CloudLinkPanel', () => {
     );
     renderPanel(transport);
 
-    await user.click(await screen.findByRole('button', { name: /link this instance/i }));
+    await user.click(await screen.findByRole('button', { name: /link this computer/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t reach the dorkos cloud/i);
   });
   describe('pending: time left on the code', () => {
@@ -353,7 +362,7 @@ describe('CloudLinkPanel', () => {
       await flush();
       vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'pending' });
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /link this instance/i }));
+        fireEvent.click(screen.getByRole('button', { name: /link this computer/i }));
       });
       await flush();
       return transport;
@@ -450,7 +459,7 @@ describe('CloudLinkPanel', () => {
       renderPanel(transport);
       await flush();
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /link this instance/i }));
+        fireEvent.click(screen.getByRole('button', { name: /link this computer/i }));
       });
       await flush();
 

@@ -36,6 +36,7 @@ import { cn, formatShortcutKey, openLink, SHORTCUTS, useCopyFeedback } from '@/l
 import { useConfig } from '@/layers/entities/config';
 import { AccountMenuContainer } from '@/layers/features/profile';
 import { HelpMenuItems } from '@/layers/features/report-issue';
+import { useCurrentUser } from '@/layers/features/auth';
 
 /**
  * The shape a footer control takes when the You tab gives it a whole row:
@@ -56,13 +57,21 @@ export const FOOTER_LABELLED_ROW = cn(
 );
 
 /**
- * What the fold is called once it has room for a name.
+ * What the fold is called once it has room for a name — the phone, where help
+ * and feedback sit outside it as rows of their own.
  *
- * Named for what is behind it rather than for the fact that it is a fold: your
- * account first, then Settings, the theme, help and feedback. "More" is what a
- * control is called when nobody has decided what it holds.
+ * Named for what is behind it rather than for the fact that it is a fold, and
+ * true in both states: the theme always, and signing out only on an install
+ * that has a login to sign out of (login is off by default, ADR-0320). "More"
+ * is what a control is called when nobody has decided what it holds. It never
+ * says "account": that word means the DorkOS account, which has its own row at
+ * the top of the You tab (DOR-2628).
+ *
+ * @param canSignOut - Whether this install has a local session to end.
  */
-const ACCOUNT_MENU_LABEL = 'Account and settings';
+function foldLabel(canSignOut: boolean): string {
+  return canSignOut ? 'Sign out and theme' : 'Theme';
+}
 
 /** The cycle the theme item walks. */
 const THEME_ORDER: Theme[] = ['light', 'dark', 'system'];
@@ -102,6 +111,7 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
   const { devtoolsOpen, routerDevtoolsOpen, toggleDevtools, toggleRouterDevtools } = useAppStore();
   const { data: config } = useConfig();
   const version = config?.version;
+  const label = foldLabel(useCurrentUser() !== null);
   // Pressing the item closes the menu, so there is no chrome left to morph a
   // check mark into — the toast fallback is the pattern for exactly that
   // (`useCopyFeedback`'s TSDoc). Before this it was a bare
@@ -147,7 +157,7 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={labelled ? ACCOUNT_MENU_LABEL : 'More'}
+          aria-label={labelled ? label : 'More'}
           data-testid="sidebar-footer-menu-trigger"
           className={cn(
             'hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring transition-colors duration-150',
@@ -161,13 +171,13 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
           ) : (
             <MoreHorizontal className="size-(--size-icon-sm)" />
           )}
-          {labelled && ACCOUNT_MENU_LABEL}
+          {labelled && label}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" className="w-56">
         {}
         {/* Both of the account block's doors yield to the header block, which
-            BC-43 gives "Workspace settings" and "Account". Two menus offering
+            BC-43 gives "Settings" and your profile ("you"). Two menus offering
             one dialog under two different names is the same defect as one menu
             doing it, with more distance between the rows to make it harder to
             notice. What stays is what the header menu does NOT carry: who you

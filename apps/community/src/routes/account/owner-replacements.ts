@@ -79,6 +79,7 @@ export function registerOwnerReplacementLinkRoutes(
     return json(c, CommunityWireOwnerReplacementObjectPreflightResponseSchema, {
       communityName: row.name,
       claimableAfter: row.claimable_after?.toISOString() ?? null,
+      objectionCooldownDays: config.ownerReplacement.objectionCooldownDays,
     });
   });
 

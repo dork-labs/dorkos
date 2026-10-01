@@ -34,6 +34,7 @@ import {
   type ConnectorAgentRequestService,
 } from '../services/connectors/agent-request-service.js';
 import { ConnectorSubscriptionError } from '../services/connectors/events/subscription-store.js';
+import { sendManagedCloudError } from './managed-cloud-error.js';
 
 const ReviewListQuerySchema = z
   .object({ state: z.enum(['pending', 'resolved']).optional() })
@@ -259,6 +260,7 @@ function sendManagementError(res: Response, error: unknown): void {
     res.status(status).json({ error: error.message, code: error.code });
     return;
   }
+  if (sendManagedCloudError(res, error)) return;
   throw error;
 }
 

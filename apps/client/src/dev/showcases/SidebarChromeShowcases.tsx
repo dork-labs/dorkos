@@ -21,7 +21,8 @@
 import { Users } from 'lucide-react';
 import { SidebarMenuSurface, type SidebarMenuNode } from '@/layers/shared/ui';
 import {
-  buildHeaderBlockMenuNodes,
+  buildHeaderBlockIdentityNodes,
+  buildHeaderBlockVersionNodes,
   buildNewMenuNodes,
   NewMenu,
   SidebarHeaderBlock,
@@ -65,13 +66,18 @@ function MenuTarget({ nodes, label }: { nodes: SidebarMenuNode[]; label: string 
 
 /** The header block, live, plus the growth case its menu is built for. */
 function SidebarHeaderBlockShowcase() {
-  const short = buildHeaderBlockMenuNodes({
-    onOpenSettings: noop,
+  const identity = buildHeaderBlockIdentityNodes({
+    you: null,
+    accountStatus: 'Not signed in',
     onOpenAccount: noop,
+    onOpenSettings: noop,
+  });
+  const version = buildHeaderBlockVersionNodes({
     version: '0.58.0',
     isDevMode: false,
     onCheckForUpdates: noop,
   });
+  const short = [...identity, ...version];
   const community = (id: string, label: string): SidebarMenuNode => ({
     kind: 'action',
     id,
@@ -83,17 +89,17 @@ function SidebarHeaderBlockShowcase() {
   // What "communities shipped" looks like from inside the menu: more rows, in
   // the same list, above the version line.
   const long: SidebarMenuNode[] = [
-    ...short.slice(0, 2),
+    ...identity,
     { kind: 'separator', id: 'sep-communities' },
     community('community-acme', 'Acme Robotics'),
     community('community-side', 'Side project'),
-    ...short.slice(2),
+    ...version,
   ];
 
   return (
     <PlaygroundSection
       title="SidebarHeaderBlock"
-      description="The panel's identity, named after the operator, and a button from day one — press it for Workspace settings, Account and a quiet version line. The New button and the ⌘K pill are its neighbours. This is the real component wired to this install, so the name it shows is whatever your own profile says (or 'Your team' until you have set one)."
+      description="The panel's identity, named after the operator, and a button from day one — press it for you, your DorkOS account, Settings and a quiet version line. The New button and the ⌘K pill are its neighbours. This is the real component wired to this install, so the name it shows is whatever your own profile says (or 'Your team' until you have set one)."
     >
       <ShowcaseLabel>Live — the block, the New button, the ⌘K pill</ShowcaseLabel>
       <ShowcaseDemo>

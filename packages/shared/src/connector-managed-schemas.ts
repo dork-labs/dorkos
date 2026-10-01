@@ -16,6 +16,33 @@ import {
   ConnectorProviderExecuteResultSchema,
 } from './connector-schemas.js';
 
+/** Known legacy managed-connector refusal codes the control plane sends in `error`. */
+export const MANAGED_CONNECTOR_ERROR_CODES = {
+  unauthorized: 'unauthorized',
+  permissionUpgradeRequired: 'permission_upgrade_required',
+  managedConnectorsUnavailable: 'managed_connectors_unavailable',
+  invalidRequest: 'invalid_request',
+  internalError: 'internal_error',
+  notFound: 'not_found',
+  conflict: 'conflict',
+} as const;
+
+/**
+ * The legacy managed-connector error body the control plane sends on any
+ * non-2xx response to `/api/instances/connectors/*`. Tolerant on read
+ * (`.passthrough()`): an extra key the cloud adds later must never turn a
+ * refusal into a parse failure of its own. The control plane vendors this
+ * module byte-for-byte, so a breaking change here is a breaking change there.
+ */
+export const ManagedConnectorErrorBodySchema = z
+  .object({
+    error: z.string().min(1).max(100),
+    reason: z.string().max(1_000).optional(),
+  })
+  .passthrough();
+/** The legacy managed-connector error body. */
+export type ManagedConnectorErrorBody = z.infer<typeof ManagedConnectorErrorBodySchema>;
+
 /** Exact permissions minted onto a newly linked instance key for managed connectors. */
 export const MANAGED_CONNECTOR_INSTANCE_KEY_PERMISSIONS = {
   instance: ['link'],

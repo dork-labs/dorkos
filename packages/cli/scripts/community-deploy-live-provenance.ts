@@ -66,7 +66,8 @@ export interface ProbeFailure {
   code: string;
 }
 
-type Probe<T> = ({ ok: true } & T) | ProbeFailure;
+/** A probe's result: what it read, or a stable failure code. */
+export type Probe<T> = ({ ok: true } & T) | ProbeFailure;
 
 /** Shape of a GraphQL envelope, without any message text. */
 export interface GraphqlEnvelopeSummary {
@@ -88,9 +89,11 @@ export interface GraphqlEnvelopeSummary {
 export interface CommunityLiveProvenanceReceipt {
   /**
    * Version of this block's shape, so the gate-flip PR can cite fields unambiguously. 2 dropped the
-   * leftover-network probe: Fly's API has no read for a private network once its app is gone.
+   * leftover-network probe: Fly's API has no read for a private network once its app is gone. 3
+   * added the `removal` block the gate attaches (DOR-2606): the uncertain-create removal's own
+   * reads against the real launch, before and after cleanup, and each create's real timing.
    */
-  schema: 2;
+  schema: 3;
   fly: Probe<{
     network: string | null;
     journaledNetwork: string | null;
@@ -154,7 +157,12 @@ export function failureCode(error: unknown): string {
   return `${source}:ERROR`;
 }
 
-async function probe<T>(read: () => Promise<T>): Promise<({ ok: true } & T) | ProbeFailure> {
+/**
+ * Run one read, recording a failure as its stable code instead of throwing.
+ *
+ * @param read - The read; its result's fields are spread into the success.
+ */
+export async function probe<T>(read: () => Promise<T>): Promise<Probe<T>> {
   try {
     return { ok: true, ...(await read()) };
   } catch (error) {
@@ -364,7 +372,7 @@ export async function probeCommunityLiveProvenance(
   }));
 
   return {
-    schema: 2,
+    schema: 3,
     fly,
     neon,
     tigrisBinding,
@@ -378,7 +386,7 @@ export async function probeCommunityLiveProvenance(
 export function failedProvenanceReceipt(code: string): CommunityLiveProvenanceReceipt {
   const failed: ProbeFailure = { ok: false, code };
   return {
-    schema: 2,
+    schema: 3,
     fly: failed,
     neon: failed,
     tigrisBinding: failed,
@@ -392,25 +400,28 @@ export function failedProvenanceReceipt(code: string): CommunityLiveProvenanceRe
 export const PROVENANCE_PROBE_DEADLINE_MS = 8 * 60_000;
 
 /**
- * Run the probes so that cleanup never depends on them: a throw becomes `guard:PROBE_THREW` and a
- * run that has not settled by the deadline becomes `guard:PROBE_DEADLINE`. Resolves; never rejects.
+ * Run a probe run so that cleanup never depends on it: a throw becomes `guard:PROBE_THREW` and a
+ * run that has not settled by the deadline becomes `guard:PROBE_DEADLINE`, each through `failed`.
+ * Resolves; never rejects.
  *
  * @param run - The probe run, started inside this guard so even a synchronous throw is caught.
+ * @param failed - The receipt to record in the run's place, given the guard's code.
  * @param deadlineMs - Overall deadline.
  */
-export async function guardCommunityLiveProvenance(
-  run: () => Promise<CommunityLiveProvenanceReceipt>,
-  deadlineMs: number = PROVENANCE_PROBE_DEADLINE_MS
-): Promise<CommunityLiveProvenanceReceipt> {
+export async function guardProbeRun<T>(
+  run: () => Promise<T>,
+  failed: (code: string) => T,
+  deadlineMs: number
+): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
-  const deadline = new Promise<CommunityLiveProvenanceReceipt>((resolve) => {
-    timer = setTimeout(() => resolve(failedProvenanceReceipt('guard:PROBE_DEADLINE')), deadlineMs);
+  const deadline = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(failed('guard:PROBE_DEADLINE')), deadlineMs);
   });
   const guarded = (async () => {
     try {
       return await run();
     } catch {
-      return failedProvenanceReceipt('guard:PROBE_THREW');
+      return failed('guard:PROBE_THREW');
     }
   })();
   try {
@@ -418,4 +429,17 @@ export async function guardCommunityLiveProvenance(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Run the marker probes under {@link guardProbeRun}, so cleanup never depends on them.
+ *
+ * @param run - The probe run.
+ * @param deadlineMs - Overall deadline.
+ */
+export async function guardCommunityLiveProvenance(
+  run: () => Promise<CommunityLiveProvenanceReceipt>,
+  deadlineMs: number = PROVENANCE_PROBE_DEADLINE_MS
+): Promise<CommunityLiveProvenanceReceipt> {
+  return guardProbeRun(run, failedProvenanceReceipt, deadlineMs);
 }

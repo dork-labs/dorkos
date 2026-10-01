@@ -528,6 +528,10 @@ export const CommunityAdminOwnerReplacementSchema = z.strictObject({
   }),
   /** Which waiting period applies; null until the notice resolves. */
   wait: z.enum(['standard', 'long']).nullable(),
+  /** The owner kept ownership against an earlier request, so this one has the longer wait. */
+  afterObjection: z.boolean(),
+  /** A request was withdrawn in the 30 days before this one, so it has the longer wait. */
+  afterWithdrawal: z.boolean(),
   claimableAfter: timestamp.nullable(),
   claimExpiresAt: timestamp.nullable(),
   claimReissuedAt: timestamp.nullable(),

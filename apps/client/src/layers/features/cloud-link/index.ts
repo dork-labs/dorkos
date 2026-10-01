@@ -15,4 +15,9 @@ export {
   CLOUD_ELIGIBILITY_URL,
   type CloudEligibilityNoteProps,
 } from './ui/CloudEligibilityNote';
-export { useCloudLink, cloudStatusKey, type CloudLinkView } from './model/use-cloud-link';
+export {
+  useCloudLink,
+  useCloudStatus,
+  cloudStatusKey,
+  type CloudLinkView,
+} from './model/use-cloud-link';

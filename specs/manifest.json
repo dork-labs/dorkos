@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260930-230338",
+      "slug": "dorkos-account-by-default",
+      "title": "DorkOS account by default: discovery, usage and management",
+      "created": "2026-09-30",
+      "status": "ideation"
+    },
+    {
       "id": "260930-032224",
       "slug": "community-launch-acceptance",
       "title": "Verify launch-to-first-conversation and publish the entry point",
@@ -292,7 +299,7 @@
       "slug": "community-self-host-launcher",
       "title": "Guided Community self-host launch",
       "created": "2026-09-20",
-      "status": "decomposed",
+      "status": "implemented",
       "project": "Community Self-Hosting"
     },
     {
@@ -3446,6 +3453,14 @@
       "created": "2026-09-26",
       "status": "implemented",
       "linearIssue": "DOR-2355"
+    },
+    {
+      "id": "260930-205620",
+      "slug": "managed-cloud-error-honesty",
+      "title": "Make managed cloud refusals diagnosable and honest in logs, routes and the access card",
+      "created": "2026-09-30",
+      "status": "specified",
+      "linearIssue": "DOR-2622"
     }
   ]
 }

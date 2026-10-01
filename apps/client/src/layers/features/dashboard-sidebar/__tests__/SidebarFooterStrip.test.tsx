@@ -122,6 +122,8 @@ vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
 // The account rows read the roster, the auth session and two deep links; this
 // suite is about the strip's own layout, so they stand in. Their behaviour is
 // pinned in `features/profile`'s own suite.
+let mockCurrentUser: { email: string } | null = null;
+vi.mock('@/layers/features/auth', () => ({ useCurrentUser: () => mockCurrentUser }));
 vi.mock('@/layers/features/profile', () => ({
   AccountMenuContainer: () => <div data-testid="account-menu-rows" />,
 }));
@@ -313,7 +315,7 @@ describe('SidebarFooterStrip', () => {
   });
 
   it('offers no Settings row of its own — the header block’s menu is the one door', async () => {
-    // P2.4's header block carries "Workspace settings" (BC-43), so the built-in
+    // P2.4's header block carries "Settings" (BC-43), so the built-in
     // `settings` contribution retired rather than leaving one dialog behind two
     // differently-named rows in two menus. Deleting the assertion would have
     // been the cheap way out; this one fails if the row comes back.
@@ -499,11 +501,26 @@ describe('SidebarFooterStrip', () => {
     });
 
     it('says what the fold holds instead of calling itself "More"', () => {
+      mockCurrentUser = null;
       renderStrip();
       const trigger = screen.getByTestId('sidebar-footer-menu-trigger');
-      expect(trigger).toHaveAccessibleName('Account and settings');
-      expect(trigger.textContent).toContain('Account and settings');
+      // No login on this install (the default): nothing to sign out of.
+      expect(trigger).toHaveAccessibleName('Theme');
+      expect(trigger.textContent).toContain('Theme');
+      expect(trigger.textContent).not.toMatch(/account|login|sign/i);
       expect(trigger.className).toContain('min-h-11');
+    });
+
+    it('names signing out only when there is a login to sign out of', () => {
+      mockCurrentUser = { email: 'owner@example.com' };
+      try {
+        renderStrip();
+        expect(screen.getByTestId('sidebar-footer-menu-trigger')).toHaveAccessibleName(
+          'Sign out and theme'
+        );
+      } finally {
+        mockCurrentUser = null;
+      }
     });
 
     it('still opens the account rows it has always held', async () => {

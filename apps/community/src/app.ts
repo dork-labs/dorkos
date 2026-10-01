@@ -543,7 +543,12 @@ export function createCommunityApp({
   registerOwnerErasureRoutes(communityApi, { pool, auth });
   registerHistoryOriginRoute(communityApi, { pool, auth });
   registerTakedownNoticeRoutes(communityApi, { pool, auth });
-  registerOwnerReplacementRoutes(communityApi, { pool, auth, now });
+  registerOwnerReplacementRoutes(communityApi, {
+    pool,
+    auth,
+    now,
+    objectionCooldownDays: config.ownerReplacement.objectionCooldownDays,
+  });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;

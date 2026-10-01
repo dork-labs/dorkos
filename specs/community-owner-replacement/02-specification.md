@@ -186,7 +186,7 @@ The owner's options depend on the community's state and on their account, and ev
 | Transfer       | a signed-in session and the account's password (`POST /owner/transfer`)                                    | `active` only (refused in `archived` and `held`, unchanged)      |
 | Delete         | a signed-in session and the account's password (`POST /owner/deletion`, with the name and id confirmation) | every state the owner-deletion route accepts                     |
 
-An owner whose account has no password (single sign-on only) can keep ownership but cannot transfer or delete until they add a password, and the copy says so. An owner who cannot sign in at all can still keep ownership through the email link. The mail builder and the banner compute the options at send or render time from the lifecycle and `hasPassword(account)`.
+An owner whose account has no password (single sign-on only) can keep ownership but cannot transfer or delete until they add a password, and the copy says so, naming only what a password would open in this lifecycle (deletion alone in `archived` and `held`). An owner who cannot sign in at all can still keep ownership through the email link. The mail builder and the banner compute the options at send or render time from the lifecycle and `hasPassword(account)`.
 
 ### Things that end an open replacement
 
@@ -405,7 +405,7 @@ The reminder is the same with "in 2 days". "Claim link sent again" says: "The ho
 
 **The object-only link page (`/keep-ownership`).** "Keep ownership of <community>? The host's request will end. The host can ask again after 90 days [the configured C], and you'll be told again." One button, **Keep ownership**. Then: "You kept ownership. The host has been told." A dead link: "This link no longer works."
 
-**The owner, in the community.** A banner on every page, above the hold banner if both apply: "The host has been asked to make someone else the owner of this community. Unless you keep ownership, that can happen on or after <date>." Buttons: **Keep ownership** (confirm as on the link page) and **What this means**, a panel with the reason sentence, the reference as quoted plain text ("The host's reference: "ABC-123""), and only the options this owner has, from the table above: "You can hand the community to someone yourself." (active, has a password), "You can delete the community." (has a password), or "To hand it to someone or delete it, add a password to your account first." (no password). A reissued claim adds "The link for the new owner was sent again on <date>."
+**The owner, in the community.** A banner on every page, above the hold banner if both apply: "The host has been asked to make someone else the owner of this community. Unless you keep ownership, that can happen on or after <date>." Buttons: **Keep ownership** (confirm as on the link page) and **What this means**, a panel with the reason sentence, the reference as quoted plain text ("The host's reference: "ABC-123""), and only the options this owner has, from the table above: "You can hand the community to someone yourself." (active, has a password), "You can delete the community." (has a password), or, with no password, "To hand it to someone or delete it, add a password to your account first." (active) or "To delete it, add a password to your account first." (archived or held, where a password opens deletion alone). A reissued claim adds "The link for the new owner was sent again on <date>."
 
 Reason sentences: "The host was told you've left the group this community belongs to." / "The host couldn't reach you." / "The host didn't give a specific reason."
 
@@ -534,6 +534,10 @@ None open. Resolved while specifying, under the operator's standing instruction,
 - RFC 5321 (SMTP reply classes), RFC 5322 (mailbox syntax), RFC 7208 (SPF), RFC 6376 (DKIM), RFC 7489 (DMARC), OpenID Connect Core 1.0 §8 (pairwise subject identifiers)
 
 ## Changelog
+
+- **2026-10-01** — Task 3.1 review (DOR-2542): an owner without a password in an `archived` or `held` community is told "To delete it, add a password to your account first.", in the email and the banner, since a password would not let them hand it on there. The object-only link preflight and the owner's notice read also return `objectionCooldownDays`, so both confirmations can name the configured cooling-off.
+
+- **2026-10-01** — Task 3.1 (DOR-2542), sentences the spec did not give, for the time before the owner's notice resolves (no date yet) and for links that ended: the owner's banner says "The host has been asked to make someone else the owner of this community. Unless you keep ownership, that can happen once a waiting period of at least 7 days has passed."; the admins' banner says "The host has been asked to make someone else the owner. The owner has at least 7 days to respond."; the claim page says "You can't take ownership of <community> yet. The waiting period starts once the owner has been told. Keep this link."; and the object-only link page, when the request closed another way, has the heading "This request has already ended." (the route's own answer). The host list also carries `afterObjection` and `afterWithdrawal`, so the host page reads the reason for a longer wait instead of working it out from the list.
 
 - **2026-09-30** — Task 2.2 review (DOR-2539): the lock order puts the `"user"` row before member rows, the order an account erasure takes them in; the old order (member rows, then `"user"`) deadlocked a host request against the owner's erasure. The host request and claim-token routes also refuse while the mail worker cannot compose their notice.
 

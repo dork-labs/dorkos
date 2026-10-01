@@ -286,10 +286,9 @@ test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
       // The words are ON the control, not in a tooltip a finger cannot summon.
       await expect(destinations.filter({ hasText: label })).toHaveCount(1);
     }
-    // The account is named rather than hidden behind a "⋯".
-    await expect(panel.getByTestId('sidebar-footer-menu-trigger')).toContainText(
-      'Account and settings'
-    );
+    // The fold is named rather than hidden behind a "⋯".
+    // Login is off on this server, so the fold holds the theme and says so.
+    await expect(panel.getByTestId('sidebar-footer-menu-trigger')).toHaveAccessibleName('Theme');
     await expect(panel.getByRole('button', { name: 'Ask DorkBot' })).toBeVisible();
   });
 

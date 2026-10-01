@@ -640,7 +640,7 @@ describe('ConnectDialog', () => {
       await user.click(screen.getByRole('button', { name: 'Link my DorkOS account again' }));
       // No stacked dialogs: the Connect dialog is gone before Settings opens.
       expect(order).toEqual(['closed', 'settings']);
-      expect(openSettings).toHaveBeenCalledWith('access', 'account');
+      expect(openSettings).toHaveBeenCalledWith('account');
       await waitFor(() =>
         expect(screen.queryByTestId('connect-auth-dialog')).not.toBeInTheDocument()
       );

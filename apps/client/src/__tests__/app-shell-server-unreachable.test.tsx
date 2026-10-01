@@ -18,12 +18,19 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientProvider,
+  focusManager,
+  onlineManager,
+  useQuery,
+} from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 
 // ── Router: the shell mounts without a RouterProvider ──
 
@@ -378,6 +385,30 @@ function seedYesterdaysConfigAfterAnOldBlip(client: QueryClient) {
     ?.setState({ errorUpdateCount: 2, errorUpdatedAt: anHourAgo });
 }
 
+/**
+ * Put the clock a moment into THIS launch, and seed the config this tab read a
+ * moment before it reloaded.
+ *
+ * **The shape of a quick reload, which every seed above misses (DOR-2649).** A
+ * config read a few seconds before a reload is restored by the boot cache still
+ * inside its 30s `staleTime`, so TanStack sees nothing to refetch on mount — and
+ * an hour-old seed never exercised that, because an hour-old entry is stale and
+ * always refetched. Pinned to `LAUNCH_STARTED_AT` rather than `Date.now()`:
+ * that constant was sampled when this file was imported, and a seed dated
+ * relative to "now" could land AFTER it, reading as an answer from this launch
+ * and passing for the wrong reason.
+ *
+ * Needs fake timers already installed, since it sets the system time.
+ *
+ * @param client - The query client the shell will read from.
+ */
+function seedConfigFromJustBeforeAReload(client: QueryClient) {
+  vi.setSystemTime(LAUNCH_STARTED_AT + 2000);
+  client.setQueryData(configKeys.current(), settledConfig(), {
+    updatedAt: LAUNCH_STARTED_AT - 3000,
+  });
+}
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -585,6 +616,139 @@ describe('AppShell, when the server will not answer', () => {
 
     expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+  });
+});
+
+describe('AppShell, after a quick reload', () => {
+  it('does not call a healthy server unreachable when the remembered config is seconds old', async () => {
+    // **The flash this case exists for (DOR-2649).** Reload within 30s of the
+    // last config read and the boot cache restores a copy TanStack calls fresh,
+    // so nothing asked the server — and with nothing able to answer "this
+    // launch", the 15s hang deadline replaced the whole app with this screen
+    // over a server that was fine, wiping whatever was open until the screen's
+    // own retry brought it back.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockResolvedValue(settledConfig());
+
+    renderAppShell(seedConfigFromJustBeforeAReload);
+    await letTimePass(HANG_DEADLINE_MS + 1000);
+
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+    // And the reason it stayed away is that the server was actually asked —
+    // not that the deadline stopped looking.
+    expect(transport.getConfig).toHaveBeenCalled();
+  });
+
+  it('still says so when that reload’s own read hangs past the deadline', async () => {
+    // The other half: a fresh remembered copy must not DISARM the screen. The
+    // read this load sends goes unanswered, and that silence is evidence.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+
+    renderAppShell(seedConfigFromJustBeforeAReload);
+    await letTimePass(HANG_DEADLINE_MS - 1000);
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+
+    await letTimePass(1500);
+    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
+    expect(screen.queryByTestId('app-shell')).not.toBeInTheDocument();
+  });
+
+  it('still says so when that reload’s own read is refused', async () => {
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
+
+    renderAppShell(seedConfigFromJustBeforeAReload);
+    await letTimePass(100);
+
+    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
+  });
+});
+
+describe('AppShell, when the config read stalls for reasons of its own', () => {
+  // **Why the hang deadline runs from mount and not from "a read is in
+  // flight".** Gating it on `fetchStatus === 'fetching'` looked tidier, but the
+  // config query has readers this shell does not control: a paused read (the
+  // browser thinks it is offline, the tab is hidden mid-retry) never reports
+  // `fetching`, and an optimistic settings write cancels the read and puts it
+  // back to `idle`. Each of those stopped or restarted the clock, so a server
+  // that never answered was never called unreachable — or was, three times
+  // late. The deadline is about what the SERVER has said this launch, so it
+  // only stops for an answer.
+  afterEach(() => {
+    onlineManager.setOnline(true);
+    focusManager.setFocused(undefined);
+  });
+
+  it('still says so when the browser is offline and another reader asked first', async () => {
+    // Several config readers keep TanStack's default `networkMode: 'online'`,
+    // and the onboarding gate mounts one before the shell's own. Offline, that
+    // read starts PAUSED and the shell's refetch joins it rather than starting
+    // its own, so the query never reads `fetching` at all.
+    vi.useFakeTimers();
+    onlineManager.setOnline(false);
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    const queryClient = makeQueryClient();
+    function OnlineModeReader() {
+      useQuery({
+        queryKey: configKeys.current(),
+        queryFn: () => transport.getConfig(),
+        staleTime: 30_000,
+      });
+      return null;
+    }
+    seedYesterdaysConfig(queryClient);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <TooltipProvider>
+            <OnlineModeReader />
+            <AppShell />
+          </TooltipProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    await letTimePass(HANG_DEADLINE_MS + 1000);
+
+    // The premise, so this case cannot pass for a different reason.
+    expect(queryClient.getQueryState(configKeys.current())?.fetchStatus).toBe('paused');
+    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
+  });
+
+  it('keeps its deadline when a settings write cancels the read mid-hang', async () => {
+    // The sidebar, composer, status bar, room limits and notification prefs all
+    // cancel the config read before writing optimistically, which sets it back
+    // to `idle` with nothing answered.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    const queryClient = makeQueryClient();
+
+    renderAppShell(seedYesterdaysConfig, queryClient);
+    await letTimePass(5000);
+    await act(async () => {
+      await queryClient.cancelQueries({ queryKey: configKeys.current() });
+    });
+    await letTimePass(HANG_DEADLINE_MS - 4000);
+
+    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
+  });
+
+  it('keeps its deadline when a retry pauses in a hidden tab', async () => {
+    // TanStack pauses a retry while the document is unfocused, and a paused
+    // retry is not `fetching` either.
+    vi.useFakeTimers();
+    focusManager.setFocused(false);
+    vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
+
+    renderAppShell(
+      seedYesterdaysConfig,
+      new QueryClient({ defaultOptions: { queries: { retry: 1 } } })
+    );
+    await letTimePass(HANG_DEADLINE_MS + 1000);
+
+    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
   });
 });
 

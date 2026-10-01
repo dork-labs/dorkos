@@ -125,11 +125,16 @@ export const UNLINKED_REASON = 'This instance was unlinked';
 /** The link-flow state the client UI reads. */
 export type CloudLinkState = 'idle' | 'pending' | 'linked' | 'expired' | 'denied' | 'unlinked';
 
+/** How a relink that did not replace the held key ended; the computer stayed linked. */
+export type CloudRelinkOutcome = 'denied' | 'expired' | 'failed';
+
 /** The `GET /api/cloud/link/status` shape. */
 export interface CloudLinkStatus {
   state: CloudLinkState;
   accountLabel?: string;
   lastHeartbeatAt?: string;
+  /** Present while linked after a relink ended without replacing the key. */
+  relinkOutcome?: CloudRelinkOutcome;
 }
 
 /** The `GET /api/cloud/status` settled-summary shape. */
@@ -258,10 +263,15 @@ export class CloudLinkManager {
   private configPort: CloudConfigPort | undefined;
 
   private state: CloudLinkState = 'idle';
+  private relinkOutcome: CloudRelinkOutcome | undefined;
   private lastHeartbeatAt: string | undefined;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   private pollController: AbortController | undefined;
   private pollTask: Promise<void> | undefined;
+  /** True once {@link stop} ran: nothing starts for a key saved afterwards. */
+  private stopped = false;
+  /** Settles once the current flow's token exchange has been applied, before any follow-up. */
+  private pollSettled: Promise<void> | undefined;
   private keyCheck:
     { context: LinkContext; settled: Promise<void>; keptAt: number | undefined } | undefined;
   private linkGeneration = ++nextLinkGeneration;
@@ -309,11 +319,15 @@ export class CloudLinkManager {
    * Begin the device flow: request a code, enter `pending`, and kick off the
    * background poll that carries the flow to `linked`/`denied`/`expired`. Returns
    * the codes for the human to enter; the client polls {@link getStatus} for the
-   * outcome.
+   * outcome. A flow already running is stopped first, keeping any key its
+   * token exchange in flight issues (see {@link drainPoll}).
    */
   async startLink(): Promise<StartLinkResult> {
+    const draining = this.drainPoll();
+    if (draining) await draining;
     const generation = this.advanceGeneration();
     this.cancelPoll();
+    this.relinkOutcome = undefined;
     const baseUrl = resolveCloudBaseUrl();
     // Resolve the analytics-merge opt-in HERE, at link time: the descriptor built
     // now is what the cloud persists and reads to alias this install's anonymous
@@ -334,7 +348,11 @@ export class CloudLinkManager {
     this.setState('pending');
     const controller = new AbortController();
     this.pollController = controller;
-    this.pollTask = this.runPoll(baseUrl, descriptor, codes, controller.signal, generation);
+    const exchange = this.runPoll(baseUrl, descriptor, codes, controller.signal, generation);
+    this.pollSettled = exchange.then(() => undefined);
+    this.pollTask = exchange.then((approved) =>
+      approved ? this.afterApproval(baseUrl, descriptor, approved) : undefined
+    );
 
     return {
       userCode: codes.user_code,
@@ -357,13 +375,24 @@ export class CloudLinkManager {
     this.config.clear({ previousLinkProof: this.previousLinkProof() });
   }
 
+  /**
+   * Run the device poll and apply its outcome. Resolves with the approved key
+   * once it is saved, so the follow-up work can run, else `undefined`.
+   *
+   * At token exchange the cloud issues the new key and retires the old one,
+   * so an approval is saved even when the flow was cancelled or restarted
+   * while its token request was in flight: a key the cloud issued is never
+   * thrown away by a local cancel or restart. Only a change of cloud URL,
+   * which makes the key belong to another service, drops it. Any other
+   * outcome is applied only while this flow is still the current one.
+   */
   private async runPoll(
     baseUrl: string,
     descriptor: InstanceDescriptor,
     codes: { device_code: string; interval: number; expires_in: number },
     signal: AbortSignal,
     generation: number
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     try {
       const result = await pollForToken({
         baseUrl,
@@ -376,26 +405,85 @@ export class CloudLinkManager {
         signal,
       });
       this.settlePoll(signal);
-      if (signal.aborted || generation !== this.linkGeneration || baseUrl !== resolveCloudBaseUrl())
-        return;
+      if (baseUrl !== resolveCloudBaseUrl()) return undefined;
       if (result.status === 'approved') {
         this.config.save({ instanceToken: result.accessToken, instanceName: descriptor.name });
-        const context = this.captureContext(result.accessToken, baseUrl);
         this.setState('linked');
-        await this.notifyManagedProviderSync();
-        if (!this.ownsContext(context)) return;
-        await this.heartbeat(baseUrl, descriptor, result.accessToken, generation);
-        if (this.ownsContext(context)) this.startHeartbeatSchedule();
-      } else {
-        this.setState(result.status === 'denied' ? 'denied' : 'expired');
+        return result.accessToken;
+      }
+      if (!signal.aborted && generation === this.linkGeneration) {
+        this.settleUnfinished(result.status === 'denied' ? 'denied' : 'expired');
       }
     } catch (err) {
       this.settlePoll(signal);
       if (!signal.aborted && generation === this.linkGeneration) {
         logger.warn('[CloudLink] Device-link poll failed', logError(err));
-        this.setState('idle');
+        this.settleUnfinished('failed');
       }
     }
+    return undefined;
+  }
+
+  /** Register the managed provider and start heartbeats for a newly saved key. */
+  private async afterApproval(
+    baseUrl: string,
+    descriptor: InstanceDescriptor,
+    accessToken: string
+  ): Promise<void> {
+    if (this.stopped) return;
+    const context = this.captureContext(accessToken, baseUrl);
+    await this.notifyManagedProviderSync();
+    if (!this.ownsContext(context)) return;
+    await this.heartbeat(baseUrl, descriptor, accessToken, context.generation);
+    if (this.ownsContext(context)) this.startHeartbeatSchedule();
+  }
+
+  /**
+   * Stop the current flow. Polling stops at once between token requests; a
+   * token request already sent is allowed to finish, and a key it returns is
+   * saved before this resolves. With no flow running it returns nothing, so
+   * a caller that withdraws locally can do so before its first `await`.
+   */
+  private drainPoll(): Promise<void> | undefined {
+    const settled = this.pollSettled;
+    this.pollController?.abort();
+    if (!settled) {
+      this.cancelPoll();
+      return undefined;
+    }
+    return settled.then(() => {
+      // A newer flow may have started while this one settled; leave it alone.
+      if (this.pollSettled === settled) this.cancelPoll();
+    });
+  }
+
+  /**
+   * A link flow ended without a new key. A computer that still holds its key
+   * never stopped being linked, so it goes straight back to `linked` with a
+   * note saying how the relink ended, instead of reading as broken until the
+   * next heartbeat. With no key, the flow's own end state stands.
+   */
+  private settleUnfinished(outcome: CloudRelinkOutcome): void {
+    if (this.config.getToken()) {
+      this.relinkOutcome = outcome;
+      this.setState('linked');
+      return;
+    }
+    this.setState(outcome === 'failed' ? 'idle' : outcome);
+  }
+
+  /**
+   * Stop a link flow in progress, or dismiss the note a finished relink left.
+   * A token exchange already in flight finishes first, and a key it issues is
+   * kept (see {@link drainPoll}). Settles in `linked` while a key is held,
+   * else `idle`.
+   */
+  async cancelLink(): Promise<CloudLinkStatus> {
+    const draining = this.drainPoll();
+    if (draining) await draining;
+    this.relinkOutcome = undefined;
+    this.setState(this.config.getToken() ? 'linked' : 'idle');
+    return this.getStatus();
   }
 
   /** A settled poll no longer counts as a pending re-link (see {@link markUnlinked}). */
@@ -425,12 +513,10 @@ export class CloudLinkManager {
   async unlink(): Promise<void> {
     const token = this.config.getToken();
     const baseUrl = resolveCloudBaseUrl();
-    this.advanceGeneration();
-    this.cancelPoll();
-    this.stopHeartbeatSchedule();
-    this.clearKeepingProof();
-    this.lastHeartbeatAt = undefined;
-    this.setState('idle');
+    // Withdraw locally first, before any await. A token exchange already in
+    // flight is drained afterwards rather than abandoned (see drainPoll).
+    const draining = this.drainPoll();
+    this.withdrawLocally();
     const reconciliation = this.notifyManagedProviderSync();
     const revocation = token
       ? revokeInstanceKey({
@@ -439,8 +525,30 @@ export class CloudLinkManager {
           fetchImpl: this.fetchImpl,
         })
       : undefined;
+    if (draining) {
+      await draining;
+      // That exchange may have saved a key the cloud issued meanwhile. The
+      // person asked to unlink, so it is cleared and revoked too, never left
+      // live in config.
+      const issued = this.config.getToken();
+      if (issued) {
+        this.withdrawLocally();
+        await this.notifyManagedProviderSync();
+        await revokeInstanceKey({ baseUrl, accessToken: issued, fetchImpl: this.fetchImpl });
+      }
+    }
     await reconciliation;
     await revocation;
+  }
+
+  /** Drop the key and everything running on it, keeping its relink proof. */
+  private withdrawLocally(): void {
+    this.advanceGeneration();
+    this.stopHeartbeatSchedule();
+    this.clearKeepingProof();
+    this.lastHeartbeatAt = undefined;
+    this.relinkOutcome = undefined;
+    this.setState('idle');
   }
 
   /** The link-flow state for `GET /api/cloud/link/status`. */
@@ -450,6 +558,9 @@ export class CloudLinkManager {
       state: this.state,
       ...(accountLabel ? { accountLabel } : {}),
       ...(this.lastHeartbeatAt ? { lastHeartbeatAt: this.lastHeartbeatAt } : {}),
+      ...(this.state === 'linked' && this.relinkOutcome
+        ? { relinkOutcome: this.relinkOutcome }
+        : {}),
     };
   }
 
@@ -749,6 +860,7 @@ export class CloudLinkManager {
 
   /** Stop all timers and cancel any in-flight poll (server shutdown). */
   stop(): void {
+    this.stopped = true;
     this.advanceGeneration();
     this.cancelPoll();
     this.stopHeartbeatSchedule();
@@ -788,7 +900,14 @@ export class CloudLinkManager {
     try {
       await this.syncManagedProvider();
     } catch (error) {
-      logger.warn('[CloudLink] Managed provider registration failed', logError(error));
+      const detail =
+        error instanceof ManagedConnectorCloudError
+          ? { code: error.code, status: error.status }
+          : {};
+      logger.warn('[CloudLink] Managed provider registration failed', {
+        ...logError(error),
+        ...detail,
+      });
     }
   }
 
@@ -844,7 +963,14 @@ export class CloudLinkManager {
     }
     await this.confirmKey(context);
     return this.ownsContext(context)
-      ? new ManagedConnectorCloudError('request_failed', error.status, { cause: error })
+      ? new ManagedConnectorCloudError('request_failed', {
+          status: error.status,
+          cloudCode: error.cloudCode,
+          reason: error.reason,
+          method: error.method,
+          path: error.path,
+          cause: error,
+        })
       : error;
   }
 
@@ -927,6 +1053,7 @@ export class CloudLinkManager {
     this.stopHeartbeatSchedule();
     this.clearKeepingProof();
     this.lastHeartbeatAt = undefined;
+    this.relinkOutcome = undefined;
     this.setState(relinkPending ? 'pending' : 'unlinked');
     void this.notifyManagedProviderSync();
     logger.warn(
@@ -936,6 +1063,7 @@ export class CloudLinkManager {
 
   private startHeartbeatSchedule(): void {
     this.stopHeartbeatSchedule();
+    if (this.stopped) return;
     this.heartbeatTimer = setInterval(() => {
       void this.heartbeatTick();
     }, this.heartbeatIntervalMs);
@@ -964,6 +1092,7 @@ export class CloudLinkManager {
     this.pollController?.abort();
     this.pollController = undefined;
     this.pollTask = undefined;
+    this.pollSettled = undefined;
   }
 
   private setState(state: CloudLinkState): void {

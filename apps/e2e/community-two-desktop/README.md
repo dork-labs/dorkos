@@ -139,6 +139,11 @@ the reason:
 A run that ends with a step neither run nor listed fails, so a step cannot drop
 out quietly.
 
+To retry, run the script again while the gate still holds. The channel keeps
+every earlier run's messages, so each run marks its own messages with a stamp,
+looks at the newest end of the channel rather than the whole feed, and reads
+the channel's full history through the app when it needs a message's details.
+
 Cleanup removes only what the run made: each app's agent enrollments and
 connections (which revokes that app's grant on the community), then both apps
 and their temporary homes. It never deletes the community, its channels or the
