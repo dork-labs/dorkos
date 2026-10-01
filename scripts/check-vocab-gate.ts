@@ -69,7 +69,8 @@
  * — both record what shipped or what the wire says, not new prose to sweep.
  * Everything else under `docs/` is scanned, but only against
  * {@link MDX_SCANNED_WAVES} — wave 4 ("integration"/"connector"/"adapter"/
- * "provider"), the exact vocabulary the audit swept docs for. Wave 1
+ * "provider"), the exact vocabulary the audit swept docs for, and wave 5
+ * ("community"/"communities", DOR-2631). Wave 1
  * ("connection", for network health) is deliberately NOT enforced in docs:
  * outside the Connections domain, "connection" is ordinary prose everywhere
  * a protocol or network guide talks about a network connection (the SSE
@@ -792,8 +793,14 @@ export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Vi
  * predating this one. A future ticket can widen `MDX_SCANNED_WAVES`
  * deliberately, the same way a new wave object is added to
  * `banned-terms.json` — this is data, not a hardcoded exception.
+ *
+ * Wave 5 ("community"/"communities", DOR-2631) is the first such widening:
+ * "Space" replaced "Community" in what people read, and the docs are where a
+ * person learns the word, so a docs page saying "community" undoes the rename
+ * exactly as a UI string would. A literal command or route that still says
+ * community belongs in inline code, which {@link stripNonProse} blanks.
  */
-const MDX_SCANNED_WAVES = new Set(['wave-4']);
+const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5']);
 
 /**
  * Run the gate against a repo checkout: TypeScript/TSX source through

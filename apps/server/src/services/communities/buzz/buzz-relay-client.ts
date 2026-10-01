@@ -416,7 +416,7 @@ export class BuzzRelayClient {
       this.pendingConnect?.({
         status: 'not-admitted',
         disclosure:
-          'Your key is valid, but whoever runs this community has not let it in yet. Ask them to add it — there is no way to request access from here.',
+          'Your key is valid, but whoever runs this space has not let it in yet. Ask them to add it — there is no way to request access from here.',
         error: message,
       });
       return;

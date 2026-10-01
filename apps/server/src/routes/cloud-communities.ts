@@ -119,7 +119,7 @@ const RoomQuerySchema = z.object({
  * move that was already cancelled (the start that cancelled it said why).
  */
 const MOVE_ALREADY_CANCELLED =
-  'That move was already cancelled, so nothing was sent on to the new host. Press Start moving to begin a new one.';
+  'That move was already cancelled, so nothing was sent on to DorkOS. Press Start moving to begin a new one.';
 
 /**
  * A size in the units a person's own computer shows (powers of 1000, as
@@ -328,7 +328,7 @@ export function createCloudCommunitiesRouter(
       return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     const body = StartBodySchema.safeParse(req.body);
     if (!body.success) {
-      return res.status(400).json({ ok: false, message: 'Give the community a name.' });
+      return res.status(400).json({ ok: false, message: 'Give the space a name.' });
     }
     try {
       const started = await startCommunity(body.data);
@@ -378,7 +378,7 @@ export function createCloudCommunitiesRouter(
     const query = MoveQuerySchema.safeParse(req.query);
     if (!query.success) {
       req.resume();
-      return res.status(400).json({ ok: false, message: 'Give the community a name.' });
+      return res.status(400).json({ ok: false, message: 'Give the space a name.' });
     }
     // The browser can leave after the last byte arrives but before this
     // answers (a cancel, a stall, a closed tab). A move started for nobody
@@ -449,7 +449,7 @@ export function createCloudCommunitiesRouter(
       );
       return res.status(413).json({
         ok: false,
-        message: `This export is too large for the new host. It is ${describeBytes(staged.bytes, 'up')}, and the most the host takes is ${describeBytes(limit, 'down')}.`,
+        message: `This export is too large to move. It is ${describeBytes(staged.bytes, 'up')}, and the most DorkOS takes is ${describeBytes(limit, 'down')}.`,
         ...(cancelled ? {} : { mayExist: true as const }),
       } satisfies CloudCommunityRefusal);
     }

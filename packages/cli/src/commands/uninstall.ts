@@ -51,7 +51,7 @@ const REMOVAL_WORDS: Record<string, string> = {
   'task-roots': 'its scheduled task folders',
   'mcp-sign-ins': 'its sign-ins',
   'identity-tokens': 'its access tokens',
-  'community-enrollments': 'its community memberships',
+  'community-enrollments': 'its space memberships',
   'connection-access': 'its connection access',
 };
 

@@ -108,23 +108,23 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         // that already-authenticated browser cookie into the local browser so
         // this test can activate the local app's own approval link.
         await localContext.addCookies(await ownerPage.context().cookies(origin));
-        // Connect lives in the sidebar's community switcher, under Add community.
+        // Connect lives in the sidebar's context switcher, under Add a space › Join a space.
         await localPage.goto(env.local);
         const switcher = localPage.getByTestId('sidebar-header-block');
         await expect(switcher).toBeVisible();
         await switcher.click();
         await localPage.locator('[data-menu-item-id="add-community"]').hover();
-        await localPage.getByRole('menuitem', { name: 'Connect a community…' }).click();
-        const dialog = localPage.getByRole('dialog', { name: 'Connect a community' });
+        await localPage.getByRole('menuitem', { name: 'Join a space…' }).click();
+        const dialog = localPage.getByRole('dialog', { name: 'Join a space' });
         await expect(dialog).toBeVisible();
-        await dialog.getByLabel('Community address').fill(origin);
+        await dialog.getByLabel('Space address or invitation link').fill(origin);
         await dialog.getByLabel('Name for this installation').fill(installName);
         const startedResponse = localPage.waitForResponse(
           (response) =>
             response.request().method() === 'POST' &&
             new URL(response.url()).pathname === '/api/community-connections'
         );
-        await dialog.getByRole('button', { name: 'Connect community', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
         const started = await startedResponse;
         expect(started.ok(), `local connection start returned ${started.status()}`).toBe(true);
         const connection = (await started.json()) as { connection: { ref: string } };
@@ -246,18 +246,18 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       await expect(localPage.getByRole('button', { name: 'Members', exact: true })).toBeVisible();
       await localPage.getByRole('button', { name: 'Members', exact: true }).click();
-      const agentControls = localPage.getByRole('region', { name: 'My community agents' });
+      const agentControls = localPage.getByRole('region', { name: 'Your agents in this space' });
       await expect(agentControls.getByLabel('Local agent')).toBeVisible();
       await agentControls.getByLabel('Local agent').click();
       await localPage.getByRole('option', { name: registered.name, exact: true }).click();
-      await agentControls.getByLabel('Community handle (optional)').fill(handle);
+      await agentControls.getByLabel('Space handle (optional)').fill(handle);
       const enrolledResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'POST' &&
           new URL(response.url()).pathname ===
             `/api/communities/${refA}/agents/${encodeURIComponent(localAgentId)}/enroll`
       );
-      await agentControls.getByRole('button', { name: 'Add to community', exact: true }).click();
+      await agentControls.getByRole('button', { name: 'Add to space', exact: true }).click();
       const enrolledResult = await enrolledResponse;
       expect(enrolledResult.status()).toBe(201);
       await expect(agentControls.getByText(ownedAgentLabel, { exact: true })).toBeVisible();
@@ -384,9 +384,9 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       // The scenario uses rooms.post without replyTo, so its pending and
       // confirmed attachment rows belong to the channel feed.
-      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      await expect(localPage.getByRole('feed', { name: 'Space messages' })).toBeVisible();
       await expect(
-        localPage.getByText('Waiting for community confirmation…', { exact: true })
+        localPage.getByText('Waiting for space confirmation…', { exact: true })
       ).toBeVisible();
       type Entry = {
         id: string;
@@ -432,7 +432,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       expect(confirmed).toHaveLength(1);
       await expect(
-        localPage.getByText('Waiting for community confirmation…', { exact: true })
+        localPage.getByText('Waiting for space confirmation…', { exact: true })
       ).toHaveCount(0);
       await expect(localPage.getByText('Here is what I saw.', { exact: true })).toHaveCount(1);
       // Read the attachment through the local browser surface. The remote-owner
@@ -811,7 +811,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await localPage.goto(
         `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
       );
-      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      await expect(localPage.getByRole('feed', { name: 'Space messages' })).toBeVisible();
       await expect(localPage.getByText(bMarker, { exact: true })).toHaveCount(0);
 
       // The runner owns both lifecycle controls and keeps Community A's database,
@@ -827,7 +827,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         stopCommunityA.ok(),
         `could not stop packaged Community A: ${await stopCommunityA.text()}`
       ).toBe(true);
-      const offlineNotice = localPage.getByText('Community unavailable. Showing saved messages.', {
+      const offlineNotice = localPage.getByText('Space unavailable. Showing saved messages.', {
         exact: true,
       });
       await expect(offlineNotice).toBeVisible({ timeout: 90_000 });
@@ -944,7 +944,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await localPage.goto(
         `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
       );
-      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      await expect(localPage.getByRole('feed', { name: 'Space messages' })).toBeVisible();
 
       // A committed Community event can outlive its HTTP receipt. Its native
       // SSE echo must replace the top-level pending row by exact remote entry
@@ -980,12 +980,12 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'the Community receipt was not held after persistence'
       );
       expect(afterPersistRoot?.id).toBeTruthy();
-      const afterPersistChannel = localPage.getByRole('feed', { name: 'Community messages' });
+      const afterPersistChannel = localPage.getByRole('feed', { name: 'Space messages' });
       await expect(
         afterPersistChannel.getByText('Here is what I saw.', { exact: true })
       ).toHaveCount(entriesBeforeAfterPersist.length + 1);
       await expect(
-        localPage.getByText('Waiting for community confirmation…', { exact: true })
+        localPage.getByText('Waiting for space confirmation…', { exact: true })
       ).toHaveCount(0);
       await expect(
         afterPersistChannel.getByText(`@${handle} ${afterPersistMarker}`, { exact: true })
@@ -1019,7 +1019,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         afterPersistChannel.getByText('Here is what I saw.', { exact: true })
       ).toHaveCount(entriesBeforeAfterPersist.length + 1);
       await expect(
-        localPage.getByText('Waiting for community confirmation…', { exact: true })
+        localPage.getByText('Waiting for space confirmation…', { exact: true })
       ).toHaveCount(0);
       await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
         method: 'POST',
@@ -1049,7 +1049,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await localPage.goto(
         `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
       );
-      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      await expect(localPage.getByRole('feed', { name: 'Space messages' })).toBeVisible();
 
       // A real runtime turn waits on its session-scoped step barrier. The Stop
       // button must terminate it before the barrier can release, proving Stop
@@ -1410,7 +1410,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           new URL(response.url()).pathname ===
             `/api/communities/${refA}/agents/${encodeURIComponent(localAgentId)}`
       );
-      await localPage.getByRole('button', { name: 'Remove from community', exact: true }).click();
+      await localPage.getByRole('button', { name: 'Remove from space', exact: true }).click();
       await localPage.getByRole('button', { name: 'Remove agent', exact: true }).click();
       const ejectionResult = await ejectionResponse;
       expect(ejectionResult.ok(), `agent ejection returned ${ejectionResult.status()}`).toBe(true);
@@ -1452,7 +1452,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL2XQAAAABJRU5ErkJggg==',
         'base64'
       );
-      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      await expect(localPage.getByRole('feed', { name: 'Space messages' })).toBeVisible();
       const localComposer = localPage.getByPlaceholder('Message general…');
       await expect(localComposer).toBeVisible();
       const localFileChooser = localPage.waitForEvent('filechooser');
@@ -1548,7 +1548,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await localPage.goto(
         `${env.local}/channels?community=${encodeURIComponent(refB)}&id=${encodeURIComponent(roomB!.roomId)}`
       );
-      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      await expect(localPage.getByRole('feed', { name: 'Space messages' })).toBeVisible();
       const unreadMarker = `local-unread-${crypto.randomUUID()}`;
       const unreadRoot = await postHumanMarker(unreadMarker);
       expect(unreadRoot?.id).toBeTruthy();
@@ -1607,7 +1607,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       const unreadArticle = localPage.getByRole('article').filter({ hasText: unreadMarker });
       await expect(unreadArticle).toHaveCount(1);
       await unreadArticle.getByRole('button', { name: 'Reply in thread', exact: true }).click();
-      const threadFeed = localPage.getByRole('feed', { name: 'Community thread' });
+      const threadFeed = localPage.getByRole('feed', { name: 'Space thread' });
       await expect(threadFeed).toBeVisible();
       const localThreadReply = `local-thread-reply-${crypto.randomUUID()}`;
       const localThreadPost = localPage.waitForResponse(
@@ -1632,7 +1632,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       expect(remoteThreadReply?.threadRootEntryId).toBe(unreadRoot!.id);
       await localPage.setViewportSize({ width: 390, height: 844 });
-      await expect(threadFeed).toHaveAccessibleName('Community thread');
+      await expect(threadFeed).toHaveAccessibleName('Space thread');
       await testInfo.attach('native-local-thread-mobile.aria.yml', {
         body: await localPage.locator('#app-tab-panel').ariaSnapshot({ depth: 6 }),
         contentType: 'text/yaml',
@@ -1642,7 +1642,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await backToChannel.focus();
       await expect(backToChannel).toBeFocused();
       await localPage.keyboard.press('Enter');
-      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      await expect(localPage.getByRole('feed', { name: 'Space messages' })).toBeVisible();
       expect(
         await localPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
       ).toBe(true);

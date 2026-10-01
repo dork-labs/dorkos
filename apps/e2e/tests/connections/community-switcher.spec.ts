@@ -275,7 +275,7 @@ async function openManageAlpha(page: Page) {
   await page.keyboard.press('ArrowDown');
   await expect(manage).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('menuitem', { name: 'Community settings' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /^Space settings/ })).toBeVisible();
 }
 
 test('Community actions open the Community’s own pages, by keyboard', async ({
@@ -292,7 +292,7 @@ test('Community actions open the Community’s own pages, by keyboard', async ({
   await testInfo.attach('community-actions-desktop.png', { path: shot, contentType: 'image/png' });
   await page.keyboard.press('ArrowDown');
   // Settings for a Community open THAT Community's settings, on its site.
-  await expect(page.getByRole('menuitem', { name: 'Community settings' })).toBeFocused();
+  await expect(page.getByRole('menuitem', { name: /^Space settings/ })).toBeFocused();
   const settings = page.context().waitForEvent('page');
   await page.keyboard.press('Enter');
   const settingsPage = await settings;
@@ -306,7 +306,7 @@ test('Community actions open the Community’s own pages, by keyboard', async ({
 
   await openManageAlpha(page);
   const leave = page.context().waitForEvent('page');
-  await page.getByRole('menuitem', { name: 'Leave community' }).press('Enter');
+  await page.getByRole('menuitem', { name: 'Leave space' }).press('Enter');
   expect((await leave).url()).toBe('https://alpha.example.test/c/remote-alpha/settings/account');
 });
 
@@ -419,7 +419,7 @@ test('A Community that ends elsewhere is left within seconds, on the server’s 
   expect(endingRead - endedAt).toBeLessThan(10_000);
 });
 
-test('Joining with an invitation opens the link on the Community’s site, not a pairing', async ({
+test('Joining with an invitation opens the link on the space’s site, then fills Connect', async ({
   page,
 }) => {
   await mockCommunitySwitcher(page);
@@ -441,27 +441,25 @@ test('Joining with an invitation opens the link on the Community’s site, not a
   await page.keyboard.press('ArrowDown');
   await expect(add).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('menuitem', { name: 'Connect a community…' })).toBeFocused();
-  // Alpha's host has not said this person runs it, so there is no way to create one.
+  // Not linked to a DorkOS account, so Join is the first choice and Start is not offered.
+  await expect(page.getByRole('menuitem', { name: 'Join a space…' })).toBeFocused();
+  await expect(page.locator('[data-menu-item-id="add-community-start"]')).toHaveCount(0);
+  // Alpha's server has not said this person runs it, so there is no way to create one.
   await expect(page.locator('[data-menu-item-id^="add-community-create"]')).toHaveCount(0);
-  await page.keyboard.press('ArrowDown');
-  await expect(page.getByRole('menuitem', { name: 'Join with an invitation…' })).toBeFocused();
   await page.keyboard.press('Enter');
-  const field = page.getByLabel('Invitation link');
-  await field.fill('https://alpha.example.test/c/remote-alpha');
-  await page.getByRole('button', { name: 'Open invitation' }).click();
-  await expect(page.getByRole('alert')).toContainText('That isn’t an invitation link.');
-
+  const field = page.getByLabel('Space address or invitation link');
   const link = 'https://alpha.example.test/c/remote-alpha/join#invite=one-time';
   await field.fill(link);
   const opened = page.context().waitForEvent('page');
   await page.getByRole('button', { name: 'Open invitation' }).click();
   expect((await opened).url()).toBe(link);
-  await expect(field).toBeHidden();
+  // Back on Connect, with the space's address and never the invite.
+  await expect(field).toHaveValue('https://alpha.example.test/c/remote-alpha');
+  await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
   await expect(page).not.toHaveURL(/\/connections/);
 });
 
-test('A host operator can create a community on their own host, by keyboard and on a phone', async ({
+test('A server operator can create a space on their own server, by keyboard and on a phone', async ({
   page,
 }) => {
   await mockCommunitySwitcher(page, { hostOperator: true });
@@ -479,12 +477,13 @@ test('A host operator can create a community on their own host, by keyboard and 
   await page.keyboard.press('ArrowDown');
   await expect(add).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('menuitem', { name: 'Connect a community…' })).toBeFocused();
+  await expect(page.getByRole('menuitem', { name: 'Join a space…' })).toBeFocused();
+  // The self-run paths sit one step away, behind Advanced.
   await page.keyboard.press('ArrowDown');
-  await expect(page.getByRole('menuitem', { name: 'Join with an invitation…' })).toBeFocused();
-  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('menuitem', { name: 'Advanced' })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
   const create = page.getByRole('menuitem', {
-    name: /^Create a community….*, opens on alpha\.example\.test$/,
+    name: /^Create a space on your server….*, opens on alpha\.example\.test$/,
   });
   await expect(create).toBeFocused();
   const opened = page.context().waitForEvent('page');
@@ -503,7 +502,7 @@ test('A host operator can create a community on their own host, by keyboard and 
     has: page.locator('[data-menu-group-id="add-community"]'),
   });
   const row = group.getByRole('menuitem', {
-    name: /^Create a community….*, opens on alpha\.example\.test$/,
+    name: /^Create a space on your server….*, opens on alpha\.example\.test$/,
   });
   await row.scrollIntoViewIfNeeded();
   await expect(row).toBeVisible();
@@ -511,7 +510,7 @@ test('A host operator can create a community on their own host, by keyboard and 
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
 });
 
-test('Community actions fit the 390px phone sheet', async ({ page }, testInfo) => {
+test('Space actions fit the 390px phone sheet', async ({ page }, testInfo) => {
   await mockCommunitySwitcher(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/channels?community=alpha&id=general');
@@ -520,7 +519,7 @@ test('Community actions fit the 390px phone sheet', async ({ page }, testInfo) =
   const manage = page.getByRole('group', { name: 'Manage Alpha' });
   await expect(manage).toBeVisible();
   // Rows that leave the app say where, in their accessible names.
-  for (const name of ['Invite people', 'Community settings', 'Leave community…']) {
+  for (const name of ['Invite people', 'Space settings', 'Leave space…']) {
     const row = manage.getByRole('menuitem', { name });
     await expect(row).toBeVisible();
     await expect(row).toHaveAccessibleName(/opens on alpha\.example\.test$/);
@@ -531,8 +530,10 @@ test('Community actions fit the 390px phone sheet', async ({ page }, testInfo) =
     has: page.locator('[data-menu-group-id="add-community"]'),
   });
   await add.scrollIntoViewIfNeeded();
-  for (const name of ['Connect a community…', 'Join with an invitation…', 'Run your own community'])
+  for (const name of ['Join a space…', 'Run your own space server'])
     await expect(add.getByRole('menuitem', { name })).toBeVisible();
+  // Advanced is a labelled run of rows in the sheet, not a second level.
+  await expect(add.locator('[data-menu-group-id="add-community-advanced"]')).toHaveText('Advanced');
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
     .toBe(true);

@@ -1,5 +1,5 @@
 /**
- * "Start a community": name it, make it yours in the browser, connect this
+ * "Start a space": name it, make it yours in the browser, connect this
  * DorkOS to it.
  *
  * @module features/community-hosting/ui/StartCommunityDialog
@@ -49,9 +49,9 @@ export function startFormStep(props: StartFormStepProps): HostingStep {
     props.webAddressStatus.kind === 'reserved';
   const allowance = allowanceCopy(props.allowance);
   return {
-    title: 'Start a community',
+    title: 'Start a space',
     description:
-      'A place to share channels with people and agents. Your DorkOS account hosts it, and you own it.',
+      'A place to share channels with people and agents. It runs on DorkOS, and you own it.',
     body: (
       <form id={props.formId} onSubmit={props.onSubmit} className="space-y-4" noValidate>
         <CommunityFields
@@ -65,7 +65,7 @@ export function startFormStep(props: StartFormStepProps): HostingStep {
         />
         {allowance && <p className="text-muted-foreground text-sm">{allowance}</p>}
         {props.failure.notice && <HostingNoticeView notice={props.failure.notice} />}
-        {/* Last thing above "Start community", so it is read before the press. */}
+        {/* Last thing above "Start space", so it is read before the press. */}
         <CloudEligibilityNote />
       </form>
     ),
@@ -75,7 +75,7 @@ export function startFormStep(props: StartFormStepProps): HostingStep {
           Cancel
         </Button>
         <Button type="submit" form={props.formId} disabled={blocked || props.submitting}>
-          {props.submitting ? 'Starting…' : 'Start community'}
+          {props.submitting ? 'Starting…' : 'Start space'}
         </Button>
       </>
     ),
@@ -132,7 +132,7 @@ function StartCommunityFlow({
     ? claimConnectStep({
         state: claim.state,
         name: target.name,
-        doneDetail: 'Invite people from the community’s own settings when you’re ready.',
+        doneDetail: 'Invite people from the space’s own settings when you’re ready.',
         onOpenClaim: claim.openClaim,
         onConfirmClaimed: claim.confirmClaimed,
         onOpenApproval: claim.openApproval,

@@ -77,6 +77,52 @@ describe('local community connection DTOs', () => {
     ).toBe(true);
   });
 
+  // DOR-2543. Purpose: an owner notice rides only a verified, connected connection, and only in
+  // its two shapes. Fails if the refine were dropped, or a notice could ride a pending, unverified
+  // or reconnect-required connection.
+  it('carries an owner notice only on a verified connection', () => {
+    const ownerNotice = {
+      state: 'open' as const,
+      replacementId: 'replacement-1',
+      requestState: 'waiting' as const,
+      requestedAt: '2026-09-20T10:00:00.000Z',
+      claimableAfter: '2026-10-04T10:00:00.000Z',
+      claimReissuedAt: null,
+      options: { keep: true as const, transfer: true, delete: true, needsPassword: false },
+    };
+    const completed = {
+      state: 'completed' as const,
+      replacementId: 'replacement-1',
+      newOwnerDisplayName: 'Riley',
+      completedAt: '2026-10-05T09:00:00.000Z',
+    };
+    const parse = (value: unknown) => CommunityConnectionDescriptorSchema.safeParse(value).success;
+    expect(parse({ ...connection, ownerNotice })).toBe(true);
+    expect(parse({ ...connection, ownerNotice: completed })).toBe(true);
+    expect(parse(connection)).toBe(true);
+    const none = { read: false, post: false, enrollAgent: false, stream: false };
+    const unverified = {
+      ...connection,
+      access: { state: 'unverified' as const, effective: none, lastKnown: access.lastKnown },
+    };
+    const reconnect = {
+      ...connection,
+      status: 'reconnect-required',
+      access: { state: 'reconnect-required' as const, effective: none, lastKnown: null },
+      attention: { state: 'unavailable', unreadCount: null, mentionCount: null, verifiedAt: null },
+    };
+    const pending = { ...connection, status: 'pending', access: null, attention: null };
+    expect(parse(unverified)).toBe(true);
+    expect(parse(reconnect)).toBe(true);
+    expect(parse(pending)).toBe(true);
+    for (const shape of [unverified, reconnect, pending])
+      expect(parse({ ...shape, ownerNotice })).toBe(false);
+    // Only the two shapes: an admin's view, or a notice without its request id, is refused.
+    expect(parse({ ...connection, ownerNotice: { ...ownerNotice, state: 'admin' } })).toBe(false);
+    const { replacementId: _id, ...unnamed } = completed;
+    expect(parse({ ...connection, ownerNotice: unnamed })).toBe(false);
+  });
+
   it('accepts a connection whose remote grant must be replaced', () => {
     expect(
       CommunityConnectionDescriptorSchema.parse({

@@ -91,6 +91,19 @@ const nextConfig: NextConfig = {
         destination: '/features/every-agent-one-place',
         permanent: true,
       },
+      // The DorkOS account page left the self-hosting section (DOR-2635): an
+      // account is for everyone, not only people running DorkOS themselves.
+      {
+        source: '/docs/self-hosting/dorkos-accounts',
+        destination: '/docs/account',
+        permanent: true,
+      },
+      // Its raw-markdown copies too (the .mdx/.md rewrites below serve them).
+      {
+        source: '/docs/self-hosting/dorkos-accounts.:ext(mdx|md)',
+        destination: '/docs/account.:ext',
+        permanent: true,
+      },
       // docs/connectors/ became docs/connections/ in the 2026-08 Connections
       // rename (DOR-860). Keep every old connector URL alive.
       {

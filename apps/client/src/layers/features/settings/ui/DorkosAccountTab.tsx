@@ -7,7 +7,8 @@ import { CloudPlanPanel, readCreditsFor, useCloudCredits } from '@/layers/featur
  *
  * Signed out it is a calm page: what an account would add HERE, then one
  * button. Signed in it is the account itself — Plan, Credits, Use credits for,
- * What's on your account, Seats — with "Unlink this computer" last. The link
+ * What's on your account, Seats, Manage on the web — with "Unlink this
+ * computer" last. The link
  * flow's own states (the code, an expired code, a refusal) render in place, so
  * nothing about the account ever sends somebody to a second surface.
  *

@@ -64,7 +64,6 @@ describe('buildCommunityContextNodes', () => {
     onOpenSettings: () => {},
     onLeave: () => {},
     onDisconnect: () => {},
-    onConnect: () => {},
     onJoin: () => {},
     creationOrigins: [] as string[],
     onCreate: () => {},
@@ -72,35 +71,54 @@ describe('buildCommunityContextNodes', () => {
     hosting: null,
   };
 
-  it('offers only "Add community" while this DorkOS is selected', () => {
+  it('offers only "Add a space" while this DorkOS is selected', () => {
     const nodes = buildCommunityContextNodes({ ...handlers, selected: null });
     expect(nodes.map((node) => node.id)).toEqual(['add-community']);
+    expect(nodes[0]).toMatchObject({ label: 'Add a space' });
   });
 
-  it('keeps pairing, joining and running a server as three separate paths', () => {
+  /** The ids of a submenu's rows, or `null` when the node is not one. */
+  function ids(node: ReturnType<typeof buildCommunityContextNodes>[number] | undefined) {
+    return node?.kind === 'submenu' ? node.items.map((item) => item.id) : null;
+  }
+
+  /** The Advanced submenu under "Add a space". */
+  function advanced(add: ReturnType<typeof buildCommunityContextNodes>[number] | undefined) {
+    const found =
+      add?.kind === 'submenu'
+        ? add.items.find((item) => item.id === 'add-community-advanced')
+        : undefined;
+    return found;
+  }
+
+  // Purpose: Join is the one way in, and running your own server sits behind
+  // Advanced. Fails if Connect and Join come back as two rows, or the self-run
+  // path returns to the top level.
+  it('offers Join, then Advanced with the self-run path, while unlinked', () => {
     const [add] = buildCommunityContextNodes({ ...handlers, selected: null });
-    expect(add!.kind === 'submenu' && add!.items.map((node) => node.id)).toEqual([
-      'add-community-connect',
+    expect(ids(add)).toEqual([
       'add-community-join',
-      'add-community-deploy',
+      'add-community-sep-advanced',
+      'add-community-advanced',
     ]);
+    expect(add!.kind === 'submenu' && add!.items[0]).toMatchObject({
+      label: 'Join a space',
+      opensInput: true,
+    });
+    expect(ids(advanced(add))).toEqual(['add-community-deploy']);
   });
 
-  it('offers creation between joining and running a server, one row per host', () => {
+  it('offers creation under Advanced, one row per server the person runs', () => {
     const [one] = buildCommunityContextNodes({
       ...handlers,
       selected: null,
       creationOrigins: ['https://a.example.com'],
     });
-    expect(one!.kind === 'submenu' && one!.items.map((node) => node.id)).toEqual([
-      'add-community-connect',
-      'add-community-join',
-      'add-community-create',
-      'add-community-deploy',
-    ]);
-    const create = one!.kind === 'submenu' ? one!.items[2]! : null;
+    expect(ids(advanced(one))).toEqual(['add-community-create', 'add-community-deploy']);
+    const advancedOne = advanced(one);
+    const create = advancedOne?.kind === 'submenu' ? advancedOne.items[0] : null;
     expect(create).toMatchObject({
-      label: 'Create a community',
+      label: 'Create a space on your server',
       opensInput: true,
       external: { host: 'a.example.com' },
     });
@@ -109,38 +127,33 @@ describe('buildCommunityContextNodes', () => {
       selected: null,
       creationOrigins: ['https://a.example.com', 'https://b.example.com:8443'],
     });
+    const advancedTwo = advanced(two);
+    const rows = advancedTwo?.kind === 'submenu' ? advancedTwo.items : [];
     expect(
-      two!.kind === 'submenu' &&
-        two!.items
-          .filter((node) => node.id.startsWith('add-community-create'))
-          .map((node) => (node.kind === 'action' ? node.label : null))
-    ).toEqual(['Create a community on a.example.com', 'Create a community on b.example.com:8443']);
+      rows
+        .filter((node) => node.id.startsWith('add-community-create'))
+        .map((node) => (node.kind === 'action' ? node.label : null))
+    ).toEqual(['Create a space on a.example.com', 'Create a space on b.example.com:8443']);
   });
 
-  // Purpose: the hosted entry points exist only while linked (spec P5). Fails
-  // if an unlinked install draws them, or a linked one misses either.
-  it('adds Start and Move beside the other paths only while linked', () => {
-    const linked = {
-      onStart: () => {},
-      onMove: () => {},
-      onOpenHosted: null,
-    };
+  // Purpose: the entry points for spaces on DorkOS exist only while linked
+  // (spec P5), and Start and Join lead. Fails if an unlinked install draws
+  // them, a linked one misses either, or the order buries Start.
+  it('leads with Start and Join, then Your spaces, only while linked', () => {
+    const linked = { onStart: () => {}, onOpenYourSpaces: () => {} };
     const [add] = buildCommunityContextNodes({ ...handlers, selected: null, hosting: linked });
-    expect(add!.kind === 'submenu' && add!.items.map((node) => node.id)).toEqual([
-      'add-community-connect',
-      'add-community-join',
+    expect(ids(add)).toEqual([
       'add-community-start',
-      'add-community-move',
-      'add-community-deploy',
+      'add-community-join',
+      'add-community-yours',
+      'add-community-sep-advanced',
+      'add-community-advanced',
     ]);
-    const [withList] = buildCommunityContextNodes({
-      ...handlers,
-      selected: null,
-      hosting: { ...linked, onOpenHosted: () => {} },
-    });
-    expect(withList!.kind === 'submenu' && withList!.items.map((node) => node.id)).toContain(
-      'add-community-hosted'
-    );
+    const labels =
+      add!.kind === 'submenu'
+        ? add!.items.map((item) => ('label' in item ? item.label : null))
+        : [];
+    expect(labels).toEqual(['Start a space', 'Join a space', 'Your spaces', null, 'Advanced']);
   });
 
   it('puts the selected Community’s actions first, with only the local disconnect drawn as destructive', () => {

@@ -33,6 +33,12 @@
         "provider",
         "providers"
       ]
+    },
+    {
+      "id": "wave-5",
+      "issue": "DOR-2631",
+      "note": "What code calls a \"community\" is a \"space\" to the person reading (specs/dorkos-account-by-default, decision D6). The rename is user-facing only for now: identifiers, routes (/api/communities), CLI verbs (`dorkos community`), config keys, DB tables and the cloud wire contract keep the word until DOR-2639 renames them, and the gate never reads those positions. Singular and plural are listed because a term is fenced with a word boundary. Docs prose is scanned for this wave too (MDX_SCANNED_WAVES); a literal command or route that still says community belongs in inline code, which the docs scan blanks. Every surviving copy-position use is a scoped, reasoned allowlist entry — the open-source Community server's own pages, the marketplace's community-source sense, and the like.",
+      "terms": ["community", "communities"]
     }
   ]
 }

@@ -113,7 +113,7 @@ describe('CommunityGonePanel', () => {
       ...base,
       seemsGoneSince: '2026-09-01T12:00:00.000Z',
     });
-    expect(screen.getByText('This community seems to be gone')).toBeInTheDocument();
+    expect(screen.getByText('This space seems to be gone')).toBeInTheDocument();
     // It did answer, with "not found": say that, with the year, since two weeks can cross one.
     const expected = new Date('2026-09-01T12:00:00.000Z').toLocaleDateString(undefined, {
       year: 'numeric',
@@ -121,7 +121,7 @@ describe('CommunityGonePanel', () => {
       day: 'numeric',
     });
     expect(
-      screen.getByText(`Since ${expected}, Alpha has said this community doesn’t exist.`, {
+      screen.getByText(`Since ${expected}, Alpha has said this space doesn’t exist.`, {
         exact: false,
       })
     ).toBeInTheDocument();
@@ -159,8 +159,8 @@ describe('CommunityGonePanel', () => {
         },
       },
     });
-    expect(screen.getByText('The host took this community down')).toBeInTheDocument();
-    expect(screen.getByText(/The host of Alpha took it down/)).toBeInTheDocument();
+    expect(screen.getByText('This space was taken down')).toBeInTheDocument();
+    expect(screen.getByText(/Whoever runs Alpha took it down/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove from DorkOS' })).toBeInTheDocument();
   });
 
@@ -177,7 +177,7 @@ describe('CommunityGonePanel', () => {
         },
       },
     });
-    expect(screen.getByText('This community was deleted')).toBeInTheDocument();
+    expect(screen.getByText('This space was deleted')).toBeInTheDocument();
     expect(
       screen.getByText(
         'Alpha no longer exists, so DorkOS removed the copy it kept on this computer.'

@@ -57,7 +57,7 @@ const form = {
 
 const claimBase = {
   name: 'Night shift',
-  doneDetail: 'Invite people from the community’s own settings when you’re ready.',
+  doneDetail: 'Invite people from the space’s own settings when you’re ready.',
   onOpenClaim: noop,
   onConfirmClaimed: noop,
   onOpenApproval: noop,
@@ -82,7 +82,7 @@ function moveAt(overrides: Partial<CloudCommunityMove>) {
 function StartShowcase() {
   return (
     <PlaygroundSection
-      title="Start a community"
+      title="Start a space"
       description="The switcher's Start flow while linked to a DorkOS account: form, errors on the field, a refusal in the service's own words, claim in the browser, connecting, done."
     >
       <ShowcaseDemo responsive>
@@ -170,7 +170,7 @@ function StartShowcase() {
 function MoveShowcase() {
   return (
     <PlaygroundSection
-      title="Move a community here"
+      title="Move a space here"
       description="Moving in from an owner export: explain, choose, the two upload legs with determinate progress, importing, every failure, cancelled, an unknown state, and the claim at the end."
     >
       <ShowcaseDemo responsive>
@@ -292,9 +292,8 @@ function HostedListShowcase() {
       deletionNoticeAt: '2026-10-15T00:00:00.000Z',
     },
     notice: {
-      title: 'On hold by the host.',
-      detail:
-        'Contact the host to talk about it. You can export the community until the date shown.',
+      title: 'On hold.',
+      detail: 'Contact DorkOS to talk about it. You can export the space until the date shown.',
       actionUrl: 'https://host.example.invalid/contact',
       actionLabel: 'Contact the host',
     },
@@ -318,7 +317,7 @@ function HostedListShowcase() {
   ] as CloudCommunityMove[];
   return (
     <PlaygroundSection
-      title="Hosted communities"
+      title="Your spaces"
       description="Every community the account hosts: open, waiting for its owner, on hold with the service's notice and a deletion date, being deleted, an unknown state, the keep preview, and recent moves."
     >
       <ShowcaseLabel>List</ShowcaseLabel>

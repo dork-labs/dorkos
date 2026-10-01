@@ -53,6 +53,9 @@ import {
 } from '../services/communities/remote/state.js';
 import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
 import { CommunityAttentionCache } from '../services/communities/remote/community-attention-cache.js';
+import { CommunityOwnerNoticeCache } from '../services/communities/remote/community-owner-notice-cache.js';
+import { CommunityOwnerNoticeAnnouncer } from '../services/notifications/emitters/community-owner-replacement.js';
+import { resolveDorkHome } from '../lib/dork-home.js';
 
 /** Resolve the only local human allowed to use a stored community connection. */
 export function resolveCommunityOwner(req: Request, res: Response): string | null {
@@ -62,24 +65,24 @@ export function resolveCommunityOwner(req: Request, res: Response): string | nul
     return null;
   }
   if (!res.locals.user && !isLocalCaller(req)) {
-    res.status(403).json({ error: 'Manage community connections from this machine.' });
+    res.status(403).json({ error: 'Manage space connections from this machine.' });
     return null;
   }
   let caller;
   try {
     caller = resolveCaller(req, res);
   } catch {
-    res.status(403).json({ error: 'An agent cannot manage community connections.' });
+    res.status(403).json({ error: 'An agent cannot manage space connections.' });
     return null;
   }
   if (!getRoomService().authorRegistry.isOwner(caller.id, readOwnerAccount()?.id ?? null)) {
-    res.status(403).json({ error: 'Only this install’s owner can manage community connections.' });
+    res.status(403).json({ error: 'Only this install’s owner can manage space connections.' });
     return null;
   }
   const expectedOwner = req.get('x-dorkos-community-owner');
   if (expectedOwner && expectedOwner !== caller.id) {
     res.status(409).json({
-      error: 'The local owner changed. Reload Community data for the current account.',
+      error: 'The local owner changed. Reload to see spaces for the current account.',
       code: 'COMMUNITY_OWNER_CHANGED',
     });
     return null;
@@ -98,12 +101,12 @@ function failure(res: Response, error: unknown): void {
   } else if (error instanceof RemoteCommunitySelectionRequiredError) {
     res.status(409).json({
       code: 'COMMUNITY_SELECTION_REQUIRED',
-      error: 'Choose a specific community from this host and use its community link.',
+      error: 'That address has more than one space on it. Use the link for the one you want.',
     });
   } else if (error instanceof RemoteCommunityNameNotFoundError) {
     res.status(404).json({
       code: 'COMMUNITY_NAME_NOT_FOUND',
-      error: 'No community uses that short address on this host. Check the spelling.',
+      error: 'No space uses that short address there. Check the spelling.',
     });
   } else if (error instanceof RemoteCommunityRateLimitedError) {
     // The host's own wait, passed on so the person is told how long, not left to guess.
@@ -111,32 +114,32 @@ function failure(res: Response, error: unknown): void {
     if (retryAfterSeconds !== undefined) res.set('Retry-After', String(retryAfterSeconds));
     res.status(429).json({
       code: 'COMMUNITY_RATE_LIMITED',
-      error: `This DorkOS has tried that community too many times in a short while. Wait ${describeCommunityRetryWait(retryAfterSeconds)}, then try again.`,
+      error: `This DorkOS has tried that space too many times in a short while. Wait ${describeCommunityRetryWait(retryAfterSeconds)}, then try again.`,
       ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
     });
   } else if (error instanceof RemoteCommunityUpgradeRequiredError) {
     res.status(426).json({
       code: 'COMMUNITY_UPGRADE_REQUIRED',
-      error: 'This community’s server is too old to connect. Ask whoever runs it to update it.',
+      error: 'This space’s server is too old to connect. Ask whoever runs it to update it.',
     });
   } else if (error instanceof RemoteConnectionAuthorizationError) {
     res.status(409).json({
-      error: 'Reconnect this community to continue.',
+      error: 'Reconnect this space to continue.',
       code: 'COMMUNITY_RECONNECT_REQUIRED',
     });
   } else if (error instanceof RemoteConnectionNotFoundError) {
-    res.status(404).json({ error: 'Community connection not found.' });
+    res.status(404).json({ error: 'Space connection not found.' });
   } else if (error instanceof PinnedOriginError) {
     res
       .status(error.code === 'INVALID_ORIGIN' || error.code === 'UNSAFE_ADDRESS' ? 400 : 502)
       .json({
         error:
           error.code === 'INVALID_ORIGIN' || error.code === 'UNSAFE_ADDRESS'
-            ? 'Enter an accessible HTTPS community address.'
-            : 'The community could not complete this connection request.',
+            ? 'Enter an accessible HTTPS space address.'
+            : 'The space could not complete this connection request.',
       });
   } else {
-    res.status(502).json({ error: 'The community connection is unavailable.' });
+    res.status(502).json({ error: 'The space connection is unavailable.' });
   }
 }
 
@@ -154,33 +157,69 @@ function attentionAccess(connection: CommunityConnectionDescriptor): 'read' | 'o
 }
 
 /**
- * Add attention only after the local owner and remote read grant are verified.
+ * The per-connection reads a connection listing adds, each held within the same budget, and the
+ * announcer that tells the owner once about each notice those reads find.
+ */
+interface ActivityCaches {
+  attention: CommunityAttentionCache;
+  ownerNotice: CommunityOwnerNoticeCache;
+  announcer: CommunityOwnerNoticeAnnouncer;
+}
+
+/**
+ * Add attention, and the owner's notice about a request to replace them, only after the local
+ * owner and remote read grant are verified.
  *
- * Remote counts are untrusted. Any failure — transport, a slow answer, or
+ * Remote answers are untrusted. Any failure — transport, a slow answer, or
  * counts that break a descriptor rule — leaves this one connection on the last
  * counts its Community confirmed (`stale`) or on `unavailable`, so a single
  * broken or slow Community can never fail or stall the whole list and hide the
  * Remove control the owner needs to drop it. A Community that is offline this
  * read is not asked at all and keeps its last confirmed counts, also `stale`.
+ *
+ * The owner notice is asked at the same moment as the counts, so it adds nothing to how long the
+ * list takes. Unlike the counts it is never kept past about a minute: an offline Community, or
+ * one that stays slow or fails, shows none rather than an old one (DOR-2543). Each notice shown
+ * is handed to the announcer, which raises its notification once, ever; the list never waits
+ * for that.
  */
 async function withAttention(
   connection: CommunityConnectionDescriptor,
   owner: string,
-  attentionCache: CommunityAttentionCache
+  caches: ActivityCaches
 ): Promise<CommunityConnectionDescriptor> {
   const access = attentionAccess(connection);
   if (access === 'none') {
-    attentionCache.forget(owner, connection.ref);
+    caches.attention.forget(owner, connection.ref);
+    caches.ownerNotice.forget(owner, connection.ref);
     return connection;
   }
-  const attention =
+  const [attention, ownerNotice] =
     access === 'offline'
-      ? attentionCache.lastConfirmed(owner, connection.ref)
-      : await attentionCache.read(owner, connection.ref, () =>
-          getRemoteCommunityAdapter(connection.ref, owner).attention()
-        );
-  const enriched = CommunityConnectionDescriptorSchema.safeParse({ ...connection, attention });
-  return enriched.success ? enriched.data : connection;
+      ? [caches.attention.lastConfirmed(owner, connection.ref), undefined]
+      : await Promise.all([
+          caches.attention.read(owner, connection.ref, () =>
+            getRemoteCommunityAdapter(connection.ref, owner).attention()
+          ),
+          caches.ownerNotice.read(owner, connection.ref, () =>
+            getRemoteCommunityAdapter(connection.ref, owner).ownerReplacementNotice()
+          ),
+        ]);
+  const enriched = CommunityConnectionDescriptorSchema.safeParse({
+    ...connection,
+    attention,
+    ...(ownerNotice ? { ownerNotice } : {}),
+  });
+  // Counts that break a descriptor rule must not take a valid notice down with them.
+  const result = enriched.success
+    ? enriched.data
+    : (CommunityConnectionDescriptorSchema.safeParse({
+        ...connection,
+        ...(ownerNotice ? { ownerNotice } : {}),
+      }).data ?? connection);
+  if (result.ownerNotice)
+    void caches.announcer.announce(result.ref, result.label, result.ownerNotice);
+  return result;
 }
 
 /** Build the production route or inject an isolated service in HTTP tests. */
@@ -200,24 +239,30 @@ export function createCommunityConnectionsRouter(
       }
     }
   ),
-  attentionCache: CommunityAttentionCache = new CommunityAttentionCache()
+  attentionCache: CommunityAttentionCache = new CommunityAttentionCache(),
+  ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache(),
+  announcer: CommunityOwnerNoticeAnnouncer = new CommunityOwnerNoticeAnnouncer(resolveDorkHome())
 ): Router {
   const router = Router();
+  const caches: ActivityCaches = {
+    attention: attentionCache,
+    ownerNotice: ownerNoticeCache,
+    announcer,
+  };
   router.get('/', async (req, res) => {
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     try {
       const connections = await connectionService.list(owner);
-      attentionCache.retainOnly(
-        owner,
-        connections
-          .filter((connection) => attentionAccess(connection) !== 'none')
-          .map((connection) => connection.ref)
-      );
+      const readable = connections
+        .filter((connection) => attentionAccess(connection) !== 'none')
+        .map((connection) => connection.ref);
+      attentionCache.retainOnly(owner, readable);
+      ownerNoticeCache.retainOnly(owner, readable);
       res.json(
         CommunityConnectionListResponseSchema.parse({
           connections: await Promise.all(
-            connections.map((item) => withAttention(item, owner, attentionCache))
+            connections.map((item) => withAttention(item, owner, caches))
           ),
         })
       );
@@ -230,7 +275,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const parsed = CommunityConnectionStartRequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Enter a valid community address and install name.' });
+      res.status(400).json({ error: 'Enter a valid space address and install name.' });
       return;
     }
     try {
@@ -259,7 +304,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const parsed = CommunityNavigationMoveRequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Choose a connected community and move direction.' });
+      res.status(400).json({ error: 'Choose a connected space and move direction.' });
       return;
     }
     try {
@@ -296,7 +341,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const parsed = CommunityNavigationRememberRequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Choose a valid Community destination.' });
+      res.status(400).json({ error: 'Choose a valid space to open.' });
       return;
     }
     try {
@@ -312,7 +357,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     try {
@@ -330,17 +375,18 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     attentionCache.retainOwner(owner);
+    ownerNoticeCache.retainOwner(owner);
     try {
       res.json(
         CommunityConnectionStatusResponseSchema.parse({
           connection: await withAttention(
             await connectionService.status(ref.data, owner),
             owner,
-            attentionCache
+            caches
           ),
         })
       );
@@ -353,7 +399,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     try {
@@ -369,7 +415,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     try {
@@ -386,7 +432,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     try {
@@ -404,7 +450,7 @@ export function createCommunityConnectionsRouter(
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
-      res.status(404).json({ error: 'Community connection not found.' });
+      res.status(404).json({ error: 'Space connection not found.' });
       return;
     }
     try {
@@ -414,9 +460,10 @@ export function createCommunityConnectionsRouter(
     } catch (error) {
       failure(res, error);
     } finally {
-      // Even a failed disconnect may have removed the local copy; counts for a
-      // Community the owner asked to leave must not outlive the request.
+      // Even a failed disconnect may have removed the local copy; counts and notices
+      // for a Community the owner asked to leave must not outlive the request.
       attentionCache.forget(owner, ref.data);
+      ownerNoticeCache.forget(owner, ref.data);
     }
   });
   return router;

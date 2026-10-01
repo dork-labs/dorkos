@@ -64,10 +64,10 @@ describe('communityRefusal', () => {
   it.each([
     [
       'AGENT_LIMIT_REACHED',
-      'You’ve reached your agent limit in this community. Remove one to add another.',
+      'You’ve reached your agent limit in this space. Remove one to add another.',
     ],
-    ['MEMBER_LIMIT_REACHED', 'This community is full. Ask its owner to make room.'],
-    ['STORAGE_LIMIT_REACHED', 'This community is out of file space.'],
+    ['MEMBER_LIMIT_REACHED', 'This space is full. Ask its owner to make room.'],
+    ['STORAGE_LIMIT_REACHED', 'This space is out of file space.'],
   ] as const)('names the %s cap as a state, not a conflict or an outage', (code, error) => {
     // Purpose: a Community answers a cap with 409 and its own code; fails if that reads as a
     // generic conflict ("refresh and try again") that no refresh can fix.
@@ -82,10 +82,10 @@ describe('communityRefusal', () => {
     expect(communityRefusal(new PinnedHttpError(429, 'RATE_LIMITED'), 'enroll-agent')).toEqual({
       status: 429,
       code: 'COMMUNITY_LIMIT_REACHED',
-      error: 'You’ve reached this community’s limit on active agents. Remove one to add another.',
+      error: 'You’ve reached this space’s limit on active agents. Remove one to add another.',
     });
     expect(communityRefusal(new PinnedHttpError(429, 'RATE_LIMITED'))?.error).toBe(
-      'This community’s limit was reached. Try again later.'
+      'This space’s limit was reached. Try again later.'
     );
   });
 
@@ -103,16 +103,16 @@ describe('communityRefusal', () => {
       status: 423,
       code: 'COMMUNITY_HELD',
       error:
-        'The host has put this community on hold. You can read it, but no one can post. Its owner can still export it.',
+        'This space is on hold. You can read it, but no one can post. Its owner can still export it.',
     });
   });
 
   it('tells an archived community apart from one being deleted', () => {
     expect(communityRefusal(new PinnedHttpError(423, 'COMMUNITY_ARCHIVED'))?.error).toBe(
-      'This community is archived, so it’s read-only.'
+      'This space is archived, so it’s read-only.'
     );
     expect(communityRefusal(new PinnedHttpError(423, 'COMMUNITY_DELETION_PENDING'))?.error).toBe(
-      'This community is being deleted.'
+      'This space is being deleted.'
     );
   });
 
@@ -121,7 +121,7 @@ describe('communityRefusal', () => {
       'Replies can only go on a top-level message.'
     );
     expect(communityRefusal(new PinnedHttpError(409, 'COMMUNITY_UNAVAILABLE'))?.error).toBe(
-      'This community isn’t open right now.'
+      'This space isn’t open right now.'
     );
   });
 });

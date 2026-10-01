@@ -158,7 +158,7 @@ describe('remote community surface', () => {
     await waitFor(() => expect(view.transport.getRemoteCommunityRoom).toHaveBeenCalled());
     expect(view.transport.subscribeRemoteCommunityRoom).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Stop my agents' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add to community' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add to space' })).not.toBeInTheDocument();
   });
 
   it('makes unverified access cache-only and starts no protected request', async () => {
@@ -245,7 +245,7 @@ describe('remote community surface', () => {
       })
     );
     expect(screen.getByText('Builder · Agent')).toBeInTheDocument();
-    expect(screen.getByText('Waiting for community confirmation…')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for space confirmation…')).toBeInTheDocument();
     expect(screen.getByText('proof.png')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'proof.png' })).not.toBeInTheDocument();
     act(() =>
@@ -269,7 +269,7 @@ describe('remote community surface', () => {
     expect(
       screen.getByText('Delivery not confirmed. The retry window has ended.')
     ).toBeInTheDocument();
-    expect(screen.queryByText('Waiting for community confirmation…')).not.toBeInTheDocument();
+    expect(screen.queryByText('Waiting for space confirmation…')).not.toBeInTheDocument();
     act(() =>
       view.emit({
         type: 'deliveries',

@@ -7,7 +7,7 @@ import { cn } from '@/layers/shared/lib';
  * it two different ways.
  */
 export const CLOUD_ELIGIBILITY_TEXT =
-  'Paid plans, and communities that DorkOS hosts for you, are for people in the United States who are 18 or older.';
+  'Paid plans, and spaces that run on DorkOS for you, are for people in the United States who are 18 or older.';
 
 /**
  * Where the full answer lives: the pricing page's questions, which include

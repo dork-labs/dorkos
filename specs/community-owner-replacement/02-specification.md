@@ -460,7 +460,7 @@ Real Postgres; the `smtp-server` fake in process (accept, `421`, `550`, hang); O
 ## Performance Considerations
 
 - One indexed read per worker tick for due replacements and due messages; replacements are rare and human-scale.
-- The DorkOS notice read rides the existing per-connection budget (`COMMUNITY_ATTENTION_BUDGET_MS`) and is cached like the counts; a slow Community shows no notice rather than a stale one.
+- The DorkOS notice read rides the existing per-connection budget (`COMMUNITY_ATTENTION_BUDGET_MS`) and is cached like the counts; a slow Community shows no notice rather than a stale one. An answer that missed this read's budget is still shown if it landed within about 65 seconds (`COMMUNITY_OWNER_NOTICE_FRESH_MS`, a little over two of the app's 30-second polls), so a Community that always answers just past the budget is not hidden.
 - SMTP sends happen outside any database transaction; a slow mail server holds a lease, never a row lock.
 
 ## Security Considerations

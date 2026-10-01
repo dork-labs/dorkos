@@ -292,12 +292,21 @@ describe('owner replacement wire schemas', () => {
     expect(
       parse({ ...ownerNotice, options: { ...ownerNotice.options, keep: false } }).success
     ).toBe(false);
-    expect(
-      CommunityWireOwnerReplacementNoticeResponseSchema.safeParse({
-        open: null,
-        completed: { newOwnerDisplayName: 'Riley', completedAt: AT },
-      }).success
-    ).toBe(true);
+    const completed = {
+      replacementId: 'replacement-1',
+      newOwnerDisplayName: 'Riley',
+      completedAt: AT,
+      wasYours: true,
+    };
+    const parseCompleted = (value: unknown) =>
+      CommunityWireOwnerReplacementNoticeResponseSchema.safeParse({ open: null, completed: value })
+        .success;
+    expect(parseCompleted(completed)).toBe(true);
+    // The completion names its request and says whether it was the reader's (DOR-2543).
+    const { wasYours: _wasYours, ...unmarked } = completed;
+    expect(parseCompleted(unmarked)).toBe(false);
+    const { replacementId: _id, ...unnamed } = completed;
+    expect(parseCompleted(unnamed)).toBe(false);
   });
 
   // Purpose: fails if the session objection takes anything but a replacement id.

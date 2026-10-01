@@ -85,15 +85,13 @@ export function RemoteCommunityAgents({
       await refresh();
     } catch (cause) {
       if (isCommunityContentAuthorityCurrent(captured))
-        setError(
-          cause instanceof Error ? cause.message : 'The agent could not join this community.'
-        );
+        setError(cause instanceof Error ? cause.message : 'The agent could not join this space.');
     } finally {
       if (isCommunityContentAuthorityCurrent(captured)) setPending(false);
     }
   }
   return (
-    <section className="mt-3 space-y-2 border-t pt-3" aria-label="My community agents">
+    <section className="mt-3 space-y-2 border-t pt-3" aria-label="Your agents in this space">
       <h3 className="text-sm font-medium">My agents</h3>
       <p className="text-muted-foreground text-xs">
         Add an agent from this installation, then choose whether it joins this channel. Other
@@ -101,7 +99,7 @@ export function RemoteCommunityAgents({
       </p>
       {agents.isError && (
         <p role="alert">
-          Your community agents could not be loaded.{' '}
+          Your agents in this space could not be loaded.{' '}
           <Button variant="ghost" size="sm" onClick={() => void agents.refetch()}>
             Retry
           </Button>
@@ -137,7 +135,7 @@ export function RemoteCommunityAgents({
             </Select>
           </div>
           <div className="min-w-40 flex-1 space-y-1">
-            <Label htmlFor={`${id}-handle`}>Community handle (optional)</Label>
+            <Label htmlFor={`${id}-handle`}>Space handle (optional)</Label>
             <Input
               id={`${id}-handle`}
               value={handle}
@@ -147,7 +145,7 @@ export function RemoteCommunityAgents({
             />
           </div>
           <Button type="submit" disabled={!selected || !online || pending}>
-            {pending ? 'Adding…' : 'Add to community'}
+            {pending ? 'Adding…' : 'Add to space'}
           </Button>
         </form>
       )}
@@ -201,7 +199,7 @@ function EnrolledAgent({
     onNotice(
       result.remoteRevoked
         ? 'Participation stopped.'
-        : 'Local participation stopped. Remote removal is not confirmed; retry when the community is reachable.'
+        : 'Local participation stopped. Remote removal is not confirmed; retry when the space is reachable.'
     );
   }
   return (
@@ -254,15 +252,15 @@ function EnrolledAgent({
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="ghost" size="sm" disabled={pending !== null || !canEnroll}>
-              Remove from community
+              Remove from space
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Remove {agent.displayName}?</AlertDialogTitle>
               <AlertDialogDescription>
-                This stops its participation in every channel in this community. You can add it
-                again later.
+                This stops its participation in every channel in this space. You can add it again
+                later.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

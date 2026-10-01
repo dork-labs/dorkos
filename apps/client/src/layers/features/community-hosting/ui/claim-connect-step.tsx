@@ -107,7 +107,7 @@ export function claimConnectStep(props: ClaimConnectStepProps): HostingStep {
         body: (
           <p className="flex items-center gap-2 text-sm">
             <CheckCircle2 className="text-status-success-fg size-4" aria-hidden />
-            It’s selected in your community list.
+            It’s selected in your list of spaces.
           </p>
         ),
         actions: <Button onClick={props.onClose}>Done</Button>,

@@ -24,6 +24,7 @@ import {
   RotateCcw,
   ShieldQuestion,
   Sparkles,
+  TriangleAlert,
   WifiOff,
   type LucideIcon,
 } from 'lucide-react';
@@ -91,6 +92,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   // Something an extension asks a person (spec `flow-multiproject` §7): a
   // question, whoever raised it.
   'extension.decision': MessageCircleQuestion,
+  // Someone asked to take over a community this person owns (DOR-2543).
+  'community.owner-replacement': TriangleAlert,
 };
 
 /** How loudly a notification draws. */
@@ -295,6 +298,11 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // the same place its phone-free arrival deep-links to
     // (`standingDeepLink` in the server's `escalation-service.ts`).
     return { to: '/', search: { settings: EXTENSIONS_SETTINGS_TAB } };
+  }
+  if (kind === 'community.owner-replacement') {
+    // The subject is the owner's connection ref: the community's own page, where the banner
+    // says what is happening and opens the community to keep ownership.
+    return { to: '/channels', search: { community: subject.id } };
   }
   // An extension's decision history row carries no link of its own (the
   // title and body say what happened); "Watch" on the row opens its chat.

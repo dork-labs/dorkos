@@ -3,12 +3,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  describeCommunityRetryWait,
   type CommunityConnectionDescriptor,
   type CommunityConnectionStartResponse,
 } from '@dorkos/shared/community-connections';
+import { isCommunityInvitationUrl } from '@dorkos/shared/community-wire';
 import { useTransport } from '@/layers/shared/model';
-import { isCommunityAuthorityCurrent, type ConfirmedCommunityAuthority } from '@/layers/shared/lib';
+import {
+  isCommunityAuthorityCurrent,
+  openExternalLink,
+  type ConfirmedCommunityAuthority,
+} from '@/layers/shared/lib';
 import {
   Button,
   Input,
@@ -37,69 +41,13 @@ import {
   useShowCommunityApproval,
   type CommunityApprovalCheck,
 } from '@/layers/entities/community';
-
-/**
- * What to say when a connection could not start.
- *
- * Four refusals get their own words, because "check the address" would send
- * the person looking for a typo in each of them:
- *
- * - `COMMUNITY_SELECTION_REQUIRED`: the address leads to a host holding several
- *   communities. It is right as far as it goes; they need one community's own
- *   link, so the example is built on the host they typed.
- * - `COMMUNITY_NAME_NOT_FOUND`: the host is real but knows no community by that
- *   short address. Here the spelling really is the thing to check.
- * - `COMMUNITY_RATE_LIMITED`: the host limits how often one machine may
- *   look up a name or start a connection, and this one has reached it. The
- *   address may be fine; the answer is to wait, for as long as the host said
- *   when it said.
- * - `COMMUNITY_UPGRADE_REQUIRED`: the community's server is older than this
- *   DorkOS can connect to. Nothing the person types fixes it; whoever runs the
- *   server has to update it.
- *
- * Every other failure keeps the general message.
- *
- * @param error - Why the start failed.
- * @param address - The address the person submitted.
- */
-function startErrorMessage(error: unknown, address: string | undefined): string {
-  const refusal =
-    typeof error === 'object' && error !== null
-      ? (error as { code?: unknown; body?: { retryAfterSeconds?: unknown } })
-      : {};
-  switch (refusal.code) {
-    case 'COMMUNITY_SELECTION_REQUIRED':
-      return `That address has more than one community on it. Enter the link for the one you want: its short address, like ${shortAddressExample(address)}, or its full link, which has /c/ in it.`;
-    case 'COMMUNITY_NAME_NOT_FOUND':
-      return 'No community uses that short address on this host. Check the spelling, or ask for the community’s full link.';
-    case 'COMMUNITY_RATE_LIMITED':
-      return `This DorkOS has tried that community too many times in a short while. Your address may be fine. Wait ${describeCommunityRetryWait(refusal.body?.retryAfterSeconds)}, then try again.`;
-    case 'COMMUNITY_UPGRADE_REQUIRED':
-      return 'This community’s server is too old to connect to this DorkOS. Ask whoever runs the community to update it, then try again.';
-    default:
-      return 'Couldn’t connect. Check the community address and try again.';
-  }
-}
-
-/**
- * Whether a failed start puts the address itself in doubt. A busy host or an
- * outdated server is not the address's fault, so the field is not marked
- * invalid for those; the message is still tied to it.
- */
-function blamesAddress(error: unknown): boolean {
-  const code =
-    typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : '';
-  return code !== 'COMMUNITY_RATE_LIMITED' && code !== 'COMMUNITY_UPGRADE_REQUIRED';
-}
-
-/** A short address on the host the person typed, or a generic one when it cannot be read. */
-function shortAddressExample(address: string | undefined): string {
-  try {
-    return `${new URL(address ?? '').origin}/your-community`;
-  } catch {
-    return 'https://spaces.example.com/acme';
-  }
-}
+import {
+  blamesAddress,
+  INCOMPLETE_INVITATION,
+  isBrokenInvitation,
+  spaceAddressFromInvitation,
+  startErrorMessage,
+} from './join-space-copy';
 
 /** What the connect dialog was opened for. */
 export interface ConnectCommunityRequest {
@@ -133,7 +81,12 @@ interface Started {
 }
 
 /**
- * Connect this installation to a Community, in place, from the switcher.
+ * Join a space: connect this installation to it, in place, from the switcher.
+ *
+ * The one Join flow (spec §4). An address connects. An invitation link opens
+ * on the space's own site, where the person joins, and the form stays here
+ * with the space's address filled in, so joining always ends in a connected
+ * computer.
  *
  * One dialog for the whole pairing: the address and installation name, then
  * the wait while the person approves on the Community's own site, then the
@@ -234,7 +187,7 @@ export function ConnectCommunityDialog({
   // keep waiting on a connection that is gone.
   else if (open && shownRef !== null && !connection && list.isSuccess) {
     const label =
-      lastSeen?.owner === ownerKey && lastSeen.ref === shownRef ? lastSeen.label : 'this community';
+      lastSeen?.owner === ownerKey && lastSeen.ref === shownRef ? lastSeen.label : 'this space';
     setShownRef(null);
     setNotice({
       address,
@@ -347,6 +300,11 @@ function ConnectCommunityBody({
   const client = useQueryClient();
   const id = useId();
   const [url, setUrl] = useState('');
+  // Set once an invitation was opened: where it opened, so the form can say
+  // what happens next while the person joins there.
+  const [joiningOn, setJoiningOn] = useState<string | null>(null);
+  // A join link that is not one this app may open: said, never sent on.
+  const [brokenInvitation, setBrokenInvitation] = useState(false);
   const [installName, setInstallName] = useState(defaultInstallName);
   const addressInput = useRef<HTMLInputElement>(null);
   const approvalLink = useRef<HTMLAnchorElement>(null);
@@ -392,12 +350,36 @@ function ConnectCommunityBody({
   // field was disabled while the start ran, so focus is moved once it is enabled again.
   const startError = start.error;
   useEffect(() => {
-    if (startError) addressInput.current?.focus();
-  }, [startError]);
+    if (startError || brokenInvitation) addressInput.current?.focus();
+  }, [startError, brokenInvitation]);
+
+  const isInvitation = isCommunityInvitationUrl(url);
+  const errorText = brokenInvitation
+    ? INCOMPLETE_INVITATION
+    : start.error
+      ? startErrorMessage(start.error, start.variables)
+      : null;
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!url.trim() || !installName.trim() || start.isPending) return;
+    if (!url.trim() || start.isPending) return;
+    if (isBrokenInvitation(url)) {
+      start.reset();
+      setBrokenInvitation(true);
+      return;
+    }
+    // An invitation is joined on the space's own site, never here: open it as
+    // it is, and stay on Connect with the space's address filled in, so the
+    // person comes back to a computer that connects rather than to a
+    // membership this DorkOS knows nothing about.
+    if (isCommunityInvitationUrl(url)) {
+      if (!openExternalLink(url.trim())) return;
+      setUrl(spaceAddressFromInvitation(url));
+      setJoiningOn(new URL(url.trim()).host);
+      start.reset();
+      return;
+    }
+    if (!installName.trim()) return;
     start.mutate(url.trim());
   }
 
@@ -438,32 +420,41 @@ function ConnectCommunityBody({
     return (
       <form onSubmit={submit}>
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Connect a community</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>Join a space</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            Bring a community’s channels into this app, so you and your agents can talk there. You
-            approve it on the community’s own site.
+            Bring a space’s channels into this app, so you and your agents can talk there. You
+            approve it on the space’s own site.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-4 py-4">
           {status}
           <div className="space-y-1.5">
-            <Label htmlFor={`${id}-url`}>Community address</Label>
+            <Label htmlFor={`${id}-url`}>Space address or invitation link</Label>
             <Input
               ref={addressInput}
               id={`${id}-url`}
               type="url"
               inputMode="url"
-              placeholder="https://spaces.example.com/acme"
-              aria-describedby={start.error ? `${id}-url-hint ${id}-url-error` : `${id}-url-hint`}
-              aria-invalid={start.error && blamesAddress(start.error) ? true : undefined}
+              placeholder="https://example.com/acme"
+              aria-describedby={errorText ? `${id}-url-hint ${id}-url-error` : `${id}-url-hint`}
+              aria-invalid={
+                brokenInvitation || (start.error && blamesAddress(start.error)) ? true : undefined
+              }
               required
-              autoComplete="url"
+              // A one-time invitation must never be saved by the browser's autofill.
+              autoComplete="off"
               value={url}
-              onChange={(event) => setUrl(event.target.value)}
+              onChange={(event) => {
+                setUrl(event.target.value);
+                setJoiningOn(null);
+                setBrokenInvitation(false);
+              }}
               disabled={start.isPending || !authority}
             />
-            <p id={`${id}-url-hint`} className="text-muted-foreground text-xs">
-              Its full link or its short address both work.
+            <p id={`${id}-url-hint`} aria-live="polite" className="text-muted-foreground text-xs">
+              {joiningOn
+                ? `Finish joining on ${joiningOn} in the tab that opened, then come back and connect.`
+                : 'Its full link, its short address, or an invitation link you were sent.'}
             </p>
           </div>
           <div className="space-y-1.5">
@@ -478,12 +469,12 @@ function ConnectCommunityBody({
               disabled={start.isPending || !authority}
             />
             <p id={`${id}-name-hint`} className="text-muted-foreground text-xs">
-              What the community calls this DorkOS.
+              What the space calls this DorkOS.
             </p>
           </div>
-          {start.error && (
+          {errorText && (
             <p id={`${id}-url-error`} role="alert" className="text-destructive text-sm">
-              {startErrorMessage(start.error, start.variables)}
+              {errorText}
             </p>
           )}
         </ResponsiveDialogBody>
@@ -493,9 +484,14 @@ function ConnectCommunityBody({
           </Button>
           <Button
             type="submit"
-            disabled={start.isPending || !authority || !url.trim() || !installName.trim()}
+            disabled={
+              start.isPending ||
+              !url.trim() ||
+              // Opening an invitation asks nothing of this DorkOS; connecting does.
+              (!isInvitation && (!authority || !installName.trim()))
+            }
           >
-            {start.isPending ? 'Connecting…' : 'Connect community'}
+            {start.isPending ? 'Connecting…' : isInvitation ? 'Open invitation' : 'Connect'}
           </Button>
         </ResponsiveDialogFooter>
       </form>
@@ -581,7 +577,8 @@ function ConnectCommunityBody({
           </Button>
         ) : (
           <p className="text-muted-foreground text-sm">
-            Approve in the community tab you opened. If you closed it, cancel and connect again.
+            Approve in the tab you opened for this space. If you closed it, cancel and connect
+            again.
           </p>
         )}
         {(end.isError || Boolean(check.error)) && (

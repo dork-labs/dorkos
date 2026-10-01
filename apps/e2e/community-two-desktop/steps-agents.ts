@@ -88,7 +88,7 @@ export async function agentSteps(w: World): Promise<void> {
     );
   }
   const agentsRegion = (local: Desktop) =>
-    local.page.getByRole('region', { name: 'My community agents' });
+    local.page.getByRole('region', { name: 'Your agents in this space' });
   async function openAgents(local: Desktop, ref: string, roomId: string) {
     await local.page.goto(`${local.origin}/channels?community=${ref}&id=${roomId}`);
     await agentsPanel(local);
@@ -112,14 +112,14 @@ export async function agentSteps(w: World): Promise<void> {
     const region = agentsRegion(local);
     await region.getByLabel('Local agent').click();
     await local.page.getByRole('option', { name: agent.name, exact: true }).click();
-    await region.getByLabel('Community handle (optional)').fill(handle);
+    await region.getByLabel('Space handle (optional)').fill(handle);
     const enrolled = local.page.waitForResponse(
       (r) =>
         r.request().method() === 'POST' &&
         new URL(r.url()).pathname ===
           `/api/communities/${ref}/agents/${encodeURIComponent(agent.id)}/enroll`
     );
-    await region.getByRole('button', { name: 'Add to community', exact: true }).click();
+    await region.getByRole('button', { name: 'Add to space', exact: true }).click();
     return (await enrolled).status();
   }
   async function joinChannelInUi(
@@ -213,10 +213,10 @@ export async function agentSteps(w: World): Promise<void> {
           'An agent past the limit is refused with a reason the person can act on',
           'The Community refuses the enrollment with 429 "Active agent limit reached." ' +
             '(apps/community/src/routes/community/agents.ts), but the DorkOS app answers POST ' +
-            '/api/communities/:ref/agents/:localAgentId/enroll with 502 "Community unavailable." because fail() in ' +
+            '/api/communities/:ref/agents/:localAgentId/enroll with 502 "Space unavailable." because fail() in ' +
             'apps/server/src/routes/remote-communities.ts maps every unrecognised Community refusal to 502. Repro: run a ' +
             'Community with COMMUNITY_AGENTS_PER_OWNER=1, enroll one local agent from the channel Members panel, then ' +
-            'add a second: the panel says "Community unavailable." while the Community is up.',
+            'add a second: the panel says "Space unavailable." while the Community is up.',
           async () => {
             assert(status < 500, `enroll refusal is a ${status}`);
             assert(!/unavailable/i.test(refusal), `the panel says "${refusal}"`);
@@ -324,7 +324,7 @@ export async function agentSteps(w: World): Promise<void> {
       .toBe(true);
     await openGeneral(a, refA);
     const ask = `@b-helper please confirm the two-desktop proof ${stamp}`;
-    // `send` waits out the reload's "Connecting to the community…" and confirms the post.
+    // `send` waits out the reload's "Connecting to the space…" and confirms the post.
     const { liveWaitMs } = await send(composer(a), ask);
     await seeNewest(a, ask);
     let reply: Entry | undefined;

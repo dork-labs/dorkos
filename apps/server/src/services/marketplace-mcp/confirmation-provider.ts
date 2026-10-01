@@ -728,7 +728,7 @@ function summaryOf(req: ConfirmationRequest): string {
       // Removing an agent package removes the agent from the team, and a
       // reinstall does not bring any of this back (DOR-2245).
       return req.packageType === 'agent'
-        ? `${base}. This removes the agent from your team: its rooms, schedules (paused), sign-ins, access tokens, community memberships and connection access go, and reinstalling does not restore them`
+        ? `${base}. This removes the agent from your team: its rooms, schedules (paused), sign-ins, access tokens, space memberships and connection access go, and reinstalling does not restore them`
         : base;
     }
     case 'update': {

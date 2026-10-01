@@ -34,7 +34,7 @@ export function CommunityPageHeading({ community, roomId }: CommunityPageHeading
     Boolean(roomId) && access.capabilities.read,
     access.fingerprint
   );
-  const label = connection?.label ?? 'Community';
+  const label = connection?.label ?? 'Space';
   const title = roomId ? room.data?.title : undefined;
   // Still on its way: a half-name read aloud is the half a person remembers.
   const pending =

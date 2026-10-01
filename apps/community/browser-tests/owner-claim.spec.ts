@@ -248,8 +248,8 @@ test('a host administrator creates a community and its intended owner signs up a
     await expect(
       ownerPage.getByRole('heading', { name: 'You’re the owner of Second Place.' })
     ).toBeVisible();
-    // The steps are the DorkOS app's own (sidebar switcher, Add community, Connect a
-    // community…), and the page hands over the community's own link, which a host address is not.
+    // The steps are the DorkOS app's own (sidebar switcher, Add a space, Join a space…), and the
+    // page hands over the community's own link, which a host address is not.
     const connect = ownerPage
       .locator('[data-slot="notice"]')
       .filter({ hasText: 'Connect DorkOS to this community' });
@@ -260,8 +260,8 @@ test('a host administrator creates a community and its intended owner signs up a
       connect.getByText('In the DorkOS app, open the menu at the top left.', { exact: true })
     ).toBeVisible();
     await expect(connect.getByText(/sidebar|team’s name/u)).toHaveCount(0);
-    await expect(connect.getByText('Add community', { exact: true })).toBeVisible();
-    await expect(connect.getByText('Connect a community…', { exact: true })).toBeVisible();
+    await expect(connect.getByText('Add a space', { exact: true })).toBeVisible();
+    await expect(connect.getByText('Join a space…', { exact: true })).toBeVisible();
     await expect(ownerPage.getByText(/Connections, then Messaging/u)).toHaveCount(0);
     const claimedId = (
       await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='Second Place'")

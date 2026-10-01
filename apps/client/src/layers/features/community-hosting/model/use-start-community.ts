@@ -1,5 +1,5 @@
 /**
- * The "Start a community" form: name, optional web address, and the one
+ * The "Start a space" form: name, optional web address, and the one
  * request that starts it.
  *
  * The app never decides who may start a community. It sends the request and

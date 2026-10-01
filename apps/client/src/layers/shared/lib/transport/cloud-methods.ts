@@ -12,6 +12,9 @@
  * @module shared/lib/transport/cloud-methods
  */
 import type {
+  CloudBillingPage,
+  CloudAccountExportResponse,
+  CloudBillingSessionResponse,
   CloudCommunityClaimLinkResponse,
   CloudCommunityKeepResponse,
   CloudCommunityMovePollResponse,
@@ -27,6 +30,7 @@ import type {
   CloudLinkSummary,
   CloudMembersResponse,
   CloudNudgeResponse,
+  CloudOffersResponse,
   CloudOrgsResponse,
   CloudPlanResponse,
   CloudSeatActionResponse,
@@ -111,6 +115,27 @@ export function createCloudMethods(baseUrl: string) {
         `/cloud/seats/${encodeURIComponent(seatId)}/release`,
         { method: 'POST' }
       );
+    },
+
+    getCloudOffers(): Promise<CloudOffersResponse> {
+      return fetchJSON<CloudOffersResponse>(baseUrl, '/cloud/offers');
+    },
+
+    createCloudBillingSession(
+      page: CloudBillingPage,
+      skuId?: string
+    ): Promise<CloudBillingSessionResponse> {
+      return fetchJSON<CloudBillingSessionResponse>(
+        baseUrl,
+        `/cloud/billing/${encodeURIComponent(page)}`,
+        { method: 'POST', body: JSON.stringify(skuId === undefined ? {} : { skuId }) }
+      );
+    },
+
+    requestCloudAccountExport(): Promise<CloudAccountExportResponse> {
+      return fetchJSON<CloudAccountExportResponse>(baseUrl, '/cloud/account/export', {
+        method: 'POST',
+      });
     },
 
     getCloudCredits(): Promise<CloudCreditsStatus> {

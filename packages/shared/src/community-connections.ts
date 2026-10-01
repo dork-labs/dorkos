@@ -13,7 +13,11 @@ import type {
 } from './community-navigation.js';
 import type { CommunityNavigationDestination } from './config-schema.js';
 import type { CommunityInstallationDestination } from './config-schema.js';
-import { CommunityConnectionAccessSchema } from './community-wire.js';
+import {
+  CommunityConnectionAccessSchema,
+  CommunityWireOwnerReplacementOptionsSchema,
+} from './community-wire.js';
+import { CommunityAdminOwnerReplacementOpenStateSchema } from './community-admin-wire.js';
 
 /**
  * Activity state for one owner-scoped Community connection. A number is only
@@ -39,6 +43,40 @@ export const CommunityConnectionAttentionSchema = z.discriminatedUnion('state', 
 ]);
 /** Owner-safe aggregate activity for one Community connection. */
 export type CommunityConnectionAttention = z.infer<typeof CommunityConnectionAttentionSchema>;
+
+/**
+ * What the owner of a community is told, on their own DorkOS connection, about a request to
+ * make someone else its owner. Only ever present for the community's owner: an admin or member
+ * connection never carries it.
+ *
+ * `open` is a request still running: the date it can complete (`null` until the owner's notice
+ * has resolved), when the link for the new owner was sent again, and only the options this owner
+ * has now. `completed` is that same request, now finished: the Community stopped showing it as
+ * open and says someone else became the owner after it was asked. Both carry the request's id,
+ * so the app tells the owner about each once.
+ */
+export const CommunityConnectionOwnerNoticeSchema = z.discriminatedUnion('state', [
+  z.strictObject({
+    state: z.literal('open'),
+    replacementId: z.string().min(1),
+    /** Where the request stands: `claimable` means it can complete at any time now. */
+    requestState: CommunityAdminOwnerReplacementOpenStateSchema,
+    requestedAt: z.iso.datetime(),
+    /** The earliest the new owner can take over; `null` until the owner's notice resolves. */
+    claimableAfter: z.iso.datetime().nullable(),
+    /** When the host sent the link for the new owner again, if it did. */
+    claimReissuedAt: z.iso.datetime().nullable(),
+    options: CommunityWireOwnerReplacementOptionsSchema,
+  }),
+  z.strictObject({
+    state: z.literal('completed'),
+    replacementId: z.string().min(1),
+    newOwnerDisplayName: z.string().min(1),
+    completedAt: z.iso.datetime(),
+  }),
+]);
+/** An owner's notice about a request to replace them, as their DorkOS connection carries it. */
+export type CommunityConnectionOwnerNotice = z.infer<typeof CommunityConnectionOwnerNoticeSchema>;
 
 /** How long a Community must keep answering "not found" before it seems to be gone: 14 days. */
 export const COMMUNITY_SEEMS_GONE_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
@@ -77,6 +115,13 @@ export const CommunityConnectionDescriptorSchema = z
      * there were some; the app says so, since the rooms those posts belonged to are gone.
      */
     undeliveredAgentMessages: z.number().int().positive().optional(),
+    /**
+     * A request to make someone else this community's owner, present only on the owner's own
+     * connection, and only from a Community answer that is recent: this read's, or one that
+     * landed in the last minute or so when this read could not wait for it (DOR-2543). A
+     * Community that stays slow or offline shows no notice rather than an old one.
+     */
+    ownerNotice: CommunityConnectionOwnerNoticeSchema.optional(),
   })
   .superRefine((connection, context) => {
     if (
@@ -86,6 +131,15 @@ export const CommunityConnectionDescriptorSchema = z
       context.addIssue({
         code: 'custom',
         message: 'Only a verified connection can report host authority.',
+      });
+    }
+    if (
+      connection.ownerNotice &&
+      (connection.status !== 'connected' || connection.access?.state !== 'verified')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Only a verified connection can carry an owner notice.',
       });
     }
     if (connection.status === 'pending' && connection.access !== null) {

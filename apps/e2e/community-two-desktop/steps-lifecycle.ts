@@ -17,6 +17,9 @@ import {
 } from './desktop.js';
 import type { World } from './world.js';
 
+/** The space server's own Leave button, the one that names what leaving ends and keeps. */
+const LEAVE_BUTTON = 'button[aria-describedby="leave-scope-ends leave-scope-stays"]';
+
 /**
  * Steps 24-29: ownership transfer between the two people, Disconnect and
  * Leave from the switcher's Manage menu, an expired invitation, removal by
@@ -99,9 +102,9 @@ export async function lifecycleSteps(w: World): Promise<void> {
         const blocked = await shot(owner, '24a-owner-leave-blocked-transfer-first');
         await transfer(owner, 'Desktop B');
         // A is now a member, so A's own page offers leaving instead of transfer.
-        await expect(
-          owner.getByRole('button', { name: 'Leave community', exact: true })
-        ).toBeVisible();
+        // The space server's own leave button, found by the scope it describes: its label is
+        // the server's copy (apps/community), left for DOR-2653.
+        await expect(owner.locator(LEAVE_BUTTON)).toBeVisible();
         await expect(owner.locator('#successor')).toHaveCount(0);
         const roles = Object.fromEntries(
           ((await directory(member)) ?? []).map((m) => [m.displayName, m.role])
@@ -275,12 +278,12 @@ export async function lifecycleSteps(w: World): Promise<void> {
   }
 
   await step(
-    '26 Leave community from the Manage menu opens the Community’s own page; leaving ends B’s access',
+    '26 Leave space from the Manage menu opens the Community’s own page; leaving ends B’s access',
     async () => {
       await openGeneral(b, refB);
       const before = (await externalOpens(b)).length;
       await openManageMenu(b, COMMUNITY);
-      await b.page.getByRole('menuitem', { name: /^Leave community/ }).click();
+      await b.page.getByRole('menuitem', { name: /^Leave space/ }).click();
       await expect.poll(async () => (await externalOpens(b)).length).toBe(before + 1);
       const opened = (await externalOpens(b))[before]!;
       assert.equal(
@@ -294,7 +297,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
       await member.locator('#leave-community-name').fill(COMMUNITY);
       await member.locator('#leave-password').fill(PASSWORD);
       const leaveShot = await shot(member, '26a-member-leave-review');
-      await member.getByRole('button', { name: 'Leave community', exact: true }).click();
+      await member.locator(LEAVE_BUTTON).click();
       await expect.poll(() => memberCanRead(member), { timeout: 30_000 }).not.toBe(200);
       const access = await lostAccess(b, refB, 'leaving');
       const bShot = await shot(b.page, '26b-desktop-b-after-leaving');

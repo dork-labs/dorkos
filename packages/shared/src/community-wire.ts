@@ -267,9 +267,19 @@ export const CommunityWireOwnerReplacementNoticeResponseSchema = z.strictObject(
     ])
     .nullable(),
   completed: z
-    .strictObject({ newOwnerDisplayName: z.string().min(1), completedAt: timestamp })
+    .strictObject({
+      replacementId: id,
+      newOwnerDisplayName: z.string().min(1),
+      completedAt: timestamp,
+      /** True only for the reader who was the owner this request replaced. */
+      wasYours: z.boolean(),
+    })
     .nullable(),
 });
+/** One member's view of an owner replacement, as `GET /owner-replacement` answers it. */
+export type CommunityWireOwnerReplacementNoticeResponse = z.infer<
+  typeof CommunityWireOwnerReplacementNoticeResponseSchema
+>;
 /** The owner keeps ownership from a signed-in session. No password needed. */
 export const CommunityWireOwnerReplacementObjectionRequestSchema = z.strictObject({
   replacementId: id,
@@ -1540,6 +1550,15 @@ export const COMMUNITY_SETTINGS_SECTIONS = [
 export type CommunitySettingsSection = (typeof COMMUNITY_SETTINGS_SECTIONS)[number];
 
 /**
+ * The path that opens one Community in the browser, at its canonical `/c/<id>` address.
+ *
+ * @param communityId - The Community's own id on its host.
+ */
+export function communityPath(communityId: string): string {
+  return `/c/${encodeURIComponent(communityId)}`;
+}
+
+/**
  * The path that opens one Community's settings, optionally at one section.
  *
  * The page still decides what the signed-in person may see: a section their
@@ -1552,7 +1571,7 @@ export function communitySettingsPath(
   communityId: string,
   section?: CommunitySettingsSection
 ): string {
-  const base = `/c/${encodeURIComponent(communityId)}/settings`;
+  const base = `${communityPath(communityId)}/settings`;
   return section ? `${base}/${section}` : base;
 }
 

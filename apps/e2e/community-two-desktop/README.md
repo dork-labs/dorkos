@@ -72,7 +72,7 @@ server and window.
 | 23     | B's app quits and relaunches mid-journey. The connection, switcher order, saved spot and agent all survive, and B reopens where they were        |
 | 24     | An owner can't leave without handing over ownership. Ownership goes from A to B and back                                                         |
 | 25     | "Disconnect…" in the Manage menu ends only this app's connection and removes its agents there. B stays a member and can connect again            |
-| 26     | "Leave community…" opens the Community's own page. Once B confirms there, B's app loses access, and A is unaffected                              |
+| 26     | "Leave space…" opens the Community's own page. Once B confirms there, B's app loses access, and A is unaffected                                  |
 | 27     | An expired invitation is refused and lets no one in                                                                                              |
 | 28     | B rejoins and connects again. A removes B, and B's app loses access cleanly while A's apps keep working                                          |
 | 29     | Step 19's check again, now including the private channel                                                                                         |

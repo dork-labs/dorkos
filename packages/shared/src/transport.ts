@@ -220,6 +220,10 @@ import type {
   CloudOrgsResponse,
   CloudPlanResponse,
   CloudSeatActionResponse,
+  CloudBillingPage,
+  CloudBillingSessionResponse,
+  CloudAccountExportResponse,
+  CloudOffersResponse,
   CloudSeatsResponse,
   CloudUsageResponse,
   StartLinkResult,
@@ -2931,6 +2935,31 @@ export interface Transport
    * @param seatId - The seat's opaque identifier.
    */
   releaseCloudSeat(seatId: string): Promise<CloudSeatActionResponse>;
+  /**
+   * Read everything the service will sell this account right now, exactly as
+   * it sent it, in its order. `{ available: false }` when there is no cloud
+   * account.
+   */
+  getCloudOffers(): Promise<CloudOffersResponse>;
+  /**
+   * Start a session on one billing page and get its web address, to open in
+   * the person's own browser: the billing portal (change or end a plan,
+   * invoices), checkout for one offer, or buying credits. Nothing is paid in
+   * the app. A refusal comes back as a value, never as a thrown error.
+   *
+   * @param page - Which page to open.
+   * @param skuId - The offer to check out, from {@link getCloudOffers}. Checkout only.
+   */
+  createCloudBillingSession(
+    page: CloudBillingPage,
+    skuId?: string
+  ): Promise<CloudBillingSessionResponse>;
+  /**
+   * Ask for a copy of everything the DorkOS account holds. The answer carries
+   * the download link once it is ready; until then, ask again. A refusal comes
+   * back as a value.
+   */
+  requestCloudAccountExport(): Promise<CloudAccountExportResponse>;
   /**
    * Read whether DorkOS credits are armed as an inference source on this
    * server. Carries no credential — only whether the path is on and which

@@ -65,7 +65,7 @@ function renderDialogs(transport: Transport, dialog: CommunityHostingDialog) {
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
         <CommunityHostingDialogs
-          entry={{ allowance: null, unfinishedMoveId: null, hasHosted: false }}
+          entry={{ allowance: null, unfinishedMoveId: null }}
           dialog={dialog}
           onDialogChange={vi.fn()}
           installName="My DorkOS"
@@ -91,7 +91,7 @@ function linkedTransport(): Transport {
   return transport;
 }
 
-describe('Start a community', () => {
+describe('Start a space', () => {
   // Purpose: the whole happy path, and the claim link's only route. Fails if
   // the link is kept in the query cache, or if connecting uses anything but
   // the returned canonical link.
@@ -115,9 +115,9 @@ describe('Start a community', () => {
     });
     const { client, onConnected } = renderDialogs(transport, { kind: 'start' });
 
-    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Night shift' } });
+    fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Night shift' } });
     fireEvent.change(screen.getByLabelText(/Web address/), { target: { value: 'Night-Shift' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Start community' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
     await screen.findByRole('heading', { name: 'Make Night shift yours' });
     expect(transport.startHostedCommunity).toHaveBeenCalledWith({
       idempotencyKey: expect.any(String),
@@ -180,8 +180,8 @@ describe('Start a community', () => {
       allowance: null,
     });
     renderDialogs(transport, { kind: 'start' });
-    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Night shift' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Start community' }));
+    fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Night shift' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
     fireEvent.click(await screen.findByRole('button', { name: /Open in your browser/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Your browser blocked the new window.'
@@ -208,8 +208,8 @@ describe('Start a community', () => {
       problem: { code: 'conflict', status: 409, title: 'Not waiting for an owner.' } as never,
     });
     renderDialogs(transport, { kind: 'start' });
-    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Night shift' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Start community' }));
+    fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Night shift' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
     fireEvent.click(await screen.findByRole('button', { name: /Open in your browser/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Not waiting for an owner.');
     expect(mockWindowClose).toHaveBeenCalled();
@@ -230,8 +230,8 @@ describe('Start a community', () => {
       allowance: null,
     });
     renderDialogs(transport, { kind: 'start' });
-    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Night shift' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Start community' }));
+    fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Night shift' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
     fireEvent.click(await screen.findByRole('button', { name: 'I’ve finished' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Your sign-in isn’t finished yet.');
     expect(transport.startCommunityConnection).not.toHaveBeenCalled();
@@ -244,27 +244,27 @@ describe('Start a community', () => {
       problem: nameTakenProblem as never,
     });
     renderDialogs(transport, { kind: 'start' });
-    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Acme' } });
+    fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Acme' } });
     fireEvent.change(screen.getByLabelText(/Web address/), { target: { value: 'acme' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Start community' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
     expect(await screen.findByText('That web address is taken.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Community name')).toHaveValue('Acme');
+    expect(screen.getByLabelText('Space name')).toHaveValue('Acme');
   });
 
   it('says the account could not be reached, and keeps the form', async () => {
     const transport = linkedTransport();
     vi.mocked(transport.startHostedCommunity).mockRejectedValue(new Error('offline'));
     renderDialogs(transport, { kind: 'start' });
-    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Acme' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Start community' }));
+    fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Acme' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Couldn’t reach your DorkOS account. Try again.'
     );
-    expect(screen.getByLabelText('Community name')).toHaveValue('Acme');
+    expect(screen.getByLabelText('Space name')).toHaveValue('Acme');
   });
 });
 
-describe('Move a community here', () => {
+describe('Move a space here', () => {
   const importing = { ...(moveImportingFixture as unknown as CloudCommunityMove), upload: null };
 
   it('sends the file, then follows the move as the service reports it', async () => {
@@ -279,7 +279,7 @@ describe('Move a community here', () => {
     fireEvent.click(screen.getByRole('button', { name: 'I have the file' }));
     const file = new File(['PK export'], 'old-garden.zip', { type: 'application/zip' });
     fireEvent.change(screen.getByLabelText('Export file'), { target: { files: [file] } });
-    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Old garden' } });
+    fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Old garden' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start moving' }));
 
     await screen.findByRole('heading', { name: 'Moving Old garden' });
@@ -295,7 +295,7 @@ describe('Move a community here', () => {
   function startMoving(file: File) {
     fireEvent.click(screen.getByRole('button', { name: 'I have the file' }));
     fireEvent.change(screen.getByLabelText('Export file'), { target: { files: [file] } });
-    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Old garden' } });
+    fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Old garden' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start moving' }));
   }
 
@@ -329,7 +329,7 @@ describe('Move a community here', () => {
   it('starts afresh after a refusal, instead of replaying the refused move', async () => {
     const transport = linkedTransport();
     const tooLarge =
-      'This export is too large for the new host. It is 9 bytes, and the most the host takes is 8 bytes.';
+      'This export is too large to move. It is 9 bytes, and the most DorkOS takes is 8 bytes.';
     vi.mocked(transport.startHostedCommunityMove).mockResolvedValue({
       ok: false,
       message: tooLarge,

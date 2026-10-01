@@ -83,7 +83,7 @@ const POPUP_BLOCKED: HostingNotice = {
   message: 'Your browser blocked the new window. Allow pop-ups for DorkOS, then try again.',
 };
 const CONNECT_FAILED: HostingNotice = {
-  message: 'Couldn’t connect this DorkOS to the community. Try again.',
+  message: 'Couldn’t connect this DorkOS to the space. Try again.',
 };
 const APPROVAL_ENDED: HostingNotice = {
   message: 'The approval ended before it finished. Connect again to continue.',
