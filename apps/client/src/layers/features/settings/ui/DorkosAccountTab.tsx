@@ -1,5 +1,5 @@
 import { CloudEligibilityNote, CloudLinkPanel } from '@/layers/features/cloud-link';
-import { CloudPlanPanel, readCreditsFor } from '@/layers/features/cloud-plan';
+import { CloudPlanPanel, creditsRuntimesOnOffer } from '@/layers/features/cloud-plan';
 import { useCloudCredits } from '@/layers/shared/model';
 
 /**
@@ -27,13 +27,14 @@ export function DorkosAccountTab() {
  * What a DorkOS account would add on this computer, before it is linked.
  *
  * **Only what the server reports as wired.** Nothing is promised that this
- * server cannot do today: the credits line appears only while the server has
- * credits switched on, naming exactly the runtimes it reaches, and with nothing
- * wired the page says one plain line instead of a list of hopes.
+ * server cannot do today: the credits line appears only while credits are not
+ * switched off on this computer, naming exactly the runtimes the server reports
+ * as wired, and with nothing wired the page says one plain line instead of a
+ * list of hopes.
  */
 function SignedOutPage() {
   const { data: credits } = useCloudCredits();
-  const runtimes = readCreditsFor(credits).map((row) => row.name);
+  const runtimes = creditsRuntimesOnOffer(credits);
 
   return (
     <div className="space-y-2">

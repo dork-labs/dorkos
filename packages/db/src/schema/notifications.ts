@@ -57,6 +57,7 @@ export const notifications = sqliteTable(
         'report.daily',
         'account.limited',
         'account.reset',
+        'credits.refused',
         'extension.approval',
         'extension.decision',
       ],

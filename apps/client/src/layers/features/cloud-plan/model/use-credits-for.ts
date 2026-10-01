@@ -16,15 +16,16 @@
  *
  * @module features/cloud-plan/model/use-credits-for
  */
-import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { CloudCreditsChosenBy, CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
+import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { claudeAccountName } from '@/layers/shared/lib';
 import { useClaudeAccounts, useCloudCredits, useSetCreditsDefault } from '@/layers/shared/model';
 
 /** One runtime the credits path is wired for, as the switch row reads it. */
 export interface CreditsForRow {
   /** The runtime's type id (`claude-code`). Never rendered. */
   runtime: string;
-  /** The runtime's display name. */
+  /** The runtime's own name, as every runtime surface says it ("Claude Code"). */
   name: string;
   /** Whether this runtime's new work runs on DorkOS credits by default. */
   on: boolean;
@@ -35,8 +36,9 @@ export interface CreditsForRow {
   /** Whether turning it off from here can work. */
   canTurnOff: boolean;
   /**
-   * The sign-in turning it off goes back to, named — or `null` when the runtime
-   * has no sign-in of its own to name.
+   * The sign-in turning it off goes back to, by the name the person gave it —
+   * or `null` when it has none (never a raw folder name), which the row says
+   * as "its own sign-in".
    */
   previousSignIn: string | null;
 }
@@ -64,7 +66,7 @@ export function readCreditsFor(
       const on = choice?.runsOn === 'credits';
       return {
         runtime,
-        name: runtimeDisplayName(runtime),
+        name: getRuntimeDescriptor(runtime).label,
         on,
         chosenBy: on ? (choice?.chosenBy ?? null) : null,
         canTurnOn: true,
@@ -72,6 +74,21 @@ export function readCreditsFor(
         previousSignIn: previousSignIn(runtime),
       };
     });
+}
+
+/**
+ * The runtimes a DorkOS account would let this computer run on credits, for
+ * the page shown BEFORE linking: every runtime the server reports as wired,
+ * unless credits are switched off on this computer. Not gated on `enabled`,
+ * which needs a link and so can never be true on that page.
+ *
+ * @param report - `GET /api/cloud/credits`, or `undefined` while it loads.
+ */
+export function creditsRuntimesOnOffer(report: CloudCreditsStatus | undefined): string[] {
+  if (!report || report.killed) return [];
+  return Object.entries(report.runtimes)
+    .filter(([, state]) => state === 'wired')
+    .map(([runtime]) => getRuntimeDescriptor(runtime).label);
 }
 
 /** The rows, and the one write that changes a runtime's default. */
@@ -95,9 +112,11 @@ export interface UseCreditsFor {
 export function useCreditsFor(): UseCreditsFor {
   const { data } = useCloudCredits();
   const setDefault = useSetCreditsDefault();
-  const { ownResolvedAccount, nameFor } = useClaudeAccounts();
+  const { accounts, ownResolvedAccount, nameFor } = useClaudeAccounts();
   const rows = readCreditsFor(data, (runtime) =>
-    runtime === 'claude-code' && ownResolvedAccount ? nameFor(ownResolvedAccount) : null
+    runtime === 'claude-code' && ownResolvedAccount
+      ? givenName(ownResolvedAccount, accounts, nameFor)
+      : null
   );
 
   const setOn = (runtime: string, on: boolean) => {
@@ -112,6 +131,22 @@ export function useCreditsFor(): UseCreditsFor {
     : null;
 
   return { rows, pending: setDefault.isPending, failure, setOn };
+}
+
+/**
+ * The name a person gave a Claude sign-in (a registered account's label, or
+ * Main's), or `null` when all there is to call it is its folder: a path like
+ * `.claude-work` means nothing to somebody reading a settings row.
+ */
+function givenName(
+  path: string,
+  accounts: readonly { path: string; label: string | null }[],
+  nameFor: (path: string) => string
+): string | null {
+  const registered = accounts.find((account) => account.path === path);
+  if (registered) return registered.label;
+  const named = nameFor(path);
+  return named === claudeAccountName(path, []) ? null : named;
 }
 
 /** What a failed turn-on says when the request brought back no reason of its own. */

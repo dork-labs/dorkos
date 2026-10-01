@@ -65,6 +65,7 @@ export {
 export {
   useCloudCredits,
   useDismissCreditsNotice,
+  useKeepCreditsOutOfProject,
   useSetCreditsDefault,
   useUndoFilledCredits,
 } from './server-config/use-cloud-credits';

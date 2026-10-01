@@ -1296,6 +1296,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // so every account reads as allowed unless a test supplies otherwise.
     getAccountEligibility: vi.fn().mockResolvedValue({ project: null, allow: null, accounts: [] }),
     setProjectAccounts: vi.fn().mockResolvedValue({ project: null, allow: null, accounts: [] }),
+    keepCreditsOutOfProject: vi
+      .fn()
+      .mockResolvedValue({ project: null, allow: null, accounts: [] }),
     setAccountOnlyProjects: vi.fn().mockResolvedValue({ onlyProjects: null }),
     // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
     // Each resolves with what the real route answers, so a component under test

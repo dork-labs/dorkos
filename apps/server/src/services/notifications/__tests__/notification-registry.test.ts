@@ -115,6 +115,11 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     resetsAt: '2026-08-24T20:00:00.000Z',
     resetConfirmedAt: '2026-08-24T20:01:00.000Z',
   },
+  'credits.refused': {
+    runtime: 'claude-code',
+    sessionId: 'sess-1',
+    message: "Couldn't reach DorkOS credits, so nothing was sent.",
+  },
   'extension.approval': {
     id: 'flow',
     name: 'Flow',
@@ -157,6 +162,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'report.daily': 'quiet',
   'account.limited': 'notable',
   'account.reset': 'notable',
+  // Nothing was spent and nothing waits on it: told, never paged (ADR 261001-000811).
+  'credits.refused': 'notable',
   // Waiting on a person, but nothing is stuck: it badges the bell and never
   // reaches a phone (DOR-2517).
   'extension.approval': 'notable',
@@ -244,6 +251,7 @@ describe('notification registry', () => {
       'agent.unreachable',
       'approval.pending',
       'ask.pending',
+      'credits.refused',
       'dead-letter.created',
       'dm.received',
       'extension.approval',

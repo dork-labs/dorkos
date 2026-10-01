@@ -1508,6 +1508,18 @@
           "allow"
         ]
       },
+      "ProjectWithoutCreditsRequest": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
       "OnlyProjectsResponse": {
         "type": "object",
         "properties": {
@@ -14187,6 +14199,7 @@
           "report.daily",
           "account.limited",
           "account.reset",
+          "credits.refused",
           "extension.approval",
           "extension.decision"
         ]
@@ -16870,6 +16883,86 @@
           },
           "404": {
             "description": "The folder is not in a project (a git repository)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The change could not be saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/project-accounts/without-credits": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Keep DorkOS credits out of a session’s project",
+        "description": "Gives the project the session’s folder is in an allow list without DorkOS credits: its current list, or every account it may use today. Answers with the project’s new eligibility and what a new chat there would run on now. Only a person may call it: a request from another site, a caller that names itself an agent (`X-DorkOS-Agent`), and, with Require login on, a caller without a signed-in session are refused with `403`. With Require login off, a local caller that sends no agent header is trusted, and an approved extension's own browser code shares the app's page, so it passes in either posture. Each change is recorded in Activity.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectWithoutCreditsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The project and every account, after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountEligibilityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person, or the folder is outside the directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The session is not known",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session’s folder is not in a project (a git repository)",
             "content": {
               "application/json": {
                 "schema": {

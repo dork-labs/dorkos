@@ -119,7 +119,11 @@ This computer's own Claude sign-in (usually the `~/.claude` folder) is your main
 
 ### DorkOS credits
 
-When this computer is linked to a DorkOS account, **DorkOS credits** is one more choice in the same places you pick an account: the **Default account** list under **Runs on**, an agent's **Runs on**, the account chip before a chat's first message, and **Continue on another account**. A chat set to DorkOS credits runs on them and nothing else. If DorkOS can't reach your credits, the chat stops and says so, with **Retry** and **Use your Claude Code sign-in**. It never quietly runs on your own sign-in instead.
+When this computer is linked to a DorkOS account, **DorkOS credits** is one more choice in the same places you pick an account: the **Default account** list under **Runs on**, an agent's **Runs on**, the account chip before a chat's first message, and **Continue on another account**. A chat set to DorkOS credits runs on them and nothing else. If DorkOS can't reach your credits, the chat stops and says so, with **Retry** and **Use your Claude Code sign-in**. It never quietly runs on your own sign-in instead. When a scheduled task, an agent's reply or a room turn stops this way, you get a notification, so it never fails without anyone knowing.
+
+Some projects have their own Claude Code sign-in in their `.claude/settings.json`. Those can't run on credits, so the chat stops with **Don't use credits in this project** beside **Use your Claude Code sign-in**. That adds a project limit without credits, which you can remove in Settings → Runtimes.
+
+Anything a chat runs, such as a project's hooks or the commands an agent runs, can read the credits key while the chat runs on credits, just as it could read your own API key. Only use credits in projects you trust.
 
 If you link a DorkOS account while Claude Code has no sign-in at all, DorkOS sets new Claude Code chats to run on credits and tells you once, with **Change** and **Undo all**. If you sign in to Claude Code later, DorkOS offers once to switch back. Turning credits off is remembered, and a sign-in that has expired is never replaced with credits. A computer linked before credits were a choice keeps everything as it was, and gets one offer you can turn down.
 

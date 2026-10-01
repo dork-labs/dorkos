@@ -3497,6 +3497,18 @@ export interface Transport
   setProjectAccounts(project: string, allow: string[] | null): Promise<AccountEligibilityResponse>;
 
   /**
+   * Keep DorkOS credits out of the project a session's folder is in (`POST
+   * /api/runtimes/claude-code/project-accounts/without-credits`): the "Don't use
+   * credits in this project" answer on a refused credits turn. Only a person
+   * may; rejects with the server's `message` and `status` (409 for a folder in
+   * no project).
+   *
+   * @param sessionId - The session whose turn credits refused.
+   * @returns The project's new eligibility, with what a new chat there runs on now.
+   */
+  keepCreditsOutOfProject(sessionId: string): Promise<AccountEligibilityResponse>;
+
+  /**
    * Keep a Claude account to some projects, or free it with `null` (`PUT
    * /api/runtimes/claude-code/accounts/:id/only-projects`). Only a person may;
    * rejects with the server's `message` and `status`.

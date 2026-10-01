@@ -91,6 +91,13 @@ export const NOTIFICATION_KINDS = [
    */
   'account.reset',
   /**
+   * A turn chose DorkOS credits and could not have them, so nothing was sent
+   * (ADR 261001-000811). Raised for every such turn, a scheduled task's or a
+   * room's as much as a chat's, so a refused turn nobody was watching is never
+   * silent; one per runtime and reason an hour.
+   */
+  'credits.refused',
+  /**
    * An installed extension is waiting for a person to let it run (DOR-2517).
    * Standing, per copy and version; `notable`, so it never reaches a phone.
    */

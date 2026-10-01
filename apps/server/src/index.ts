@@ -97,6 +97,7 @@ import {
 import { watchSessionLifecycle } from './services/notifications/emitters/session-lifecycle.js';
 import { watchAskResolution } from './services/notifications/emitters/ask-resolution.js';
 import { watchRuntimeSigninFailures } from './services/notifications/emitters/runtime-signin.js';
+import { watchCreditsRefusals } from './services/notifications/emitters/credits-refused.js';
 import { deadLetterPayload } from './services/notifications/emitters/dead-letter.js';
 import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
 import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
@@ -1409,6 +1410,9 @@ async function start() {
   // A runtime whose sign-in stopped working, noticed at whichever turn trips
   // over it first — including the 3am ones nobody is watching (DOR-1654).
   watchRuntimeSigninFailures();
+  // A turn DorkOS credits refused, told whoever started it, so a refused
+  // scheduled task or room turn is never silent (ADR 261001-000811).
+  watchCreditsRefusals();
   // Nothing tells the server it was updated, so it compares versions on boot.
   void announceInstalledVersion(dorkHome);
   // Git older than 2.38 cannot refuse a folder set up to look like a git

@@ -268,6 +268,19 @@ export interface NotificationPayloads {
      */
     closedAtBoot?: boolean;
   };
+  /**
+   * A turn chose DorkOS credits and could not have them, so nothing was sent
+   * (ADR 261001-000811). The session is the one that noticed, and where "Open"
+   * goes: its refused turn carries the ways on (Retry, the own sign-in, or
+   * keeping credits out of the project).
+   */
+  'credits.refused': {
+    /** The runtime type, e.g. `claude-code`. */
+    runtime: string;
+    sessionId: string;
+    /** The refusal's own sentence: why, and what to do instead. */
+    message: string;
+  };
   /** DorkOS is running a version it was not running before. */
   'update.installed': {
     version: string;
@@ -618,6 +631,14 @@ const REPORT_DAILY_DEDUPE_WINDOW_MS = 25 * 60 * 60 * 1000;
  * resets at a different time and so carries a different key.
  */
 const ACCOUNT_LIMITED_DEDUPE_WINDOW_MS = 8 * 24 * 60 * 60 * 1000;
+
+/**
+ * How long one credits refusal stays deduped. A schedule that runs every five
+ * minutes against a folder credits cannot run would otherwise say so twelve
+ * times an hour; once an hour is enough to know, and the reason is in the key,
+ * so a different refusal is still told at once.
+ */
+const CREDITS_REFUSED_DEDUPE_WINDOW_MS = 60 * 60 * 1000;
 
 /** A reset time in the server's local zone, short, e.g. `9/27/26, 8:00 PM`. */
 function formatResetTime(iso: string): string {
@@ -1118,6 +1139,27 @@ const ENTRIES: NotificationRegistryMap = {
     relay: 'never',
   },
 
+  'credits.refused': {
+    // Raised by the runtime-registry wrap (`emitters/credits-refused.ts`),
+    // which sees every turn: a scheduled task or a relay delivery consumes its
+    // own stream and drops the error, so without this a refused background turn
+    // reached nobody. `notable`, not `blocking`: nothing is broken that DorkOS
+    // is waiting on, and nothing was spent.
+    kind: 'credits.refused',
+    tier: 'notable',
+    storage: 'event',
+    subjectType: 'session',
+    locate: (p) => ({ subjectId: p.sessionId, sessionId: p.sessionId }),
+    title: () => 'A turn didn’t run on DorkOS credits',
+    body: (p) => p.message,
+    actions: () => OPEN_ACTION,
+    // Per runtime and REASON, not per session: ten tasks refused for one
+    // reason are one thing to be told. The sentence is the reason's identity.
+    dedupeKey: (p) => `credits-refused:${p.runtime}:${p.message}`,
+    dedupeWindowMs: CREDITS_REFUSED_DEDUPE_WINDOW_MS,
+    relay: 'never',
+  },
+
   'account.reset': {
     // Raised by `session/fleet/resume-service.ts` at the first confirmed reset
     // of an account some sessions were waiting on. `notable`, like the limit it
@@ -1317,6 +1359,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'report.daily',
   'account.limited',
   'account.reset',
+  'credits.refused',
   'extension.approval',
   'extension.decision',
 ];

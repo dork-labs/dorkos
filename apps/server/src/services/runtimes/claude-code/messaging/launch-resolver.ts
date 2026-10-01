@@ -37,7 +37,10 @@
  *
  * @module services/runtimes/claude-code/messaging/launch-resolver
  */
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import {
+  runtimeEnvironment,
+  runtimeInheritedNames,
+} from '../../shared/runtime-environment-config.js';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -352,10 +355,6 @@ export async function resolveLaunch(args: {
   if (onCredits) {
     ensureCreditsClaudeRoot();
     creditsEnv = await resolveCreditsLaunchEnv(CLAUDE_CODE_CAPABILITIES, 'Claude Code');
-    // The endpoint pinned ABOVE a folder's own `.claude/settings*.json`, which
-    // outrank the process environment inside the CLI; refuses a folder whose
-    // settings name their own sign-in (`credits-launch.ts`).
-    creditsSettings = creditsSettingsEnv(effectiveCwd, creditsEnv.ANTHROPIC_BASE_URL ?? '');
   }
   // Resolve a stored Claude credential REFERENCE into ANTHROPIC_API_KEY at the
   // env seam (ADR-0315). Injected below ONLY when configured; a missing or
@@ -442,6 +441,18 @@ export async function resolveLaunch(args: {
     ),
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };
+  if (onCredits) {
+    // The endpoint pinned ABOVE a folder's own `.claude/settings*.json`, which
+    // outrank the process environment inside the CLI, with the server's own
+    // `PATH`, proxy and certificates put back over a folder's; refuses a folder
+    // whose settings name their own sign-in (`credits-launch.ts`). Before the
+    // session is stamped below, so a refused launch changes nothing.
+    creditsSettings = creditsSettingsEnv(
+      effectiveCwd,
+      creditsEnv.ANTHROPIC_BASE_URL ?? '',
+      sdkOptions.env ?? {}
+    );
+  }
 
   // Record which account this launch settled on, so the session can say later
   // which credential its turns ran under (`ClaudeCodeRuntime.getSessionAccount`,
@@ -756,8 +767,9 @@ export async function resolveLaunch(args: {
 }
 
 /**
- * A credits turn's process environment is the allowlist `creditsProcessEnv`
- * builds, with the credits pair on top; any other turn's is returned as
+ * A credits turn's process environment is what `creditsProcessEnv` keeps (the
+ * baseline, DorkOS's own names and the inherit list, never a name that routes
+ * or pays), with the credits pair on top; any other turn's is returned as
  * projected, and carries no credits variable because none was added.
  *
  * @param creditsEnv - The credits pair on a credits turn, else `undefined`.
@@ -767,7 +779,9 @@ function forCredits(
   creditsEnv: Record<string, string> | undefined,
   env: Record<string, string>
 ): Record<string, string> {
-  return creditsEnv === undefined ? env : creditsProcessEnv(env, creditsEnv);
+  return creditsEnv === undefined
+    ? env
+    : creditsProcessEnv(env, creditsEnv, runtimeInheritedNames('claude-code'));
 }
 
 /**

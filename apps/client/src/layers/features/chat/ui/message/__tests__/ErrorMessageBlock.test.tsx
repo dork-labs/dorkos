@@ -1232,4 +1232,57 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
     expect(useAppStore.getState().retryAccount).toEqual({ id: 'default', sessionId: SESSION_ID });
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
+
+  // A folder with its own sign-in can never run on credits: the card's way on
+  // is a project rule without credits, then a retry on what the project runs on now.
+  it('keeps credits out of this project, then retries on what the project runs on now', async () => {
+    const onRetry = vi.fn();
+    const keepCreditsOutOfProject = vi.fn().mockResolvedValue({
+      project: { root: '/repo', name: 'repo' },
+      allow: ['work', 'default'],
+      accounts: [],
+      launch: { ok: true, accountId: 'work', root: '/claude-work' },
+    });
+    renderBlock(
+      <ErrorMessageBlock
+        message={SENTENCE}
+        category="execution_error"
+        code="credits_unavailable"
+        onRetry={onRetry}
+        sessionId={SESSION_ID}
+        runtimeLabel="Claude Code"
+      />,
+      { keepCreditsOutOfProject }
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Don’t use credits in this project' }));
+    await waitFor(() => expect(onRetry).toHaveBeenCalledTimes(1));
+    expect(keepCreditsOutOfProject).toHaveBeenCalledWith(SESSION_ID);
+    expect(useAppStore.getState().retryAccount).toEqual({ id: 'work', sessionId: SESSION_ID });
+  });
+
+  it('says why when the folder is in no project, and retries nothing', async () => {
+    const onRetry = vi.fn();
+    const keepCreditsOutOfProject = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          'This folder isn’t in a project (a git repository), so there is no project to keep credits out of. Use your own sign-in for this chat instead.'
+        )
+      );
+    renderBlock(
+      <ErrorMessageBlock
+        message={SENTENCE}
+        category="execution_error"
+        code="credits_unavailable"
+        onRetry={onRetry}
+        sessionId={SESSION_ID}
+        runtimeLabel="Claude Code"
+      />,
+      { keepCreditsOutOfProject }
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Don’t use credits in this project' }));
+    expect(await screen.findByText(/isn’t in a project/)).toBeInTheDocument();
+    expect(onRetry).not.toHaveBeenCalled();
+    expect(useAppStore.getState().retryAccount).toBeNull();
+  });
 });

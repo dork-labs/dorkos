@@ -86,6 +86,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'report.daily': Sparkles,
   'account.limited': Hourglass,
   'account.reset': RotateCcw,
+  'credits.refused': CircleAlert,
   // The mark the right panel's header already uses for extensions (DOR-2517).
   'extension.approval': Puzzle,
   // Something an extension asks a person (spec `flow-multiproject` §7): a

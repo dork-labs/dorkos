@@ -15,7 +15,7 @@ import type {
   CloudCreditsStatus,
 } from '@dorkos/shared/cloud-schemas';
 import { useTransport } from '../TransportContext';
-import { configKeys } from './query-keys';
+import { accountKeys, configKeys } from './query-keys';
 
 /** The one query key the credits status is read under. */
 const cloudCreditsKeys = {
@@ -73,5 +73,22 @@ export function useDismissCreditsNotice() {
     mutationFn: (request: CloudCreditsNoticeDismissRequest) =>
       transport.dismissCloudCreditsNotice(request),
     onSuccess: settle,
+  });
+}
+
+/**
+ * Keep DorkOS credits out of the project a session's folder is in: a project
+ * rule, so the folder's own sign-in (or the next account allowed there) runs
+ * its work from now on. Answers with what a new chat there runs on now.
+ */
+export function useKeepCreditsOutOfProject() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) => transport.keepCreditsOutOfProject(sessionId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: accountKeys.all });
+      void queryClient.invalidateQueries({ queryKey: configKeys.all });
+    },
   });
 }

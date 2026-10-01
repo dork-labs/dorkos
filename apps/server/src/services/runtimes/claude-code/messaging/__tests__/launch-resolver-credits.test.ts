@@ -120,14 +120,16 @@ describe('who pays for a Claude Code turn', () => {
     expect(fs.existsSync(path.join(creditsClaudeRoot(), 'projects'))).toBe(true);
   });
 
-  it('builds a credits turn’s process env from an allowlist: no key, route or backend credential survives', async () => {
-    // Even names the person explicitly inherits: a credits turn keeps none of them.
+  it('keeps the person’s inherit list on credits, but no key, route or backend credential survives', async () => {
+    // Even names the person explicitly inherits: a credits turn keeps none that
+    // route or pay, and every other one it keeps.
     vi.mocked(configManager.get).mockImplementation(((key: string) =>
       key === 'runtimes'
         ? {
             environment: {
               inherit: {
                 claudeCode: [
+                  'MY_TOOL_HOME',
                   'CLAUDE_CODE_USE_ANTHROPIC_AWS',
                   'ANTHROPIC_AWS_API_KEY',
                   'CLAUDE_CODE_USE_GATEWAY',
@@ -138,6 +140,7 @@ describe('who pays for a Claude Code turn', () => {
             },
           }
         : undefined) as never);
+    vi.stubEnv('MY_TOOL_HOME', '/opt/tool');
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-person-own');
     vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'oauth-person-own');
     vi.stubEnv('CLAUDE_CODE_USE_BEDROCK', '1');
@@ -157,6 +160,7 @@ describe('who pays for a Claude Code turn', () => {
         );
       }
       expect(env.ANTHROPIC_AUTH_TOKEN).toBe(token.token);
+      expect(env.MY_TOOL_HOME).toBe('/opt/tool');
       // And the launch's own settings blank every routing switch above a folder's.
       const settingsEnv = (options?.settings as { env?: Record<string, string> }).env ?? {};
       for (const name of [
@@ -180,19 +184,32 @@ describe('who pays for a Claude Code turn', () => {
     }
   });
 
-  it('blanks every variable a folder’s settings set, beyond a short safe list', async () => {
+  it('blanks only what a folder’s settings set to route or pay, and puts the server’s PATH back', async () => {
     const folder = path.join(dorkHome, 'folder');
     fs.mkdirSync(path.join(folder, '.claude'), { recursive: true });
     fs.writeFileSync(
       path.join(folder, '.claude', 'settings.json'),
       JSON.stringify({
-        env: { ANTHROPIC_BASE_URL: 'http://folder', SOME_ROUTE: 'x', MAX_THINKING_TOKENS: '9' },
+        env: {
+          ANTHROPIC_BASE_URL: 'http://folder',
+          ANTHROPIC_SOMETHING_NEW: 'x',
+          AWS_PROFILE: 'folder',
+          HTTPS_PROXY: 'http://folder-proxy',
+          PATH: '/folder/bin',
+          DATABASE_URL: 'postgres://folder',
+          MAX_THINKING_TOKENS: '9',
+        },
       })
     );
     const { options } = await launch(makeSession(creditsClaudeRoot()), folder);
     const settingsEnv = (options?.settings as { env?: Record<string, string> }).env ?? {};
     expect(settingsEnv.ANTHROPIC_BASE_URL).toBe(token.endpoints.anthropicMessages);
-    expect(settingsEnv.SOME_ROUTE).toBe('');
+    expect(settingsEnv.ANTHROPIC_SOMETHING_NEW).toBe('');
+    expect(settingsEnv.AWS_PROFILE).toBe('');
+    expect(settingsEnv.HTTPS_PROXY).toBe(options?.env?.HTTPS_PROXY ?? '');
+    expect(settingsEnv.PATH).toBe(options?.env?.PATH);
+    expect(settingsEnv.PATH).toBeTruthy();
+    expect(settingsEnv).not.toHaveProperty('DATABASE_URL');
     expect(settingsEnv).not.toHaveProperty('MAX_THINKING_TOKENS');
   });
 

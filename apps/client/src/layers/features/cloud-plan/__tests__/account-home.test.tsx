@@ -18,7 +18,7 @@ import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitl
 import orgFixture from '@dork-labs/cloud-api/fixtures/v1/seats/org.json' with { type: 'json' };
 import seatFixture from '@dork-labs/cloud-api/fixtures/v1/seats/seat.json' with { type: 'json' };
 import { TransportProvider } from '@/layers/shared/model';
-import { errorReason, readCreditsFor } from '../model/use-credits-for';
+import { creditsRuntimesOnOffer, errorReason, readCreditsFor } from '../model/use-credits-for';
 import { describeDorkosAccountLine, lowCreditsFigure } from '../model/use-dorkos-account-line';
 import { AccountContents } from '../ui/AccountContents';
 import { SeatManagement } from '../ui/SeatManagement';
@@ -99,7 +99,59 @@ describe('readCreditsFor', () => {
   });
 });
 
+describe('creditsRuntimesOnOffer', () => {
+  // Before linking, `enabled` is false by definition; the offer must not wait on it.
+  it('names the wired runtimes before linking, by the name every runtime surface uses', () => {
+    expect(creditsRuntimesOnOffer(OFF)).toEqual(['Claude Code']);
+  });
+
+  it('offers nothing where credits are switched off on this computer', () => {
+    expect(creditsRuntimesOnOffer({ ...OFF, killed: true })).toEqual([]);
+    expect(creditsRuntimesOnOffer(undefined)).toEqual([]);
+  });
+});
+
 describe('Use credits for', () => {
+  /** A config whose Claude sign-in is the given folder, registered or not. */
+  function configWith(path: string, accounts: { path: string; label: string | null }[] = []) {
+    return vi.fn().mockResolvedValue({
+      claudeCode: {
+        resolvedAccount: path,
+        inherited: false,
+        accounts: accounts.map((account, i) => ({
+          id: `a${i}`,
+          color: '#111111',
+          colorIsDefault: true,
+          isAccountRoot: true,
+          ...account,
+        })),
+      },
+    });
+  }
+
+  it('says “its own sign-in” rather than naming a raw folder', async () => {
+    const transport = createMockTransport({
+      getCloudCredits: vi.fn().mockResolvedValue(LIVE),
+      getConfig: configWith('/home/me/.claude-work'),
+    });
+    renderWith(<UseCreditsFor />, transport);
+    expect(
+      await screen.findByText(/Turning this off puts it back on its own sign-in\./)
+    ).toBeVisible();
+    expect(screen.queryByText(/claude-work/)).not.toBeInTheDocument();
+  });
+
+  it('names the sign-in it goes back to by the name the person gave it', async () => {
+    const transport = createMockTransport({
+      getCloudCredits: vi.fn().mockResolvedValue(LIVE),
+      getConfig: configWith('/home/me/.claude-work', [
+        { path: '/home/me/.claude-work', label: 'Work' },
+      ]),
+    });
+    renderWith(<UseCreditsFor />, transport);
+    expect(await screen.findByText(/Turning this off puts it back on Work\./)).toBeVisible();
+  });
+
   it('is absent where credits cannot be chosen', async () => {
     const transport = createMockTransport({ getCloudCredits: vi.fn().mockResolvedValue(OFF) });
     renderWith(<UseCreditsFor />, transport);
@@ -113,7 +165,7 @@ describe('Use credits for', () => {
       setCloudCreditsDefault: vi.fn().mockResolvedValue(LIVE),
     });
     renderWith(<UseCreditsFor />, transport);
-    const toggle = await screen.findByRole('switch', { name: 'Use credits for Claude' });
+    const toggle = await screen.findByRole('switch', { name: 'Use credits for Claude Code' });
     expect(toggle).not.toBeChecked();
     fireEvent.click(toggle);
     await waitFor(() =>
@@ -128,7 +180,7 @@ describe('Use credits for', () => {
       setCloudCreditsDefault: vi.fn().mockResolvedValue(SAID_NO),
     });
     renderWith(<UseCreditsFor />, transport);
-    const toggle = await screen.findByRole('switch', { name: 'Use credits for Claude' });
+    const toggle = await screen.findByRole('switch', { name: 'Use credits for Claude Code' });
     expect(toggle).toBeChecked();
     expect(toggle).toBeEnabled();
     expect(screen.getByText(/Turning this off puts it back on/)).toBeVisible();
@@ -142,7 +194,9 @@ describe('Use credits for', () => {
   it('never reads on for a computer whose new work is not on credits', async () => {
     const transport = createMockTransport({ getCloudCredits: vi.fn().mockResolvedValue(SAID_NO) });
     renderWith(<UseCreditsFor />, transport);
-    expect(await screen.findByRole('switch', { name: 'Use credits for Claude' })).not.toBeChecked();
+    expect(
+      await screen.findByRole('switch', { name: 'Use credits for Claude Code' })
+    ).not.toBeChecked();
   });
 
   it('says calmly when DorkOS turned it on, and shows the notices owed', async () => {
@@ -166,7 +220,7 @@ describe('Use credits for', () => {
         .mockRejectedValue(serverError(409, 'Sign in to your DorkOS account first.')),
     });
     renderWith(<UseCreditsFor />, transport);
-    fireEvent.click(await screen.findByRole('switch', { name: 'Use credits for Claude' }));
+    fireEvent.click(await screen.findByRole('switch', { name: 'Use credits for Claude Code' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Couldn’t change that. Sign in to your DorkOS account first.'
     );
@@ -226,7 +280,7 @@ describe('What’s on your account', () => {
       }),
     });
     renderWith(<AccountContents />, transport);
-    expect(await screen.findByText('Claude')).toBeInTheDocument();
+    expect(await screen.findByText('Claude Code')).toBeInTheDocument();
     expect(await screen.findByText('Acme Robotics')).toBeInTheDocument();
     expect(await screen.findByText(/^Gmail/)).toBeInTheDocument();
     // An app on the person's own key is not on the DorkOS account.
