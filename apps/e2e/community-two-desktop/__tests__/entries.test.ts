@@ -47,6 +47,12 @@ describe('two-Desktop send confirmation', () => {
   it('ignores reads, other routes, other messages and bodies it cannot parse', () => {
     // Catches a send "confirmed" by an unrelated request, such as the history read or an upload.
     expect(isEntryPostFor('GET', ENTRIES, null, 'hello')).toBe(false);
+    // A non-POST carrying the very same body still is not a send.
+    expect(isEntryPostFor('GET', ENTRIES, body('hello'), 'hello')).toBe(false);
+    expect(isEntryPostFor('PUT', ENTRIES, body('hello'), 'hello')).toBe(false);
+    // A longer message that merely contains this one is a different send.
+    expect(isEntryPostFor('POST', ENTRIES, body('hello abc'), 'hello')).toBe(false);
+    expect(isEntryPostFor('POST', ENTRIES, body('hello'), 'hello abc')).toBe(false);
     expect(
       isEntryPostFor(
         'POST',

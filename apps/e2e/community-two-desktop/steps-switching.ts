@@ -105,17 +105,19 @@ export async function switchingSteps(w: World): Promise<void> {
   );
 
   await step('11 both people post in the channel and each sees the other live', async () => {
+    const liveWaitMs: Record<string, number> = {};
     for (const [sender, receiver, message] of [
       [a, b, MSG_A],
       [b, a, MSG_B],
     ] as const) {
-      await send(composer(sender), message);
+      liveWaitMs[sender.name] = (await send(composer(sender), message)).liveWaitMs;
       // A held community keeps earlier runs' messages and the feed is virtualized,
       // so read the newest end of it, never the whole feed's text.
       await seeNewest(sender, message);
       await seeNewest(receiver, message);
     }
     return {
+      liveWaitMs,
       a: await shot(a.page, '11-desktop-a-general'),
       b: await shot(b.page, '11-desktop-b-general'),
     };
@@ -127,13 +129,14 @@ export async function switchingSteps(w: World): Promise<void> {
       await seeNewest(b, MSG_A);
       await messageRow(feed(b), MSG_A).getByRole('button', { name: 'Reply in thread' }).click();
       await expect(threadFeed(b)).toBeVisible();
-      await send(composer(b, /Reply in thread/), THREAD_B);
+      const reply = await send(composer(b, /Reply in thread/), THREAD_B);
       await expect(threadFeed(b)).toContainText(THREAD_B, { timeout: 30_000 });
-      // Replies stay out of the channel. Read A's newest rows, where a stray reply
-      // would land, and fail plainly if A's feed is gone rather than "not containing" it.
-      await expect(feed(a), 'A’s channel feed is on screen').toBeVisible();
-      await seeNewest(a, MSG_A);
-      await expect(feed(a)).not.toContainText(THREAD_B);
+      // The Community filed the reply under A's message, not in the channel.
+      const rootA = (await channelEntries<Entry>(a, refA, room.roomId)).find(
+        (e) => e.text === MSG_A
+      );
+      assert(rootA, 'A’s message is in the channel’s history');
+      assert.equal(reply.entry.threadRootEntryId, rootA.id, 'the reply is in A’s message’s thread');
       await messageRow(feed(a), MSG_A)
         .getByRole('button', { name: /Reply in thread|Open thread/ })
         .first()
@@ -147,7 +150,18 @@ export async function switchingSteps(w: World): Promise<void> {
         await local.page.getByRole('button', { name: 'Back to channel', exact: true }).click();
         await expect(feed(local)).toBeVisible();
       }
-      return evidence;
+      // Replies stay out of the channel. Checked only now that A's app has the reply
+      // (A just read it in the thread), so the check cannot pass by arriving too early:
+      // the channel's top-level history lacks it, and so do A's newest rows, where a
+      // stray reply would land.
+      assert(
+        !(await channelEntries<Entry>(a, refA, room.roomId)).some((e) => e.text === THREAD_B),
+        'the thread reply is in the channel’s top-level history'
+      );
+      await expect(feed(a), 'A’s channel feed is on screen').toBeVisible();
+      await seeNewest(a, MSG_B);
+      await expect(feed(a)).not.toContainText(THREAD_B);
+      return { ...evidence, liveWaitMs: reply.liveWaitMs };
     }
   );
 
@@ -161,9 +175,12 @@ export async function switchingSteps(w: World): Promise<void> {
       const fileChooser = await chooser;
       if (fileChooser) await fileChooser.setFiles(file);
       else await a.page.locator('input[type="file"]').first().setInputFiles(file);
-      await send(composer(a), ATTACH_TEXT);
+      const { liveWaitMs } = await send(composer(a), ATTACH_TEXT);
       await seeNewest(b, ATTACH_TEXT);
-      await expect(feed(b).getByRole('button', { name: ATTACH_NAME, exact: true })).toBeVisible({
+      // Scoped to this run's row: an earlier run in a held community left a file of the same name.
+      await expect(
+        messageRow(feed(b), ATTACH_TEXT).getByRole('button', { name: ATTACH_NAME, exact: true })
+      ).toBeVisible({
         timeout: 60_000,
       });
       const entry = (await channelEntries<Entry>(b, refB, room.roomId)).find(
@@ -176,6 +193,7 @@ export async function switchingSteps(w: World): Promise<void> {
       assert(bytes.ok, `B attachment download ${bytes.status}`);
       assert.equal(await bytes.text(), ATTACH_BODY, 'attachment bytes intact');
       return {
+        liveWaitMs,
         b: await shot(b.page, '13-desktop-b-attachment'),
         attachmentId: entry.attachments[0]!.id,
       };

@@ -405,10 +405,14 @@ export const CONNECTING_LINE = 'Connecting to the community…';
  *
  * @param box - The composer (a channel's or a thread's).
  * @param text - What to send.
+ * @returns How long the channel took to become ready for the post, and the
+ *   entry the Community confirmed, so a step can record a slow connect and
+ *   check where the message landed.
  */
-export async function send(box: Locator, text: string): Promise<void> {
+export async function send(box: Locator, text: string): Promise<SendReceipt> {
   const page = box.page();
   const preview = JSON.stringify(text.length > 60 ? `${text.slice(0, 60)}…` : text);
+  const waitStarted = Date.now();
   await expect(
     page.getByText(CONNECTING_LINE, { exact: true }),
     `the channel was still connecting to the community, so ${preview} could not be sent`
@@ -426,6 +430,7 @@ export async function send(box: Locator, text: string): Promise<void> {
     sendButton,
     `Send never became enabled for ${preview}: the channel is not ready for posts`
   ).toBeEnabled({ timeout: 60_000 });
+  const liveWaitMs = Date.now() - waitStarted;
   const posted = page.waitForResponse(
     (r) => isEntryPostFor(r.request().method(), r.url(), r.request().postData(), text),
     { timeout: 30_000 }
@@ -438,6 +443,23 @@ export async function send(box: Locator, text: string): Promise<void> {
     );
   });
   assert.equal(response.status(), 201, `posting ${preview} answered ${response.status()}, not 201`);
+  const { entry } = (await response.json()) as { entry: PostedEntry };
+  return { liveWaitMs, entry };
+}
+
+/** The confirmed entry a send's 201 carries; only the fields the steps read. */
+export interface PostedEntry {
+  id: string;
+  text: string;
+  /** The entry at the head of this entry's thread, or `null` when top-level. */
+  threadRootEntryId: string | null;
+}
+
+/** What {@link send} reports about one confirmed post. */
+export interface SendReceipt {
+  /** From the start of the send until the channel was live and Send enabled. */
+  liveWaitMs: number;
+  entry: PostedEntry;
 }
 
 /**
