@@ -8896,6 +8896,288 @@
           "deniedAt"
         ]
       },
+      "CloudOffersResponse": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              }
+            },
+            "required": [
+              "available"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "offers": {
+                "type": "object",
+                "properties": {
+                  "offers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "skuId": {
+                          "type": "string",
+                          "description": "Send back unchanged to checkout."
+                        },
+                        "planId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "interval": {
+                          "type": "string"
+                        },
+                        "amountMicro": {
+                          "type": "string"
+                        },
+                        "limits": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "skuId",
+                        "planId",
+                        "displayName",
+                        "interval",
+                        "amountMicro",
+                        "limits"
+                      ],
+                      "additionalProperties": {}
+                    }
+                  },
+                  "denomination": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "offers"
+                ]
+              }
+            },
+            "required": [
+              "available",
+              "offers"
+            ]
+          }
+        ]
+      },
+      "CloudBillingSessionResponse": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "url": {
+                "type": "string",
+                "description": "A short-lived https address to open."
+              }
+            },
+            "required": [
+              "ok",
+              "url"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "problem": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "integer"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "requiredPlanDisplayName": {
+                    "type": "string"
+                  },
+                  "actionUrl": {
+                    "type": "string"
+                  },
+                  "actionLabel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "status",
+                  "title"
+                ],
+                "additionalProperties": {},
+                "description": "The service`s own refusal, in its own words."
+              }
+            },
+            "required": [
+              "ok",
+              "problem"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ok",
+              "message"
+            ]
+          }
+        ]
+      },
+      "CloudAccountExportResponse": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "export": {
+                "type": "object",
+                "properties": {
+                  "requestedAt": {
+                    "type": "string"
+                  },
+                  "readyAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "downloadUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "A short-lived https link, null until the export is ready."
+                  }
+                },
+                "required": [
+                  "requestedAt",
+                  "readyAt",
+                  "downloadUrl"
+                ]
+              }
+            },
+            "required": [
+              "ok",
+              "export"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "problem": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "integer"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "requiredPlanDisplayName": {
+                    "type": "string"
+                  },
+                  "actionUrl": {
+                    "type": "string"
+                  },
+                  "actionLabel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "status",
+                  "title"
+                ],
+                "additionalProperties": {},
+                "description": "The service`s own refusal, in its own words."
+              }
+            },
+            "required": [
+              "ok",
+              "problem"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ok",
+              "message"
+            ]
+          }
+        ]
+      },
       "ApplyShapeResult": {
         "type": "object",
         "properties": {
@@ -29434,6 +29716,159 @@
                     "accountLabel",
                     "lastHeartbeatAt"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cloud/offers": {
+      "get": {
+        "tags": [
+          "Cloud"
+        ],
+        "summary": "What the DorkOS account will sell this account right now",
+        "description": "Passed through exactly as the service sent it, in its order. `available: false` when this instance is not linked or the service does not serve offers; no request leaves the machine in the first case.",
+        "responses": {
+          "200": {
+            "description": "The offers, or nothing to show",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudOffersResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Could not reach the DorkOS account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cloud/billing/{page}": {
+      "post": {
+        "tags": [
+          "Cloud"
+        ],
+        "summary": "Start a billing session and get its web address to open in the browser",
+        "description": "`portal` is where a plan is changed or ended and invoices live, `checkout` starts one offer (body `{ skuId }` from GET /api/cloud/offers), and `topup` buys credits. Only an address is returned; nothing is paid in the app. A refusal answers 200 with the service`s own problem envelope, or one plain sentence when the service could not be asked or does not offer the page to this account. Sent `no-store`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "portal",
+                "checkout",
+                "topup"
+              ]
+            },
+            "required": true,
+            "name": "page",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "skuId": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The page address, or a refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBillingSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A checkout that names no offer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a billing page this server opens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cloud/account/export": {
+      "post": {
+        "tags": [
+          "Cloud"
+        ],
+        "summary": "Ask for a copy of everything the DorkOS account holds",
+        "description": "The answer carries the download link once the export is ready; until then, ask again. A refusal answers 200 with the service`s own problem envelope, or one plain sentence. Sent `no-store`.",
+        "responses": {
+          "200": {
+            "description": "Where the export stands, or a refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudAccountExportResponse"
                 }
               }
             }

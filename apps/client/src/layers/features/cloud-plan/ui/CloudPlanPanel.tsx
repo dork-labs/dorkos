@@ -2,6 +2,7 @@ import { Skeleton } from '@/layers/shared/ui';
 import { useCloudPlan } from '../model/use-cloud-plan';
 import { AccountContents } from './AccountContents';
 import { CreditsGauge } from './CreditsGauge';
+import { ManageOnWeb } from './ManageOnWeb';
 import { PlanCard } from './PlanCard';
 import { SeatManagement } from './SeatManagement';
 import { UpgradeNudge } from './UpgradeNudge';
@@ -9,8 +10,9 @@ import { UseCreditsFor } from './UseCreditsFor';
 
 /**
  * The signed-in half of Settings › DorkOS account — what the account includes,
- * what it has, what runs on it, and the seats it holds, in that order: Plan,
- * Credits, Use credits for, What's on your account, Seats.
+ * what it has, what runs on it, the seats it holds, and where money changes,
+ * in that order: Plan, Credits, Use credits for, What's on your account, Seats,
+ * Manage on the web.
  *
  * It renders only once this computer is linked (the link panel around it shows
  * the signed-out page otherwise), so nothing here has to say "link first".
@@ -56,6 +58,8 @@ export function CloudPlanPanel() {
       <UseCreditsFor />
       <AccountContents />
       <SeatManagement />
+      {/* Renders nothing until the service describes a plan. */}
+      <ManageOnWeb />
     </div>
   );
 }
