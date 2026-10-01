@@ -1,11 +1,11 @@
 flowchart TB
   accTitle: Local participation in a multi-community host
-  accDescr: Local rooms remain in SQLite. Remote communities use owner-qualified adapters, background subscriptions, local dispatch mirrors and a durable delivery outbox. One independent host has host-wide sign-in and tenant-scoped data. Host administration does not grant content access.
+  accDescr: Local rooms remain in SQLite. Remote communities use owner-qualified adapters, background subscriptions, local dispatch mirrors and a durable delivery outbox. One independent host has host-wide sign-in and tenant-scoped data. Host administration is separate from ordinary membership; scoped takedown and evidence operations are explicit exceptions. Installation grants own their enrolled agents. Authoritative removal purges local mirrors; unknown errors do not.
   subgraph local["Local DorkOS"]
     ui["Client · community switcher"]
     rooms["Local RoomService + SQLite"]
-    adapter{{"Owner-qualified RemoteCommunityAdapter<br/>Pinned origin + community UUID"}}
-    inbound["Background subscriptions<br/>Local mirrors + agent dispatch"]
+    adapter{{"Owner-qualified RemoteCommunityAdapter<br/>Pinned origin + community UUID<br/>Installation-owned grant + agent enrollment"}}
+    inbound["Background subscriptions<br/>Local mirrors + agent dispatch<br/>Purge on authoritative removal"]
     outbound["Durable outbox<br/>Retry + receipt + authorization check"]
     ui <-->|"HTTP + WebSocket"| rooms
     ui <-->|"Qualified HTTP + SSE"| adapter
@@ -24,5 +24,10 @@ flowchart TB
     api --> db
     api --> blobs
   end
-  adapter <-->|"HTTP + SSE<br/>Scoped personal / agent credentials"| api
+  adapter <-->|"HTTP + SSE<br/>Scoped personal / installation-agent credentials"| api
+  removal["Disconnect this installation<br/>Remove its active enrolled agents + grant<br/>Other installations remain independent"]
+  removal -->|"Qualified remote cleanup; report failures"| adapter
+  refusal["Authoritative denial / deletion / takedown<br/>Unknown 404 / outage / suspension is not deletion"]
+  api --> refusal
+  refusal -->|"Invalidate affected local mirrors"| inbound
   messaging["Slack / Telegram"] -->|"Relay bridges"| rooms

@@ -1,0 +1,25 @@
+flowchart TB
+  accTitle: Projects, extensions, and starting agent work
+  accDescr: Project identity resolves to a git main checkout, while workspaces are execution checkouts. One running extension can reach multiple permitted projects. Approval of code or trust in its source is separate from per-project settings. Activity decisions and bounded startWork preserve project account eligibility and session provenance.
+  folders["Sessions · agents · installs · workspaces"]
+  projects["Project registry<br/>Stable name → git main checkout<br/>Worktrees resolve to project identity"]
+  reported["Extension-reported roots<br/>Bounded visibility; no discovery expansion"]
+  workspace["Workspace checkout<br/>Execution isolation; not a new project identity"]
+  code["Discovered extension code"]
+  approval["Person approves copy / trusts source<br/>Activity inbox or Settings<br/>Code trust is not project enablement"]
+  extension["One running extension instance<br/>Multiple permitted projects"]
+  settings["Per-project extension settings<br/>Enable work separately from trusting code"]
+  inbox["Activity inbox decisions<br/>Core owns deadline, answer and history"]
+  start["startWork / sessions.start<br/>Project visibility + runtime account eligibility<br/>Shared rate / running limits, including descendants"]
+  session["New session in project root<br/>First prompt dispatched; origin recorded<br/>Current chat stays unchanged"]
+  folders --> projects
+  reported -->|"Reported until observed by core"| projects
+  projects --> workspace
+  code --> approval
+  approval -->|"Approved loading policy"| extension
+  projects -->|"Permitted project context"| extension
+  extension <-->|"Project-scoped configuration"| settings
+  extension <-->|"Raise / answer / resolve"| inbox
+  extension -->|"Person action or server request"| start
+  projects -->|"Resolve project; enforce visibility"| start
+  start -->|"Recheck eligibility at launch"| session
