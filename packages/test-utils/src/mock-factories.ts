@@ -1372,6 +1372,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getCloudStatus: vi
       .fn()
       .mockResolvedValue({ linked: false, accountLabel: null, lastHeartbeatAt: null }),
+    checkCloudLink: vi
+      .fn()
+      .mockResolvedValue({ linked: false, accountLabel: null, lastHeartbeatAt: null }),
     // The plan-aware reads (DOR-2027) default to "nothing to show" — the same
     // answer an install with no cloud account gets — so every existing test
     // renders the unlinked surface unless it deliberately says otherwise.
@@ -1386,6 +1389,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getCloudOffers: vi.fn().mockResolvedValue({ available: false }),
     createCloudBillingSession: vi.fn(),
     requestCloudAccountExport: vi.fn(),
+    requestCloudAccountDeletion: vi.fn(),
     getCloudCredits: vi.fn().mockResolvedValue({
       enabled: false,
       ready: false,

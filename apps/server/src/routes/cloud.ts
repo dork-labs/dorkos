@@ -28,6 +28,7 @@ import { Router, type Response } from 'express';
 import { z } from 'zod';
 import type { Problem } from '@dork-labs/cloud-api';
 import type {
+  CloudAccountDeletionResponse,
   CloudAccountExportResponse,
   CloudBillingPage,
   CloudBillingSessionResponse,
@@ -56,6 +57,7 @@ import { isAbsent, isCloudLinked, problemOf } from '../services/core/cloud/v1-cl
 import {
   openBillingPage,
   readOffers,
+  requestAccountDeletion,
   requestAccountExport,
 } from '../services/core/cloud/billing-pages.js';
 import {
@@ -113,6 +115,16 @@ router.post('/unlink', async (_req, res) => {
 /** GET /api/cloud/status — settled linked/unlinked summary for Settings. */
 router.get('/status', (_req, res) => {
   res.json(getCloudLinkManager().getSummary());
+});
+
+/**
+ * POST /api/cloud/link/check — ask the DorkOS account, now, whether it still
+ * accepts this computer, and answer the settled summary that results. A
+ * computer whose account was deleted comes back unlinked with its key cleared;
+ * a service that cannot be reached keeps the link. Never an error.
+ */
+router.post('/link/check', async (_req, res) => {
+  res.json(await getCloudLinkManager().checkLink());
 });
 
 /**
@@ -391,6 +403,35 @@ router.post('/account/export', async (_req, res) => {
     return cloudWriteFailed(res, err, {
       what: 'request an account export',
       absent: 'Exporting your data isn’t available on your account yet.',
+    });
+  }
+});
+
+/**
+ * POST /api/cloud/account/deletion — ask for the DorkOS account to be
+ * deleted. Nothing is deleted here: the service emails the account a
+ * confirmation link, and the account goes only when the person follows it.
+ * Once it has, `POST /api/cloud/link/check` finds this computer unlinked.
+ * A refusal answers 200, for the reason {@link cloudWriteFailed} gives.
+ */
+router.post('/account/deletion', async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!isCloudLinked()) return res.json(NOT_LINKED);
+  try {
+    const deletion = await requestAccountDeletion();
+    const body: CloudAccountDeletionResponse = {
+      ok: true,
+      deletion: {
+        requestedAt: deletion.requestedAt,
+        confirmationSentTo: deletion.confirmationSentTo,
+        confirmBy: deletion.confirmBy,
+      },
+    };
+    return res.json(body);
+  } catch (err) {
+    return cloudWriteFailed(res, err, {
+      what: 'ask to delete the account',
+      absent: 'Deleting your account from the app isn’t available on your account yet.',
     });
   }
 });

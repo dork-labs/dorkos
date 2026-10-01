@@ -17,6 +17,8 @@ import offersFixture from '@dork-labs/cloud-api/fixtures/v1/billing/offers.json'
 import offersEmptyFixture from '@dork-labs/cloud-api/fixtures/v1/billing/offers-empty.json' with { type: 'json' };
 import refusalFixture from '@dork-labs/cloud-api/fixtures/v1/problem/entitlement-required-action.json' with { type: 'json' };
 import exportFixture from '@dork-labs/cloud-api/fixtures/v1/session/account-export.json' with { type: 'json' };
+import deletionFixture from '@dork-labs/cloud-api/fixtures/v1/session/account-deletion.json' with { type: 'json' };
+import deletionConflictFixture from '@dork-labs/cloud-api/fixtures/v1/problem/account-deletion-conflict.json' with { type: 'json' };
 
 const config = vi.hoisted(() => ({ cloud: { instanceToken: 'tok_test' } as unknown }));
 vi.mock('../../services/core/config-manager.js', () => ({
@@ -289,6 +291,90 @@ describe('billing-page routes', () => {
       config.cloud = undefined;
       const seen = fakeAccount({});
       const res = await request(server).post('/api/cloud/account/export').expect(200);
+      expect(res.body).toEqual({
+        ok: false,
+        message: 'This instance is not linked to a DorkOS account.',
+      });
+      expect(seen).toHaveLength(0);
+    });
+  });
+
+  describe('POST /api/cloud/account/deletion', () => {
+    it('asks for the deletion and says where the confirmation link went', async () => {
+      const seen = fakeAccount({ '/v1/account/deletion': { status: 200, body: deletionFixture } });
+      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      expect(res.body).toEqual({
+        ok: true,
+        deletion: {
+          requestedAt: deletionFixture.requestedAt,
+          confirmationSentTo: deletionFixture.confirmationSentTo,
+          confirmBy: deletionFixture.confirmBy,
+        },
+      });
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({
+        method: 'POST',
+        path: '/v1/account/deletion',
+        body: {},
+        authorization: 'Bearer tok_test',
+      });
+    });
+
+    it('passes on a link with no deadline as one', async () => {
+      fakeAccount({
+        '/v1/account/deletion': { status: 200, body: { ...deletionFixture, confirmBy: null } },
+      });
+      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      expect(res.body.deletion.confirmBy).toBeNull();
+    });
+
+    it('never relays a field the contract does not define', async () => {
+      fakeAccount({
+        '/v1/account/deletion': {
+          status: 200,
+          body: { ...deletionFixture, confirmationUrl: 'https://account.example.invalid/x' },
+        },
+      });
+      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      expect(Object.keys(res.body.deletion).sort()).toEqual([
+        'confirmBy',
+        'confirmationSentTo',
+        'requestedAt',
+      ]);
+    });
+
+    it.each([
+      ['a not-found problem', { code: 'not_found', status: 404, title: 'Developer prose' }],
+      ['a bare 404', 'Not Found'],
+    ])('says deleting is not available on the account for %s', async (_shape, body) => {
+      fakeAccount({ '/v1/account/deletion': { status: 404, body } });
+      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      expect(res.body).toEqual({
+        ok: false,
+        message: 'Deleting your account from the app isn’t available on your account yet.',
+      });
+    });
+
+    it('passes a refusal through in the service`s own words, link included', async () => {
+      fakeAccount({ '/v1/account/deletion': { status: 409, body: deletionConflictFixture } });
+      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      expect(res.body).toEqual({ ok: false, problem: deletionConflictFixture });
+    });
+
+    it('says the account could not be reached when the answer is unreadable', async () => {
+      fakeAccount({ '/v1/account/deletion': { status: 200, body: { requestedAt: 'soon' } } });
+      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      expect(res.body).toEqual({
+        ok: false,
+        message: 'Couldn’t reach your DorkOS account. Try again shortly.',
+      });
+    });
+
+    it('sends nothing while this instance is not linked', async () => {
+      config.cloud = undefined;
+      const seen = fakeAccount({});
+      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
       expect(res.body).toEqual({
         ok: false,
         message: 'This instance is not linked to a DorkOS account.',

@@ -8,6 +8,7 @@ import usageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-denomin
 import usageWithOtherChargesFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-with-other-charges.json' with { type: 'json' };
 import offersFixture from '@dork-labs/cloud-api/fixtures/v1/billing/offers.json' with { type: 'json' };
 import refusalFixture from '@dork-labs/cloud-api/fixtures/v1/problem/entitlement-required-action.json' with { type: 'json' };
+import deletionFixture from '@dork-labs/cloud-api/fixtures/v1/session/account-deletion.json' with { type: 'json' };
 import { TransportProvider } from '@/layers/shared/model';
 import { CreditsGauge, ManageOnWeb, PlanCard } from '@/layers/features/cloud-plan';
 import { createPlaygroundTransport } from '../playground-transport';
@@ -50,6 +51,13 @@ function LinkedCard({ usage, children }: { usage: CloudUsageResponse; children?:
         ok: true,
         export: { requestedAt: '2026-09-15T12:00:00.000Z', readyAt: null, downloadUrl: null },
       },
+      // Asking to delete deletes nothing anywhere: it shows the "check your
+      // email" state, and the link check keeps answering linked.
+      requestCloudAccountDeletion: {
+        ok: true,
+        deletion: deletionFixture,
+      },
+      checkCloudLink: { linked: true, accountLabel: null, lastHeartbeatAt: null },
     };
     return new Proxy(base, {
       get(target, prop, receiver) {

@@ -12,7 +12,7 @@
  * @module features/cloud-link/model/use-cloud-link
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import { connectorKeys } from '@/layers/entities/connectors';
 import { accountSignInKeys } from '@/layers/entities/community';
@@ -48,6 +48,68 @@ export function useCloudStatus() {
     queryFn: () => transport.getCloudStatus(),
     staleTime: 30_000,
   });
+}
+
+/**
+ * Refresh everything read through the DorkOS account once the link changes
+ * hands: the connections that came through it, and which space sites sign in
+ * with it.
+ *
+ * @param queryClient - The app's query client.
+ */
+function invalidateAccountReads(queryClient: QueryClient): Promise<unknown> {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
+    queryClient.invalidateQueries({ queryKey: accountSignInKeys.all }),
+  ]);
+}
+
+/** What {@link useCheckCloudLink}'s check does with a link it finds ended. */
+export interface CheckCloudLinkOptions {
+  /**
+   * Clear the server's "DorkOS revoked this computer's access" note before
+   * anything shows it, because the person ended the link themselves (an
+   * account deletion they confirmed). The panel then reads signed out.
+   */
+  expected?: boolean;
+}
+
+/**
+ * Ask the DorkOS account, now, whether it still accepts this computer.
+ *
+ * For a surface waiting on something that ends the link somewhere else, such
+ * as an account deletion confirmed from an email: the next scheduled check may
+ * be minutes away. The answer is written straight into the shared summary, so
+ * every surface that says whether this computer is signed in moves at once,
+ * and an ended link refreshes what was read through the account.
+ *
+ * @returns A check that resolves with the settled summary, or `null` when this
+ *   DorkOS could not be asked.
+ */
+export function useCheckCloudLink(): (
+  options?: CheckCloudLinkOptions
+) => Promise<CloudLinkSummary | null> {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useCallback(
+    async (options: CheckCloudLinkOptions = {}) => {
+      let summary: CloudLinkSummary;
+      try {
+        summary = await transport.checkCloudLink();
+      } catch {
+        return null;
+      }
+      if (!summary.linked && options.expected) {
+        // Before the summary moves, so the panel re-reads a flow state that
+        // no longer carries the note.
+        await transport.cancelCloudLink().catch(() => {});
+      }
+      queryClient.setQueryData<CloudLinkSummary>(cloudStatusKey, summary);
+      if (!summary.linked) await invalidateAccountReads(queryClient);
+      return summary;
+    },
+    [transport, queryClient]
+  );
 }
 
 /**
@@ -167,6 +229,28 @@ export function useCloudLink(): UseCloudLink {
     };
   }, [transport, stopPolling]);
 
+  // A link that ended somewhere else (the account was deleted, or this
+  // computer was unlinked on the web) reaches this panel as the shared summary
+  // turning unlinked. The flow state read on mount still says "linked", so read
+  // it again rather than keep showing an account that has gone. A device flow
+  // in progress owns the flow state and is left alone.
+  const wasLinked = useRef<boolean | undefined>(undefined);
+  const linkedNow = summary.data?.linked;
+  useEffect(() => {
+    const before = wasLinked.current;
+    wasLinked.current = linkedNow;
+    if (before !== true || linkedNow !== false || flowActiveRef.current) return;
+    transport
+      .getCloudLinkStatus()
+      .then((s) => {
+        if (mountedRef.current && !flowActiveRef.current) setLinkStatus(s);
+      })
+      .catch(() => {
+        // The summary still drives the view once the flow state is cleared.
+        if (mountedRef.current && !flowActiveRef.current) setLinkStatus(null);
+      });
+  }, [linkedNow, transport]);
+
   const start = useCallback(async () => {
     setStartError(null);
     setStarting(true);
@@ -215,8 +299,7 @@ export function useCloudLink(): UseCloudLink {
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: cloudStatusKey }),
-        queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
-        queryClient.invalidateQueries({ queryKey: accountSignInKeys.all }),
+        invalidateAccountReads(queryClient),
       ]);
     } catch {
       // Unlink failed (e.g. the local server call errored): the instance was not

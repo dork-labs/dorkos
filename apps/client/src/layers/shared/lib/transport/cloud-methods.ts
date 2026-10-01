@@ -13,6 +13,7 @@
  */
 import type {
   CloudBillingPage,
+  CloudAccountDeletionResponse,
   CloudAccountExportResponse,
   CloudBillingSessionResponse,
   CloudCommunityClaimLinkResponse,
@@ -67,6 +68,10 @@ export function createCloudMethods(baseUrl: string) {
 
     getCloudStatus(): Promise<CloudLinkSummary> {
       return fetchJSON<CloudLinkSummary>(baseUrl, '/cloud/status');
+    },
+
+    checkCloudLink(): Promise<CloudLinkSummary> {
+      return fetchJSON<CloudLinkSummary>(baseUrl, '/cloud/link/check', { method: 'POST' });
     },
 
     getCloudPlan(): Promise<CloudPlanResponse> {
@@ -135,6 +140,12 @@ export function createCloudMethods(baseUrl: string) {
 
     requestCloudAccountExport(): Promise<CloudAccountExportResponse> {
       return fetchJSON<CloudAccountExportResponse>(baseUrl, '/cloud/account/export', {
+        method: 'POST',
+      });
+    },
+
+    requestCloudAccountDeletion(): Promise<CloudAccountDeletionResponse> {
+      return fetchJSON<CloudAccountDeletionResponse>(baseUrl, '/cloud/account/deletion', {
         method: 'POST',
       });
     },

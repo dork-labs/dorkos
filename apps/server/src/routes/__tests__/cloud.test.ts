@@ -14,6 +14,7 @@ const mockManager = vi.hoisted(() => ({
   unlink: vi.fn(),
   cancelLink: vi.fn(),
   getSummary: vi.fn(),
+  checkLink: vi.fn(),
 }));
 vi.mock('../../services/core/auth/cloud-link.js', () => ({
   getCloudLinkManager: () => mockManager,
@@ -155,6 +156,19 @@ describe('cloud routes', () => {
       });
       const res = await request(server).get('/api/cloud/status').expect(200);
       expect(res.body.linked).toBe(false);
+    });
+  });
+
+  describe('POST /api/cloud/link/check', () => {
+    it('asks the account now and answers the summary that results', async () => {
+      manager.checkLink.mockResolvedValue({
+        linked: false,
+        accountLabel: null,
+        lastHeartbeatAt: null,
+      });
+      const res = await request(server).post('/api/cloud/link/check').expect(200);
+      expect(res.body).toEqual({ linked: false, accountLabel: null, lastHeartbeatAt: null });
+      expect(manager.checkLink).toHaveBeenCalledTimes(1);
     });
   });
 

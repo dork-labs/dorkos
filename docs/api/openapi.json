@@ -9178,6 +9178,115 @@
           }
         ]
       },
+      "CloudAccountDeletionResponse": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "deletion": {
+                "type": "object",
+                "properties": {
+                  "requestedAt": {
+                    "type": "string"
+                  },
+                  "confirmationSentTo": {
+                    "type": "string",
+                    "description": "Where the confirmation link went, as the service chose to show it."
+                  },
+                  "confirmBy": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "When the emailed link stops working, or null for no limit."
+                  }
+                },
+                "required": [
+                  "requestedAt",
+                  "confirmationSentTo",
+                  "confirmBy"
+                ]
+              }
+            },
+            "required": [
+              "ok",
+              "deletion"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "problem": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "integer"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "requiredPlanDisplayName": {
+                    "type": "string"
+                  },
+                  "actionUrl": {
+                    "type": "string"
+                  },
+                  "actionLabel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "status",
+                  "title"
+                ],
+                "additionalProperties": {},
+                "description": "The service`s own refusal, in its own words."
+              }
+            },
+            "required": [
+              "ok",
+              "problem"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ok",
+              "message"
+            ]
+          }
+        ]
+      },
       "ApplyShapeResult": {
         "type": "object",
         "properties": {
@@ -29724,6 +29833,49 @@
         }
       }
     },
+    "/api/cloud/link/check": {
+      "post": {
+        "tags": [
+          "Cloud"
+        ],
+        "summary": "Ask the DorkOS account now whether it still accepts this instance",
+        "description": "Sends one heartbeat and answers the settled summary. A key the account refuses (the account was deleted, or this instance was unlinked on the web) is cleared and the answer reads unlinked; an account that cannot be reached keeps the link.",
+        "responses": {
+          "200": {
+            "description": "Linked state, account label, and last heartbeat, after the check",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    },
+                    "accountLabel": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lastHeartbeatAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "linked",
+                    "accountLabel",
+                    "lastHeartbeatAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/cloud/offers": {
       "get": {
         "tags": [
@@ -29870,6 +30022,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CloudAccountExportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cloud/account/deletion": {
+      "post": {
+        "tags": [
+          "Cloud"
+        ],
+        "summary": "Ask for the DorkOS account to be deleted",
+        "description": "Deletes nothing: the service emails the account a confirmation link, and the account is deleted only when the person follows it. A refusal answers 200 with the service`s own problem envelope, or one plain sentence. Sent `no-store`.",
+        "responses": {
+          "200": {
+            "description": "Where the confirmation link went, or a refusal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudAccountDeletionResponse"
                 }
               }
             }

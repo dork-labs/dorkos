@@ -274,6 +274,8 @@ export class CloudLinkManager {
   private pollSettled: Promise<void> | undefined;
   private keyCheck:
     { context: LinkContext; settled: Promise<void>; keptAt: number | undefined } | undefined;
+  /** The link check in flight, shared by every caller that overlaps it. */
+  private linkCheck: Promise<CloudLinkSummary> | undefined;
   private linkGeneration = ++nextLinkGeneration;
 
   constructor(private readonly options: CloudLinkManagerOptions = {}) {
@@ -571,6 +573,45 @@ export class CloudLinkManager {
       accountLabel: this.config.getAccountLabel(),
       lastHeartbeatAt: this.lastHeartbeatAt ?? null,
     };
+  }
+
+  /**
+   * Ask the service, now, whether it still accepts this computer's key, and
+   * answer the settled summary that results.
+   *
+   * The same heartbeat the schedule sends, so the verdict is applied the same
+   * way: a `401` unlinks (the account was deleted, or this computer was
+   * unlinked on the web), a good answer keeps the link, and a transient
+   * failure keeps the key. For a person waiting on something that ends the
+   * link elsewhere, who should not wait for the next scheduled heartbeat.
+   * Calls that overlap share one heartbeat; it is bounded by
+   * {@link KEY_CHECK_TIMEOUT_MS}.
+   */
+  checkLink(): Promise<CloudLinkSummary> {
+    if (this.linkCheck) return this.linkCheck;
+    const token = this.config.getToken();
+    if (!token) return Promise.resolve(this.getSummary());
+    const context = this.captureContext(token);
+    const bound = new AbortController();
+    const timer = setTimeout(() => bound.abort(), KEY_CHECK_TIMEOUT_MS);
+    timer.unref?.();
+    const check = this.heartbeat(
+      context.baseUrl,
+      buildInstanceDescriptor(),
+      token,
+      context.generation,
+      bound.signal
+    )
+      .catch((error: unknown) => {
+        logger.error('[CloudLink] Could not apply the link check result', logError(error));
+      })
+      .then(() => this.getSummary())
+      .finally(() => {
+        clearTimeout(timer);
+        this.linkCheck = undefined;
+      });
+    this.linkCheck = check;
+    return check;
   }
 
   /** Whether this instance holds a key (a refused call's key check may since have dropped it). */
