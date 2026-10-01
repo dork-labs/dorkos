@@ -43,6 +43,9 @@ test.describe('Settings — one panel per tab, mid-transition @smoke', () => {
   }) => {
     await settingsPage.open();
     await expect(settingsPage.activePanel).toBeVisible();
+    // Server sits behind the Advanced fold (DOR-2629); open it before the
+    // sampler starts so the fold's own render is not part of what is measured.
+    await settingsPage.expandAdvanced();
 
     // Install the sampler BEFORE the first click. Scoped to the settings dialog:
     // other surfaces (right panel, terminal, canvas) render their own tabpanels,

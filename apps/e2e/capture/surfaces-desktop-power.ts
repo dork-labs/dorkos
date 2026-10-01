@@ -14,7 +14,7 @@ import {
 } from './lib.js';
 
 /**
- * The power-surface drives: the Control Center flyout, the Settings → Rooms
+ * The power-surface drives: the Control Center flyout, the Settings → Room limits
  * dials behind one of its switches, and the one-time full-power consent door.
  * Split out of `surfaces-desktop` (which was over the 500-line limit) because
  * these three are one cohesive group — every one of them frames a power
@@ -95,7 +95,7 @@ export async function shootControlCenter(
 }
 
 /**
- * Capture Settings → Rooms: the four reply-limit dials that sit behind the
+ * Capture Settings → Room limits: the four reply-limit dials that sit behind the
  * Control Center's "Limit automatic replies" switch.
  *
  * Reached by the `?settings=rooms` deep link — the same URL param the Control
@@ -104,7 +104,7 @@ export async function shootControlCenter(
  * fourth label is the only proof the whole list has drawn rather than a leading
  * slice of it.
  *
- * The click on the already-selected Rooms tab is not navigation — it is what
+ * The click on the already-selected Room limits tab is not navigation — it is what
  * takes the ACCENT FOCUS RING off the dialog's expand control. Radix autofocuses
  * the first tabbable thing when the dialog opens, and a deep link arrives with
  * nothing else having been clicked, so that ring sits on an unrelated icon
@@ -119,11 +119,11 @@ export async function shootSettingsRooms(
   rec: RunRecorder
 ): Promise<void> {
   await page.goto(url('/team?settings=rooms'));
-  const panel = page.getByRole('tabpanel', { name: 'Rooms' });
+  const panel = page.getByRole('tabpanel', { name: 'Room limits' });
   await panel.getByText('Replies everywhere each hour', { exact: true }).waitFor({
     timeout: WAIT_MS,
   });
-  await page.getByRole('tab', { name: 'Rooms' }).click({ timeout: WAIT_MS });
+  await page.getByRole('tab', { name: 'Room limits' }).click({ timeout: WAIT_MS });
   await shoot(page, 'settings-rooms', theme, rec);
 }
 

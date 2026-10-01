@@ -342,8 +342,8 @@ export function LiveLaneShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Waiting — one agent already working in several conversations at once (Settings → Rooms →
-        Conversations at once). Whichever finishes first may free it, so the line names the one it
+        Waiting — one agent already working in several conversations at once (Settings → Room limits
+        → Conversations at once). Whichever finishes first may free it, so the line names the one it
         has been in longest without promising it.
       </ShowcaseLabel>
       <ShowcaseDemo>

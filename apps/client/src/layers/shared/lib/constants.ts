@@ -10,6 +10,8 @@ export const STORAGE_KEYS = {
   RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts',
   PIP_PANEL_STATE: 'dorkos-pip-panel-state',
   ROOM_THREAD_WIDTH: 'dorkos-room-thread-width',
+  /** Whether Settings' folded Advanced group is open (DOR-2629). */
+  SETTINGS_ADVANCED_OPEN: 'dorkos-settings-advanced-open',
 } as const;
 
 /**

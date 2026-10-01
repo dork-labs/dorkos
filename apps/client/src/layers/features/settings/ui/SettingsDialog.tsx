@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
+import { STORAGE_KEYS } from '@/layers/shared/lib';
 
 import { ProfileTab } from './ProfileTab';
 import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
@@ -36,6 +37,19 @@ import { PrivacyTab } from './PrivacyTab';
 import { DangerZoneTab } from './DangerZoneTab';
 import { ExperimentsTab } from './ExperimentsTab';
 
+/** The sidebar group that starts folded. */
+const ADVANCED_GROUP = 'Advanced';
+
+/**
+ * Whether Advanced is open, remembered per viewer in this browser. Folded is
+ * the default; only the viewer's own press of the toggle is remembered.
+ */
+const ADVANCED_FOLD = { group: ADVANCED_GROUP, storageKey: STORAGE_KEYS.SETTINGS_ADVANCED_OPEN };
+
+/**
+ * The Settings tabs, in sidebar order: You, Agents, This computer, then
+ * Advanced folded at the bottom (DOR-2629).
+ */
 const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   // "You" names what used to be an unlabelled run of four tabs above the first
   // section header — four loose things, then three real sections (DOR-1758).
@@ -80,37 +94,20 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     group: 'You',
   },
   {
-    id: 'tools',
-    label: 'Tools',
-    icon: Wrench,
-    component: ToolsTab,
-    group: 'Agents & sessions',
-  },
-  {
-    // What agents may do, for everyone (spec `agent-permissions`). First in the
-    // group because it is the answer to "why did my agent ask / refuse".
-    id: 'permissions',
-    label: 'Permissions',
-    icon: KeyRound,
-    component: PermissionsTab,
-    group: 'Agents & sessions',
-  },
-  {
     id: 'runtimes',
     label: 'Runtimes',
     icon: Cpu,
     component: RuntimesTab,
-    group: 'Agents & sessions',
+    group: 'Agents',
   },
   {
-    // Beside Runtimes rather than under System: what it holds is how far agents
-    // may carry a conversation with EACH OTHER, which is a question about
-    // agents, not about this machine.
-    id: 'rooms',
-    label: 'Rooms',
-    icon: MessagesSquare,
-    component: RoomsTab,
-    group: 'Agents & sessions',
+    // What agents may do, for everyone (spec `agent-permissions`) — the answer
+    // to "why did my agent ask / refuse".
+    id: 'permissions',
+    label: 'Permissions',
+    icon: KeyRound,
+    component: PermissionsTab,
+    group: 'Agents',
   },
   {
     // The plumbing behind the Connections page: how DorkOS reaches your apps
@@ -121,7 +118,7 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     label: 'Connections',
     icon: Cable,
     component: ConnectionsTab,
-    group: 'Agents & sessions',
+    group: 'Agents',
   },
   {
     // The local half of what was the Access tab: whether this computer asks
@@ -131,13 +128,6 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     label: 'Login & security',
     icon: ShieldCheck,
     component: SecurityPanel,
-    group: 'This computer',
-  },
-  {
-    id: 'privacy',
-    label: 'Privacy & Data',
-    icon: Lock,
-    component: PrivacyTab,
     group: 'This computer',
   },
   {
@@ -151,30 +141,56 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     component: RemoteAccessTab,
     group: 'This computer',
   },
-  { id: 'server', label: 'Server', icon: Server, component: ServerTab, group: 'System' },
   {
-    // Between Server and the danger zone on purpose: it is a place to try
-    // things, not a danger zone, and burying it under "Advanced" is how the last
-    // flag stayed invisible (DOR-1304). The tab renders whatever the server
+    id: 'privacy',
+    label: 'Privacy & Data',
+    icon: Lock,
+    component: PrivacyTab,
+    group: 'This computer',
+  },
+  // Advanced, folded until you open it (DOR-2629): the five tabs most people
+  // set once or never. Folding is not hiding — a `?settings=` link to any of
+  // them still lands, and opens the fold on its way in. The ids are the ones
+  // every existing link was minted with; only the grouping moved.
+  { id: 'server', label: 'Server', icon: Server, component: ServerTab, group: ADVANCED_GROUP },
+  {
+    id: 'tools',
+    label: 'Tools',
+    icon: Wrench,
+    component: ToolsTab,
+    group: ADVANCED_GROUP,
+  },
+  {
+    // The DEFAULTS every room follows, which is all that lives here: each room
+    // keeps its own limits in its own panel (Members → Automatic replies), and
+    // a room that sets none follows these. Named "Room limits" because that is
+    // the whole of what the tab holds; the id stays `rooms` for old links.
+    id: 'rooms',
+    label: 'Room limits',
+    icon: MessagesSquare,
+    component: RoomsTab,
+    group: ADVANCED_GROUP,
+  },
+  {
+    // A place to try things, not a danger zone. It sits behind the fold with
+    // the other rarely-touched tabs, but every flag still has a direct
+    // `?settings=experiments` link, and the tab renders whatever the server
     // registers, so an empty registry shows an empty-state line rather than a
-    // missing tab — an experiments section that disappears would look like a
-    // regression.
+    // missing tab (DOR-1304).
     id: 'experiments',
     label: 'Experiments',
     icon: FlaskConical,
     component: ExperimentsTab,
-    group: 'System',
+    group: ADVANCED_GROUP,
   },
   {
     // Named after what it holds, which is now only the three actions you cannot
-    // take back by hand. "Advanced" was a junk drawer — a polling switch, the
-    // message box, logging and these buttons in one flat stack — and every other
-    // section moved somewhere its name predicts (DOR-1758).
+    // take back by hand (DOR-1758).
     id: 'danger',
     label: 'Danger zone',
     icon: TriangleAlert,
     component: DangerZoneTab,
-    group: 'System',
+    group: ADVANCED_GROUP,
   },
 ];
 
@@ -207,6 +223,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       tabs={SETTINGS_TABS}
       extensionSlot="settings.tabs"
       maximized
+      foldedGroup={ADVANCED_FOLD}
       testId="settings-dialog"
     />
   );

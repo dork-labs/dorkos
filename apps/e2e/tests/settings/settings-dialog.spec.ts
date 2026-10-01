@@ -22,11 +22,21 @@ test.describe('Settings — Dialog @smoke', () => {
     await expect(settingsPage.dialog).toBeHidden();
   });
 
-  test('has its core tabs', async ({ settingsPage }) => {
+  test('has its core tabs, with Advanced folded below them', async ({ settingsPage }) => {
     await settingsPage.open();
 
-    const tabs = ['Appearance', 'Preferences', 'Server'];
+    const tabs = ['Appearance', 'Preferences', 'Runtimes'];
     for (const tabName of tabs) {
+      await expect(settingsPage.tab(tabName)).toBeVisible();
+    }
+
+    // Server, Tools, Room limits, Experiments and Danger zone wait behind one
+    // quiet disclosure (DOR-2629). Asserting the folded state first makes this
+    // a test of the fold, not only of the tabs behind it.
+    await expect(settingsPage.advancedToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(settingsPage.tab('Server')).toHaveCount(0);
+    await settingsPage.expandAdvanced();
+    for (const tabName of ['Server', 'Tools', 'Room limits', 'Experiments', 'Danger zone']) {
       await expect(settingsPage.tab(tabName)).toBeVisible();
     }
   });

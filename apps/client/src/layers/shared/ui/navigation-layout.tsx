@@ -296,6 +296,64 @@ function NavigationLayoutSectionHeader({
 NavigationLayoutSectionHeader.displayName = 'NavigationLayoutSectionHeader';
 
 // ---------------------------------------------------------------------------
+// Group toggle
+// ---------------------------------------------------------------------------
+
+export interface NavigationLayoutGroupToggleProps {
+  /** The group's name, shown where a section header would be. */
+  children: React.ReactNode;
+  /** Whether the group's items are showing. */
+  expanded: boolean;
+  /** Called with the next state when the toggle is pressed. */
+  onExpandedChange: (expanded: boolean) => void;
+  /** Id of the element holding the group's items, for `aria-controls`. */
+  controls: string;
+  className?: string;
+}
+
+/**
+ * A section header that folds its group away — the calm disclosure for items
+ * most people never need ("Advanced"). It reads like a
+ * {@link NavigationLayoutSectionHeader} with a chevron, so a folded group looks
+ * like one more quiet heading rather than a call to action.
+ *
+ * It is a plain `button` with `aria-expanded`, not a tab: the tablist's arrow
+ * keys look only for `role="tab"`, so they walk past it exactly as they walk
+ * past a section header, and Tab reaches it as an ordinary control. On a phone
+ * it keeps the list's 44px tap height.
+ */
+function NavigationLayoutGroupToggle({
+  children,
+  expanded,
+  onExpandedChange,
+  controls,
+  className,
+}: NavigationLayoutGroupToggleProps) {
+  const { isMobile } = useNavigationLayout();
+  return (
+    <button
+      type="button"
+      data-slot="navigation-layout-group-toggle"
+      aria-expanded={expanded}
+      aria-controls={controls}
+      onClick={() => onExpandedChange(!expanded)}
+      className={cn(
+        'text-muted-foreground/70 hover:text-foreground text-2xs flex w-full items-center gap-1 text-left font-medium tracking-wide uppercase transition-colors select-none',
+        isMobile ? 'min-h-[44px] px-4 pt-3 pb-1' : 'px-3 pt-3 pb-1',
+        className
+      )}
+    >
+      <span>{children}</span>
+      <ChevronRight
+        aria-hidden
+        className={cn('size-3 shrink-0 transition-transform duration-150', expanded && 'rotate-90')}
+      />
+    </button>
+  );
+}
+NavigationLayoutGroupToggle.displayName = 'NavigationLayoutGroupToggle';
+
+// ---------------------------------------------------------------------------
 // Item
 // ---------------------------------------------------------------------------
 
@@ -658,6 +716,7 @@ export {
   NavigationLayoutBody,
   NavigationLayoutSidebar,
   NavigationLayoutSectionHeader,
+  NavigationLayoutGroupToggle,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,
