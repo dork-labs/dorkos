@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(community): let a host close someone else's account"
+  - 'fix(community): limit and log host account closures'
 ---
 
 ### Added
