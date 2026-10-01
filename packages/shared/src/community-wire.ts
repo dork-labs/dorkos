@@ -267,7 +267,13 @@ export const CommunityWireOwnerReplacementNoticeResponseSchema = z.strictObject(
     ])
     .nullable(),
   completed: z
-    .strictObject({ newOwnerDisplayName: z.string().min(1), completedAt: timestamp })
+    .strictObject({
+      replacementId: id,
+      newOwnerDisplayName: z.string().min(1),
+      completedAt: timestamp,
+      /** True only for the reader who was the owner this request replaced. */
+      wasYours: z.boolean(),
+    })
     .nullable(),
 });
 /** One member's view of an owner replacement, as `GET /owner-replacement` answers it. */

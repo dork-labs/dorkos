@@ -1,8 +1,8 @@
 /**
  * What the owner of a community reads in DorkOS about a request to make someone else its owner
- * (DOR-2543): the banner on the community's page, the dot on its row, and the one-time
- * notifications. Every sentence offers only what this owner can do now, from the options the
- * Community sent.
+ * (DOR-2543): the banner on the community's page and the dot on its row. The one-time
+ * notifications are written on the server, in the notification registry. Every sentence offers
+ * only what this owner can do now, from the options the Community sent.
  *
  * @module entities/community/lib/owner-notice
  */
@@ -88,35 +88,6 @@ export function ownerNoticeBanner(
       `The link for the new owner was sent again on ${formatDate(notice.claimReissuedAt, format)}.`
     );
   return lines;
-}
-
-/** What a one-time notification says: a title, and one sentence under it. */
-export interface OwnerNoticeAnnouncement {
-  title: string;
-  description: string;
-}
-
-/**
- * The notification for a request first seen, or for its completion.
- *
- * @param notice - The owner notice.
- * @param label - What this DorkOS calls the community.
- * @param format - Locale and zone for dates; the viewer's own by default.
- */
-export function ownerNoticeAnnouncement(
-  notice: CommunityConnectionOwnerNotice,
-  label: string,
-  format?: OwnerNoticeDateFormat
-): OwnerNoticeAnnouncement {
-  if (notice.state === 'completed')
-    return {
-      title: `${notice.newOwnerDisplayName} is now the owner of ${label}`,
-      description: 'You are still a member.',
-    };
-  return {
-    title: `Someone asked to take over ${label}`,
-    description: `Unless you keep ownership, the host can make someone else its owner ${when(notice, format)}.`,
-  };
 }
 
 /**

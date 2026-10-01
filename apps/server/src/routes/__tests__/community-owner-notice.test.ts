@@ -50,6 +50,7 @@ import {
   COMMUNITY_ATTENTION_BUDGET_MS,
 } from '../../services/communities/remote/community-attention-cache.js';
 import { CommunityOwnerNoticeCache } from '../../services/communities/remote/community-owner-notice-cache.js';
+import { CommunityOwnerNoticeAnnouncer } from '../../services/notifications/emitters/community-owner-replacement.js';
 
 type Role = 'owner' | 'admin' | 'member';
 /** How the fixture answers one community's notice read right now. */
@@ -74,7 +75,7 @@ const tokens = new Map<string, string>();
 const noticeReads: string[] = [];
 let behaviour: Record<Role, NoticeBehaviour>;
 /** Whether the request is still open, or has completed, on the fixture. */
-let requestPhase: 'open' | 'completed' | 'ended' | 'ended-after-an-earlier-completion';
+let requestPhase: 'open' | 'completed' | 'ended';
 let openServers: Server[] = [];
 
 function roleOf(communityId: string): Role | undefined {
@@ -83,17 +84,16 @@ function roleOf(communityId: string): Role | undefined {
 
 /** What the Community tells a member of this role, as the real route answers it. */
 function noticeFor(role: Role): CommunityWireOwnerReplacementNoticeResponse {
+  // Every member is told of a completion; only the owner it replaced is told it was theirs.
   if (requestPhase === 'completed')
     return {
       open: null,
-      completed: { newOwnerDisplayName: 'Riley', completedAt: '2026-10-05T09:00:00.000Z' },
-    };
-  // The owner kept ownership, but the Community still shows every member, for 7 days, the
-  // completion that made this person the owner in the first place.
-  if (requestPhase === 'ended-after-an-earlier-completion')
-    return {
-      open: null,
-      completed: { newOwnerDisplayName: 'Owner', completedAt: '2026-09-18T09:00:00.000Z' },
+      completed: {
+        replacementId,
+        newOwnerDisplayName: 'Riley',
+        completedAt: '2026-10-05T09:00:00.000Z',
+        wasYours: role === 'owner',
+      },
     };
   if (requestPhase === 'ended' || role === 'member') return { open: null, completed: null };
   const shared = {
@@ -212,13 +212,17 @@ afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Each test starts with nothing announced.
+  dorkHome = await mkdtemp(join(tmpdir(), 'community-owner-notice-home-'));
   behaviour = { owner: 'answer', admin: 'answer', member: 'answer' };
   requestPhase = 'open';
   noticeReads.length = 0;
+  raised = [];
 });
 
 afterEach(async () => {
+  await rm(dorkHome, { recursive: true, force: true });
   // A hung notice read holds its socket open; let the router's servers go regardless.
   fixture.closeAllConnections();
   for (const server of openServers) {
@@ -228,16 +232,29 @@ afterEach(async () => {
   openServers = [];
 });
 
+/** Every notification this test's announcers raised, in order. */
+let raised: unknown[];
+/** This test's own data directory, so no test sees another's announcements. */
+let dorkHome: string;
+
 /** A fresh router, with its own caches, over the test's connection store. */
-async function router(noticeCache = new CommunityOwnerNoticeCache()) {
+async function router(
+  noticeCache = new CommunityOwnerNoticeCache(),
+  service = new RemoteCommunityPairingService(store)
+) {
+  // A late announcement from an earlier test lands in that test's array, never this one's.
+  const sink = raised;
   const app = express();
   app.use(
     '/api/community-connections',
     createCommunityConnectionsRouter(
-      new RemoteCommunityPairingService(store),
+      service,
       undefined,
       new CommunityAttentionCache(),
-      noticeCache
+      noticeCache,
+      new CommunityOwnerNoticeAnnouncer(dorkHome, async (payload) => {
+        sink.push(payload);
+      })
     )
   );
   const server = app.listen(0, '127.0.0.1');
@@ -281,13 +298,12 @@ describe('the owner notice on a DorkOS connection', () => {
     expect(new Set(noticeReads)).toEqual(new Set(Object.values(communities)));
   });
 
-  // Purpose: the completion is told once to the owner who saw the request, under that request's
-  // id, and never to a member, who is also shown the completion by the Community for 7 days.
-  it('tells the owner their request completed, and tells a member nothing', async () => {
-    const server = await router();
-    expect((await list(server)).byRole.get('owner')?.ownerNotice?.state).toBe('open');
+  // Purpose: the completion is the owner's because the Community says so (`wasYours`), so it
+  // needs nothing remembered from before: a fresh router (a restarted DorkOS) that never saw the
+  // request open still tells the owner, and never a member or an admin, who are also told of it.
+  it('tells the owner their request completed, even after a restart, and no one else', async () => {
     requestPhase = 'completed';
-    const { byRole } = await list(server);
+    const { byRole } = await list(await router());
     expect(byRole.get('owner')?.ownerNotice).toEqual({
       state: 'completed',
       replacementId,
@@ -298,23 +314,37 @@ describe('the owner notice on a DorkOS connection', () => {
     expect(byRole.get('admin')).not.toHaveProperty('ownerNotice');
   });
 
-  // Purpose: a request that ended any other way (kept, withdrawn) simply stops showing, and a
-  // later completion of some other request is not passed off as the owner's.
+  // Purpose: the owner is notified once per request and phase, through the notification registry,
+  // however many reads and restarts later the notice is still showing; a member and an admin are
+  // never notified. Fails if the route stopped raising, raised per read, or raised for a non-owner.
+  it('notifies the owner once per request and phase, across reads and restarts', async () => {
+    const server = await router();
+    await list(server);
+    await list(server);
+    await list(await router()); // a restart: a new router and announcer over the same data
+    await vi.waitFor(() => expect(raised).toHaveLength(1));
+    expect(raised[0]).toEqual({
+      ref: refs.get('owner'),
+      communityLabel: expect.any(String),
+      replacementId,
+      phase: 'open',
+      claimable: false,
+      claimableAfter: '2026-10-04T10:00:00.000Z',
+    });
+    requestPhase = 'completed';
+    await list(server);
+    await list(await router());
+    await vi.waitFor(() => expect(raised).toHaveLength(2));
+    expect(raised[1]).toMatchObject({ phase: 'completed', newOwnerDisplayName: 'Riley' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(raised).toHaveLength(2);
+  });
+
+  // Purpose: a request that ended without a new owner (kept, withdrawn) simply stops showing.
   it('stops showing a request that ended without a new owner', async () => {
     const server = await router();
     await list(server);
     requestPhase = 'ended';
-    expect((await list(server)).byRole.get('owner')).not.toHaveProperty('ownerNotice');
-    requestPhase = 'completed';
-    expect((await list(server)).byRole.get('owner')).not.toHaveProperty('ownerNotice');
-  });
-
-  // Purpose: a completion from before the owner's request was asked is some earlier change of
-  // owner, not this request. Fails if any completion after a seen request counted as its own.
-  it('never passes off an earlier completion as the owner’s request', async () => {
-    const server = await router();
-    await list(server);
-    requestPhase = 'ended-after-an-earlier-completion';
     expect((await list(server)).byRole.get('owner')).not.toHaveProperty('ownerNotice');
   });
 
@@ -360,13 +390,80 @@ describe('the owner notice on a DorkOS connection', () => {
     expect(noticeReads.filter((id) => id === communities.owner)).toHaveLength(1);
   });
 
-  // Purpose: disconnecting forgets the notice, including the open request it remembered.
-  it('forgets the notice when the Community is disconnected locally', async () => {
-    const cache = new CommunityOwnerNoticeCache(100, 60_000);
-    await list(await router(cache));
-    cache.forget('author-a', refs.get('owner')!);
+  // Purpose: the real DELETE route forgets the notice it cached. The connection is listed again
+  // at once (reconnected under the same ref) while its Community hangs, inside the freshness
+  // window, so only the route's forget stands between the owner and the notice from before.
+  it('forgets the notice when the Community is disconnected through the route', async () => {
+    const service = new RemoteCommunityPairingService(store);
+    vi.spyOn(service, 'disconnect').mockResolvedValue({
+      remoteRevoked: true,
+      agentsNotRemoved: [],
+    });
+    const server = await router(new CommunityOwnerNoticeCache(100, 60_000), service);
+    expect((await list(server)).byRole.get('owner')?.ownerNotice?.state).toBe('open');
+    const removed = await request(server).delete(`/api/community-connections/${refs.get('owner')}`);
+    expect(removed.status).toBe(200);
     behaviour.owner = 'hang';
-    requestPhase = 'completed';
-    expect((await list(await router(cache))).byRole.get('owner')).not.toHaveProperty('ownerNotice');
+    expect((await list(server)).byRole.get('owner')).not.toHaveProperty('ownerNotice');
   });
+
+  // Purpose: a connection that drops out of the list is forgotten by the next list read, so it
+  // cannot bring an old notice back when it reappears.
+  it('forgets the notice of a connection that left the list', async () => {
+    const service = new RemoteCommunityPairingService(store);
+    const server = await router(new CommunityOwnerNoticeCache(100, 60_000), service);
+    expect((await list(server)).byRole.get('owner')?.ownerNotice?.state).toBe('open');
+    const all = await service.list('author-a');
+    const listing = vi
+      .spyOn(service, 'list')
+      .mockResolvedValue(all.filter((item) => item.ref !== refs.get('owner')));
+    await list(server);
+    listing.mockRestore();
+    behaviour.owner = 'hang';
+    expect((await list(server)).byRole.get('owner')).not.toHaveProperty('ownerNotice');
+  });
+
+  // Purpose: a connection that stops being readable loses its notice at once, and does not get it
+  // back when it can read again while its Community is slow. Driven on both reads: the list
+  // (which also drops unreadable refs) and the single-connection read, where only the forget for
+  // an unreadable connection stands between the owner and the old notice.
+  it.each(['list', 'single'] as const)(
+    'forgets the notice of a connection that stops being readable (%s read)',
+    async (read) => {
+      const service = new RemoteCommunityPairingService(store);
+      const server = await router(new CommunityOwnerNoticeCache(100, 60_000), service);
+      const ownerRef = refs.get('owner')!;
+      const one = async () =>
+        read === 'list'
+          ? (await list(server)).byRole.get('owner')
+          : ((await request(server).get(`/api/community-connections/${ownerRef}`)).body
+              .connection as CommunityConnectionDescriptor);
+      expect((await one())?.ownerNotice?.state).toBe('open');
+      const readable = await service.status(ownerRef, 'author-a');
+      const unreadable = { read: false, post: false, enrollAgent: false, stream: false };
+      const blind =
+        readable.access?.state === 'verified'
+          ? {
+              ...readable,
+              access: {
+                ...readable.access,
+                effective: unreadable,
+                lastKnown: readable.access.lastKnown
+                  ? { ...readable.access.lastKnown, capabilities: unreadable }
+                  : null,
+              },
+            }
+          : readable;
+      const all = await service.list('author-a');
+      const listing = vi
+        .spyOn(service, 'list')
+        .mockResolvedValue(all.map((item) => (item.ref === ownerRef ? blind : item)));
+      const status = vi.spyOn(service, 'status').mockResolvedValue(blind);
+      expect(await one()).not.toHaveProperty('ownerNotice');
+      listing.mockRestore();
+      status.mockRestore();
+      behaviour.owner = 'hang';
+      expect(await one()).not.toHaveProperty('ownerNotice');
+    }
+  );
 });

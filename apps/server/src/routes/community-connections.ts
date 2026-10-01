@@ -54,6 +54,8 @@ import {
 import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
 import { CommunityAttentionCache } from '../services/communities/remote/community-attention-cache.js';
 import { CommunityOwnerNoticeCache } from '../services/communities/remote/community-owner-notice-cache.js';
+import { CommunityOwnerNoticeAnnouncer } from '../services/notifications/emitters/community-owner-replacement.js';
+import { resolveDorkHome } from '../lib/dork-home.js';
 
 /** Resolve the only local human allowed to use a stored community connection. */
 export function resolveCommunityOwner(req: Request, res: Response): string | null {
@@ -154,10 +156,14 @@ function attentionAccess(connection: CommunityConnectionDescriptor): 'read' | 'o
   return 'none';
 }
 
-/** The per-connection reads a connection listing adds, each held within the same budget. */
+/**
+ * The per-connection reads a connection listing adds, each held within the same budget, and the
+ * announcer that tells the owner once about each notice those reads find.
+ */
 interface ActivityCaches {
   attention: CommunityAttentionCache;
   ownerNotice: CommunityOwnerNoticeCache;
+  announcer: CommunityOwnerNoticeAnnouncer;
 }
 
 /**
@@ -172,8 +178,10 @@ interface ActivityCaches {
  * read is not asked at all and keeps its last confirmed counts, also `stale`.
  *
  * The owner notice is asked at the same moment as the counts, so it adds nothing to how long the
- * list takes, and it is never shown stale: a slow, failing or offline Community shows none
- * (DOR-2543).
+ * list takes. Unlike the counts it is never kept past about a minute: an offline Community, or
+ * one that stays slow or fails, shows none rather than an old one (DOR-2543). Each notice shown
+ * is handed to the announcer, which raises its notification once, ever; the list never waits
+ * for that.
  */
 async function withAttention(
   connection: CommunityConnectionDescriptor,
@@ -202,13 +210,16 @@ async function withAttention(
     attention,
     ...(ownerNotice ? { ownerNotice } : {}),
   });
-  if (enriched.success) return enriched.data;
   // Counts that break a descriptor rule must not take a valid notice down with them.
-  const withNotice = CommunityConnectionDescriptorSchema.safeParse({
-    ...connection,
-    ...(ownerNotice ? { ownerNotice } : {}),
-  });
-  return withNotice.success ? withNotice.data : connection;
+  const result = enriched.success
+    ? enriched.data
+    : (CommunityConnectionDescriptorSchema.safeParse({
+        ...connection,
+        ...(ownerNotice ? { ownerNotice } : {}),
+      }).data ?? connection);
+  if (result.ownerNotice)
+    void caches.announcer.announce(result.ref, result.label, result.ownerNotice);
+  return result;
 }
 
 /** Build the production route or inject an isolated service in HTTP tests. */
@@ -229,10 +240,15 @@ export function createCommunityConnectionsRouter(
     }
   ),
   attentionCache: CommunityAttentionCache = new CommunityAttentionCache(),
-  ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache()
+  ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache(),
+  announcer: CommunityOwnerNoticeAnnouncer = new CommunityOwnerNoticeAnnouncer(resolveDorkHome())
 ): Router {
   const router = Router();
-  const caches: ActivityCaches = { attention: attentionCache, ownerNotice: ownerNoticeCache };
+  const caches: ActivityCaches = {
+    attention: attentionCache,
+    ownerNotice: ownerNoticeCache,
+    announcer,
+  };
   router.get('/', async (req, res) => {
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;

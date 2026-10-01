@@ -955,11 +955,23 @@ describe('SidebarHeaderBlock', () => {
         },
       },
       community('b', 'Beta'),
+      {
+        ...community('c', 'Gamma'),
+        // A completed request is news for the Inbox, never a dot.
+        ownerNotice: {
+          state: 'completed',
+          replacementId: 'replacement-c',
+          newOwnerDisplayName: 'Riley',
+          completedAt: '2026-10-05T09:00:00.000Z',
+        },
+      },
     ];
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     const alpha = (await screen.findByText('Alpha')).closest('[role="menuitemradio"]');
     const beta = screen.getByText('Beta').closest('[role="menuitemradio"]');
+    const gamma = screen.getByText('Gamma').closest('[role="menuitemradio"]');
+    expect(within(gamma as HTMLElement).queryByRole('img')).not.toBeInTheDocument();
     expect(
       within(alpha as HTMLElement).getByRole('img', {
         name: 'Someone asked to take over this community',

@@ -63,6 +63,13 @@ const connections = [
     options: { keep: true, transfer: true, delete: true, needsPassword: false },
   }),
   connection('member-ref'),
+  // The prior owner after the request went through: news for the Inbox, not a warning here.
+  connection('completed-ref', {
+    state: 'completed',
+    replacementId: 'replacement-1',
+    newOwnerDisplayName: 'Riley',
+    completedAt: '2026-10-05T09:00:00.000Z',
+  }),
 ];
 
 function renderPage() {
@@ -103,8 +110,8 @@ describe('the owner banner on a community’s page', () => {
     expect(openExternalLink).toHaveBeenCalledWith('https://owner-ref.example/c/remote-owner-ref');
   });
 
-  it('shows a member nothing', async () => {
-    address.community = 'member-ref';
+  it.each(['member-ref', 'completed-ref'])('shows nothing on %s', async (ref) => {
+    address.community = ref;
     const list = renderPage();
     await waitFor(() => expect(list).toHaveBeenCalled());
     expect(await screen.findByText('No channel selected')).toBeInTheDocument();

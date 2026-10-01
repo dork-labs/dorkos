@@ -233,11 +233,27 @@ describe('what members read (GET /owner-replacement)', () => {
         [replacementId]
       )
     ).rows[0].display_name;
-    for (const reader of [bystander.cookie, c.owner.cookie, claimant.cookie])
+    // Only the owner it replaced is told it was theirs (DOR-2543): their own DorkOS announces it
+    // from that, so it fails if the new owner or a bystander were marked, or the prior owner not.
+    for (const [reader, wasYours] of [
+      [bystander.cookie, false],
+      [c.owner.cookie, true],
+      [claimant.cookie, false],
+    ] as const)
       expect(await (await readNotice(c, { cookie: reader })).json()).toEqual({
         open: null,
-        completed: { newOwnerDisplayName: newOwner, completedAt: completedAt.toISOString() },
+        completed: {
+          replacementId,
+          newOwnerDisplayName: newOwner,
+          completedAt: completedAt.toISOString(),
+          wasYours,
+        },
       });
+    // The prior owner's own DorkOS connection reads the same, through its grant.
+    const priorOwnerGrant = await pairInstall(host.h, c.communityId, c.owner.cookie);
+    expect((await (await readNotice(c, { bearer: priorOwnerGrant })).json()).completed).toEqual(
+      expect.objectContaining({ replacementId, wasYours: true })
+    );
     clock.ms = completedAt.getTime() + 7 * DAY - MINUTE;
     expect((await (await readNotice(c, { cookie: bystander.cookie })).json()).completed).not.toBe(
       null

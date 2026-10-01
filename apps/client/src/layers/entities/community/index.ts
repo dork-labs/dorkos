@@ -11,17 +11,10 @@ export {
 } from './model/use-community-connections';
 export { useCommunityConnectionsSync } from './model/use-community-connections-sync';
 export {
-  OWNER_NOTICE_ANNOUNCED_KEY,
-  resetOwnerNoticeAnnouncementsForTests,
-  useCommunityOwnerNoticeAnnouncer,
-} from './model/use-community-owner-notice-announcer';
-export {
   communityPageUrl,
   openOwnerNotice,
-  ownerNoticeAnnouncement,
   ownerNoticeBanner,
   type OpenOwnerNotice,
-  type OwnerNoticeAnnouncement,
   type OwnerNoticeDateFormat,
 } from './lib/owner-notice';
 export {

@@ -59,7 +59,8 @@ async function noticeReader(
  * `GET /owner-replacement` tells the owner about an open request (with the host's reference,
  * a reissued link, and what they can do about it), tells admins that one is open, and tells
  * every member for 7 days that the community has a new owner. It never names a host operator,
- * a key, a legal hold, or the account named in the request.
+ * a key, a legal hold, or the account named in the request. The completion carries the
+ * request's id and `wasYours`, true only for the member who was the owner it replaced.
  *
  * `POST /owner-replacement/objection` is the owner keeping ownership from their own browser
  * session, with no password, so an owner who signs in only through single sign-on can say no.
@@ -125,17 +126,26 @@ export function registerOwnerReplacementRoutes(
             : { role: 'admin', ...shared };
       }
     }
-    const completed = await pool.query<{ display_name: string; ended_at: Date }>(
-      `SELECT m.display_name,r.ended_at FROM owner_replacements r
+    const completed = await pool.query<{
+      id: string;
+      display_name: string;
+      ended_at: Date;
+      was_yours: boolean;
+    }>(
+      `SELECT r.id,m.display_name,r.ended_at,r.prior_owner_member_id=$4 AS was_yours
+       FROM owner_replacements r
        JOIN members m ON m.community_id=r.community_id AND m.id=r.new_owner_member_id
        WHERE r.community_id=$1 AND r.state='completed' AND r.ended_at>$2 AND r.ended_at<=$3
        ORDER BY r.ended_at DESC LIMIT 1`,
-      [member.community_id, new Date(at.getTime() - COMPLETION_NOTICE_DAYS * DAY_MS), at]
+      [member.community_id, new Date(at.getTime() - COMPLETION_NOTICE_DAYS * DAY_MS), at, member.id]
     );
     if (completed.rows[0])
       body.completed = {
+        replacementId: completed.rows[0].id,
         newOwnerDisplayName: completed.rows[0].display_name,
         completedAt: completed.rows[0].ended_at.toISOString(),
+        // Only the reader who was the owner it replaced: their own DorkOS tells them once.
+        wasYours: completed.rows[0].was_yours,
       };
     c.header('Cache-Control', 'no-store');
     return json(c, CommunityWireOwnerReplacementNoticeResponseSchema, body);

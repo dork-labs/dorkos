@@ -117,8 +117,9 @@ export const CommunityConnectionDescriptorSchema = z
     undeliveredAgentMessages: z.number().int().positive().optional(),
     /**
      * A request to make someone else this community's owner, present only on the owner's own
-     * connection and only when the Community answered this read in time (DOR-2543). A slow
-     * Community shows no notice rather than an old one.
+     * connection, and only from a Community answer that is recent: this read's, or one that
+     * landed in the last minute or so when this read could not wait for it (DOR-2543). A
+     * Community that stays slow or offline shows no notice rather than an old one.
      */
     ownerNotice: CommunityConnectionOwnerNoticeSchema.optional(),
   })

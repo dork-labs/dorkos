@@ -23,12 +23,6 @@ import {
  */
 export const COMMUNITY_OWNER_NOTICE_FRESH_MS = 65_000;
 
-/** The owner's request this cache last saw open, to recognise its completion. */
-interface SeenRequest {
-  replacementId: string;
-  requestedAt: number;
-}
-
 interface Confirmed {
   /** What the owner is told, or nothing when there is nothing for the owner. */
   notice: CommunityConnectionOwnerNotice | undefined;
@@ -38,26 +32,22 @@ interface Confirmed {
 
 interface Entry {
   confirmed?: Confirmed;
-  seen?: SeenRequest;
   pending?: Promise<Confirmed>;
 }
 
 /**
- * Turn one Community answer into what its owner is told, and remember the owner's open request.
+ * Turn one Community answer into what its owner is told.
  *
- * Only the owner's view of an open request becomes a notice: an admin's view, and every
- * member's view of a completion, become nothing, so a non-owner's connection carries none. A
- * completion is the owner's only when this cache saw that owner's request open and the
- * completion came after it was asked; it is then told under that request's id. Any other answer
- * means the request ended some other way (kept, withdrawn, expired), and it is forgotten.
+ * Only the owner's view of an open request becomes a notice: an admin's view becomes nothing.
+ * A completion becomes a notice only when the Community says it was this reader's (`wasYours`,
+ * the owner it replaced); every other member's view of it becomes nothing. So a non-owner's
+ * connection never carries one.
  */
 function project(
-  entry: Entry,
   answer: CommunityWireOwnerReplacementNoticeResponse
 ): CommunityConnectionOwnerNotice | undefined {
   const { open, completed } = answer;
-  if (open?.role === 'owner') {
-    entry.seen = { replacementId: open.replacementId, requestedAt: Date.parse(open.requestedAt) };
+  if (open?.role === 'owner')
     return CommunityConnectionOwnerNoticeSchema.parse({
       state: 'open',
       replacementId: open.replacementId,
@@ -67,16 +57,13 @@ function project(
       claimReissuedAt: open.claimReissuedAt,
       options: open.options,
     });
-  }
-  const seen = entry.seen;
-  if (seen && !open && completed && Date.parse(completed.completedAt) >= seen.requestedAt)
+  if (completed?.wasYours)
     return CommunityConnectionOwnerNoticeSchema.parse({
       state: 'completed',
-      replacementId: seen.replacementId,
+      replacementId: completed.replacementId,
       newOwnerDisplayName: completed.newOwnerDisplayName,
       completedAt: completed.completedAt,
     });
-  entry.seen = undefined;
   return undefined;
 }
 
@@ -90,11 +77,9 @@ function project(
  * the counts, a slow request keeps running (one per Community at a time) and its answer serves
  * the next read.
  *
- * A refusal (401/403, or a rejected grant) forgets everything for that connection at once,
- * including the request it saw open. Entries are owner-scoped, live only in memory, and are
- * dropped by the same calls that drop a connection's counts. Because the open request is
- * remembered only here, a completion that lands after this server restarts is not told as the
- * owner's; the Community's own email to the owner still says it.
+ * A refusal (401/403, or a rejected grant) forgets that connection's answer at once. Entries are
+ * owner-scoped, live only in memory, and are dropped by the same calls that drop a connection's
+ * counts. Nothing here is needed to recognise a completion: the Community says whose it was.
  */
 export class CommunityOwnerNoticeCache {
   private readonly owners = new Map<string, Map<CommunityRef, Entry>>();
@@ -193,7 +178,7 @@ export class CommunityOwnerNoticeCache {
     const pending = Promise.resolve()
       .then(fetchNotice)
       .then((answer) => {
-        const confirmed = { notice: project(entry, answer), at: this.now() };
+        const confirmed = { notice: project(answer), at: this.now() };
         entry.confirmed = confirmed;
         return confirmed;
       })

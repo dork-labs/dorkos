@@ -14185,7 +14185,8 @@
           "account.limited",
           "account.reset",
           "extension.approval",
-          "extension.decision"
+          "extension.decision",
+          "community.owner-replacement"
         ]
       },
       "NotificationTier": {
