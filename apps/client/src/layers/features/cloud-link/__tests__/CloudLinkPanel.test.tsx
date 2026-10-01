@@ -82,6 +82,8 @@ describe('CloudLinkPanel', () => {
 
     // Pending: the code and the activation link are shown.
     expect(screen.getByText('WXYZ7890')).toBeInTheDocument();
+    // A first link: nothing is linked yet, so no "stays linked" line.
+    expect(screen.queryByText(/stays linked until you approve/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /open the approval page/i })).toBeInTheDocument();
 
     // Poll fires → linked. Same panel instance updates in place.

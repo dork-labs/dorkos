@@ -115,6 +115,7 @@ export function CloudLinkPanel({ signedOut, children }: CloudLinkPanelProps) {
             cancel={cancel}
             starting={starting}
             startError={startError}
+            relinking={alreadyLinked}
           />
         </FieldCardContent>
       </FieldCard>
@@ -150,17 +151,19 @@ interface BodyProps {
   cancel: () => Promise<void>;
   starting: boolean;
   startError: string | null;
+  /** This computer is still linked: the code on screen is for a NEW link. */
+  relinking: boolean;
 }
 
 /** Render the state-specific body for a not-yet-linked {@link CloudLinkView}. */
-function CloudLinkBody({ view, start, cancel, starting, startError }: BodyProps) {
+function CloudLinkBody({ view, start, cancel, starting, startError, relinking }: BodyProps) {
   switch (view.kind) {
     case 'idle':
       return <IdleState start={start} starting={starting} startError={startError} />;
     case 'pending':
       // Keyed by the code so a fresh code starts a fresh countdown and clears
       // any error left over from the last one.
-      return <PendingState key={view.userCode} view={view} cancel={cancel} />;
+      return <PendingState key={view.userCode} view={view} cancel={cancel} relinking={relinking} />;
     case 'expired':
       return (
         <RecoveryState
@@ -294,9 +297,11 @@ const OPEN_FAILED_MESSAGE =
 function PendingState({
   view,
   cancel,
+  relinking,
 }: {
   view: Extract<CloudLinkView, { kind: 'pending' }>;
   cancel: () => Promise<void>;
+  relinking: boolean;
 }) {
   const { copied, failed, copy } = useCopyFeedback();
   const [openError, setOpenError] = useState<string | null>(null);
@@ -322,6 +327,13 @@ function PendingState({
 
   return (
     <div className="space-y-4">
+      {/* A relink never takes the account away while it waits; say so, or the
+          code reads like the computer was signed out. */}
+      {relinking && (
+        <p className="text-muted-foreground text-sm">
+          This computer stays linked until you approve the new code.
+        </p>
+      )}
       <div className="space-y-2">
         <p className="text-sm font-medium">Enter this code to link</p>
         <div className="flex items-center gap-2">

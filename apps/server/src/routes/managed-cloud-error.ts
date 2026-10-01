@@ -43,13 +43,13 @@ const ANSWERS: Record<ManagedConnectorCloudErrorCode, ManagedCloudAnswer> = {
     status: 401,
     code: 'cloud_link_required',
     error:
-      'This computer isn’t linked to your DorkOS account anymore. Link it again in Settings › Access.',
+      'This computer isn’t linked to your DorkOS account anymore. Link it again in Settings › DorkOS account.',
   },
   permission_upgrade_required: {
     status: 409,
     code: 'cloud_link_needs_update',
     error:
-      'This computer’s link to your DorkOS account needs updating. Link it again in Settings › Access.',
+      'This computer’s link to your DorkOS account needs updating. Link it again in Settings › DorkOS account.',
   },
   unavailable: UNAVAILABLE,
   network_error: UNAVAILABLE,

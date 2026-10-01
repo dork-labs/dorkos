@@ -4,6 +4,7 @@ covers:
   - 'fix(client): point every "Settings › Access" message at its new tab, and tighten the account home (DOR-2628)'
   - 'fix(client): say plainly when DorkOS credits stop, and name the phone fold for what it holds (DOR-2628)'
   - 'fix(client): show only a server-written reason when DorkOS credits fail to turn on (DOR-2628)'
+  - 'fix(client): point the last two link messages at the DorkOS account tab, and say a relink keeps the computer linked (DOR-2628)'
 ---
 
 ### Changed

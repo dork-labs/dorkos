@@ -60,8 +60,12 @@ describe('CloudLinkPanel — linking again while linked', () => {
     await user.click(screen.getByRole('button', { name: 'Link again' }));
     await waitFor(() => expect(transport.startCloudLink).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('RELINK42')).toBeInTheDocument();
-    // Still linked while the new code shows, so no "what an account adds" page.
+    // Still linked while the new code shows, so no "what an account adds" page,
+    // and one plain line says the link is not gone.
     expect(screen.queryByText('What an account adds here')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('This computer stays linked until you approve the new code.')
+    ).toBeInTheDocument();
   });
 
   it('starts the new link by itself when it was opened to link again, once', async () => {
