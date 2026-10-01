@@ -103,6 +103,19 @@ export function retainDocHistory(
   store.transaction((tx) => {
     backfillEnvelopeAccounting(store, tx);
     const cutoff = new Date(Date.parse(now) - limits.ageMs).toISOString();
+    // Remove expired source correlations with no retained receipt before computing usage.
+    tx.delete(canvasDocBatches)
+      .where(
+        sql`status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
+      AND updated_at < ${cutoff} AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE
+      d.document_id=canvas_doc_batches.document_id AND d.batch_id=canvas_doc_batches.batch_id)`
+      )
+      .run();
+    const usage = historyUsage(tx);
+    const adjustUsage = (documentId: string, delta: number) => {
+      usage.documents.set(documentId, (usage.documents.get(documentId) ?? 0) + delta);
+      usage.installation += delta;
+    };
     let cursor: { documentId: string; docSeq: number; receivedAt: string } | undefined;
     for (;;) {
       const candidates = tx.all<{
@@ -110,39 +123,54 @@ export function retainDocHistory(
         eventId: string;
         docSeq: number;
         receivedAt: string;
+        bytes: number;
+        payloadPrunedAt: string | null;
       }>(sql`
-      SELECT e.document_id AS documentId,e.event_id AS eventId,e.doc_seq AS docSeq,e.received_at AS receivedAt
+      SELECT e.document_id AS documentId,e.event_id AS eventId,e.doc_seq AS docSeq,e.received_at AS receivedAt,
+        ${historyBytes} AS bytes,e.payload_pruned_at AS payloadPrunedAt
       FROM canvas_doc_events e WHERE NOT ${protectedEventSql}
       AND ${cursor ? sql`(e.received_at,e.document_id,e.doc_seq)>(${cursor.receivedAt},${cursor.documentId},${cursor.docSeq})` : sql`1`}
       ORDER BY e.received_at,e.document_id,e.doc_seq LIMIT 200`);
       if (!candidates.length) break;
       cursor = candidates[candidates.length - 1]!;
       for (const candidate of candidates) {
-        const usage = historyUsage(tx, candidate.documentId);
         if (
           candidate.receivedAt >= cutoff &&
-          usage.document <= limits.documentBytes &&
+          (usage.documents.get(candidate.documentId) ?? 0) <= limits.documentBytes &&
           usage.installation <= limits.installationBytes
         )
           continue;
-        // Payload reset is distinct from compact receipt membership. Do not erase authority/admission evidence.
-        tx.update(canvasDocEvents)
-          .set({ payload: sql`'null'`, provenance: {}, payloadPrunedAt: now })
-          .where(
-            and(
-              eq(canvasDocEvents.documentId, candidate.documentId),
-              eq(canvasDocEvents.eventId, candidate.eventId)
+        let retainedBytes = candidate.bytes;
+        // Payload reset is distinct from receipt membership; compaction preserves source evidence.
+        if (candidate.payloadPrunedAt === null) {
+          tx.update(canvasDocEvents)
+            .set({ payload: sql`'null'`, provenance: {}, payloadPrunedAt: now })
+            .where(
+              and(
+                eq(canvasDocEvents.documentId, candidate.documentId),
+                eq(canvasDocEvents.eventId, candidate.eventId)
+              )
             )
-          )
-          .run();
-        advanceFloor(tx, candidate.documentId, candidate.docSeq + 1, false);
-        const compactUsage = historyUsage(tx, candidate.documentId);
+            .run();
+          retainedBytes = tx.get<{ bytes: number }>(sql`SELECT ${historyBytes} AS bytes
+            FROM canvas_doc_events e WHERE e.document_id=${candidate.documentId}
+            AND e.event_id=${candidate.eventId}`)!.bytes;
+          adjustUsage(candidate.documentId, retainedBytes - candidate.bytes);
+          advanceFloor(tx, candidate.documentId, candidate.docSeq + 1, false);
+        }
         if (
           candidate.receivedAt >= cutoff &&
-          compactUsage.document <= limits.documentBytes &&
-          compactUsage.installation <= limits.installationBytes
+          (usage.documents.get(candidate.documentId) ?? 0) <= limits.documentBytes &&
+          usage.installation <= limits.installationBytes
         )
           continue;
+        const batchIds = tx
+          .all<{ batchId: string }>(
+            sql`SELECT DISTINCT batch_id AS batchId
+          FROM canvas_doc_deliveries WHERE document_id=${candidate.documentId}
+          AND event_id=${candidate.eventId} AND batch_id IS NOT NULL`
+          )
+          .map((row) => row.batchId);
         tx.delete(canvasDocDeliveries)
           .where(
             and(
@@ -160,51 +188,45 @@ export function retainDocHistory(
           )
           .run();
         advanceFloor(tx, candidate.documentId, candidate.docSeq + 1, true);
-        deleteOrphanBatches(tx, candidate.documentId);
+        adjustUsage(candidate.documentId, -retainedBytes);
+        adjustUsage(candidate.documentId, -deleteOrphanBatches(tx, candidate.documentId, batchIds));
       }
     }
-    // Completed batches retain source correlation while any delivery/header references them.
-    tx.delete(canvasDocBatches)
-      .where(
-        sql`status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
-      AND updated_at < ${cutoff} AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE
-      d.document_id=canvas_doc_batches.document_id AND d.batch_id=canvas_doc_batches.batch_id)`
-      )
-      .run();
   });
 }
-function historyUsage(
-  tx: DbTransaction,
-  documentId: string
-): { document: number; installation: number } {
-  return {
-    document:
-      tx.get<{ bytes: number }>(sql`SELECT coalesce(sum(${historyBytes}),0) AS bytes
-    FROM canvas_doc_events e WHERE e.document_id=${documentId} AND NOT ${protectedEventSql}`)!
-        .bytes +
-      tx.get<{
-        bytes: number;
-      }>(sql`SELECT coalesce(sum(${batchBytes}),0) AS bytes FROM canvas_doc_batches b
-      WHERE b.document_id=${documentId} AND ${completedBatchSql}`)!.bytes,
-    installation:
-      tx.get<{ bytes: number }>(sql`SELECT coalesce(sum(${historyBytes}),0) AS bytes
-    FROM canvas_doc_events e WHERE NOT ${protectedEventSql}`)!.bytes +
-      tx.get<{
-        bytes: number;
-      }>(sql`SELECT coalesce(sum(${batchBytes}),0) AS bytes FROM canvas_doc_batches b
-      WHERE ${completedBatchSql}`)!.bytes,
-  };
+/** Aggregate completed rows once; subsequent compaction/deletion adjusts these exact totals. */
+function historyUsage(tx: DbTransaction): { documents: Map<string, number>; installation: number } {
+  const rows = tx.all<{ documentId: string; bytes: number }>(sql`
+    SELECT e.document_id AS documentId,sum(${historyBytes}) AS bytes FROM canvas_doc_events e
+      WHERE NOT ${protectedEventSql} GROUP BY e.document_id
+    UNION ALL
+    SELECT b.document_id AS documentId,sum(${batchBytes}) AS bytes FROM canvas_doc_batches b
+      WHERE ${completedBatchSql} GROUP BY b.document_id`);
+  const documents = new Map<string, number>();
+  let installation = 0;
+  for (const row of rows) {
+    documents.set(row.documentId, (documents.get(row.documentId) ?? 0) + row.bytes);
+    installation += row.bytes;
+  }
+  return { documents, installation };
 }
-function deleteOrphanBatches(tx: DbTransaction, documentId: string): void {
-  tx.delete(canvasDocBatches)
-    .where(
-      sql`document_id=${documentId}
-    AND status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
-    AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE d.document_id=canvas_doc_batches.document_id
-    AND d.batch_id=canvas_doc_batches.batch_id)`
-    )
-    .run();
+/** Only the deleted input's bounded route correlations can have become newly orphaned. */
+function deleteOrphanBatches(tx: DbTransaction, documentId: string, batchIds: string[]): number {
+  if (!batchIds.length) return 0;
+  const rows = tx.all<{ batchId: string; bytes: number }>(sql`SELECT b.batch_id AS batchId,
+    ${batchBytes} AS bytes FROM canvas_doc_batches b WHERE b.document_id=${documentId}
+    AND b.batch_id IN (${sql.join(
+      batchIds.map((id) => sql`${id}`),
+      sql`,`
+    )})
+    AND ${completedBatchSql}
+    AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE d.document_id=b.document_id
+    AND d.batch_id=b.batch_id)`);
+  for (const row of rows)
+    tx.delete(canvasDocBatches).where(eq(canvasDocBatches.batchId, row.batchId)).run();
+  return rows.reduce((sum, row) => sum + row.bytes, 0);
 }
+
 function advanceFloor(
   tx: DbTransaction,
   documentId: string,

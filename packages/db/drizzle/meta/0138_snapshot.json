@@ -8953,6 +8953,24 @@
             "received_at"
           ],
           "isUnique": false
+        },
+        "canvas_doc_events_retention_idx": {
+          "name": "canvas_doc_events_retention_idx",
+          "columns": [
+            "received_at",
+            "document_id",
+            "doc_seq"
+          ],
+          "isUnique": false
+        },
+        "canvas_doc_events_unaccounted_idx": {
+          "name": "canvas_doc_events_unaccounted_idx",
+          "columns": [
+            "document_id",
+            "event_id"
+          ],
+          "isUnique": false,
+          "where": "\"canvas_doc_events\".\"envelope_bytes\"=0 AND \"canvas_doc_events\".\"payload_pruned_at\" IS NULL"
         }
       },
       "foreignKeys": {
