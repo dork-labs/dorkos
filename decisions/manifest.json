@@ -2,6 +2,37 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261001-185204",
+      "slug": "granted-document-events-use-a-durable-outbox",
+      "title": "Granted document events use a durable outbox and remain untrusted",
+      "status": "proposed",
+      "created": "2026-10-01",
+      "extractedFrom": "doc-channel",
+      "specSlug": "doc-channel",
+      "supersedes": null,
+      "amends": "260911-200302",
+      "affects": [
+        "apps/server/src/services/canvas/",
+        "packages/relay/src/",
+        "apps/server/src/services/rooms/"
+      ]
+    },
+    {
+      "id": "261001-185211",
+      "slug": "document-live-state-is-independent-of-editable-content",
+      "title": "Document live state is independent of editable content",
+      "status": "proposed",
+      "created": "2026-10-01",
+      "extractedFrom": "doc-channel",
+      "specSlug": "doc-channel",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/canvas/",
+        "packages/shared/src/canvas-schemas.ts",
+        "apps/client/src/layers/features/canvas/"
+      ]
+    },
+    {
       "id": "260929-071355",
       "slug": "access-levels-are-stored-as-intent",
       "title": "Access levels are stored as intent and follow the app, never wider than their class",

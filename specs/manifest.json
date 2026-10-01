@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "261001-184500",
+      "slug": "doc-channel",
+      "title": "Two-way events between canvas documents and agents",
+      "created": "2026-10-01",
+      "status": "specified",
+      "project": "Canvas and Browser in Rooms",
+      "linearIssue": "DOR-2665"
+    },
+    {
       "id": "260930-230338",
       "slug": "dorkos-account-by-default",
       "title": "DorkOS account by default: discovery, usage and management",
