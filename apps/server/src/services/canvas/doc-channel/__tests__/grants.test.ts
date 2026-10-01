@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   approvals,
+  agents,
+  sessionMetadata,
   canvasDocEvents,
   canvasDocGrants,
   createDb,
@@ -95,6 +97,7 @@ beforeEach(() => {
     agentId: 'opener',
     sessionId: 'session-a',
     runtime: 'claude-code',
+    agentPath: '/tmp/opener',
     scope: 'session:session-a',
   };
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-grants-'));
@@ -120,7 +123,13 @@ beforeEach(() => {
     },
     resolveTarget({ route }) {
       return route.to === 'log'
-        ? { agentId: null, sessionId: null, runtime: null, scope: 'session:session-a' }
+        ? {
+            agentId: null,
+            sessionId: null,
+            runtime: null,
+            agentPath: null,
+            scope: 'session:session-a',
+          }
         : currentTarget;
     },
     sourceRoot: () => dir,
@@ -135,6 +144,67 @@ afterEach(() => {
 });
 
 describe('independent exact document route grants', () => {
+  it('retains the exact approved path when all mutable agent and session records relocate', () => {
+    const now = clock.toISOString();
+    db.insert(agents)
+      .values({
+        id: 'other',
+        name: 'Other',
+        runtime: 'claude-code',
+        projectPath: '/tmp/approved',
+        registeredAt: now,
+        updatedAt: now,
+      })
+      .run();
+    db.insert(sessionMetadata)
+      .values([
+        {
+          sessionId: 'session-a',
+          runtime: 'claude-code',
+          agentPath: '/tmp/approved',
+          createdAt: now,
+        },
+        {
+          sessionId: 'canonical',
+          runtime: 'claude-code',
+          agentPath: '/tmp/approved',
+          createdAt: now,
+        },
+      ])
+      .run();
+    authority.resolveTarget = () => {
+      const agent = db.select().from(agents).where(eq(agents.id, 'other')).get()!;
+      const session = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, 'session-a'))
+        .get()!;
+      return {
+        agentId: agent.id,
+        sessionId: session.sessionId,
+        runtime: session.runtime,
+        scope: 'session:session-a',
+        agentPath: agent.projectPath,
+      };
+    };
+    configure(otherRoute);
+    const ticket = approved();
+    const row = grant(request(), ticket.token);
+    expect(service.revalidateGrant('doc-a', row.grantId, actor).grantId).toBe(row.grantId);
+    db.update(agents).set({ projectPath: '/tmp/relocated' }).where(eq(agents.id, 'other')).run();
+    db.update(sessionMetadata).set({ agentPath: '/tmp/relocated' }).run();
+    expect(() => service.revalidateGrant('doc-a', row.grantId, actor)).toThrow(
+      'TARGET_IDENTITY_CHANGED'
+    );
+    expect(
+      (
+        store.getGrant(row.grantId)!.approvalEvidence as {
+          binding: { target: { agentPath: string } };
+        }
+      ).binding.target.agentPath
+    ).toBe('/tmp/approved');
+  });
+
   it('logs without declarations and gives declared unapproved routes an explicit saved-only reason', () => {
     expect(service.getCurrentRoutes('doc-a', 'task.toggled', actor)).toEqual([]);
     configure(otherRoute);
