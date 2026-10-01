@@ -461,14 +461,25 @@ export const CommunityAdminErasureJournalQuerySchema = z.strictObject({
 });
 
 /**
- * One finished erasure, by id only: the same object the server logs and writes to
- * `COMMUNITY_ERASURE_JOURNAL`. Written one per line, the lines are what `erasure:reapply` reads.
+ * One finished erasure, by id only: the object the server logs and writes to
+ * `COMMUNITY_ERASURE_JOURNAL`, plus `finishedAt`, when the erasure finished on the server (the
+ * time its journal retention counts from; the same on every read). Written one per line, the
+ * lines are what `erasure:reapply` reads; it ignores `finishedAt`.
+ *
+ * `finishedAt` is required here because this is what the server sends. Servers released before
+ * it was added send lines without it, so a reader that may talk to one should accept its absence.
  */
 export const CommunityAdminErasureJournalLineSchema = z.discriminatedUnion('event', [
-  z.strictObject({ event: z.literal('community.member_erased'), communityId: id, memberId: id }),
+  z.strictObject({
+    event: z.literal('community.member_erased'),
+    communityId: id,
+    memberId: id,
+    finishedAt: timestamp,
+  }),
   z.strictObject({
     event: z.literal('community.account_erased'),
     userId: z.string().min(1).max(128),
+    finishedAt: timestamp,
   }),
 ]);
 

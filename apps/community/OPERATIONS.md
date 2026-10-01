@@ -243,7 +243,7 @@ People erase themselves. A member can erase their messages from one community, o
 
 An account that has ever been a host operator cannot be deleted online, because host audit records must keep naming who acted. That person can still erase each of their memberships.
 
-Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`, and adds the same line to the **erasure journal** in the database. A restored backup brings back everyone erased since it was taken, and it takes the journal back to the same moment. So keep a copy of the journal **outside the server and outside your backups, for at least as long as you keep backups.**
+Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`, and adds the same line, with the time it finished (`finishedAt`), to the **erasure journal** in the database. A restored backup brings back everyone erased since it was taken, and it takes the journal back to the same moment. So keep a copy of the journal **outside the server and outside your backups, for at least as long as you keep backups.**
 
 The server keeps each journal line for `COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS` (400 days unless you change it; at least 30), then deletes it. Set it to your longest backup or point-in-time-recovery retention plus 30 days: a line is needed only while a backup older than it can still be restored. The most it allows is 3,650 days, so if you keep backups for longer than about ten years, the server's journal cannot cover the oldest of them; keep your own copy's month files for as long as those backups.
 

@@ -1,7 +1,8 @@
 /**
  * Reading the erasure journal through the host API (DOR-2566): the scope that allows it, paging
  * that never skips a row while erasures commit concurrently, an empty journal, cursors that
- * notice a restore, isolation between two hosts, and that a real erasure's line carries ids only.
+ * notice a restore, isolation between two hosts, that a real erasure's line carries ids only, and
+ * that each line's `finishedAt` is when its erasure finished and never changes (DOR-2621).
  *
  * The restore rehearsal (an erasure made after a backup, re-applied from the pulled copy) is in
  * member-erasure-recovery.integration.test.ts, beside the backup helpers it reuses.
@@ -110,6 +111,10 @@ const lineOf = (record: ErasureJournalRecord) =>
         memberId: record.memberId,
       }
     : { event: 'community.account_erased', userId: record.userId };
+/** A line without its `finishedAt`, to compare with {@link lineOf}. */
+const idsOf = (line: Page['lines'][number]) =>
+  Object.fromEntries(Object.entries(line).filter(([key]) => key !== 'finishedAt'));
+const idsOfAll = (lines: Page['lines']) => lines.map(idsOf);
 
 beforeAll(async () => {
   [h, other] = await Promise.all([
@@ -134,7 +139,7 @@ describe('an empty journal', () => {
     expect(await page(h, { cursor: empty.nextCursor })).toMatchObject({ lines: [] });
     const first = member();
     await append(h, first);
-    expect((await drain(h, empty.nextCursor)).lines).toEqual([lineOf(first)]);
+    expect(idsOfAll((await drain(h, empty.nextCursor)).lines)).toEqual([lineOf(first)]);
   });
 });
 
@@ -190,11 +195,11 @@ describe('paging', () => {
     expect(await page(h, { cursor: start, limit: 5 })).toMatchObject({ hasMore: false });
     expect(await page(h, { cursor: start, limit: 4 })).toMatchObject({ hasMore: true });
     const first = await drain(h, start, 2);
-    expect(first.lines).toEqual(records.map(lineOf));
+    expect(idsOfAll(first.lines)).toEqual(records.map(lineOf));
     const later = [member(), member()];
     for (const record of later) await append(h, record);
-    expect((await drain(h, first.cursor, 2)).lines).toEqual(later.map(lineOf));
-    expect((await drain(h, start, 1)).lines).toEqual([...records, ...later].map(lineOf));
+    expect(idsOfAll((await drain(h, first.cursor, 2)).lines)).toEqual(later.map(lineOf));
+    expect(idsOfAll((await drain(h, start, 1)).lines)).toEqual([...records, ...later].map(lineOf));
   });
 
   // Purpose: fails if a reader can move past a row whose erasure commits after a later one.
@@ -216,7 +221,7 @@ describe('paging', () => {
       await holder.query('COMMIT');
       await later;
       const after = await drain(h, during.nextCursor);
-      expect([...during.lines, ...after.lines]).toEqual([lineOf(a), lineOf(b)]);
+      expect(idsOfAll([...during.lines, ...after.lines])).toEqual([lineOf(a), lineOf(b)]);
     } finally {
       holder.release();
     }
@@ -242,7 +247,7 @@ describe('paging', () => {
     }
     await writers;
     expect(seen).toHaveLength(records.length);
-    expect(new Set(seen.map((line) => JSON.stringify(line)))).toEqual(
+    expect(new Set(seen.map((line) => JSON.stringify(idsOf(line))))).toEqual(
       new Set(records.map((record) => JSON.stringify(lineOf(record))))
     );
   });
@@ -285,6 +290,44 @@ describe('stale cursors', () => {
   });
 });
 
+describe('finishedAt', () => {
+  // Purpose: fails if finishedAt is anything but the row's stored finish time (e.g. the time of
+  // the read), or if it changes between reads or when a reader starts again after a 410.
+  it('is the stored finish time, the same on every read and after a 410 restart', async () => {
+    const start = (await drain(h)).cursor;
+    const records = [member(), member(), member()];
+    for (const record of records) await append(h, record);
+    // A known time, an hour ago (inside every retention), so it cannot be the time of the read.
+    const stored = new Date(Math.floor(Date.now() / 1000) * 1000 - 3_600_000 + 123);
+    await h.pool.query('UPDATE erasure_journal SET created_at=$2 WHERE member_id=$1', [
+      records[0].memberId,
+      stored,
+    ]);
+    const first = await drain(h, start);
+    expect(idsOfAll(first.lines)).toEqual(records.map(lineOf));
+    expect(first.lines[0].finishedAt).toBe(stored.toISOString());
+    const rows = await h.pool.query<{ member_id: string; created_at: Date }>(
+      'SELECT member_id,created_at FROM erasure_journal WHERE member_id = ANY($1::uuid[])',
+      [records.map((record) => record.memberId)]
+    );
+    const createdAt = new Map(rows.rows.map((row) => [row.member_id, row.created_at]));
+    expect(first.lines.map((line) => line.finishedAt)).toEqual(
+      records.map((record) => createdAt.get(record.memberId)!.toISOString())
+    );
+
+    expect((await drain(h, start)).lines).toEqual(first.lines);
+
+    // As after a restore: the cursor's row now has a different nonce, so it answers 410 and the
+    // reader starts again from the start. Every line it already had comes back unchanged.
+    await h.pool.query('UPDATE erasure_journal SET nonce=gen_random_uuid() WHERE member_id=$1', [
+      records[2].memberId,
+    ]);
+    expect((await read(h, { cursor: first.cursor })).status).toBe(410);
+    const again = (await drain(h)).lines;
+    for (const line of first.lines) expect(again).toContainEqual(line);
+  });
+});
+
 describe('two hosts', () => {
   // Purpose: fails if one host's key, cursor, or rows reach another host's journal.
   it('keeps each host to its own journal', async () => {
@@ -297,17 +340,18 @@ describe('two hosts', () => {
     expect((await read(h, {}, { bearer: otherKey })).status).toBe(401);
     const here = await drain(h);
     const there = await drain(other, undefined, 3, otherKey);
-    expect(there.lines).toEqual([lineOf(theirs)]);
-    expect(here.lines).toContainEqual(lineOf(mine));
-    expect(here.lines).not.toContainEqual(lineOf(theirs));
+    expect(idsOfAll(there.lines)).toEqual([lineOf(theirs)]);
+    expect(idsOfAll(here.lines)).toContainEqual(lineOf(mine));
+    expect(idsOfAll(here.lines)).not.toContainEqual(lineOf(theirs));
     expect((await read(other, { cursor: here.cursor }, { bearer: otherKey })).status).toBe(410);
   });
 });
 
 describe('a real erasure', { timeout: 120_000 }, () => {
-  // Purpose: fails if a finished erasure writes no row, a row other than the file's line, or a
-  // row that carries anything the erasure removed.
-  it('adds the same lines as the journal file, by id only', async () => {
+  // Purpose: fails if a finished erasure writes no row, a row other than the file's line plus its
+  // finish time, a row that carries anything the erasure removed, a finish time other than the
+  // erasure's own, or a file line that gained the finish time (an older erasure:reapply reads it).
+  it('adds the same lines as the journal file, by id only, with when each finished', async () => {
     const start = (await drain(h)).cursor;
     const s = await makeScene(h, operatorCookie, 'journalread');
     const email = (await h.pool.query('SELECT email FROM "user" WHERE id=$1', [s.p.userId])).rows[0]
@@ -327,17 +371,34 @@ describe('a real erasure', { timeout: 120_000 }, () => {
       'account erasure'
     );
     const logged: string[] = [];
+    const before = Date.now();
     await runErasures(h.pool, hoursFromNow(73), { log: (line) => logged.push(line) });
+    const after = Date.now();
     const response = await read(h, { cursor: start });
     const text = await response.text();
     const pulled = CommunityAdminErasureJournalPageSchema.parse(JSON.parse(text)).lines;
-    expect(pulled.map((line) => JSON.stringify(line)).sort()).toEqual([...logged].sort());
+    // P's membership, then Q's account: its membership first, then the account itself.
+    expect(logged).toHaveLength(3);
+    for (const line of logged) expect(Object.keys(JSON.parse(line))).not.toContain('finishedAt');
+    expect(pulled.map((line) => JSON.stringify(idsOf(line))).sort()).toEqual([...logged].sort());
+    // The member erasure's last transaction stamps the member row with the same now() as its line.
+    const erasedAt = (
+      await h.pool.query<{ erased_at: Date }>(
+        'SELECT erased_at FROM members WHERE id=$1 AND community_id=$2',
+        [s.p.memberId, s.communityId]
+      )
+    ).rows[0].erased_at;
     expect(pulled).toContainEqual({
       event: 'community.member_erased',
       communityId: s.communityId,
       memberId: s.p.memberId,
+      finishedAt: erasedAt.toISOString(),
     });
-    expect(pulled).toContainEqual({ event: 'community.account_erased', userId: s.q.userId });
+    const account = pulled.find((line) => line.event === 'community.account_erased');
+    expect(account).toMatchObject({ event: 'community.account_erased', userId: s.q.userId });
+    const accountFinished = Date.parse(account!.finishedAt);
+    expect(accountFinished).toBeGreaterThanOrEqual(before);
+    expect(accountFinished).toBeLessThanOrEqual(after);
     for (const needle of [s.p.handle, s.q.handle, email, `hello from ${s.p.handle}`])
       expect(text).not.toContain(needle);
   });
@@ -421,7 +482,7 @@ describe('retention', () => {
       [edge.memberId]
     );
     expect(await pruneErasureJournal(h.pool, 30)).toBe(2);
-    const left = (await drain(h)).lines;
+    const left = idsOfAll((await drain(h)).lines);
     for (const record of old) expect(left).not.toContainEqual(lineOf(record));
     expect(left).toContainEqual(lineOf(fresh));
     expect(left).toContainEqual(lineOf(edge));
