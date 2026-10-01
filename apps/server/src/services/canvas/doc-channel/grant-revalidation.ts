@@ -271,7 +271,10 @@ export class DocChannelGrantRevalidation {
       target.agentId !== grant.targetAgentId ||
       this.canonicalSession(target.sessionId, tx) !==
         this.canonicalSession(grant.targetSessionId, tx) ||
-      target.runtime !== grant.targetRuntime
+      target.runtime !== grant.targetRuntime ||
+      target.agentPath !==
+        (grant.approvalEvidence as { binding?: { target?: DocGrantTarget } }).binding?.target
+          ?.agentPath
     )
       throw new DocRouteGrantError('TARGET_IDENTITY_CHANGED');
     if (
