@@ -8,16 +8,16 @@ This file holds no secret and no real provider identifier. Every `<angle-bracket
 
 Some steps depend on work that is not on `main` yet. Do not start a run until everything it needs is in this table as done. The table is part of the checklist: update it in the same PR that lands each item.
 
-| Needed by  | What                                                                                                          | Where it comes from                                  | Status on 2026-09-29        |
-| ---------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------- |
-| L2, L3, L4 | A published release at or after the one containing #2372, #2373, #2374 and #2378                              | the release session                                  | pending: not yet released   |
-| L2, L3, L4 | DOR-2169's published-release live gate PASS, recorded in `specs/community-self-host-launcher/`                | DOR-2169 task 4.3                                    | pending                     |
-| L2         | The gate's hold arm `DORKOS_COMMUNITY_LIVE_HOLD_MINUTES`, the second-person proof, `handoff.json`             | task 1.1 (DOR-2591)                                  | done: pending merge         |
-| L2         | The driver's remote mode, `DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF`                                              | task 1.2 (DOR-2592)                                  | pending: not on `main`      |
-| L2         | The no-DorkOS-host guard, `dorkosHostsContacted` and the single-sign-on check in the gate receipt             | task 1.3 (DOR-2593)                                  | pending: not on `main`      |
-| L2         | `apps/community/FLY.md` "Back up and upgrade a community made with guided setup"                              | task 1.4 (DOR-2594, PR #2384)                        | done: merged                |
-| L4         | The draft guide `docs/self-hosting/community.mdx`                                                             | task 1.6 (DOR-2596)                                  | pending: PR open, on `hold` |
-| L3         | A confirmed way to hand the launcher a restricted Neon credential (see [L3 preconditions](#l3-preconditions)) | this checklist, proved by a dry run before any spend | pending: not yet proved     |
+| Needed by  | What                                                                                                          | Where it comes from                                  | Status on 2026-10-01                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------- |
+| L2, L3, L4 | A published release at or after the one containing #2372, #2373, #2374 and #2378                              | the release session                                  | done: v0.94.0                            |
+| L2, L3, L4 | DOR-2169's published-release live gate PASS, recorded in `specs/community-self-host-launcher/`                | DOR-2169 task 4.3                                    | done: receipt `dorkos-gate-854ea55f80a0` |
+| L2         | The gate's hold arm `DORKOS_COMMUNITY_LIVE_HOLD_MINUTES`, the second-person proof, `handoff.json`             | task 1.1 (DOR-2591)                                  | done: in v0.94.0                         |
+| L2         | The driver's remote mode, `DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF`                                              | task 1.2 (DOR-2592)                                  | done: in v0.94.0                         |
+| L2         | The no-DorkOS-host guard, `dorkosHostsContacted` and the single-sign-on check in the gate receipt             | task 1.3 (DOR-2593)                                  | done: in v0.94.0                         |
+| L2         | `apps/community/FLY.md` "Back up and upgrade a community made with guided setup"                              | task 1.4 (DOR-2594, PR #2384)                        | done: merged                             |
+| L4         | The draft guide `docs/self-hosting/community.mdx`                                                             | task 1.6 (DOR-2596)                                  | pending: PR open, on `hold`              |
+| L3         | A confirmed way to hand the launcher a restricted Neon credential (see [L3 preconditions](#l3-preconditions)) | this checklist, proved by a dry run before any spend | pending: not yet proved                  |
 
 ## Rules for every run
 
@@ -63,7 +63,7 @@ What counts as a match, and the named exceptions:
 
 - **Fly apps and live buckets:** identical before and after.
 - **Soft-deleted Tigris buckets.** Fly keeps a deleted bucket's record under the name `<name>_deleted_<suffix>`, and `fly storage list` no longer shows it (see the note in `packages/cli/src/commands/community-deploy/fly-graphql-contract.ts`). After cleanup, check the Tigris console for one per bucket the run made. Record whether it is there and whether the console shows it holding objects. A soft-deleted bucket is expected, not a mismatch. Any object still in one is a stop: ask the operator.
-- **WireGuard peers:** identical before and after. A new peer means something in the run opened a private tunnel into the org. Record its name, remove it with `fly wireguard remove <fly-org> <peer-name>`, and note which step created it.
+- **WireGuard peers:** identical before and after. A new peer means something in the run opened a private tunnel into the org. Record its name, remove it with `fly wireguard remove <fly-org> <peer-name>`, and note which step created it. A known source: the DOR-2169 published-release gate's own `sshOnCustomNetwork` provenance probe runs `fly ssh console --command true`, which can create (or reuse) an interactive peer — seen on receipt `dorkos-gate-854ea55f80a0`. Remove it the same way after a gate run that shows one.
 - **Custom private network.** When the release includes DOR-2238's provenance markers, each launched app gets its own private network, and Fly keeps that network after the app is destroyed (`specs/launcher-uncertain-create-cleanup/02-specification.md`, Decision 1). Record the network name from `fly apps list --json` before cleanup. After cleanup the app is gone but the network may remain: record it as the expected leftover. flyctl has no command that lists networks on their own, so this check reads the app listing taken before cleanup. When the release does not include those markers, the app must show no network name at all.
 - **Neon projects:** identical before and after.
 

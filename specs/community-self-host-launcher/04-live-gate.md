@@ -1,6 +1,6 @@
 # Credentialed launcher acceptance gate
 
-Refs DOR-2169, task 4.3. Status: implemented and locally tested; the actual provider run remains outstanding.
+Refs DOR-2169, task 4.3. Status: implemented, locally tested, and proved against a published release (below). Task 4.3 is done.
 
 `pnpm --filter dorkos test:community-live` installs an exact published version, refuses a release without the launcher, and runs that installed CLI against explicitly designated disposable Fly, Neon and Tigris resources. It interrupts and resumes owner setup, checks the applied bootstrap-secret rotation, signs in through the public HTTP contract, posts and downloads a private attachment, and verifies anonymous denial. Secrets stay in private temporary files or memory; the clipboard handoff uses a private local socket.
 
@@ -100,4 +100,16 @@ Worst case, with every bounded read timing out, the probes before cleanup now ta
 
 The PR that flips `PROVENANCE_ROUND_TRIP_PROVED` cites this block. It needs a run on a version that writes markers. On an older version, the journal has no network to compare, and the block says so. Both flags were flipped on receipt `dorkos-gate-376b14cf0957` (2026-09-30), a tarball run packed from `v0.93.0` plus cherry-picks (commit `f0e98fef` on `live/dor-2238-marker-pack`).
 
-The implementation received independent REVIEW.md reviews, including the recovery and rotation fixes. The final local evidence is recorded in the PR. A successful local unit run does not establish a successful provider deployment. Task 4.3 remains open until a real published-release run produces its nonsecret deployment, owner, attachment and cleanup receipt.
+The implementation received independent REVIEW.md reviews, including the recovery and rotation fixes. The final local evidence is recorded in the PR. A successful local unit run does not establish a successful provider deployment, but the published-release run below does.
+
+## Published-release gate pass (DOR-2169, DOR-2606)
+
+Task 4.3's outstanding published-release run happened on receipt `dorkos-gate-854ea55f80a0`: a `source.kind: 'release'` run against the published `dorkos@0.94.0` (npm), with gate tooling from `main` at `eba2e7863` (includes #2421, DOR-2606's removal-reads work). Fly org: the operator's personal org, region `ord`; Neon region `aws-us-east-2`. Started 2026-10-01T00:35:40Z, ended 00:40:17Z, exit 0: `Community live gate passed for 0.94.0 at dorkos-gate-854ea55f80a0`. The nonsecret receipt is at `~/.dork/live-gate/receipts/dorkos-gate-854ea55f80a0.json`.
+
+`ownerCreated`, `privateFileRoundTrip`, `anonymousDownloadDenied` and `secondMemberProof` all read `true`; `singleSignOnOffered` reads `false`; `dorkosHostsContacted` is `[]`. Cleanup removed all three resources it created (the Neon project, the Tigris bucket, the Fly app) and retained none.
+
+The DOR-2606 removal reads (`provenance.removal`, schema 3) also passed: `listAppTigris` reads `ok`, the bucket's `verdict` reads `proved`, and every journal match (`appNameMatchesJournal`, `networkMatchesJournal`, `organizationMatchesJournal`) reads `true`, with `complete: true`. `appNameWhileLive.available` reads `false`, as expected for a still-running app. After cleanup, Fly released the app name after 672 ms and the Tigris name after 1412 ms, both on the first read. All three create windows report `withinWindow: true` (Fly 748 ms after request, Neon 1767 ms, Tigris 1322 ms, against deadlines of 120 s / 120 s / 210 s and a 120 s margin). `journalWatch` recorded 781 polls, none unreadable.
+
+Before and after inventories matched: no Fly apps, no live Tigris buckets, and the Neon project list unchanged. One new WireGuard peer did appear during the run, made by the gate's own `fly ssh console --command true` provenance probe (`scripts/test-community-deploy-live.ts`, the `sshOnCustomNetwork` probe), not by the deploy or cleanup path; it was removed by hand after the run. See the matching note in `specs/community-launch-acceptance/05-live-checklist.md`'s inventory section.
+
+This closes task 4.3: a real published-release run has produced its nonsecret deployment, owner, attachment and cleanup receipt.
