@@ -32,6 +32,11 @@ export interface CloudLinkStatus {
   accountLabel?: string;
   /** ISO timestamp of the most recent successful heartbeat. Absent until one lands. */
   lastHeartbeatAt?: string;
+  /**
+   * How a relink ended when it did not replace the key. Present only while
+   * `linked`: this instance stayed linked the whole time.
+   */
+  relinkOutcome?: 'denied' | 'expired' | 'failed';
 }
 
 /**

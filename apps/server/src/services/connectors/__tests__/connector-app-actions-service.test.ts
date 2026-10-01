@@ -16,6 +16,7 @@ import {
   SHORT_APP_ACTIONS_FRESH_MS,
 } from '../resources/app-actions-service.js';
 import { ConnectorRegistry } from '../registry.js';
+import { ManagedConnectorCloudError } from '../../core/auth/cloud-link-client.js';
 
 const INSTANCE = 'composio:test' as ConnectorProviderInstanceId;
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
@@ -210,6 +211,25 @@ describe('ConnectorAppActionsService', () => {
     });
     await expect(service(broken.provider).list()).rejects.toMatchObject({
       code: 'actions_unavailable',
+    });
+  });
+
+  it('keeps the cloud refusal behind a failed listing as its cause', async () => {
+    const refusal = new ManagedConnectorCloudError('permission_upgrade_required', { status: 403 });
+    const versionless = fakeProvider({
+      version: async () => {
+        throw refusal;
+      },
+    });
+    await expect(service(versionless.provider).list()).rejects.toMatchObject({
+      code: 'actions_unavailable',
+      cause: refusal,
+    });
+    const pageless = fakeProvider();
+    pageless.listOperationSchemas.mockRejectedValueOnce(refusal);
+    await expect(service(pageless.provider).list()).rejects.toMatchObject({
+      code: 'actions_unavailable',
+      cause: refusal,
     });
   });
 

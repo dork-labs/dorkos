@@ -11,7 +11,6 @@ import {
   Badge,
   Button,
   Checkbox,
-  QueryErrorState,
   ResponsiveDialog,
   ResponsiveDialogBody,
   ResponsiveDialogContent,
@@ -28,6 +27,7 @@ import {
 } from '../../lib/reconciliation-selection';
 import { olderVersionIds } from '../../lib/older-versions';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
+import { LoadFailedState } from '../LoadFailedState';
 import { AccessOutcome } from './AccessOutcome';
 
 interface ConnectionAccessDialogProps {
@@ -89,7 +89,8 @@ export function ConnectionAccessDialog({
               <Skeleton className="h-36 rounded-lg" />
             </div>
           ) : access.loadFailed ? (
-            <QueryErrorState
+            <LoadFailedState
+              error={access.loadError}
               title="Couldn’t load account actions"
               description="Nothing changed. Try loading the current access again."
               onRetry={access.refresh}

@@ -1,7 +1,11 @@
 import { SecurityPanel } from '@/layers/features/auth';
 import { CloudLinkPanel } from '@/layers/features/cloud-link';
 import { CloudPlanPanel } from '@/layers/features/cloud-plan';
-import { useDeepLinkScroll, useSettingsDeepLink } from '@/layers/shared/model';
+import {
+  SETTINGS_RELINK_SECTION,
+  useDeepLinkScroll,
+  useSettingsDeepLink,
+} from '@/layers/shared/model';
 
 /**
  * Access tab for the Settings dialog — who may get into this install, and as
@@ -21,7 +25,8 @@ import { useDeepLinkScroll, useSettingsDeepLink } from '@/layers/shared/model';
  */
 export function AccessTab() {
   const { section } = useSettingsDeepLink();
-  useDeepLinkScroll(section);
+  // A request to link again lands on the account half; the panel there acts on it.
+  useDeepLinkScroll(section === SETTINGS_RELINK_SECTION ? 'account' : section);
 
   return (
     <div className="space-y-8">

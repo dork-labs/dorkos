@@ -3485,6 +3485,10 @@ const CloudLinkStatusSchema = z.object({
   state: CloudLinkStateSchema,
   accountLabel: z.string().optional(),
   lastHeartbeatAt: z.string().optional(),
+  relinkOutcome: z.enum(['denied', 'expired', 'failed']).optional().openapi({
+    description:
+      'Present while linked after a relink ended without replacing the key: this computer stayed linked.',
+  }),
 });
 
 const CloudSummarySchema = z.object({
@@ -3522,6 +3526,23 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Link-flow state machine',
+      content: { 'application/json': { schema: CloudLinkStatusSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/cloud/link/cancel',
+  tags: ['Cloud'],
+  summary: 'Stop a link flow in progress, or dismiss the note a finished relink left',
+  description:
+    'Stops polling at once between token requests. A token request already sent finishes ' +
+    'first, and a key it issues is kept. Settles in `linked` while this instance holds a key, ' +
+    'else `idle`, and answers that state.',
+  responses: {
+    200: {
+      description: 'The state the link flow settled in',
       content: { 'application/json': { schema: CloudLinkStatusSchema } },
     },
   },

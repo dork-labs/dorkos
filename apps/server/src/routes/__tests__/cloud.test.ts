@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
+import { logger } from '../../lib/logger.js';
 
 // Mock the cloud-link manager accessor — the route is thin over it, so the
 // route test only proves wiring + response shapes, not the flow (covered by
@@ -11,6 +12,7 @@ const mockManager = vi.hoisted(() => ({
   startLink: vi.fn(),
   getStatus: vi.fn(),
   unlink: vi.fn(),
+  cancelLink: vi.fn(),
   getSummary: vi.fn(),
 }));
 vi.mock('../../services/core/auth/cloud-link.js', () => ({
@@ -106,6 +108,15 @@ describe('cloud routes', () => {
     });
   });
 
+  describe('POST /api/cloud/link/cancel', () => {
+    it('stops the link flow and answers the state it settled in', async () => {
+      manager.cancelLink.mockResolvedValue({ state: 'linked', accountLabel: 'kai@dork.dev' });
+      const res = await request(server).post('/api/cloud/link/cancel').expect(200);
+      expect(res.body).toEqual({ state: 'linked', accountLabel: 'kai@dork.dev' });
+      expect(manager.cancelLink).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('POST /api/cloud/unlink', () => {
     it('unlinks and returns ok', async () => {
       manager.unlink.mockResolvedValue(undefined);
@@ -185,6 +196,23 @@ describe('cloud routes', () => {
       mockPlan.readPlanOverview.mockRejectedValue(new Error('boom'));
       const res = await request(server).get('/api/cloud/plan').expect(502);
       expect(res.body.entitlements).toBeUndefined();
+    });
+
+    it('logs the problem code and status when a read fails', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      mockPlan.readPlanOverview.mockRejectedValue(new Error('boom'));
+      mockV1.problemOf.mockReturnValue({
+        code: 'temporarily_unavailable',
+        status: 503,
+        title: 'Down',
+      });
+      await request(server).get('/api/cloud/plan').expect(502);
+      expect(warn).toHaveBeenCalledWith(
+        '[Cloud] Could not read the plan',
+        expect.objectContaining({ code: 'temporarily_unavailable', status: 503 })
+      );
+      warn.mockRestore();
+      mockV1.problemOf.mockReturnValue(null);
     });
 
     it('defaults the usage grouping to seat and refuses an unknown one', async () => {

@@ -7,6 +7,7 @@
  * @module commands/community-deploy/provenance/removal-output
  */
 import { ExternalLabelSchema } from '../provider-contract.js';
+import { tigrisAccessKeySteps } from './tigris-access-key.js';
 import type { LaunchJournal } from '../journal.js';
 import type {
   CandidateSummary,
@@ -86,7 +87,7 @@ function proofLine(target: ProvedResource): string {
 function removalEffect(target: ProvedResource): string {
   if (target.provider === 'fly') return 'Removing it deletes this app.';
   if (target.provider === 'neon') return 'Removing it deletes this project and its database.';
-  return `Removing it deletes this bucket and every file in it, and removes its two access keys from app ${shown(target.appName)}.`;
+  return `Removing it deletes this bucket and every file in it, and takes its access key off app ${shown(target.appName)}. Tigris keeps the key itself until you delete it, and DorkOS shows you how once the bucket is gone.`;
 }
 
 function row(label: string, value: string): string {
@@ -192,7 +193,8 @@ function manualSteps(provider: RemovalProvider, journal: LaunchJournal): string[
     'To check it and remove it yourself:',
     `  Inspect: fly storage list --org ${organization}`,
     `  Remove:  fly storage destroy ${name}`,
-    `  Then remove its access keys: fly secrets unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY --app ${app} --stage`,
+    `  Then take its access key off the app: fly secrets unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY --app ${app} --stage`,
+    ...tigrisAccessKeySteps(name, organization),
   ];
 }
 
@@ -209,7 +211,7 @@ function continueWith(context: RemovalOutputContext): string {
 function removedLine(target: RemovalTarget, nameReleased: boolean | null): string {
   const what = `${SERVICE[target.provider]} ${shown(target.resourceName)} (${TOKEN_NAME[target.provider]} ${shown(target.token)})`;
   if (target.provider === 'tigris') {
-    return `Removed ${what} and its two access keys on app ${shown(target.appName)}.`;
+    return `Removed ${what} and took its access key off app ${shown(target.appName)}.`;
   }
   if (target.provider === 'neon') return `Removed ${what}.`;
   if (nameReleased === true) return `Removed ${what}. Fly has released the name.`;
@@ -304,7 +306,17 @@ export function formatRemovalOutcome(
         1
       );
     case 'removed':
-      return done([removedLine(outcome.target, outcome.nameReleased), continueWith(context)]);
+      return done([
+        removedLine(outcome.target, outcome.nameReleased),
+        // Fly leaves the bucket's key active in Tigris and nothing DorkOS holds can delete it.
+        ...(outcome.target.provider === 'tigris'
+          ? tigrisAccessKeySteps(
+              shown(outcome.target.resourceName),
+              shown(outcome.target.organization)
+            )
+          : []),
+        continueWith(context),
+      ]);
     case 'removal-uncertain':
       return done(
         [

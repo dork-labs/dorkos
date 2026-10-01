@@ -8,7 +8,7 @@ import {
   Unplug,
   X,
 } from 'lucide-react';
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,9 +41,12 @@ import {
   useCopyFeedback,
   useRenderSlot,
 } from '@/layers/shared/lib';
-import { useNow } from '@/layers/shared/model';
+import { SETTINGS_RELINK_SECTION, useNow, useSettingsDeepLink } from '@/layers/shared/model';
 import { useCloudLink, type CloudLinkView } from '../model/use-cloud-link';
 import { msUntilExpiry, spokenExpiry, visibleExpiry } from '../lib/code-expiry';
+
+/** How a relink that did not replace the link ended, as the linked view carries it. */
+type CloudLinkRelinkOutcome = Extract<CloudLinkView, { kind: 'linked' }>['relinkOutcome'];
 
 /**
  * DorkOS account section for the Settings dialog — links or unlinks this
@@ -55,7 +58,8 @@ import { msUntilExpiry, spokenExpiry, visibleExpiry } from '../lib/code-expiry';
  * tab (sibling UI composition).
  */
 export function CloudLinkPanel() {
-  const { view, start, unlink, starting, unlinking, startError } = useCloudLink();
+  const { view, start, unlink, cancel, starting, unlinking, startError } = useCloudLink();
+  useRelinkRequest(view, start);
 
   return (
     <div className="space-y-4">
@@ -74,6 +78,7 @@ export function CloudLinkPanel() {
             view={view}
             start={start}
             unlink={unlink}
+            cancel={cancel}
             starting={starting}
             unlinking={unlinking}
             startError={startError}
@@ -84,17 +89,49 @@ export function CloudLinkPanel() {
   );
 }
 
+/**
+ * Start linking again when Settings was opened to do that (from a "Link my
+ * DorkOS account again" button elsewhere), so one click gets a person to a
+ * fresh link code. Acts once the panel knows its state, never while a code is
+ * already showing, and settles the section back to `account` so the request is
+ * spent.
+ */
+function useRelinkRequest(view: CloudLinkView, start: () => Promise<void>): void {
+  const { section, setSection } = useSettingsDeepLink();
+  const handled = useRef(false);
+  const requested = section === SETTINGS_RELINK_SECTION;
+  useEffect(() => {
+    if (!requested) {
+      handled.current = false;
+      return;
+    }
+    if (handled.current || view.kind === 'loading') return;
+    handled.current = true;
+    setSection('account');
+    if (view.kind !== 'pending') void start();
+  }, [requested, view.kind, start, setSection]);
+}
+
 interface BodyProps {
   view: CloudLinkView;
   start: () => Promise<void>;
   unlink: () => Promise<void>;
+  cancel: () => Promise<void>;
   starting: boolean;
   unlinking: boolean;
   startError: string | null;
 }
 
 /** Render the state-specific body for the current {@link CloudLinkView}. */
-function CloudLinkBody({ view, start, unlink, starting, unlinking, startError }: BodyProps) {
+function CloudLinkBody({
+  view,
+  start,
+  unlink,
+  cancel,
+  starting,
+  unlinking,
+  startError,
+}: BodyProps) {
   switch (view.kind) {
     case 'loading':
       return <Skeleton className="h-9 w-40" />;
@@ -103,9 +140,19 @@ function CloudLinkBody({ view, start, unlink, starting, unlinking, startError }:
     case 'pending':
       // Keyed by the code so a fresh code starts a fresh countdown and clears
       // any error left over from the last one.
-      return <PendingState key={view.userCode} view={view} />;
+      return <PendingState key={view.userCode} view={view} cancel={cancel} />;
     case 'linked':
-      return <LinkedState view={view} unlink={unlink} unlinking={unlinking} />;
+      return (
+        <LinkedState
+          view={view}
+          start={start}
+          starting={starting}
+          startError={startError}
+          unlink={unlink}
+          unlinking={unlinking}
+          dismiss={cancel}
+        />
+      );
     case 'expired':
       return (
         <RecoveryState
@@ -240,7 +287,13 @@ const OPEN_FAILED_MESSAGE =
   'We could not open the approval page. Copy the code and open it in your browser.';
 
 /** A device flow is in progress — show the code, the approval-page button, and the time left. */
-function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending' }> }) {
+function PendingState({
+  view,
+  cancel,
+}: {
+  view: Extract<CloudLinkView, { kind: 'pending' }>;
+  cancel: () => Promise<void>;
+}) {
   const { copied, failed, copy } = useCopyFeedback();
   const [openError, setOpenError] = useState<string | null>(null);
 
@@ -288,10 +341,16 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
       </div>
 
       <div className="space-y-2">
-        <Button variant="outline" onClick={handleOpen}>
-          <ExternalLink className="mr-1.5 size-4" />
-          Open the approval page
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={handleOpen}>
+            <ExternalLink className="mr-1.5 size-4" />
+            Open the approval page
+          </Button>
+          {/* Stops waiting. A computer that was already linked stays linked. */}
+          <Button variant="ghost" onClick={() => void cancel()}>
+            Cancel
+          </Button>
+        </div>
         {openError && (
           <p className="text-destructive text-sm" role="alert">
             {openError}
@@ -327,18 +386,31 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
   );
 }
 
-/** Linked — show the account, last sync, and the unlink action. */
+/**
+ * Linked — show the account, last sync, and the two actions. Linking again
+ * keeps this computer linked until the new link is approved, and is how a link
+ * that needs updating picks up the update.
+ */
 function LinkedState({
   view,
+  start,
+  starting,
+  startError,
   unlink,
   unlinking,
+  dismiss,
 }: {
   view: Extract<CloudLinkView, { kind: 'linked' }>;
+  start: () => Promise<void>;
+  starting: boolean;
+  startError: string | null;
   unlink: () => Promise<void>;
   unlinking: boolean;
+  dismiss: () => Promise<void>;
 }) {
   return (
     <div className="space-y-4">
+      {view.relinkOutcome && <RelinkNote outcome={view.relinkOutcome} dismiss={dismiss} />}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
@@ -357,21 +429,67 @@ function LinkedState({
           )}
         </div>
 
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={unlinking}
-              aria-label="Unlink this instance"
-            >
-              <Unplug className={cn('mr-1.5 size-3.5', unlinking && 'animate-pulse')} />
-              {unlinking ? 'Unlinking…' : 'Unlink'}
-            </Button>
-          </AlertDialogTrigger>
-          <UnlinkConfirm unlink={unlink} />
-        </AlertDialog>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" size="sm" onClick={() => void start()} disabled={starting}>
+            {starting ? <Spinner className="mr-1.5" /> : <RefreshCw className="mr-1.5 size-3.5" />}
+            Link again
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={unlinking}
+                aria-label="Unlink this instance"
+              >
+                <Unplug className={cn('mr-1.5 size-3.5', unlinking && 'animate-pulse')} />
+                {unlinking ? 'Unlinking…' : 'Unlink'}
+              </Button>
+            </AlertDialogTrigger>
+            <UnlinkConfirm unlink={unlink} />
+          </AlertDialog>
+        </div>
       </div>
+      {startError && (
+        <p role="alert" className="text-destructive text-sm">
+          {startError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const RELINK_NOTE: Record<NonNullable<CloudLinkRelinkOutcome>, string> = {
+  denied: 'The new link was turned down on dorkos.ai.',
+  expired: 'The code for the new link timed out.',
+  failed: 'The new link couldn’t finish.',
+};
+
+/**
+ * Why a relink didn't finish, on a computer that never stopped being linked.
+ * Quiet on purpose: nothing is broken, so it reads as a note, not an alarm.
+ */
+function RelinkNote({
+  outcome,
+  dismiss,
+}: {
+  outcome: NonNullable<CloudLinkRelinkOutcome>;
+  dismiss: () => Promise<void>;
+}) {
+  return (
+    <div role="status" className="bg-muted/40 flex items-start gap-2 rounded-lg p-3 text-sm">
+      <p className="min-w-0 flex-1">
+        {RELINK_NOTE[outcome]} This computer is still linked. Use Link again to try once more.
+      </p>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Dismiss"
+        className="-my-1 shrink-0"
+        onClick={() => void dismiss()}
+      >
+        <X className="size-3.5" />
+      </Button>
     </div>
   );
 }

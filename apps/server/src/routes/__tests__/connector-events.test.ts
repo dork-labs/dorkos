@@ -10,6 +10,7 @@ import { createConnectorEventsRouter } from '../connector-events.js';
 import { ConnectorSubscriptionStore } from '../../services/connectors/events/subscription-store.js';
 import { ConnectorSubscriptionService } from '../../services/connectors/events/subscription-service.js';
 import { ConnectorEventGrantService } from '../../services/connectors/events/grant-service.js';
+import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
 
 const owner = { kind: 'local_install', installationId: 'event-route-owner' } as const;
 const now = '2026-09-07T12:00:00.000Z';
@@ -232,6 +233,23 @@ describe('owner notification HTTP boundary', () => {
     );
     expect(f.discover).not.toHaveBeenCalled();
   });
+  it('answers a DorkOS account refusal behind the definitions honestly, not as an outage', async () => {
+    const f = fixture();
+    f.discover
+      .mockRejectedValueOnce(new ManagedConnectorCloudError('permission_upgrade_required'))
+      .mockRejectedValueOnce(new ManagedConnectorCloudError('unauthorized'))
+      .mockRejectedValueOnce(new Error('provider outage'));
+    const upgrade = await request(target.server).get(`${prefix}/definitions`);
+    expect(upgrade.status).toBe(409);
+    expect(upgrade.body.code).toBe('cloud_link_needs_update');
+    const unlinked = await request(target.server).get(`${prefix}/definitions`);
+    expect(unlinked.status).toBe(401);
+    expect(unlinked.body.code).toBe('cloud_link_required');
+    const outage = await request(target.server).get(`${prefix}/definitions`);
+    expect(outage.status).toBe(503);
+    expect(outage.body.code).toBe('events_unavailable');
+  });
+
   it('requires the operator cookie while login is enabled', async () => {
     const f = fixture({ login: true });
     expect((await request(target.server).get(`${prefix}/subscriptions`)).status).toBe(403);

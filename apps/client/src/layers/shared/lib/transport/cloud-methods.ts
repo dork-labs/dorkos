@@ -52,6 +52,10 @@ export function createCloudMethods(baseUrl: string) {
       return fetchJSON<CloudLinkStatus>(baseUrl, '/cloud/link/status');
     },
 
+    cancelCloudLink(): Promise<CloudLinkStatus> {
+      return fetchJSON<CloudLinkStatus>(baseUrl, '/cloud/link/cancel', { method: 'POST' });
+    },
+
     unlinkCloud(): Promise<{ ok: boolean }> {
       return fetchJSON<{ ok: boolean }>(baseUrl, '/cloud/unlink', { method: 'POST' });
     },

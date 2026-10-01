@@ -19,6 +19,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
+import { logger } from '../../lib/logger.js';
 import listFixture from '@dork-labs/cloud-api/fixtures/v1/communities/list.json' with { type: 'json' };
 import movesFixture from '@dork-labs/cloud-api/fixtures/v1/communities/moves.json' with { type: 'json' };
 import startFixture from '@dork-labs/cloud-api/fixtures/v1/communities/start.json' with { type: 'json' };
@@ -107,6 +108,8 @@ interface Received {
 /** What the fake service answers, set per test. */
 interface Script {
   list: unknown;
+  /** The status the list read answers with. */
+  listStatus: number;
   startStatus: number;
   startBody: unknown;
   moveStartStatus: number;
@@ -135,6 +138,7 @@ let inFlight = 0;
 function defaultScript(): Script {
   return {
     list: listFixture,
+    listStatus: 200,
     startStatus: 200,
     startBody: startAnswer(),
     moveStartStatus: 200,
@@ -191,7 +195,7 @@ const fake = listeningServer(async (req, res) => {
     body,
   });
   const route = `${req.method} ${url.pathname}`;
-  if (route === 'GET /v1/communities') return send(res, 200, script.list);
+  if (route === 'GET /v1/communities') return send(res, script.listStatus, script.list);
   if (route === 'GET /v1/communities/moves') return send(res, 200, movesFixture);
   if (route === 'GET /v1/entitlements') {
     if (script.entitlementsGate) await script.entitlementsGate;
@@ -405,6 +409,20 @@ describe('GET /api/cloud/communities', () => {
     script.list = '<html>proxy error</html>';
     const res = await request(server).get('/api/cloud/communities').expect(502);
     expect(res.body).toEqual({ error: 'Couldn’t reach your DorkOS account. Try again.' });
+  });
+
+  // Purpose: a refused read names the service's own code and status in the
+  // log. Fails if the log line drops them back to a bare message.
+  it('logs the problem code and status when a read is refused', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    script.listStatus = 503;
+    script.list = { code: 'temporarily_unavailable', status: 503, title: 'Down for a moment.' };
+    await request(server).get('/api/cloud/communities').expect(502);
+    expect(warn).toHaveBeenCalledWith(
+      '[Cloud] Could not read hosted communities',
+      expect.objectContaining({ code: 'temporarily_unavailable', status: 503 })
+    );
+    warn.mockRestore();
   });
 
   // Purpose: a failed list waits for the reads it started beside it. Fails if

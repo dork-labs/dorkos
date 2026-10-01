@@ -12,7 +12,13 @@ import type {
 } from '@dorkos/shared/connector-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import { SETTINGS_RELINK_SECTION, TransportProvider } from '@/layers/shared/model';
+
+const openSettings = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSettingsDeepLink: () => ({ open: openSettings }),
+}));
 import { AppActions, type AppActionsProps } from '../ui/AppActions';
 import { ConnectionAccessCard } from '../ui/access/ConnectionAccessCard';
 
@@ -239,6 +245,32 @@ describe('AppActions before an app is connected', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Try again' }));
     expect(transport.getConnectorAppActions).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('AppActions when a DorkOS account problem stops the list', () => {
+  it('names the problem and offers to link again, one click from the list', async () => {
+    const user = userEvent.setup();
+    const refusal = Object.assign(new Error('x'), { code: 'cloud_link_needs_update' });
+    renderActions(transportWith(refusal));
+
+    expect(await screen.findByText(/This computer’s link needs updating\./)).toBeInTheDocument();
+    expect(screen.getByText(/pick up the update/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Link my DorkOS account again' }));
+    expect(openSettings).toHaveBeenCalledWith('access', SETTINGS_RELINK_SECTION);
+  });
+
+  it('names a refusal on DorkOS’s end with its title, and offers only a retry', async () => {
+    const refusal = Object.assign(new Error('x'), { code: 'cloud_refused' });
+    renderActions(transportWith(refusal));
+
+    expect(
+      await screen.findByText(/DorkOS’s servers couldn’t finish this\. Nothing changed/)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Link my DorkOS account again' })
+    ).not.toBeInTheDocument();
   });
 });
 

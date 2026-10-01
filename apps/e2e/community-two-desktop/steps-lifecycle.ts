@@ -225,7 +225,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
       // Connecting again is a fresh pairing, and it works.
       refB = await connectDesktop(b, member, communityOrigin, COMMUNITY, 'Desktop B', null);
       await openGeneral(b, refB);
-      await expect(feed(b)).toContainText(stamp, { timeout: 30_000 });
+      await seeNewest(b, stillA);
       return {
         menuShot,
         dialogShot,

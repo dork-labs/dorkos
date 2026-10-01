@@ -4,6 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { expect } from '@playwright/test';
 import {
+  channelEntries,
   composer,
   connections,
   destinations,
@@ -11,6 +12,7 @@ import {
   json,
   launchDesktop,
   openSwitcher,
+  send,
   sendJson,
   switchTo,
   timeline,
@@ -322,20 +324,14 @@ export async function agentSteps(w: World): Promise<void> {
       .toBe(true);
     await openGeneral(a, refA);
     const ask = `@b-helper please confirm the two-desktop proof ${stamp}`;
-    const box = composer(a);
-    await box.click();
-    await box.fill(ask);
-    // Close the @mention completion if it opened, so Enter sends rather than picks.
-    if (await a.page.getByRole('listbox').isVisible()) await box.press('Escape');
-    await box.press('Enter');
-    await expect(feed(a)).toContainText(ask, { timeout: 30_000 });
+    // `send` waits out the reload's "Connecting to the community…" and confirms the post.
+    const { liveWaitMs } = await send(composer(a), ask);
+    await seeNewest(a, ask);
     let reply: Entry | undefined;
     await expect
       .poll(
         async () => {
-          const { entries } = await json<{ entries: Entry[] }>(
-            `${a.origin}/api/communities/${refA}/rooms/${room.roomId}/entries?limit=100`
-          );
+          const entries = await channelEntries<Entry>(a, refA, room.roomId);
           reply = entries.find(
             (e) =>
               e.authorKind === 'agent' &&
@@ -352,6 +348,7 @@ export async function agentSteps(w: World): Promise<void> {
     await openGeneral(b, refB);
     await seeNewest(b, reply!.text.slice(0, 40));
     return {
+      liveWaitMs,
       reply: reply!.text.slice(0, 160),
       a: await shot(a.page, '22a-desktop-a-agent-reply'),
       b: await shot(b.page, '22b-desktop-b-agent-reply'),

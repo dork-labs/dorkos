@@ -6,6 +6,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { createServerPrincipal } from '../../services/connectors/principal/server-principal.js';
 import { createConnectorExecutionRouter } from '../connector-execution.js';
+import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
@@ -209,6 +210,17 @@ describe('connector execution routes', () => {
       .get('/api/connectors/usage/operator')
       .set('Authorization', 'Bearer verified')
       .expect(403);
+  });
+
+  it('answers a refused managed-cloud call honestly instead of falling through to a 500', async () => {
+    listAgentUsage.mockRejectedValueOnce(
+      new ManagedConnectorCloudError('permission_upgrade_required', { status: 403 })
+    );
+    const response = await request(fixtureTarget.mount(buildApp({ user: PROGRAM_USER })))
+      .get('/api/connectors/usage/agent?agentId=agent-a&limit=10')
+      .set('Authorization', 'Bearer verified')
+      .expect(409);
+    expect(response.body.code).toBe('cloud_link_needs_update');
   });
 
   it('fails closed for every public connector route when migration recovery is incomplete', async () => {

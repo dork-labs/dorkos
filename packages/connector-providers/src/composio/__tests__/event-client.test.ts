@@ -110,6 +110,24 @@ describe('Composio event SDK boundary', () => {
     expect(local.requests[0].path).toContain('toolkit_versions%5Bgmail%5D=20260901_00');
   });
 
+  it('keeps the provider error as the cause when event discovery fails', async () => {
+    const local = await fixture((path, response) => {
+      if (!path.startsWith('/api/v3.1/triggers_types')) return false;
+      response.statusCode = 500;
+      response.end(JSON.stringify({ error: { message: 'private-event-sentinel' } }));
+      return true;
+    });
+    const failure = await local.client
+      .listDefinitions({ toolkit: 'gmail', toolkitVersion: version, limit: 20, signal: signal() })
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      name: 'ComposioCatalogError',
+      message: 'Event discovery failed. Check the connection status.',
+    });
+    expect((failure as Error).cause).toBeInstanceOf(Error);
+    expect((failure as Error).message).not.toContain('private-event-sentinel');
+  });
+
   it('revalidates authority after metadata and sends one exact-account mutation with unproven ownership', async () => {
     const local = await fixture();
     const definition = (
