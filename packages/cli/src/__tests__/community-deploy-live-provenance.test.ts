@@ -79,7 +79,7 @@ describe('live gate provenance receipt', () => {
     const boundary = dependencies();
     const receipt = await probeCommunityLiveProvenance(journal, boundary);
     expect(receipt).toEqual({
-      schema: 2,
+      schema: 3,
       fly: {
         ok: true,
         network: NETWORK,
@@ -163,7 +163,7 @@ describe('live gate provenance receipt', () => {
     boundary.runSshNoOp.mockRejectedValue(withText('EXIT'));
     const receipt = await probeCommunityLiveProvenance(journal, boundary);
     expect(receipt).toEqual({
-      schema: 2,
+      schema: 3,
       fly: { ok: false, code: 'gql:INVALID_RESPONSE' },
       neon: { ok: false, code: 'err:EXIT' },
       tigrisBinding: { ok: false, code: 'err:ERROR' },

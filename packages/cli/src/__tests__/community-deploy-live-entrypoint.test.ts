@@ -200,7 +200,9 @@ describe('credentialed live gate entrypoint', () => {
     const cleanup = main.indexOf('await cleanupCommunityLiveGate(');
     expect(probes).toBeGreaterThan(0);
     expect(probes).toBeLessThan(cleanup);
-    expect(main).toMatch(/\n\s+provenance,\n/u);
+    expect(main).toMatch(
+      /\n\s+provenance: \{\s+\.\.\.provenance,\s+removal: buildCommunityLiveRemovalReceipt\(/u
+    );
     expect(main).toContain("args: ['ssh', 'console', '--app', name, '--command', 'true']");
     // Every probe call, including the unknown-app name, runs inside the guard's callback.
     const guarded = main.slice(probes, cleanup);
@@ -209,6 +211,53 @@ describe('credentialed live gate entrypoint', () => {
     expect(main.slice(0, probes)).not.toContain('unknownAppName');
     // Nothing in Fly's API reads a private network once its app is gone, so no step claims to.
     expect(main).not.toContain('NetworkAfterCleanup');
+  });
+
+  // DOR-2606: the removal's own reads run against the real launch, read-only. A real run costs
+  // money, so this pins where main makes them; the reads themselves are unit-tested beside them.
+  it('times each create while the launcher runs, and reads the removal queries around cleanup', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    // The watch starts before the first launcher can write a create intent, and stops once the
+    // resumed launcher has exited; the finally stops it on every other path.
+    const watch = main.indexOf('createWatch = watchCommunityLiveCreates(readLiveJournal);');
+    expect(watch).toBeGreaterThan(0);
+    expect(watch).toBeLessThan(main.indexOf('runLauncherPty({'));
+    expect(main).toMatch(/await resumed;\s+const observedCreates = await createWatch\.stop\(\);/u);
+    expect(main.slice(main.lastIndexOf('} finally {'))).toContain('await createWatch?.stop();');
+    // The before-cleanup reads go through the removal's own probe, guarded, before cleanup.
+    const before = main.indexOf('removalBefore = await guardRemovalReadsBeforeCleanup(');
+    const cleanup = main.indexOf('await cleanupCommunityLiveGate(');
+    expect(before).toBeGreaterThan(
+      main.indexOf('provenance = await guardCommunityLiveProvenance(')
+    );
+    expect(before).toBeLessThan(cleanup);
+    expect(main.slice(before, cleanup)).toContain(
+      "removalProbes('tigris').find(intent, journal as unknown as LaunchJournal)"
+    );
+    // The after-cleanup name reads run only once cleanup has finished, guarded, before the receipt.
+    const after = main.indexOf('const removalAfter = await whileInterruptible(');
+    expect(after).toBeGreaterThan(main.indexOf('cleanedUp = true;'));
+    expect(after).toBeGreaterThan(main.indexOf('const { cleanup, provenance, tigrisBucketFound'));
+    expect(after).toBeLessThan(main.indexOf('await writeFile(\n      receiptPath'));
+    // The wait is announced, and a signal during it only cancels it: the receipt is still written.
+    const notice = main.indexOf('Waiting up to ${NAME_RELEASE_DEADLINE_MS / 60_000} minutes');
+    expect(notice).toBeGreaterThan(main.indexOf('cleanedUp = true;'));
+    expect(notice).toBeLessThan(after);
+    expect(main).toMatch(
+      /const removalAfter = await whileInterruptible\(process, \(interrupt\) =>\s+guardRemovalReadsAfterCleanup\(/u
+    );
+    expect(main.slice(after, main.indexOf('await writeFile('))).toContain('{ signal: interrupt }');
+    // The watch stops before the launcher is killed, in the finally.
+    const finallyBlock = main.slice(main.lastIndexOf('} finally {'));
+    expect(finallyBlock.indexOf('await createWatch?.stop();')).toBeLessThan(
+      finallyBlock.indexOf('launcher?.kill();')
+    );
+    // No new write: the removal's delete paths are never called from the gate.
+    expect(main).not.toMatch(/removalProbes\([^)]*\)\.(remove|clearBoundSecrets)/u);
   });
 
   // The hold (DOR-2591) runs after provider resources exist, so what matters is where main puts

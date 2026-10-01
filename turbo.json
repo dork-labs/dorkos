@@ -90,6 +90,10 @@
         "$TURBO_ROOT$/apps/e2e/tests/harness/**"
       ]
     },
+    "@dorkos/site#test": {
+      "dependsOn": ["^build", "@dorkos/relay#build", "@dorkos/extension-api#build"],
+      "cache": true
+    },
     "test:watch": {
       "cache": false,
       "persistent": true

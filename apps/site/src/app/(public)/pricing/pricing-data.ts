@@ -149,8 +149,8 @@ export interface Plan {
   highlighted?: boolean;
 }
 
-/** The paid plans all open on the same day; until then their button creates an account. */
-const PAID_CTA = { label: 'Create your account', href: '/signup' } as const;
+/** The paid plans all open on the same day; until then their button asks for early access. */
+const PAID_CTA = { label: 'Request early access', href: '/early-access' } as const;
 
 export const PLANS: readonly Plan[] = [
   {

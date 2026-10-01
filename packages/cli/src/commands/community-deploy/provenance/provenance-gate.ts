@@ -32,7 +32,7 @@ import { randomBytes } from 'node:crypto';
 export const PROVENANCE_ROUND_TRIP_PROVED = { fly: true, neon: true } as const;
 
 /** Margin either side of the create window, for clock skew between this machine and a service. */
-const CREATE_WINDOW_MARGIN_MS = 2 * 60 * 1000;
+export const CREATE_WINDOW_MARGIN_MS = 2 * 60 * 1000;
 
 /** Create a fresh 128-bit marker as 32 lowercase hex characters. */
 export function createProvenanceMarker(): string {
