@@ -32,12 +32,22 @@ function moveWithinMenu(event: KeyboardEvent<HTMLDivElement>) {
  * dropdown gets both from Radix, so there this renders its children unwrapped.
  *
  * @param sheet - Whether the rows render in the phone sheet.
+ * @param label - The menu's accessible name. Default "Actions"; the identity
+ *   rows above the destinations are their own menu, named "You".
  * @param children - The action rows.
  */
-export function SheetActionsMenu({ sheet, children }: { sheet: boolean; children: ReactNode }) {
+export function SheetActionsMenu({
+  sheet,
+  label = 'Actions',
+  children,
+}: {
+  sheet: boolean;
+  label?: string;
+  children: ReactNode;
+}) {
   if (!sheet) return <>{children}</>;
   return (
-    <div role="menu" aria-label="Actions" tabIndex={-1} onKeyDown={moveWithinMenu}>
+    <div role="menu" aria-label={label} tabIndex={-1} onKeyDown={moveWithinMenu}>
       {children}
     </div>
   );

@@ -439,13 +439,11 @@ async function shootWorkbench(page: Page, theme: Theme, rec: RunRecorder): Promi
 
 /** Open Settings → DorkOS account, link, and shoot the pending then linked states. */
 async function shootCloudLink(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
-  // `?settings=account` is a legacy id since DOR-1758 — the map lands it on the
-  // Access tab, scrolled to its account section — so the PANEL is Access and the
-  // "DorkOS account" heading is that section's.
+  // `?settings=account` is the DorkOS account tab's own id again (DOR-2628).
   await page.goto(url('/team?settings=account'));
-  const panel = page.getByRole('tabpanel', { name: 'Access' });
+  const panel = page.getByRole('tabpanel', { name: 'DorkOS account' });
   await panel.getByRole('heading', { name: 'DorkOS account' }).waitFor({ timeout: WAIT_MS });
-  await panel.getByRole('button', { name: 'Link this instance' }).click({ timeout: WAIT_MS });
+  await panel.getByRole('button', { name: 'Link this computer' }).click({ timeout: WAIT_MS });
 
   // Pending: the code + the "waiting" status render immediately (optimistic).
   await panel
@@ -453,9 +451,9 @@ async function shootCloudLink(page: Page, theme: Theme, rec: RunRecorder): Promi
     .waitFor({ timeout: WAIT_MS });
   await shoot(page, 'accounts-pending', theme, rec);
 
-  // Linked: the fake auto-flips; the client's 2500ms status poll lands "Linked"
-  // within a couple of ticks. Wait the money state — no arbitrary sleep.
-  await panel.getByText('Linked', { exact: true }).waitFor({ timeout: WAIT_MS });
+  // Linked: the fake auto-flips; the client's 2500ms status poll lands "Signed
+  // in" within a couple of ticks. Wait the money state — no arbitrary sleep.
+  await panel.getByText('Signed in', { exact: true }).waitFor({ timeout: WAIT_MS });
   await panel.getByText('Dork Labs', { exact: false }).waitFor({ timeout: WAIT_MS });
   await shoot(page, 'accounts-linked', theme, rec);
 }

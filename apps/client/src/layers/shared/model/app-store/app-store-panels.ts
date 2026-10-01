@@ -15,12 +15,13 @@ import type { AppState } from './app-store-types';
 /** Valid tab identifiers for the Settings dialog. Extension tabs are allowed as arbitrary strings. */
 export type SettingsTab =
   | 'profile'
+  | 'account'
   | 'appearance'
   | 'preferences'
   | 'notifications'
   | 'server'
   | 'tools'
-  | 'access'
+  | 'security'
   | 'remote-access'
   | 'runtimes'
   | 'rooms'

@@ -36,12 +36,18 @@ export const cloudPlanKeys = {
 /** How long a plan read stays fresh. Plans do not move minute to minute. */
 const STALE_MS = 60_000;
 
-/** Read the entitlement and credit position behind the plan card. */
-export function useCloudPlan() {
+/**
+ * Read the entitlement and credit position behind the plan card.
+ *
+ * @param options.enabled - Hold the read until the caller knows it is worth
+ *   asking (the header menu waits for the link summary). Default true.
+ */
+export function useCloudPlan({ enabled = true }: { enabled?: boolean } = {}) {
   const transport = useTransport();
   return useQuery<CloudPlanResponse>({
     queryKey: cloudPlanKeys.plan(),
     queryFn: () => transport.getCloudPlan(),
+    enabled,
     staleTime: STALE_MS,
   });
 }

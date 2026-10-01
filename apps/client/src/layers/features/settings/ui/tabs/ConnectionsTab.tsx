@@ -5,7 +5,7 @@
  * Rule of thumb: the Connections page is for apps, this tab is for the
  * plumbing. Both sections belong to `features/connections` and are composed
  * here (sibling UI composition); this file only wires them to the two places
- * they send people: Settings › Access for the DorkOS account link, and the
+ * they send people: Settings › DorkOS account for the account link, and the
  * Connections page for the apps themselves. Every chat app's message history
  * (with delivery health and messages that reached no one) folds in under the
  * chat app settings, since it is about all of them at once.
@@ -57,10 +57,8 @@ export function ConnectionsTab() {
         </h3>
         <ConnectionWays
           onManageAccount={() => {
-            // The tab switch is the dialog's own state; the section is the
-            // URL's, and Access scrolls to it when it mounts.
-            navigation.onValueChange('access');
-            settings.setSection('account');
+            // The tab switch is the dialog's own state.
+            navigation.onValueChange('account');
           }}
           onOpenConnectionsPage={openConnectionsPage}
         />

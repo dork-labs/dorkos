@@ -89,10 +89,10 @@ function lowerFirst(text: string): string {
  * reauthorized. A failed request therefore leaves both the old label and old
  * content intact rather than painting a target the app could not enter.
  *
- * The switcher builds and guards its own account rows rather than taking them
+ * The switcher builds and guards its own identity rows rather than taking them
  * as props, so no caller can mount it without them or without the DOR-329
- * close-focus guard (Workspace settings and Account both open a dialog that
- * Radix's focus restore would otherwise blur).
+ * close-focus guard (you, the DorkOS account and Settings each open a surface
+ * that Radix's focus restore would otherwise blur).
  */
 export function CommunityContextSwitcher({
   triggerClassName,
@@ -180,7 +180,11 @@ export function CommunityContextSwitcher({
       : null,
   });
   const menu = useHeaderBlockMenu(contextNodes);
-  const guarded = useGuardedMenuNodes(menu.nodes);
+  // One guard over both runs of rows, so a row above the destinations and a
+  // row below them spend the same one-shot hold.
+  const guarded = useGuardedMenuNodes([...menu.identityNodes, ...menu.nodes]);
+  const identityNodes = guarded.nodes.slice(0, menu.identityNodes.length);
+  const actionNodes = guarded.nodes.slice(menu.identityNodes.length);
   const installationLabel = menu.teamName;
   const installationLabelPending = menu.nameUnknown;
   const targetPending = selectedRef !== undefined && connections.data === undefined;
@@ -306,7 +310,20 @@ export function CommunityContextSwitcher({
           className="max-h-(--radix-dropdown-menu-content-available-height) w-64 overflow-y-auto"
           onCloseAutoFocus={handleCloseAutoFocus}
         >
-          <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>
+          {/* On a phone the label is the sheet's title, so it stays first;
+              on desktop it heads the destinations, under the identity rows. */}
+          {isMobile && <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>}
+          {/* You, your DorkOS account and Settings come first (DOR-2628):
+              who you are before where you are. */}
+          <SheetActionsMenu sheet={isMobile} label="You">
+            <SidebarMenuNodes
+              variant={isMobile ? 'sheet' : 'dropdown'}
+              nodes={identityNodes}
+              onSheetClose={() => handleOpenChange(false)}
+            />
+          </SheetActionsMenu>
+          <ResponsiveDropdownMenuSeparator />
+          {!isMobile && <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>}
           {isMobile && destinations.length >= 8 && (
             <div className="px-4 pb-2">
               <Input
@@ -382,7 +399,7 @@ export function CommunityContextSwitcher({
               );
             })}
           </ResponsiveDropdownMenuRadioGroup>
-          {guarded.nodes.length > 0 && (
+          {actionNodes.length > 0 && (
             <>
               <ResponsiveDropdownMenuSeparator />
               {/* The sheet's action rows are menu items, and a menu item needs a
@@ -391,7 +408,7 @@ export function CommunityContextSwitcher({
               <SheetActionsMenu sheet={isMobile}>
                 <SidebarMenuNodes
                   variant={isMobile ? 'sheet' : 'dropdown'}
-                  nodes={guarded.nodes}
+                  nodes={actionNodes}
                   onSheetClose={() => handleOpenChange(false)}
                 />
               </SheetActionsMenu>

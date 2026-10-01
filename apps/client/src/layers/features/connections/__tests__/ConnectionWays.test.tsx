@@ -139,7 +139,7 @@ describe('ConnectionWays', () => {
     expect(account).toHaveTextContent('Working');
     // Unlinking the account turns off more than apps, so it is never offered here.
     expect(within(account).queryByRole('button', { name: /disconnect|remove/i })).toBeNull();
-    expect(within(account).getByRole('button', { name: /Manage in Access/ })).toBeInTheDocument();
+    expect(within(account).getByRole('button', { name: /Manage account/ })).toBeInTheDocument();
 
     const key = screen.getByTestId('connection-way-composio');
     expect(key).toHaveTextContent('Your Composio key');
@@ -504,7 +504,7 @@ describe('ConnectionWays', () => {
       })
     );
     await user.click(await screen.findByRole('button', { name: 'Add another way' }));
-    await user.click(screen.getByRole('button', { name: /Link in Access/ }));
+    await user.click(screen.getByRole('button', { name: /Link account/ }));
     expect(handlers.onManageAccount).toHaveBeenCalledTimes(1);
   });
 

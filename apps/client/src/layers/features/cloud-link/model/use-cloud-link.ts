@@ -32,6 +32,24 @@ const TERMINAL_STATES = new Set<CloudLinkState>(['linked', 'denied', 'expired', 
 export const cloudStatusKey = ['cloud', 'status'] as const;
 
 /**
+ * The settled linked/unlinked summary (`GET /api/cloud/status`) on its own,
+ * without the device flow behind it.
+ *
+ * For a surface that only needs to SAY whether this computer is signed in —
+ * the header menu's account row — and must not start polling or a mount-time
+ * flow read the way {@link useCloudLink} does. Both read one cache entry, so a
+ * link or unlink in Settings is seen everywhere at once.
+ */
+export function useCloudStatus() {
+  const transport = useTransport();
+  return useQuery<CloudLinkSummary>({
+    queryKey: cloudStatusKey,
+    queryFn: () => transport.getCloudStatus(),
+    staleTime: 30_000,
+  });
+}
+
+/**
  * The rendered view of the account-link panel — a single discriminated union so
  * the UI never has to reconcile the summary and the live flow state itself.
  */
@@ -49,7 +67,7 @@ export interface UseCloudLink {
   view: CloudLinkView;
   /** Begin the device flow (or restart it after expiry/denial). */
   start: () => Promise<void>;
-  /** Unlink this instance from its DorkOS account. */
+  /** Unlink this computer from its DorkOS account. */
   unlink: () => Promise<void>;
   starting: boolean;
   unlinking: boolean;
@@ -71,11 +89,7 @@ export function useCloudLink(): UseCloudLink {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
-  const summary = useQuery<CloudLinkSummary>({
-    queryKey: cloudStatusKey,
-    queryFn: () => transport.getCloudStatus(),
-    staleTime: 30_000,
-  });
+  const summary = useCloudStatus();
 
   const [flow, setFlow] = useState<StartLinkResult | null>(null);
   const [linkStatus, setLinkStatus] = useState<CloudLinkStatus | null>(null);

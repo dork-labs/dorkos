@@ -167,7 +167,7 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
       <DropdownMenuContent side="top" align="end" className="w-56">
         {}
         {/* Both of the account block's doors yield to the header block, which
-            BC-43 gives "Workspace settings" and "Account". Two menus offering
+            BC-43 gives "Settings" and your profile ("you"). Two menus offering
             one dialog under two different names is the same defect as one menu
             doing it, with more distance between the rows to make it harder to
             notice. What stays is what the header menu does NOT carry: who you

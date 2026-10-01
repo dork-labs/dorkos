@@ -8,8 +8,8 @@
  * route is on screen (spec R2, P2 AC-8).
  *
  * **The switcher.** The block is a button named after the operator ("Dorian's
- * team"), opening a menu with Workspace settings, Account and a quiet version
- * line. Connected communities are additional rows in this same menu
+ * team"), opening a menu with you, your DorkOS account and Settings at the top
+ * and a quiet version line at the bottom (DOR-2628). Connected communities are additional rows in this same menu
  * (`CommunityContextSwitcher`): single-player → multi-player is "the menu gets
  * longer", with zero relayout of anything outside it. It is not a workspace
  * manager and it adds no workspace surface (§16 Non-Goals).

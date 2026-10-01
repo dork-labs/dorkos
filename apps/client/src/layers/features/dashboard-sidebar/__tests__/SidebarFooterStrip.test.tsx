@@ -313,7 +313,7 @@ describe('SidebarFooterStrip', () => {
   });
 
   it('offers no Settings row of its own — the header block’s menu is the one door', async () => {
-    // P2.4's header block carries "Workspace settings" (BC-43), so the built-in
+    // P2.4's header block carries "Settings" (BC-43), so the built-in
     // `settings` contribution retired rather than leaving one dialog behind two
     // differently-named rows in two menus. Deleting the assertion would have
     // been the cheap way out; this one fails if the row comes back.

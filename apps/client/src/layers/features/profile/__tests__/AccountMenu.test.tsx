@@ -87,7 +87,7 @@ describe('AccountMenu', () => {
   });
 
   it('yields the two doors the sidebar header block carries, and keeps the rest', () => {
-    // BC-43 gives "Workspace settings" and "Account" a home in the sidebar's
+    // BC-43 gives "Settings" and your profile (the "you" row) a home in the sidebar's
     // header block, so the footer fold that also draws these rows hides both
     // rather than offering one dialog under two names in two menus. What it
     // keeps is what the header menu does not carry: who you are signed in as,

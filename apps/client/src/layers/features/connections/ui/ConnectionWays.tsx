@@ -226,7 +226,7 @@ function AccountWayRow({
             </Button>
           )}
           <Button size="sm" variant="outline" onClick={onManageAccount}>
-            Manage in Access
+            Manage account
             <ChevronRight className="size-3.5" aria-hidden />
           </Button>
         </>
@@ -284,10 +284,12 @@ function AddWays({
         <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
           <div className="min-w-0 flex-1 basis-48">
             <p className="text-sm font-medium">Your DorkOS account</p>
-            <p className="text-muted-foreground text-xs">Link it in Access, then connect apps.</p>
+            <p className="text-muted-foreground text-xs">
+              Link this computer to it, then connect apps.
+            </p>
           </div>
           <Button size="sm" variant="outline" onClick={onManageAccount}>
-            Link in Access
+            Link account
             <ChevronRight className="size-3.5" aria-hidden />
           </Button>
         </li>

@@ -229,7 +229,8 @@ describe('SettingsDialog', () => {
     expect(screen.getByRole('tab', { name: /server/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /tools/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /^runtimes/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /^access$/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /^dorkos account$/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /^login & security$/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /privacy & data/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /remote access/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /danger zone/i })).toBeDefined();
@@ -238,11 +239,10 @@ describe('SettingsDialog', () => {
     // The two deleted tabs are gone.
     expect(screen.queryByRole('tab', { name: /integrations/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^agents$/i })).toBeNull();
-    // So are the three the reshuffle retired: Security and DorkOS account are
-    // one Access tab now, and Advanced is named after what it holds (DOR-1758).
-    expect(screen.queryByRole('tab', { name: /^security$/i })).toBeNull();
-    expect(screen.queryByRole('tab', { name: /dorkos account/i })).toBeNull();
+    // Advanced is named after what it holds (DOR-1758), and the Access tab
+    // that merged local login with the DorkOS account is gone again (DOR-2628).
     expect(screen.queryByRole('tab', { name: /^advanced$/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /^access$/i })).toBeNull();
   });
 
   // The staging area for flags that ship OFF (DOR-1304). Reachable by click and
@@ -269,7 +269,7 @@ describe('SettingsDialog', () => {
   });
 
   // DOR-2419: the plumbing behind the Connections page. Both sections render,
-  // and the DorkOS account row's link lands on Access, where the link lives.
+  // and the DorkOS account row's link lands on the DorkOS account tab.
   it('opens Connections from ?settings=connections with both sections', async () => {
     deepLink.tab = 'connections';
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
@@ -279,7 +279,7 @@ describe('SettingsDialog', () => {
     expect(await within(panel).findByText('Set up when you connect your first app')).toBeDefined();
   });
 
-  it('switches to Access from the DorkOS account row', async () => {
+  it('switches to the DorkOS account tab from the DorkOS account row', async () => {
     deepLink.tab = 'connections';
     const transport = createMockTransport({
       getConfig: vi.fn().mockResolvedValue(mockConfig),
@@ -290,8 +290,16 @@ describe('SettingsDialog', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(transport),
     });
-    fireEvent.click(await screen.findByRole('button', { name: /Manage in Access/ }));
-    expect(await screen.findByText('On this machine')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: /Manage account/ }));
+    expect(await screen.findByRole('button', { name: 'Unlink this computer' })).toBeDefined();
+  });
+
+  // The DorkOS account's one home sits directly after Profile and never moves
+  // (DOR-2628): who you are, then the account attached to you.
+  it('puts DorkOS account directly after Profile', () => {
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    const names = screen.getAllByRole('tab').map((tab) => tab.textContent?.trim());
+    expect(names.slice(0, 2)).toEqual(['Profile', 'DorkOS account']);
   });
 
   // Verifies the grouped-nav section headers render in the sidebar. Scoped to the
@@ -306,7 +314,7 @@ describe('SettingsDialog', () => {
     ).map((el) => el.textContent);
     // Four labelled peers. The first four tabs used to carry no group at all and
     // rendered as a headerless run above the first header (DOR-1758).
-    expect(headers).toEqual(['You', 'Agents & sessions', 'Access & privacy', 'System']);
+    expect(headers).toEqual(['You', 'Agents & sessions', 'This computer', 'System']);
   });
 
   // Verifies font family selector appears in the Appearance tab. The three rows
@@ -433,7 +441,8 @@ describe('SettingsDialog — one heading per panel', () => {
     { nav: /^tools/i, title: 'Tools' },
     { nav: /^runtimes/i, title: 'Runtimes' },
     { nav: /^connections$/i, title: 'Connections' },
-    { nav: /^access$/i, title: 'Access' },
+    { nav: /^dorkos account$/i, title: 'DorkOS account' },
+    { nav: /^login & security$/i, title: 'Login & security' },
     { nav: /privacy & data/i, title: 'Privacy & Data' },
     { nav: /^server/i, title: 'Server' },
   ];

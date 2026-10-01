@@ -46,7 +46,9 @@ export function SeatManagement() {
   if (isError) {
     return <p className="text-muted-foreground text-sm">Couldn’t read your seats just now.</p>;
   }
-  if (!seats?.available) return null;
+  // Seats are shown only when the account holds some: an empty "Seats" card on
+  // a one-person account is furniture with nothing in it.
+  if (!seats?.available || seats.seats.length === 0) return null;
 
   const candidates = members?.available ? members.members : [];
 
@@ -105,62 +107,58 @@ export function SeatManagement() {
           )}
         </div>
 
-        {seats.seats.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No seats yet.</p>
-        ) : (
-          <ul className="divide-y">
-            {seats.seats.map((seat) => (
-              <li key={seat.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{seatLabel(seat)}</p>
-                  <p className="text-muted-foreground text-xs">
-                    {/* "Assigned <when>", never a status dot — see the component doc. */}
-                    {seat.assignedAt
-                      ? `Assigned ${formatRelativeTime(seat.assignedAt)}`
-                      : 'Not assigned'}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Badge variant="secondary">{seat.status}</Badge>
-                  {seat.status === 'assigned' ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={release.isPending}
-                      onClick={() => void onRelease(seat.id)}
+        <ul className="divide-y">
+          {seats.seats.map((seat) => (
+            <li key={seat.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{seatLabel(seat)}</p>
+                <p className="text-muted-foreground text-xs">
+                  {/* "Assigned <when>", never a status dot — see the component doc. */}
+                  {seat.assignedAt
+                    ? `Assigned ${formatRelativeTime(seat.assignedAt)}`
+                    : 'Not assigned'}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge variant="secondary">{seat.status}</Badge>
+                {seat.status === 'assigned' ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={release.isPending}
+                    onClick={() => void onRelease(seat.id)}
+                  >
+                    Release
+                  </Button>
+                ) : (
+                  // An unassigned seat has no subject to put back, so the app
+                  // offers the people it knows about rather than asking for an
+                  // identifier. With no member list it offers nothing at all,
+                  // which is the honest answer to "assign this to whom?".
+                  candidates.length > 0 && (
+                    <select
+                      className="border-input bg-background rounded-md border px-2 py-1 text-sm"
+                      aria-label="Assign this seat to"
+                      defaultValue=""
+                      disabled={assign.isPending}
+                      onChange={(event) => {
+                        const userId = event.target.value;
+                        if (userId !== '') void onAssign(seat.id, userId);
+                      }}
                     >
-                      Release
-                    </Button>
-                  ) : (
-                    // An unassigned seat has no subject to put back, so the app
-                    // offers the people it knows about rather than asking for an
-                    // identifier. With no member list it offers nothing at all,
-                    // which is the honest answer to "assign this to whom?".
-                    candidates.length > 0 && (
-                      <select
-                        className="border-input bg-background rounded-md border px-2 py-1 text-sm"
-                        aria-label="Assign this seat to"
-                        defaultValue=""
-                        disabled={assign.isPending}
-                        onChange={(event) => {
-                          const userId = event.target.value;
-                          if (userId !== '') void onAssign(seat.id, userId);
-                        }}
-                      >
-                        <option value="">Assign to…</option>
-                        {candidates.map((member) => (
-                          <option key={member.id} value={member.userId}>
-                            {memberLabel(member, candidates)}
-                          </option>
-                        ))}
-                      </select>
-                    )
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+                      <option value="">Assign to…</option>
+                      {candidates.map((member) => (
+                        <option key={member.id} value={member.userId}>
+                          {memberLabel(member, candidates)}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
 
         {refusal !== null && (
           <div className="border-destructive/40 bg-destructive/5 space-y-1 rounded-md border px-3 py-2">

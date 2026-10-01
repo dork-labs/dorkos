@@ -7,6 +7,7 @@ import {
   TriangleAlert,
   ShieldCheck,
   Lock,
+  CircleUserRound,
   Globe,
   UserRound,
   FlaskConical,
@@ -28,7 +29,8 @@ import { PermissionsTab } from './tabs/PermissionsTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsTab } from './ToolsTab';
-import { AccessTab } from './AccessTab';
+import { SecurityPanel } from '@/layers/features/auth';
+import { DorkosAccountTab } from './DorkosAccountTab';
 import { RemoteAccessTab } from './RemoteAccessTab';
 import { PrivacyTab } from './PrivacyTab';
 import { DangerZoneTab } from './DangerZoneTab';
@@ -42,6 +44,16 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   // The id is exactly `profile` because that is what the profile drawer's Edit
   // button deep-links to.
   { id: 'profile', label: 'Profile', icon: UserRound, component: ProfileTab, group: 'You' },
+  {
+    // The DorkOS account's one home (DOR-2628), directly after Profile and
+    // never anywhere else: who you are, then the account attached to you. The
+    // header menu's "DorkOS account" row opens exactly this tab.
+    id: 'account',
+    label: 'DorkOS account',
+    icon: CircleUserRound,
+    component: DorkosAccountTab,
+    group: 'You',
+  },
   {
     id: 'appearance',
     label: 'Appearance',
@@ -112,22 +124,21 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     group: 'Agents & sessions',
   },
   {
-    // Security and DorkOS account were two tabs answering one question — who may
-    // get into this install, and as whom — with a 12-line and a 14-line wrapper
-    // for a body. One tab, two sections (DOR-1758). Old links keep working
-    // through the legacy map, which lands each on its own section.
-    id: 'access',
-    label: 'Access',
+    // The local half of what was the Access tab: whether this computer asks
+    // for a login, and the API keys that stand in for one. Its own tab since
+    // the DorkOS account moved to the You group (DOR-2628).
+    id: 'security',
+    label: 'Login & security',
     icon: ShieldCheck,
-    component: AccessTab,
-    group: 'Access & privacy',
+    component: SecurityPanel,
+    group: 'This computer',
   },
   {
     id: 'privacy',
     label: 'Privacy & Data',
     icon: Lock,
     component: PrivacyTab,
-    group: 'Access & privacy',
+    group: 'This computer',
   },
   {
     // A real tab, not the sidebar button it used to be: that button sat in the
@@ -138,7 +149,7 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     label: 'Remote access',
     icon: Globe,
     component: RemoteAccessTab,
-    group: 'Access & privacy',
+    group: 'This computer',
   },
   { id: 'server', label: 'Server', icon: Server, component: ServerTab, group: 'System' },
   {

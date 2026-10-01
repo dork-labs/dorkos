@@ -9,7 +9,7 @@ import type { SidebarFooterContribution } from '@/layers/shared/model';
  * React hooks (theme state) that can't run outside a component.
  *
  * **`settings` is deliberately not here.** The settings dialog has one door in
- * this panel now: "Workspace settings" in the header block's menu (BC-43). It
+ * this panel now: "Settings" in the header block's menu (BC-43). It
  * was contributed here while the header block did not exist, and P2.5's own
  * comment recorded the fold as its home "until then" — so it goes with the
  * arrival of P2.4 rather than leaving one dialog behind two differently-named

@@ -266,8 +266,8 @@ export function ProfileEmailField({ member }: ProfileFieldProps) {
           label="Email"
           description={
             member.person?.email
-              ? 'From the account you signed in with. Change it in Settings › Security.'
-              : 'You have no login on this machine. Turn one on in Settings › Security if you want one.'
+              ? 'From the account you signed in with. Change it in Settings › Login & security.'
+              : 'You have no login on this machine. Turn one on in Settings › Login & security if you want one.'
           }
           orientation="vertical"
         >

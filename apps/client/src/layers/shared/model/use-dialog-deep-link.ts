@@ -99,17 +99,18 @@ export type SettingsDeepLinkTarget = SettingsTabTarget | SettingsRouteTarget;
  * still reachable from inside the dialog until it is deleted; what changes
  * here is where an old *link* lands.
  *
- * `security` and `account` were two tabs answering one question — who may get
- * into this install, and as whom — so they became one Access tab with a section
- * each, and each id keeps its own half (DOR-1758). `advanced` is that batch's
- * rename: the tab holds only the destructive actions now and is named after
- * them.
+ * `access` is the tab that briefly held both local login and the DorkOS
+ * account (DOR-1758). They are their own tabs again — `security` ("Login &
+ * security") and `account` ("DorkOS account") — because "account" had come to
+ * mean four things and the DorkOS account needed one home (DOR-2628). Every
+ * in-app door into `access` was a door to its account half, so that is where an
+ * old `access` link lands. `advanced` is the DOR-1758 rename: the tab holds only
+ * the destructive actions now and is named after them.
  */
 const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsDeepLinkTarget> = {
   channels: { kind: 'route', path: '/connections' },
   integrations: { kind: 'route', path: '/connections' },
-  security: { kind: 'tab', tab: 'access', section: 'security' },
-  account: { kind: 'tab', tab: 'access', section: 'account' },
+  access: 'account',
   advanced: 'danger',
 };
 
@@ -192,8 +193,8 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   const activeTab = resolved?.kind === 'tab' ? resolved.tab : null;
   // An explicit `?settingsSection=` wins; a legacy id that named one half of a
   // merged tab supplies its own when the URL carries none, so a bookmark to
-  // `?settings=account` still lands ON the account section rather than at the
-  // top of the tab that absorbed it.
+  // the absorbed tab still lands ON its section rather than at the top of the
+  // tab that absorbed it.
   const section = navigate
     ? (search.settingsSection ?? (resolved?.kind === 'tab' ? (resolved.section ?? null) : null))
     : null;

@@ -79,6 +79,12 @@ function renderWith(
   return { transport, queryClient };
 }
 
+/** The value `<dd>` beside a `<dt>` label. */
+function fact(label: string): string {
+  const term = screen.getByText(label);
+  return textOf(term.nextElementSibling as HTMLElement);
+}
+
 /** The balance fixture with some amounts replaced, keeping its denomination. */
 function balanceWith(change: (balance: Balance) => void): Balance {
   const copy = structuredClone(balanceFixture);
@@ -93,7 +99,8 @@ describe('the credits gauge', () => {
   it('shows what is left and what was granted as positions, rounded down', async () => {
     // remaining 612,345 / 250 = 2,449.38 → 2,449; granted 750,000 / 250 = 3,000.
     renderWith(<CreditsGauge />, {});
-    expect(await screen.findByText('2,449 of 3,000 credits left in this period')).toBeVisible();
+    await screen.findByText('Included');
+    expect(fact('Included')).toBe('2,449 of 3,000 credits left');
   });
 
   it('rounds what was granted down too', async () => {
@@ -103,19 +110,21 @@ describe('the credits gauge', () => {
         b.allowance.grantedMicro = '750200';
       }),
     });
-    expect(await screen.findByText('2,449 of 3,000 credits left in this period')).toBeVisible();
+    await screen.findByText('Included');
+    expect(fact('Included')).toBe('2,449 of 3,000 credits left');
   });
 
   it('reads the balance figures in the balance`s unit, not the usage response`s', async () => {
     renderWith(<CreditsGauge />, { balance: legacyBalanceFixture });
     expect(await screen.findByText('Total for the last 30 days: 18 credits')).toBeVisible();
     expect(screen.getAllByText(/couldn’t read the credit figures/i)).toHaveLength(1);
-    expect(screen.queryByText(/left in this period/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Included')).not.toBeInTheDocument();
   });
 
   it('reads the usage figures in the usage response`s unit, not the balance`s', async () => {
     renderWith(<CreditsGauge />, { usage: legacyUsageFixture });
-    expect(await screen.findByText('2,449 of 3,000 credits left in this period')).toBeVisible();
+    await screen.findByText('Included');
+    expect(fact('Included')).toBe('2,449 of 3,000 credits left');
     expect(screen.getAllByText(/couldn’t read the credit figures/i)).toHaveLength(1);
     expect(screen.queryByText(/total for the last 30 days/i)).not.toBeInTheDocument();
   });
@@ -127,7 +136,8 @@ describe('the credits gauge', () => {
         b.allowance.remainingMicro = '999';
       }),
     });
-    expect(await screen.findByText('3 of 3,000 credits left in this period')).toBeVisible();
+    await screen.findByText('Included');
+    expect(fact('Included')).toBe('3 of 3,000 credits left');
   });
 
   it('shows where the credits went as charges, and the total from the exact sum', async () => {
@@ -160,11 +170,35 @@ describe('the credits gauge', () => {
     expect(screen.getByText('Total for the last 30 days: 2 credits')).toBeVisible();
   });
 
+  it('shows credits added as a position with money beside, apart from what is included', async () => {
+    renderWith(<CreditsGauge />, {});
+    await screen.findByText('Added');
+    // 99,999 / 250 = 399.996 → 399 credits; the money beside is the rounded
+    // count's value, 399 × 250 = 99,750 micro.
+    expect(fact('Added')).toBe(`399 credits (${money('99750')})`);
+    expect(fact('Included')).toBe('2,449 of 3,000 credits left');
+  });
+
+  it('leaves out an owed line when nothing is owed, and shows even a sliver of debt', async () => {
+    renderWith(<CreditsGauge />, {});
+    await screen.findByText('Included');
+    expect(screen.queryByText('Owed')).not.toBeInTheDocument();
+    cleanup();
+
+    renderWith(<CreditsGauge />, {
+      balance: balanceWith((b) => {
+        b.owedMicro = '1';
+      }),
+    });
+    await screen.findByText('Owed');
+    expect(fact('Owed')).toBe('<1 credit');
+  });
+
   it('says it could not read the figures when a response names no unit', async () => {
     renderWith(<CreditsGauge />, { balance: legacyBalanceFixture, usage: legacyUsageFixture });
     expect(await screen.findByText(legacyUsageFixture.rows[0].displayName)).toBeVisible();
     expect(screen.getAllByText(/couldn’t read the credit figures/i)).toHaveLength(2);
-    expect(screen.queryByText(/left in this period/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Included')).not.toBeInTheDocument();
     expect(screen.queryByText(/total for the last 30 days/i)).not.toBeInTheDocument();
     // No figure from either payload, in any rounding, reached the screen.
     expect(screen.queryByText(/\d/)).not.toBeInTheDocument();
@@ -174,12 +208,6 @@ describe('the credits gauge', () => {
 describe('the plan card', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => cleanup());
-
-  /** The value `<dd>` beside a `<dt>` label. */
-  function fact(label: string): string {
-    const term = screen.getByText(label);
-    return textOf(term.nextElementSibling as HTMLElement);
-  }
 
   it('shows included credits as a position with money worked out from the rounded count', async () => {
     renderWith(<PlanCard />, {});
@@ -201,41 +229,6 @@ describe('the plan card', () => {
     expect(fact('Included credits')).toBe(`3,000 credits (${money('750000')})`);
   });
 
-  it('shows the allowance left as a position and credits bought with money beside', async () => {
-    renderWith(<PlanCard />, {});
-    await screen.findByText(entitlementsFixture.planDisplayName);
-    expect(fact('Allowance left')).toBe('2,449 credits');
-    // 99,999 / 250 = 399.996 → 399 credits; the money beside is the rounded
-    // count's value, 399 × 250 = 99,750 micro.
-    expect(fact('Credits bought')).toBe(`399 credits (${money('99750')})`);
-  });
-
-  it('rounds the allowance left down, where a charge would round it up', async () => {
-    // 999 / 250 = 3.996 → 3 credits, not 4.
-    renderWith(<PlanCard />, {
-      balance: balanceWith((b) => {
-        b.allowance.remainingMicro = '999';
-      }),
-    });
-    await screen.findByText(entitlementsFixture.planDisplayName);
-    expect(fact('Allowance left')).toBe('3 credits');
-  });
-
-  it('leaves out an owed line when nothing is owed, and shows even a sliver of debt', async () => {
-    renderWith(<PlanCard />, {});
-    await screen.findByText(entitlementsFixture.planDisplayName);
-    expect(screen.queryByText('Owed')).not.toBeInTheDocument();
-    cleanup();
-
-    renderWith(<PlanCard />, {
-      balance: balanceWith((b) => {
-        b.owedMicro = '1';
-      }),
-    });
-    await screen.findByText('Owed');
-    expect(fact('Owed')).toBe('<1 credit');
-  });
-
   it('says it could not read the figures when a response names no unit', async () => {
     renderWith(<PlanCard />, {
       entitlements: legacyEntitlementsFixture,
@@ -244,8 +237,6 @@ describe('the plan card', () => {
     await screen.findByText(legacyEntitlementsFixture.planDisplayName);
     expect(screen.getByText(/couldn’t read the credit figures/i)).toBeVisible();
     expect(screen.queryByText('Included credits')).not.toBeInTheDocument();
-    expect(screen.queryByText('Allowance left')).not.toBeInTheDocument();
-    expect(screen.queryByText('Credits bought')).not.toBeInTheDocument();
   });
 
   it('still says so when only the entitlement names no unit', async () => {
@@ -253,15 +244,15 @@ describe('the plan card', () => {
     await screen.findByText(legacyEntitlementsFixture.planDisplayName);
     expect(screen.getByText(/couldn’t read the credit figures/i)).toBeVisible();
     expect(screen.queryByText('Included credits')).not.toBeInTheDocument();
-    expect(screen.getByText('Allowance left')).toBeVisible();
   });
 
-  it('still says so when only the balance names no unit', async () => {
+  it('leaves what is left to the credits card, even when the balance names no unit', async () => {
+    // The plan says what the account includes; what it HAS is the credits
+    // card's to say, so a balance it cannot read is not this card's problem.
     renderWith(<PlanCard />, { balance: legacyBalanceFixture });
     await screen.findByText(entitlementsFixture.planDisplayName);
-    expect(screen.getByText(/couldn’t read the credit figures/i)).toBeVisible();
+    expect(screen.queryByText(/couldn’t read the credit figures/i)).not.toBeInTheDocument();
     expect(screen.getByText('Included credits')).toBeVisible();
-    expect(screen.queryByText('Allowance left')).not.toBeInTheDocument();
   });
 });
 

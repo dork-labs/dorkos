@@ -27,7 +27,10 @@ import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
 import { commitCommunityRouteEpoch } from '@/layers/shared/model';
 import { PageHeading, type SidebarMenuNode } from '@/layers/shared/ui';
-import { buildHeaderBlockMenuNodes } from '../ui/header-block-menu';
+import {
+  buildHeaderBlockIdentityNodes,
+  buildHeaderBlockVersionNodes,
+} from '../ui/header-block-menu';
 import { SidebarHeaderBlock, teamNameFor } from '../ui/SidebarHeaderBlock';
 import { MobileCommunityContextSwitcher } from '../ui/context/CommunityContextSwitcher';
 
@@ -43,7 +46,8 @@ let mockSelf: { id: string; displayName: string; isSelf: boolean } | null = {
 /** Whether the roster read has answered yet — the header's one gate (D6). */
 let mockRosterPending = false;
 let mockIsMobile = false;
-vi.mock('@/layers/entities/team', () => ({
+vi.mock('@/layers/entities/team', async (importOriginal) => ({
+  teamMemberFace: (await importOriginal<typeof import('@/layers/entities/team')>()).teamMemberFace,
   useTeamRoster: () => ({
     data: mockRosterPending ? undefined : { members: mockSelf === null ? [] : [mockSelf] },
     isPending: mockRosterPending,
@@ -60,9 +64,15 @@ const mockListRemoteCommunityRooms = vi.fn();
 const mockMoveCommunityNavigation = vi.fn();
 const mockSetGlobalPaletteOpen = vi.fn();
 let mockCloudLinked = false;
+let mockCloudAccountLabel: string | null = null;
 const mockGetCloudStatus = vi.fn(() =>
-  Promise.resolve({ linked: mockCloudLinked, accountLabel: null, lastHeartbeatAt: null })
+  Promise.resolve({
+    linked: mockCloudLinked,
+    accountLabel: mockCloudAccountLabel,
+    lastHeartbeatAt: null,
+  })
 );
+const mockGetCloudPlan = vi.fn(() => Promise.resolve({ available: false }));
 const mockListHostedCommunities = vi.fn(() =>
   Promise.resolve({ available: true, communities: [], moves: [], allowance: null })
 );
@@ -118,6 +128,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       resolveCommunityNavigation: mockResolveCommunityNavigation,
       listRemoteCommunityRooms: mockListRemoteCommunityRooms,
       getCloudStatus: mockGetCloudStatus,
+      getCloudPlan: mockGetCloudPlan,
       listHostedCommunities: mockListHostedCommunities,
     }),
     useSettingsDeepLink: () => ({ open: mockOpenSettings }),
@@ -182,14 +193,15 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
 // it is exercised. Marked here so its presence is still asserted.
 vi.mock('../ui/NewMenu', () => ({ NewMenu: () => <div data-testid="new-menu" /> }));
 
-/** Menu rows this render should show, or `null` for the real builder. */
+/** Rows below the destinations this render should show, or `null` for the real builder. */
 let mockMenuNodes: SidebarMenuNode[] | null = null;
 vi.mock('../ui/header-block-menu', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../ui/header-block-menu')>();
   return {
     ...actual,
-    buildHeaderBlockMenuNodes: (model: Parameters<typeof actual.buildHeaderBlockMenuNodes>[0]) =>
-      mockMenuNodes ?? actual.buildHeaderBlockMenuNodes(model),
+    buildHeaderBlockVersionNodes: (
+      model: Parameters<typeof actual.buildHeaderBlockVersionNodes>[0]
+    ) => mockMenuNodes ?? actual.buildHeaderBlockVersionNodes(model),
   };
 });
 
@@ -221,6 +233,7 @@ beforeEach(() => {
   mockConnections = [];
   mockCommunityOrder = [];
   mockCloudLinked = false;
+  mockCloudAccountLabel = null;
   mockResolveCommunityNavigation.mockResolvedValue(null);
   mockGetCommunityNavigation.mockResolvedValue({
     ownerKey: 'owner-a',
@@ -289,37 +302,64 @@ function rows(count: number): SidebarMenuNode[] {
 // The menu, as data
 // ---------------------------------------------------------------------------
 
-describe('buildHeaderBlockMenuNodes', () => {
+describe('buildHeaderBlockIdentityNodes', () => {
   const base = {
-    onOpenSettings: () => {},
+    you: { name: 'Dorian', face: null, onOpen: () => {} },
+    accountStatus: 'Not signed in',
     onOpenAccount: () => {},
-    version: '0.58.0',
-    isDevMode: false,
-    onCheckForUpdates: () => {},
+    onOpenSettings: () => {},
   };
 
-  it('carries Workspace settings, Account and the version line, in that order', () => {
-    expect(buildHeaderBlockMenuNodes(base).map((n) => n.id)).toEqual([
-      'workspace-settings',
-      'account',
-      'sep-version',
-      'version',
+  it('reads you, your DorkOS account, then Settings (DOR-2628)', () => {
+    expect(buildHeaderBlockIdentityNodes(base).map((n) => n.id)).toEqual([
+      'you',
+      'dorkos-account',
+      'settings',
     ]);
   });
 
-  it('spells the version line the way the design does', () => {
-    const version = buildHeaderBlockMenuNodes(base).find((n) => n.id === 'version');
-    expect(version).toMatchObject({ label: 'v0.58.0 beta', hint: 'Check for updates' });
+  it('names you by your name and says the row opens your profile', () => {
+    expect(buildHeaderBlockIdentityNodes(base)[0]).toMatchObject({
+      label: 'Dorian',
+      description: 'View profile',
+    });
   });
 
-  it('drops Account when the roster names nobody, rather than offering a dead row', () => {
+  it('carries the account’s status under its name', () => {
     expect(
-      buildHeaderBlockMenuNodes({ ...base, onOpenAccount: null }).map((n) => n.id)
-    ).not.toContain('account');
+      buildHeaderBlockIdentityNodes({ ...base, accountStatus: 'Signed in · Dorian' }).find(
+        (n) => n.id === 'dorkos-account'
+      )
+    ).toMatchObject({ label: 'DorkOS account', description: 'Signed in · Dorian' });
+  });
+
+  it('drops the you row when the roster names nobody, rather than offering a dead row', () => {
+    expect(buildHeaderBlockIdentityNodes({ ...base, you: null }).map((n) => n.id)).toEqual([
+      'dorkos-account',
+      'settings',
+    ]);
+  });
+
+  it('says "account" once, meaning the DorkOS account, and never "workspace"', () => {
+    const said = buildHeaderBlockIdentityNodes(base)
+      .filter((n) => n.kind === 'action')
+      .map((n) => (n.kind === 'action' ? n.label : ''));
+    expect(said.filter((text) => /account/i.test(text))).toEqual(['DorkOS account']);
+    expect(said.filter((text) => /workspace/i.test(text))).toEqual([]);
+  });
+});
+
+describe('buildHeaderBlockVersionNodes', () => {
+  const base = { version: '0.58.0', isDevMode: false, onCheckForUpdates: () => {} };
+
+  it('spells the version line the way the design does, behind its own rule', () => {
+    const nodes = buildHeaderBlockVersionNodes(base);
+    expect(nodes.map((n) => n.id)).toEqual(['sep-version', 'version']);
+    expect(nodes[1]).toMatchObject({ label: 'v0.58.0 beta', hint: 'Check for updates' });
   });
 
   it('says "Development build" instead of a number nobody can update to', () => {
-    const nodes = buildHeaderBlockMenuNodes({ ...base, isDevMode: true });
+    const nodes = buildHeaderBlockVersionNodes({ ...base, isDevMode: true });
     expect(nodes.find((n) => n.id === 'version')).toMatchObject({
       kind: 'note',
       text: 'Development build',
@@ -327,17 +367,7 @@ describe('buildHeaderBlockMenuNodes', () => {
   });
 
   it('withholds the version line entirely until the server has answered', () => {
-    expect(buildHeaderBlockMenuNodes({ ...base, version: null }).map((n) => n.id)).not.toContain(
-      'version'
-    );
-  });
-
-  it('says "workspace" once, and only where it names the settings surface', () => {
-    const said = buildHeaderBlockMenuNodes(base)
-      .filter((n) => n.kind === 'action' || n.kind === 'note')
-      .map((n) => (n.kind === 'note' ? n.text : n.label))
-      .filter((text) => /workspace/i.test(text));
-    expect(said).toEqual(['Workspace settings']);
+    expect(buildHeaderBlockVersionNodes({ ...base, version: null })).toEqual([]);
   });
 });
 
@@ -399,7 +429,7 @@ describe('SidebarHeaderBlock', () => {
     ).toBeInTheDocument();
   });
 
-  it('keeps Workspace settings, Account and the version line on phones', async () => {
+  it('keeps you, your DorkOS account, Settings and the version line on phones', async () => {
     // This menu is the version number's one home in the chrome (BC-44), and
     // the footer menu deliberately does not repeat these rows, so a phone that
     // lost them here would have no way to reach them at all.
@@ -411,11 +441,12 @@ describe('SidebarHeaderBlock', () => {
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     const sheet = await screen.findByRole('dialog');
     expect(await screen.findByRole('menuitem', { name: /v0\.58\.0 beta/ })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /Account/ })).toBeInTheDocument();
-    // A menu item is only a menu item inside a menu (axe aria-required-parent).
-    const actions = within(sheet).getByRole('menu', { name: 'Actions' });
-    expect(within(actions).getByRole('menuitem', { name: /Account/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('menuitem', { name: /Workspace settings/ }));
+    // A menu item is only a menu item inside a menu (axe aria-required-parent),
+    // and the identity rows are their own menu, above the destinations.
+    const you = within(sheet).getByRole('menu', { name: 'You' });
+    expect(within(you).getByRole('menuitem', { name: /Dorian/ })).toBeInTheDocument();
+    expect(within(you).getByRole('menuitem', { name: /DorkOS account/ })).toBeInTheDocument();
+    fireEvent.click(within(you).getByRole('menuitem', { name: 'Settings' }));
     expect(mockOpenSettings).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(sheet).not.toBeInTheDocument());
   });
@@ -460,7 +491,7 @@ describe('SidebarHeaderBlock', () => {
     expect(screen.getByTestId('sidebar-search-pill')).toBeInTheDocument();
   });
 
-  it('says "workspace" nowhere in the block itself — not even to a screen reader', async () => {
+  it('says "workspace" nowhere — not in the block, not in its menu', async () => {
     renderBlock();
     // Observable first: the block IS rendered and DOES carry an accessible
     // name, so the absence below is about the wording and not about an empty
@@ -469,25 +500,50 @@ describe('SidebarHeaderBlock', () => {
     expect(block.getAttribute('aria-label')).toMatch(/team/);
     expect(block.outerHTML).not.toMatch(/workspace/i);
 
-    // …and inside the menu it is said exactly once, naming the settings
-    // surface that already carries that word (§16, R4).
+    // There is no workspace object, so the menu opens plain Settings (DOR-2628).
     fireEvent.pointerDown(block);
     const menu = await screen.findByRole('menu');
-    expect(menu.textContent?.match(/workspace/gi)).toHaveLength(1);
+    expect(await within(menu).findByRole('menuitem', { name: 'Settings' })).toBeInTheDocument();
+    expect(menu.textContent).not.toMatch(/workspace/i);
   });
 
-  it('opens the settings dialog from Workspace settings', async () => {
+  it('opens the settings dialog from Settings', async () => {
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Workspace settings…' }));
-    expect(mockOpenSettings).toHaveBeenCalledOnce();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Settings' }));
+    expect(mockOpenSettings).toHaveBeenCalledWith();
   });
 
-  it('opens your own profile from Account', async () => {
+  it('opens your own profile from the row with your name', async () => {
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Account…' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Dorian\s*View profile$/ }));
     expect(mockOpenProfile).toHaveBeenCalledWith('me');
+  });
+
+  it('opens Settings › DorkOS account from its row, and says when you are not signed in', async () => {
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const row = await screen.findByRole('menuitem', { name: /DorkOS account/ });
+    await waitFor(() => expect(row).toHaveTextContent('Not signed in'));
+    fireEvent.click(row);
+    expect(mockOpenSettings).toHaveBeenCalledWith('account');
+  });
+
+  it('names the signed-in account with the service’s own label', async () => {
+    mockCloudLinked = true;
+    mockCloudAccountLabel = 'kai@dork.dev';
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const row = await screen.findByRole('menuitem', { name: /DorkOS account/ });
+    await waitFor(() => expect(row).toHaveTextContent('Signed in · kai@dork.dev'));
+  });
+
+  it('has only one row that says "Account" — the duplicate profile row is gone', async () => {
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    await screen.findByRole('menuitem', { name: /DorkOS account/ });
+    expect(screen.getAllByRole('menuitem', { name: /account/i })).toHaveLength(1);
   });
 
   it('shows the running version in the menu once the server answers', async () => {
@@ -1065,7 +1121,9 @@ describe('SidebarHeaderBlock', () => {
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     await screen.findByRole('menuitem', { name: 'Row 0' });
-    expect(document.querySelectorAll('[role^="menuitem"]')).toHaveLength(5);
+    // 3 rows + the installation + the add-a-community row + you, DorkOS
+    // account and Settings above the destinations.
+    expect(document.querySelectorAll('[role^="menuitem"]')).toHaveLength(8);
     const short = blockMarkup();
     cleanup();
 
@@ -1076,7 +1134,7 @@ describe('SidebarHeaderBlock', () => {
     await screen.findByRole('menuitem', { name: 'Row 5' });
     // The menu really did get longer — otherwise the comparison below is a
     // comparison of two identical renders and proves nothing.
-    expect(document.querySelectorAll('[role^="menuitem"]')).toHaveLength(8);
+    expect(document.querySelectorAll('[role^="menuitem"]')).toHaveLength(11);
 
     expect(blockMarkup()).toBe(short);
   });
@@ -1222,10 +1280,10 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(mockOpenSettings).not.toHaveBeenCalled();
   });
 
-  it('opens this DorkOS’s settings, never a Community’s, from Workspace settings', async () => {
+  it('opens this DorkOS’s settings, never a Community’s, from Settings', async () => {
     mockConnections = [alpha()];
     await openManageAlpha();
-    fireEvent.click(screen.getByRole('menuitem', { name: /Workspace settings/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }));
     expect(mockOpenSettings).toHaveBeenCalledTimes(1);
     expect(mockOpenExternalLink).not.toHaveBeenCalled();
   });

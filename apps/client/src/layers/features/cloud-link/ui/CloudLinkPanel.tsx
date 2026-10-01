@@ -8,7 +8,7 @@ import {
   Unplug,
   X,
 } from 'lucide-react';
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useId, useState, type ReactNode } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +23,7 @@ import {
   Checkbox,
   FieldCard,
   FieldCardContent,
+  SettingRow,
   Skeleton,
   Spinner,
 } from '@/layers/shared/ui';
@@ -45,39 +46,57 @@ import { useNow } from '@/layers/shared/model';
 import { useCloudLink, type CloudLinkView } from '../model/use-cloud-link';
 import { msUntilExpiry, spokenExpiry, visibleExpiry } from '../lib/code-expiry';
 
+/** Props for {@link CloudLinkPanel}. */
+export interface CloudLinkPanelProps {
+  /**
+   * The page shown before this computer is linked — what an account would add
+   * here — drawn above the link controls. The caller owns it because only the
+   * caller knows which benefits the server reports as wired.
+   */
+  signedOut?: ReactNode;
+  /**
+   * The signed-in sections, drawn between the account line and "Unlink this
+   * computer" once linked.
+   */
+  children?: ReactNode;
+}
+
 /**
- * DorkOS account section for the Settings dialog — links or unlinks this
- * instance to a DorkOS account. Always available: local login and the cloud link
- * are independent systems, so this panel never gates on the auth session.
+ * The DorkOS account, from not linked to linked: the device-link flow and its
+ * recovery states before, the account line and "Unlink this computer" after,
+ * with the caller's own content in each half. Always available: local login
+ * and the account link are independent systems, so this never gates on the
+ * auth session.
  *
- * All flow state lives in {@link useCloudLink}; this component only renders the
- * current view and wires the buttons. Composed into the Settings dialog's Access
- * tab (sibling UI composition).
+ * All flow state lives in {@link useCloudLink}, and this is its ONE caller on
+ * screen — the signed-in content arrives as children rather than reading the
+ * flow a second time, so two copies of the poll can never race.
+ *
+ * Composed into Settings › DorkOS account (sibling UI composition).
+ *
+ * @param props - The two halves' content. See {@link CloudLinkPanelProps}.
  */
-export function CloudLinkPanel() {
+export function CloudLinkPanel({ signedOut, children }: CloudLinkPanelProps) {
   const { view, start, unlink, starting, unlinking, startError } = useCloudLink();
+
+  if (view.kind === 'loading') return <Skeleton className="h-24 w-full" />;
+
+  if (view.kind === 'linked') {
+    return (
+      <div className="space-y-4">
+        <LinkedLine view={view} />
+        {children}
+        <UnlinkSection unlink={unlink} unlinking={unlinking} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1">
-        {/* No heading here: the Access tab draws the section heading this
-            sits under ("DorkOS account"). This is its explainer. */}
-        <p className="text-muted-foreground text-sm">
-          Link this instance to a DorkOS account to reach it from dorkos.ai and receive updates.
-          Linking is independent of local login.
-        </p>
-      </div>
-
+      {signedOut}
       <FieldCard>
         <FieldCardContent>
-          <CloudLinkBody
-            view={view}
-            start={start}
-            unlink={unlink}
-            starting={starting}
-            unlinking={unlinking}
-            startError={startError}
-          />
+          <CloudLinkBody view={view} start={start} starting={starting} startError={startError} />
         </FieldCardContent>
       </FieldCard>
     </div>
@@ -85,27 +104,21 @@ export function CloudLinkPanel() {
 }
 
 interface BodyProps {
-  view: CloudLinkView;
+  view: Exclude<CloudLinkView, { kind: 'loading' } | { kind: 'linked' }>;
   start: () => Promise<void>;
-  unlink: () => Promise<void>;
   starting: boolean;
-  unlinking: boolean;
   startError: string | null;
 }
 
-/** Render the state-specific body for the current {@link CloudLinkView}. */
-function CloudLinkBody({ view, start, unlink, starting, unlinking, startError }: BodyProps) {
+/** Render the state-specific body for a not-yet-linked {@link CloudLinkView}. */
+function CloudLinkBody({ view, start, starting, startError }: BodyProps) {
   switch (view.kind) {
-    case 'loading':
-      return <Skeleton className="h-9 w-40" />;
     case 'idle':
       return <IdleState start={start} starting={starting} startError={startError} />;
     case 'pending':
       // Keyed by the code so a fresh code starts a fresh countdown and clears
       // any error left over from the last one.
       return <PendingState key={view.userCode} view={view} />;
-    case 'linked':
-      return <LinkedState view={view} unlink={unlink} unlinking={unlinking} />;
     case 'expired':
       return (
         <RecoveryState
@@ -129,8 +142,8 @@ function CloudLinkBody({ view, start, unlink, starting, unlinking, startError }:
     case 'revoked':
       return (
         <RecoveryState
-          title="This instance was unlinked"
-          description="DorkOS revoked this instance’s access. Link again to reconnect it to your account."
+          title="This computer was unlinked"
+          description="DorkOS revoked this computer’s access. Link again to reconnect it to your account."
           actionLabel="Link again"
           onAction={start}
           pending={starting}
@@ -200,10 +213,6 @@ function IdleState({
 
   return (
     <div className="space-y-4">
-      <p className="text-muted-foreground text-sm">
-        This instance is not linked to a DorkOS account.
-      </p>
-
       <div className="flex items-start gap-2.5">
         <Checkbox
           id={checkboxId}
@@ -224,7 +233,7 @@ function IdleState({
 
       <Button onClick={() => void handleLink()} disabled={busy}>
         {busy ? <Spinner className="mr-1.5" /> : <Link2 className="mr-1.5 size-(--size-icon-sm)" />}
-        {busy ? 'Starting…' : 'Link this instance'}
+        {busy ? 'Starting…' : 'Link this computer'}
       </Button>
       {(consentError ?? startError) && (
         <p className="text-destructive text-sm" role="alert">
@@ -327,52 +336,51 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
   );
 }
 
-/** Linked — show the account, last sync, and the unlink action. */
-function LinkedState({
-  view,
-  unlink,
-  unlinking,
-}: {
-  view: Extract<CloudLinkView, { kind: 'linked' }>;
-  unlink: () => Promise<void>;
-  unlinking: boolean;
-}) {
+/** Linked — who this computer is signed in as, and when it last heard from the account. */
+function LinkedLine({ view }: { view: Extract<CloudLinkView, { kind: 'linked' }> }) {
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="size-2 shrink-0 rounded-full bg-green-500" aria-hidden />
-            <p className="text-sm font-medium">Linked</p>
-          </div>
-          {view.accountLabel ? (
-            <p className="text-foreground truncate text-sm">{view.accountLabel}</p>
-          ) : (
-            <p className="text-muted-foreground text-sm">Syncing account…</p>
-          )}
-          {view.lastHeartbeatAt && (
-            <p className="text-muted-foreground text-xs">
-              Last synced {formatRelativeTime(view.lastHeartbeatAt).toLowerCase()}
-            </p>
-          )}
-        </div>
-
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={unlinking}
-              aria-label="Unlink this instance"
-            >
-              <Unplug className={cn('mr-1.5 size-3.5', unlinking && 'animate-pulse')} />
-              {unlinking ? 'Unlinking…' : 'Unlink'}
-            </Button>
-          </AlertDialogTrigger>
-          <UnlinkConfirm unlink={unlink} />
-        </AlertDialog>
-      </div>
+    <div className="min-w-0 space-y-1">
+      <p className="text-sm font-medium">Signed in</p>
+      {view.accountLabel ? (
+        <p className="text-foreground truncate text-sm">{view.accountLabel}</p>
+      ) : (
+        <p className="text-muted-foreground text-sm">Syncing account…</p>
+      )}
+      {view.lastHeartbeatAt && (
+        <p className="text-muted-foreground text-xs">
+          Last synced {formatRelativeTime(view.lastHeartbeatAt).toLowerCase()}
+        </p>
+      )}
     </div>
+  );
+}
+
+/** The last thing on the signed-in page: taking this computer off the account. */
+function UnlinkSection({ unlink, unlinking }: { unlink: () => Promise<void>; unlinking: boolean }) {
+  return (
+    <FieldCard>
+      <FieldCardContent>
+        <SettingRow
+          label="Unlink this computer"
+          description="This computer stops using your DorkOS account. You can link it again at any time."
+        >
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={unlinking}
+                aria-label="Unlink this computer"
+              >
+                <Unplug className={cn('mr-1.5 size-3.5', unlinking && 'animate-pulse')} />
+                {unlinking ? 'Unlinking…' : 'Unlink'}
+              </Button>
+            </AlertDialogTrigger>
+            <UnlinkConfirm unlink={unlink} />
+          </AlertDialog>
+        </SettingRow>
+      </FieldCardContent>
+    </FieldCard>
   );
 }
 
@@ -388,10 +396,9 @@ function UnlinkConfirm({ unlink }: { unlink: () => Promise<void> }) {
   return (
     <AlertDialogContent>
       <AlertDialogHeader>
-        <AlertDialogTitle>Unlink this instance?</AlertDialogTitle>
+        <AlertDialogTitle>Unlink this computer?</AlertDialogTitle>
         <AlertDialogDescription>
-          This instance will stop reporting to your DorkOS account. You can link it again at any
-          time.
+          This computer will stop using your DorkOS account. You can link it again at any time.
         </AlertDialogDescription>
       </AlertDialogHeader>
       {connections.isPending ? (

@@ -302,7 +302,7 @@ describe('AgentRequestCard — no account yet', () => {
     // Equal choices: the same weight, neither pressed on the person.
     expect(relink.className).toBe(key.className);
     await user.click(relink);
-    expect(openSettings).toHaveBeenCalledWith('access', 'account');
+    expect(openSettings).toHaveBeenCalledWith('account');
   });
 
   it('answers "Not now" as a denial', async () => {
