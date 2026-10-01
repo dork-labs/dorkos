@@ -28,6 +28,7 @@ import {
   heldCreditsToken,
   creditsWiringReport,
   primeCreditsInferenceGated,
+  revokeHeldCreditsToken,
   primeCreditsInferenceWithContext,
 } from '../credits-inference.js';
 
@@ -256,6 +257,35 @@ describe('authoritative Cloud identity for credits', () => {
     expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
     expect(JSON.stringify(warn.mock.calls)).not.toContain(canary);
     warn.mockRestore();
+  });
+
+  it('revokes the held token under the link that minted it, and drops it (unlink)', async () => {
+    const fetch = fakeCloud((url) =>
+      answer(
+        url.pathname === '/v1/session'
+          ? session
+          : url.pathname.endsWith('/revoke')
+            ? { revoked: true }
+            : tokenFixture
+      )
+    );
+    expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(true);
+    await revokeHeldCreditsToken();
+    const revoke = fetch.mock.calls.find(([url]) => new URL(url).pathname.endsWith('/revoke'));
+    expect(revoke && new URL(revoke[0]).pathname).toBe('/v1/inference/tokens/it_0001/revoke');
+    expect(revoke?.[1].headers).toMatchObject({ authorization: 'Bearer token-A' });
+    expect(heldCreditsToken()).toBeNull();
+  });
+
+  it('drops the token even when the revoke fails', async () => {
+    fakeCloud((url) => answer(url.pathname === '/v1/session' ? session : tokenFixture));
+    expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('offline')))
+    );
+    await revokeHeldCreditsToken();
+    expect(heldCreditsToken()).toBeNull();
   });
 
   it('makes no request while the kill switch is on', async () => {

@@ -166,8 +166,8 @@ export interface CloudCreditsStatus {
   /** Per-runtime state, derived from what each runtime declares. */
   runtimes: Record<'claude-code' | 'opencode' | 'codex', CloudCreditsRuntimeState>;
   /**
-   * The runtimes whose default is DorkOS credits, and who chose that. Absent
-   * runtimes run on their own sign-in by default.
+   * Each runtime's recorded choice, and who made it. A runtime with no record
+   * runs on its own sign-in by default.
    */
   defaults?: Partial<Record<string, CloudCreditsChoice>>;
   /** Notices the app owes the person, each shown until they act on it. */
@@ -176,12 +176,14 @@ export interface CloudCreditsStatus {
 
 /**
  * Who made a credits choice: `default` when DorkOS filled a gap on a new link
- * (a runtime with no working sign-in), `user` when a person picked it.
+ * (a runtime with no sign-in at all), `user` when a person chose.
  */
 export type CloudCreditsChosenBy = 'default' | 'user';
 
-/** One runtime's credits default, as `GET /api/cloud/credits` reports it. */
+/** One runtime's recorded choice, as `GET /api/cloud/credits` reports it. */
 export interface CloudCreditsChoice {
+  /** What new work on the runtime runs on by default. */
+  runsOn: 'credits' | 'own-sign-in';
   /** Who chose it. */
   chosenBy: CloudCreditsChosenBy;
 }
@@ -190,7 +192,7 @@ export interface CloudCreditsChoice {
  * A notice about credits the person is owed, each dismissible:
  *
  * - `filled`: a new link set these runtimes to credits because none had a
- *   working sign-in. Offers Change and Undo all.
+ *   sign-in at all. Offers Change and Undo all.
  * - `offer`: this computer was linked before credits were a choice, so nothing
  *   was switched; credits are offered once.
  * - `signed-in`: a runtime DorkOS set to credits now has a working sign-in of

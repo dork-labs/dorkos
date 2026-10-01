@@ -51,7 +51,11 @@ import {
   isAccountColor,
 } from '@dorkos/shared/account-usage';
 import { creditsClaudeRoot, isCreditsClaudeRoot } from './credits-root.js';
-import { creditsIsDefaultFor, readCreditsSettings } from '../../core/cloud/credits-defaults.js';
+import {
+  creditsAllowedForAgent,
+  creditsIsDefaultFor,
+  readCreditsSettings,
+} from '../../core/cloud/credits-defaults.js';
 import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
@@ -389,6 +393,8 @@ export type LaunchAccountResolution =
  * @param opts - The ladder's inputs.
  * @param opts.hintId - Registry id from this send's launch hint, if any.
  * @param opts.agentAccountId - Registry id from the agent's manifest, if any.
+ * @param opts.agentId - The agent's id, which decides whether its file may name
+ *   DorkOS credits (only an agent a person allowed onto credits in the app).
  * @param opts.project - The launch's project, or null for a folder in no project.
  * @param opts.config - Config reader (defaults to the module singleton).
  * @returns The folder and account this launch uses, or the refusal.
@@ -396,6 +402,7 @@ export type LaunchAccountResolution =
 export function resolveLaunchAccountRoot(opts: {
   hintId?: string | undefined;
   agentAccountId?: string | undefined;
+  agentId?: string | undefined;
   project: ProjectRef | null;
   config?: ConfigReader;
 }): LaunchAccountResolution {
@@ -418,6 +425,18 @@ export function resolveLaunchAccountRoot(opts: {
     // named choice that cannot be honoured is refused at launch, never moved
     // onto somebody's own sign-in (ADR 261001-000811).
     if (id === CREDITS_ACCOUNT_ID) {
+      // An agent's own file may name credits, but only a person can put an
+      // agent on them: the file is honoured only for an agent a person allowed
+      // in the app. Otherwise it is ignored and the next rule decides.
+      if (source === 'agent manifest' && !creditsAllowedForAgent(opts.agentId, config)) {
+        logger.warn(
+          '[claude-config-dir] agent file names DorkOS credits nobody allowed; ignoring',
+          {
+            agentId: opts.agentId,
+          }
+        );
+        continue;
+      }
       const verdict = accountEligibility(config, 'claude-code', CREDITS_ACCOUNT_ID, project);
       if (!verdict.eligible)
         return { ok: false, error: refusalFor(config, CREDITS_ACCOUNT_ID, project, verdict) };
@@ -891,13 +910,16 @@ function describeCreditsEntry(
   config: ConfigReader,
   available: boolean
 ): NonNullable<NonNullable<ServerConfig['claudeCode']>['credits']> {
-  const choice = readCreditsSettings(config).defaults['claude-code'];
+  const settings = readCreditsSettings(config);
+  const choice = settings.defaults['claude-code'];
+  const onCredits = choice?.runsOn === 'credits';
   return {
     id: CREDITS_ACCOUNT_ID,
     path: creditsClaudeRoot(),
     available,
-    isDefault: choice !== undefined,
-    ...(choice ? { chosenBy: choice.chosenBy } : {}),
+    isDefault: onCredits,
+    ...(onCredits ? { chosenBy: choice.chosenBy } : {}),
+    allowedAgents: settings.agents,
   };
 }
 

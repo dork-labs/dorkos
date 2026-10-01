@@ -1922,19 +1922,26 @@ export const DefaultAccountColorSchema = z
   .nullable();
 
 /**
- * One runtime's DorkOS credits default (ADR 261001-000811): new work on that
- * runtime runs on credits when nothing more specific (a session's own pick, its
- * agent, a project rule) names an account.
+ * One runtime's recorded Runs on choice about DorkOS credits (ADR
+ * 261001-000811): new work on that runtime runs on credits when the record says
+ * `credits` and nothing more specific (a session's own pick, its agent) names
+ * an account. A project rule can block credits; it never chooses them.
+ *
+ * `own-sign-in` is a recorded "no": the person turned credits off, or undid a
+ * choice DorkOS made. A new link fills gaps only where NO record exists, so a
+ * "no" is never overridden.
  *
  * Kept here rather than in the runtime's `defaultAccount`, on purpose: that
  * field names the person's OWN sign-in, which is what turning credits off
  * returns to, and what flow's CLI reads as the runtime's default account. A
- * credits default must never change either.
+ * credits choice must never change either.
  */
 export const CloudCreditsDefaultSchema = z.object({
+  /** What new work on this runtime runs on by default. */
+  runsOn: z.enum(['credits', 'own-sign-in']),
   /**
-   * `default` when DorkOS set it on a new link because the runtime had no
-   * working sign-in; `user` when a person chose it.
+   * `default` when DorkOS set credits on a new link because the runtime had no
+   * sign-in at all; `user` when a person chose.
    */
   chosenBy: z.enum(['default', 'user']),
   /** Whether the person has seen the notice that DorkOS made this choice. */
@@ -1946,18 +1953,19 @@ export const CloudCreditsDefaultSchema = z.object({
   signInReoffered: z.boolean().default(false),
 });
 
-/** One runtime's credits default. See {@link CloudCreditsDefaultSchema}. */
+/** One runtime's credits choice. See {@link CloudCreditsDefaultSchema}. */
 export type CloudCreditsDefault = z.infer<typeof CloudCreditsDefaultSchema>;
 
 /**
  * The person's DorkOS credits choices (`cloud.credits`, ADR 261001-000811).
  * Written only by the server: a person's pick in Runs on, the fill-the-gaps
- * step of a NEW link, and the dismissals of the notices about those.
+ * step of a NEW link, an agent a person allowed onto credits, and the
+ * dismissals of the notices about those.
  */
 export const CloudCreditsSettingsSchema = z.object({
   /**
-   * Runtime type → its credits default. A runtime with no entry runs new work
-   * on its own sign-in by default.
+   * Runtime type → its recorded choice. A runtime with no record runs new work
+   * on its own sign-in and is a gap a new link may fill.
    */
   defaults: z.record(z.string(), CloudCreditsDefaultSchema).default({}),
   /**
@@ -1966,6 +1974,18 @@ export const CloudCreditsSettingsSchema = z.object({
    * `dismissed` after, `none` when it was never owed (a new link, or no link).
    */
   offer: z.enum(['none', 'pending', 'dismissed']).default('none'),
+  /**
+   * The ids of agents a person allowed onto credits in the app. An agent's own
+   * file naming `dorkos-credits` puts it on credits only when its id is here,
+   * so a cloned or agent-written file can never start spending.
+   */
+  agents: z.array(z.string()).default([]),
+  /**
+   * The DorkOS account these choices were made under (its id, else its org's),
+   * or `null` while unknown. A link to a different account starts over; a
+   * relink to the same one keeps every choice.
+   */
+  linkedTo: z.string().nullable().default(null),
 });
 
 /** The `cloud.credits` block. See {@link CloudCreditsSettingsSchema}. */
@@ -3446,14 +3466,19 @@ export const UserConfigSchema = z.object({
        * Which runtimes run new work on DorkOS credits by default, and who chose
        * that (ADR 261001-000811). See {@link CloudCreditsSettingsSchema}.
        */
-      credits: CloudCreditsSettingsSchema.default(() => ({ defaults: {}, offer: 'none' as const })),
+      credits: CloudCreditsSettingsSchema.default(() => ({
+        defaults: {},
+        offer: 'none' as const,
+        agents: [],
+        linkedTo: null,
+      })),
     })
     .default(() => ({
       instanceToken: null,
       instanceName: null,
       linkedAccountLabel: null,
       previousLinkProof: null,
-      credits: { defaults: {}, offer: 'none' as const },
+      credits: { defaults: {}, offer: 'none' as const, agents: [], linkedTo: null },
     })),
   /**
    * Connector gateway settings (connector-completion spec). `rawMcpServers`

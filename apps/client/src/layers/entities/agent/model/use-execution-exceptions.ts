@@ -148,6 +148,9 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
       ? [{ id: CREDITS_ACCOUNT_ID, label: CREDITS_ACCOUNT_LABEL }]
       : []),
   ];
+  // An agent whose own file names credits that no person allowed runs on the
+  // next rule instead, so for it credits are not a known choice.
+  const creditsAllowed = new Set(config?.claudeCode?.credits?.allowedAgents ?? []);
 
   /** The model the server default supplies for one runtime, if it supplies one. */
   const serverModelFor = (runtime: string) =>
@@ -230,7 +233,10 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
       // Read on BOTH surfaces, unlike the catalogs above: the registry is
       // already in hand from `GET /api/config`, so a billing override costs no
       // request and the sidebar can see it too.
-      knownAccounts,
+      knownAccounts:
+        agent.account === CREDITS_ACCOUNT_ID && !creditsAllowed.has(agent.id)
+          ? knownAccounts?.filter((account) => account.id !== CREDITS_ACCOUNT_ID)
+          : knownAccounts,
       accountsUnavailable,
       // Only a model actually found in the catalog can say whether it takes an
       // effort. A model that is missing is already reported as missing, and

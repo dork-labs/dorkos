@@ -977,3 +977,37 @@ describe('ClaudeCodeRuntime — the account two sessions share', () => {
     }
   });
 });
+
+// ADR 261001-000811: a credits token refused partway through a turn is a
+// credits problem. It surfaces as the credits card's error, never as "sign in
+// to Claude again" (which would also raise a sign-in notification).
+describe('a credits turn whose token is refused partway through', () => {
+  it('ends with the credits card, not a Claude sign-in error', async () => {
+    __setCreditsStateForTests({
+      token: { ...CREDITS_TOKEN_FIXTURE, expiresAt: '2999-01-01T00:00:00.000Z' },
+    });
+    mockedQuery.mockImplementationOnce(
+      () => wrapSdkQuery(sdkError(CLAUDE_VENDOR_AUTH_TEXT)) as unknown as ReturnType<typeof query>
+    );
+    try {
+      const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
+      const events = [];
+      for await (const event of runtime.sendMessage(sessionId, 'conformance ping', {
+        cwd: '/projects/conformance',
+        accountHint: 'dorkos-credits',
+      })) {
+        events.push(event);
+      }
+      const errors = events.filter((event) => event.type === 'error');
+      expect(errors.length).toBeGreaterThan(0);
+      for (const error of errors) {
+        expect((error.data as { code?: string }).code).toBe('credits_unavailable');
+        expect((error.data as { category?: string }).category).not.toBe('auth_error');
+      }
+    } finally {
+      __setCreditsStateForTests({ token: null });
+    }
+  });
+});

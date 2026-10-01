@@ -23,6 +23,7 @@ import type { AgentSession } from '../../agent-types.js';
 import { __setCreditsStateForTests } from '../../../../core/cloud/credits-inference.js';
 import { creditsClaudeRoot } from '../../credits-root.js';
 import { resolveClaudeCredentialEnv } from '../../../../core/credential-env.js';
+import { configManager } from '../../../../core/config-manager.js';
 
 const link = vi.hoisted(() => ({ linked: true }));
 
@@ -61,7 +62,7 @@ vi.mock('../../../../core/cloud/v1-client.js', () => ({
 }));
 
 const token = InferenceTokenSchema.parse(tokenFixture);
-const liveClock = () => Date.parse(token.expiresAt) - 60_000;
+const liveClock = () => Date.parse(token.expiresAt) - 60 * 60_000;
 
 let dorkHome: string;
 
@@ -77,12 +78,12 @@ function makeSession(accountRoot?: string): AgentSession {
   };
 }
 
-const opts: MessageSenderOpts = { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
-
 /** Drive one turn; hand back what the SDK was launched with (or nothing) and the events. */
 async function launch(
-  session: AgentSession
+  session: AgentSession,
+  cwd = '/mock/project'
 ): Promise<{ options: Options | undefined; events: StreamEvent[] }> {
+  const opts: MessageSenderOpts = { cwd, onSdkSessionRebind: async () => {} };
   let options: Options | undefined;
   vi.mocked(query).mockImplementation((args) => {
     options = args.options;
@@ -119,19 +120,103 @@ describe('who pays for a Claude Code turn', () => {
     expect(fs.existsSync(path.join(creditsClaudeRoot(), 'projects'))).toBe(true);
   });
 
-  it('strips the person’s own key and every route around the endpoint from a credits turn', async () => {
+  it('builds a credits turn’s process env from an allowlist: no key, route or backend credential survives', async () => {
+    // Even names the person explicitly inherits: a credits turn keeps none of them.
+    vi.mocked(configManager.get).mockImplementation(((key: string) =>
+      key === 'runtimes'
+        ? {
+            environment: {
+              inherit: {
+                claudeCode: [
+                  'CLAUDE_CODE_USE_ANTHROPIC_AWS',
+                  'ANTHROPIC_AWS_API_KEY',
+                  'CLAUDE_CODE_USE_GATEWAY',
+                  'CLAUDE_CODE_USE_MANTLE',
+                  'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD',
+                ],
+              },
+            },
+          }
+        : undefined) as never);
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-person-own');
     vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'oauth-person-own');
     vi.stubEnv('CLAUDE_CODE_USE_BEDROCK', '1');
+    vi.stubEnv('AWS_BEARER_TOKEN_BEDROCK', 'aws-own');
+    vi.stubEnv('CLAUDE_CODE_USE_ANTHROPIC_AWS', '1');
+    vi.stubEnv('ANTHROPIC_AWS_API_KEY', 'aws-api-own');
+    vi.stubEnv('CLAUDE_CODE_USE_GATEWAY', '1');
+    vi.stubEnv('CLAUDE_CODE_USE_MANTLE', '1');
+    vi.stubEnv('CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD', '1');
     vi.mocked(resolveClaudeCredentialEnv).mockResolvedValue({ ANTHROPIC_API_KEY: 'sk-stored' });
-    const { options } = await launch(makeSession(creditsClaudeRoot()));
-    const env = options?.env ?? {};
-    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
-    expect(env.CLAUDE_CODE_USE_BEDROCK).toBeUndefined();
-    expect(env.ANTHROPIC_AUTH_TOKEN).toBe(token.token);
-    // The stored key is never even resolved for a credits turn.
-    expect(resolveClaudeCredentialEnv).not.toHaveBeenCalled();
+    try {
+      const { options } = await launch(makeSession(creditsClaudeRoot()));
+      const env = options?.env ?? {};
+      for (const name of Object.keys(env)) {
+        expect(name, `${name} survived into a credits turn`).not.toMatch(
+          /^(CLAUDE_CODE_USE_|AWS_|ANTHROPIC_API_KEY|ANTHROPIC_AWS|CLAUDE_CODE_OAUTH)/
+        );
+      }
+      expect(env.ANTHROPIC_AUTH_TOKEN).toBe(token.token);
+      // And the launch's own settings blank every routing switch above a folder's.
+      const settingsEnv = (options?.settings as { env?: Record<string, string> }).env ?? {};
+      for (const name of [
+        'CLAUDE_CODE_USE_BEDROCK',
+        'CLAUDE_CODE_USE_ANTHROPIC_AWS',
+        'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD',
+        'CLAUDE_CODE_USE_MANTLE',
+        'CLAUDE_CODE_USE_GATEWAY',
+        'ANTHROPIC_API_KEY',
+        'ANTHROPIC_AWS_API_KEY',
+      ]) {
+        expect(settingsEnv[name], name).toBe('');
+      }
+      expect(settingsEnv.ANTHROPIC_BASE_URL).toBe(token.endpoints.anthropicMessages);
+      // The token never rides the settings: they are passed on the command line.
+      expect(JSON.stringify(options?.settings)).not.toContain(token.token);
+      // The stored key is never even resolved for a credits turn.
+      expect(resolveClaudeCredentialEnv).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(configManager.get).mockReturnValue(undefined as never);
+    }
+  });
+
+  it('blanks every variable a folder’s settings set, beyond a short safe list', async () => {
+    const folder = path.join(dorkHome, 'folder');
+    fs.mkdirSync(path.join(folder, '.claude'), { recursive: true });
+    fs.writeFileSync(
+      path.join(folder, '.claude', 'settings.json'),
+      JSON.stringify({
+        env: { ANTHROPIC_BASE_URL: 'http://folder', SOME_ROUTE: 'x', MAX_THINKING_TOKENS: '9' },
+      })
+    );
+    const { options } = await launch(makeSession(creditsClaudeRoot()), folder);
+    const settingsEnv = (options?.settings as { env?: Record<string, string> }).env ?? {};
+    expect(settingsEnv.ANTHROPIC_BASE_URL).toBe(token.endpoints.anthropicMessages);
+    expect(settingsEnv.SOME_ROUTE).toBe('');
+    expect(settingsEnv).not.toHaveProperty('MAX_THINKING_TOKENS');
+  });
+
+  it.each([
+    ['its own token', { env: { ANTHROPIC_AUTH_TOKEN: 'folder-token' } }],
+    ['a key helper', { apiKeyHelper: 'echo folder-key' }],
+  ])('refuses a credits turn in a folder whose settings name %s', async (_name, settings) => {
+    const folder = path.join(dorkHome, 'signed-folder');
+    fs.mkdirSync(path.join(folder, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(folder, '.claude', 'settings.local.json'), JSON.stringify(settings));
+    const { events } = await launch(makeSession(creditsClaudeRoot()), folder);
+    expect(query).not.toHaveBeenCalled();
+    expect(events[0]).toMatchObject({
+      type: 'error',
+      data: {
+        code: 'credits_unavailable',
+        message: expect.stringContaining('name their own sign-in'),
+      },
+    });
+  });
+
+  it('gives a turn on the person’s own sign-in no flag settings env at all', async () => {
+    const { options } = await launch(makeSession(path.join(dorkHome, 'own-claude')));
+    expect((options?.settings as { env?: unknown } | undefined)?.env).toBeUndefined();
   });
 
   it('refuses a credits session with no live token, and launches nothing (fail closed)', async () => {

@@ -518,7 +518,7 @@ describe('ConfigManager', () => {
       instanceName: null,
       linkedAccountLabel: null,
       previousLinkProof: null,
-      credits: { defaults: {}, offer: 'none' },
+      credits: { defaults: {}, offer: 'none', agents: [], linkedTo: null },
     });
   });
 
@@ -6241,6 +6241,7 @@ describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
     // this body is the only thing that writes the leaf (see the skill's note).
     // Suppress the body and this goes red.
     const onDisk = upgrade(link);
+    // The rest of the block (`agents`, `linkedTo`) is the schema's default on read.
     expect(onDisk.cloud.credits).toEqual({ defaults: {}, offer: 'pending' });
     expect(onDisk.cloud.instanceToken).toBe('ik_live');
   });
@@ -6251,7 +6252,10 @@ describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
   });
 
   it('is idempotent and never overwrites a choice already recorded', () => {
-    const credits = { defaults: { 'claude-code': { chosenBy: 'user' } }, offer: 'dismissed' };
+    const credits = {
+      defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'user' } },
+      offer: 'dismissed',
+    };
     const store = createMockStore({ cloud: { ...link, credits } });
     seedCloudCreditsChoices(store);
     seedCloudCreditsChoices(store);

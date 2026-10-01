@@ -15,6 +15,7 @@ import {
 } from '@/layers/shared/lib';
 import { useClaudeAccounts, useIsMobile } from '@/layers/shared/model';
 import {
+  Button,
   ProvenanceChip,
   ResponsivePopover,
   ResponsivePopoverContent,
@@ -309,6 +310,13 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   // inheriting" rather than as a value (same rule as model and effort above).
   const accountId = agent.account ?? null;
   const accountIsSetHere = accountId !== null;
+  // An agent whose file names credits that no person allowed in the app: its
+  // turns ignore the pick (the server's ladder), and the row says so.
+  const creditsNotAllowed =
+    runtime === 'claude-code' &&
+    accountId === CREDITS_ACCOUNT_ID &&
+    config?.claudeCode?.credits !== undefined &&
+    !config.claudeCode.credits.allowedAgents.includes(agent.id);
   // The account a new session would bill to with nothing set here — already
   // resolved by the server, because the client cannot compute it.
   const serverDefaultAccount =
@@ -500,12 +508,14 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
         <ExecutionRow
           label="Account"
           valueLabel={
-            accountId !== null
-              ? // The registry's name where the id still resolves, the raw id
-                // where it does not — a row about a broken reference that hid
-                // the reference would be unfixable.
-                (knownAccounts?.find((a) => a.id === accountId)?.label ?? accountId)
-              : (serverDefaultAccount ?? 'Default')
+            creditsNotAllowed
+              ? (serverDefaultAccount ?? 'Default')
+              : accountId !== null
+                ? // The registry's name where the id still resolves, the raw id
+                  // where it does not — a row about a broken reference that hid
+                  // the reference would be unfixable.
+                  (knownAccounts?.find((a) => a.id === accountId)?.label ?? accountId)
+                : (serverDefaultAccount ?? 'Default')
           }
           options={(knownAccounts ?? []).map((account) => ({
             value: account.id,
@@ -527,6 +537,29 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
           testId="agent-account-row"
           className="col-span-full"
         />
+      )}
+      {creditsNotAllowed && (
+        // The agent's own file names DorkOS credits, but no person allowed it,
+        // so it runs on the next rule (ADR 261001-000811). One calm line and
+        // the one action that settles it.
+        <div
+          className="text-muted-foreground col-span-full flex flex-wrap items-center gap-2 text-xs"
+          data-testid="agent-credits-not-allowed"
+        >
+          <span>
+            This agent’s settings ask to run on DorkOS credits. It uses your default until you allow
+            it.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-xs"
+            disabled={updateAgent.isPending}
+            onClick={() => writeAccount(CREDITS_ACCOUNT_ID)}
+          >
+            Allow
+          </Button>
+        </div>
       )}
     </div>
   );

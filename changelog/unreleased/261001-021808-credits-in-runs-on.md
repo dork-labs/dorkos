@@ -1,12 +1,14 @@
 ---
 covers:
   - 'feat(credits): make DorkOS credits one more choice in Runs on, never a silent switch (DOR-2623)'
+  - 'fix(credits): pin the credits endpoint above folder settings, respect "no", gate agent files (DOR-2623)'
 ---
 
 ### Added
 
-- Choose DorkOS credits in the same places you choose a Claude account: Settings › Runtimes › **Runs on**, an agent's Runs on, the account chip before a chat's first message, and **Continue on another account**. Settings › Access › DorkOS account has one switch per runtime credits can pay for (DOR-2623)
-- If you link a DorkOS account while Claude Code has no working sign-in, new Claude Code chats run on credits, and DorkOS tells you once, with **Change** and **Undo all**. If you sign in to Claude Code later, DorkOS offers once to switch back. A computer that was already linked keeps everything as it was and gets one offer you can turn down (DOR-2623)
+- Choose DorkOS credits in the same places you choose a Claude account: Settings › Runtimes › **Runs on**, an agent's Runs on, the account chip before a chat's first message, and **Continue on another account**. Settings › DorkOS account has one switch per runtime credits can pay for (DOR-2623)
+- If you link a DorkOS account while Claude Code has no sign-in at all, new Claude Code chats run on credits, and DorkOS tells you once, with **Change** and **Undo all**. If you sign in to Claude Code later, DorkOS offers once to switch back. Turning credits off is remembered, and a sign-in that has expired is never replaced with credits. A computer that was already linked keeps everything as it was and gets one offer you can turn down (DOR-2623)
+- An agent runs on DorkOS credits only when you choose that in the app. If an agent's own settings file asks for credits, the agent row says so and offers **Allow** (DOR-2623)
 
 ### Changed
 
@@ -15,5 +17,5 @@ covers:
 
 ### Fixed
 
-- A chat set to DorkOS credits now stops and says so when credits can't be reached, with **Retry** and **Use your Claude Code sign-in**. It never quietly runs on your own sign-in instead, and a chat on your own sign-in never uses credits (DOR-2623)
-- DorkOS credits keep working after a restart, and an expiring credits token is replaced before a chat needs it (DOR-2623)
+- A chat set to DorkOS credits now stops and says so when credits can't be reached, with **Retry** and **Use your Claude Code sign-in**. It never quietly runs on your own sign-in instead, and a chat on your own sign-in never uses credits. A folder's own Claude Code settings can't send your credits anywhere else (DOR-2623)
+- DorkOS credits keep working after a restart, and an expiring credits token is replaced before a chat needs it. Unlinking your DorkOS account stops anything running on credits right away (DOR-2623)

@@ -1217,7 +1217,13 @@ describe('ClaudeAccountsSection — DorkOS credits in Runs on (ADR 261001-000811
       inherited: false,
       resolvedAccountId: 'personal',
       accounts: [PERSONAL],
-      credits: { id: 'dorkos-credits', path: CREDITS_PATH, available: true, isDefault: false },
+      credits: {
+        id: 'dorkos-credits',
+        path: CREDITS_PATH,
+        allowedAgents: [],
+        available: true,
+        isDefault: false,
+      },
     });
     await screen.findByRole('combobox', { name: 'Default account' });
     await chooseOption(user, 'DorkOS credits');
@@ -1234,7 +1240,13 @@ describe('ClaudeAccountsSection — DorkOS credits in Runs on (ADR 261001-000811
       resolvedAccount: HOME,
       inherited: true,
       accounts: [PERSONAL],
-      credits: { id: 'dorkos-credits', path: CREDITS_PATH, available: false, isDefault: false },
+      credits: {
+        id: 'dorkos-credits',
+        path: CREDITS_PATH,
+        allowedAgents: [],
+        available: false,
+        isDefault: false,
+      },
     });
     await user.click(await screen.findByRole('combobox', { name: 'Default account' }));
     const listbox = await screen.findByRole('listbox');
@@ -1251,6 +1263,7 @@ describe('ClaudeAccountsSection — DorkOS credits in Runs on (ADR 261001-000811
       credits: {
         id: 'dorkos-credits',
         path: CREDITS_PATH,
+        allowedAgents: [],
         available: true,
         isDefault: true,
         chosenBy: 'default',
@@ -1281,6 +1294,7 @@ describe('ClaudeAccountsSection — DorkOS credits in Runs on (ADR 261001-000811
       credits: {
         id: 'dorkos-credits',
         path: CREDITS_PATH,
+        allowedAgents: [],
         available: false,
         isDefault: true,
         chosenBy: 'user',

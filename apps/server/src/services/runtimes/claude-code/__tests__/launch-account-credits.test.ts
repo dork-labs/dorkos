@@ -62,7 +62,10 @@ function fakeConfig(
   };
 }
 
-const CREDITS_DEFAULT = { defaults: { 'claude-code': { chosenBy: 'user' } }, offer: 'none' };
+const CREDITS_DEFAULT = {
+  defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'user' } },
+  offer: 'none',
+};
 
 describe('credits in the launch ladder', () => {
   it('a session that picks credits runs in the credits folder', () => {
@@ -74,13 +77,40 @@ describe('credits in the launch ladder', () => {
     expect(launch).toEqual({ ok: true, root: creditsClaudeRoot(), accountId: CREDITS_ACCOUNT_ID });
   });
 
-  it('an agent pinned to credits runs on credits, under a session hint that names none', () => {
+  it('an agent a person allowed onto credits runs on them', () => {
     const launch = resolveLaunchAccountRoot({
       agentAccountId: CREDITS_ACCOUNT_ID,
+      agentId: 'agent-1',
       project: null,
-      config: fakeConfig(),
+      config: fakeConfig({}, { defaults: {}, offer: 'none', agents: ['agent-1'] }),
     });
     expect(launch.ok && launch.accountId).toBe(CREDITS_ACCOUNT_ID);
+  });
+
+  it('ignores an agent file naming credits that no person allowed, and falls through', () => {
+    for (const agentId of ['agent-2', undefined]) {
+      const launch = resolveLaunchAccountRoot({
+        agentAccountId: CREDITS_ACCOUNT_ID,
+        agentId,
+        project: null,
+        config: fakeConfig(
+          { defaultAccount: WORK },
+          { defaults: {}, offer: 'none', agents: ['agent-1'] }
+        ),
+      });
+      expect(launch.ok && launch.root).toBe(WORK);
+    }
+  });
+
+  it('a person’s recorded no on the machine default runs on their own sign-in', () => {
+    const launch = resolveLaunchAccountRoot({
+      project: null,
+      config: fakeConfig(
+        { defaultAccount: WORK },
+        { defaults: { 'claude-code': { runsOn: 'own-sign-in', chosenBy: 'user' } }, offer: 'none' }
+      ),
+    });
+    expect(launch.ok && launch.root).toBe(WORK);
   });
 
   it('a session’s own pick beats an agent pinned to credits', () => {

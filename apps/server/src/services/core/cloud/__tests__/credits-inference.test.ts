@@ -32,7 +32,8 @@ import {
 } from '../credits-inference.js';
 
 const token = InferenceTokenSchema.parse(tokenFixture);
-const live = () => Date.parse(token.expiresAt) - 60_000;
+/** A clock an hour before the token expires: well outside the refresh margin. */
+const live = () => Date.parse(token.expiresAt) - 60 * 60_000;
 const DECLARES = { credits: { protocol: 'anthropic-messages' as const } };
 
 describe('the credits kill switch', () => {
@@ -84,6 +85,13 @@ describe('a launch that chose credits', () => {
       reason: 'unreachable',
       code: 'credits_unavailable',
       message: expect.stringContaining("Couldn't reach DorkOS credits"),
+    });
+  });
+
+  it('is never handed a token about to expire (inside the refresh margin)', async () => {
+    __setCreditsStateForTests({ token, now: () => Date.parse(token.expiresAt) - 60_000 });
+    await expect(resolveCreditsLaunchEnv(DECLARES, 'Claude Code', 0)).rejects.toMatchObject({
+      reason: 'unreachable',
     });
   });
 

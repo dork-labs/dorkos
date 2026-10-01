@@ -26,7 +26,7 @@ vi.mock('../v1-client.js', () => ({
   isCloudLinked: () => state.token !== null,
   readCloudInstanceToken: () => state.token,
   problemOf: () => null,
-  resolveCloudInstanceId: async () => 'instance-1',
+  resolveCloudIdentity: async () => ({ instanceId: 'instance-1', accountKey: null }),
   captureCloudV1Context: () =>
     state.token === null
       ? null

@@ -260,6 +260,7 @@ export class CloudLinkManager {
     ((receipt: ManagedConnectorExecutionReceipt) => void | Promise<void>) | undefined;
   private syncManagedProvider: (() => void | Promise<void>) | undefined;
   private onNewLink: (() => void | Promise<void>) | undefined;
+  private onUnlink: (() => void | Promise<void>) | undefined;
   private configPort: CloudConfigPort | undefined;
 
   private state: CloudLinkState = 'idle';
@@ -430,6 +431,11 @@ export class CloudLinkManager {
    * The revoke retains only the retiring credential and cannot affect a new link.
    */
   async unlink(): Promise<void> {
+    // Started while the link still stands, so its synchronous part captures
+    // what it needs (the credits token and the client to revoke it with)
+    // before the link is withdrawn below; awaited only at the end, so the
+    // local withdrawal stays immediate.
+    const unlinkStep = this.notifyUnlink();
     const token = this.config.getToken();
     const baseUrl = resolveCloudBaseUrl();
     this.advanceGeneration();
@@ -448,6 +454,7 @@ export class CloudLinkManager {
       : undefined;
     await reconciliation;
     await revocation;
+    await unlinkStep;
   }
 
   /** The link-flow state for `GET /api/cloud/link/status`. */
@@ -495,6 +502,25 @@ export class CloudLinkManager {
    */
   setOnNewLink(onNewLink: () => void | Promise<void>): void {
     this.onNewLink = onNewLink;
+  }
+
+  /**
+   * Attach the step that runs when this computer stops being linked: a person
+   * unlinking or the cloud refusing the key. On a person's unlink it is called
+   * before the link is cleared, and its synchronous part runs then, so it can
+   * capture what was minted under the link and revoke it afterwards.
+   */
+  setOnUnlink(onUnlink: () => void | Promise<void>): void {
+    this.onUnlink = onUnlink;
+  }
+
+  private async notifyUnlink(): Promise<void> {
+    if (!this.onUnlink) return;
+    try {
+      await this.onUnlink();
+    } catch (error) {
+      logger.warn('[CloudLink] Unlink step failed', logError(error));
+    }
   }
 
   private async notifyNewLink(): Promise<void> {
@@ -952,6 +978,9 @@ export class CloudLinkManager {
     }
     this.stopHeartbeatSchedule();
     this.clearKeepingProof();
+    // The cloud already refused the key, so nothing can be revoked under it;
+    // the unlink step still drops the credits token and stops work on it.
+    void this.notifyUnlink();
     this.lastHeartbeatAt = undefined;
     this.setState(relinkPending ? 'pending' : 'unlinked');
     void this.notifyManagedProviderSync();

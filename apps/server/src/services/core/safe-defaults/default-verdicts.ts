@@ -453,6 +453,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // that a person did not choose (ADR 261001-000811).
   'cloud.credits.defaults': {},
   'cloud.credits.offer': 'none',
+  // No agent allowed onto credits, and no account the choices belong to yet.
+  'cloud.credits.agents': [],
+  'cloud.credits.linkedTo': null,
 };
 
 /**

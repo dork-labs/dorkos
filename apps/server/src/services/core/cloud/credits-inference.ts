@@ -12,7 +12,7 @@
  * Who pays for a turn is always a choice a person made, or a default they were
  * told about. That choice lives where every other Runs on choice lives (for
  * Claude Code, the account ladder: a session's own pick, its agent's account,
- * a project rule, the machine default), never in this module. This module only
+ * the machine default; a project rule can only block credits), never in this module. This module only
  * answers ONE question for a launch that already chose credits: here is the
  * environment that makes it so, or a refusal.
  *
@@ -44,19 +44,26 @@
  *
  * @module services/core/cloud/credits-inference
  */
-import { InferenceTokenSchema, V1_ROUTES, type InferenceToken } from '@dork-labs/cloud-api';
+import {
+  InferenceTokenRevokeResponseSchema,
+  InferenceTokenSchema,
+  V1_ROUTES,
+  v1Path,
+  type InferenceToken,
+} from '@dork-labs/cloud-api';
 import { CloudApiResponseError } from '@dork-labs/cloud-api/client';
 import type { CloudCreditsRuntimeState, CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
 import type { RuntimeCapabilities, RuntimeCreditsProtocol } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
 import { creditsKilled } from './credits-availability.js';
+import { noteCreditsAccount } from './credits-defaults.js';
 import {
   captureCloudV1Context,
   isCloudLinked,
   problemOf,
   readCloudInstanceToken,
-  resolveCloudInstanceId,
+  resolveCloudIdentity,
   type CloudV1Context,
 } from './v1-client.js';
 
@@ -111,6 +118,17 @@ function live(): InferenceToken | null {
 }
 
 /**
+ * The held token when it has more than the refresh margin left, else `null`.
+ * A launch is never handed a token about to expire: a turn started on one
+ * would fail partway through, so the launch mints a fresh one first.
+ */
+function handoutable(): InferenceToken | null {
+  const token = live();
+  if (token === null) return null;
+  return Date.parse(token.expiresAt) - now() > REFRESH_MARGIN_MS ? token : null;
+}
+
+/**
  * The held token while it is live, else `null`. Never mints.
  * @internal Exported for tests; production reads it through {@link ensureCreditsToken}.
  */
@@ -162,8 +180,11 @@ export async function primeCreditsInferenceWithContext(
     return false;
   }
   try {
-    const instanceId = await resolveCloudInstanceId(context);
+    const { instanceId, accountKey } = await resolveCloudIdentity(context);
     if (!context.isCurrent() || attempt !== attemptGeneration) return false;
+    // Which account the credits choices belong to, when that was not known
+    // (a link made before it was recorded); a new link sets it itself.
+    if (accountKey !== null) noteCreditsAccount(accountKey);
     if (instanceId === null) {
       minted = null;
       return false;
@@ -283,7 +304,7 @@ export function stopCreditsLifecycle(): void {
 async function ensureCreditsToken(
   timeoutMs: number = CREDITS_LAUNCH_WAIT_MS
 ): Promise<InferenceToken | null> {
-  const held = live();
+  const held = handoutable();
   if (held) return held;
   if (creditsKilled() || !isCloudLinked()) return null;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -295,11 +316,51 @@ async function ensureCreditsToken(
   } finally {
     clearTimeout(timer);
   }
-  return live();
+  return handoutable();
+}
+
+/** How long an unlink waits for the held token's revoke before it moves on. */
+const REVOKE_WAIT_MS = 3_000;
+
+/**
+ * Drop the held token and ask the service to revoke it under the link
+ * credential that minted it. Everything it needs is captured SYNCHRONOUSLY on
+ * the call (an unlink calls it before the link is cleared), and only the
+ * request is awaited, so a token can never outlive the link it was minted
+ * under. Best effort and bounded: the local token is gone either way, and a
+ * revoke that fails or takes too long is logged without any response value.
+ */
+export async function revokeHeldCreditsToken(): Promise<void> {
+  const held = minted;
+  minted = null;
+  inflight = null;
+  attemptGeneration += 1;
+  if (held === null) return;
+  const context = captureCloudV1Context();
+  if (context === null) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      context.client.post(
+        v1Path.inferenceTokenRevoke(held.token.tokenId),
+        InferenceTokenRevokeResponseSchema,
+        { body: {} }
+      ),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, REVOKE_WAIT_MS);
+      }),
+    ]);
+  } catch (error) {
+    const status = problemOf(error)?.status ?? null;
+    logger.warn('[Cloud] Could not revoke the credits token on unlink', { status });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Why a launch that chose credits cannot have them. */
-export type CreditsUnavailableReason = 'off' | 'not-linked' | 'unreachable' | 'not-supported';
+export type CreditsUnavailableReason =
+  'off' | 'not-linked' | 'unreachable' | 'not-supported' | 'folder-sign-in' | 'stopped';
 
 /**
  * A launch chose DorkOS credits and cannot have them, so it is refused rather
@@ -341,6 +402,10 @@ function creditsRefusalSentence(reason: CreditsUnavailableReason, runtimeLabel: 
       return `${runtimeLabel} can't run on DorkOS credits yet, so nothing was sent. Use your ${runtimeLabel} sign-in.`;
     case 'unreachable':
       return `Couldn't reach DorkOS credits, so nothing was sent. Try again, or use your ${runtimeLabel} sign-in.`;
+    case 'folder-sign-in':
+      return `This folder's ${runtimeLabel} settings name their own sign-in, so it can't run on DorkOS credits and nothing was sent. Use your ${runtimeLabel} sign-in here.`;
+    case 'stopped':
+      return `DorkOS credits stopped working partway through this turn. Try again, or use your ${runtimeLabel} sign-in.`;
   }
 }
 

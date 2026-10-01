@@ -805,6 +805,10 @@ export const CONFIG_WRITE_POLICY = {
   // (ADR 261001-000811). Only a person picks it, in Runs on.
   'cloud.credits.defaults': 'operator-only',
   'cloud.credits.offer': 'operator-only',
+  // Letting an agent's file put it on credits is a person's decision; an agent
+  // writing this would allow itself to spend.
+  'cloud.credits.agents': 'operator-only',
+  'cloud.credits.linkedTo': 'operator-only',
 
   // A configured raw-MCP server becomes a tool endpoint sessions can attach —
   // an agent writing one grants itself a capability, which is exactly the line
@@ -967,6 +971,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.previousLinkProof',
       'cloud.credits.defaults',
       'cloud.credits.offer',
+      'cloud.credits.agents',
+      'cloud.credits.linkedTo',
       'runtimes.codex.credentialRef',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',

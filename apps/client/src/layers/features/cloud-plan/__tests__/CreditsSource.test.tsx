@@ -72,7 +72,9 @@ describe('CreditsSource', () => {
 
   it('says calmly when DorkOS turned credits on, and turning off goes back to the own sign-in', async () => {
     const user = userEvent.setup();
-    const transport = renderSource({ defaults: { 'claude-code': { chosenBy: 'default' } } });
+    const transport = renderSource({
+      defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'default' } },
+    });
     const toggle = await screen.findByRole('switch', {
       name: 'Use DorkOS credits for Claude Code',
     });
@@ -93,7 +95,7 @@ describe('CreditsSource', () => {
   it('announces the gaps a new link filled, with Change and Undo all', async () => {
     const user = userEvent.setup();
     const transport = renderSource({
-      defaults: { 'claude-code': { chosenBy: 'default' } },
+      defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'default' } },
       notices: [{ kind: 'filled', runtimes: ['claude-code'] }],
     });
     const notice = await screen.findByTestId('credits-notice-filled');
@@ -107,7 +109,7 @@ describe('CreditsSource', () => {
   it('opens Runs on from the announcement, and settles it', async () => {
     const user = userEvent.setup();
     const transport = renderSource({
-      defaults: { 'claude-code': { chosenBy: 'default' } },
+      defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'default' } },
       notices: [{ kind: 'filled', runtimes: ['claude-code'] }],
     });
     await screen.findByTestId('credits-notice-filled');
@@ -131,7 +133,7 @@ describe('CreditsSource', () => {
   it('re-offers the own sign-in once it works under a choice DorkOS made', async () => {
     const user = userEvent.setup();
     const transport = renderSource({
-      defaults: { 'claude-code': { chosenBy: 'default' } },
+      defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'default' } },
       notices: [{ kind: 'signed-in', runtime: 'claude-code' }],
     });
     await screen.findByTestId('credits-notice-signed-in');

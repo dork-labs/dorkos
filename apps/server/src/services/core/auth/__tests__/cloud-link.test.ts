@@ -440,13 +440,16 @@ describe('CloudLinkManager', () => {
         instanceName: null,
         linkedAccountLabel: null,
         previousLinkProof: OLD_PROOF,
-        credits: { defaults: {}, offer: 'none' },
+        credits: { defaults: {}, offer: 'none', agents: [], linkedTo: null },
       });
       expect(JSON.stringify(configManager.getAll())).not.toContain('dork_inst_old');
     });
 
     it('keeps the person’s credits choices across an unlink, so nothing is moved (ADR 261001-000811)', async () => {
-      const credits = { defaults: { 'claude-code': { chosenBy: 'user' } }, offer: 'none' };
+      const credits = {
+        defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'user' } },
+        offer: 'none',
+      };
       configManager.set('cloud', { ...LINKED, credits } as never);
       manager = new CloudLinkManager({
         fetchImpl: routerFetch({ revoke: () => ({ status: 200, body: {} }) }),
@@ -456,8 +459,17 @@ describe('CloudLinkManager', () => {
       await manager.unlink();
 
       expect(configManager.get('cloud').credits).toEqual({
-        defaults: { 'claude-code': { chosenBy: 'user', announced: true, signInReoffered: false } },
+        defaults: {
+          'claude-code': {
+            runsOn: 'credits',
+            chosenBy: 'user',
+            announced: true,
+            signInReoffered: false,
+          },
+        },
         offer: 'none',
+        agents: [],
+        linkedTo: null,
       });
     });
 

@@ -1011,9 +1011,21 @@ Linking this instance to a DorkOS account lets the account see and manage it. Ru
     },
     'cloud.credits.defaults': {
       description:
-        'Which runtimes run new work on DorkOS credits by default, and who chose that: you, in Runs on, or DorkOS, when you linked your account and that runtime had no working sign-in (DorkOS tells you once). Change it in Settings, not by hand.',
+        'What each runtime runs new work on by default (DorkOS credits or its own sign-in), and who chose that: you, in Runs on, or DorkOS, when you linked your account and that runtime had no sign-in at all (DorkOS tells you once). Change it in Settings, not by hand.',
       type: 'object',
       default: '{}',
+    },
+    'cloud.credits.agents': {
+      description:
+        'The agents you allowed onto DorkOS credits in the app. An agent whose own settings file asks for credits runs on them only when it is on this list.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'cloud.credits.linkedTo': {
+      description:
+        'Which DorkOS account your credits choices belong to. Linking a different account starts them over; linking the same one again keeps them.',
+      type: 'string | null',
+      default: 'null',
     },
     'cloud.credits.offer': {
       description:

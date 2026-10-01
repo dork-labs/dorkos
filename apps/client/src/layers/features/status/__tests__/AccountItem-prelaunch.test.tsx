@@ -574,6 +574,7 @@ describe('AccountItem before launch — DorkOS credits (ADR 261001-000811)', () 
     path: '/Users/dev/.dork/runtimes/claude-code/credits',
     available: true,
     isDefault: false,
+    allowedAgents: [] as string[],
   };
 
   it('offers DorkOS credits last, as one more account for this session', async () => {

@@ -477,6 +477,10 @@ export const CONFIG_DISCLOSURE = {
   // in Runs on, and an agent has no use for it: withheld rather than exposed.
   'cloud.credits.defaults': 'withhold',
   'cloud.credits.offer': 'withhold',
+  // Which agents a person allowed onto credits, and which account the choices
+  // belong to: spending policy and an account identity, withheld.
+  'cloud.credits.agents': 'withhold',
+  'cloud.credits.linkedTo': 'withhold',
 
   // Raw-MCP URLs may contain userinfo, query tokens, or secret path segments.
   // Withhold the complete URL rather than guessing which parts are credentials;

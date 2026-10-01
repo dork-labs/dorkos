@@ -1,3 +1,4 @@
+import { setCreditsAllowedForAgent } from '../../services/core/cloud/credits-defaults.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
@@ -11,6 +12,10 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 // agent header; the real config store is not opened in these route tests.
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(() => undefined), set: vi.fn(), getAll: vi.fn() },
+}));
+
+vi.mock('../../services/core/cloud/credits-defaults.js', () => ({
+  setCreditsAllowedForAgent: vi.fn(),
 }));
 
 // Mock boundary validation — default to passthrough (returns path as-is)
@@ -865,6 +870,41 @@ describe('Mesh routes', () => {
 
       expect(res.status).toBe(200);
       expect(meshCore.update).toHaveBeenCalledWith('agent-1', { account: 'acme-corp' });
+    });
+
+    // Only a person can put an agent on DorkOS credits (ADR 261001-000811): the
+    // consent is recorded in DorkOS config, never trusted from the file.
+    it('records a person’s consent when they put an agent on DorkOS credits', async () => {
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
+      vi.mocked(setCreditsAllowedForAgent).mockClear();
+
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ account: 'dorkos-credits' });
+
+      expect(res.status).toBe(200);
+      expect(setCreditsAllowedForAgent).toHaveBeenCalledExactlyOnceWith('agent-1', true);
+    });
+
+    it('withdraws the consent when a person moves the agent off credits', async () => {
+      meshCore.update.mockReturnValue(MOCK_MANIFEST);
+      vi.mocked(setCreditsAllowedForAgent).mockClear();
+
+      await request(fixtureServer).patch('/api/mesh/agents/agent-1').send({ account: null });
+
+      expect(setCreditsAllowedForAgent).toHaveBeenCalledExactlyOnceWith('agent-1', false);
+    });
+
+    it('records no consent when an agent names credits for itself', async () => {
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
+      vi.mocked(setCreditsAllowedForAgent).mockClear();
+
+      await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ account: 'dorkos-credits' });
+
+      expect(setCreditsAllowedForAgent).not.toHaveBeenCalled();
     });
 
     it('reads a null account as "bill the server default again"', async () => {

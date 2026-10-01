@@ -28,6 +28,7 @@ const CREDITS = {
   path: '/e2e/never-launched/runtimes/claude-code/credits',
   available: true,
   isDefault: false,
+  allowedAgents: [] as string[],
 };
 
 /** Answer `GET /api/config` with the server's own config plus a choosable credits entry. */
@@ -128,7 +129,7 @@ test.describe('DorkOS credits in Runs on @smoke', () => {
           linked: true,
           ready: true,
           runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
-          defaults: { 'claude-code': { chosenBy: 'user' } },
+          defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'user' } },
           notices: [],
         },
       });

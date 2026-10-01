@@ -4322,6 +4322,10 @@ export const ServerConfigSchema = z
               description:
                 'Who made credits the default: `default` when DorkOS filled a gap on a new link, `user` when a person chose it. Absent when credits are not the default',
             }),
+            allowedAgents: z.array(z.string()).openapi({
+              description:
+                "The ids of agents a person allowed onto credits in the app. An agent whose own file names `dorkos-credits` runs on credits only when its id is here; otherwise the file's pick is ignored and the agent runs on the next rule",
+            }),
           })
           .optional()
           .openapi({

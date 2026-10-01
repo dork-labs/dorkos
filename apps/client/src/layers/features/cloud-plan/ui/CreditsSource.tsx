@@ -51,7 +51,9 @@ export function CreditsSource() {
           </p>
         )}
         {wired.map((runtime) => {
-          const choice = data.defaults?.[runtime];
+          const recorded = data.defaults?.[runtime];
+          // On only when the record says credits: a recorded "no" is off.
+          const choice = recorded?.runsOn === 'credits' ? recorded : undefined;
           const label = runtimeLabel(runtime);
           return (
             <SwitchSettingRow

@@ -39,9 +39,11 @@ import { tunnelManager } from './services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from './services/core/config/tunnel-settings.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import {
+  revokeHeldCreditsToken,
   startCreditsLifecycle,
   stopCreditsLifecycle,
 } from './services/core/cloud/credits-inference.js';
+import { readCloudAccountKey } from './services/core/cloud/v1-client.js';
 import { fillCreditsGaps } from './services/core/cloud/credits-defaults.js';
 import { creditsRuntimeViews } from './services/core/cloud/credits-runtimes.js';
 import { initMoveStaging } from './services/core/cloud/community-move-upload.js';
@@ -5901,12 +5903,20 @@ async function start() {
   // computer is linked, minted now and again before each one expires, so a
   // restart never quietly drops a session set to credits. The credits folder
   // exists from boot so a credits session's transcript is always listed. A new
-  // link (and only a new link) fills the gaps: a runtime with no working
-  // sign-in of its own defaults to credits, and the person is told.
+  // link (and only a new link) fills the gaps: a runtime with no sign-in at all
+  // defaults to credits, and the person is told. A link to a different DorkOS
+  // account starts the choices over; a relink to the same one keeps them. An
+  // unlink revokes the held token and stops every credits session's process.
   ensureCreditsClaudeRoot();
   startCreditsLifecycle();
+  getCloudLinkManager().setOnUnlink(async () => {
+    await revokeHeldCreditsToken();
+    await claudeRuntime?.stopCreditsSessions();
+  });
   getCloudLinkManager().setOnNewLink(async () => {
-    const switched = await fillCreditsGaps(creditsRuntimeViews());
+    const switched = await fillCreditsGaps(creditsRuntimeViews(), {
+      key: await readCloudAccountKey(),
+    });
     if (switched.length > 0) {
       logger.info('[Cloud] New link: these runtimes now run on DorkOS credits by default', {
         runtimes: switched,

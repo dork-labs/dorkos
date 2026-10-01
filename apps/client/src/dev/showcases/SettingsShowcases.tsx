@@ -283,6 +283,7 @@ const CREDITS_DEFAULT_CONFIG = {
       available: true,
       isDefault: true,
       chosenBy: 'default' as const,
+      allowedAgents: [] as string[],
     },
   },
 };

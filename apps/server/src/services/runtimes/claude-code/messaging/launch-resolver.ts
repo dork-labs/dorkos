@@ -59,6 +59,7 @@ import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
+import { creditsProcessEnv, creditsSettingsEnv } from './credits-launch.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
 import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
@@ -330,6 +331,7 @@ export async function resolveLaunch(args: {
       // above. It reaches the spawn env and stops there — nothing writes it to
       // `session_metadata`, because disk stays the per-session truth.
       agentAccountId: manifest?.account,
+      agentId: manifest?.id,
       project: await projectOfFolder(effectiveCwd),
     });
     if (!launch.ok) throw launch.error;
@@ -346,9 +348,14 @@ export async function resolveLaunch(args: {
   // stored key below.
   const onCredits = isCreditsClaudeRoot(accountRoot);
   let creditsEnv: Record<string, string> = {};
+  let creditsSettings: Record<string, string> | undefined;
   if (onCredits) {
     ensureCreditsClaudeRoot();
     creditsEnv = await resolveCreditsLaunchEnv(CLAUDE_CODE_CAPABILITIES, 'Claude Code');
+    // The endpoint pinned ABOVE a folder's own `.claude/settings*.json`, which
+    // outrank the process environment inside the CLI; refuses a folder whose
+    // settings name their own sign-in (`credits-launch.ts`).
+    creditsSettings = creditsSettingsEnv(effectiveCwd, creditsEnv.ANTHROPIC_BASE_URL ?? '');
   }
   // Resolve a stored Claude credential REFERENCE into ANTHROPIC_API_KEY at the
   // env seam (ADR-0315). Injected below ONLY when configured; a missing or
@@ -392,8 +399,8 @@ export async function resolveLaunch(args: {
     // of `path-not-found`. Read `plugin_errors` for whether a plugin is actually
     // there.
     pluginDelivery: 'initialize',
-    env: withoutOwnCredentials(
-      onCredits,
+    env: forCredits(
+      onCredits ? creditsEnv : undefined,
       runtimeEnvironment('claude-code', 'turn', {
         CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
         // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took
@@ -431,10 +438,6 @@ export async function resolveLaunch(args: {
         ...claudeCredentialEnv,
         // This session's freshly minted agent identity token (or nothing).
         ...agentTokenEnv,
-        // The credits endpoint and token, only on a credits session (resolved
-        // above, refused there when unavailable), and LAST so nothing inherited
-        // can point a credits turn anywhere else. `{}` on every other session.
-        ...creditsEnv,
       })
     ),
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
@@ -595,6 +598,11 @@ export async function resolveLaunch(args: {
   // variable that would make a granted folder's CLAUDE.md load stripped from the
   // env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
   applyDirectoryGrants(sdkOptions, messageOpts?.additionalDirectories, effectiveCwd);
+  // A credits turn's endpoint, in the launch's own settings (see above).
+  if (creditsSettings) {
+    const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
+    sdkOptions.settings = { ...base, env: creditsSettings };
+  }
 
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.
@@ -748,39 +756,18 @@ export async function resolveLaunch(args: {
 }
 
 /**
- * Variables that would make a credits turn bill something other than credits:
- * a key or sign-in token of the person's own, custom headers meant for their
- * own gateway, and the switches that send Claude Code to Bedrock, Vertex or
- * Foundry instead of `ANTHROPIC_BASE_URL`.
- */
-const CREDITS_CLEARED_ENV_NAMES = [
-  'ANTHROPIC_API_KEY',
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  'ANTHROPIC_CUSTOM_HEADERS',
-  'CLAUDE_CODE_USE_BEDROCK',
-  'CLAUDE_CODE_USE_VERTEX',
-  'CLAUDE_CODE_USE_FOUNDRY',
-  'AWS_BEARER_TOKEN_BEDROCK',
-  'ANTHROPIC_FOUNDRY_API_KEY',
-  'ANTHROPIC_FOUNDRY_AUTH_TOKEN',
-] as const;
-
-/**
- * A credits turn's environment with every one of the person's own credential
- * and routing variables removed, so the turn reaches the credits endpoint and
- * bills nothing else. Any other turn's environment is returned untouched.
+ * A credits turn's process environment is the allowlist `creditsProcessEnv`
+ * builds, with the credits pair on top; any other turn's is returned as
+ * projected, and carries no credits variable because none was added.
  *
- * @param onCredits - Whether this launch runs on DorkOS credits.
+ * @param creditsEnv - The credits pair on a credits turn, else `undefined`.
  * @param env - The projected environment.
  */
-function withoutOwnCredentials(
-  onCredits: boolean,
+function forCredits(
+  creditsEnv: Record<string, string> | undefined,
   env: Record<string, string>
 ): Record<string, string> {
-  if (!onCredits) return env;
-  const next = { ...env };
-  for (const name of CREDITS_CLEARED_ENV_NAMES) delete next[name];
-  return next;
+  return creditsEnv === undefined ? env : creditsProcessEnv(env, creditsEnv);
 }
 
 /**
