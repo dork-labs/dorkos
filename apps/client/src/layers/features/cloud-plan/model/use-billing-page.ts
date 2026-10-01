@@ -86,8 +86,8 @@ export function useOpenBillingPage(): OpenBillingPage {
         .then((answer) => {
           if (!answer.ok) {
             win.close();
-            // A refused checkout most often means the offer left the list
-            // since it was read; read the list again.
+            // A refused checkout may mean the offer left the list since it
+            // was read; read the list again.
             if (target.page === 'checkout') {
               void queryClient.invalidateQueries({ queryKey: cloudPlanKeys.offers() });
             }

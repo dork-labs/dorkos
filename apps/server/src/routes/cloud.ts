@@ -216,18 +216,12 @@ interface WriteFailureWording {
   /** What was being done, for the log line. */
   what: string;
   /**
-   * What to tell the person when the service does not serve this write at all:
-   * a 404 that is not a problem envelope, which is a route that is not
-   * deployed. Also used for a `not_found` problem when `notFound` is absent.
-   * Without it, such a refusal is passed through like any other.
+   * What to tell the person when the service answers "not found". The service
+   * gives the same answer for a route it does not serve and for a thing the
+   * write named that it cannot find, so this one sentence has to be true in
+   * both cases. Without it, such a refusal is passed through like any other.
    */
   absent?: string;
-  /**
-   * What to tell the person when the service answers with a `not_found`
-   * problem: the route is there, but the thing the write names is not (an
-   * offer no longer on sale, say).
-   */
-  notFound?: string;
 }
 
 /**
@@ -239,11 +233,10 @@ interface WriteFailureWording {
  * service's.
  *
  * A "not found" is the exception. Its words are written for developers, not
- * people, so a write that can meet one names its own plain sentences: one for
- * a route that is not served at all (`wording.absent`), and one for a route
- * that is served but could not find what the write named (`wording.notFound`).
- * The two are told apart by the answer's shape: a deployed route refuses with
- * a problem envelope, a missing one does not.
+ * people, so a write that can meet one names its own plain sentence in
+ * `wording.absent`. That one sentence covers both things "not found" can mean
+ * here, because the answer looks the same either way: the service does not
+ * serve this write, or it cannot find what the write named.
  *
  * **It answers 200, and that is not sloppiness.** A refusal a plan change would
  * lift is an ANSWER this route succeeded in obtaining, not a failure of this
@@ -260,13 +253,10 @@ interface WriteFailureWording {
  * @param wording - What was being done, and what to say when it is not served.
  */
 function cloudWriteFailed(res: Response, error: unknown, wording: WriteFailureWording) {
-  const problem = problemOf(error);
-  if (isAbsent(error)) {
-    const sentence = problem !== null ? (wording.notFound ?? wording.absent) : wording.absent;
-    if (sentence !== undefined) {
-      return res.json({ ok: false, message: sentence } satisfies CloudWriteRefusal);
-    }
+  if (wording.absent !== undefined && isAbsent(error)) {
+    return res.json({ ok: false, message: wording.absent } satisfies CloudWriteRefusal);
   }
+  const problem = problemOf(error);
   if (problem !== null) {
     return res.json({ ok: false, problem } satisfies CloudWriteRefusal);
   }
@@ -329,7 +319,9 @@ const CheckoutBodySchema = z.object({ skuId: z.string().min(1) });
 /** What each billing page is called when it is not available on this account. */
 const BILLING_ABSENT: Record<CloudBillingPage, string> = {
   portal: 'Billing isn’t available on your account yet.',
-  checkout: 'Changing plan isn’t available on your account yet.',
+  // Not found here is as likely an offer that left the list as a route not
+  // served, so the sentence says only what is true of both.
+  checkout: 'That plan isn’t available right now.',
   topup: 'Adding credits isn’t available on your account yet.',
 };
 
@@ -361,8 +353,6 @@ router.post('/billing/:page', async (req, res) => {
     return cloudWriteFailed(res, err, {
       what: `open the ${page.data} page`,
       absent: BILLING_ABSENT[page.data],
-      // A served checkout that cannot find the offer: it is no longer on sale.
-      ...(page.data === 'checkout' ? { notFound: 'That plan isn’t on sale any more.' } : {}),
     });
   }
 });
@@ -386,7 +376,6 @@ router.post('/account/export', async (_req, res) => {
     return cloudWriteFailed(res, err, {
       what: 'request an account export',
       absent: 'Exporting your data isn’t available on your account yet.',
-      notFound: 'Couldn’t find your DorkOS account. Try linking this computer again.',
     });
   }
 });

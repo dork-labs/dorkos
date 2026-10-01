@@ -289,17 +289,19 @@ describe('manage on the web', () => {
     });
   });
 
-  it('reads the offers again when a checkout is refused, and says the plan is gone', async () => {
+  it('reads the offers again when a checkout is refused, and says why', async () => {
     const transport = linkedTransport();
     vi.mocked(transport.createCloudBillingSession).mockResolvedValue({
       ok: false,
-      message: 'That plan isn’t on sale any more.',
+      message: 'That plan isn’t available right now.',
     });
     renderManage(transport);
     const list = await screen.findByRole('list');
     const offersReads = vi.mocked(transport.getCloudOffers).mock.calls.length;
     await userEvent.click(within(list).getAllByRole('button', { name: /choose/i })[0]);
-    expect(await screen.findByRole('alert')).toHaveTextContent('That plan isn’t on sale any more.');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That plan isn’t available right now.'
+    );
     await waitFor(() =>
       expect(vi.mocked(transport.getCloudOffers).mock.calls.length).toBeGreaterThan(offersReads)
     );
