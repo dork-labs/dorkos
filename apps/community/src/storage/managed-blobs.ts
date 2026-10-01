@@ -294,6 +294,10 @@ export async function queueCommittedBlobDeletion(
  * {@link communityFilesDeletable}): under a host legal hold, even a write that never committed
  * stays, with its queue row, until the hold is released, and the sweep removes it then. A
  * community row someone holds `FOR UPDATE` is not waited for either; the sweep tries later.
+ *
+ * Accepted trade-off, as in the pending-deletion sweep: the community row stays held `FOR SHARE`
+ * for as long as the storage delete runs (at most `BLOB_DELETE_TIMEOUT_MS`, on a request's
+ * failure path), so an admin write to that community, or placing a hold, waits for it.
  */
 export async function discardManagedBlob(
   pool: Pool,

@@ -25,23 +25,32 @@ export const BLOB_LOCK_TIMEOUT_MS = 5_000;
 export const BLOB_DELETE_TIMEOUT_MS = 60_000;
 
 /**
- * Take a community's row `FOR SHARE` before deleting one of its files, and say whether the
- * delete may go ahead. It may not when the community is under a host legal hold, when its row
- * is gone, or when someone holds the row `FOR UPDATE` (placing a hold, among others): that row
- * is skipped rather than waited for, so a cleanup never stalls behind it and tries again later.
+ * Take a community's row `FOR SHARE` before deleting one of its files, and say what may happen
+ * to them: `free` to delete, `held` under a host legal hold, or `unavailable` when the row is gone
+ * or someone holds it `FOR UPDATE` (placing a hold, among others). A locked row is skipped rather
+ * than waited for, so a cleanup never stalls behind it and tries again later.
  *
  * Keep the transaction open until the storage delete finishes. Placing a hold takes the row
  * `FOR UPDATE`, so it waits for that delete, and once it commits no further file goes.
  */
-export async function communityFilesDeletable(
+export async function lockCommunityFiles(
   client: PoolClient,
   communityId: string
-): Promise<boolean> {
+): Promise<'free' | 'held' | 'unavailable'> {
   const community = await client.query<{ legal_hold_at: Date | null }>(
     'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE SKIP LOCKED',
     [communityId]
   );
-  return Boolean(community.rows[0] && !community.rows[0].legal_hold_at);
+  if (!community.rows[0]) return 'unavailable';
+  return community.rows[0].legal_hold_at ? 'held' : 'free';
+}
+
+/** {@link lockCommunityFiles}, for a cleanup that can only delete a file now or leave it. */
+export async function communityFilesDeletable(
+  client: PoolClient,
+  communityId: string
+): Promise<boolean> {
+  return (await lockCommunityFiles(client, communityId)) === 'free';
 }
 
 /**

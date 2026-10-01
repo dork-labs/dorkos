@@ -15,6 +15,7 @@ import { discardManagedBlob, reserveManagedBlob } from '../storage/managed-blobs
 import { sweepExpiredAttachments } from '../routes/community/attachments.js';
 import { sweepExpiredExports } from '../exports/sweep.js';
 import { transaction } from '../data.js';
+import { readUsage } from '../host/limits.js';
 import { drainExports } from './export-test-helpers.js';
 import { runHostKeyCommand } from '../host-keys.js';
 import type { BlobStore } from '../storage/index.js';
@@ -797,35 +798,47 @@ async function ageUpload(attachmentId: string, rank: number): Promise<void> {
   );
 }
 
-it('keeps an unposted upload under a legal hold, without starving other communities, and sweeps it after release', async () => {
-  // Purpose: fails if the unposted-upload sweep deletes a legally held community's upload, or if
-  // held uploads are chosen and then skipped, so that they fill its batch and nobody else's
-  // upload ever goes. The held upload is the oldest and the batch takes one.
+/** The bytes that count toward the community's storage limit, and those waiting for deletion. */
+async function storageUsage(communityId: string) {
+  const [usage] = await readUsage(h.pool, { communityId });
+  return {
+    counted: usage.storage.countedBytes,
+    pendingDelete: usage.storage.pendingDeleteBytes,
+  };
+}
+
+it('removes an unposted upload under a legal hold, keeping its bytes until the release but not counting them', async () => {
+  // Purpose: fails if the unposted-upload sweep deletes a legally held community's upload bytes,
+  // or if it just skips the upload, which left it counting toward the storage limit for as long
+  // as the hold lasts (people would hit STORAGE_LIMIT_REACHED over files nobody can post). A
+  // retry of the same upload must start afresh, not get a receipt for a file that is gone.
   const held = await community();
-  const other = await community();
   const heldId = await upload(held, 'unposted');
-  const otherId = await upload(other, 'unposted');
-  await ageUpload(heldId, 2);
-  await ageUpload(otherId, 1);
+  await ageUpload(heldId, 1);
   const heldKey = (await attachmentKey(heldId))!;
-  const otherKey = (await attachmentKey(otherId))!;
+  expect(await storageUsage(held.id)).toEqual({ counted: 4, pendingDelete: 0 });
   await expectStatus(await legalHold('PUT', held.id), 200, 'place');
-  expect(await sweepExpiredAttachments(h.pool, h.blobStore, { batchSize: 1 })).toEqual({
-    deleted: 1,
-    failed: 0,
-  });
-  expect(await storedKeys([heldKey, otherKey])).toEqual([heldKey]);
-  expect(await attachmentKey(heldId)).toBe(heldKey);
-  await expectStatus(await legalHold('DELETE', held.id), 200, 'release');
-  await sweepExpiredAttachments(h.pool, h.blobStore);
-  expect(await storedKeys([heldKey])).toEqual([]);
+  expect(await sweepExpiredAttachments(h.pool, h.blobStore)).toEqual({ deleted: 1, failed: 0 });
   expect(await attachmentKey(heldId)).toBeUndefined();
+  expect(await storedKeys([heldKey])).toEqual([heldKey]);
+  expect(await queueRows(heldKey)).toBe(2);
+  expect(await storageUsage(held.id)).toEqual({ counted: 0, pendingDelete: 4 });
+
+  const retried = await upload(held, 'unposted');
+  expect(retried).not.toBe(heldId);
+
+  await sweepPendingBlobDeletions(h.pool, h.blobStore, 100);
+  expect(await storedKeys([heldKey])).toEqual([heldKey]);
+  await expectStatus(await legalHold('DELETE', held.id), 200, 'release');
+  await sweepPendingBlobDeletions(h.pool, h.blobStore, 100);
+  expect(await storedKeys([heldKey])).toEqual([]);
+  expect(await queueRows(heldKey)).toBe(0);
 });
 
 it('rechecks the hold under the community lock before deleting an unposted upload', async () => {
   // Purpose: the sweep picks its uploads before it locks anything. Fails if a hold that commits
-  // after that read does not save the upload. The sweep is paused inside the delete of another
-  // community's upload, which it reaches first, while the hold is placed.
+  // after that read does not save the upload's bytes. The sweep is paused inside the delete of
+  // another community's upload, which it reaches first, while the hold is placed.
   const other = await community();
   const c = await community();
   const otherId = await upload(other, 'first');
@@ -840,7 +853,7 @@ it('rechecks the hold under the community lock before deleting an unposted uploa
   barrier.release();
   await sweeping;
   expect(await storedKeys([racingKey])).toEqual([racingKey]);
-  expect(await attachmentKey(racingId)).toBe(racingKey);
+  expect(await queueRows(racingKey)).toBe(2);
   await expectStatus(await legalHold('DELETE', c.id), 200, 'release');
 });
 
@@ -906,8 +919,9 @@ it('keeps an expired export under a legal hold, without starving other communiti
     deleted: 1,
     failed: 0,
   });
+  // A version 2 expiry only queues the segments, and the hold-aware pending sweep keeps their
+  // bytes, so the bytes alone would survive even without this fix: the row is what fails.
   expect(await exportRow(heldExport)).toEqual(before);
-  expect(await storedKeys(before.segments)).toEqual(before.segments);
   expect((await exportRow(otherExport)).deletedAt).not.toBeNull();
   // The owner sees nothing of the hold: the export reads expired and no longer downloads.
   const shown = await expectStatus(
@@ -951,6 +965,39 @@ it('rechecks the hold under the community lock before expiring an export', async
   expect((await exportRow(otherExport)).deletedAt).not.toBeNull();
   expect(await exportRow(racingExport)).toEqual(before);
   await expectStatus(await legalHold('DELETE', c.id), 200, 'release');
+});
+
+it('keeps a legacy single-file export’s bytes under a legal hold, deleting them after release', async () => {
+  // Purpose: a version 1 archive (from before background exports) is one blob that expiry
+  // deletes itself, not through the hold-aware pending sweep. Fails if expiry deletes that blob
+  // while the community is under a legal hold.
+  const c = await community();
+  const stored = await h.blobStore.put({
+    source: (async function* () {
+      yield Buffer.from('zip!');
+    })(),
+    displayName: 'community-export.zip',
+    maxBytes: 4,
+  });
+  const archiveId = (
+    await h.pool.query<{ id: string }>(
+      `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,byte_size,expires_at,
+         cleanup_next_attempt_at)
+       VALUES($1,$2,'owner',$3,4,now()-interval '1 hour',now()-interval '1 hour') RETURNING id`,
+      [c.id, c.owner.memberId, stored.key]
+    )
+  ).rows[0].id;
+  const deletedAt = async () =>
+    (await h.pool.query('SELECT deleted_at FROM export_archives WHERE id=$1', [archiveId])).rows[0]
+      .deleted_at as Date | null;
+  await expectStatus(await legalHold('PUT', c.id), 200, 'place');
+  await sweepExpiredExports(h.pool, h.blobStore);
+  expect(await storedKeys([stored.key])).toEqual([stored.key]);
+  expect(await deletedAt()).toBeNull();
+  await expectStatus(await legalHold('DELETE', c.id), 200, 'release');
+  await sweepExpiredExports(h.pool, h.blobStore);
+  expect(await storedKeys([stored.key])).toEqual([]);
+  expect(await deletedAt()).not.toBeNull();
 });
 
 /** Reserve and store one file the way an upload does, without committing it. */
