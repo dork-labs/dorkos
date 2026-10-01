@@ -16,6 +16,7 @@ covers:
   - "fix(connectors): keep the provider error's cause when discovery wraps it (DOR-2622)"
   - 'fix(cloud-link): never throw away a key the cloud issued at token exchange (DOR-2622)'
   - 'fix(cloud-link): withdraw before draining, bound the token request, nothing after stop (DOR-2622)'
+  - 'fix(cloud-link): bound the token response body as well as its headers (DOR-2622)'
 ---
 
 ### Fixed
