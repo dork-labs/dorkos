@@ -733,6 +733,85 @@ describe('CloudLinkManager', () => {
     });
   });
 
+  describe('the note a relink left is cleared whenever the link changes', () => {
+    const HELD = {
+      instanceToken: 'dork_inst_held',
+      instanceName: 'kai-mbp',
+      linkedAccountLabel: 'Kai',
+      previousLinkProof: null,
+    };
+    const OK_HEARTBEAT: Step = {
+      status: 200,
+      body: { ok: true, instanceId: 'inst-1', lastSeenAt: '2026-09-30T00:00:00Z' },
+    };
+
+    /** Leave a `denied` note on a computer that keeps its key. */
+    async function deniedRelink(extra: Parameters<typeof routerFetch>[0] = {}) {
+      configManager.set('cloud', HELD);
+      let token: Step = { status: 400, body: { error: 'access_denied' } };
+      const fetchImpl = routerFetch({
+        code: () => CODES,
+        token: () => token,
+        heartbeat: () => OK_HEARTBEAT,
+        revoke: () => ({ status: 200, body: { ok: true } }),
+        ...extra,
+      });
+      manager = new CloudLinkManager({
+        fetchImpl,
+        sleep: noSleep,
+        resolveTelemetryInstanceId: async () => undefined,
+      });
+      await manager.startLink();
+      await manager.pendingLink;
+      expect(manager.getStatus().relinkOutcome).toBe('denied');
+      return {
+        approveNext: () => {
+          token = { status: 200, body: { access_token: 'dork_inst_new' } };
+        },
+      };
+    }
+
+    it('drops the note when a new link is started and approved', async () => {
+      const { approveNext } = await deniedRelink();
+      approveNext();
+      await manager.startLink();
+      await manager.pendingLink;
+      expect(manager.getStatus().state).toBe('linked');
+      expect(manager.getStatus().relinkOutcome).toBeUndefined();
+    });
+
+    it('drops the note when a new link is started, even if that start fails', async () => {
+      let codeRequests = 0;
+      await deniedRelink({
+        code: () => (++codeRequests === 1 ? CODES : { status: 502, body: {} }),
+      });
+      await expect(manager.startLink()).rejects.toThrow();
+      expect(manager.getStatus().state).toBe('linked');
+      expect(manager.getStatus().relinkOutcome).toBeUndefined();
+    });
+
+    it('drops the note on unlink, so a later link starts clean', async () => {
+      await deniedRelink();
+      await manager.unlink();
+      configManager.set('cloud', HELD);
+      await manager.initOnStartup();
+      expect(manager.getStatus().state).toBe('linked');
+      expect(manager.getStatus().relinkOutcome).toBeUndefined();
+    });
+
+    it('drops the note when the key is refused, so a later link starts clean', async () => {
+      let heartbeat: Step = { status: 401, body: {} };
+      await deniedRelink({ heartbeat: () => heartbeat });
+      await manager.initOnStartup();
+      expect(manager.getStatus().state).toBe('unlinked');
+      heartbeat = OK_HEARTBEAT;
+      configManager.set('cloud', HELD);
+      await manager.initOnStartup();
+      expect(manager.getStatus().state).toBe('linked');
+      expect(manager.getStatus().relinkOutcome).toBeUndefined();
+    });
+  });
+
   it('names the cloud code and status when managed provider registration fails', async () => {
     configManager.set('cloud', {
       instanceToken: 'linked-key',
