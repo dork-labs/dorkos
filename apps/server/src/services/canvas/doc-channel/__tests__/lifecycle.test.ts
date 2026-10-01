@@ -207,6 +207,48 @@ describe('startup lifecycle initialization', () => {
 });
 
 describe('canonical document ownership transactions', () => {
+  it('moves a targeted grant only while its frozen approved path remains unchanged', () => {
+    const h = setup();
+    const doc = h.canvas.open(FROM, 'agent', file);
+    pending(h, doc.id);
+    const approvalEvidence = { binding: { target: { agentPath: '/agents/one' } } };
+    h.db
+      .update(canvasDocGrants)
+      .set({
+        targetAgentId: 'agent-1',
+        targetSessionId: 'session-1',
+        targetRuntime: 'claude-code',
+        approvalEvidence,
+      })
+      .where(eq(canvasDocGrants.grantId, `grant-${doc.id}`))
+      .run();
+    h.documents.rekeyScope(FROM, TO);
+    expect(h.store.getGrant(`grant-${doc.id}`)).toMatchObject({
+      targetSessionId: 'canonical',
+      approvalEvidence,
+    });
+  });
+  it('blocks relocated source and target records that no longer match the frozen grant path', () => {
+    const h = setup();
+    const doc = h.canvas.open(FROM, 'agent', file);
+    pending(h, doc.id);
+    h.db
+      .update(canvasDocGrants)
+      .set({
+        targetAgentId: 'agent-1',
+        targetSessionId: 'session-1',
+        targetRuntime: 'claude-code',
+        approvalEvidence: { binding: { target: { agentPath: '/agents/one' } } },
+      })
+      .where(eq(canvasDocGrants.grantId, `grant-${doc.id}`))
+      .run();
+    h.db.update(agents).set({ projectPath: '/agents/two' }).where(eq(agents.id, 'agent-1')).run();
+    h.db.update(sessionMetadata).set({ agentPath: '/agents/two' }).run();
+    expect(() => h.documents.rekeyScope(FROM, TO)).toThrow();
+    expect(h.store.getGrant(`grant-${doc.id}`)?.targetSessionId).toBe('session-1');
+    expect(h.documents.lookupIdentity(doc.id)?.scope).toBe(FROM);
+  });
+
   it('blocks targeted grant movement when the canonical agent path differs from the source', () => {
     const h = setup();
     const doc = h.canvas.open(FROM, 'agent', file);
