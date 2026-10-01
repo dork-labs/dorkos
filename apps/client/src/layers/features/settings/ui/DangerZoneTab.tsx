@@ -6,7 +6,7 @@ import { ResetSettingsDialog } from './ResetSettingsDialog';
 import { RestartDialog } from './RestartDialog';
 
 /**
- * Settings → Danger zone — the three actions you cannot take back by hand.
+ * Settings → Advanced → Danger zone — the three actions you cannot take back by hand.
  *
  * This tab used to be "Advanced", which is not a category but the absence of
  * one: a polling switch, the message-box switch, four logging fields and these

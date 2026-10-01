@@ -126,8 +126,8 @@ The two below are about something else. They are not protecting anything; they d
 The last group is different again. These are the dials you turn **down** to give yourself room — less memory in use, fewer things running at once, smaller uploads, fewer tool groups in play. When DorkOS has to rebuild your settings file after a problem, it already refuses to undo a choice like that; an agent should not be able to undo it on purpose either. Each one says where you change it yourself:
 
 - Whether your Claude Code chats keep an agent awake between messages, which costs memory — **Control Center**, under _Warm agents_
-- How many scheduled runs may go at once — **Control Center**, or Settings → Tools
-- Which sets of DorkOS tools your agents are told about — **Settings → Tools**
+- How many scheduled runs may go at once — **Control Center**, or Settings → Advanced → Tools
+- Which sets of DorkOS tools your agents are told about — **Settings → Advanced → Tools**
 - How large an upload may be, and how many files it may carry — no screen yet; `dorkos config set uploads.maxFileSize`
 - Whether DorkOS updates the agent files inside your projects on its own — no screen yet; `dorkos config set harness.autoSync`
 - Whether DorkOS may move a skill into the folder every one of your tools reads, inside the folders it owns — no screen yet; `dorkos config set harness.autoAdopt`

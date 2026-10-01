@@ -1,4 +1,5 @@
-import type { CommandPaletteContribution } from '@/layers/shared/model';
+import type { CommandPaletteContribution, SettingsTab } from '@/layers/shared/model';
+import { SETTINGS_TAB_DIRECTORY } from '@/layers/shared/lib';
 
 /**
  * The quick actions that MAKE something, in the order the zero-query "New"
@@ -12,7 +13,45 @@ import type { CommandPaletteContribution } from '@/layers/shared/model';
  */
 export const PALETTE_NEW_ACTION_IDS: readonly string[] = ['new-session', 'create-agent'];
 
-/** Built-in feature palette items (priority 1-4 for core features). */
+/** Action-id prefix for a row that opens Settings on one tab: `openSettingsTab:<tab id>`. */
+const SETTINGS_TAB_ACTION_PREFIX = 'openSettingsTab:';
+
+/**
+ * The Settings tab a palette action opens, or null when the action is not one
+ * of the per-tab rows.
+ *
+ * @param action - A palette action id.
+ */
+export function settingsTabForAction(action: string): SettingsTab | null {
+  return action.startsWith(SETTINGS_TAB_ACTION_PREFIX)
+    ? action.slice(SETTINGS_TAB_ACTION_PREFIX.length)
+    : null;
+}
+
+/**
+ * One searchable row per built-in Settings tab (extension tabs are not listed), straight to that tab by its deep link
+ * (DOR-2629). It matters most for the five behind the Advanced fold — typing
+ * "danger" or "room limits" should not depend on knowing where they are filed.
+ * The rows only appear when searching; the zero-query palette is unchanged.
+ */
+const PALETTE_SETTINGS_TABS: CommandPaletteContribution[] = SETTINGS_TAB_DIRECTORY.map(
+  (tab, index) => ({
+    id: `settings-${tab.id}`,
+    // The tab's own name leads, so typing it lands here — and typing
+    // "settings" still finds the plain Settings row first, not sixteen tabs.
+    label: `${tab.label} — Settings`,
+    icon: 'Settings',
+    action: `${SETTINGS_TAB_ACTION_PREFIX}${tab.id}`,
+    category: 'feature',
+    // After every core feature, in sidebar order.
+    priority: 20 + index,
+    // The group's name, so "advanced" lists everything behind the fold. Not
+    // "settings": that word belongs to the plain Settings row.
+    keywords: [tab.group.toLowerCase()],
+  })
+);
+
+/** Built-in feature palette items (priority 1-5 for core features, then one row per Settings tab). */
 export const PALETTE_FEATURES: CommandPaletteContribution[] = [
   {
     id: 'tasks',
@@ -58,6 +97,7 @@ export const PALETTE_FEATURES: CommandPaletteContribution[] = [
     category: 'feature',
     priority: 5,
   },
+  ...PALETTE_SETTINGS_TABS,
 ];
 
 /** Built-in quick action palette items (priority 1-6 for core actions). */

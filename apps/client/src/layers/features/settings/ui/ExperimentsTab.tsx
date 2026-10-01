@@ -1,5 +1,5 @@
 /**
- * Settings → Experiments — the staged opt-ins, rendered from the server's list.
+ * Settings → Advanced → Experiments — the staged opt-ins, rendered from the server's list.
  *
  * This tab holds no knowledge of any individual experiment. The server sends an
  * ordered array of resolved entries (`config.experiments`), each carrying its own

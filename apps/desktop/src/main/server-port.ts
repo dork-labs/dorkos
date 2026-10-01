@@ -380,7 +380,7 @@ export async function chooseServerPort(): Promise<number> {
     // this one (see the module doc).
     log.info(
       `[server] Port ${preferred.port} is in use, so this session is on ${port}. ` +
-        'Settings → Server shows the address.'
+        'Settings → Advanced → Server shows the address.'
     );
   }
   return port;

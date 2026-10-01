@@ -4,7 +4,7 @@
  *
  * Chat apps run on the same message system agents use to reach each other,
  * which DorkOS starts once, when it starts. So turning them on is two honest
- * steps: save the setting (Settings › Tools shows the same switch), then
+ * steps: save the setting (Settings › Advanced › Tools shows the same switch), then
  * restart. A person who has never opened a terminal never needs one; the
  * environment variable is only named when it is the thing keeping them off.
  *

@@ -219,7 +219,7 @@ function buildUnauthorizedMessage(surface: McpAuthSurface): string {
   if (tokenPath) {
     return (
       `Unauthorized. ${subject} needs your local MCP token. Find it in ` +
-      `Settings → Tools → Connect other apps to DorkOS, or in ${tokenPath}, and send it as ` +
+      `Settings → Advanced → Tools → Connect other apps to DorkOS, or in ${tokenPath}, and send it as ` +
       '"Authorization: Bearer <token>".'
     );
   }
@@ -227,7 +227,7 @@ function buildUnauthorizedMessage(surface: McpAuthSurface): string {
   // that applies here rather than a local-token file that does not.
   return (
     'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
-    'When login is on, use your personal API key from Settings → Tools → Connect other apps to DorkOS.'
+    'When login is on, use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
   );
 }
 

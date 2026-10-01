@@ -85,11 +85,12 @@ const mockSetSelectedCwd = vi.fn();
 const mockSetStoreSessionId = vi.fn();
 const mockClearGlobalPaletteInitialSearch = vi.fn();
 const mockOpenFeedback = vi.fn();
+const mockOpenSettingsTab = vi.fn();
 const mockSettingsDeepLink = {
   isOpen: false,
   activeTab: null,
   section: null,
-  open: () => mockSetSettingsOpen(true),
+  open: (tab?: string) => (tab ? mockOpenSettingsTab(tab) : mockSetSettingsOpen(true)),
   close: () => mockSetSettingsOpen(false),
   setTab: () => {},
   setSection: () => {},
@@ -204,6 +205,12 @@ vi.mock('../model/use-palette-items', () => ({
       { id: 'relay', label: 'Connections', icon: 'Radio', action: 'openRelay' },
       { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
       { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
+      {
+        id: 'settings-danger',
+        label: 'Danger zone — Settings',
+        icon: 'Settings',
+        action: 'openSettingsTab:danger',
+      },
     ];
     const commands = [{ name: '/deploy', description: 'Deploy service' }];
     const quickActions = [
@@ -568,6 +575,18 @@ describe('Command Palette Integration', () => {
     fireEvent.click(item as Element);
 
     expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
+    expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
+  });
+
+  // DOR-2629: a tab behind the Advanced fold is one search away, opened by
+  // the same deep link a shared `?settings=` URL uses.
+  it('selecting a Settings tab row opens Settings on that tab', () => {
+    searchThen('danger');
+    const item = screen.getByText('Danger zone — Settings').closest('[data-slot="command-item"]');
+    fireEvent.click(item as Element);
+
+    expect(mockOpenSettingsTab).toHaveBeenCalledWith('danger');
+    expect(mockSetSettingsOpen).not.toHaveBeenCalled();
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 

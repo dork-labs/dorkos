@@ -298,10 +298,10 @@ router.get('/', async (req, res) => {
     // 10 more minutes or 5 more messages" — so an operator who tuned them would
     // otherwise be reading a sentence about somebody else's install.
     //
-    // The five limits ride along because Settings → Rooms offers them, and
+    // The five limits ride along because Settings → Room limits offers them, and
     // because a room's own override is shown as "Use default (N)" where N is
     // whatever is set HERE (DOR-1430). So does how many conversations one agent
-    // may work in at once, which Settings → Rooms offers too (DOR-2104). Writing them is still operator-only —
+    // may work in at once, which Settings → Room limits offers too (DOR-2104). Writing them is still operator-only —
     // `config-write-policy.ts` decides that, not this read. The rest of the
     // block (reply waits) is nothing the cockpit says out loud, so it stays off
     // the wire.

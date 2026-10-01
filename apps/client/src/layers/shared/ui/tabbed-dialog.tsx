@@ -1,4 +1,12 @@
-import { Fragment, Suspense, useEffect, type ComponentType, type ReactNode } from 'react';
+import {
+  Fragment,
+  Suspense,
+  useEffect,
+  useId,
+  useRef,
+  type ComponentType,
+  type ReactNode,
+} from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   ResponsiveDialog,
@@ -11,6 +19,8 @@ import {
   NavigationLayoutBody,
   NavigationLayoutSidebar,
   NavigationLayoutSectionHeader,
+  NavigationLayoutGroupToggle,
+  NavigationLayoutTabList,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,
@@ -18,6 +28,7 @@ import {
 } from '@/layers/shared/ui';
 import { useSlotContributions, type SlotId } from '@/layers/shared/model';
 import { useDialogTabState } from '@/layers/shared/model/use-dialog-tab-state';
+import { useFoldedGroup } from '@/layers/shared/model/interaction/use-folded-group';
 import { cn } from '@/layers/shared/lib/utils';
 
 /** A single tab definition for `TabbedDialog`. */
@@ -42,6 +53,14 @@ export interface TabbedDialogTab<T extends string> {
    * sidebar stays flat and no headers render.
    */
   group?: string;
+}
+
+/** A sidebar group that starts folded behind a disclosure. */
+export interface TabbedDialogFoldedGroup {
+  /** The `group` name, as the tabs declare it. Rendered as the toggle's label. */
+  group: string;
+  /** localStorage key that remembers, per viewer, whether it is open. */
+  storageKey: string;
 }
 
 /** Props for `TabbedDialog`. */
@@ -85,6 +104,13 @@ export interface TabbedDialogProps<T extends string> {
    * hard pixels), so the phone layout is untouched.
    */
   maximized?: boolean;
+  /**
+   * One group to fold away behind a quiet "Advanced"-style disclosure. It
+   * always renders last, below every other group (extension groups included),
+   * and opens by itself when the active tab is one of its own — so a deep link
+   * into it still lands on a visible, selected tab.
+   */
+  foldedGroup?: TabbedDialogFoldedGroup;
   /** data-testid for browser tests. */
   testId?: string;
 }
@@ -112,6 +138,7 @@ export function TabbedDialog<T extends string>({
   maxWidth = 'max-w-2xl',
   minHeight = 'min-h-[280px]',
   maximized = false,
+  foldedGroup,
   testId,
 }: TabbedDialogProps<T>) {
   const extensionTabs = useSlotContributions(extensionSlot ?? 'settings.tabs');
@@ -124,6 +151,15 @@ export function TabbedDialog<T extends string>({
   const groupOrder: (string | undefined)[] = [];
   for (const tab of allTabs) {
     if (!groupOrder.includes(tab.group)) groupOrder.push(tab.group);
+  }
+  // A folded group sits at the very bottom whatever order its tabs were
+  // declared in — it is where people look for the rarely-needed, and an
+  // extension's "Add-ons" group appended after it would be the one thing
+  // hiding below the fold.
+  const foldedName = foldedGroup?.group;
+  if (foldedName !== undefined && groupOrder.includes(foldedName)) {
+    groupOrder.splice(groupOrder.indexOf(foldedName), 1);
+    groupOrder.push(foldedName);
   }
   const hasGroups = allTabs.some((tab) => tab.group);
 
@@ -156,6 +192,69 @@ export function TabbedDialog<T extends string>({
     defaultTab,
   });
 
+  const activeInFold =
+    foldedName !== undefined &&
+    allTabs.some((tab) => tab.id === activeTab && tab.group === foldedName);
+  const [foldExpanded, setFoldExpanded] = useFoldedGroup({
+    storageKey: foldedGroup?.storageKey ?? '',
+    dialogOpen: open,
+    activeInGroup: activeInFold,
+    activeTab,
+  });
+  const foldId = useId();
+
+  const renderItems = (items: TabbedDialogTab<T>[]) =>
+    items.map((tab) => (
+      <NavigationLayoutItem key={tab.id} value={tab.id} icon={tab.icon}>
+        {tab.label}
+      </NavigationLayoutItem>
+    ));
+
+  // Folded, the group still shows the ONE tab that is active, if any: hiding a
+  // selected tab would leave the panel labelled by a tab that is not there and
+  // drop focus that was sitting on it. Folded with nothing active, the list is
+  // not rendered at all — an empty tablist is an error, and so is a toggle
+  // naming one in `aria-controls`.
+  const foldTabs =
+    foldedName === undefined
+      ? []
+      : allTabs.filter((tab) => tab.group === foldedName && (foldExpanded || tab.id === activeTab));
+  const hasFold = foldedName !== undefined && allTabs.some((tab) => tab.group === foldedName);
+
+  // Opening the fold scrolls its first row into view: on a phone the group
+  // sits at the foot of a long list, and a chevron that turns while nothing
+  // visible changes reads as a dead control. A ref rather than state, so the
+  // scroll happens once, after the rows exist, and only for the person's press.
+  const scrollFoldOnOpen = useRef(false);
+  useEffect(() => {
+    if (!foldExpanded || !scrollFoldOnOpen.current) return;
+    scrollFoldOnOpen.current = false;
+    document
+      .getElementById(foldId)
+      ?.querySelector<HTMLElement>('[data-value]')
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [foldExpanded, foldId]);
+
+  const foldFooter = hasFold ? (
+    <>
+      <NavigationLayoutGroupToggle
+        expanded={foldExpanded}
+        onExpandedChange={(next) => {
+          scrollFoldOnOpen.current = next;
+          setFoldExpanded(next);
+        }}
+        controls={foldTabs.length > 0 ? foldId : undefined}
+      >
+        {foldedName}
+      </NavigationLayoutGroupToggle>
+      {foldTabs.length > 0 && (
+        <NavigationLayoutTabList id={foldId} label={foldedName!}>
+          {renderItems(foldTabs)}
+        </NavigationLayoutTabList>
+      )}
+    </>
+  ) : undefined;
+
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent
@@ -184,27 +283,19 @@ export function TabbedDialog<T extends string>({
           </NavigationLayoutDialogHeader>
 
           <NavigationLayoutBody>
-            <NavigationLayoutSidebar>
+            <NavigationLayoutSidebar footer={foldFooter}>
               {hasGroups
-                ? groupOrder.map((group) => (
-                    <Fragment key={group ?? '__ungrouped'}>
-                      {group && (
-                        <NavigationLayoutSectionHeader>{group}</NavigationLayoutSectionHeader>
-                      )}
-                      {allTabs
-                        .filter((tab) => tab.group === group)
-                        .map((tab) => (
-                          <NavigationLayoutItem key={tab.id} value={tab.id} icon={tab.icon}>
-                            {tab.label}
-                          </NavigationLayoutItem>
-                        ))}
-                    </Fragment>
-                  ))
-                : allTabs.map((tab) => (
-                    <NavigationLayoutItem key={tab.id} value={tab.id} icon={tab.icon}>
-                      {tab.label}
-                    </NavigationLayoutItem>
-                  ))}
+                ? groupOrder
+                    .filter((group) => group === undefined || group !== foldedName)
+                    .map((group) => (
+                      <Fragment key={group ?? '__ungrouped'}>
+                        {group && (
+                          <NavigationLayoutSectionHeader>{group}</NavigationLayoutSectionHeader>
+                        )}
+                        {renderItems(allTabs.filter((tab) => tab.group === group))}
+                      </Fragment>
+                    ))
+                : renderItems(allTabs)}
             </NavigationLayoutSidebar>
 
             <NavigationLayoutContent className={cn(minHeight, 'p-4')}>

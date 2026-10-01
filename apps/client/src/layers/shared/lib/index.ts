@@ -244,6 +244,10 @@ export {
   CELEBRATIONS,
   TIME_UNITS,
   SSE_RESILIENCE,
+  SETTINGS_TAB_DIRECTORY,
+  SETTINGS_ADVANCED_GROUP,
+  type BuiltInSettingsTab,
+  type SettingsTabEntry,
 } from './constants';
 export type { FileEntry } from './file-types';
 export { createChannel, type Channel } from './broadcast-channel';

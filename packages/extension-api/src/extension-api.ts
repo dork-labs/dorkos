@@ -257,7 +257,10 @@ export interface ExtensionAPI {
    *   host renders with a `className` for sizing — a `lucide-react` icon
    *   satisfies this. Omit it and the host falls back to a default puzzle-piece.
    *   `group` applies only to the `settings.tabs` slot: it names the sidebar
-   *   section the tab sits under in the Settings dialog. Omit it and the tab
+   *   section the tab sits under in the Settings dialog: `'You'`, `'Agents'` or
+   *   `'This computer'` joins that section, `'Advanced'` files it behind the
+   *   folded Advanced disclosure, and any other name makes a section of its
+   *   own above Advanced. Omit it and the tab
    *   lands under "Add-ons", the section reserved for contributed tabs — so a
    *   tab written before this field existed still files itself somewhere honest.
    *   `visibleWhen` applies only to the `dashboard.sections` slot: a predicate
@@ -298,9 +301,10 @@ export interface ExtensionAPI {
    * Register a tab in the settings dialog.
    * Returns an unsubscribe function.
    *
-   * @param options - `group` names the sidebar section the tab sits under. Omit
-   *   it and the tab lands under "Add-ons", the section reserved for contributed
-   *   tabs.
+   * @param options - `group` names the sidebar section the tab sits under —
+   *   `'Advanced'` files it behind the folded Advanced disclosure, and an
+   *   unknown name makes a section of its own. Omit it and the tab lands under
+   *   "Add-ons", the section reserved for contributed tabs.
    */
   registerSettingsTab(
     id: string,

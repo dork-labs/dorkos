@@ -40,7 +40,7 @@ DorkOS server listening on port 4242
 Relay message bus enabled
 ```
 
-The examples below use port 4242, the default. If yours is different, swap it in. **Settings → Server** shows your address and copies it for you, which is the quickest way to check in the [desktop app](/docs/getting-started/desktop-app).
+The examples below use port 4242, the default. If yours is different, swap it in. **Settings → Advanced → Server** shows your address and copies it for you, which is the quickest way to check in the [desktop app](/docs/getting-started/desktop-app).
 
 </Step>
 <Step>
@@ -149,10 +149,10 @@ curl http://localhost:4242/api/config
 The response includes `relay.enabled: true` when Relay is active.
 
 <Callout type="info">
-  To turn Relay off, switch off **Agent messaging** in Settings › Tools and restart DorkOS. If
-  `DORKOS_RELAY_ENABLED` is set, it decides instead of the switch. With Relay off, its routes return
-  404 and session messaging falls back to calling the agent SDK directly. Your message history and
-  search index stay on disk, so turning Relay back on later doesn't lose anything.
+  To turn Relay off, switch off **Agent messaging** in Settings › Advanced › Tools and restart
+  DorkOS. If `DORKOS_RELAY_ENABLED` is set, it decides instead of the switch. With Relay off, its
+  routes return 404 and session messaging falls back to calling the agent SDK directly. Your message
+  history and search index stay on disk, so turning Relay back on later doesn't lose anything.
 </Callout>
 
 ### Budget constraints
@@ -383,7 +383,7 @@ Subscribe to `relay.system.tasks.*` on the SSE stream to watch every Tasks dispa
     DORKOS_RELAY_ENABLED: {
       type: 'boolean',
       description:
-        'Overrides the Relay subsystem on or off. Relay is on by default, and the Agent messaging switch in Settings › Tools turns it on or off; set this only when you want to force a value the switch cannot change',
+        'Overrides the Relay subsystem on or off. Relay is on by default, and the Agent messaging switch in Settings › Advanced › Tools turns it on or off; set this only when you want to force a value the switch cannot change',
     },
   }}
 />

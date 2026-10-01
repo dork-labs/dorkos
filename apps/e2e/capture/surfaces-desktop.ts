@@ -29,7 +29,7 @@ import { shootTaskRuntimePicker } from './surfaces-desktop-tasks.js';
  * before the screenshot; each `driveX` is shared between still and loop.
  *
  * Two groups live in sibling modules, both driven from the capture entry points
- * below: the power surfaces (Control Center, Settings → Rooms, the full-power
+ * below: the power surfaces (Control Center, Settings → Room limits, the full-power
  * door) in `surfaces-desktop-power`, and the four-agent fleet drive behind
  * `multi-session` in `surfaces-desktop-fleet`.
  *
