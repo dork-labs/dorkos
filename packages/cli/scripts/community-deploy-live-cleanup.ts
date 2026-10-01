@@ -1,4 +1,5 @@
 /** Exact-identity cleanup for the separately armed Community release gate. */
+import { tigrisAccessKeyName } from '../src/commands/community-deploy/provenance/tigris-access-key.js';
 
 /** Non-secret identities retained in the launcher's own recovery journal. */
 export interface CommunityLiveGateJournal {
@@ -36,7 +37,11 @@ export interface CommunityLiveGateCleanupReceipt {
   cleaned: readonly string[];
   /** Resources already absent, proved so, which this cleanup did not delete. */
   alreadyGone: readonly string[];
-  /** Resources still present. */
+  /**
+   * Resources still present. Always includes the bucket's Tigris access key by name
+   * (`<bucket>_access_key`): Fly's delete leaves it active and nothing the gate holds can delete
+   * it (DOR-2646), so the operator deletes it by hand.
+   */
   retained: readonly string[];
 }
 
@@ -143,6 +148,9 @@ export async function cleanupCommunityLiveGate(
       alreadyGone.push(tigrisBucketId);
     }
     retained.splice(retained.indexOf(tigrisBucketId), 1);
+    // Deleting the bucket (here or earlier) never deletes its access key, so it is reported as
+    // retained, never as cleaned, on every path from here on.
+    retained.push(tigrisAccessKeyName(context.bucketName));
     await dependencies.deleteNeonProject(neon.id);
     retained.splice(retained.indexOf(neonProjectId), 1);
     await dependencies.destroyFlyApp(fly.name);

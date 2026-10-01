@@ -57,12 +57,16 @@ fly storage list --org <fly-org>                     # live Tigris buckets
 fly storage dashboard --org <fly-org>                # opens the Tigris console: look for buckets named <name>_deleted_<suffix>
 fly wireguard list <fly-org> --json                  # WireGuard peers
 neonctl projects list --org-id <neon-org-id> --output json
+tigris access-keys list                              # Tigris access keys (see below for sign-in)
 ```
+
+The last line needs the Tigris command-line tool (`npm install -g @tigrisdata/cli`) and a Tigris sign-in through Fly: run `tigris login oauth` once and choose to sign in with Fly. The gate cannot read access keys itself: nothing it holds reaches Tigris's key list (DOR-2646).
 
 What counts as a match, and the named exceptions:
 
 - **Fly apps and live buckets:** identical before and after.
 - **Soft-deleted Tigris buckets.** Fly keeps a deleted bucket's record under the name `<name>_deleted_<suffix>`, and `fly storage list` no longer shows it (see the note in `packages/cli/src/commands/community-deploy/fly-graphql-contract.ts`). After cleanup, check the Tigris console for one per bucket the run made. Record whether it is there and whether the console shows it holding objects. A soft-deleted bucket is expected, not a mismatch. Any object still in one is a stop: ask the operator.
+- **Tigris access keys.** Fly makes one access key per bucket, named `<bucket>_access_key`, and deleting the bucket does not delete it (DOR-2646; `fly storage destroy` leaves it too). So after cleanup, expect one active `<bucket>_access_key` per bucket the run made. It is a known leftover, not a mismatch, but it still works, so delete it before you finish: `tigris access-keys delete <id>`, or `fly storage dashboard --org <fly-org>` and delete it under Access Keys. Then list again: the after list must match the before list. The gate receipt names the key under `cleanup.retained`, and the gate prints these steps when it passes. Any other new key is a stop.
 - **WireGuard peers:** identical before and after. A new peer means something in the run opened a private tunnel into the org. Record its name, remove it with `fly wireguard remove <fly-org> <peer-name>`, and note which step created it. A known source: the DOR-2169 published-release gate's own `sshOnCustomNetwork` provenance probe runs `fly ssh console --command true`, which can create (or reuse) an interactive peer — seen on receipt `dorkos-gate-854ea55f80a0`. Remove it the same way after a gate run that shows one.
 - **Custom private network.** When the release includes DOR-2238's provenance markers, each launched app gets its own private network, and Fly keeps that network after the app is destroyed (`specs/launcher-uncertain-create-cleanup/02-specification.md`, Decision 1). Record the network name from `fly apps list --json` before cleanup. After cleanup the app is gone but the network may remain: record it as the expected leftover. flyctl has no command that lists networks on their own, so this check reads the app listing taken before cleanup. When the release does not include those markers, the app must show no network name at all.
 - **Neon projects:** identical before and after.
@@ -213,6 +217,8 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
    fly apps destroy <app-b>
    ```
 
+   Then delete the bucket's access key, `<bucket>_access_key`, which `fly storage destroy` leaves active (see the Tigris access keys exception above).
+
 2. Take the after inventory and compare, using the exceptions above.
 
 ### L3 revocation (always, even after a failed run)
@@ -249,7 +255,7 @@ Covers A1 (a new person following only the guide). Estimate: under $0.25, billed
 2. Invite a second person from **Manage**, then **Create invite**, and join from a second browser profile.
 3. In a DorkOS app of the same release, connect the community (switcher, **Add community**, **Connect a community**), add one local agent (**Members**, **Add to community**, **Join channel**), and mention it from the second person's browser. The agent answers.
 4. Remove everything by the guide's own "Remove your community" steps.
-5. Take an inventory of both new accounts: no Fly apps, no live buckets, no Neon projects, no WireGuard peers; soft-deleted buckets and a leftover private network recorded as above.
+5. Take an inventory of both new accounts: no Fly apps, no live buckets, no Neon projects, no WireGuard peers, no Tigris access keys once you have deleted the bucket's `<bucket>_access_key`; soft-deleted buckets and a leftover private network recorded as above.
 
 Throughout, the operator writes down every message, step or word that was unclear, where it was, and what they expected instead.
 

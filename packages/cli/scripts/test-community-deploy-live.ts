@@ -92,6 +92,7 @@ import {
   readFlySessionCredential,
 } from '../src/commands/community-deploy/tigris-session.js';
 import { runProviderCommand } from '../src/commands/community-deploy/provider-process.js';
+import { tigrisAccessKeySteps } from '../src/commands/community-deploy/provenance/tigris-access-key.js';
 import {
   readDorkosHostsContacted,
   withNoDorkosHostsGuard,
@@ -675,6 +676,11 @@ async function main(): Promise<void> {
     );
     process.stdout.write(
       `Community live gate passed for ${version}${tarball ? ` (unreleased tarball from ${tarball.receipt.commit.slice(0, 12)})` : ''} at ${appName}; receipt ${receiptPath}\n`
+    );
+    // DOR-2646: cleanup deleted the bucket, but Fly leaves its Tigris access key active and the gate
+    // holds nothing that can delete it. The receipt lists it under `retained`; this says what to do.
+    process.stdout.write(
+      `${tigrisAccessKeySteps(journal.recoveryContext?.bucketName ?? appName, config.flyOrganization).join('\n')}\n`
     );
     await rm(durableHome, { recursive: true, force: true });
   } catch (error) {

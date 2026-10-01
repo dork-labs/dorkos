@@ -41,11 +41,19 @@ describe('Community live gate cleanup', () => {
     await expect(cleanupCommunityLiveGate(journal, boundary)).resolves.toEqual({
       cleaned: ['bucket-1', 'neon-1', 'fly-1'],
       alreadyGone: [],
-      retained: [],
+      retained: ['dorkos-gate-012345abcdef_access_key'],
     });
     expect(boundary.deleteTigris).toHaveBeenCalledWith(journal.recoveryContext.bucketName);
     expect(boundary.deleteNeonProject).toHaveBeenCalledWith('neon-1');
     expect(boundary.destroyFlyApp).toHaveBeenCalledWith(journal.recoveryContext.appName);
+  });
+
+  // DOR-2646: Fly's delete leaves the bucket's Tigris access key active, and the gate holds nothing
+  // that can delete it, so the receipt must never let it pass as cleaned.
+  it('reports the bucket access key as retained, never cleaned, after the bucket is deleted', async () => {
+    const receipt = await cleanupCommunityLiveGate(journal, dependencies());
+    expect(receipt.retained).toEqual(['dorkos-gate-012345abcdef_access_key']);
+    expect(receipt.cleaned).not.toContain('dorkos-gate-012345abcdef_access_key');
   });
 
   it('does not delete a same-name Fly app with a different provider identity', async () => {
@@ -67,7 +75,7 @@ describe('Community live gate cleanup', () => {
     boundary.deleteNeonProject.mockRejectedValue(new Error('raw provider error'));
     await expect(cleanupCommunityLiveGate(journal, boundary)).rejects.toMatchObject({
       step: 'provider-operation',
-      retained: ['fly-1', 'neon-1'],
+      retained: ['fly-1', 'neon-1', 'dorkos-gate-012345abcdef_access_key'],
     });
     expect(boundary.destroyFlyApp).not.toHaveBeenCalled();
   });
@@ -83,7 +91,7 @@ describe('Community live gate cleanup', () => {
     await expect(cleanupCommunityLiveGate(journal, boundary)).resolves.toEqual({
       cleaned: ['neon-1', 'fly-1'],
       alreadyGone: ['bucket-1'],
-      retained: [],
+      retained: ['dorkos-gate-012345abcdef_access_key'],
     });
     expect(boundary.listTigrisOnApp).toHaveBeenCalledWith(journal.recoveryContext.appName);
     expect(boundary.deleteTigris).not.toHaveBeenCalled();

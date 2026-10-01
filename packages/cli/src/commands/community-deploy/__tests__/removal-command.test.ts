@@ -196,6 +196,70 @@ describe('--remove-uncertain output', () => {
     expect(result.text).toContain(phrase);
   });
 
+  // DOR-2646: Fly deletes the bucket but leaves its Tigris access key active.
+  describe('a removed Tigris bucket', () => {
+    const bucket = {
+      provider: 'tigris' as const,
+      token: 'addon-5',
+      resourceName: 'community-acme',
+      organization: 'acme',
+      proof: 'binding' as const,
+      appName: 'community-acme',
+    };
+
+    it('says the access key is still active in Tigris and how to delete it', () => {
+      const { text, exitCode } = formatRemovalOutcome(
+        { outcome: 'removed', target: bucket, nameReleased: null },
+        context
+      );
+      expect(exitCode).toBe(0);
+      expect(text).toContain(
+        'Removed Tigris bucket community-acme (add-on id addon-5) and took its access key off app community-acme.'
+      );
+      expect(text).toContain(
+        "Tigris still has this bucket's access key, community-acme_access_key, and it still works."
+      );
+      expect(text).toContain('fly storage dashboard --org acme');
+      expect(text).toContain('open Access Keys and delete community-acme_access_key.');
+      expect(text).toContain('tigris access-keys delete <id>');
+      // Never claims the key itself was removed.
+      expect(text).not.toMatch(/and its (two )?access keys?/iu);
+      expect(text).not.toMatch(/provider|adapter|connector|integration/iu);
+    });
+
+    it('names the access key in the steps for removing the bucket by hand', () => {
+      const { text } = formatRemovalOutcome(
+        {
+          outcome: 'unproved',
+          provider: 'tigris',
+          reason: 'no-match',
+          candidates: [],
+        },
+        {
+          ...context,
+          journal: journal({
+            pendingIntent: {
+              provider: 'tigris',
+              organizationId: 'acme',
+              resourceName: 'community-acme',
+              requestedAt: '2026-09-23T10:31:03.000Z',
+            },
+          }),
+        }
+      );
+      expect(text).toContain('Remove:  fly storage destroy community-acme');
+      expect(text).toContain('delete community-acme_access_key');
+    });
+
+    it('leaves Fly apps and Neon projects without the access-key steps', () => {
+      const { text } = formatRemovalOutcome(
+        { outcome: 'removed', target, nameReleased: true },
+        context
+      );
+      expect(text).not.toContain('access key');
+    });
+  });
+
   it('keeps the retired nouns out of every reason', () => {
     const reasons = [
       'too-old',
