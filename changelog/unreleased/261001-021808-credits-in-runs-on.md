@@ -3,7 +3,7 @@ covers:
   - 'feat(credits): make DorkOS credits one more choice in Runs on, never a silent switch (DOR-2623)'
   - 'fix(credits): pin the credits endpoint above folder settings, respect "no", gate agent files (DOR-2623)'
   - 'fix(credits): keep a folder''s own variables on credits, offer "Don''t use credits in this project", notify every refusal (DOR-2623)'
-  - 'fix(credits): leave the agent''s cloud accounts alone, send the refusal reason, offer the project rule only for a folder''s own sign-in (DOR-2623)'
+  - "fix(credits): leave the agent's cloud accounts alone, send the refusal reason, offer the project rule only for a folder's own sign-in (DOR-2623)"
 ---
 
 ### Added
