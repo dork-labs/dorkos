@@ -33,6 +33,9 @@ export const cloudPlanKeys = {
   credits: () => [...cloudPlanKeys.all, 'credits'] as const,
 };
 
+/** How often the credits read re-asks while credits are on (see {@link useCloudCredits}). */
+const CREDITS_POLL_MS = 60_000;
+
 /** How long a plan read stays fresh. Plans do not move minute to minute. */
 const STALE_MS = 60_000;
 
@@ -123,6 +126,11 @@ export function useCloudCredits() {
     queryKey: cloudPlanKeys.credits(),
     queryFn: () => transport.getCloudCredits(),
     staleTime: STALE_MS,
+    // While credits are on, ask again every minute: the pass they run on
+    // expires on the server with no event to say so, and the switch has to
+    // read off once it has. Focus refetch alone would leave an open tab saying
+    // "on" indefinitely. Off, nothing changes without a press, so no polling.
+    refetchInterval: (query) => (query.state.data?.ready ? CREDITS_POLL_MS : false),
   });
 }
 

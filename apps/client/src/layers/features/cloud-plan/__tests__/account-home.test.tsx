@@ -106,30 +106,14 @@ describe('Use credits for', () => {
     const toggle = await screen.findByRole('switch', { name: 'Use credits for Claude' });
     expect(toggle).toBeChecked();
     expect(toggle).toBeDisabled();
-    expect(screen.getByText(/when the current pass expires, when DorkOS restarts/)).toBeVisible();
+    expect(
+      screen.getByText(/stay on until the current pass runs out, DorkOS restarts, or you unlink/)
+    ).toBeVisible();
+    // No promise of a renewal this build cannot keep.
+    expect(screen.queryByRole('button', { name: /refresh/i })).not.toBeInTheDocument();
   });
 
-  it('keeps a way to get a fresh pass while credits are on', async () => {
-    const transport = createMockTransport({
-      getCloudCredits: vi.fn().mockResolvedValue(LIVE),
-      selectCloudCredits: vi.fn().mockResolvedValue(LIVE),
-    });
-    renderWith(<UseCreditsFor />, transport);
-    fireEvent.click(await screen.findByRole('button', { name: 'Refresh' }));
-    await waitFor(() => expect(transport.selectCloudCredits).toHaveBeenCalledTimes(1));
-  });
-
-  it('offers turning it on again once the pass has run out', async () => {
-    // An expired token reads as not ready: the switch is off and usable again.
-    const transport = createMockTransport({ getCloudCredits: vi.fn().mockResolvedValue(ARMED) });
-    renderWith(<UseCreditsFor />, transport);
-    const toggle = await screen.findByRole('switch', { name: 'Use credits for Claude' });
-    expect(toggle).not.toBeChecked();
-    expect(toggle).toBeEnabled();
-    expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument();
-  });
-
-  it('says so when the server could not start credits', async () => {
+  it('says credits could not be turned on when the server sends back a report that is not live', async () => {
     const transport = createMockTransport({
       getCloudCredits: vi.fn().mockResolvedValue(ARMED),
       // The same report back, unchanged: nothing was armed.
@@ -137,7 +121,47 @@ describe('Use credits for', () => {
     });
     renderWith(<UseCreditsFor />, transport);
     fireEvent.click(await screen.findByRole('switch', { name: 'Use credits for Claude' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Couldn’t reach DorkOS credits/);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Couldn’t turn on DorkOS credits');
+    expect(alert).not.toHaveTextContent(/nothing changed/i);
+  });
+
+  it('gives the reason a failed turn-on came back with', async () => {
+    const transport = createMockTransport({
+      getCloudCredits: vi.fn().mockResolvedValue(ARMED),
+      selectCloudCredits: vi.fn().mockRejectedValue(new Error('Your account is out of credits.')),
+    });
+    renderWith(<UseCreditsFor />, transport);
+    fireEvent.click(await screen.findByRole('switch', { name: 'Use credits for Claude' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Couldn’t turn on DorkOS credits. Your account is out of credits.'
+    );
+  });
+
+  it('follows the server once the pass runs out: the switch reads off, with no false alert', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const getCloudCredits = vi.fn().mockResolvedValue(ARMED);
+      const transport = createMockTransport({
+        getCloudCredits,
+        selectCloudCredits: vi.fn().mockResolvedValue(LIVE),
+      });
+      renderWith(<UseCreditsFor />, transport);
+      const toggle = await screen.findByRole('switch', { name: 'Use credits for Claude' });
+      // Turned on: the select's report is live, and the next reads say so too.
+      getCloudCredits.mockResolvedValue(LIVE);
+      fireEvent.click(toggle);
+      await waitFor(() => expect(toggle).toBeChecked());
+
+      // The pass expires on the server; nothing tells the client but the poll.
+      getCloudCredits.mockResolvedValue(ARMED);
+      await vi.advanceTimersByTimeAsync(61_000);
+      await waitFor(() => expect(toggle).not.toBeChecked());
+      expect(toggle).toBeEnabled();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

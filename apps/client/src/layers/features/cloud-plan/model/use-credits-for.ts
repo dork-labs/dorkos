@@ -13,9 +13,10 @@
  * wired for runs on it (`GET /api/cloud/credits`). That is the machine default
  * this reads, and turning it on asks the server for the token. The token is
  * held in memory and expires, so credits also stop on their own when it runs
- * out; {@link UseCreditsFor.refresh} asks for a fresh one. There is no way to
- * put a runtime back on its own sign-in short of a restart, an unlink or that
- * expiry, so a row says so rather than offering an "off" that does nothing. When credits
+ * out, and the credits read re-asks while they are on so the switch follows.
+ * There is no way to put a runtime back on its own sign-in short of a
+ * restart, an unlink or that expiry, so a row says so rather than offering an
+ * "off" that does nothing. When credits
  * become an entry in each runtime's own sign-in list, {@link readCreditsFor}
  * and {@link useCreditsFor}'s writer are the only two places that change: the
  * rows already carry `canTurnOff` and `previousSignIn` for the switch to use.
@@ -73,8 +74,14 @@ export interface UseCreditsFor {
   rows: CreditsForRow[];
   /** A write is in flight; every switch waits for it. */
   pending: boolean;
-  /** The last write did not take: the server could not start credits. */
-  failed: boolean;
+  /**
+   * Why the last turn-on did not take, in words for the person, or `null`.
+   *
+   * It says only that credits could not be turned on — never "nothing
+   * changed", because what state survived is the server's report to give, and
+   * the switch already shows that report.
+   */
+  failure: string | null;
   /**
    * Put one runtime's default on credits, or back on its own sign-in.
    *
@@ -82,12 +89,6 @@ export interface UseCreditsFor {
    * @param on - The state the switch was moved to.
    */
   setOn: (runtime: string, on: boolean) => void;
-  /**
-   * Ask for a fresh pass while credits are on, so they do not run out mid-day;
-   * `null` when there is nothing to refresh (credits are off, or this build
-   * can switch them off and keeps them current itself).
-   */
-  refresh: (() => void) | null;
 }
 
 /** Read and write which runtimes run on DorkOS credits. */
@@ -103,11 +104,24 @@ export function useCreditsFor(): UseCreditsFor {
   };
 
   // The select answers the same report whether or not it armed anything, so a
-  // write "succeeded" only when the report it sent back says credits are live.
-  const failed = select.isError || (select.isSuccess && !select.data.ready);
+  // turn-on worked only when the report it sent back says credits are live. A
+  // turn-on that DID work stays quiet afterwards, even once the pass runs out
+  // and the switch reads off again: that is the report changing, not this
+  // write failing.
+  const failure = select.isError
+    ? `Couldn’t turn on DorkOS credits. ${errorReason(select.error)}`
+    : select.isSuccess && !select.data.ready
+      ? 'Couldn’t turn on DorkOS credits: DorkOS couldn’t get a pass for this computer. Try again in a moment.'
+      : null;
 
-  const refreshable = rows.some((row) => row.on && !row.canTurnOff);
-  const refresh = refreshable ? () => select.mutate() : null;
+  return { rows, pending: select.isPending, failure, setOn };
+}
 
-  return { rows, pending: select.isPending, failed, setOn, refresh };
+/**
+ * The reason a failed request gave, or a plain fallback when it gave none.
+ *
+ * @param error - What the transport rejected with.
+ */
+function errorReason(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : 'Try again in a moment.';
 }

@@ -122,6 +122,8 @@ vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
 // The account rows read the roster, the auth session and two deep links; this
 // suite is about the strip's own layout, so they stand in. Their behaviour is
 // pinned in `features/profile`'s own suite.
+let mockCurrentUser: { email: string } | null = null;
+vi.mock('@/layers/features/auth', () => ({ useCurrentUser: () => mockCurrentUser }));
 vi.mock('@/layers/features/profile', () => ({
   AccountMenuContainer: () => <div data-testid="account-menu-rows" />,
 }));
@@ -499,11 +501,26 @@ describe('SidebarFooterStrip', () => {
     });
 
     it('says what the fold holds instead of calling itself "More"', () => {
+      mockCurrentUser = null;
       renderStrip();
       const trigger = screen.getByTestId('sidebar-footer-menu-trigger');
-      expect(trigger).toHaveAccessibleName('Login and theme');
-      expect(trigger.textContent).toContain('Login and theme');
+      // No login on this install (the default): nothing to sign out of.
+      expect(trigger).toHaveAccessibleName('Theme');
+      expect(trigger.textContent).toContain('Theme');
+      expect(trigger.textContent).not.toMatch(/account|login|sign/i);
       expect(trigger.className).toContain('min-h-11');
+    });
+
+    it('names signing out only when there is a login to sign out of', () => {
+      mockCurrentUser = { email: 'owner@example.com' };
+      try {
+        renderStrip();
+        expect(screen.getByTestId('sidebar-footer-menu-trigger')).toHaveAccessibleName(
+          'Sign out and theme'
+        );
+      } finally {
+        mockCurrentUser = null;
+      }
     });
 
     it('still opens the account rows it has always held', async () => {

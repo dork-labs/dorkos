@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): give the DorkOS account its own home, one move from the team-name menu (DOR-2628)'
   - 'fix(client): point every "Settings › Access" message at its new tab, and tighten the account home (DOR-2628)'
+  - 'fix(client): say plainly when DorkOS credits stop, and name the phone fold for what it holds (DOR-2628)'
 ---
 
 ### Changed
