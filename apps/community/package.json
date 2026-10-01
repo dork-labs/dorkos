@@ -55,7 +55,7 @@
     "@vitejs/plugin-react": "5.2.0",
     "axe-core": "^4.13.0",
     "fast-check": "^4.10.1",
-    "smtp-server": "3.19.9",
+    "smtp-server": "3.19.16",
     "tsx": "4.23.13",
     "typescript": "^5.9.3",
     "vite": "^6.4.1",
