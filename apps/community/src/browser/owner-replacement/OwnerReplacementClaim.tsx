@@ -236,13 +236,14 @@ export function OwnerReplacementClaim() {
     }
   }
 
-  async function social(provider: SignInProvider) {
+  /** Start a sign-in round trip; `confirmAge` when the box for a new account was ticked. */
+  async function social(provider: SignInProvider, confirmAge: boolean) {
     setBusy(true);
     setError('');
     try {
       const here = window.location.origin + OWNER_REPLACEMENT_CLAIM_PATH;
       // The provider's callback may create the account, so the confirmation must be in place.
-      if (minimumAge !== null && ageConfirmed) await confirmMinimumAge();
+      if (confirmAge) await confirmMinimumAge();
       const result = await authClient.signIn.social({
         provider,
         callbackURL: here,
@@ -313,8 +314,9 @@ export function OwnerReplacementClaim() {
                 variant="default"
                 className="w-full"
                 type="button"
-                disabled={busy}
-                onClick={() => void social('oidc')}
+                // A new account must confirm the host's minimum age first, as on the owner claim.
+                disabled={busy || (minimumAge !== null && !ageConfirmed)}
+                onClick={() => void social('oidc', minimumAge !== null)}
               >
                 Continue with {providers.oidc.label}
               </Button>
@@ -406,7 +408,7 @@ export function OwnerReplacementClaim() {
             <ProviderButtons
               providers={providers}
               disabled={busy || (passwordAge !== null && !ageConfirmed)}
-              onChoose={(provider) => void social(provider)}
+              onChoose={(provider) => void social(provider, passwordAge !== null)}
             />
           </>
         )}

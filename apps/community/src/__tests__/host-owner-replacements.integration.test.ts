@@ -653,6 +653,8 @@ describe('a request (AC-3, AC-13, AC-14)', () => {
       requestedBy: { kind: 'api_key', label: keys.ownership.prefix },
       notice: { state: 'pending', resolvedAt: null, verifiedAddress: null },
       wait: null,
+      afterObjection: false,
+      afterWithdrawal: false,
       claimableAfter: null,
       claimExpiresAt: null,
       claimReissuedAt: null,
@@ -1061,6 +1063,8 @@ describe('the cooling-off after an objection (AC-20, request half)', () => {
       after_objection: true,
       after_withdrawal: false,
     });
+    // The host's list says why this request has the longer wait.
+    expect(second.replacement).toMatchObject({ afterObjection: true, afterWithdrawal: false });
   });
 
   it('starts no cooling-off after a withdrawal, an expiry, or a supersession', async () => {
@@ -1074,6 +1078,10 @@ describe('the cooling-off after an objection (AC-20, request half)', () => {
         await expectStatus(await cancel(h, c.communityId, id, auth), 200, 'cancel');
       else await closeDirectly(h, id, ending, clock());
       const again = await created(await request(h, c.communityId, auth));
+      expect(again.replacement).toMatchObject({
+        afterObjection: false,
+        afterWithdrawal: ending === 'withdrawn',
+      });
       expect(await replacementRow(h, again.replacement.replacementId)).toMatchObject({
         after_objection: false,
         // Only a withdrawal in the last 30 days forces the long wait.

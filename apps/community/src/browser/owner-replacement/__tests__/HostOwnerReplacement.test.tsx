@@ -34,6 +34,8 @@ function replacement(overrides: Partial<HostReplacement> = {}): HostReplacement 
     endedAt: null,
     withdrawnBecause: null,
     cooldownUntil: null,
+    afterObjection: false,
+    afterWithdrawal: false,
     ...overrides,
   };
 }

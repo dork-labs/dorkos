@@ -3,7 +3,6 @@ import { activeCooldown, hostRowSentence, type HostReplacement } from '../copy.j
 
 // Each host row in words (specs/community-owner-replacement, "Host page"): every state, the
 // standard wait, and each reason for the longer one.
-const DAY = 24 * 60 * 60_000;
 
 function row(overrides: Partial<HostReplacement> = {}): HostReplacement {
   return {
@@ -23,6 +22,8 @@ function row(overrides: Partial<HostReplacement> = {}): HostReplacement {
     endedAt: null,
     withdrawnBecause: null,
     cooldownUntil: null,
+    afterObjection: false,
+    afterWithdrawal: false,
     ...overrides,
   };
 }
@@ -117,38 +118,31 @@ describe('hostRowSentence', () => {
   ])('%s', (_label, overrides, sentence) => {
     // Purpose: fails if any state or wait reason is said with another state's words.
     const current = row(overrides);
-    expect(hostRowSentence(current, [current])).toBe(sentence);
+    expect(hostRowSentence(current)).toBe(sentence);
   });
 
-  it('gives the longer-wait reason from an earlier objection', () => {
-    // Purpose: fails if a request after an objection is not explained as such.
-    const earlier = row({
-      replacementId: '33333333-3333-4333-8333-333333333333',
-      state: 'objected',
-      requestedAt: '2026-01-01T00:00:00.000Z',
-      endedAt: '2026-01-05T00:00:00.000Z',
-      cooldownUntil: '2026-04-05T00:00:00.000Z',
-    });
-    const current = row({ wait: 'long' });
-    expect(hostRowSentence(current, [current, earlier])).toBe(
-      `${until} The owner kept ownership before, so this request has the longer wait.`
+  it.each<[string, Partial<HostReplacement>, string]>([
+    [
+      'after an objection',
+      { afterObjection: true },
+      'The owner kept ownership before, so this request has the longer wait.',
+    ],
+    [
+      'after a recent withdrawal',
+      { afterWithdrawal: true },
+      'An earlier request was withdrawn less than 30 days ago, so this one has the longer wait.',
+    ],
+  ])('gives the longer-wait reason the server recorded: %s', (_label, flags, reason) => {
+    // Purpose: fails if a recorded reason for the longer wait goes unsaid, or is guessed from
+    // the list instead of read from the request.
+    expect(hostRowSentence(row({ wait: 'long', reason: 'other', ...flags }))).toBe(
+      `${until} ${reason}`
     );
   });
 
-  it('gives the longer-wait reason from a withdrawal less than 30 days before', () => {
-    // Purpose: fails if a recent withdrawal is not named, or an old one is.
-    const withdrawn = (daysBefore: number) =>
-      row({
-        replacementId: '44444444-4444-4444-8444-444444444444',
-        state: 'withdrawn',
-        withdrawnBecause: 'cancelled',
-        endedAt: new Date(Date.parse('2026-09-20T10:00:00.000Z') - daysBefore * DAY).toISOString(),
-      });
-    const current = row({ wait: 'long', reason: 'other' });
-    expect(hostRowSentence(current, [current, withdrawn(29)])).toBe(
-      `${until} An earlier request was withdrawn less than 30 days ago, so this one has the longer wait.`
-    );
-    expect(hostRowSentence(current, [current, withdrawn(31)])).toBe(until);
+  it('says only the date when no reason applies', () => {
+    // Purpose: fails if a reason is invented for a long wait the host page cannot explain.
+    expect(hostRowSentence(row({ wait: 'long', reason: 'other' }))).toBe(until);
   });
 });
 

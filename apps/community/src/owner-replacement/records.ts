@@ -122,6 +122,8 @@ export function projectOwnerReplacement(
       verifiedAddress: row.verified_address,
     },
     wait: replacementWait(row),
+    afterObjection: row.after_objection,
+    afterWithdrawal: row.after_withdrawal,
     claimableAfter: row.claimable_after?.toISOString() ?? null,
     claimExpiresAt: row.claim_expires_at?.toISOString() ?? null,
     claimReissuedAt: row.claim_reissued_at?.toISOString() ?? null,

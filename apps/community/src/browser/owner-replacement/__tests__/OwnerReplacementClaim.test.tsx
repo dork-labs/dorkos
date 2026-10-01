@@ -237,6 +237,27 @@ describe('OwnerReplacementClaim, at the date', () => {
     expect(screen.queryByLabelText('Password')).toBeNull();
   });
 
+  it('keeps the named sign-in service off until a new account confirms the minimum age', async () => {
+    // Purpose: fails if a person can start creating an account through the sign-in service
+    // without the age confirmation the host asks for, as the owner claim page already forbids.
+    captureFragment(TOKEN);
+    mockFetch({
+      [PREFLIGHT]: preflight({ requiresSingleSignOn: true }),
+      [SESSION]: { status: 200, body: null },
+      [OPTIONS]: {
+        status: 200,
+        body: { google: false, github: false, oidc: { label: 'Example sign-in' }, minimumAge: 16 },
+      },
+    });
+    render(<OwnerReplacementClaim />);
+    const button = (await screen.findByRole('button', {
+      name: 'Continue with Example sign-in',
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText('I am at least 16 years old.'));
+    expect(button.disabled).toBe(false);
+  });
+
   it('resumes after a sign-in round trip from the marker, which never holds the token', async () => {
     // Purpose: fails if returning from the sign-in service loses the claim, or if the marker
     // that makes that possible carries the secret.

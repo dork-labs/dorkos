@@ -224,7 +224,9 @@ describe('OwnerReplacementBanner, owner', () => {
     );
     expect(calls.some((call) => call.method === 'POST')).toBe(false);
     fireEvent.click(screen.getAllByRole('button', { name: 'Keep ownership' }).at(-1)!);
-    expect(await screen.findByText('You kept ownership. The host has been told.')).toBeTruthy();
+    const kept = await screen.findByText('You kept ownership. The host has been told.');
+    // Focus moves to what changed, not back to a button that is gone.
+    await waitFor(() => expect(document.activeElement).toBe(kept));
     const posts = calls.filter((call) => call.method === 'POST');
     expect(posts).toEqual([
       {

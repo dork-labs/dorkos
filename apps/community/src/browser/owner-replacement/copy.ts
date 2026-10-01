@@ -22,9 +22,6 @@ export type AdminNotice = z.infer<typeof CommunityWireOwnerReplacementAdminNotic
 /** What the owner can do about an open request now. */
 export type OwnerOptions = z.infer<typeof CommunityWireOwnerReplacementOptionsSchema>;
 
-const DAY_MS = 24 * 60 * 60_000;
-/** A withdrawal this recent gives the next request the longer wait (the server's rule). */
-const RECENT_WITHDRAWAL_DAYS = 30;
 /**
  * The shortest waiting period any host can set (`COMMUNITY_OWNER_REPLACEMENT_NOTICE_DAYS`). Said
  * before the notice has gone out, while the real date is not known yet.
@@ -55,28 +52,13 @@ export function reasonSentence(reason: ReplacementReason): string {
   }
 }
 
-/**
- * Why a request has the longer wait, from the request and the community's other requests, or
- * null when none of the reasons can be told from what the host sees.
- */
-export function longWaitReason(row: HostReplacement, all: HostReplacement[]): string | null {
+/** Why a request has the longer wait, from what the server recorded when it was made. */
+export function longWaitReason(row: HostReplacement): string | null {
   if (row.notice.state === 'failed') return 'The notice couldn’t be delivered by email.';
   if (row.notice.verifiedAddress === false) return 'The owner’s email address was never confirmed.';
-  const requested = Date.parse(row.requestedAt);
-  const endedBefore = (other: HostReplacement) =>
-    other.replacementId !== row.replacementId &&
-    other.endedAt !== null &&
-    Date.parse(other.endedAt) <= requested;
-  if (all.some((other) => other.state === 'objected' && endedBefore(other)))
+  if (row.afterObjection)
     return 'The owner kept ownership before, so this request has the longer wait.';
-  if (
-    all.some(
-      (other) =>
-        other.state === 'withdrawn' &&
-        endedBefore(other) &&
-        requested - Date.parse(other.endedAt!) < RECENT_WITHDRAWAL_DAYS * DAY_MS
-    )
-  )
+  if (row.afterWithdrawal)
     return 'An earlier request was withdrawn less than 30 days ago, so this one has the longer wait.';
   if (row.reason === 'owner_left_group')
     return 'Requests saying the owner has left always have the longer wait.';
@@ -84,7 +66,7 @@ export function longWaitReason(row: HostReplacement, all: HostReplacement[]): st
 }
 
 /** Where one request stands, in words, for the host's list. */
-export function hostRowSentence(row: HostReplacement, all: HostReplacement[]): string {
+export function hostRowSentence(row: HostReplacement): string {
   const ended = row.endedAt ? replacementDate(row.endedAt) : '';
   switch (row.state) {
     case 'notifying':
@@ -93,7 +75,7 @@ export function hostRowSentence(row: HostReplacement, all: HostReplacement[]): s
       const until = `The owner has until ${replacementDate(row.claimableAfter!)}.`;
       if (row.wait === 'standard' && row.notice.resolvedAt)
         return `The owner’s mail server accepted the notice on ${replacementDate(row.notice.resolvedAt)}. ${until}`;
-      const why = longWaitReason(row, all);
+      const why = longWaitReason(row);
       return why ? `${until} ${why}` : until;
     }
     case 'claimable':

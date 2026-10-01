@@ -225,7 +225,7 @@ export function HostOwnerReplacement({
               <ul className="stack small m-0 list-none p-0">
                 {rows.map((row) => (
                   <li key={row.replacementId} className="panel-alt p-3">
-                    <p className="mb-1">{hostRowSentence(row, rows)}</p>
+                    <p className="mb-1">{hostRowSentence(row)}</p>
                     <p className="muted mb-0">
                       Asked on {replacementDate(row.requestedAt)} by {row.requestedBy.label}.{' '}
                       {REASON_LABELS[row.reason]}.

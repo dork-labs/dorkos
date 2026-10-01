@@ -1,5 +1,5 @@
 import { Button, Notice } from '@dork-labs/ui';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { z } from 'zod';
 import type { CommunityWireOwnerReplacementNoticeResponseSchema } from '@dorkos/shared/community-wire';
 import { describeError, request } from '../api.js';
@@ -58,8 +58,11 @@ function OwnerBanner({
 
   return (
     <>
-      <Notice tone="info" className="m-3" role="status">
-        <strong>{ownerBannerSentence(notice)}</strong>
+      {/* Only the sentence is a live region; the buttons beside it are not announced as status. */}
+      <Notice tone="info" className="m-3">
+        <p role="status" className="mb-0">
+          <strong>{ownerBannerSentence(notice)}</strong>
+        </p>
         <div className="row mt-2 flex-wrap gap-2">
           <Button variant="default" size="sm" onClick={() => setConfirming(true)}>
             Keep ownership
@@ -134,6 +137,10 @@ export function OwnerReplacementBanner({
   const [body, setBody] = useState<NoticeResponse | null>(null);
   const [kept, setKept] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
+  const keptLine = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (kept) keptLine.current?.focus();
+  }, [kept]);
 
   const load = useCallback(async () => {
     try {
@@ -156,8 +163,11 @@ export function OwnerReplacementBanner({
   return (
     <>
       {kept && (
-        <Notice tone="success" className="m-3" role="status">
-          You kept ownership. The host has been told.
+        <Notice tone="success" className="m-3">
+          {/* Focus lands here: the button that opened the confirm is gone with the banner. */}
+          <p ref={keptLine} tabIndex={-1} role="status" className="mb-0">
+            You kept ownership. The host has been told.
+          </p>
         </Notice>
       )}
       {body?.open?.role === 'owner' && (
@@ -177,8 +187,10 @@ export function OwnerReplacementBanner({
         </Notice>
       )}
       {showCompletion && (
-        <Notice tone="info" className="m-3" role="status">
-          <span>{completionSentence(completed)}</span>
+        <Notice tone="info" className="m-3">
+          <p role="status" className="mb-0">
+            {completionSentence(completed)}
+          </p>
           <Button
             variant="outline"
             size="sm"

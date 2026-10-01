@@ -52,8 +52,8 @@ await tidyEvidenceSink(evidenceSink);
 const noticeComposers: NoticeComposers = { ...ownerReplacementComposers(config) };
 // Whether a host may start an owner replacement. It stays off until every way the owner is told
 // works. The server's routes and the /keep-ownership and /owner-replacement pages are in place;
-// it turns on once the owner is also told on their DorkOS connection (task 3.2). Until then the worker still sends the notices of any request
-// already open, and every new request is refused.
+// it turns on once the owner is also told on their DorkOS connection (task 3.2). Until then the
+// worker still sends the notices of any request already open, and every new request is refused.
 const ownerReplacementOpen = false;
 const app = createCommunityApp({
   config,

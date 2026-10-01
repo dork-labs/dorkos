@@ -55,6 +55,8 @@ const replacement = {
   endedAt: null,
   withdrawnBecause: null,
   cooldownUntil: null,
+  afterObjection: false,
+  afterWithdrawal: false,
 } as const;
 
 const adminNotice = {
