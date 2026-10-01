@@ -6,6 +6,7 @@ import { ArrowRight, KeyRound, UsersRound } from 'lucide-react';
 import { describeError, RequestError, request } from '../api.js';
 import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import {
+  admissionIntro,
   describeAdmissionFailure,
   readPendingAdmission,
   type AdmissionFailure,
@@ -13,15 +14,16 @@ import {
   type PendingAdmission,
 } from '../admission.js';
 import { clearInviteFragment } from '../invite-fragment.js';
-import {
-  AdmissionFailurePanel,
-  InvitationSummary,
-  JoinLostNotice,
-  ReactivationReview,
-} from './AdmissionPanels.js';
+import { AdmissionFailurePanel, InvitationHeading, ReactivationReview } from './AdmissionPanels.js';
 import type { Community } from '../types.js';
 import { HostPolicyLinks } from './HostLinks.js';
-import { returnHere, takeSignInError, useSignInOptions } from '../sign-in-options.js';
+import {
+  returnHere,
+  singleSignOnLead,
+  takeSignInError,
+  useSignInOptionsState,
+} from '../sign-in-options.js';
+import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
 import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
 
 /**
@@ -90,13 +92,21 @@ export function Admission({
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   // A provider round trip that failed returns here with `?error=`; say why once.
   const [error, setError] = useState(() => takeSignInError() ?? '');
-  const providers = useSignInOptions();
+  const signInOptions = useSignInOptionsState();
+  const providers = signInOptions.options;
+  // Read as the page loaded: the hint the DorkOS app adds where the person's DorkOS account is
+  // this host's single sign-on.
+  const [loadedSearch] = useState(() => window.location.search);
   const heading = useRef<HTMLHeadingElement>(null);
   const focusedStage = useRef(stage);
   const retry = useRef<(() => Promise<void>) | null>(null);
   const resumeOnMount = useRef(resumed?.account ? resumed : null);
   const isOwner = !community && !hostSignIn;
   const pendingAdmission = preview !== null;
+  // Joining or signing in leads with the host's single sign-on where the page was opened with
+  // the hint, so joining makes no second account. Setting up a host never does.
+  const lead = isOwner ? null : singleSignOnLead(loadedSearch, signInOptions);
+  const leading = lead !== null && lead !== 'loading';
   // A new account must first confirm the host's minimum age, when it set one.
   const minimumAge = mode === 'signup' ? providers.minimumAge : null;
 
@@ -171,12 +181,12 @@ export function Admission({
     await join(pending, context);
   }
 
-  async function social(provider: SignInProvider) {
+  async function social(provider: SignInProvider, confirmAge = minimumAge !== null) {
     setBusy(true);
     setError('');
     try {
       // The provider's callback creates the account, so the confirmation must be in place first.
-      if (minimumAge !== null) await confirmMinimumAge();
+      if (confirmAge) await confirmMinimumAge();
       const result = await authClient.signIn.social({ provider, ...returnHere() });
       if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
     } catch (cause) {
@@ -299,17 +309,16 @@ export function Admission({
         : community?.name
           ? `Join ${community.name}`
           : 'Join community';
-  const intro = isOwner
-    ? 'Claim the first account, name your space, and open a channel.'
-    : stage === 'failed' || stage === 'joining' || stage === 'reactivate'
-      ? null
-      : resume?.kind === 'lost' && !preview
-        ? null
-        : preview
-          ? 'Create an account on this host, or sign in if you already have one.'
-          : rawInvite
-            ? 'Check the invitation, then create or sign in to your account.'
-            : 'Sign in to your account. To join for the first time, ask a member for an invitation.';
+  // What the invitation is, or that the join attempt was lost: above whichever sign-in leads.
+  const invitation = <InvitationHeading lost={resume?.kind === 'lost'} preview={preview} />;
+  const intro = admissionIntro({
+    isOwner,
+    stage,
+    lost: resume?.kind === 'lost',
+    hasPreview: preview !== null,
+    hasInvite: Boolean(rawInvite),
+    singleSignOn: leading ? lead.label : null,
+  });
 
   return (
     <div className="auth-wrap">
@@ -352,13 +361,22 @@ export function Admission({
             }}
           />
         ) : unadmitted && !inviteToken && !preview ? (
-          <div className="panel">
-            <h2 className="text-lg font-semibold">Your account has not joined yet.</h2>
-            <p className="muted mb-0">
-              Ask a member for a new invitation link, then open it in this browser. If your password
-              is lost, contact the person running this community.
-            </p>
-          </div>
+          <>
+            <div className="panel">
+              <h2 className="text-lg font-semibold">Your account has not joined yet.</h2>
+              <p className="muted mb-0">
+                Ask a member for a new invitation link, then open it in this browser. If your
+                password is lost, contact the person running this community.
+              </p>
+            </div>
+            {!isOwner && stage === 'account' && (
+              <ProviderButtons
+                providers={providers}
+                disabled={busy || (minimumAge !== null && !ageConfirmed)}
+                onChoose={(provider) => void social(provider)}
+              />
+            )}
+          </>
         ) : stage === 'initial' ? (
           <form className="panel" onSubmit={(event) => void preflight(event)}>
             {isOwner ? (
@@ -388,125 +406,137 @@ export function Admission({
             </Button>
           </form>
         ) : (
-          <form className="panel" onSubmit={(event) => void submitAccount(event)}>
-            {resume?.kind === 'lost' && !preview && <JoinLostNotice />}
-            {preview && <InvitationSummary preview={preview} />}
-            {(isOwner || pendingAdmission) && (
-              <div className="row mb-5" role="group" aria-label="Account">
-                <Button
-                  type="button"
-                  aria-pressed={mode === 'signup'}
-                  variant={mode === 'signup' ? 'default' : 'outline'}
-                  className="h-auto min-h-11 whitespace-normal md:min-h-9"
-                  onClick={() => setMode('signup')}
-                >
-                  {isOwner ? 'Create account' : 'Create an account on this host'}
-                </Button>
-                {!isOwner && (
+          <SingleSignOnFirst
+            lead={lead}
+            // Joining with single sign-on may make the account, so a new one confirms the age.
+            minimumAge={pendingAdmission ? providers.minimumAge : null}
+            ageConfirmed={ageConfirmed}
+            onAgeConfirmed={setAgeConfirmed}
+            before={leading && invitation}
+            disabled={busy}
+            onContinue={() =>
+              void social('oidc', pendingAdmission && providers.minimumAge !== null)
+            }
+          >
+            <form className="panel" onSubmit={(event) => void submitAccount(event)}>
+              {!leading && invitation}
+              {(isOwner || pendingAdmission) && (
+                <div className="row mb-5" role="group" aria-label="Account">
                   <Button
                     type="button"
-                    aria-pressed={mode === 'signin'}
-                    variant={mode === 'signin' ? 'default' : 'outline'}
+                    aria-pressed={mode === 'signup'}
+                    variant={mode === 'signup' ? 'default' : 'outline'}
                     className="h-auto min-h-11 whitespace-normal md:min-h-9"
-                    onClick={() => setMode('signin')}
+                    onClick={() => setMode('signup')}
                   >
-                    Sign in to this host
+                    {isOwner ? 'Create account' : 'Create an account on this host'}
                   </Button>
-                )}
-              </div>
-            )}
-            {mode === 'signup' && (
+                  {!isOwner && (
+                    <Button
+                      type="button"
+                      aria-pressed={mode === 'signin'}
+                      variant={mode === 'signin' ? 'default' : 'outline'}
+                      className="h-auto min-h-11 whitespace-normal md:min-h-9"
+                      onClick={() => setMode('signin')}
+                    >
+                      Sign in to this host
+                    </Button>
+                  )}
+                </div>
+              )}
+              {mode === 'signup' && (
+                <Field className="mb-4 gap-1.5">
+                  <FieldLabel htmlFor="your-name">Your name</FieldLabel>
+                  <Input
+                    id="your-name"
+                    autoComplete="name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    required
+                  />
+                </Field>
+              )}
               <Field className="mb-4 gap-1.5">
-                <FieldLabel htmlFor="your-name">Your name</FieldLabel>
+                <FieldLabel htmlFor="email">Email</FieldLabel>
                 <Input
-                  id="your-name"
-                  autoComplete="name"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                   required
                 />
               </Field>
-            )}
-            <Field className="mb-4 gap-1.5">
-              <FieldLabel htmlFor="email">Email</FieldLabel>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </Field>
-            <Field className="mb-4 gap-1.5">
-              <FieldLabel htmlFor="password">Password</FieldLabel>
-              <Input
-                id="password"
-                type="password"
-                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                // Only a new password must meet today's length; an older, shorter one still signs in.
-                minLength={mode === 'signup' ? COMMUNITY_PASSWORD_MIN_LENGTH : undefined}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-              {mode === 'signin' ? (
-                <span className="hint">
-                  Forgot your password? Ask the person running this community for help.
-                </span>
-              ) : (
-                <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
+              <Field className="mb-4 gap-1.5">
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                  // Only a new password must meet today's length; an older, shorter one still signs in.
+                  minLength={mode === 'signup' ? COMMUNITY_PASSWORD_MIN_LENGTH : undefined}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+                {mode === 'signin' ? (
+                  <span className="hint">
+                    Forgot your password? Ask the person running this community for help.
+                  </span>
+                ) : (
+                  <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
+                )}
+              </Field>
+              {isOwner && (
+                <>
+                  <Separator className="my-4" />
+                  <Field className="mb-4 gap-1.5">
+                    <FieldLabel htmlFor="community-name">Community name</FieldLabel>
+                    <Input
+                      id="community-name"
+                      value={communityName}
+                      onChange={(event) => setCommunityName(event.target.value)}
+                      required
+                    />
+                  </Field>
+                  <Field className="mb-4 gap-1.5">
+                    <FieldLabel htmlFor="channel-name">First channel</FieldLabel>
+                    <Input
+                      id="channel-name"
+                      value={channelName}
+                      onChange={(event) => setChannelName(event.target.value)}
+                      required
+                    />
+                  </Field>
+                </>
               )}
-            </Field>
-            {isOwner && (
-              <>
-                <Separator className="my-4" />
-                <Field className="mb-4 gap-1.5">
-                  <FieldLabel htmlFor="community-name">Community name</FieldLabel>
-                  <Input
-                    id="community-name"
-                    value={communityName}
-                    onChange={(event) => setCommunityName(event.target.value)}
-                    required
-                  />
-                </Field>
-                <Field className="mb-4 gap-1.5">
-                  <FieldLabel htmlFor="channel-name">First channel</FieldLabel>
-                  <Input
-                    id="channel-name"
-                    value={channelName}
-                    onChange={(event) => setChannelName(event.target.value)}
-                    required
-                  />
-                </Field>
-              </>
-            )}
-            {minimumAge !== null && (
-              <MinimumAgeConfirmation
-                id="minimum-age"
-                minimumAge={minimumAge}
-                confirmed={ageConfirmed}
-                onChange={setAgeConfirmed}
+              {minimumAge !== null && (
+                <MinimumAgeConfirmation
+                  id="minimum-age"
+                  minimumAge={minimumAge}
+                  confirmed={ageConfirmed}
+                  onChange={setAgeConfirmed}
+                />
+              )}
+              <Button type="submit" className="w-full" disabled={busy}>
+                {busy
+                  ? 'Working…'
+                  : isOwner
+                    ? 'Create community'
+                    : pendingAdmission
+                      ? 'Join community'
+                      : 'Sign in'}
+                <KeyRound size={16} aria-hidden="true" />
+              </Button>
+            </form>
+            {!isOwner && stage === 'account' && (
+              <ProviderButtons
+                providers={leading ? { ...providers, oidc: null } : providers}
+                disabled={busy || (minimumAge !== null && !ageConfirmed)}
+                onChoose={(provider) => void social(provider)}
               />
             )}
-            <Button type="submit" className="w-full" disabled={busy}>
-              {busy
-                ? 'Working…'
-                : isOwner
-                  ? 'Create community'
-                  : pendingAdmission
-                    ? 'Join community'
-                    : 'Sign in'}
-              <KeyRound size={16} aria-hidden="true" />
-            </Button>
-          </form>
-        )}
-        {!isOwner && stage === 'account' && (
-          <ProviderButtons
-            providers={providers}
-            disabled={busy || (minimumAge !== null && !ageConfirmed)}
-            onChoose={(provider) => void social(provider)}
-          />
+          </SingleSignOnFirst>
         )}
         <HostPolicyLinks />
       </main>

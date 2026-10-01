@@ -40,6 +40,7 @@ import type {
   CloudCommunityNameCheckResponse,
   CloudCommunityRefusal,
   CloudCommunityRestoreResponse,
+  CloudCommunitySignInResponse,
   CloudCommunityStartResponse,
   CloudHostedCommunitiesResponse,
 } from '@dorkos/shared/cloud-schemas';
@@ -47,6 +48,7 @@ import {
   cancelMove,
   checkCommunityName,
   keepCommunity,
+  readAccountSignInOrigins,
   readHostedCommunities,
   readMove,
   restoreCommunity,
@@ -319,6 +321,26 @@ export function createCloudCommunitiesRouter(
       );
     } catch (error) {
       return readFailed(res, error, 'a web address');
+    }
+  });
+
+  /**
+   * GET /sign-in — the space servers where the linked account signs a person
+   * in. Unlinked, or a service that does not serve the route yet, answers
+   * `{ available: false }`, and the app keeps today's flow.
+   */
+  router.get('/sign-in', async (_req, res) => {
+    if (!isCloudLinked())
+      return res.json({ available: false } satisfies CloudCommunitySignInResponse);
+    try {
+      const origins = await readAccountSignInOrigins();
+      return res.json(
+        (origins === null
+          ? { available: false }
+          : { available: true, origins }) satisfies CloudCommunitySignInResponse
+      );
+    } catch (error) {
+      return readFailed(res, error, 'where the account signs in');
     }
   });
 

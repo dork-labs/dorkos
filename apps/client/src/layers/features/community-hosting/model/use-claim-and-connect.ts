@@ -8,6 +8,12 @@
  * desktop app, the shell's own http(s)-only `openExternal`), then is dropped.
  * It never enters React state, the query cache, or a log.
  *
+ * **On a server that signs in with the DorkOS account**, the claim and the
+ * approval page open with the single sign-on hint, so the person becomes the
+ * owner with the account they already have instead of making a second one.
+ * Anywhere else (the account service does not say so, or cannot be reached),
+ * both open exactly as before.
+ *
  * @module features/community-hosting/model/use-claim-and-connect
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -22,6 +28,7 @@ import {
 import { useTransport } from '@/layers/shared/model';
 import {
   communityKeys,
+  useCommunityAccountSignIn,
   useConfirmedCommunityAuthority,
   withinCommunityAuthority,
 } from '@/layers/entities/community';
@@ -54,7 +61,14 @@ export interface ClaimTarget {
 /** Where the claim-and-connect steps are. */
 export type ClaimConnectState =
   | { kind: 'preparing' }
-  | { kind: 'claim'; opened: boolean; busy: boolean; notice: HostingNotice | null }
+  | {
+      kind: 'claim';
+      opened: boolean;
+      busy: boolean;
+      notice: HostingNotice | null;
+      /** The space's server signs the person in with their DorkOS account. */
+      withAccount: boolean;
+    }
   | {
       kind: 'connecting';
       approvalUrl: string | null;
@@ -104,6 +118,7 @@ export function useClaimAndConnect(
   const transport = useTransport();
   const client = useQueryClient();
   const authority = useConfirmedCommunityAuthority(target !== null);
+  const { signsInWithAccount, linkFor } = useCommunityAccountSignIn(target !== null);
   const [claim, setClaim] = useState<{
     opened: boolean;
     busy: boolean;
@@ -161,14 +176,14 @@ export function useClaimAndConnect(
           return;
         }
         // Straight into the waiting window and dropped: never stored anywhere.
-        const opened = pending.go(answer.claimUrl);
+        const opened = pending.go(linkFor(answer.claimUrl));
         setClaim((c) => ({ opened: c.opened || opened, busy: false, notice: null }));
       })
       .catch(() => {
         pending.close();
         setClaim((c) => ({ ...c, busy: false, notice: UNREACHABLE_NOTICE }));
       });
-  }, [target, claim.busy, transport]);
+  }, [target, claim.busy, transport, linkFor]);
 
   const startConnect = useCallback(async () => {
     if (!target) return;
@@ -257,14 +272,18 @@ export function useClaimAndConnect(
           }
         : preparing
           ? { kind: 'preparing' }
-          : { kind: 'claim', ...claim };
+          : {
+              kind: 'claim',
+              ...claim,
+              withAccount: target !== null && signsInWithAccount(target.communityUrl),
+            };
 
   return {
     state,
     openClaim,
     confirmClaimed,
     openApproval: () => {
-      if (connect?.approvalUrl) openExternalLink(connect.approvalUrl);
+      if (connect?.approvalUrl) openExternalLink(linkFor(connect.approvalUrl));
     },
     retryConnect: () => void startConnect(),
   };

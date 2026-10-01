@@ -48,8 +48,8 @@ import {
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
 
-/** Where "Run your own space server" leads: the CLI guide's space server section. */
-export const COMMUNITY_DEPLOY_GUIDE_URL = 'https://dorkos.ai/docs/guides/cli-usage#space-server';
+/** Where "Run your own space server" leads: the docs page for running one. */
+export const COMMUNITY_DEPLOY_GUIDE_URL = 'https://dorkos.ai/docs/self-hosting/space-server';
 
 /**
  * The servers on which the person may be offered "Create a space": each

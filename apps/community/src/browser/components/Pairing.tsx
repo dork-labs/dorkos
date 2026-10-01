@@ -6,7 +6,8 @@ import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wi
 import { describeError, hostRequest, RequestError, request } from '../api.js';
 import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import { HostPolicyLinks } from './HostLinks.js';
-import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
+import { singleSignOnLead, takeSignInError, useSignInOptionsState } from '../sign-in-options.js';
+import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
 
 const authClient = createAuthClient({ baseURL: window.location.origin });
 
@@ -55,7 +56,12 @@ export function Pairing({ search = location.search }: { search?: string }) {
   const [busy, setBusy] = useState(false);
   const [held, setHeld] = useState(false);
   const emailInput = useRef<HTMLInputElement>(null);
-  const providers = useSignInOptions();
+  const leadButton = useRef<HTMLButtonElement>(null);
+  const signInOptions = useSignInOptionsState();
+  const providers = signInOptions.options;
+  // Opened from the DorkOS app where the person's DorkOS account is this host's single sign-on.
+  const lead = singleSignOnLead(search, signInOptions);
+  const leading = lead !== null && lead !== 'loading';
 
   const loadPairing = useCallback(
     async (isCurrent: () => boolean = () => true, allowPending = true) => {
@@ -99,8 +105,10 @@ export function Pairing({ search = location.search }: { search?: string }) {
   }, [loadPairing, pairingId]);
 
   useEffect(() => {
-    if (needsSignIn) emailInput.current?.focus();
-  }, [needsSignIn]);
+    if (!needsSignIn) return;
+    if (leading) leadButton.current?.focus();
+    else if (lead !== 'loading') emailInput.current?.focus();
+  }, [needsSignIn, leading, lead]);
 
   async function signIn(event: React.FormEvent) {
     event.preventDefault();
@@ -182,11 +190,23 @@ export function Pairing({ search = location.search }: { search?: string }) {
           </Notice>
         )}
         {needsSignIn && (
-          <>
-            <form className="panel" onSubmit={(event) => void signIn(event)}>
+          <SingleSignOnFirst
+            lead={lead}
+            ref={leadButton}
+            disabled={busy}
+            onContinue={() => void social('oidc')}
+            before={
               <Notice tone="info" className="mb-5">
                 Sign in to review this connection. You’ll return to this request.
               </Notice>
+            }
+          >
+            <form className="panel" onSubmit={(event) => void signIn(event)}>
+              {!leading && (
+                <Notice tone="info" className="mb-5">
+                  Sign in to review this connection. You’ll return to this request.
+                </Notice>
+              )}
               <div className="field">
                 <Label htmlFor="pairing-email">Email</Label>
                 <Input
@@ -219,11 +239,11 @@ export function Pairing({ search = location.search }: { search?: string }) {
               </Button>
             </form>
             <ProviderButtons
-              providers={providers}
+              providers={leading ? { ...providers, oidc: null } : providers}
               disabled={busy}
               onChoose={(provider) => void social(provider)}
             />
-          </>
+          </SingleSignOnFirst>
         )}
         {!error && !status && !needsSignIn && <p role="status">Loading the request…</p>}
         {status && (

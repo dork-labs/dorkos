@@ -1,14 +1,14 @@
 {
-  "title": "Self-Hosting",
+  "title": "Advanced: Running DorkOS Yourself",
   "pages": [
     "deployment",
     "docker",
     "tunnel-setup",
+    "space-server",
     "reverse-proxy",
     "securing-your-instance",
     "threat-model",
     "telemetry",
-    "observability",
-    "dorkos-accounts"
+    "observability"
   ]
 }

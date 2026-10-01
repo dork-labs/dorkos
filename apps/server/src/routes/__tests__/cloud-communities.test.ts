@@ -31,6 +31,7 @@ import moveStartFixture from '@dork-labs/cloud-api/fixtures/v1/communities/move-
 import moveImportingFixture from '@dork-labs/cloud-api/fixtures/v1/communities/move-importing.json' with { type: 'json' };
 import moveCancelledFixture from '@dork-labs/cloud-api/fixtures/v1/communities/move-cancelled.json' with { type: 'json' };
 import nameFreeFixture from '@dork-labs/cloud-api/fixtures/v1/communities/name-check-free.json' with { type: 'json' };
+import signInFixture from '@dork-labs/cloud-api/fixtures/v1/communities/sign-in.json' with { type: 'json' };
 import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-free.json' with { type: 'json' };
 import nameTakenProblem from '@dork-labs/cloud-api/fixtures/v1/problem/community-name-taken.json' with { type: 'json' };
 import entitlementProblem from '@dork-labs/cloud-api/fixtures/v1/problem/entitlement-required-action.json' with { type: 'json' };
@@ -128,6 +129,10 @@ interface Script {
   parts: Map<number, Buffer>;
   /** Answers `complete` gives in order before it succeeds (`202` = still checking). */
   completeStatus: number[];
+  /** What the account sign-in read answers with; `null` is a service that does not serve it. */
+  signIn: unknown;
+  /** The status the account sign-in read answers with. */
+  signInStatus: number;
 }
 
 let script: Script;
@@ -162,6 +167,8 @@ function defaultScript(): Script {
     entitlementsGate: null,
     parts: new Map(),
     completeStatus: [],
+    signIn: signInFixture,
+    signInStatus: 200,
   };
 }
 
@@ -203,6 +210,9 @@ const fake = listeningServer(async (req, res) => {
   }
   if (route === 'GET /v1/communities/name-check') {
     return send(res, 200, { ...nameFreeFixture, name: url.searchParams.get('name') });
+  }
+  if (route === 'GET /v1/communities/sign-in' && script.signIn !== null) {
+    return send(res, script.signInStatus, script.signIn);
   }
   if (route === 'POST /v1/communities') return send(res, script.startStatus, script.startBody);
   if (route.startsWith('POST /v1/communities/') && route.endsWith('/claim-link')) {
@@ -356,7 +366,61 @@ describe('unlinked', () => {
       .post(`/api/cloud/communities/${startFixture.community.communityId}/claim-link`)
       .expect(200);
     expect(claim.body.ok).toBe(false);
+    const signIn = await request(server).get('/api/cloud/communities/sign-in').expect(200);
+    expect(signIn.body).toEqual({ available: false });
     expect(received).toHaveLength(0);
+  });
+});
+
+describe('GET /api/cloud/communities/sign-in', () => {
+  // Purpose: the app leads with the account on exactly the servers the service
+  // names, and keeps today's flow everywhere else.
+  it('passes on the origins of the servers where the account signs a person in', async () => {
+    const res = await request(server).get('/api/cloud/communities/sign-in').expect(200);
+    expect(res.body).toEqual({ available: true, origins: ['https://community.example.invalid'] });
+    expect(serviceRequests()).toEqual([
+      expect.objectContaining({ method: 'GET', path: '/v1/communities/sign-in' }),
+    ]);
+    expect(serviceRequests()[0]?.authorization).toBe('Bearer tok_instance');
+  });
+
+  it('reads a service that does not serve the route yet as not available, not as a fault', async () => {
+    // The demo-claim gate: until the control plane ships it, nothing changes.
+    script.signIn = null;
+    const res = await request(server).get('/api/cloud/communities/sign-in').expect(200);
+    expect(res.body).toEqual({ available: false });
+  });
+
+  it('passes an empty list on as it is: the service offers the sign-in nowhere today', async () => {
+    script.signIn = { servers: [] };
+    const res = await request(server).get('/api/cloud/communities/sign-in').expect(200);
+    expect(res.body).toEqual({ available: true, origins: [] });
+  });
+
+  it('passes on the origin and nothing else the service put beside it', async () => {
+    script.signIn = {
+      servers: [{ origin: 'https://community.example.invalid', subject: 'account-subject' }],
+      account: 'u_1',
+    };
+    const res = await request(server).get('/api/cloud/communities/sign-in').expect(200);
+    expect(res.body).toEqual({ available: true, origins: ['https://community.example.invalid'] });
+    expect(JSON.stringify(res.body)).not.toContain('account-subject');
+  });
+
+  it('refuses a server that is not a bare origin rather than opening pages on it', async () => {
+    script.signIn = { servers: [{ origin: 'https://community.example.invalid/c/x' }] };
+    const logged = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const res = await request(server).get('/api/cloud/communities/sign-in').expect(502);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    logged.mockRestore();
+  });
+
+  it('says it could not reach the account when the service fails', async () => {
+    script.signInStatus = 503;
+    script.signIn = { code: 'temporarily_unavailable', status: 503, title: 'Try again shortly.' };
+    const logged = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    await request(server).get('/api/cloud/communities/sign-in').expect(502);
+    logged.mockRestore();
   });
 });
 

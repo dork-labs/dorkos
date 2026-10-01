@@ -568,6 +568,7 @@ describe('the routes', () => {
     expect(V1_ROUTES.communities).toBe('/v1/communities');
     expect(V1_ROUTES.communitiesNameCheck).toBe('/v1/communities/name-check');
     expect(V1_ROUTES.communitiesMoves).toBe('/v1/communities/moves');
+    expect(V1_ROUTES.communitiesSignIn).toBe('/v1/communities/sign-in');
     expect(v1Path.communityClaimLink('c1')).toBe('/v1/communities/c1/claim-link');
     expect(v1Path.communityKeep('c1')).toBe('/v1/communities/c1/keep');
     expect(v1Path.communityRestore('c1')).toBe('/v1/communities/c1/restore');
@@ -578,12 +579,51 @@ describe('the routes', () => {
   it('refuses a community identifier that would build another route`s path', () => {
     // `communityClaimLink('moves')` would build `/v1/communities/moves/claim-link`,
     // which reads as the move `claim-link`.
-    for (const fixed of ['moves', 'name-check']) {
+    for (const fixed of ['moves', 'name-check', 'sign-in']) {
       expect(() => v1Path.communityClaimLink(fixed)).toThrow(TypeError);
       expect(() => v1Path.communityKeep(fixed)).toThrow(TypeError);
       expect(() => v1Path.communityRestore(fixed)).toThrow(TypeError);
     }
     expect(() => v1Path.communityKeep('..')).toThrow(TypeError);
     expect(v1Path.communityClaimLink('moves/m1')).toBe('/v1/communities/moves%2Fm1/claim-link');
+  });
+});
+
+describe('account sign-in on Community servers', () => {
+  const schema = contract.CommunitySignInResponseSchema;
+  const listed = (origin: string) => ({ servers: [{ origin }] });
+
+  it('parses a list of servers, and an empty one while the service offers it nowhere', () => {
+    expect(schema.parse(fixture('communities/sign-in.json')).servers).toHaveLength(1);
+    expect(schema.parse(fixture('communities/sign-in-none.json')).servers).toEqual([]);
+  });
+
+  it('takes a server as a bare origin, so the app compares it with `new URL(link).origin` as is', () => {
+    expect(schema.safeParse(listed('https://community.example.invalid')).success).toBe(true);
+    expect(schema.safeParse(listed('https://community.example.invalid:8443')).success).toBe(true);
+    expect(schema.safeParse(listed('http://localhost:4300')).success).toBe(true);
+    for (const notAnOrigin of [
+      'https://community.example.invalid/',
+      'https://community.example.invalid/c/x',
+      'https://community.example.invalid?x=1',
+      'https://community.example.invalid#x',
+      'https://Community.example.invalid',
+      'https://community.example.invalid:443',
+    ]) {
+      expect(schema.safeParse(listed(notAnOrigin)).success, notAnOrigin).toBe(false);
+    }
+  });
+
+  it('refuses a server a browser must not be sent to', () => {
+    for (const unsafe of UNSAFE_LINKS) {
+      expect(schema.safeParse(listed(unsafe)).success, unsafe).toBe(false);
+    }
+  });
+
+  it('says nothing about the account: an origin is all a server entry carries', () => {
+    const parsed = schema.parse({
+      servers: [{ origin: 'https://community.example.invalid', userId: 'u_1', subject: 's' }],
+    });
+    expect(parsed.servers[0]).toEqual({ origin: 'https://community.example.invalid' });
   });
 });

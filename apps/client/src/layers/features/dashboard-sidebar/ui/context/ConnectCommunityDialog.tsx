@@ -32,6 +32,7 @@ import {
   disconnectAgentsLine,
   disconnectOutcome,
   unknownDisconnectAgentsLine,
+  useCommunityAccountSignIn,
   useCommunityApprovalCheck,
   useCommunityDisconnectImpact,
   useCommunityApprovalStore,
@@ -298,11 +299,13 @@ function ConnectCommunityBody({
 }: ConnectCommunityBodyProps) {
   const transport = useTransport();
   const client = useQueryClient();
+  const accountSignIn = useCommunityAccountSignIn();
   const id = useId();
   const [url, setUrl] = useState('');
-  // Set once an invitation was opened: where it opened, so the form can say
-  // what happens next while the person joins there.
-  const [joiningOn, setJoiningOn] = useState<string | null>(null);
+  // Set once an invitation was opened: where it opened, and whether the person
+  // joins there with their DorkOS account, so the form can say what happens
+  // next while they join.
+  const [joiningOn, setJoiningOn] = useState<{ host: string; withAccount: boolean } | null>(null);
   // A join link that is not one this app may open: said, never sent on.
   const [brokenInvitation, setBrokenInvitation] = useState(false);
   const [installName, setInstallName] = useState(defaultInstallName);
@@ -372,10 +375,15 @@ function ConnectCommunityBody({
     // it is, and stay on Connect with the space's address filled in, so the
     // person comes back to a computer that connects rather than to a
     // membership this DorkOS knows nothing about.
+    // On a space that runs on DorkOS, the page leads with the person's DorkOS
+    // account, so joining makes no second account there.
     if (isCommunityInvitationUrl(url)) {
-      if (!openExternalLink(url.trim())) return;
+      if (!openExternalLink(accountSignIn.linkFor(url.trim()))) return;
       setUrl(spaceAddressFromInvitation(url));
-      setJoiningOn(new URL(url.trim()).host);
+      setJoiningOn({
+        host: new URL(url.trim()).host,
+        withAccount: accountSignIn.signsInWithAccount(url),
+      });
       start.reset();
       return;
     }
@@ -453,7 +461,9 @@ function ConnectCommunityBody({
             />
             <p id={`${id}-url-hint`} aria-live="polite" className="text-muted-foreground text-xs">
               {joiningOn
-                ? `Finish joining on ${joiningOn} in the tab that opened, then come back and connect.`
+                ? joiningOn.withAccount
+                  ? `Join on ${joiningOn.host} with your DorkOS account in the tab that opened, then come back and connect.`
+                  : `Finish joining on ${joiningOn.host} in the tab that opened, then come back and connect.`
                 : 'Its full link, its short address, or an invitation link you were sent.'}
             </p>
           </div>
@@ -558,8 +568,11 @@ function ConnectCommunityBody({
       <ResponsiveDialogHeader>
         <ResponsiveDialogTitle>Approve on {connection.label}</ResponsiveDialogTitle>
         <ResponsiveDialogDescription>
-          {connection.label} asks you to approve this DorkOS on its own site. This moves on by
-          itself once you do.
+          {connection.label} asks you to approve this DorkOS on its own site.{' '}
+          {approvalUrl && accountSignIn.signsInWithAccount(approvalUrl)
+            ? 'Sign in there with your DorkOS account. '
+            : ''}
+          This moves on by itself once you do.
         </ResponsiveDialogDescription>
       </ResponsiveDialogHeader>
       <ResponsiveDialogBody className="space-y-3 py-4">
@@ -570,7 +583,12 @@ function ConnectCommunityBody({
         </p>
         {approvalUrl ? (
           <Button asChild>
-            <a ref={approvalLink} href={approvalUrl} target="_blank" rel="noopener noreferrer">
+            <a
+              ref={approvalLink}
+              href={accountSignIn.linkFor(approvalUrl)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               Open {connection.label} to approve
               <ExternalLink className="size-3.5" aria-hidden />
             </a>

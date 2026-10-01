@@ -22,6 +22,7 @@ import type {
   CloudCommunityMoveResponse,
   CloudCommunityMoveStartInput,
   CloudCommunityNameCheckResponse,
+  CloudCommunitySignInResponse,
   CloudCommunityRestoreResponse,
   CloudCommunityStartResponse,
   CloudCreditsNoticeDismissRequest,
@@ -167,6 +168,10 @@ export function createCloudMethods(baseUrl: string) {
 
     listHostedCommunities(): Promise<CloudHostedCommunitiesResponse> {
       return fetchJSON<CloudHostedCommunitiesResponse>(baseUrl, '/cloud/communities');
+    },
+
+    getCommunityAccountSignIn(): Promise<CloudCommunitySignInResponse> {
+      return fetchJSON<CloudCommunitySignInResponse>(baseUrl, '/cloud/communities/sign-in');
     },
 
     checkHostedCommunityName(name: string): Promise<CloudCommunityNameCheckResponse> {

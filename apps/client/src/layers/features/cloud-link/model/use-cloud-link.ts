@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import { connectorKeys } from '@/layers/entities/connectors';
+import { accountSignInKeys } from '@/layers/entities/community';
 import type {
   CloudLinkState,
   CloudLinkStatus,
@@ -130,6 +131,8 @@ export function useCloudLink(): UseCloudLink {
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: cloudStatusKey }),
             queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
+            // Which space sites sign in with the account belongs to the account.
+            queryClient.invalidateQueries({ queryKey: accountSignInKeys.all }),
           ]);
         }
       }
@@ -213,6 +216,7 @@ export function useCloudLink(): UseCloudLink {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: cloudStatusKey }),
         queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
+        queryClient.invalidateQueries({ queryKey: accountSignInKeys.all }),
       ]);
     } catch {
       // Unlink failed (e.g. the local server call errored): the instance was not

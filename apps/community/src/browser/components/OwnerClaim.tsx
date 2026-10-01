@@ -21,7 +21,8 @@ import {
 import { HostPolicyLinks } from './HostLinks.js';
 import { ConnectDorkOS } from '../connect/ConnectDorkOS.js';
 import { communityLink } from '../connect/community-link.js';
-import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
+import { singleSignOnLead, takeSignInError, useSignInOptionsState } from '../sign-in-options.js';
+import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
 import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
 
 type Stage =
@@ -74,7 +75,12 @@ export function OwnerClaim() {
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   // A provider round trip that failed returns here with `?error=`; say why once.
   const [error, setError] = useState(() => takeSignInError() ?? '');
-  const providers = useSignInOptions();
+  const signInOptions = useSignInOptionsState();
+  const providers = signInOptions.options;
+  // Opened from the DorkOS app where the person's DorkOS account is this host's single sign-on:
+  // lead with it, so claiming makes no second account. Read as the page loaded.
+  const [loadedSearch] = useState(() => window.location.search);
+  const lead = singleSignOnLead(loadedSearch, signInOptions);
   // A new account must first confirm the host's minimum age, when it set one.
   const minimumAge = mode === 'signup' ? providers.minimumAge : null;
   const heading = useRef<HTMLHeadingElement>(null);
@@ -252,13 +258,13 @@ export function OwnerClaim() {
     setBusy(false);
   }
 
-  async function social(provider: SignInProvider) {
+  async function social(provider: SignInProvider, confirmAge = minimumAge !== null) {
     setBusy(true);
     setError('');
     try {
       const here = window.location.origin + OWNER_CLAIM_PATH;
       // The provider's callback creates the account, so the confirmation must be in place first.
-      if (minimumAge !== null) await confirmMinimumAge();
+      if (confirmAge) await confirmMinimumAge();
       const result = await authClient.signIn.social({
         provider,
         callbackURL: here,
@@ -295,7 +301,9 @@ export function OwnerClaim() {
           : stage === 'confirm'
             ? 'You are about to become the owner of a new community on this host.'
             : stage === 'account'
-              ? 'Create an account on this host, or sign in, to claim the community.'
+              ? lead && lead !== 'loading'
+                ? `Sign in with ${lead.label} to claim the community.`
+                : 'Create an account on this host, or sign in, to claim the community.'
               : 'The host administrator set up a new community for you. Claim it to become its owner.';
 
   return (
@@ -358,92 +366,103 @@ export function OwnerClaim() {
           </form>
         )}
         {stage === 'account' && (
-          <>
-            <form className="panel" onSubmit={(event) => void submitAccount(event)}>
-              <div className="row mb-5" role="group" aria-label="Account">
-                <Button
-                  type="button"
-                  aria-pressed={mode === 'signup'}
-                  variant={mode === 'signup' ? 'default' : 'outline'}
-                  onClick={() => setMode('signup')}
-                >
-                  Create account
-                </Button>
-                <Button
-                  type="button"
-                  aria-pressed={mode === 'signin'}
-                  variant={mode === 'signin' ? 'default' : 'outline'}
-                  onClick={() => setMode('signin')}
-                >
-                  Sign in
-                </Button>
-              </div>
-              {mode === 'signup' && (
+          <SingleSignOnFirst
+            lead={lead}
+            minimumAge={providers.minimumAge}
+            ageConfirmed={ageConfirmed}
+            onAgeConfirmed={setAgeConfirmed}
+            disabled={busy}
+            onContinue={() => void social('oidc', providers.minimumAge !== null)}
+          >
+            <>
+              <form className="panel" onSubmit={(event) => void submitAccount(event)}>
+                <div className="row mb-5" role="group" aria-label="Account">
+                  <Button
+                    type="button"
+                    aria-pressed={mode === 'signup'}
+                    variant={mode === 'signup' ? 'default' : 'outline'}
+                    onClick={() => setMode('signup')}
+                  >
+                    Create account
+                  </Button>
+                  <Button
+                    type="button"
+                    aria-pressed={mode === 'signin'}
+                    variant={mode === 'signin' ? 'default' : 'outline'}
+                    onClick={() => setMode('signin')}
+                  >
+                    Sign in
+                  </Button>
+                </div>
+                {mode === 'signup' && (
+                  <div className="field">
+                    <Label htmlFor="owner-claim-name">Your name</Label>
+                    <Input
+                      id="owner-claim-name"
+                      autoComplete="name"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      required
+                    />
+                  </div>
+                )}
                 <div className="field">
-                  <Label htmlFor="owner-claim-name">Your name</Label>
+                  <Label htmlFor="owner-claim-email">Email</Label>
                   <Input
-                    id="owner-claim-name"
-                    autoComplete="name"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
+                    id="owner-claim-email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
                     required
                   />
                 </div>
-              )}
-              <div className="field">
-                <Label htmlFor="owner-claim-email">Email</Label>
-                <Input
-                  id="owner-claim-email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <Label htmlFor="owner-claim-password">Password</Label>
-                <Input
-                  id="owner-claim-password"
-                  type="password"
-                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                  // Only a new password must meet today's length; an older one still signs in.
-                  minLength={mode === 'signup' ? COMMUNITY_PASSWORD_MIN_LENGTH : undefined}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                />
-                {mode === 'signin' ? (
-                  <span className="hint">
-                    Forgot your password? Ask the person running this host for help.
-                  </span>
-                ) : (
-                  <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
+                <div className="field">
+                  <Label htmlFor="owner-claim-password">Password</Label>
+                  <Input
+                    id="owner-claim-password"
+                    type="password"
+                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                    // Only a new password must meet today's length; an older one still signs in.
+                    minLength={mode === 'signup' ? COMMUNITY_PASSWORD_MIN_LENGTH : undefined}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                  />
+                  {mode === 'signin' ? (
+                    <span className="hint">
+                      Forgot your password? Ask the person running this host for help.
+                    </span>
+                  ) : (
+                    <span className="hint">
+                      At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.
+                    </span>
+                  )}
+                </div>
+                {minimumAge !== null && (
+                  <MinimumAgeConfirmation
+                    id="owner-claim-minimum-age"
+                    minimumAge={minimumAge}
+                    confirmed={ageConfirmed}
+                    onChange={setAgeConfirmed}
+                  />
                 )}
-              </div>
-              {minimumAge !== null && (
-                <MinimumAgeConfirmation
-                  id="owner-claim-minimum-age"
-                  minimumAge={minimumAge}
-                  confirmed={ageConfirmed}
-                  onChange={setAgeConfirmed}
-                />
-              )}
-              <Button type="submit" variant="default" className="w-full" disabled={busy}>
-                {busy
-                  ? 'Working…'
-                  : mode === 'signup'
-                    ? 'Create account and claim'
-                    : 'Sign in and claim'}
-                <KeyRound size={16} aria-hidden="true" />
-              </Button>
-            </form>
-            <ProviderButtons
-              providers={providers}
-              disabled={busy || (minimumAge !== null && !ageConfirmed)}
-              onChoose={(provider) => void social(provider)}
-            />
-          </>
+                <Button type="submit" variant="default" className="w-full" disabled={busy}>
+                  {busy
+                    ? 'Working…'
+                    : mode === 'signup'
+                      ? 'Create account and claim'
+                      : 'Sign in and claim'}
+                  <KeyRound size={16} aria-hidden="true" />
+                </Button>
+              </form>
+              <ProviderButtons
+                providers={lead !== null ? { ...providers, oidc: null } : providers}
+                disabled={busy || (minimumAge !== null && !ageConfirmed)}
+                onChoose={(provider) => void social(provider)}
+              />
+            </>
+          </SingleSignOnFirst>
         )}
         {stage === 'confirm' && (
           <div className="panel">

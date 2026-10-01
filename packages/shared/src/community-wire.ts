@@ -1606,6 +1606,48 @@ export function parseCommunitySettingsPath(
 }
 
 /**
+ * The query parameter that asks a Community page to lead with the server's own
+ * single sign-on, and the one value it takes.
+ *
+ * The DorkOS app adds it when it opens an owner claim, an invitation or a
+ * connection approval on a server whose single sign-on is the person's DorkOS
+ * account, so they sign in with that account instead of making a second one.
+ * It is only a hint about layout: a server with no single sign-on ignores it,
+ * every other way to sign in stays one step away, and it grants nothing.
+ */
+export const COMMUNITY_SIGN_IN_HINT = { param: 'sign-in', singleSignOn: 'single-sign-on' } as const;
+
+/**
+ * A Community page link with the single sign-on hint added, keeping its path
+ * and its fragment (where an invitation or an owner claim rides) exactly as
+ * they were. A value that is not a link comes back unchanged.
+ *
+ * @param link - The page to open.
+ */
+export function withCommunitySingleSignOnHint(link: string): string {
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    return link;
+  }
+  url.searchParams.set(COMMUNITY_SIGN_IN_HINT.param, COMMUNITY_SIGN_IN_HINT.singleSignOn);
+  return url.toString();
+}
+
+/**
+ * Whether a page's query string carries the single sign-on hint.
+ *
+ * @param search - A `location.search`, with or without its leading `?`.
+ */
+export function hasCommunitySingleSignOnHint(search: string): boolean {
+  return (
+    new URLSearchParams(search).get(COMMUNITY_SIGN_IN_HINT.param) ===
+    COMMUNITY_SIGN_IN_HINT.singleSignOn
+  );
+}
+
+/**
  * Whether a pasted value is a Community invitation link: an https address (or
  * plain http on this machine) with no sign-in in it, whose path is a
  * Community's join page and whose fragment carries the invite.

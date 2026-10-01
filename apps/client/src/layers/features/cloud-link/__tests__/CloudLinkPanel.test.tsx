@@ -9,6 +9,7 @@ import { createMockConnectionReadiness, createMockTransport } from '@dorkos/test
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { connectorKeys } from '@/layers/entities/connectors';
+import { accountSignInKeys } from '@/layers/entities/community';
 import { CloudLinkPanel } from '../ui/CloudLinkPanel';
 
 function renderPanel(transport: Transport) {
@@ -64,6 +65,7 @@ describe('CloudLinkPanel', () => {
     const cache = renderPanel(transport);
     cache.setQueryData(connectorKeys.catalog('gmail'), { pages: [] });
     cache.setQueryData(connectorKeys.providers(), []);
+    cache.setQueryData(accountSignInKeys.all, { available: false });
 
     await flush();
     const linkBtn = screen.getByRole('button', { name: /link this computer/i });
@@ -92,6 +94,8 @@ describe('CloudLinkPanel', () => {
     expect(screen.getByRole('button', { name: /unlink/i })).toBeInTheDocument();
     expect(cache.getQueryState(connectorKeys.catalog('gmail'))?.isInvalidated).toBe(true);
     expect(cache.getQueryState(connectorKeys.providers())?.isInvalidated).toBe(true);
+    // Where the account signs in to spaces is the account's; a new link reads it fresh.
+    expect(cache.getQueryState(accountSignInKeys.all)?.isInvalidated).toBe(true);
   });
 
   it('expired: renders the copy and a "Generate a new code" action', async () => {
@@ -133,6 +137,7 @@ describe('CloudLinkPanel', () => {
     const cache = renderPanel(transport);
     cache.setQueryData(connectorKeys.catalog('gmail'), { pages: [] });
     cache.setQueryData(connectorKeys.providers(), []);
+    cache.setQueryData(accountSignInKeys.all, { available: false });
 
     // Linked view from the settled summary: the account line, the caller's
     // signed-in sections, and no signed-out page.
@@ -149,6 +154,8 @@ describe('CloudLinkPanel', () => {
     await waitFor(() => expect(transport.unlinkCloud).toHaveBeenCalledTimes(1));
     expect(cache.getQueryState(connectorKeys.catalog('gmail'))?.isInvalidated).toBe(true);
     expect(cache.getQueryState(connectorKeys.providers())?.isInvalidated).toBe(true);
+    // Where the account signs in to spaces is the account's; a new link reads it fresh.
+    expect(cache.getQueryState(accountSignInKeys.all)?.isInvalidated).toBe(true);
     // Returns to the unlinked/idle entry point.
     expect(await screen.findByRole('button', { name: /link this computer/i })).toBeInTheDocument();
   });

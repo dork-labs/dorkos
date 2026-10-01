@@ -72,3 +72,9 @@ export {
   mergeRemoteCommunityEntries,
   reviseRemoteCommunityEntry,
 } from './model/use-remote-community-stream';
+export {
+  accountSignInKeys,
+  isAccountSignInLink,
+  useCommunityAccountSignIn,
+  type CommunityAccountSignIn,
+} from './model/use-account-sign-in';
