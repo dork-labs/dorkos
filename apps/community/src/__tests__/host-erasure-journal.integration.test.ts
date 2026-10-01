@@ -261,7 +261,9 @@ describe('stale cursors', () => {
     const forged = Buffer.from(
       JSON.stringify({ version: 1, kind: 'erasure-journal', id: 1, nonce: null })
     ).toString('base64url');
-    for (const bad of [`${value}.x${mac.slice(1)}`, `${forged}.${mac}`, 'nonsense']) {
+    // Always change the signature's first character, even when it already is `x`.
+    const flipped = `${mac[0] === 'x' ? 'y' : 'x'}${mac.slice(1)}`;
+    for (const bad of [`${value}.${flipped}`, `${forged}.${mac}`, 'nonsense']) {
       const response = await read(h, { cursor: bad });
       expect(response.status, bad).toBe(410);
       expect(await response.json()).toMatchObject({ code: 'CURSOR_STALE' });
