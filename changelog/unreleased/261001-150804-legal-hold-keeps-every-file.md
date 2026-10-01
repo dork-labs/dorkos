@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(community): keep every file of a legally held community until the release'
+  - 'fix(community): stop held unposted uploads counting toward storage'
 ---
 
 ### Fixed
