@@ -55,14 +55,7 @@ export class DocChannelIngest {
         this.acceptInTransaction(event, identity, now, authority, tx)
       );
     } catch (error) {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        typeof error.code === 'string' &&
-        error.code.startsWith('SQLITE_')
-      )
-        throw new DocIngestRefusal('DOC_EVENT_STORAGE_FAILURE', 507);
+      if (isSqliteStorageError(error)) throw new DocIngestRefusal('DOC_EVENT_STORAGE_FAILURE', 507);
       throw error;
     }
   }
@@ -181,4 +174,18 @@ export class DocChannelIngest {
       deliveries: this.store.listDeliveries(access.documentId, event.id, tx),
     };
   }
+}
+
+/** Drizzle can wrap the native SQLite failure from accounting query execution. */
+function isSqliteStorageError(error: unknown): boolean {
+  const seen = new Set<object>();
+  let current = error;
+  for (let depth = 0; depth < 16 && current && typeof current === 'object'; depth++) {
+    if (seen.has(current)) return false;
+    seen.add(current);
+    if ('code' in current && typeof current.code === 'string' && current.code.startsWith('SQLITE_'))
+      return true;
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return false;
 }

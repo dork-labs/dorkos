@@ -139,6 +139,25 @@ describe('document event acceptance', () => {
     expect(f.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM canvas_doc_events`)!.n).toBe(0);
     expect(f.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM canvas_doc_batches`)!.n).toBe(0);
   });
+  it('maps wrapped accounting persistence failure to 507 and rolls back acceptance', () => {
+    const f = fixture();
+    const saved = event();
+    f.ingest.accept(saved, f.authority);
+    f.db.run(sql`UPDATE canvas_doc_events SET envelope_bytes=0 WHERE event_id=${saved.id}`);
+    f.db.run(
+      sql`CREATE TRIGGER fail_accounting BEFORE UPDATE OF envelope_bytes ON canvas_doc_events BEGIN SELECT RAISE(ABORT,'accounting failure'); END`
+    );
+    const next = event();
+    try {
+      f.ingest.accept(next, f.authority);
+      throw new Error('Expected storage failure');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'DOC_EVENT_STORAGE_FAILURE', status: 507 });
+    }
+    expect(f.store.getEvent('doc-1', next.id)).toBeUndefined();
+    expect(f.store.getEvent('doc-1', saved.id)!.envelopeBytes).toBe(0);
+    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(2);
+  });
   it('applies precise byte caps once across routes and global documents', () => {
     const f = fixture();
     const input = event();
