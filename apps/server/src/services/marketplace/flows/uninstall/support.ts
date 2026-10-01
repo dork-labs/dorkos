@@ -114,7 +114,7 @@ export interface UninstallExtensionManager {
  * Minimal {@link AdapterManager} surface required by the uninstall flow.
  */
 export interface UninstallAdapterManager {
-  removeAdapter(id: string): Promise<void>;
+  removeAdapter(id: string, options?: { forgetHistory?: boolean }): Promise<void>;
 }
 
 /**

@@ -27,6 +27,7 @@ describe('provider contract fixture harness', () => {
     ['credential key', { password: 'value' }],
     ['secret URL', { value: 'postgresql://role:value@example.test/database' }],
     ['terminal control', { value: 'safe\u001b[2J' }],
+    ['secret value beside a name', { secrets: [{ name: 'AWS_SECRET_ACCESS_KEY', value: 'x' }] }],
   ])('rejects %s in a checked-in fixture', (_label, fixture) => {
     expect(() => expectSanitizedProviderFixture(fixture, 'fixture')).toThrow();
   });

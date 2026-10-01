@@ -3,6 +3,7 @@ import {
   CommunityConnectionDescriptorSchema,
   CommunityConnectionPollResponseSchema,
   CommunityConnectionStartResponseSchema,
+  describeCommunityRetryWait,
 } from '../community-connections.js';
 
 const capabilities = { read: true, post: true, enrollAgent: true, stream: true };
@@ -138,5 +139,20 @@ describe('local community connection DTOs', () => {
         },
       }).success
     ).toBe(false);
+  });
+});
+
+// Purpose: one phrasing of a Community's wait for the route and the dialog. Fails if a short
+// wait is rounded away, a long one is not rounded up to minutes, or a missing or unusable wait
+// is turned into a number.
+describe('describeCommunityRetryWait', () => {
+  it('says seconds under a minute, rounded-up minutes past it, and a minute when unknown', () => {
+    expect(describeCommunityRetryWait(1)).toBe('1 second');
+    expect(describeCommunityRetryWait(17)).toBe('17 seconds');
+    expect(describeCommunityRetryWait(60)).toBe('a minute');
+    expect(describeCommunityRetryWait(61)).toBe('2 minutes');
+    expect(describeCommunityRetryWait(90)).toBe('2 minutes');
+    for (const unknown of [undefined, null, 0, -5, 1.5, '17', Number.NaN])
+      expect(describeCommunityRetryWait(unknown), String(unknown)).toBe('a minute');
   });
 });

@@ -10,6 +10,7 @@ import {
   describeLauncherStop,
   explainCommunityLiveGateFailure,
   PUBLISHED_LAUNCHER_STEP,
+  withDorkosHostsContacted,
 } from '../../scripts/community-deploy-live-failure.js';
 
 const RECOVERY = 'npx -y dorkos@1.2.3 community deploy --resume run-1';
@@ -29,11 +30,33 @@ describe('explainCommunityLiveGateFailure', () => {
     expect(explained).toBeInstanceOf(CommunityLiveGateError);
     expect(explained).toMatchObject({ step: AFTER_CLEANUP_STEP, recoveryCommand: null });
     expect((explained as Error).message).toBe(
-      'Community live gate failed (after-cleanup): cleanup finished; a later step failed'
+      'Community live gate failed (after-cleanup): ' + CLEANED_UP_DETAIL
     );
-    expect(CLEANED_UP_DETAIL).toBe('cleanup finished; a later step failed');
+    expect(CLEANED_UP_DETAIL).toBe(
+      "cleanup finished, apart from the bucket's Tigris access key (see the steps above); a later step failed"
+    );
     expect(findRecoveryCommand).not.toHaveBeenCalled();
     expect(describeCommunityLiveGateFailure(explained)).not.toContain('Retained resources');
+  });
+
+  // DOR-2593: the gate fails a run whose launcher contacted a DorkOS host only after cleanup, so
+  // nothing billable is stranded. The reason must survive the after-cleanup rewrite.
+  it("keeps a gate check's own step and detail when it fails after cleanup", async () => {
+    const findRecoveryCommand = vi.fn(async () => RECOVERY);
+    const explained = await explainCommunityLiveGateFailure(
+      new CommunityLiveGateError(
+        'dorkos-hosts-contacted',
+        null,
+        'the launcher tried to reach dorkos.ai'
+      ),
+      { cleanedUp: true, recoveryCommand: RECOVERY },
+      findRecoveryCommand
+    );
+    expect(explained).toMatchObject({ step: 'dorkos-hosts-contacted', recoveryCommand: null });
+    expect((explained as Error).message).toBe(
+      `Community live gate failed (dorkos-hosts-contacted): ${CLEANED_UP_DETAIL}: the launcher tried to reach dorkos.ai`
+    );
+    expect(findRecoveryCommand).not.toHaveBeenCalled();
   });
 
   it('keeps the recovery command the run already holds before cleanup', async () => {
@@ -59,6 +82,22 @@ describe('explainCommunityLiveGateFailure', () => {
     expect(describeCommunityLiveGateFailure(explained)).toBe(
       'Community live gate failed (provider-operation): retained: fly-app-1, neon-project-1\n' +
         `Retained resources can be reconciled with:\n  ${RECOVERY}\n`
+    );
+  });
+
+  // DOR-2646: once the bucket is deleted its Tigris access key is left active, even when a later
+  // cleanup step fails, so the refusal names it apart from the resources cleanup still owes.
+  it('names the Tigris access key a deleted bucket left, apart from what cleanup retained', async () => {
+    const explained = await explainCommunityLiveGateFailure(
+      new CommunityLiveGateCleanupError('provider-operation', ['fly-app-1', 'neon-project-1'], {
+        bucket: 'dorkos-gate-1',
+        keyName: 'dorkos-gate-1_access_key',
+      }),
+      { cleanedUp: false, recoveryCommand: RECOVERY },
+      async () => null
+    );
+    expect((explained as Error).message).toBe(
+      'Community live gate failed (provider-operation): retained: fly-app-1, neon-project-1; Tigris access key left active: dorkos-gate-1_access_key'
     );
   });
 
@@ -338,5 +377,32 @@ describe('describeLauncherExit', () => {
     expect((explained as Error).message).toBe(
       'Community live gate failed (published-launcher): launcher exited with COMMUNITY_RELEASE_INVALID before writing a launch record'
     );
+  });
+});
+
+describe('withDorkosHostsContacted', () => {
+  // Purpose: fails if a run whose launcher the guard refused reports only the step it tripped
+  // over later, hiding the DorkOS contact that caused it (DOR-2593).
+  it('adds the hosts to the failure, keeping its step and recovery command', () => {
+    const failure = withDorkosHostsContacted(
+      new CommunityLiveGateError('launch-journal', RECOVERY, 'no journal'),
+      ['dorkos.ai']
+    );
+    expect(failure).toMatchObject({
+      step: 'launch-journal',
+      recoveryCommand: RECOVERY,
+      detail: 'no journal; the launcher tried to reach dorkos.ai',
+    });
+  });
+
+  it('turns an unexplained failure into a named one, and leaves others alone', () => {
+    const plain = new Error('provider said no');
+    expect(withDorkosHostsContacted(plain, ['cloud.dorkos.ai'])).toMatchObject({
+      step: 'dorkos-hosts-contacted',
+      detail: 'the launcher tried to reach cloud.dorkos.ai',
+    });
+    expect(withDorkosHostsContacted(plain, [])).toBe(plain);
+    const named = new CommunityLiveGateError('dorkos-hosts-contacted', null, 'x');
+    expect(withDorkosHostsContacted(named, ['dorkos.ai'])).toBe(named);
   });
 });

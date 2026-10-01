@@ -8,13 +8,22 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import { createMockTransport, createMockConnectionReadiness } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import { SETTINGS_RELINK_SECTION, TransportProvider } from '@/layers/shared/model';
 import {
   ConnectionAccessCard,
   type ConnectionAccessCardProps,
 } from '../ui/access/ConnectionAccessCard';
 
-afterEach(cleanup);
+const openSettings = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSettingsDeepLink: () => ({ open: openSettings }),
+}));
+
+afterEach(() => {
+  cleanup();
+  openSettings.mockReset();
+});
 
 function candidate(id: string, classification: 'read' | 'write' | 'destructive') {
   return {
@@ -723,4 +732,40 @@ describe('ConnectionAccessCard — ways out', () => {
     expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
     expect(transport.previewConnectorReconciliation).toHaveBeenCalledTimes(2);
   });
+});
+
+describe('ConnectionAccessCard — a DorkOS account problem', () => {
+  function refusal(code: string) {
+    return Object.assign(new Error('refused'), { code });
+  }
+
+  it.each([
+    ['cloud_link_required', 'This computer isn’t linked to DorkOS', true],
+    ['cloud_link_needs_update', 'This computer’s link needs updating', true],
+    ['cloud_unavailable', 'DorkOS’s servers aren’t answering', false],
+    ['cloud_refused', 'DorkOS’s servers couldn’t finish this', false],
+  ])(
+    'says where a %s problem is, offering a relink only when it helps',
+    async (code, title, relink) => {
+      const transport = createMockTransport();
+      vi.mocked(transport.previewConnectorReconciliation).mockRejectedValue(refusal(code));
+      renderCard(transport, {
+        mode: 'page',
+        connectionId: 'connection-1',
+        serviceName: 'Gmail',
+        onFinished: vi.fn(),
+        onSkip: vi.fn(),
+      });
+      expect(await screen.findByText(title)).toBeInTheDocument();
+      expect(screen.queryByText('Couldn’t load who can use it')).not.toBeInTheDocument();
+      const button = screen.queryByRole('button', { name: 'Link my DorkOS account again' });
+      if (relink) {
+        expect(button).toBeInTheDocument();
+        await userEvent.setup().click(button!);
+        expect(openSettings).toHaveBeenCalledWith('access', SETTINGS_RELINK_SECTION);
+      } else {
+        expect(button).not.toBeInTheDocument();
+      }
+    }
+  );
 });

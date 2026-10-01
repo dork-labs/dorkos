@@ -96,6 +96,15 @@ function isNamedLeftover(hit: Hit): boolean {
     return true;
   if (hit.table === 'channels' && hit.column === 'name' && hit.rowId === before.adminChannelId)
     return true;
+  // The erasure journal names P's deleted account by its id and nothing else, which is how a
+  // restored backup erases it again (DOR-2566). The id is random and its account row is gone.
+  if (
+    hit.table === 'erasure_journal' &&
+    hit.column === 'user_id' &&
+    hit.needle === pA.userId.toLowerCase() &&
+    hit.communityId === null
+  )
+    return true;
   if (hit.table !== 'entries' || hit.column !== 'text') return false;
   return [before.qCode, before.qFreeText, before.qEmailShaped].includes(hit.rowId ?? '');
 }
@@ -333,12 +342,13 @@ describe('residue scan (AC-1, AC-10)', () => {
     for (const row of [before.qCode, before.qFreeText, before.qEmailShaped, before.adminChannelId])
       expect(leftoverRows).toContain(row);
     // The member id survives only where the husk must be pointed at: the husk itself, its
-    // entries, agents and handle, the audit trail, and the erasure request.
+    // entries, agents and handle, the audit trail, the erasure request, and the erasure journal.
     expect(await scanUuidColumns(h.pool, communityA, pA.memberId)).toEqual([
       'agents.owner_member_id',
       'audit_events.actor_member_id',
       'community_handles.member_id',
       'entries.author_member_id',
+      'erasure_journal.member_id',
       'erasure_requests.member_id',
       'members.id',
     ]);
@@ -564,6 +574,7 @@ describe('residue scan (AC-1, AC-10)', () => {
       'audit_events.actor_member_id',
       'community_handles.member_id',
       'entries.author_member_id',
+      'erasure_journal.member_id',
       'erasure_requests.member_id',
       'members.id',
     ]);

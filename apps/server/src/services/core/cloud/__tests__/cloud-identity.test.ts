@@ -245,6 +245,17 @@ describe('authoritative Cloud identity for credits', () => {
     expect(creditsWiringReport().ready).toBe(false);
   });
 
+  it('logs the problem code beside the status when a mint fails', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    fakeCloud(() => answer({ code: 'not_found', status: 404, title: 'Unavailable' }, 404));
+    expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
+    expect(warn).toHaveBeenCalledWith('[Cloud] Could not obtain an inference token', {
+      status: 404,
+      code: 'not_found',
+    });
+    warn.mockRestore();
+  });
+
   it('never logs a malformed mint response body containing credential material', async () => {
     const canary = 'LEAKME';
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});

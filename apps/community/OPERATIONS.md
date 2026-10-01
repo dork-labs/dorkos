@@ -43,12 +43,14 @@ docker compose -f apps/community/compose.yml up -d --wait database
 docker compose -f apps/community/compose.yml build community
 docker compose -f apps/community/compose.yml exec -T database pg_restore -U community -d community --exit-on-error < "$community_restore_dir/database.dump"
 docker compose -f apps/community/compose.yml run --rm --no-deps -T --entrypoint tar community -C /data/blobs -xzf - < "$community_restore_dir/blobs.tar.gz"
+# Erase again everyone erased since the backup, from the journal copy kept off the server.
+cat /absolute/path/to/erasure-journal-*.log | docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
 docker compose -f apps/community/compose.yml up -d community
 ```
 
 Use fresh, empty volumes. The image initializes its blob volume for the `node` user, which also extracts the archive. A permission error is a failed restore; fix the volume ownership before starting the app. With S3, restore the matching object versions into a separate bucket instead of extracting the file archive, and point the test deployment there.
 
-Start the app only after both restores finish. Check sign-in, channel history, a thread, and exact attachment bytes. Verify that a removed member still cannot sign in to the community. Keep the restored deployment private: it contains the same identities, secrets and community identifier as production.
+Start the app only after both restores and the re-applied erasures finish (see [Erasure requests](#erasure-requests)). Check sign-in, channel history, a thread, and exact attachment bytes. Verify that a removed member still cannot sign in to the community. Keep the restored deployment private: it contains the same identities, secrets and community identifier as production.
 
 A successful archive command is not a recovery test. Rehearse this process before depending on a backup schedule.
 
@@ -118,11 +120,11 @@ Mail that looks forged is often rejected or filtered as spam, and for notices th
 - Publish a DMARC policy for the domain, so the SPF and DKIM results count toward the address people see in the From line.
 - Send a test message to an outside mailbox and check that it arrives in the inbox and shows SPF, DKIM, and DMARC passing.
 
-Then watch for failed notices. The server logs each attempt that does not deliver as `Community notice not delivered`, with its outcome (`retrying` or `failed`) and a reason code, never the address or your mail server's reply: `SMTP_REJECTED` (your mail server or the recipient's refused it), `SMTP_UNAVAILABLE` (busy, down, or not answering), `SMTP_TLS` (the encrypted connection failed, or your mail server did not offer the STARTTLS you required), `SMTP_AUTH` (your mail server refused the user name or password), or `RECIPIENT_UNAVAILABLE` (the account is gone). `SMTP_UNAVAILABLE`, `SMTP_TLS`, and `SMTP_AUTH` are retried for 72 hours before the notice fails, so fixing your settings within that time still delivers it. A run of `SMTP_REJECTED` usually means the sender domain is failing those checks.
+Then watch for failed notices. The server logs each attempt that does not deliver as `Community notice not delivered`, with its outcome (`retrying` or `failed`) and a reason code, never the address or your mail server's reply: `SMTP_REJECTED` (your mail server or the recipient's refused it), `SMTP_UNAVAILABLE` (busy, down, or not answering), `SMTP_TLS` (the encrypted connection failed, or your mail server did not offer the STARTTLS you required), `SMTP_AUTH` (your mail server refused the user name or password), `RECIPIENT_UNAVAILABLE` (the account is gone), or `NOTICE_OBSOLETE` (what the notice was about has ended since, so it was not sent; nothing to fix). `SMTP_UNAVAILABLE`, `SMTP_TLS`, and `SMTP_AUTH` are retried for 72 hours before the notice fails, so fixing your settings within that time still delivers it. A run of `SMTP_REJECTED` usually means the sender domain is failing those checks.
 
 ## Host API keys
 
-A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, and `communities:takedown` to take down content by its ID. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
+A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, `communities:takedown` to take down content by its ID, `communities:erasure_journal` to copy the [erasure journal](#erasure-requests) off the server, and `communities:ownership` to ask to replace an owner who has left (see [below](#replacing-an-owner-who-has-left)). No other permission includes `communities:ownership`, so a key that suspends communities cannot replace owners. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
 
 To create the first key on a host without a browser, run the offline command with `COMMUNITY_DATABASE_URL` set. It prints the key once on standard output, so pipe it straight into your secret store:
 
@@ -139,6 +141,10 @@ Wrong passwords work differently. Leaving, disconnecting all installations, tran
 
 Keys belong to the host, not to the person who made them. Removing a host operator does not stop the keys that operator created. When someone leaves, open **API keys**, find the keys that show their name, and replace or revoke them. **Replace** gives a new key with the same permissions and keeps the old one working for up to a day, so a program can switch over without downtime.
 
+## Pairing requests
+
+When a local DorkOS install asks to connect, the server keeps a pairing request for the member to approve. A request lasts ten minutes. The cleanup sweep deletes each one an hour after it expires, whether it was used, declined, or ignored. A used request lives on as the connection it made, which the member can see and remove in their settings.
+
 ## Community limits
 
 Each community record on the host page has **Limits**: the most active members and the most file space, each shown beside what the community uses now. Leave a field empty for no limit. A lower limit never removes anyone or anything; it only stops new members or new files once the community is at the limit, and people see "This community is full" or "out of file space" instead of a retry. Exports never count, so an owner can always take their data out.
@@ -152,6 +158,22 @@ When you must stop a community without destroying it, for example while you look
 If you intend to delete a held community, publish a deletion notice: a date at least `COMMUNITY_HOST_DELETION_NOTICE_DAYS` away (14 days unless you change it; never fewer than 7). Members see the date on every channel, with a reminder that the owner can export until then. After the date passes, **Delete** asks for the last eight characters of the community's ID and schedules the same seven-day deletion an owner's request does; you can cancel it during those seven days, and the owner cannot. A suspended community cannot be deleted this way, because its owner could not export: hold it with a notice date first.
 
 A suspended community can be put on hold directly. It goes from suspended to on hold in one step and is never live in between.
+
+## Replacing an owner who has left
+
+Sometimes the person who owns a community leaves, and nobody can manage it any more. If they can still sign in, ask them to hand it over themselves from the community's Settings.
+
+This server has both sides of replacing an owner (`POST /api/v1/host/communities/:id/owner-replacements`, see [the API](API.md#replace-an-owner-who-has-left)): the host's request, and the routes the owner uses to keep ownership and the new owner uses to take it. The pages those emailed links open are in place, but the owner is not yet told on their DorkOS connection, so until they are, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE`, even with mail set up. Nothing changes for any community.
+
+Once requests open, the server emails the owner, waits at least 7 days (30 whenever the notice could not be delivered, the address was never confirmed by a sign-in service, the owner kept ownership before, or the reason is that the owner left the group), reminds them 2 days before the end, and then gives the new owner 14 days before the request expires. What you can prepare now:
+
+- **Mail.** Requests need it, because the owner must be told outside the community they may have left (see [Mail](#mail)).
+- **Who can ask.** A host API key with `communities:ownership`, or a host operator with their password. An operator who signs in only through single sign-on has no password to confirm, so they use a key with that permission instead.
+- **Naming the new owner.** When this host uses single sign-on, every request must name the new owner by the ID your sign-in service gives that person for this site, and only that account will be able to take ownership. Some sign-in services give each site a different ID for the same person. Use the one your service gives this host, not one another app sees: find it in your own records (for example, a sign-in by that person on this host) or in your sign-in service's admin tools.
+- **What ends a request.** Cancelling it, suspending the community, deleting it, or taking it down. The owner handing it on or asking to delete it ends it too. Holds, archiving, limits, web addresses, and legal holds do not.
+- **The member limit.** Taking ownership does not check it, because you asked for this person. A new owner who was not already an active member can take the community one past its member limit, and new members are then refused until there is room.
+
+**What protects the owner.** Against someone who has stolen a key or tricked an operator, the owner's protection on every host is the email, the waiting period, and their one-click way to keep ownership, which needs no sign-in. The claim link is not a protection: whoever can ask can send a new link, and the owner is emailed each time. Naming the new owner is not either, because a stolen key chooses the name. What naming does stop is a stranger using a claim link that leaked. So keep `communities:ownership` for the few programs that need it, and watch the host audit trail for `owner_replacement.request`.
 
 ## Legal holds
 
@@ -221,15 +243,56 @@ People erase themselves. A member can erase their messages from one community, o
 
 An account that has ever been a host operator cannot be deleted online, because host audit records must keep naming who acted. That person can still erase each of their memberships.
 
-Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`. Logs on many hosts are short-lived, so also set `COMMUNITY_ERASURE_JOURNAL` to a file path. Keep either the log lines or the journal **outside your backups, for at least as long as you keep backups.** A restored backup brings back everyone erased since it was taken. After any restore, stop the app and run the erasures again before you start it:
+Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`, and adds the same line to the **erasure journal** in the database. A restored backup brings back everyone erased since it was taken, and it takes the journal back to the same moment. So keep a copy of the journal **outside the server and outside your backups, for at least as long as you keep backups.**
+
+The server keeps each journal line for `COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS` (400 days unless you change it; at least 30), then deletes it. Set it to your longest backup or point-in-time-recovery retention plus 30 days: a line is needed only while a backup older than it can still be restored. The most it allows is 3,650 days, so if you keep backups for longer than about ten years, the server's journal cannot cover the oldest of them; keep your own copy's month files for as long as those backups.
+
+Copy the journal on a schedule (every hour is plenty) from a machine that is not the Community server, with a host API key that has only `communities:erasure_journal`. This script needs `curl`, `jq` and `flock` (on Linux, part of util-linux). It adds new lines to one file per month, such as `erasure-journal-2026-09.log`, remembers where it stopped, and deletes month files older than the retention. Keep the key out of the command line and the environment: put it in a curl config file that only the script's user can read (`chmod 600`), containing one line, `header = "Authorization: Bearer dkh_…"`.
+
+```bash
+#!/usr/bin/env bash
+# Copy new erasure journal lines off the Community server. Run it hourly, for example from cron.
+set -euo pipefail
+umask 077
+url=https://community.example.com/api/v1/host/erasure-journal
+journal_dir=/var/lib/community-erasure-journal # outside the server and outside your backups
+key_config=/etc/community-erasure-journal/curl.conf # mode 600; see below
+retention_days=400 # the server's COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS
+
+cd "$journal_dir"
+exec 9> "$journal_dir/pull.lock"
+flock -n 9 || exit 0 # the previous pull is still running
+page=$(mktemp "$journal_dir/page.XXXXXX")
+trap 'rm -f "$page"' EXIT
+touch "$journal_dir/cursor"
+while :; do
+  cursor=$(cat "$journal_dir/cursor")
+  status=$(curl -sS --max-time 60 -K "$key_config" -o "$page" -w '%{http_code}' --get \
+    --data-urlencode 'limit=1000' ${cursor:+--data-urlencode "cursor=$cursor"} "$url")
+  # After a restore or a prune the saved place is gone: read from the start again.
+  if [ "$status" = 410 ]; then : > "$journal_dir/cursor"; continue; fi
+  [ "$status" = 200 ] || { echo "Erasure journal pull failed: HTTP $status" >&2; exit 1; }
+  jq -c '.lines[]' "$page" >> "$journal_dir/erasure-journal-$(date -u +%Y-%m).log"
+  jq -r '.nextCursor' "$page" > "$journal_dir/cursor"
+  [ "$(jq -r '.hasMore' "$page")" = true ] || break
+done
+# A month's file stops changing when the month ends; delete it once it is past the retention.
+find "$journal_dir" -name 'erasure-journal-*.log' -mtime +"$retention_days" -delete
+```
+
+After a restore, or once the line it stopped at has been deleted, the saved place no longer matches, so the next pull reads the journal from the start again and appends every line the server still has to the current month's file, including lines your copy already has. The duplicates are bounded by what the server keeps, and they are safe: running an erasure twice changes nothing. Alert when the script fails, the same way you would for a failed backup.
+
+You can also set `COMMUNITY_ERASURE_JOURNAL` to a file path, and the server appends every line there too. That file is only useful if it lives on storage that outlasts the server and stays out of your backups; on a host whose disk is replaced at each deploy, such as a Fly Machine without a volume, rely on the pulled copy.
+
+After any restore, stop the app and run the erasures again from your copy before you start it:
 
 ```bash
 docker compose -f apps/community/compose.yml stop community
-docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js < erasure-journal.log
+cat /var/lib/community-erasure-journal/erasure-journal-*.log | docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
 docker compose -f apps/community/compose.yml up -d community
 ```
 
-From a source checkout, `pnpm --filter @dorkos/community erasure:reapply < erasure-journal.log` does the same. It prints only counts, and running it twice changes nothing.
+From a source checkout, piping the same files to `pnpm --filter @dorkos/community erasure:reapply` does the same. It prints only counts, and running it twice changes nothing.
 
 A few things inside the community stay on purpose, because they are not attributed to the person in the database: their name typed as plain words in someone else's message, their handle inside code or a quote, an email-shaped string such as `bob@handle`, and the names of channels they created. Two more stay briefly. A message that names their old `@handle` and is posted in the moment between the last mention pass and the end of the erasure keeps that text. And a local install's pairing request that nobody approved or declined names only the install, not a person, so it stays until it is cleaned up, at most 70 minutes after it started.
 

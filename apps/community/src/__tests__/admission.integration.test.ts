@@ -5,7 +5,7 @@ import { serve } from '@hono/node-server';
 import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
-import { sweepExpiredAdmissions } from '../routes/invites.js';
+import { sweepExpiredAdmissions } from '../routes/community/invites.js';
 import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -1614,7 +1614,8 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(redeemed.status).toBe(200);
     const other = { cookie: otherCookie, id: (await redeemed.json()).memberId };
     const otherGrant = (await issueGrant(other.cookie, ['read', 'post', 'enroll-agent'])).token;
-    expect((await bearerCall(`/api/v1/agents/${agentId}`, 'DELETE', otherGrant)).status).toBe(403);
+    // A grant acts only on agents it enrolled, so another member's agent is not found (DOR-2612).
+    expect((await bearerCall(`/api/v1/agents/${agentId}`, 'DELETE', otherGrant)).status).toBe(404);
 
     const grantId = (
       await pool.query<{ id: string }>(

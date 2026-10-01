@@ -26,6 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
+  buttonVariants,
   FieldDescription,
   Spinner,
 } from '@/layers/shared/ui';
@@ -490,7 +491,7 @@ export function BindingDialog({
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
                           <AlertDialogAction
                             onClick={() => onDelete(bindingId)}
-                            className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+                            className={buttonVariants({ variant: 'destructive' })}
                           >
                             Remove
                           </AlertDialogAction>

@@ -59,6 +59,26 @@ export class CommunityOutboxStore {
       .length;
   }
 
+  /**
+   * How many of one owner's agent posts to one community never arrived there: still waiting, or
+   * failed. Read just before a deleted or taken-down community's copy is removed (DOR-2575), when
+   * the waiting ones are about to be stopped and every one of them is about to lose its room.
+   * A post the person stopped themselves is not counted: they chose that.
+   */
+  undeliveredCount(communityRef: CommunityRef, ownerAuthorId: string): number {
+    return this.db
+      .select({ id: communityOutbox.id })
+      .from(communityOutbox)
+      .where(
+        and(
+          eq(communityOutbox.communityRef, communityRef),
+          eq(communityOutbox.ownerAuthorId, ownerAuthorId),
+          or(eq(communityOutbox.state, 'pending'), eq(communityOutbox.state, 'failed'))
+        )
+      )
+      .all().length;
+  }
+
   /** Pending or repairable failed delivery rows for one local connection owner. */
   visibleForOwner(ownerAuthorId: string): readonly CommunityOutboxItem[] {
     return this.db

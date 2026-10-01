@@ -35,7 +35,7 @@ This plan implements the frozen launcher contract in four ordered phases. The ca
 
 - [x] **4.1 Add owner handoff and applied bootstrap-secret rotation.** Keep account creation in Community and prove replacement secrets are active before handoff.
 - [x] **4.2 Package the launcher and document guided and manual operations.** Prove the installed CLI outside a checkout and keep the manual recipe as an auditable fallback.
-- [ ] **4.3 Add the separately armed credentialed release gate.** Exercise the exact release across all three providers with explicit spend gates and verified cleanup.
+- [x] **4.3 Add the separately armed credentialed release gate.** Exercise the exact release across all three providers with explicit spend gates and verified cleanup.
 
 ## Dependency graph
 

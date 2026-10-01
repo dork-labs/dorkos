@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   COMMUNITY_LIVE_GATE_ALL_ENV,
   COMMUNITY_LIVE_GATE_ENV,
+  COMMUNITY_LIVE_GATE_HOLD_ENV,
   COMMUNITY_LIVE_GATE_TARBALL_ENV,
   CommunityLiveGateNotArmedError,
   communityLiveGateRecoveryCommand,
@@ -133,6 +134,7 @@ process.stdout.write(JSON.stringify({ args, journal }));
       neonOrganization: 'org-live-test',
       neonRegion: 'aws-us-east-1',
       budgetUsd: 5,
+      holdMinutes: null,
     });
   });
 
@@ -218,5 +220,46 @@ process.stdout.write(JSON.stringify({ args, journal }));
         "DORK_HOME='/retained/home' npx --yes --package '/work/it'\\''s here/dorkos-0.92.0.tgz' dorkos community deploy '--app-name' 'dorkos-gate-012345abcdef' --resume 'run-1'"
       );
     });
+  });
+
+  describe('hold arm', () => {
+    it('is optional: unset means no hold, and it is not one of the required names', () => {
+      // Catches the hold becoming required (breaking every existing run) or defaulting to a hold.
+      expect(parseCommunityLiveGateConfig(armed).holdMinutes).toBeNull();
+      expect(COMMUNITY_LIVE_GATE_ENV).not.toContain(COMMUNITY_LIVE_GATE_HOLD_ENV);
+      // It is still a name no ordinary task may pass through.
+      expect(COMMUNITY_LIVE_GATE_ALL_ENV).toContain(COMMUNITY_LIVE_GATE_HOLD_ENV);
+      expect(COMMUNITY_LIVE_GATE_HOLD_ENV).toBe('DORKOS_COMMUNITY_LIVE_HOLD_MINUTES');
+    });
+
+    it.each([
+      ['1', 1],
+      ['45', 45],
+      ['20', 20],
+    ])('accepts %s minutes', (value, minutes) => {
+      // Catches the bounds being off by one at either end.
+      expect(
+        parseCommunityLiveGateConfig({ ...armed, [COMMUNITY_LIVE_GATE_HOLD_ENV]: value })
+          .holdMinutes
+      ).toBe(minutes);
+    });
+
+    it.each(['0', '46', '99', '1.5', 'abc', '', ' 5', '-1', '1e1', '0x10', '450'])(
+      'refuses %j, naming the allowed range',
+      (value) => {
+        // Catches spend silently extended past 45 minutes, or a value coerced instead of refused.
+        let refusal: unknown;
+        try {
+          parseCommunityLiveGateConfig({ ...armed, [COMMUNITY_LIVE_GATE_HOLD_ENV]: value });
+        } catch (error) {
+          refusal = error;
+        }
+        expect(refusal).toBeInstanceOf(CommunityLiveGateNotArmedError);
+        expect((refusal as CommunityLiveGateNotArmedError).fields).toEqual([
+          COMMUNITY_LIVE_GATE_HOLD_ENV,
+        ]);
+        expect((refusal as Error).message).toContain('from 1 to 45');
+      }
+    );
   });
 });

@@ -28,6 +28,7 @@
  *
  * @module entities/community/model/community-drafts
  */
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { getCommunityAuthority, getCommunityConnectionGeneration } from '@/layers/shared/lib';
@@ -214,5 +215,29 @@ export function useCommunityDraft(address: CommunityDraftAddress | null): Commun
   const key = address ? communityDraftKey(address) : null;
   return useCommunityDraftStore((state) =>
     key === null ? EMPTY_COMMUNITY_DRAFT : (state.drafts[key] ?? EMPTY_COMMUNITY_DRAFT)
+  );
+}
+
+/**
+ * The text of every unsent draft one owner holds for one Community connection, oldest first.
+ *
+ * What the gone panel counts and offers to copy before the person removes a Community, which
+ * erases these drafts ({@link CommunityDraftActions.discardCommunity}) — a deleted Community's
+ * copy is gone from the server, but what the person typed here is still only here (DOR-2575).
+ * A draft with only files staged is left out: those files are still on the person's computer.
+ *
+ * @param ownerKey - The confirmed local owner, or `null` while it is unconfirmed (nothing then).
+ * @param ref - The Community connection ref.
+ */
+export function useUnsentCommunityDrafts(ownerKey: string | null, ref: string): readonly string[] {
+  const drafts = useCommunityDraftStore((state) => state.drafts);
+  return useMemo(
+    () =>
+      ownerKey === null
+        ? []
+        : Object.values(drafts)
+            .filter((held) => held.ownerKey === ownerKey && held.ref === ref && held.text.trim())
+            .map((held) => held.text),
+    [drafts, ownerKey, ref]
   );
 }

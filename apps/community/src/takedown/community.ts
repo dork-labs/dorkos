@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { endExportJob, deleteReadyExports } from '../exports/store.js';
 import { revokeTenantAccess } from '../host/communities.js';
+import { endOwnerReplacement } from '../owner-replacement/end.js';
 import {
   assertHostActor,
   hostActorRequester,
@@ -252,6 +253,13 @@ export async function createCommunityTakedown(
         : null,
   };
   await revokeTenantAccess(client, community.id);
+  // A community taken down is on its way to deletion, so any open request to replace its owner
+  // is withdrawn as a deletion. The owner hears of it only when the takedown notifies them.
+  await endOwnerReplacement(client, {
+    communityId: community.id,
+    ending: { state: 'withdrawn', cause: 'deletion', quiet: !input.notify },
+    now: input.now,
+  });
   const id = randomUUID();
   const requester = hostActorRequester(input.actor);
   const deleteAfter = new Date(input.now.getTime() + input.reversalHours * HOUR_MS);

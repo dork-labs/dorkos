@@ -9,8 +9,18 @@ import {
   ageConfirmationMessage,
   ageConfirmed,
 } from './sign-up/minimum-age.js';
-import { communityOidc } from './oidc.js';
+import { communityOidc, isOidcCallback, OIDC_PROVIDER_ID } from './oidc.js';
+import {
+  ownerReplacementAdmission,
+  type OwnerReplacementAdmission,
+} from './owner-replacement/admission.js';
 import { hashSecret, readCookie, verifyValue } from './security.js';
+
+/**
+ * What let a new account in: an owner grant or an invitation, or only a live claim to replace
+ * a community's owner, which may name the one account it admits.
+ */
+type Admission = { by: 'grant' } | ({ by: 'owner_replacement' } & OwnerReplacementAdmission);
 
 /** Create one independent Better Auth instance for a community deployment. */
 export function createCommunityAuth(
@@ -32,7 +42,7 @@ export function createCommunityAuth(
       message: ageConfirmationMessage(config.minimumAge),
     });
   };
-  const checkAdmission = async (cookieHeader: string | null) => {
+  const checkAdmission = async (cookieHeader: string | null): Promise<Admission | null> => {
     const grant = verifyValue(readCookie(cookieHeader, 'community_bootstrap'), config.authSecret);
     if (grant) {
       const result = await pool.query(
@@ -51,7 +61,7 @@ export function createCommunityAuth(
            )`,
         [hashSecret(grant)]
       );
-      if (result.rowCount) return true;
+      if (result.rowCount) return { by: 'grant' };
     }
     const pending = verifyValue(readCookie(cookieHeader, 'community_admission'), config.authSecret);
     if (pending) {
@@ -64,10 +74,24 @@ export function createCommunityAuth(
            AND c.lifecycle='active' AND m.active AND m.role IN ('owner','admin')`,
         [hashSecret(pending)]
       );
-      if (result.rowCount) return true;
+      if (result.rowCount) return { by: 'grant' };
     }
-    return false;
+    // A claim to replace an owner admits a new account only while it can be claimed.
+    const replacement = await ownerReplacementAdmission(
+      pool,
+      cookieHeader,
+      config.authSecret,
+      now()
+    );
+    return replacement ? { by: 'owner_replacement', ...replacement } : null;
   };
+  /**
+   * The subject each OIDC sign-up admitted only by a claim that names an account must carry,
+   * by the Better Auth request it happens in. The user row is created first and its OIDC
+   * account row right after, in one transaction; the account hook refuses any other subject,
+   * which rolls the new user back with it.
+   */
+  const namedSubjects = new WeakMap<object, string>();
 
   return betterAuth({
     database: pool,
@@ -118,9 +142,18 @@ export function createCommunityAuth(
           });
         }
         if (ctx.path.startsWith('/sign-up/')) {
-          if (!(await checkAdmission(ctx.headers?.get('cookie') ?? null))) {
+          const admission = await checkAdmission(ctx.headers?.get('cookie') ?? null);
+          if (!admission) {
             throw new APIError('FORBIDDEN', {
               message: 'An invitation or owner grant is required.',
+            });
+          }
+          // A claim that names an account admits only that account, made through the host's
+          // sign-in service, never a password sign-up.
+          if (admission.by === 'owner_replacement' && admission.claimant) {
+            throw new APIError('FORBIDDEN', {
+              code: 'single_sign_on_required',
+              message: 'Create your account through the sign-in service named in the request.',
             });
           }
           refuseUnconfirmedAge(ctx.headers?.get('cookie') ?? null);
@@ -131,12 +164,22 @@ export function createCommunityAuth(
       user: {
         create: {
           before: async (user, ctx) => {
-            if (!(await checkAdmission(ctx?.headers?.get('cookie') ?? null))) {
+            const admission = await checkAdmission(ctx?.headers?.get('cookie') ?? null);
+            if (!admission) {
               // The code lets an OAuth or OIDC callback redirect with `?error=invitation_required`.
               throw new APIError('FORBIDDEN', {
                 code: 'invitation_required',
                 message: 'An invitation or owner grant is required.',
               });
+            }
+            if (admission.by === 'owner_replacement' && admission.claimant) {
+              // Only a sign-up through the issuer the request named, which the host still uses.
+              if (!ctx || !isOidcCallback(ctx) || config.oidc?.issuer !== admission.claimant.issuer)
+                throw new APIError('FORBIDDEN', {
+                  code: 'single_sign_on_required',
+                  message: 'Create your account through the sign-in service named in the request.',
+                });
+              namedSubjects.set(ctx, admission.claimant.subject);
             }
             refuseUnconfirmedAge(ctx?.headers?.get('cookie') ?? null);
             return { data: user };
@@ -152,6 +195,23 @@ export function createCommunityAuth(
               sameSite: 'lax',
               secure: config.publicUrl.startsWith('https:'),
             });
+          },
+        },
+      },
+      account: {
+        create: {
+          // The account row of a sign-up a named claim admitted must be the named identity.
+          before: async (account, ctx) => {
+            const subject = ctx ? namedSubjects.get(ctx) : undefined;
+            if (
+              subject !== undefined &&
+              (account.providerId !== OIDC_PROVIDER_ID || account.accountId !== subject)
+            )
+              throw new APIError('FORBIDDEN', {
+                code: 'claim_account_mismatch',
+                message: 'Sign in with the account named in the request, then try again.',
+              });
+            return { data: account };
           },
         },
       },

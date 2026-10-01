@@ -5,6 +5,7 @@ import { CheckIcon } from 'lucide-react';
 import { Checkbox as CheckboxPrimitive } from 'radix-ui';
 
 import { cn } from './cn.js';
+import { FOCUS_RING, INVALID_RING } from './focus-ring.js';
 
 /** Props for {@link Checkbox}. */
 export interface CheckboxProps extends React.ComponentProps<typeof CheckboxPrimitive.Root> {
@@ -40,7 +41,9 @@ function Checkbox({ className, responsive = true, ...props }: CheckboxProps) {
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        'peer border-dui-input focus-visible:border-dui-ring focus-visible:ring-dui-ring/50 aria-invalid:border-dui-destructive aria-invalid:ring-dui-destructive/20 data-[state=checked]:border-dui-primary data-[state=checked]:bg-dui-primary data-[state=checked]:text-dui-primary-foreground dui-dark:bg-dui-input/30 dui-dark:aria-invalid:ring-dui-destructive/40 dui-dark:data-[state=checked]:bg-dui-primary shrink-0 rounded-[4px] border shadow-xs transition-[color,background-color,border-color,box-shadow] duration-100 outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none!',
+        'peer border-dui-input data-[state=checked]:border-dui-primary data-[state=checked]:bg-dui-primary data-[state=checked]:text-dui-primary-foreground dui-dark:bg-dui-input/30 dui-dark:data-[state=checked]:bg-dui-primary shrink-0 rounded-[4px] border shadow-xs transition-[color,background-color,border-color,box-shadow] duration-100 outline-none disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none!',
+        FOCUS_RING,
+        INVALID_RING,
         responsive ? 'size-5 md:size-4' : 'size-4',
         className
       )}

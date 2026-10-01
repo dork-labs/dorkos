@@ -103,7 +103,7 @@ export function InboxBellPill({
         // with one unread row the bar beside it painted past its own box on
         // Home, Tasks and Team (DOR-2524). From `lg` up the number and its word
         // sit inline again, where the row has room for them.
-        'focus-visible:ring-ring/60 relative flex h-6 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-colors outline-none focus-visible:ring-2 lg:w-auto lg:justify-start lg:gap-1 lg:px-1.5',
+        'focus-visible:ring-ring relative flex h-6 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-colors outline-none focus-visible:ring-2 lg:w-auto lg:justify-start lg:gap-1 lg:px-1.5',
         tone === 'waiting'
           ? 'bg-status-warning-bg text-status-warning-fg border-status-warning-border/60 hover:border-status-warning-border hover:bg-status-warning-border/25 active:bg-status-warning-border/40'
           : 'text-muted-foreground border-border/60 hover:border-border hover:bg-muted active:bg-muted/70',

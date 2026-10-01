@@ -54,7 +54,12 @@ import {
   RemoteConnectionAuthorizationError,
   RemoteConnectionNotFoundError,
 } from '../services/communities/remote/connection-store.js';
-import { communityRefusal, type CommunityRefusalAction } from './remote-community-refusal.js';
+import {
+  communityGoneRefusal,
+  communityRefusal,
+  type CommunityRefusal,
+  type CommunityRefusalAction,
+} from './remote-community-refusal.js';
 import {
   followNativeRedactions,
   NATIVE_REDACTION_POLL_MS,
@@ -114,6 +119,10 @@ function fail(
   error: unknown,
   action?: CommunityRefusalAction
 ): void {
+  if (error instanceof RemoteCommunityGoneError) {
+    res.status(error.refusal.status).json({ code: error.refusal.code, error: error.refusal.error });
+    return;
+  }
   if (error instanceof RemoteConnectionCapabilityError) {
     res.status(403).json({ code: 'COMMUNITY_ACCESS_DENIED', error: error.message });
     return;
@@ -144,6 +153,18 @@ class RemoteConnectionCapabilityError extends Error {
   }
 }
 
+/**
+ * The connection's community was recorded deleted or taken down, so it has no capabilities left.
+ * Answered as the gone refusal the Community itself gives, never as "not allowed": the app puts a
+ * person's refused message back in their draft on exactly these codes (DOR-2575).
+ */
+class RemoteCommunityGoneError extends Error {
+  constructor(readonly refusal: CommunityRefusal) {
+    super(refusal.error);
+    this.name = 'RemoteCommunityGoneError';
+  }
+}
+
 async function verifiedConnection(
   ref: import('@dorkos/shared/community-adapter').CommunityRef,
   owner: string,
@@ -151,6 +172,8 @@ async function verifiedConnection(
 ) {
   const connection = await getRemotePairingService().status(ref, owner);
   if (connection.status === 'reconnect-required') throw new RemoteConnectionAuthorizationError();
+  const gone = communityGoneRefusal(connection.access?.lastKnown?.lifecycle);
+  if (gone) throw new RemoteCommunityGoneError(gone);
   if (!connection.access || connection.access.state !== 'verified')
     throw new Error('Community unavailable');
   if (!connection.access.effective[capability]) throw new RemoteConnectionCapabilityError();

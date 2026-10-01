@@ -63,6 +63,9 @@ export const COMMUNITY_RESERVED_SHORT_NAMES: readonly string[] = [
   'import',
   'invite',
   'deletion',
+  // The owner's link to keep ownership, and the new owner's claim, when a host replaces an owner.
+  'keep-ownership',
+  'owner-replacement',
   // First-host setup is reached through the browser app, and a host would expect the word kept.
   'setup',
   // Pages a host is likely to publish, and words that would let a community pose as the host.
@@ -391,6 +394,11 @@ export const CommunityAdminHostApiKeyScopeSchema = z.enum([
    * key needs it to read a replacement's details.
    */
   'communities:ownership',
+  /**
+   * Read the erasure journal: which members and accounts were erased, by id only. No other
+   * scope implies it.
+   */
+  'communities:erasure_journal',
 ]);
 /** A key holds each scope at most once, so it can hold at most every scope there is. */
 const hostApiKeyScopes = z
@@ -437,6 +445,44 @@ export const CommunityAdminHostApiKeySecretResponseSchema = z.strictObject({
 /** Revocation takes no input; it cannot be undone. */
 export const CommunityAdminHostApiKeyRevokeRequestSchema = z.strictObject({});
 
+/** Most erasure journal lines one read returns, and how many when `limit` is left out. */
+export const COMMUNITY_ERASURE_JOURNAL_PAGE_MAX = 1_000;
+const COMMUNITY_ERASURE_JOURNAL_PAGE_DEFAULT = 500;
+
+/** Read the erasure journal after `cursor`, or from the start without one. */
+export const CommunityAdminErasureJournalQuerySchema = z.strictObject({
+  cursor: z.string().min(1).max(512).optional(),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(COMMUNITY_ERASURE_JOURNAL_PAGE_MAX)
+    .default(COMMUNITY_ERASURE_JOURNAL_PAGE_DEFAULT),
+});
+
+/**
+ * One finished erasure, by id only: the same object the server logs and writes to
+ * `COMMUNITY_ERASURE_JOURNAL`. Written one per line, the lines are what `erasure:reapply` reads.
+ */
+export const CommunityAdminErasureJournalLineSchema = z.discriminatedUnion('event', [
+  z.strictObject({ event: z.literal('community.member_erased'), communityId: id, memberId: id }),
+  z.strictObject({
+    event: z.literal('community.account_erased'),
+    userId: z.string().min(1).max(128),
+  }),
+]);
+
+/**
+ * One page of the erasure journal, oldest first. Keep `nextCursor` and send it next time, even
+ * when `lines` is empty; `hasMore` says whether to ask again now. A cursor this server no longer
+ * recognises, as after a backup restore, answers `410 CURSOR_STALE`: read again from the start.
+ */
+export const CommunityAdminErasureJournalPageSchema = z.strictObject({
+  lines: z.array(CommunityAdminErasureJournalLineSchema).max(COMMUNITY_ERASURE_JOURNAL_PAGE_MAX),
+  nextCursor: z.string().min(1),
+  hasMore: z.boolean(),
+});
+
 /**
  * The host's own pointer for an owner replacement (a ticket or case number): 1 to 80 letters,
  * digits, spaces, and `._#-`. No `:` or `/`, so it can never read as a link. Shown to the owner
@@ -482,6 +528,10 @@ export const CommunityAdminOwnerReplacementSchema = z.strictObject({
   }),
   /** Which waiting period applies; null until the notice resolves. */
   wait: z.enum(['standard', 'long']).nullable(),
+  /** The owner kept ownership against an earlier request, so this one has the longer wait. */
+  afterObjection: z.boolean(),
+  /** A request was withdrawn in the 30 days before this one, so it has the longer wait. */
+  afterWithdrawal: z.boolean(),
   claimableAfter: timestamp.nullable(),
   claimExpiresAt: timestamp.nullable(),
   claimReissuedAt: timestamp.nullable(),

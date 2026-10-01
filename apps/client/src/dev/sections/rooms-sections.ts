@@ -14,7 +14,7 @@ import type { PlaygroundSection } from '../playground-registry';
  * AgentRosterPicker, RemoveMemberConfirm. FileExplorerShowcases — Room Files.
  * RoomThreadShowcases — ThreadReplyRow, RoomThreadPanel, Thread arrival
  * animations. RoomDeliveryShowcases — Room moments, Room notices, PendingRow,
- * Message.Attachments.
+ * Message.Attachments. CommunityGoneShowcases — CommunityGonePanel.
  */
 export const ROOMS_SECTIONS: PlaygroundSection[] = [
   {
@@ -240,5 +240,12 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     page: 'rooms',
     category: 'Delivery',
     keywords: ['attachment', 'file', 'image', 'thumbnail', 'download', 'chip', 'upload'],
+  },
+  {
+    id: 'communitygonepanel',
+    title: 'CommunityGonePanel',
+    page: 'rooms',
+    category: 'Delivery',
+    keywords: ['community', 'deleted', 'taken down', 'gone', 'unsent', 'draft', 'copy', 'remove'],
   },
 ];

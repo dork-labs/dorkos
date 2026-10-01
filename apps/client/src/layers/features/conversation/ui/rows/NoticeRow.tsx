@@ -328,7 +328,7 @@ export function NoticeRow({
       {...(feedPosition && { role: 'article', 'aria-label': noticeName(entry.body.text) })}
       {...feedArticleProps(feedPosition)}
       className={cn(
-        'focus-visible:ring-ring/50 flex items-start gap-2 px-[var(--msg-padding-x)] py-2 text-xs outline-none focus-visible:ring-2',
+        'focus-visible:ring-ring flex items-start gap-2 px-[var(--msg-padding-x)] py-2 text-xs outline-none focus-visible:ring-2',
         tone ?? 'text-muted-foreground'
       )}
     >

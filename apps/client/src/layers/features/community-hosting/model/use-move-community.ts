@@ -151,21 +151,36 @@ export function useMoveCommunity(resumeMoveId: string | null): MoveCommunity {
     };
     const serial = JSON.stringify(body);
     if (key.current?.body !== serial) key.current = { body: serial, key: crypto.randomUUID() };
+    const idempotencyKey = key.current.key;
     const controller = new AbortController();
     abort.current = controller;
     setFailure({ field: null, notice: null });
     setSending({ loaded: 0, total: input.file.size });
     try {
-      const answer = await transport.startHostedCommunityMove(
-        input.file,
-        {
-          idempotencyKey: key.current.key,
-          name: body.name,
-          ...(input.shortName ? { shortName: input.shortName } : {}),
-        },
-        (progress) => setSending(progress),
-        controller.signal
-      );
+      // Ask first whether the file fits on this computer: over the tunnel, a
+      // large file can take hours to send just to hear it doesn't.
+      const room = await transport.checkHostedCommunityMoveRoom(input.file.size, controller.signal);
+      if (controller.signal.aborted) return;
+      const answer = room.ok
+        ? await transport.startHostedCommunityMove(
+            input.file,
+            {
+              idempotencyKey,
+              name: body.name,
+              ...(input.shortName ? { shortName: input.shortName } : {}),
+            },
+            (progress) => setSending(progress),
+            controller.signal
+          )
+        : room;
+      // The key is only for picking up a move this start may have made without
+      // hearing back, which a refusal marks `mayExist` (the account could not
+      // be reached or broke, or a cancel did not go through). Once the move is
+      // here the dialog follows it by id, and any other refusal left no move,
+      // so either way the next Start makes a fresh move and hears the real
+      // reason, rather than replaying one that was cancelled or failed
+      // (DOR-2611).
+      if (answer.ok || answer.mayExist !== true) key.current = null;
       if (answer.ok) {
         seed(answer.move);
         setMoveId(answer.move.moveId);
@@ -178,8 +193,13 @@ export function useMoveCommunity(resumeMoveId: string | null): MoveCommunity {
         setFailure({ field: null, notice: noticeOf(answer) });
       }
     } catch {
-      // A cancel the person asked for is not a failure worth a sentence.
-      if (!controller.signal.aborted) setFailure({ field: null, notice: UNREACHABLE_NOTICE });
+      // A cancel the person asked for is not a failure worth a sentence. It
+      // also leaves no move: the local server cancels one whose browser left.
+      // (Only a cancel in the instant after the server answered could leave
+      // one, and the account's list still shows it.) A stall or a broken
+      // connection keeps the key, since the move may exist.
+      if (controller.signal.aborted) key.current = null;
+      else setFailure({ field: null, notice: UNREACHABLE_NOTICE });
     } finally {
       abort.current = null;
       setSending(null);

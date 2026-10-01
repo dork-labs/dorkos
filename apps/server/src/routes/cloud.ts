@@ -79,6 +79,16 @@ router.get('/link/status', (_req, res) => {
   res.json(getCloudLinkManager().getStatus());
 });
 
+/**
+ * POST /api/cloud/link/cancel — stop a link flow in progress, or dismiss the
+ * note a finished relink left. A token exchange already in flight finishes
+ * first and a key it issues is kept. Answers the state it settled in:
+ * `linked` while this computer holds a key, else `idle`.
+ */
+router.post('/link/cancel', async (_req, res) => {
+  res.json(await getCloudLinkManager().cancelLink());
+});
+
 /** POST /api/cloud/unlink — withdraw locally before best-effort server-side revoke. */
 router.post('/unlink', async (_req, res) => {
   try {
@@ -107,7 +117,12 @@ router.get('/status', (_req, res) => {
  * @param what - What was being read, for the log line.
  */
 function cloudReadFailed(res: Response, error: unknown, what: string) {
-  logger.warn(`[Cloud] Could not read ${what}`, logError(error));
+  const problem = problemOf(error);
+  logger.warn(`[Cloud] Could not read ${what}`, {
+    ...logError(error),
+    code: problem?.code,
+    status: problem?.status,
+  });
   return res.status(502).json({ error: 'Could not reach the DorkOS cloud. Try again shortly.' });
 }
 

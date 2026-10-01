@@ -218,6 +218,8 @@ export function useAccessReconciliation({
     isLoading: previewMutation.isPending,
     /** The snapshot could not be loaded; nothing changed. */
     loadFailed: previewMutation.isError,
+    /** The error behind a failed load, for `cloudFailure()`. */
+    loadError: previewMutation.error,
     /** A write is in flight. */
     isSaving: applyMutation.isPending,
     /** The last write could not be confirmed; reload before another change. */

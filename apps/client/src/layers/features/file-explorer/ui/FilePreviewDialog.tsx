@@ -483,7 +483,7 @@ export function FilePreviewDialog({
               // drawer made a document unreadable without sideways scrolling.
               className={cn(
                 'text-foreground/90 border-border/60 bg-background field-sizing-content',
-                'focus-visible:border-ring focus-visible:ring-ring/50 min-h-64 w-full',
+                'focus-visible:border-ring focus-visible:ring-ring min-h-64 w-full',
                 'resize-none rounded-md border px-3 py-2 font-mono text-xs',
                 'whitespace-pre-wrap focus-visible:ring-[3px] focus-visible:outline-none'
               )}

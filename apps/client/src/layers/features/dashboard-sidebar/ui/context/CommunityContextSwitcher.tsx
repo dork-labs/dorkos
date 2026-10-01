@@ -44,6 +44,7 @@ import {
   communityCreationOrigins,
   COMMUNITY_DEPLOY_GUIDE_URL,
 } from './community-context-actions';
+import { communityRowState, navigationDescriptor } from './community-row-state';
 import { DisconnectCommunityDialog, JoinCommunityDialog } from './CommunityActionDialogs';
 import { ConnectCommunityDialog, type ConnectCommunityRequest } from './ConnectCommunityDialog';
 import { SheetActionsMenu } from './SheetActionsMenu';
@@ -79,32 +80,6 @@ function orderedConnections(
 
 function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
-}
-
-function navigationDescriptor(connection: CommunityConnectionDescriptor) {
-  const lifecycle = connection.access?.lastKnown?.lifecycle;
-  return {
-    kind: 'community',
-    key: `community:${connection.ref}`,
-    ref: connection.ref,
-    remoteCommunityId: connection.remoteCommunityId,
-    label: connection.label,
-    icon: { kind: 'community', ref: connection.ref },
-    pinnedOrigin: connection.pinnedOrigin,
-    membershipState:
-      lifecycle === 'deletion_pending'
-        ? 'deletion-pending'
-        : (lifecycle ?? (connection.status === 'pending' ? 'pending' : 'active')),
-    connectionState: connection.status,
-    availability:
-      connection.access?.state === 'verified'
-        ? 'online'
-        : connection.access?.state === 'unverified'
-          ? 'offline'
-          : 'unknown',
-    unreadCount: connection.attention?.unreadCount ?? null,
-    mentionCount: connection.attention?.mentionCount ?? null,
-  };
 }
 
 /**
@@ -358,12 +333,6 @@ export function CommunityContextSwitcher({
             </ResponsiveDropdownMenuRadioItem>
             {visibleDestinations.map((connection) => {
               const descriptor = navigationDescriptor(connection);
-              const state =
-                descriptor.membershipState !== 'active'
-                  ? descriptor.membershipState.replace('-', ' ')
-                  : descriptor.availability !== 'online'
-                    ? descriptor.availability
-                    : undefined;
               const mentions = descriptor.mentionCount ?? 0;
               const otherUnread = Math.max(0, (descriptor.unreadCount ?? 0) - mentions);
               const attention = [
@@ -385,17 +354,8 @@ export function CommunityContextSwitcher({
                   disabled={pendingRef !== null}
                   itemRef={connection.ref === selectedRef ? selectedItem : undefined}
                   description={
-                    [
-                      connection.status === 'reconnect-required'
-                        ? 'Reconnect required'
-                        : connection.seemsGoneSince &&
-                            connection.access?.lastKnown?.lifecycle !== 'deleted'
-                          ? 'Seems to be gone'
-                          : state,
-                      attention,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ') || undefined
+                    [communityRowState(connection), attention].filter(Boolean).join(' · ') ||
+                    undefined
                   }
                   className={pendingRef !== null ? 'opacity-50' : undefined}
                 >

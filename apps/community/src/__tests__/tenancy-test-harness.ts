@@ -17,6 +17,9 @@ export const TENANCY_PASSWORD = 'password1234';
 /** Upper bound for one HTTP call, so a lock cycle fails the test instead of hanging it. */
 const REQUEST_TIMEOUT_MS = 20_000;
 
+/** How long the harness server keeps an idle connection: longer than any test runs. */
+const HARNESS_KEEP_ALIVE_MS = 15 * 60_000;
+
 /** One real Community server on its own database, storage folder, and pool. */
 export interface TenancyHarness {
   config: CommunityConfig;
@@ -61,17 +64,31 @@ export async function startTenancyHarness(
     env?: Record<string, unknown>;
     /** Another BlobStore (S3) instead of the fixture's own folder. */
     blobStore?: BlobStore;
+    /** Mail composers the app treats as available, as `main.ts` passes the worker's own set. */
+    noticeComposers?: Parameters<typeof createCommunityApp>[0]['noticeComposers'];
+    /** Let hosts start owner replacements, as `main.ts` will once the owner can answer. */
+    ownerReplacementOpen?: boolean;
+    /**
+     * Serve another harness's database instead of a fresh one, as the same host restarted with
+     * other settings would. Closing this one leaves that database to its owner.
+     */
+    sharesDatabaseOf?: TenancyHarness;
   } = {}
 ): Promise<TenancyHarness> {
   const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
   if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for tenancy tests');
   const admin = new Pool({ connectionString: adminUrl });
-  const dbName = `community_${label}_${randomUUID().replaceAll('-', '')}`;
-  const dbUrl = new URL(adminUrl);
+  const shared = options.sharesDatabaseOf;
+  const dbUrl = new URL(shared ? shared.config.databaseUrl : adminUrl);
+  const dbName = shared
+    ? dbUrl.pathname.slice(1)
+    : `community_${label}_${randomUUID().replaceAll('-', '')}`;
   dbUrl.pathname = `/${dbName}`;
   const storagePath = await mkdtemp(join(tmpdir(), `community-${label}-`));
-  await admin.query(`CREATE DATABASE ${dbName}`);
-  await migrate(dbUrl.toString());
+  if (!shared) {
+    await admin.query(`CREATE DATABASE ${dbName}`);
+    await migrate(dbUrl.toString());
+  }
   // Several pool clients, so concurrent requests really run in parallel transactions.
   const pool = new Pool({ connectionString: dbUrl.toString(), max: 10 });
   const config = parseConfig({
@@ -96,9 +113,18 @@ export async function startTenancyHarness(
     pool,
     blobStore,
     hooks: { ...options.hooks, now: options.now },
+    noticeComposers: options.noticeComposers,
+    ownerReplacementOpen: options.ownerReplacementOpen,
   });
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
   configureServerTimeouts(server);
+  // The test's fetch and this server share one event loop, so a test that computes for longer
+  // than Node's idle keep-alive (5 s plus a 1 s buffer), such as building a large archive,
+  // starves both sides' idle timers. When the loop resumes, fetch sends its next request on the
+  // pooled connection before the server's overdue timer closes it, and the request fails with
+  // ECONNRESET. A real client runs on its own loop and closes an idle connection first, as the
+  // server's Keep-Alive hint tells it to, so only the harness keeps connections this long.
+  if ('keepAliveTimeout' in server) server.keepAliveTimeout = HARNESS_KEEP_ALIVE_MS;
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
@@ -132,7 +158,7 @@ export async function startTenancyHarness(
     async close() {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await pool.end();
-      await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
+      if (!shared) await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
       await admin.end();
       await rm(storagePath, { recursive: true, force: true });
     },

@@ -74,7 +74,7 @@ export function AccountLimitMarkerLine({ entry, now: fixedNow }: AccountLimitMar
               {entry.toSessionId ? (
                 <button
                   type="button"
-                  className="hover:text-foreground focus-visible:ring-ring/50 rounded-sm underline underline-offset-2 outline-none focus-visible:ring-2"
+                  className="hover:text-foreground focus-visible:ring-ring rounded-sm underline underline-offset-2 outline-none focus-visible:ring-2"
                   onClick={() => setSessionId(entry.toSessionId!)}
                 >
                   {targetName}

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { Pool } from 'pg';
+import { Client, Pool } from 'pg';
 import { COMMUNITY_MIGRATIONS, migrate } from '../migrate.js';
 import { inspectBackout } from '../backout.js';
 import { createCommunityApp } from '../app.js';
@@ -24,6 +24,18 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Wait for every session on the database to close before forcing the drop. `Pool.end()`,
+  // including the one inside migrate(), resolves before its connections finish closing, and
+  // FORCE terminates a connection mid-close into an uncaught 57P01 that fails the whole run.
+  // Bounded: a connection this file leaked still gets dropped, loudly, rather than hanging.
+  for (let tries = 0; tries < 100; tries++) {
+    const open = await admin.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=$1',
+      [dbName]
+    );
+    if (open.rows[0].n === 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
   await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
   await admin.end();
 });
@@ -51,7 +63,9 @@ async function applyVersionFourSchema(db: Pool): Promise<void> {
 
 it('creates all owner, conversation, credential and auth tables in fresh Postgres', async () => {
   await migrate(testUrl.toString());
-  const db = new Pool({ connectionString: testUrl.toString() });
+  // A Client, not a Pool: its end() resolves only once the connection has closed.
+  const db = new Client({ connectionString: testUrl.toString() });
+  await db.connect();
   try {
     const result = await db.query<{ tablename: string }>(
       "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
@@ -1563,6 +1577,195 @@ it('upgrades a populated database to import parts without changing what old code
     await expect(
       db.query("UPDATE community_imports SET upload_kind='zip' WHERE id=$1", [arrived])
     ).rejects.toThrow(/community_imports_upload_kind/);
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+  }
+});
+
+it('upgrades a populated database to the notice promise without touching open replacements', async () => {
+  // Purpose: fails if the migration rewrites or closes a replacement that was open before it,
+  // or if old code's insert (which names no promise) stops working.
+  const name = `community_notice_promise_${randomUUID().replaceAll('-', '')}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const db = new Pool({ connectionString: url.toString() });
+  try {
+    // Found by name, so renumbering the migration at merge time needs no change here.
+    await applyBefore(
+      db,
+      COMMUNITY_MIGRATIONS.find(([, filename]) =>
+        filename.endsWith('_owner_replacement_promise.sql')
+      )![1]
+    );
+    const userId = randomUUID();
+    await db.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+      userId,
+      'Owner',
+      `${userId}@example.test`,
+    ]);
+    // The one-owner rule is checked at commit, so the owner arrives with the activation.
+    const setup = await db.connect();
+    let community: string;
+    let member: string;
+    try {
+      await setup.query('BEGIN');
+      community = (
+        await setup.query<{ id: string }>(
+          "INSERT INTO communities(name,lifecycle) VALUES('Before','pending_owner') RETURNING id"
+        )
+      ).rows[0].id;
+      member = (
+        await setup.query<{ id: string }>(
+          `INSERT INTO members(community_id,user_id,display_name,handle,role)
+           VALUES($1,$2,'Owner','owner','owner') RETURNING id`,
+          [community, userId]
+        )
+      ).rows[0].id;
+      await setup.query(
+        "UPDATE communities SET lifecycle='active',activated_at=now(),lifecycle_version=2 WHERE id=$1",
+        [community]
+      );
+      await setup.query('COMMIT');
+    } finally {
+      setup.release();
+    }
+    const insertOpen = () =>
+      db.query<{ id: string }>(
+        `INSERT INTO owner_replacements(community_id,reason,claimant_named,claim_token_hash,
+           requested_by_host_actor,idempotency_key,payload_hash,after_objection,after_withdrawal,
+           prior_owner_member_id,requested_at)
+         VALUES($1,'other',false,$2,'api_key:old-key',$3,$4,false,false,$5,now()) RETURNING id`,
+        [
+          community,
+          createHash('sha256').update(randomUUID()).digest('hex'),
+          randomUUID(),
+          'b'.repeat(64),
+          member,
+        ]
+      );
+    const before = (await insertOpen()).rows[0].id;
+    const snapshot = async () =>
+      (await db.query('SELECT * FROM owner_replacements WHERE id=$1', [before])).rows[0];
+    const was = await snapshot();
+
+    await migrate(url.toString());
+
+    expect(await snapshot()).toEqual({ ...was, notice_promised_at: null });
+    // Old code's insert still works; closing the first keeps one open per community.
+    await db.query(
+      `UPDATE owner_replacements SET state='withdrawn',withdrawn_cause='cancelled',ended_at=now(),
+         claim_token_hash=NULL WHERE id=$1`,
+      [before]
+    );
+    const old = (await insertOpen()).rows[0].id;
+    expect(
+      (await db.query('SELECT notice_promised_at FROM owner_replacements WHERE id=$1', [old])).rows
+    ).toEqual([{ notice_promised_at: null }]);
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+  }
+});
+
+// Purpose: the enrolling-grant migration (DOR-2612) names a grant only where it is provable (the
+// owner only ever held one enroll-agent grant there), leaves every other agent a legacy row, and
+// then lets two installations hold one row each for the same local id while a legacy local id
+// stays unique per owner.
+it('backfills the enrolling grant only where one grant could have enrolled the agent', async () => {
+  const name = `community_enrolling_grant_${randomUUID().replaceAll('-', '')}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const db = new Pool({ connectionString: url.toString() });
+  try {
+    // Found by name, so renumbering the migration at merge time needs no change here.
+    await applyBefore(
+      db,
+      COMMUNITY_MIGRATIONS.find(([, filename]) =>
+        filename.endsWith('_agent_enrolling_grant.sql')
+      )![1]
+    );
+    const community = (
+      await db.query<{ id: string }>(
+        "INSERT INTO communities(name,lifecycle) VALUES('Before','pending_owner') RETURNING id"
+      )
+    ).rows[0].id;
+    const member = async (label: string) => {
+      await db.query(`INSERT INTO "user"(id,name,email,"emailVerified") VALUES ($1,$1,$2,true)`, [
+        `u-${label}`,
+        `${label}@grant.test`,
+      ]);
+      return (
+        await db.query<{ id: string }>(
+          `INSERT INTO members(community_id,user_id,display_name,handle,role,active)
+           VALUES($1,$2,$3,$3,'member',true) RETURNING id`,
+          [community, `u-${label}`, label]
+        )
+      ).rows[0].id;
+    };
+    const grant = async (memberId: string, scopes: string[], revoked = false) =>
+      (
+        await db.query<{ id: string }>(
+          `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,revoked_at)
+           VALUES($1,$2,$3,$4,$5) RETURNING id`,
+          [community, memberId, randomUUID(), scopes, revoked ? new Date() : null]
+        )
+      ).rows[0].id;
+    const agent = async (ownerId: string, localAgentId: string | null) =>
+      (
+        await db.query<{ id: string }>(
+          `INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id)
+           VALUES($1,$2,'Agent',$3,$4) RETURNING id`,
+          [community, ownerId, `a-${randomUUID().slice(0, 8)}`, localAgentId]
+        )
+      ).rows[0].id;
+
+    // One enroll-agent grant, beside a read-only one that could not have enrolled anything.
+    const solo = await member('solo');
+    const soloGrant = await grant(solo, ['read', 'post', 'enroll-agent']);
+    await grant(solo, ['read']);
+    const soloAgent = await agent(solo, 'shared-id');
+    const imported = await agent(solo, null);
+    // Two enroll-agent grants, one since revoked: either could have enrolled it.
+    const multi = await member('multi');
+    await grant(multi, ['read', 'post', 'enroll-agent'], true);
+    const multiGrant = await grant(multi, ['read', 'post', 'enroll-agent']);
+    const multiAgent = await agent(multi, 'shared-id');
+    // No grant at all.
+    const none = await member('none');
+    const noneAgent = await agent(none, 'shared-id');
+
+    await migrate(url.toString());
+
+    const enrolledBy = async (id: string) =>
+      (await db.query('SELECT enrolled_by_grant_id FROM agents WHERE id=$1', [id])).rows[0]
+        .enrolled_by_grant_id;
+    expect(await enrolledBy(soloAgent)).toBe(soloGrant);
+    expect(await enrolledBy(imported)).toBeNull();
+    expect(await enrolledBy(multiAgent)).toBeNull();
+    expect(await enrolledBy(noneAgent)).toBeNull();
+
+    const enrolled = (ownerId: string, localAgentId: string | null, grantId: string | null) =>
+      db.query(
+        `INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id,
+           enrolled_by_grant_id) VALUES($1,$2,'Agent',$3,$4,$5)`,
+        [community, ownerId, `a-${randomUUID().slice(0, 8)}`, localAgentId, grantId]
+      );
+    // A second installation of the same person holds its own row for the same local id…
+    const secondInstall = await grant(multi, ['read', 'post', 'enroll-agent']);
+    await enrolled(multi, 'next', multiGrant);
+    await enrolled(multi, 'next', secondInstall);
+    // …but one installation still holds one row per local id, and a legacy id stays unique.
+    await expect(enrolled(multi, 'next', multiGrant)).rejects.toThrow(
+      /agents_grant_local_id_unique/
+    );
+    await expect(enrolled(multi, 'shared-id', null)).rejects.toThrow(
+      /agents_owner_local_id_legacy_unique/
+    );
+    // Erased agents keep no local id, and any number of them still fit.
+    await enrolled(solo, null, null);
   } finally {
     await db.end();
     await admin.query(`DROP DATABASE IF EXISTS ${name}`);

@@ -29,6 +29,16 @@ type AnySearchUpdater = (prev: Record<string, unknown>) => Record<string, unknow
  * says which params the URL half is made of; every close path builds its patch
  * from {@link clearedDialogSearch} rather than listing params again (DOR-839).
  */
+/**
+ * The Access tab section that asks the account panel to start linking this
+ * computer again. It lands on the account section like `account` does, and the
+ * panel starts the link once, then settles the section back to `account` so
+ * reopening Settings does not start another. A link that needs updating is
+ * still linked, so without this a person would land on a panel with no way
+ * forward.
+ */
+export const SETTINGS_RELINK_SECTION = 'relink';
+
 const DIALOG_SEARCH_PARAMS = {
   settings: ['settings', 'settingsSection'],
   tasks: ['tasks'],

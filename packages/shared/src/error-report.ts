@@ -153,7 +153,19 @@ const HTTP_URL = /\bhttps?:\/\/[^\s<>"'`]+/g;
  * these (a Wikipedia `…_(disambiguation)`) survives whole when it carries no
  * query, and loses only the query when it does.
  */
-const URL_TRAILING_PUNCTUATION = /[).,;:]+$/;
+const URL_TRAILING_PUNCTUATION = new Set([')', '.', ',', ';', ':']);
+
+/**
+ * The run of {@link URL_TRAILING_PUNCTUATION} that ends `url`, found by walking
+ * back from the end. Not a `/[).,;:]+$/` regex: that backtracks quadratically
+ * on a URL holding a long run of those characters anywhere but its end, and
+ * the text here is whatever a log line carried.
+ */
+function trailingPunctuation(url: string): string {
+  let start = url.length;
+  while (start > 0 && URL_TRAILING_PUNCTUATION.has(url[start - 1]!)) start--;
+  return url.slice(start);
+}
 
 /**
  * Drop the query string and fragment from every `http(s)` URL in `text`,
@@ -178,7 +190,7 @@ const URL_TRAILING_PUNCTUATION = /[).,;:]+$/;
  */
 export function redactUrlQueries(text: string): string {
   return text.replace(HTTP_URL, (url) => {
-    const trailing = URL_TRAILING_PUNCTUATION.exec(url)?.[0] ?? '';
+    const trailing = trailingPunctuation(url);
     const withoutTrailing = url.slice(0, url.length - trailing.length);
     return `${withoutTrailing.replace(/[?#][^\s<>"'`]*$/, '')}${trailing}`;
   });

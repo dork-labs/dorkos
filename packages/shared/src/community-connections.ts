@@ -70,6 +70,13 @@ export const CommunityConnectionDescriptorSchema = z
      * missing community and a misconfigured host look the same from here.
      */
     seemsGoneSince: z.iso.datetime().optional(),
+    /**
+     * How many of this owner's agent posts never arrived when the Community was found deleted or
+     * taken down: still waiting, or failed, counted just before DorkOS removed its copy
+     * (DOR-2575). Present only on a deleted, deleting or taken-down community, and only when
+     * there were some; the app says so, since the rooms those posts belonged to are gone.
+     */
+    undeliveredAgentMessages: z.number().int().positive().optional(),
   })
   .superRefine((connection, context) => {
     if (
@@ -135,12 +142,37 @@ export const CommunityConnectionPollResponseSchema = z.strictObject({
 });
 
 /**
+ * One agent this install added to a Community, named as this app knows it. Only
+ * agents added from this install appear.
+ */
+export const CommunityInstallationAgentSchema = z.strictObject({
+  /** The local agent's manifest id. */
+  localAgentId: z.string().min(1),
+  /** The agent's name in this app, or `null` when this app no longer has the agent. */
+  displayName: z.string().min(1).nullable(),
+});
+
+/**
+ * What disconnecting this install would take off the Community, read from this
+ * install's own records without asking the Community, so the confirmation can
+ * say it even when the Community cannot be reached.
+ */
+export const CommunityDisconnectImpactSchema = z.strictObject({
+  /** The agents this install added, which disconnecting removes from the Community. */
+  agents: z.array(CommunityInstallationAgentSchema),
+});
+
+/**
  * The outcome of disconnecting this install. The local credential is always
  * removed; `remoteRevoked` is false only when the Community could not be told
  * to end this install's access, so the person can end it there themselves.
+ * Disconnecting also removes the agents this install added to the Community;
+ * `agentsNotRemoved` lists the ones it could not remove, which are still on
+ * the Community until the person removes them there.
  */
 export const CommunityDisconnectResponseSchema = z.strictObject({
   remoteRevoked: z.boolean(),
+  agentsNotRemoved: z.array(CommunityInstallationAgentSchema),
 });
 
 /** Inputs for connecting this install to a community. */
@@ -151,6 +183,10 @@ export type CommunityConnectionStartResponse = z.infer<
 >;
 /** The outcome of disconnecting this install from a community. */
 export type CommunityDisconnectResponse = z.infer<typeof CommunityDisconnectResponseSchema>;
+/** One agent this install added to a community. */
+export type CommunityInstallationAgent = z.infer<typeof CommunityInstallationAgentSchema>;
+/** What disconnecting this install would take off a community. */
+export type CommunityDisconnectImpact = z.infer<typeof CommunityDisconnectImpactSchema>;
 /** Public outcome of polling browser approval. */
 export type CommunityConnectionPollResponse = z.infer<typeof CommunityConnectionPollResponseSchema>;
 
@@ -169,11 +205,18 @@ export interface CommunityConnectionTransport {
   /** Cancel an outstanding approval and erase the pending local proof. */
   cancelCommunityConnection(ref: string): Promise<void>;
   /**
-   * Disconnect this installation: end its access on the community, then discard
-   * its local credentials and cached content. Resolves with whether the
-   * community confirmed the access is gone.
+   * Disconnect this installation: remove the agents it added to the community,
+   * end its access there, then discard its local credentials and cached
+   * content. Resolves with whether the community confirmed the access is gone
+   * and which agents it could not remove.
    */
   disconnectCommunity(ref: string): Promise<CommunityDisconnectResponse>;
+  /**
+   * Read what disconnecting would take off the community: the agents this
+   * installation added there. Answered from local records, so it works while
+   * the community cannot be reached.
+   */
+  getCommunityDisconnectImpact(ref: string): Promise<CommunityDisconnectImpact>;
   /** Read and reconcile this owner's saved Community order and destinations. */
   getCommunityNavigation(): Promise<CommunityNavigationState>;
   /** Remember the last canonical route visited inside this owner's local installation. */
@@ -188,4 +231,21 @@ export interface CommunityConnectionTransport {
   ): Promise<CommunityNavigationState>;
   /** Return a remembered destination only when the owner can still read its room. */
   resolveCommunityNavigation(ref: string): Promise<CommunityNavigationDestination | null>;
+}
+
+/**
+ * Say how long to wait before trying a Community again, from the wait it named in `Retry-After`.
+ *
+ * Whole seconds under a minute, rounded-up minutes past it, and "a minute" when no usable wait
+ * was given. The server's `COMMUNITY_RATE_LIMITED` text and the connect dialog both use it, so
+ * the two never disagree.
+ *
+ * @param seconds - The wait in whole seconds, or anything else when none is known.
+ * @returns A phrase to follow "Wait", such as "17 seconds" or "2 minutes".
+ */
+export function describeCommunityRetryWait(seconds: unknown): string {
+  if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds < 1) return 'a minute';
+  if (seconds < 60) return seconds === 1 ? '1 second' : `${seconds} seconds`;
+  const minutes = Math.ceil(seconds / 60);
+  return minutes === 1 ? 'a minute' : `${minutes} minutes`;
 }

@@ -2,9 +2,10 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
-import type {
-  CommunityConnectionDescriptor,
-  CommunityConnectionStartResponse,
+import {
+  describeCommunityRetryWait,
+  type CommunityConnectionDescriptor,
+  type CommunityConnectionStartResponse,
 } from '@dorkos/shared/community-connections';
 import { useTransport } from '@/layers/shared/model';
 import { isCommunityAuthorityCurrent, type ConfirmedCommunityAuthority } from '@/layers/shared/lib';
@@ -24,8 +25,11 @@ import {
 import {
   communityKeys,
   communityOwnerAddress,
-  unconfirmedDisconnectMessage,
+  disconnectAgentsLine,
+  disconnectOutcome,
+  unknownDisconnectAgentsLine,
   useCommunityApprovalCheck,
+  useCommunityDisconnectImpact,
   useCommunityApprovalStore,
   useCommunityConnections,
   useConfirmedCommunityAuthority,
@@ -37,24 +41,55 @@ import {
 /**
  * What to say when a connection could not start.
  *
- * One refusal gets its own words: an address that leads to a host holding
- * several communities (the server's `COMMUNITY_SELECTION_REQUIRED`). The
- * address is right as far as it goes, so "check the address" would send the
- * person looking for a typo that is not there; they need one community's own
- * link, so the example is built on the host they typed. Every other failure keeps the general
- * message.
+ * Four refusals get their own words, because "check the address" would send
+ * the person looking for a typo in each of them:
+ *
+ * - `COMMUNITY_SELECTION_REQUIRED`: the address leads to a host holding several
+ *   communities. It is right as far as it goes; they need one community's own
+ *   link, so the example is built on the host they typed.
+ * - `COMMUNITY_NAME_NOT_FOUND`: the host is real but knows no community by that
+ *   short address. Here the spelling really is the thing to check.
+ * - `COMMUNITY_RATE_LIMITED`: the host limits how often one machine may
+ *   look up a name or start a connection, and this one has reached it. The
+ *   address may be fine; the answer is to wait, for as long as the host said
+ *   when it said.
+ * - `COMMUNITY_UPGRADE_REQUIRED`: the community's server is older than this
+ *   DorkOS can connect to. Nothing the person types fixes it; whoever runs the
+ *   server has to update it.
+ *
+ * Every other failure keeps the general message.
  *
  * @param error - Why the start failed.
  * @param address - The address the person submitted.
  */
 function startErrorMessage(error: unknown, address: string | undefined): string {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === 'COMMUNITY_SELECTION_REQUIRED'
-  )
-    return `That address has more than one community on it. Enter the link for the one you want: its short address, like ${shortAddressExample(address)}, or its full link, which has /c/ in it.`;
-  return 'Couldn’t connect. Check the community address and try again.';
+  const refusal =
+    typeof error === 'object' && error !== null
+      ? (error as { code?: unknown; body?: { retryAfterSeconds?: unknown } })
+      : {};
+  switch (refusal.code) {
+    case 'COMMUNITY_SELECTION_REQUIRED':
+      return `That address has more than one community on it. Enter the link for the one you want: its short address, like ${shortAddressExample(address)}, or its full link, which has /c/ in it.`;
+    case 'COMMUNITY_NAME_NOT_FOUND':
+      return 'No community uses that short address on this host. Check the spelling, or ask for the community’s full link.';
+    case 'COMMUNITY_RATE_LIMITED':
+      return `This DorkOS has tried that community too many times in a short while. Your address may be fine. Wait ${describeCommunityRetryWait(refusal.body?.retryAfterSeconds)}, then try again.`;
+    case 'COMMUNITY_UPGRADE_REQUIRED':
+      return 'This community’s server is too old to connect to this DorkOS. Ask whoever runs the community to update it, then try again.';
+    default:
+      return 'Couldn’t connect. Check the community address and try again.';
+  }
+}
+
+/**
+ * Whether a failed start puts the address itself in doubt. A busy host or an
+ * outdated server is not the address's fault, so the field is not marked
+ * invalid for those; the message is still tied to it.
+ */
+function blamesAddress(error: unknown): boolean {
+  const code =
+    typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : '';
+  return code !== 'COMMUNITY_RATE_LIMITED' && code !== 'COMMUNITY_UPGRADE_REQUIRED';
 }
 
 /** A short address on the host the person typed, or a generic one when it cannot be read. */
@@ -348,6 +383,17 @@ function ConnectCommunityBody({
     },
   });
   const end = useEndCommunityConnection();
+  // Disconnecting a connection that needs reconnecting still removes the agents it added.
+  const impact = useCommunityDisconnectImpact(
+    connection?.status === 'reconnect-required' ? connection : null
+  );
+
+  // A failed start hands focus back to the address, where the fix (or the retry) begins. The
+  // field was disabled while the start ran, so focus is moved once it is enabled again.
+  const startError = start.error;
+  useEffect(() => {
+    if (startError) addressInput.current?.focus();
+  }, [startError]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -357,14 +403,16 @@ function ConnectCommunityBody({
 
   function endConnection(ending: CommunityConnectionDescriptor) {
     end.mutate(ending, {
-      onSuccess: ({ remoteRevoked }) => {
+      onSuccess: (result) => {
         if (ending.status === 'pending') onCancelled(ending.label);
-        else
+        else {
+          const outcome = disconnectOutcome(ending.label, result);
           onEnded(
-            remoteRevoked
+            outcome.tone === 'success'
               ? `${ending.label} is disconnected. Connect again to continue.`
-              : unconfirmedDisconnectMessage(ending.label)
+              : outcome.message
           );
+        }
       },
       // Ending can erase local proof even when the Community cannot answer.
       onSettled: () => {
@@ -406,7 +454,8 @@ function ConnectCommunityBody({
               type="url"
               inputMode="url"
               placeholder="https://spaces.example.com/acme"
-              aria-describedby={`${id}-url-hint`}
+              aria-describedby={start.error ? `${id}-url-hint ${id}-url-error` : `${id}-url-hint`}
+              aria-invalid={start.error && blamesAddress(start.error) ? true : undefined}
               required
               autoComplete="url"
               value={url}
@@ -433,7 +482,7 @@ function ConnectCommunityBody({
             </p>
           </div>
           {start.error && (
-            <p role="alert" className="text-destructive text-sm">
+            <p id={`${id}-url-error`} role="alert" className="text-destructive text-sm">
               {startErrorMessage(start.error, start.variables)}
             </p>
           )}
@@ -456,7 +505,14 @@ function ConnectCommunityBody({
     <p className="text-muted-foreground text-xs break-all">{connection.pinnedOrigin}</p>
   );
 
-  if (connection.status === 'reconnect-required')
+  if (connection.status === 'reconnect-required') {
+    // Wait only while a read is running; a failed one says what Disconnect still does.
+    const checking = !impact.data && impact.fetchStatus === 'fetching';
+    const agentsLine = impact.data
+      ? disconnectAgentsLine(connection.label, impact.data.agents)
+      : checking
+        ? null
+        : unknownDisconnectAgentsLine(connection.label);
     return (
       <>
         <ResponsiveDialogHeader>
@@ -468,6 +524,20 @@ function ConnectCommunityBody({
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-3 py-4">
           {origin}
+          {agentsLine && <p className="text-sm">{agentsLine}</p>}
+          {impact.isError && !impact.data && !checking && (
+            <div
+              role="alert"
+              className="flex flex-col items-start gap-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+            >
+              <p className="text-destructive">
+                Couldn’t check which of your agents are on {connection.label}.
+              </p>
+              <Button size="sm" variant="outline" onClick={() => void impact.refetch()}>
+                Check again
+              </Button>
+            </div>
+          )}
           {end.isError && (
             <p role="alert" className="text-destructive text-sm">
               Couldn’t disconnect. Check that DorkOS is running, then try again.
@@ -478,12 +548,13 @@ function ConnectCommunityBody({
           <Button type="button" variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button disabled={end.isPending} onClick={() => endConnection(connection)}>
+          <Button disabled={end.isPending || checking} onClick={() => endConnection(connection)}>
             {end.isPending ? 'Disconnecting…' : 'Disconnect'}
           </Button>
         </ResponsiveDialogFooter>
       </>
     );
+  }
 
   // Pending. (A connected one closes the dialog before it is drawn for long.)
   return (

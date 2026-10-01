@@ -248,6 +248,28 @@ export class UnclaimedChatStore {
     return row ? toDomain(row) : undefined;
   }
 
+  /**
+   * Delete every chat one connection recorded, whatever its status, for when a
+   * person removes that connection (DOR-2608, the same decision as DOR-2604).
+   *
+   * Pending, claimed, ignored and blocked rows all go: each carries the
+   * sender's name and the chat's title, and none of them means anything once
+   * the connection is gone. That includes a block. If someone later sets up a
+   * connection with the same id, a chat blocked on the old one reaches the
+   * claim feed again as new.
+   *
+   * Matches the whole id, never a prefix of it, so removing `tg` leaves `tg-2`
+   * alone. A single statement: the `(adapter_id, chat_id)` unique index leads
+   * with the id, and pending rows are capped at {@link MAX_PENDING_CHATS}.
+   *
+   * @param adapterId - The removed connection's id.
+   * @returns How many rows were deleted.
+   */
+  deleteForConnection(adapterId: string): number {
+    return this._db.delete(unclaimedChats).where(eq(unclaimedChats.adapterId, adapterId)).run()
+      .changes;
+  }
+
   /** Mark a chat claimed onto `agentId`. Caller creates the binding first. */
   claim(id: string, agentId: string): void {
     this._db

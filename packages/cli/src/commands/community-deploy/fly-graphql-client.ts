@@ -4,24 +4,33 @@
  * @module commands/community-deploy/fly-graphql-client
  */
 import {
+  FLY_APP_NAME_AVAILABLE_QUERY,
+  FLY_APP_PROVENANCE_QUERY,
   FLY_APP_TIGRIS_QUERY,
+  FLY_TIGRIS_BY_NAME_QUERY,
   FLY_TIGRIS_CREATE_MUTATION,
   FLY_TIGRIS_CREDENTIALS_QUERY,
   FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   createTigrisVariables,
+  parseAppNameAvailableResponse,
+  parseFlyAppProvenanceResponse,
+  parseTigrisOnAppResponse,
   parseAppTigrisResponse,
+  parseTigrisNameHeldResponse,
   parseTigrisCreateResponse,
   parseTigrisCredentialsResponse,
   parseTigrisDeleteResponse,
   parseTigrisReadResponse,
   parseTigrisTermsResponse,
   FlyGraphqlContractError,
+  type FlyAppProvenance,
   type FlyGraphqlContractErrorCode,
   type TigrisAddOnIdentity,
   type TigrisBucketCredentials,
   type TigrisCreateInput,
+  type TigrisOnApp,
   type TigrisCreateResult,
 } from './fly-graphql-contract.js';
 import { SAFE_PROVIDER_IDENTIFIER_PATTERN } from './provider-identifiers.js';
@@ -124,7 +133,10 @@ async function readBounded(
   }
 }
 
-/** In-memory Fly GraphQL client restricted to the launcher's pinned Tigris operations. */
+/**
+ * In-memory Fly GraphQL client restricted to the launcher's pinned operations: the Tigris add-on
+ * lifecycle and the read of one app's provenance.
+ */
 export class FlyTigrisGraphqlClient {
   private readonly accessToken: string;
   private readonly timeoutMs: number;
@@ -207,6 +219,37 @@ export class FlyTigrisGraphqlClient {
   }
 
   /**
+   * Read one app's provenance by its exact name.
+   *
+   * @param appName - Planned app name.
+   * @returns The app's provenance, or `null` when Fly reports no app with that name.
+   */
+  async readAppProvenance(appName: string): Promise<FlyAppProvenance | null> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_APP_PROVENANCE_QUERY,
+      { name: appName },
+      parseFlyAppProvenanceResponse,
+      false
+    );
+  }
+
+  /**
+   * Read one app and the Tigris add-ons attached to it, with what the removal proof needs.
+   *
+   * @param appName - Planned app name.
+   * @returns The app and its add-ons, or `null` when Fly reports no app with that name.
+   */
+  async readTigrisOnApp(appName: string): Promise<TigrisOnApp | null> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(FLY_APP_TIGRIS_QUERY, { appName }, parseTigrisOnAppResponse, false);
+  }
+
+  /**
    * Read one bucket's access keys by its exact ID, for a resumed launch that has none in memory.
    *
    * @param addOnId - Provider-issued add-on ID already recorded in the launch journal.
@@ -220,6 +263,40 @@ export class FlyTigrisGraphqlClient {
       FLY_TIGRIS_CREDENTIALS_QUERY,
       { id: addOnId },
       (response) => parseTigrisCredentialsResponse(response, addOnId),
+      false
+    );
+  }
+
+  /**
+   * Read whether Fly would accept a new app with this name now.
+   *
+   * @param appName - Planned app name.
+   */
+  async isAppNameAvailable(appName: string): Promise<boolean> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(appName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_APP_NAME_AVAILABLE_QUERY,
+      { name: appName },
+      parseAppNameAvailableResponse,
+      false
+    );
+  }
+
+  /**
+   * Read whether a Tigris bucket name is still held (see `FLY_TIGRIS_BY_NAME_QUERY`).
+   *
+   * @param bucketName - The planned bucket name.
+   */
+  async isTigrisNameHeld(bucketName: string): Promise<boolean> {
+    if (!SAFE_PROVIDER_IDENTIFIER_PATTERN.test(bucketName)) {
+      throw new FlyGraphqlClientError('INVALID_RESPONSE');
+    }
+    return this.request(
+      FLY_TIGRIS_BY_NAME_QUERY,
+      { name: bucketName, provider: 'tigris' },
+      parseTigrisNameHeldResponse,
       false
     );
   }
@@ -285,7 +362,7 @@ export class FlyTigrisGraphqlClient {
           method: 'POST',
           headers: {
             accept: 'application/json',
-            authorization: `Bearer ${this.accessToken}`,
+            authorization: flyGraphqlAuthorization(this.accessToken),
             'content-type': 'application/json',
           },
           body: JSON.stringify({ query, variables }),
@@ -335,4 +412,22 @@ export class FlyTigrisGraphqlClient {
       this.signal?.removeEventListener('abort', cancel);
     }
   }
+}
+
+/**
+ * Build the Authorization header flyctl itself sends to Fly's GraphQL API for a token.
+ *
+ * `fly auth token` prints the session with its scheme stripped. A scoped token from
+ * `fly tokens create` is a macaroon (`fm1r_`, `fm1a_` or `fm2_`), which flyctl sends under
+ * the `FlyV1` scheme; anything else goes under `Bearer`. This mirrors fly-go's
+ * `tokens.GraphQLHeader`, so a scoped token reaches the API the way `fly` would send it.
+ *
+ * @param token - The comma-separated token list `fly auth token --json` printed.
+ * @returns The header value. It contains the token, so it must never be logged.
+ */
+export function flyGraphqlAuthorization(token: string): string {
+  const macaroon = token
+    .split(',')
+    .some((part) => ['fm1r', 'fm1a', 'fm2'].includes(part.trim().split('_', 1)[0]!));
+  return `${macaroon ? 'FlyV1' : 'Bearer'} ${token}`;
 }

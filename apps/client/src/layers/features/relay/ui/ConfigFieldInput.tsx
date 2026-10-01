@@ -231,7 +231,7 @@ export function ConfigFieldInput({
                   aria-checked={stringValue === opt.value}
                   onClick={() => onChange(field.key, opt.value)}
                   className={cn(
-                    'hover:bg-accent/50 focus-visible:border-ring focus-visible:ring-ring/50 flex flex-col items-start rounded-md border p-3 text-left transition outline-none focus-visible:ring-[3px]',
+                    'hover:bg-accent/50 focus-visible:border-ring focus-visible:ring-ring flex flex-col items-start rounded-md border p-3 text-left transition outline-none focus-visible:ring-[3px]',
                     stringValue === opt.value && 'border-primary ring-primary bg-accent/30 ring-1'
                   )}
                 >

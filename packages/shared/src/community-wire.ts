@@ -250,6 +250,8 @@ export const CommunityWireOwnerReplacementOwnerNoticeSchema = z.strictObject({
   reference: z.string().regex(COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN).nullable(),
   claimReissuedAt: timestamp.nullable(),
   options: CommunityWireOwnerReplacementOptionsSchema,
+  /** How many days after the owner keeps ownership the host must wait to ask again. */
+  objectionCooldownDays: z.int().min(1),
 });
 /**
  * `GET /owner-replacement` for one member. The owner and admins see an open request (the owner
@@ -276,10 +278,15 @@ export const CommunityWireOwnerReplacementObjectionRequestSchema = z.strictObjec
 export const CommunityWireOwnerReplacementObjectRequestSchema = z.strictObject({
   token: ownerReplacementToken,
 });
-/** A live object-only link reveals only the community's name and the earliest claim date. */
+/**
+ * A live object-only link reveals only the community's name, the earliest claim date, and the
+ * host's cooling-off after an objection, so the page can say when the host may ask again.
+ */
 export const CommunityWireOwnerReplacementObjectPreflightResponseSchema = z.strictObject({
   communityName: z.string().min(1),
   claimableAfter: timestamp.nullable(),
+  /** How many days after the owner keeps ownership the host must wait to ask again. */
+  objectionCooldownDays: z.int().min(1),
 });
 /**
  * The object-only link's answer: `kept` when the request is now objected (including a replay of
@@ -945,7 +952,11 @@ export const CommunityWireAgentSchema = z.strictObject({
 });
 /** An enrolled agent identity. */
 export type CommunityWireAgent = z.infer<typeof CommunityWireAgentSchema>;
-/** Enrollment request made under a scoped personal grant. */
+/**
+ * Enrollment request made under a scoped personal grant. The community records the grant as the
+ * agent's enrolling installation, so two installations sharing a `localAgentId` get one agent
+ * each.
+ */
 export const CommunityWireAgentEnrollRequestSchema = z.strictObject({
   // A local harness owns this identifier. It is deliberately not constrained
   // to the community service's UUID vocabulary.
@@ -956,7 +967,12 @@ export const CommunityWireAgentEnrollRequestSchema = z.strictObject({
 });
 /** Public agent management response. */
 export const CommunityWireAgentResponseSchema = z.strictObject({ agent: CommunityWireAgentSchema });
-/** Public list of agents visible to the current member. */
+/**
+ * The caller's active agents. A member signed in to the community sees all of theirs. A
+ * personal grant (one installation) sees only the agents it enrolled, plus any enrolled before
+ * the community recorded grants or whose enrolling grant was revoked, and can recover, rotate,
+ * remove and place in channels only those.
+ */
 export const CommunityWireAgentListResponseSchema = z.strictObject({
   agents: z.array(CommunityWireAgentSchema),
 });

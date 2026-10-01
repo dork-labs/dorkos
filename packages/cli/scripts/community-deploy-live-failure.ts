@@ -14,12 +14,17 @@ import { LaunchSafeErrorCodeSchema } from '../src/commands/community-deploy/jour
 import { CommunityLiveGateError } from './community-deploy-live-capture.js';
 import { CommunityLiveGateCleanupError } from './community-deploy-live-cleanup.js';
 import { CommunityLiveGateNotArmedError } from './community-deploy-live-config.js';
+import { CommunityLiveHeldPhaseError } from './community-deploy-live-hold.js';
 
 /** Step a failure after cleanup is reported as. */
 export const AFTER_CLEANUP_STEP = 'after-cleanup';
 
-/** What a failure after cleanup did and did not leave behind. */
-export const CLEANED_UP_DETAIL = 'cleanup finished; a later step failed';
+/**
+ * What a failure after cleanup did and did not leave behind. Cleanup deletes the bucket but never
+ * its Tigris access key (DOR-2646); the gate prints the steps to delete that key before this.
+ */
+export const CLEANED_UP_DETAIL =
+  "cleanup finished, apart from the bucket's Tigris access key (see the steps above); a later step failed";
 
 /** Step a published launcher that exited with a failure is reported as. */
 export const PUBLISHED_LAUNCHER_STEP = 'published-launcher';
@@ -119,8 +124,20 @@ export async function explainCommunityLiveGateFailure(
   findRecoveryCommand: () => Promise<string | null>,
   findLauncherStop: () => Promise<string | null> = async () => null
 ): Promise<unknown> {
-  if (state.cleanedUp)
+  // A held-phase failure is reported after its cleanup and already says so, naming its own step.
+  if (state.cleanedUp && error instanceof CommunityLiveHeldPhaseError) return error;
+  // A check the gate makes after cleanup (DOR-2593: the launcher contacted a DorkOS host) keeps its
+  // own fixed step and detail, so the reason is not lost behind the generic after-cleanup one.
+  if (state.cleanedUp) {
+    if (error instanceof CommunityLiveGateError) {
+      return new CommunityLiveGateError(
+        error.step,
+        null,
+        error.detail ? `${CLEANED_UP_DETAIL}: ${error.detail}` : CLEANED_UP_DETAIL
+      );
+    }
     return new CommunityLiveGateError(AFTER_CLEANUP_STEP, null, CLEANED_UP_DETAIL);
+  }
   // A launcher that failed before the gate read its journal may still have written one, and may
   // already have created resources. Find it now rather than stay silent about them.
   const recoveryCommand = state.recoveryCommand ?? (await findRecoveryCommand().catch(() => null));
@@ -129,7 +146,11 @@ export async function explainCommunityLiveGateFailure(
     return new CommunityLiveGateError(
       error.step,
       recoveryCommand,
-      `retained: ${error.retained.join(', ') || 'unknown'}`
+      `retained: ${error.retained.join(', ') || 'unknown'}${
+        error.accessKeyLeftAtTigris
+          ? `; Tigris access key left active: ${error.accessKeyLeftAtTigris.keyName}`
+          : ''
+      }`
     );
   // The journal's saved error is the more specific answer (it names the service); without a
   // journal, the launcher's own last code, which the PTY runner attached, is the next best.
@@ -148,6 +169,36 @@ export async function explainCommunityLiveGateFailure(
     error instanceof CommunityLiveGateError ? error.step : 'execution',
     recoveryCommand,
     launcherStop ?? undefined
+  );
+}
+
+/** Step a run fails at when its launcher tried to reach a DorkOS host (DOR-2593). */
+export const DORKOS_HOSTS_CONTACTED_STEP = 'dorkos-hosts-contacted';
+
+/**
+ * Name the DorkOS hosts a failed run's launcher tried to reach. A launcher the guard refused
+ * usually fails at an earlier step (its journal, its exit), so without this the operator would see
+ * that step and pay for another run to learn the cause.
+ *
+ * @param explained - The failure `explainCommunityLiveGateFailure` decided on.
+ * @param contacted - Hosts from the guard's record; empty when none (or no record).
+ * @returns `explained` unchanged when nothing was contacted or it already names the hosts; else a
+ *   gate error keeping its step and recovery command, with the hosts added to its detail.
+ */
+export function withDorkosHostsContacted(
+  explained: unknown,
+  contacted: readonly string[]
+): unknown {
+  if (contacted.length === 0) return explained;
+  if (explained instanceof CommunityLiveGateError && explained.step === DORKOS_HOSTS_CONTACTED_STEP)
+    return explained;
+  const reached = `the launcher tried to reach ${contacted.join(', ')}`;
+  if (!(explained instanceof CommunityLiveGateError))
+    return new CommunityLiveGateError(DORKOS_HOSTS_CONTACTED_STEP, null, reached);
+  return new CommunityLiveGateError(
+    explained.step,
+    explained.recoveryCommand,
+    explained.detail ? `${explained.detail}; ${reached}` : reached
   );
 }
 

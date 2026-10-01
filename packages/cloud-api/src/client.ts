@@ -120,7 +120,11 @@ export function isCloudApiProblemError(error: unknown): error is CloudApiProblem
  */
 export function createCloudApiClient(options: CloudApiClientOptions) {
   const doFetch: FetchLike = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
-  const base = options.baseUrl.replace(/\/+$/, '');
+  // Trim trailing `/` by hand: `/\/+$/` backtracks quadratically on a long run
+  // of `/` that is not at the end of the string.
+  let baseEnd = options.baseUrl.length;
+  while (baseEnd > 0 && options.baseUrl[baseEnd - 1] === '/') baseEnd--;
+  const base = options.baseUrl.slice(0, baseEnd);
 
   /**
    * Sends one request and validates the answer against `schema`.

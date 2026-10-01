@@ -11,6 +11,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
+import type { Problem } from '@dork-labs/cloud-api';
 import type { CloudCommunityMove } from '@dorkos/shared/cloud-schemas';
 import startFixture from '@dork-labs/cloud-api/fixtures/v1/communities/start.json' with { type: 'json' };
 import moveImportingFixture from '@dork-labs/cloud-api/fixtures/v1/communities/move-importing.json' with { type: 'json' };
@@ -288,6 +289,189 @@ describe('Move a community here', () => {
       expect.any(Function),
       expect.any(AbortSignal)
     );
+  });
+
+  /** Choose `file`, name the community and press Start moving. */
+  function startMoving(file: File) {
+    fireEvent.click(screen.getByRole('button', { name: 'I have the file' }));
+    fireEvent.change(screen.getByLabelText('Export file'), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText('Community name'), { target: { value: 'Old garden' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start moving' }));
+  }
+
+  // Purpose (DOR-2610): a file that won't fit on this computer is refused
+  // before a byte is sent, with the server's own words and numbers. Fails if
+  // the app uploads first, or asks about any size but the file's.
+  it('asks whether the file fits first, and sends nothing when it does not', async () => {
+    const transport = linkedTransport();
+    const noRoom =
+      'This computer doesn’t have room to hold the export. It needs 2.1 GB free and has 1.4 GB. Free up some space, then try again.';
+    vi.mocked(transport.checkHostedCommunityMoveRoom).mockResolvedValue({
+      ok: false,
+      message: noRoom,
+    });
+    renderDialogs(transport, { kind: 'move', moveId: null });
+    const file = new File(['PK export'], 'old-garden.zip', { type: 'application/zip' });
+    startMoving(file);
+
+    expect(await screen.findByText(noRoom)).toBeInTheDocument();
+    expect(transport.checkHostedCommunityMoveRoom).toHaveBeenCalledWith(
+      file.size,
+      expect.any(AbortSignal)
+    );
+    expect(transport.startHostedCommunityMove).not.toHaveBeenCalled();
+  });
+
+  // Purpose (DOR-2611): after a refusal that left no move (here, too big for
+  // the new host, which cancelled the move it had just made), pressing Start
+  // again with the same file and name must make a fresh move and hear the
+  // reason again, not replay the cancelled one. Fails if the key is reused.
+  it('starts afresh after a refusal, instead of replaying the refused move', async () => {
+    const transport = linkedTransport();
+    const tooLarge =
+      'This export is too large for the new host. It is 9 bytes, and the most the host takes is 8 bytes.';
+    vi.mocked(transport.startHostedCommunityMove).mockResolvedValue({
+      ok: false,
+      message: tooLarge,
+    });
+    renderDialogs(transport, { kind: 'move', moveId: null });
+    startMoving(new File(['PK export'], 'old-garden.zip', { type: 'application/zip' }));
+    expect(await screen.findByText(tooLarge)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start moving' }));
+    await waitFor(() => expect(transport.startHostedCommunityMove).toHaveBeenCalledTimes(2));
+    const [first, second] = vi
+      .mocked(transport.startHostedCommunityMove)
+      .mock.calls.map((call) => call[1].idempotencyKey);
+    expect(second).not.toBe(first);
+  });
+
+  /** The idempotency keys every start has sent, in order. */
+  function sentKeys(transport: Transport) {
+    return vi
+      .mocked(transport.startHostedCommunityMove)
+      .mock.calls.map((call) => call[1].idempotencyKey);
+  }
+
+  // Purpose (DOR-2611): "Start again" after a move was cancelled (or failed)
+  // must make a new move. Fails if the key of the finished move is reused:
+  // the service would replay it and the app would show the same end again.
+  it('starts a new move after Start again on a cancelled move', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.startHostedCommunityMove).mockResolvedValue({ ok: true, move: importing });
+    vi.mocked(transport.getHostedCommunityMove).mockResolvedValue({
+      available: true,
+      move: { ...importing, state: 'cancelled', pollAfterMs: null },
+    });
+    renderDialogs(transport, { kind: 'move', moveId: null });
+    startMoving(new File(['PK export'], 'old-garden.zip', { type: 'application/zip' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start moving' }));
+
+    await waitFor(() => expect(transport.startHostedCommunityMove).toHaveBeenCalledTimes(2));
+    const [first, second] = sentKeys(transport);
+    expect(second).not.toBe(first);
+  });
+
+  // Purpose (DOR-2611): a cancel while the file is going up leaves no move (the
+  // local server cancels one whose browser left), so the next Start must not
+  // replay it. Fails if a cancelled send keeps the key.
+  it('starts a new move after the person cancels the upload', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.startHostedCommunityMove).mockImplementationOnce(
+      (_file, _input, _progress, signal) =>
+        new Promise((_resolve, reject) =>
+          signal?.addEventListener('abort', () => reject(new Error('Upload canceled')))
+        )
+    );
+    vi.mocked(transport.startHostedCommunityMove).mockResolvedValueOnce({
+      ok: false,
+      message: 'That file is empty. Choose the export you saved.',
+    });
+    renderDialogs(transport, { kind: 'move', moveId: null });
+    startMoving(new File(['PK export'], 'old-garden.zip', { type: 'application/zip' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start moving' }));
+
+    await waitFor(() => expect(transport.startHostedCommunityMove).toHaveBeenCalledTimes(2));
+    const [first, second] = sentKeys(transport);
+    expect(second).not.toBe(first);
+  });
+
+  // Purpose (DOR-2610): pressing Cancel while the app is still asking about
+  // room stops everything quietly. Fails if a refusal that arrives after the
+  // cancel is shown, or the file is sent anyway.
+  it('says nothing and sends nothing when cancelled during the room check', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.checkHostedCommunityMoveRoom).mockImplementation(
+      (_bytes, signal) =>
+        new Promise((resolve) =>
+          signal?.addEventListener('abort', () =>
+            resolve({ ok: false, message: 'This computer doesn’t have room to hold the export.' })
+          )
+        )
+    );
+    renderDialogs(transport, { kind: 'move', moveId: null });
+    startMoving(new File(['PK export'], 'old-garden.zip', { type: 'application/zip' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+    await screen.findByRole('button', { name: 'Start moving' });
+    expect(screen.queryByText(/doesn’t have room/)).not.toBeInTheDocument();
+    expect(transport.startHostedCommunityMove).not.toHaveBeenCalled();
+  });
+
+  // Purpose (DOR-2611): a refusal marked `mayExist` (the account could not be
+  // reached, answered with a server error, or a cancel did not go through)
+  // may have left a move, so starting again must reuse the key and pick it up
+  // rather than make a second one. Fails if every refusal resets the key.
+  it('keeps the same key when the refusal says the move may exist', async () => {
+    const transport = linkedTransport();
+    const unavailable = {
+      code: 'temporarily_unavailable',
+      status: 503,
+      title: 'Try again shortly.',
+    };
+    vi.mocked(transport.startHostedCommunityMove)
+      .mockResolvedValueOnce({
+        ok: false,
+        message: 'Couldn’t reach your DorkOS account. Try again.',
+        mayExist: true,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        problem: unavailable as Problem,
+        mayExist: true,
+      })
+      .mockResolvedValue({ ok: false, message: 'The file didn’t arrive. Try again.' });
+    renderDialogs(transport, { kind: 'move', moveId: null });
+    startMoving(new File(['PK export'], 'old-garden.zip', { type: 'application/zip' }));
+    await screen.findByText('Couldn’t reach your DorkOS account. Try again.');
+    fireEvent.click(screen.getByRole('button', { name: 'Start moving' }));
+    await waitFor(() => expect(transport.startHostedCommunityMove).toHaveBeenCalledTimes(2));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start moving' }));
+    await waitFor(() => expect(transport.startHostedCommunityMove).toHaveBeenCalledTimes(3));
+
+    const [first, second, third] = sentKeys(transport);
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+  });
+
+  // Purpose (DOR-2611): a send that broke or went silent (not a cancel) never
+  // heard back, so the move may exist; the next Start must reuse the key.
+  // Fails if the catch clears the key for anything but a cancel.
+  it('keeps the same key when the send breaks without a cancel', async () => {
+    const transport = linkedTransport();
+    vi.mocked(transport.startHostedCommunityMove)
+      .mockRejectedValueOnce(new Error('Upload failed'))
+      .mockResolvedValue({ ok: false, message: 'The file didn’t arrive. Try again.' });
+    renderDialogs(transport, { kind: 'move', moveId: null });
+    startMoving(new File(['PK export'], 'old-garden.zip', { type: 'application/zip' }));
+    await screen.findByText('Couldn’t reach your DorkOS account. Try again.');
+    fireEvent.click(screen.getByRole('button', { name: 'Start moving' }));
+    await waitFor(() => expect(transport.startHostedCommunityMove).toHaveBeenCalledTimes(2));
+
+    const [first, second] = sentKeys(transport);
+    expect(second).toBe(first);
   });
 
   // Purpose: a move survives a reload because it is read from the service,

@@ -6,6 +6,13 @@
 import { spawn } from 'node:child_process';
 
 const DEFAULT_MAX_BYTES = 1024 * 1024;
+
+/**
+ * Deadline for each Community launch service read: every `fly` and `neonctl` process and every Fly
+ * GraphQL request. Writes get at least `PROVIDER_WRITE_TIMEOUT_MS` instead (`writeDeadline`). The
+ * removal command's create windows are sized from both: see `uncertain-verdict.ts`.
+ */
+export const COMMUNITY_SERVICE_TIMEOUT_MS = 30_000;
 const TERMINATION_GRACE_MS = 250;
 
 /** Sanitized result from a provider response parser. */

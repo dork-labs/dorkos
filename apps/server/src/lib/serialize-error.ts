@@ -66,9 +66,9 @@ function clip(value: string, max: number): string {
 }
 
 /**
- * A frame line, for the fallback boundary only. See {@link clipStack}.
+ * A whitespace run, for the fallback boundary only. See {@link findFrameLine}.
  */
-const STACK_FRAMES_PATTERN = /\n\s+at /;
+const WHITESPACE_RUN = /\s+/g;
 
 /**
  * Clip a stack, budgeting the message header and the frames separately.
@@ -112,7 +112,29 @@ function findFramesBoundary(stack: string, message: string): number {
     const messageAt = stack.indexOf(message);
     if (messageAt !== -1) return messageAt + message.length;
   }
-  return stack.search(STACK_FRAMES_PATTERN);
+  return findFrameLine(stack);
+}
+
+/**
+ * Where `stack.search(/\n\s+at /)` would land — the first newline that opens
+ * a whitespace run ending in `at ` — found in linear time.
+ *
+ * Not that regex: its `\s+` also matches newlines, so a stack holding a long
+ * run of blank lines makes it backtrack quadratically, and a stack is text a
+ * library or a subprocess chose. `at` is not whitespace, so a match can only
+ * end where a maximal whitespace run ends; that turns the search into one
+ * pass over those runs.
+ */
+function findFrameLine(stack: string): number {
+  WHITESPACE_RUN.lastIndex = 0;
+  for (let run = WHITESPACE_RUN.exec(stack); run; run = WHITESPACE_RUN.exec(stack)) {
+    if (!stack.startsWith('at ', run.index + run[0].length)) continue;
+    // `\s+` needs at least one character after the newline, so a newline
+    // sitting right before `at ` does not open a match on its own.
+    const newline = run[0].indexOf('\n');
+    if (newline !== -1 && newline < run[0].length - 1) return run.index + newline;
+  }
+  return -1;
 }
 
 /** A plain `{}` object, as opposed to a class instance, array, or null. */

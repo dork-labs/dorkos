@@ -407,7 +407,7 @@ describe('Community membership in this DorkOS with Cloud unreachable', () => {
 
     const disconnected = await request(app).delete(`/api/community-connections/${ref}`);
     expect(disconnected.status).toBe(200);
-    expect(disconnected.body).toEqual({ remoteRevoked: true });
+    expect(disconnected.body).toEqual({ remoteRevoked: true, agentsNotRemoved: [] });
     expect(revocations).toEqual([`${tenant}/me/connection`]);
     expect((await request(app).get('/api/community-connections')).body.connections).toEqual([]);
 

@@ -7,6 +7,7 @@ import {
   CommunityConnectionStartResponseSchema,
   CommunityConnectionStatusResponseSchema,
   CommunityConnectionPollResponseSchema,
+  CommunityDisconnectImpactSchema,
   CommunityDisconnectResponseSchema,
   type CommunityConnectionTransport,
 } from '@dorkos/shared/community-connections';
@@ -58,6 +59,11 @@ export function createCommunityMethods(baseUrl: string): CommunityConnectionTran
     async disconnectCommunity(ref) {
       return CommunityDisconnectResponseSchema.parse(
         await fetchJSON(baseUrl, path(ref), { method: 'DELETE' })
+      );
+    },
+    async getCommunityDisconnectImpact(ref) {
+      return CommunityDisconnectImpactSchema.parse(
+        await fetchJSON(baseUrl, `${path(ref)}/disconnect-impact`)
       );
     },
     async getCommunityNavigation() {

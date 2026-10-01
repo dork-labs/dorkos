@@ -18,7 +18,7 @@ import {
 import { EncryptedFileCredentialStore } from '../../../core/credential-provider.js';
 import {
   RemoteCommunityPairingService,
-  RemoteCommunityLookupRateLimitedError,
+  RemoteCommunityRateLimitedError,
   RemoteCommunityNameNotFoundError,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
@@ -27,6 +27,7 @@ import {
 } from '../pairing-service.js';
 import {
   CommunityDeletedError,
+  CommunityTakenDownError,
   RemoteCommunityAdapter,
   remoteOriginIdempotencyKeyOf,
   remoteThreadReplySeqOf,
@@ -65,6 +66,11 @@ let rejectedStatus = 403;
 /** The wire error code sent with a rejection, when a test needs one. */
 let rejectedCode: string | undefined;
 let rejectedPath: string | undefined;
+/**
+ * A refusal the host gives to a qualified pairing start instead of starting one, when a test
+ * needs it: its status, JSON body and optional `Retry-After` header.
+ */
+let pairingStartRefusal: { status: number; body: unknown; retryAfter?: string } | undefined;
 /** What the host says to `/me/host-access`; `undefined` models a host built before it (404). */
 let hostAccessAnswer: { status: number; body: unknown } | undefined;
 /** What `/me/connection-access` reports: `archived` models a host hold, as installations see it. */
@@ -84,6 +90,10 @@ const requests: Array<{ path: string; body: Record<string, string> }> = [];
 const revocations: Array<{ path: string; authorization: string | undefined }> = [];
 /** How the fake Community answers a self-revocation: a status, or drop the socket. */
 let revocationAnswer: number | 'hang-up' = 204;
+/** Every agent removal the fake Community received, with the bearer that sent it. */
+const agentRemovals: Array<{ memberId: string; authorization: string | undefined }> = [];
+/** How the fake Community answers removing one agent, by member id: default 204. */
+const agentRemovalAnswers = new Map<string, number | 'hang-up' | 'bare-404'>();
 /** How the fake Community answers a reply-count read: counts, or 404 like a server from before the route. */
 let threadsAnswer: 'counts' | 404 = 'counts';
 /** When set, the fake Community holds every access re-check until this settles. */
@@ -119,6 +129,8 @@ beforeAll(async () => {
     if (nameLookup) {
       const answer = shortNameAnswers.get(nameLookup[1]);
       if (answer === 'rate-limited') {
+        // The real Community answers a spent lookup budget this way (apps/community http.ts).
+        res.setHeader('retry-after', '17');
         send({ code: 'RATE_LIMITED', message: 'Slow down.' }, 429);
       } else if (answer === 'redirect') {
         res.statusCode = 301;
@@ -146,6 +158,34 @@ beforeAll(async () => {
       send(
         rejectedCode ? { code: rejectedCode, message: 'Refused.' } : { error: 'Grant rejected' },
         rejectedStatus
+      );
+      return;
+    }
+    const agentRemoval =
+      req.method === 'DELETE' && req.url?.startsWith(`${qualified}/agents/`)
+        ? decodeURIComponent(req.url.slice(`${qualified}/agents/`.length))
+        : null;
+    if (agentRemoval) {
+      agentRemovals.push({ memberId: agentRemoval, authorization: req.headers.authorization });
+      const answer = agentRemovalAnswers.get(agentRemoval) ?? 204;
+      if (answer === 'hang-up') {
+        req.socket.destroy();
+        return;
+      }
+      if (answer === 204) {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+      // A 404 from something in front of the Community, not the Community's own answer.
+      if (answer === 'bare-404') {
+        res.statusCode = 404;
+        res.end('Not Found');
+        return;
+      }
+      send(
+        { code: answer === 404 ? 'NOT_FOUND' : 'INTERNAL', message: 'untrusted remote text' },
+        answer
       );
       return;
     }
@@ -193,6 +233,10 @@ beforeAll(async () => {
         description: null,
         createdAt: new Date().toISOString(),
       });
+    } else if (req.url === `${qualified}/pairings/start` && pairingStartRefusal) {
+      if (pairingStartRefusal.retryAfter)
+        res.setHeader('retry-after', pairingStartRefusal.retryAfter);
+      send(pairingStartRefusal.body, pairingStartRefusal.status);
     } else if (req.url === `${qualified}/pairings/start` && !legacySingletonServer) {
       const pairingId = randomUUID();
       send(
@@ -427,6 +471,46 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       ).resolves.toMatchObject({ connection: { remoteCommunityId } });
     } finally {
       requireExplicitCommunity = false;
+    }
+  });
+
+  // Purpose: the host limits pairing starts per caller (5 a minute by default), which says
+  // nothing about the address. Fails if that 429 is rethrown as a generic failure, which the
+  // dialog would show as "check the community address", or if the host's wait is lost.
+  it('reports a limited pairing start as rate limited, with the host’s wait', async () => {
+    const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+    pairingStartRefusal = {
+      status: 429,
+      body: { code: 'RATE_LIMITED', message: 'Too many attempts. Try again soon.' },
+      retryAfter: '42',
+    };
+    try {
+      for (const link of [origin, `${origin}/c/${remoteCommunityId}`]) {
+        const refusal = service.start('limited-owner', link, 'Limited install');
+        await expect(refusal, link).rejects.toBeInstanceOf(RemoteCommunityRateLimitedError);
+        await expect(refusal, link).rejects.toMatchObject({ retryAfterSeconds: 42 });
+      }
+    } finally {
+      pairingStartRefusal = undefined;
+    }
+  });
+
+  // Purpose: only a server with no qualified pairing route (an uncoded 404) needs upgrading. A
+  // current server's coded NOT_FOUND means the community went away between discovery and
+  // pairing, which an upgrade would not fix. Fails if any 404 there reads as "upgrade".
+  it('asks for an upgrade only on an uncoded 404 from the pairing start', async () => {
+    const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+    pairingStartRefusal = { status: 404, body: { code: 'NOT_FOUND', message: 'Not found.' } };
+    try {
+      const gone = service.start('gone-owner', origin, 'Gone install');
+      await expect(gone).rejects.toBeInstanceOf(PinnedHttpError);
+      await expect(gone).rejects.toMatchObject({ status: 404, remoteCode: 'NOT_FOUND' });
+      pairingStartRefusal = { status: 404, body: {} };
+      await expect(service.start('old-owner', origin, 'Old install')).rejects.toBeInstanceOf(
+        RemoteCommunityUpgradeRequiredError
+      );
+    } finally {
+      pairingStartRefusal = undefined;
     }
   });
 
@@ -1012,6 +1096,113 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await service.disconnect(ref, 'gone-owner');
     });
 
+    // Purpose (DOR-2575): what the community's agents never delivered is counted BEFORE the purge,
+    // which stops those posts and removes their rooms, and the count outlives it: a later check,
+    // when the posts are already stopped and would count none, keeps the first answer. The
+    // person's removal forgets it. It fails if the count is taken after the purge, recounted on a
+    // later check, dropped from the descriptor, or left behind after removal.
+    it('counts undelivered agent posts before the purge and keeps that count', async () => {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      let waiting = 3;
+      const order: string[] = [];
+      const countUndelivered = vi.fn(() => {
+        order.push('count');
+        return waiting;
+      });
+      const revokeConnection = vi.fn(async () => {
+        order.push('purge');
+        waiting = 0;
+      });
+      const service = new RemoteCommunityPairingService(
+        store,
+        revokeConnection,
+        undefined,
+        { now: () => clock.now, freshMs: 0 },
+        countUndelivered
+      );
+      // The count is kept before the gone lifecycle is saved, so a crash between them keeps it.
+      const record = store.recordUndeliveredWhenGone.bind(store);
+      vi.spyOn(store, 'recordUndeliveredWhenGone').mockImplementation(async (...args) => {
+        order.push('keep count');
+        return record(...args);
+      });
+      const updateAccess = store.updateAccess.bind(store);
+      vi.spyOn(store, 'updateAccess').mockImplementation(async (...args) => {
+        if (args[2].lastKnown?.lifecycle === 'deleted') order.push('save gone');
+        return updateAccess(...args);
+      });
+      const started = await service.start(
+        'undelivered-owner',
+        `${origin}/c/${remoteCommunityId}`,
+        'Deleted'
+      );
+      const ref = started.connection.ref;
+      expect((await service.poll(ref, 'undelivered-owner')).status).toBe('connected');
+      approved = false;
+      expect((await service.status(ref, 'undelivered-owner')).undeliveredAgentMessages).toBe(
+        undefined
+      );
+
+      refuse(`${qualified}/me/connection-access`, 410, 'COMMUNITY_DELETED');
+      expect((await service.status(ref, 'undelivered-owner')).undeliveredAgentMessages).toBe(3);
+      expect(order).toEqual(['count', 'keep count', 'save gone', 'purge']);
+      expect(countUndelivered).toHaveBeenCalledWith(ref, 'undelivered-owner');
+
+      // Checked again (a new server start would be the same): the posts are stopped by now.
+      expect((await service.status(ref, 'undelivered-owner')).undeliveredAgentMessages).toBe(3);
+      expect((await service.list('undelivered-owner'))[0]?.undeliveredAgentMessages).toBe(3);
+      expect(countUndelivered).toHaveBeenCalledOnce();
+
+      await service.disconnect(ref, 'undelivered-owner');
+      expect(await store.undeliveredWhenGone(ref, 'undelivered-owner')).toBe(0);
+    });
+
+    // Purpose (DOR-2575): a community that answers as live again (a reversed takedown the person
+    // reconnected to) no longer reports what once went undelivered. It fails if the old count
+    // lingers onto a working community.
+    it('forgets the undelivered count once the community answers as live', async () => {
+      const { store, service, ref } = await connectedAt('live-again-owner');
+      await store.recordUndeliveredWhenGone(ref, 'live-again-owner', 2);
+      const answer = await service.status(ref, 'live-again-owner');
+      expect(answer.access?.state).toBe('verified');
+      expect(answer.undeliveredAgentMessages).toBeUndefined();
+      expect(await store.undeliveredWhenGone(ref, 'live-again-owner')).toBe(0);
+      await service.disconnect(ref, 'live-again-owner');
+    });
+
+    // Purpose (DOR-2575): a count that cannot be taken never holds up the purge.
+    it('still purges when the undelivered count fails', async () => {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const revokeConnection = vi.fn(async () => undefined);
+      const service = new RemoteCommunityPairingService(
+        store,
+        revokeConnection,
+        undefined,
+        { now: () => clock.now, freshMs: 0 },
+        () => {
+          throw new Error('database closed');
+        }
+      );
+      const started = await service.start(
+        'count-fails-owner',
+        `${origin}/c/${remoteCommunityId}`,
+        'Deleted'
+      );
+      const ref = started.connection.ref;
+      expect((await service.poll(ref, 'count-fails-owner')).status).toBe('connected');
+      approved = false;
+      refuse(`${qualified}/me/connection-access`, 410, 'COMMUNITY_DELETED');
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      const answer = await service.status(ref, 'count-fails-owner');
+      warn.mockRestore();
+      expect(revokeConnection).toHaveBeenCalledOnce();
+      expect(answer.access?.lastKnown?.lifecycle).toBe('deleted');
+      expect(answer.undeliveredAgentMessages).toBeUndefined();
+      await service.disconnect(ref, 'count-fails-owner');
+    });
+
     // Purpose: a 410 without that code (a stale cursor, an older route) is not a deletion.
     it('does not treat a 410 without the code as a deletion', async () => {
       const { service, revokeConnection, ref } = await connectedAt('stale-owner');
@@ -1077,10 +1268,10 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       const { service, revokeConnection, ref } = await connectedAt('nudged-owner');
       refuse(`${qualified}/me/connection-access`, 410, 'COMMUNITY_DELETED');
       const before = accessRequests;
-      await service.communityDeletedSeen(ref, 'nudged-owner');
+      await service.communityGoneSeen(ref, 'nudged-owner');
       expect(accessRequests).toBe(before + 1);
-      await service.communityDeletedSeen(ref, 'nudged-owner');
-      await service.communityDeletedSeen(ref, 'nudged-owner');
+      await service.communityGoneSeen(ref, 'nudged-owner');
+      await service.communityGoneSeen(ref, 'nudged-owner');
       expect(accessRequests).toBe(before + 1);
       expect(revokeConnection).toHaveBeenCalledOnce();
       await service.disconnect(ref, 'nudged-owner');
@@ -1152,6 +1343,194 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
 
       rejectedAuthorization = undefined;
       eventsTail = `data: ${JSON.stringify({ type: 'closed', reason: 'deleted', cursor: 'resume-1' })}\n\n`;
+      const events: RemoteNativeRoomEvent[] = [];
+      for await (const event of adapter.subscribeNativeRoom(remoteRoomId)) events.push(event);
+      expect(events.at(-1)).toEqual({ type: 'room_closed', reason: 'access-revoked' });
+      await service.disconnect(ref, 'routes-owner');
+    });
+  });
+
+  // DOR-2334 part 3: a whole community its host took down (DOR-2293).
+  describe('a community its host took down', () => {
+    async function connectedTo(owner: string) {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const revokeConnection = vi.fn(async () => undefined);
+      const service = new RemoteCommunityPairingService(store, revokeConnection, undefined, {
+        freshMs: 0,
+      });
+      const started = await service.start(owner, `${origin}/c/${remoteCommunityId}`, 'Takedown');
+      expect((await service.poll(started.connection.ref, owner)).status).toBe('connected');
+      approved = false;
+      return { store, service, revokeConnection, ref: started.connection.ref };
+    }
+    const refuse = (path: string, status: number, code?: string) => {
+      rejectedAuthorization = `Bearer ${token}`;
+      rejectedPath = path;
+      rejectedStatus = status;
+      rejectedCode = code;
+    };
+    const access = `${qualified}/me/connection-access`;
+    afterEach(() => {
+      rejectedAuthorization = undefined;
+      rejectedPath = undefined;
+      rejectedStatus = 403;
+      rejectedCode = undefined;
+      eventsTail = '';
+    });
+
+    // Purpose: `423 COMMUNITY_TAKEN_DOWN` records `taken_down` and purges exactly this
+    // connection's copies at once, even though the host can reverse it; later checks don't purge
+    // again, and a failed purge is retried. It fails if a takedown reads as an archive or outage.
+    it('records a takedown and purges once, retrying a failed purge', async () => {
+      const { service, revokeConnection, ref } = await connectedTo('taken-owner');
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      revokeConnection.mockRejectedValueOnce(new Error('purge failed'));
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+      const first = await service.status(ref, 'taken-owner');
+      await service.status(ref, 'taken-owner');
+      await service.status(ref, 'taken-owner');
+      warn.mockRestore();
+
+      expect(first.access).toMatchObject({
+        state: 'verified',
+        effective: { read: false, post: false, enrollAgent: false, stream: false },
+        lastKnown: { lifecycle: 'taken_down' },
+      });
+      // Failed, retried and succeeded, then left alone; only ever this connection.
+      expect(revokeConnection.mock.calls).toEqual([
+        [ref, 'taken-owner'],
+        [ref, 'taken-owner'],
+      ]);
+      await service.disconnect(ref, 'taken-owner');
+    });
+
+    // Purpose: a host suspension is not a takedown and purges nothing, including the
+    // `503 COMMUNITY_SUSPENDED` a community that was never taken down answers.
+    it('never purges on a suspension', async () => {
+      const { service, revokeConnection, ref } = await connectedTo('suspended-owner');
+      refuse(access, 503, 'COMMUNITY_SUSPENDED');
+      const answer = await service.status(ref, 'suspended-owner');
+      expect(revokeConnection).not.toHaveBeenCalled();
+      expect(answer.access?.lastKnown?.lifecycle).not.toBe('taken_down');
+      await service.disconnect(ref, 'suspended-owner');
+    });
+
+    // Purpose: as the real Community does it. A takedown revokes every grant; a reversal
+    // suspends the community (no purge, and it no longer shows as taken down); once the host lifts
+    // that, the old grant is rejected (401), so the connection needs reconnecting rather than
+    // staying "taken down". Reconnecting is a new connection, which a later takedown purges
+    // afresh. It fails if a reversal stays "taken down", or a reversal purges.
+    it('follows a reversal to reconnecting, and purges a takedown of the new connection', async () => {
+      const { service, revokeConnection, ref } = await connectedTo('reversed-owner');
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      await service.status(ref, 'reversed-owner');
+      expect(revokeConnection.mock.calls).toEqual([[ref, 'reversed-owner']]);
+
+      refuse(access, 503, 'COMMUNITY_SUSPENDED');
+      const suspended = await service.status(ref, 'reversed-owner');
+      expect(suspended.access?.lastKnown?.lifecycle).toBe('suspended');
+      expect(revokeConnection).toHaveBeenCalledTimes(1);
+
+      // The host lifts the suspension; the grant the takedown revoked is refused.
+      refuse(access, 401);
+      const lifted = await service.status(ref, 'reversed-owner');
+      expect(lifted.status).toBe('reconnect-required');
+      expect(lifted.access?.state).toBe('reconnect-required');
+      await service.disconnect(ref, 'reversed-owner');
+
+      // Connecting again, then taken down again: that connection is purged too.
+      rejectedAuthorization = undefined;
+      const again = await connectedTo('reversed-owner');
+      expect(
+        (await again.service.status(again.ref, 'reversed-owner')).access?.lastKnown
+      ).toMatchObject({ lifecycle: 'active' });
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      await again.service.status(again.ref, 'reversed-owner');
+      expect(again.revokeConnection.mock.calls).toEqual([[again.ref, 'reversed-owner']]);
+      await again.service.disconnect(again.ref, 'reversed-owner');
+    });
+
+    // Purpose (review 1): the host reverses AND lifts the takedown before this installation checks
+    // again, so the first answer after "taken down" is the revoked grant's 401. The connection then
+    // needs reconnecting (the app's reconnect path), not a "taken down" panel with no way back.
+    it('needs reconnecting when the next answer after a takedown is a rejected grant', async () => {
+      const { service, ref } = await connectedTo('lifted-owner');
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      await service.status(ref, 'lifted-owner');
+      refuse(access, 401);
+      const lifted = await service.status(ref, 'lifted-owner');
+      expect(lifted).toMatchObject({
+        status: 'reconnect-required',
+        access: { state: 'reconnect-required' },
+      });
+      await service.disconnect(ref, 'lifted-owner');
+    });
+
+    // Purpose: a takedown the host lets run becomes a deletion; the `404 NOT_FOUND` after it is
+    // final, without purging again.
+    it('treats a 404 after a takedown as the deletion it became', async () => {
+      const { service, revokeConnection, ref } = await connectedTo('after-owner');
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      await service.status(ref, 'after-owner');
+      refuse(access, 404, 'NOT_FOUND');
+      const after = await service.status(ref, 'after-owner');
+      expect(after.access?.lastKnown?.lifecycle).toBe('deleted');
+      expect(revokeConnection).toHaveBeenCalledTimes(1);
+      await service.disconnect(ref, 'after-owner');
+    });
+
+    // Purpose: a takedown is a definite answer, so the "seems gone" count starts over, and once
+    // recorded, other requests answering it don't ask the Community again.
+    it('resets the not-found count, and nudges once', async () => {
+      const { store, service, ref } = await connectedTo('nudge-owner');
+      refuse(access, 404, 'NOT_FOUND');
+      await service.status(ref, 'nudge-owner');
+      expect(await store.notFoundSince(ref, 'nudge-owner')).not.toBeNull();
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      const before = accessRequests;
+      await service.communityGoneSeen(ref, 'nudge-owner');
+      await service.communityGoneSeen(ref, 'nudge-owner');
+      expect(accessRequests).toBe(before + 1);
+      expect(await store.notFoundSince(ref, 'nudge-owner')).toBeNull();
+      await service.disconnect(ref, 'nudge-owner');
+    });
+
+    // Purpose: every route family answers `423 COMMUNITY_TAKEN_DOWN` as gone (never as an archive
+    // or a stale cursor) and nudges the access check; a stream closed as `taken_down` ends as
+    // access revoked.
+    it('answers 423 COMMUNITY_TAKEN_DOWN as gone on every route', async () => {
+      const { store, service, ref } = await connectedTo('routes-owner');
+      const goneSeen = vi.fn();
+      const adapter = new RemoteCommunityAdapter(
+        ref,
+        'routes-owner',
+        store,
+        undefined,
+        undefined,
+        goneSeen
+      );
+      const channel = `${qualified}/channels/${remoteRoomId}`;
+      refuse(`${channel}/entries`, 423, 'COMMUNITY_TAKEN_DOWN');
+      await expect(adapter.listEntries(remoteRoomId)).rejects.toBeInstanceOf(
+        CommunityTakenDownError
+      );
+      refuse(channel, 423, 'COMMUNITY_TAKEN_DOWN');
+      await expect(adapter.getRoom(remoteRoomId)).resolves.toBeNull();
+      refuse(`${channel}/members`, 423, 'COMMUNITY_TAKEN_DOWN');
+      await expect(adapter.listMembers(remoteRoomId)).resolves.toEqual([]);
+      refuse(`${qualified}/agents/${remoteAgentId}`, 423, 'COMMUNITY_TAKEN_DOWN');
+      await expect(adapter.revokeAgent(remoteAgentId)).resolves.toBeUndefined();
+      refuse(`${channel}/events`, 423, 'COMMUNITY_TAKEN_DOWN');
+      await expect(
+        adapter.subscribeNativeRoom(remoteRoomId)[Symbol.asyncIterator]().next()
+      ).rejects.toBeInstanceOf(CommunityTakenDownError);
+      expect(goneSeen).toHaveBeenCalledTimes(5);
+      expect(goneSeen).toHaveBeenCalledWith(ref, 'routes-owner');
+
+      rejectedAuthorization = undefined;
+      eventsTail = `data: ${JSON.stringify({ type: 'closed', reason: 'taken_down', cursor: 'resume-1' })}\n\n`;
       const events: RemoteNativeRoomEvent[] = [];
       for await (const event of adapter.subscribeNativeRoom(remoteRoomId)) events.push(event);
       expect(events.at(-1)).toEqual({ type: 'room_closed', reason: 'access-revoked' });
@@ -1345,6 +1724,282 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     });
   });
 
+  // DOR-2603. Purpose: an agent this installation added must not stay active on the Community
+  // after its only controller disconnects. These fail if disconnect stops removing the agents,
+  // removes them after the grant that allows it is gone, touches an agent it did not add, or
+  // hides one it could not remove.
+  describe('disconnect removes the agents this installation added', () => {
+    const scout = {
+      localAgentId: 'scout-local',
+      remoteMemberId: randomUUID(),
+      displayName: 'Scout',
+      active: true,
+    };
+    const echo = {
+      localAgentId: 'echo-local',
+      remoteMemberId: randomUUID(),
+      displayName: 'Echo',
+      active: true,
+    };
+    /** An agent removed here earlier, whose removal the Community may never have heard. */
+    const relay = {
+      localAgentId: 'relay-local',
+      remoteMemberId: randomUUID(),
+      displayName: 'Relay',
+      active: false,
+    };
+    const view = (agent: typeof scout) => ({
+      localAgentId: agent.localAgentId,
+      displayName: agent.displayName,
+    });
+
+    async function connectedWith(owner: string, agents: (typeof scout)[]) {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const reader = vi.fn((_ref: string, ownerKey: string) => (ownerKey === owner ? agents : []));
+      const service = new RemoteCommunityPairingService(
+        store,
+        undefined,
+        undefined,
+        {},
+        undefined,
+        reader
+      );
+      const started = await service.start(owner, origin, 'Agents install');
+      expect((await service.poll(started.connection.ref, owner)).status).toBe('connected');
+      approved = false;
+      revocations.length = 0;
+      agentRemovals.length = 0;
+      return { store, service, reader, ref: started.connection.ref };
+    }
+
+    async function expectLocalCopyGone(store: RemoteConnectionStore, ref: string, owner: string) {
+      expect(await store.list(owner)).toEqual([]);
+      expect(
+        await new EncryptedFileCredentialStore(directory).get(`community:${ref}:personal`)
+      ).toBeNull();
+    }
+
+    afterEach(() => {
+      revocationAnswer = 204;
+      revocations.length = 0;
+      agentRemovals.length = 0;
+      agentRemovalAnswers.clear();
+    });
+
+    it('removes each agent with its own bearer before revoking the grant', async () => {
+      const { store, service, reader, ref } = await connectedWith('agents-owner', [scout, echo]);
+      const before = requests.length;
+      expect(await service.disconnect(ref, 'agents-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(reader).toHaveBeenCalledWith(ref, 'agents-owner');
+      expect(agentRemovals).toEqual(
+        expect.arrayContaining([
+          { memberId: scout.remoteMemberId, authorization: `Bearer ${token}` },
+          { memberId: echo.remoteMemberId, authorization: `Bearer ${token}` },
+        ])
+      );
+      expect(agentRemovals).toHaveLength(2);
+      // Order: every agent removal reached the Community before the grant was revoked.
+      const paths = requests.slice(before).map((request) => request.path);
+      const revokedAt = paths.indexOf(`${qualified}/me/connection`);
+      expect(revokedAt).toBeGreaterThan(
+        paths.indexOf(`${qualified}/agents/${scout.remoteMemberId}`)
+      );
+      expect(revokedAt).toBeGreaterThan(
+        paths.indexOf(`${qualified}/agents/${echo.remoteMemberId}`)
+      );
+      // Only the agents this installation added: it never lists the member's agents there.
+      expect(paths.filter((path) => path === `${qualified}/agents`)).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'agents-owner');
+    });
+
+    it('names only the agent the Community would not remove, and still disconnects', async () => {
+      const { store, service, ref } = await connectedWith('partial-owner', [scout, echo]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 500);
+      expect(await service.disconnect(ref, 'partial-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout)],
+      });
+      expect(revocations).toHaveLength(1);
+      await expectLocalCopyGone(store, ref, 'partial-owner');
+    });
+
+    it('names every agent when the Community cannot be reached, and still disconnects', async () => {
+      const { store, service, ref } = await connectedWith('offline-owner', [scout, echo]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 'hang-up');
+      agentRemovalAnswers.set(echo.remoteMemberId, 'hang-up');
+      revocationAnswer = 'hang-up';
+      expect(await service.disconnect(ref, 'offline-owner')).toEqual({
+        remoteRevoked: false,
+        agentsNotRemoved: [view(scout), view(echo)],
+      });
+      // Nothing reached the Community, so the revoke is not tried only to wait out another timeout.
+      expect(revocations).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'offline-owner');
+    });
+
+    it('still revokes the grant when the Community answered any agent removal', async () => {
+      const { service, ref } = await connectedWith('answered-agent-owner', [scout, echo]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 'hang-up');
+      agentRemovalAnswers.set(echo.remoteMemberId, 500);
+      expect(await service.disconnect(ref, 'answered-agent-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout), view(echo)],
+      });
+      expect(revocations).toHaveLength(1);
+    });
+
+    it('does not count a 404 the Community did not send as removed', async () => {
+      const { service, ref } = await connectedWith('bare-404-owner', [scout]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 'bare-404');
+      expect(await service.disconnect(ref, 'bare-404-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout)],
+      });
+    });
+
+    // An agent revoked here was already removed on purpose. One enrolled before the Community
+    // recorded enrolling grants is still found by its owner and local id, which another
+    // installation of the same person can share, so a second removal could take that one's.
+    it('never sends a removal for an agent revoked here earlier, nor names it', async () => {
+      const { service, ref } = await connectedWith('earlier-owner', [scout, relay]);
+      expect(await service.disconnectImpact(ref, 'earlier-owner')).toEqual({
+        agents: [view(scout)],
+      });
+      expect(await service.disconnect(ref, 'earlier-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(agentRemovals.map((removal) => removal.memberId)).toEqual([scout.remoteMemberId]);
+    });
+
+    it('names a fenced connection’s agents without removing them, even with a bearer', async () => {
+      const fenced = [{ ...scout, active: false }];
+      const { store, service, ref } = await connectedWith('fenced-bearer-owner', fenced);
+      const file = join(directory, 'communities', 'remote', 'connections.json');
+      const records = JSON.parse(await readFile(file, 'utf8')) as Array<{
+        ref: string;
+        status: string;
+      }>;
+      records.find((record) => record.ref === ref)!.status = 'reconnect-required';
+      await writeFile(file, JSON.stringify(records));
+      expect(await service.disconnect(ref, 'fenced-bearer-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout)],
+      });
+      expect(agentRemovals).toEqual([]);
+      expect(revocations).toHaveLength(1);
+      await expectLocalCopyGone(store, ref, 'fenced-bearer-owner');
+    });
+
+    // The reconnect dialog's path: a rejected grant revoked every enrollment here without telling
+    // the Community, and dropped the bearer, so nothing can be removed from here.
+    it('names the agents a rejected grant revoked here, since the Community still has them', async () => {
+      const fenced = [
+        { ...scout, active: false },
+        { ...relay, active: false },
+      ];
+      const { store, service, ref } = await connectedWith('fenced-owner', fenced);
+      await store.requireReconnect(ref, 'fenced-owner');
+      expect(await service.disconnectImpact(ref, 'fenced-owner')).toEqual({
+        agents: [view(scout), view(relay)],
+      });
+      expect(await service.disconnect(ref, 'fenced-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout), view(relay)],
+      });
+      expect(agentRemovals).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'fenced-owner');
+    });
+
+    it('counts an agent the Community no longer has as removed', async () => {
+      const { service, ref } = await connectedWith('already-gone-owner', [scout]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 404);
+      expect(await service.disconnect(ref, 'already-gone-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+    });
+
+    it('names every agent when no bearer is left to remove them', async () => {
+      const { store, service, ref } = await connectedWith('no-bearer-owner', [scout]);
+      await store.requireReconnect(ref, 'no-bearer-owner');
+      expect(await service.disconnect(ref, 'no-bearer-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout)],
+      });
+      expect(agentRemovals).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'no-bearer-owner');
+    });
+
+    it('still disconnects when the agents cannot be read', async () => {
+      approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const service = new RemoteCommunityPairingService(
+        store,
+        undefined,
+        undefined,
+        {},
+        undefined,
+        () => {
+          throw new Error('database closed');
+        }
+      );
+      const started = await service.start('unreadable-owner', origin, 'Agents install');
+      expect((await service.poll(started.connection.ref, 'unreadable-owner')).status).toBe(
+        'connected'
+      );
+      approved = false;
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      expect(await service.disconnect(started.connection.ref, 'unreadable-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+      await expectLocalCopyGone(store, started.connection.ref, 'unreadable-owner');
+    });
+
+    it('says which agents disconnecting would remove without asking the Community', async () => {
+      const { service, ref } = await connectedWith('impact-owner', [scout, echo]);
+      const before = requests.length;
+      expect(await service.disconnectImpact(ref, 'impact-owner')).toEqual({
+        agents: [view(scout), view(echo)],
+      });
+      expect(requests.length).toBe(before);
+      await service.disconnect(ref, 'impact-owner');
+      await expect(service.disconnectImpact(ref, 'impact-owner')).rejects.toBeInstanceOf(
+        RemoteConnectionNotFoundError
+      );
+    });
+
+    it('reads no agents for a request still waiting for approval', async () => {
+      const store = new RemoteConnectionStore(directory);
+      const reader = vi.fn(() => [scout]);
+      const service = new RemoteCommunityPairingService(
+        store,
+        undefined,
+        undefined,
+        {},
+        undefined,
+        reader
+      );
+      const started = await service.start('pending-agents-owner', origin, 'Agents install');
+      expect(
+        await service.disconnectImpact(started.connection.ref, 'pending-agents-owner')
+      ).toEqual({ agents: [] });
+      expect(await service.disconnect(started.connection.ref, 'pending-agents-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(reader).not.toHaveBeenCalled();
+      expect(agentRemovals).toEqual([]);
+    });
+  });
+
   describe('disconnect revokes the grant on the Community', () => {
     async function connected(owner: string) {
       approved = true;
@@ -1399,6 +2054,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
       await expect(failing.disconnect(again.connection.ref, 'purging-owner')).resolves.toEqual({
         remoteRevoked: true,
+        agentsNotRemoved: [],
       });
       warn.mockRestore();
       await expectLocalCopyGone(store, again.connection.ref, 'purging-owner');
@@ -1406,7 +2062,10 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
 
     it('revokes with its own bearer at the qualified path before deleting the local copy', async () => {
       const { store, service, ref } = await connected('disconnect-owner');
-      expect(await service.disconnect(ref, 'disconnect-owner')).toEqual({ remoteRevoked: true });
+      expect(await service.disconnect(ref, 'disconnect-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
       expect(revocations).toEqual([
         { path: `${qualified}/me/connection`, authorization: `Bearer ${token}` },
       ]);
@@ -1418,6 +2077,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       revocationAnswer = 401;
       expect(await service.disconnect(ref, 'already-revoked-owner')).toEqual({
         remoteRevoked: true,
+        agentsNotRemoved: [],
       });
       expect(revocations).toHaveLength(1);
       await expectLocalCopyGone(store, ref, 'already-revoked-owner');
@@ -1435,6 +2095,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
         revocationAnswer = answer;
         expect(await service.disconnect(ref, 'unreachable-owner')).toEqual({
           remoteRevoked: false,
+          agentsNotRemoved: [],
         });
         expect(revocations).toHaveLength(1);
         await expectLocalCopyGone(store, ref, 'unreachable-owner');
@@ -1471,7 +2132,10 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       }>;
       records.find((record) => record.ref === ref)!.status = 'reconnect-required';
       await writeFile(file, JSON.stringify(records));
-      expect(await service.disconnect(ref, 'reconnect-owner')).toEqual({ remoteRevoked: true });
+      expect(await service.disconnect(ref, 'reconnect-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
       expect(revocations).toEqual([
         { path: `${qualified}/me/connection`, authorization: `Bearer ${token}` },
       ]);
@@ -1490,6 +2154,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       revocationAnswer = 'hang-up';
       expect(await service.disconnect(ref, 'reconnect-offline-owner')).toEqual({
         remoteRevoked: false,
+        agentsNotRemoved: [],
       });
       expect(revocations).toHaveLength(1);
       await expectLocalCopyGone(store, ref, 'reconnect-offline-owner');
@@ -1500,6 +2165,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await store.requireReconnect(ref, 'dropped-bearer-owner');
       expect(await service.disconnect(ref, 'dropped-bearer-owner')).toEqual({
         remoteRevoked: true,
+        agentsNotRemoved: [],
       });
       expect(revocations).toEqual([]);
       await expectLocalCopyGone(store, ref, 'dropped-bearer-owner');
@@ -1508,7 +2174,10 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     it('reports a connected record that lost its bearer as unconfirmed', async () => {
       const { store, service, ref } = await connected('lost-bearer-owner');
       await new EncryptedFileCredentialStore(directory).delete(`community:${ref}:personal`);
-      expect(await service.disconnect(ref, 'lost-bearer-owner')).toEqual({ remoteRevoked: false });
+      expect(await service.disconnect(ref, 'lost-bearer-owner')).toEqual({
+        remoteRevoked: false,
+        agentsNotRemoved: [],
+      });
       expect(revocations).toEqual([]);
       await expectLocalCopyGone(store, ref, 'lost-bearer-owner');
     });
@@ -1521,6 +2190,7 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       revocations.length = 0;
       expect(await service.disconnect(started.connection.ref, 'pending-disconnect-owner')).toEqual({
         remoteRevoked: true,
+        agentsNotRemoved: [],
       });
       expect(revocations).toEqual([]);
       expect(await store.list('pending-disconnect-owner')).toEqual([]);
@@ -1810,9 +2480,10 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       requests.length = 0;
       try {
         const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
-        await expect(
-          service.start('name-owner', `${origin}/busy-club`, 'Limited')
-        ).rejects.toBeInstanceOf(RemoteCommunityLookupRateLimitedError);
+        const refusal = service.start('name-owner', `${origin}/busy-club`, 'Limited');
+        await expect(refusal).rejects.toBeInstanceOf(RemoteCommunityRateLimitedError);
+        // The host's own wait is carried, so the person can be told how long.
+        await expect(refusal).rejects.toMatchObject({ retryAfterSeconds: 17 });
         expect(pairingStarts()).toEqual([]);
       } finally {
         shortNameAnswers.clear();

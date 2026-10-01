@@ -373,6 +373,7 @@ describe('ConnectorReconciliationService', () => {
         readConnectorAuthorityCommand: async () => {
           throw Object.assign(new Error('absent'), { code: 'not_found' });
         },
+        isLinked: () => false,
       },
       now: () => NOW,
       createId: (() => {
@@ -561,6 +562,7 @@ describe('ConnectorReconciliationService', () => {
         readConnectorAuthorityCommand: async () => {
           throw Object.assign(new Error('absent'), { code: 'not_found' });
         },
+        isLinked: () => false,
       },
       now: () => NOW,
       createId: (() => {

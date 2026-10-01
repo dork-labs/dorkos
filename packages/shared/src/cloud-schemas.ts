@@ -32,6 +32,11 @@ export interface CloudLinkStatus {
   accountLabel?: string;
   /** ISO timestamp of the most recent successful heartbeat. Absent until one lands. */
   lastHeartbeatAt?: string;
+  /**
+   * How a relink ended when it did not replace the key. Present only while
+   * `linked`: this instance stayed linked the whole time.
+   */
+  relinkOutcome?: 'denied' | 'expired' | 'failed';
 }
 
 /**
@@ -182,9 +187,17 @@ export interface CloudCreditsStatus {
  * `actionUrl` when it has one; `message` is the local server's plain sentence
  * for everything the service did not describe (unlinked, unreachable). Both
  * answer HTTP 200, for the reason `CloudSeatActionResponse` gives.
+ *
+ * `mayExist: true` says the write may have taken effect even though it was
+ * refused: the account could not be reached, answered with a server error
+ * (5xx), or a clean-up this server tried after it did not go through. A
+ * caller that retries with an idempotency key keeps the same key then, so the
+ * retry picks up what was made instead of making it twice. Absent, the
+ * refusal came before anything was made (or after it was undone).
  */
 export type CloudCommunityRefusal =
-  { ok: false; problem: Problem } | { ok: false; message: string };
+  | { ok: false; problem: Problem; mayExist?: true }
+  | { ok: false; message: string; mayExist?: true };
 
 /**
  * How the local server is getting a move's export to its Community server.
@@ -276,6 +289,13 @@ export type CloudCommunityRestoreResponse =
 /** A move write (start, cancel, send again) — the move as it now stands. */
 export type CloudCommunityMoveResponse =
   { ok: true; move: CloudCommunityMove } | CloudCommunityRefusal;
+
+/**
+ * `GET /api/cloud/communities/moves/room?bytes=` — whether an export of that
+ * size fits on this computer, asked before it is sent. Advisory: sending the
+ * file checks again, and nothing is held back for it in between.
+ */
+export type CloudCommunityMoveRoomResponse = { ok: true } | CloudCommunityRefusal;
 
 /** `GET /api/cloud/communities/moves/:moveId` — one move, read from the service every time. */
 export type CloudCommunityMovePollResponse =

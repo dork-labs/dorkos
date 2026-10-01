@@ -5,8 +5,8 @@ import { tombstonePayloadHash } from '../content-removal.js';
 import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
 import { ERASED_MENTION, randomHuskHandle, rewriteHandleTokens } from '../erasure/erasure.js';
 import { parseErasureJournal } from '../erasure/reapply.js';
-import { resolveCommunityMentions } from '../mentions.js';
-import { reauthenticationDecision, REAUTH_WINDOW_MS } from '../routes/erasures.js';
+import { resolveCommunityMentions } from '../content/mentions.js';
+import { reauthenticationDecision, REAUTH_WINDOW_MS } from '../routes/account/erasures.js';
 
 // Purpose: an erased person's handle is released, so every token the mention resolver would
 // read as them must become @[erased], and nothing else may change. Each case names the

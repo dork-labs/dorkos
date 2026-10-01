@@ -77,9 +77,13 @@ describe('community connection transport', () => {
     const fetch = answer(null, 204);
     const methods = createCommunityMethods('/api');
     await methods.cancelCommunityConnection('a/b');
-    fetch.mockResolvedValueOnce(new Response(JSON.stringify({ remoteRevoked: false })));
+    const left = [{ localAgentId: 'scout', displayName: 'Scout' }];
+    fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ remoteRevoked: false, agentsNotRemoved: left }))
+    );
     await expect(methods.disconnectCommunity('community-b')).resolves.toEqual({
       remoteRevoked: false,
+      agentsNotRemoved: left,
     });
     expect(fetch).toHaveBeenNthCalledWith(
       1,
@@ -91,6 +95,18 @@ describe('community connection transport', () => {
       '/api/community-connections/community-b',
       expect.objectContaining({ method: 'DELETE' })
     );
+  });
+  it('reads which agents a disconnect would remove, without their member ids', async () => {
+    const agents = [{ localAgentId: 'scout', displayName: 'Scout' }];
+    const fetch = answer({ agents });
+    const methods = createCommunityMethods('/api');
+    await expect(methods.getCommunityDisconnectImpact('a/b')).resolves.toEqual({ agents });
+    expect(fetch.mock.calls[0]![0]).toBe('/api/community-connections/a%2Fb/disconnect-impact');
+    // The browser never needs, and must not quietly accept, an agent's id on the Community.
+    fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ agents: [{ ...agents[0], remoteMemberId: 'm-1' }] }))
+    );
+    await expect(methods.getCommunityDisconnectImpact('a/b')).rejects.toThrow();
   });
   it('preserves a local authorization refusal rather than reporting success', async () => {
     answer({ error: 'Only this install’s owner can manage community connections.' }, 403);

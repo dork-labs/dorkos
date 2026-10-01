@@ -31,16 +31,50 @@ import {
   readFlySecretInventory,
   readFlySessionCredential,
   TigrisSessionError,
+  verifyFreshTigrisSecrets,
   verifyTigrisSecretNames,
   type FlySessionReadOptions,
 } from '../tigris-session.js';
+import { flyProvenanceNetwork, neonProvenanceRole } from '../provenance/provenance-gate.js';
 import type { NeonReadOptions } from '../neon-read.js';
 import type { CommunityPreflightInventory, CommunityPreflightSelection } from '../preflight.js';
-import type { CommunityCreationDependencies, CreatedResourceIdentity } from '../execute.js';
+import type {
+  CommunityCreationDependencies,
+  CreatedResourceIdentity,
+  CreationInspectContext,
+} from '../execute.js';
 import type { LaunchJournal } from '../journal.js';
 import type { LaunchPlan } from '../plan.js';
 import { ProviderMutationError } from '../provider-mutation.js';
 import { classifyCommunityProviderPreflightFailure } from './versions.js';
+
+/** Stop before recording an intent while Fly still holds the name of an app a removal deleted. */
+export class FlyNameStillHeldError extends Error {
+  /**
+   * Create the stop with the exact next step.
+   *
+   * @param appName - The planned app name.
+   */
+  constructor(appName: string) {
+    super(`Fly is still releasing the name ${appName}. Try \`--resume\` again in a few minutes.`);
+    this.name = 'FlyNameStillHeldError';
+  }
+}
+
+/** Stop before recording an intent while Fly still holds the name of a bucket a removal deleted. */
+export class TigrisNameStillHeldError extends Error {
+  /**
+   * Create the stop with the exact next step.
+   *
+   * @param bucketName - The planned bucket name.
+   */
+  constructor(bucketName: string) {
+    super(
+      `Fly is still releasing the storage name ${bucketName}. Try \`--resume\` again in a few minutes.`
+    );
+    this.name = 'TigrisNameStillHeldError';
+  }
+}
 
 /** Local executable and profile settings used by the default service assembly. */
 export interface CommunityServiceOptions {
@@ -89,10 +123,22 @@ async function exactFlyApp(
   return matches[0]!;
 }
 
+/**
+ * The Neon role a project must carry: the one already journaled, the one this in-flight create
+ * named from its marker, or, for a create started before markers shipped, the old fixed role.
+ */
+function expectedNeonRole(context: CreationInspectContext): string {
+  return (
+    context.journal.resources.neonRoleId ??
+    (context.provenanceMarker ? neonProvenanceRole(context.provenanceMarker) : 'community_owner')
+  );
+}
+
 async function exactNeonProject(
   options: CommunityServiceOptions,
   plan: LaunchPlan,
-  projectId: string
+  projectId: string,
+  roleName: string
 ): Promise<CreatedResourceIdentity> {
   const projects = (await readNeonProjects(options.neon, plan.neon.organizationId)).filter(
     (project) => project.id === projectId && project.name === plan.neon.projectName
@@ -107,9 +153,9 @@ async function exactNeonProject(
   const branch = branches[0]!;
   const topology = await readNeonBranchTopology(options.neon, projectId, branch.id);
   const databases = topology.databases.filter(
-    (database) => database.name === 'community' && database.ownerName === 'community_owner'
+    (database) => database.name === 'community' && database.ownerName === roleName
   );
-  const roles = topology.roles.filter((role) => role.name === 'community_owner');
+  const roles = topology.roles.filter((role) => role.name === roleName);
   const endpoints = (await readNeonEndpoints(options.neon, projectId, branch.id)).filter(
     (endpoint) => endpoint.type === 'read_write' && endpoint.regionId === plan.neon.region
   );
@@ -132,7 +178,14 @@ async function exactNeonProject(
   };
 }
 
-async function useTigrisClient<T>(
+/**
+ * Run one consumer against the pinned Fly GraphQL client, holding the local Fly session token only
+ * for that call.
+ *
+ * @param options - Local executable and profile settings.
+ * @param consumer - Operations to run with the client.
+ */
+export async function useTigrisClient<T>(
   options: CommunityServiceOptions,
   consumer: (client: FlyTigrisGraphqlClient) => Promise<T>
 ): Promise<T> {
@@ -239,6 +292,8 @@ export function createDefaultCommunityCreationDependencies(input: {
   // The plan records the Fly organization by slug, as flyctl does; Fly's add-on API wants the
   // organization's GraphQL ID instead, as `fly ext tigris create` sends it.
   let flyOrganizationId: string | undefined;
+  const readAppProvenance = (appName: string) =>
+    useTigrisClient(input.options, (client) => client.readAppProvenance(appName));
   // The keys from the create answer, held only until `inspect` has put them on the app.
   let tigrisCredentials: TigrisBucketCredentials | null = null;
   return {
@@ -246,11 +301,25 @@ export function createDefaultCommunityCreationDependencies(input: {
     now: input.now,
     progress: input.progress,
     fly: {
-      create: async () => {
+      // Runs before any intent is recorded, so a name Fly still holds can never strand the run.
+      prepare: async () => {
+        const name = input.plan.fly.appName;
+        const removed = (input.latestJournal().removals ?? []).some(
+          (removal) => removal.provider === 'fly' && removal.resourceName === name
+        );
+        if (!removed) return;
+        const available = await useTigrisClient(input.options, (client) =>
+          client.isAppNameAvailable(name)
+        );
+        if (!available) throw new FlyNameStillHeldError(name);
+      },
+      create: async (marker) => {
         const created = await createFlyApp(
           input.options.fly,
           input.plan.fly.appName,
-          input.plan.fly.organizationId
+          input.plan.fly.organizationId,
+          flyProvenanceNetwork(marker),
+          readAppProvenance
         );
         return {
           id: created.id,
@@ -258,24 +327,48 @@ export function createDefaultCommunityCreationDependencies(input: {
           name: created.name,
         };
       },
-      inspect: async (id) => {
-        const found = await exactFlyApp(
-          input.options,
-          input.plan.fly.organizationId,
-          id,
-          input.plan.fly.appName
-        );
-        return { id: found.id, organizationId: found.organizationSlug, name: found.name };
+      inspect: async (id, context) => {
+        const expectedNetwork = context.provenanceMarker
+          ? flyProvenanceNetwork(context.provenanceMarker)
+          : context.journal.provenance?.flyNetwork;
+        // A run started before markers shipped has no network to check and records none. It keeps
+        // the listing read it has always used, so a launch already in progress is never re-checked
+        // through the newer provenance read.
+        if (expectedNetwork === undefined) {
+          const listed = await exactFlyApp(
+            input.options,
+            input.plan.fly.organizationId,
+            id,
+            input.plan.fly.appName
+          );
+          return { id: listed.id, organizationId: listed.organizationSlug, name: listed.name };
+        }
+        const found = await readAppProvenance(input.plan.fly.appName);
+        if (
+          !found ||
+          found.id !== id ||
+          found.name !== input.plan.fly.appName ||
+          found.organizationSlug !== input.plan.fly.organizationId
+        ) {
+          throw new ProviderMutationError('INVALID_RESPONSE');
+        }
+        if (found.network !== expectedNetwork) throw new ProviderMutationError('INVALID_RESPONSE');
+        return {
+          id: found.id,
+          organizationId: found.organizationSlug,
+          name: found.name,
+          provenance: { flyNetwork: found.network },
+        };
       },
     },
     neon: {
-      create: async () => {
+      create: async (marker) => {
         const project = await createNeonProject(input.options.neon, {
           organizationId: input.plan.neon.organizationId,
           name: input.plan.neon.projectName,
           regionId: input.plan.neon.region,
           databaseName: 'community',
-          roleName: 'community_owner',
+          roleName: neonProvenanceRole(marker),
           postgresVersion: 17,
         });
         return {
@@ -284,10 +377,25 @@ export function createDefaultCommunityCreationDependencies(input: {
           name: project.name,
         };
       },
-      inspect: (id) => exactNeonProject(input.options, input.plan, id),
+      inspect: (id, context) =>
+        exactNeonProject(input.options, input.plan, id, expectedNeonRole(context)),
     },
     tigris: {
       prepare: async () => {
+        // After an uncertain-create removal of a bucket with this name, Fly renames the deleted
+        // record and frees the name at once (a by-name lookup answers NOT_FOUND). Check anyway,
+        // before any intent is recorded: a create refused because the name is still held would be
+        // a new uncertain stop that --remove-uncertain can only answer as absent.
+        const bucketName = input.plan.tigris.bucketName;
+        const removed = (input.latestJournal().removals ?? []).some(
+          (removal) => removal.provider === 'tigris' && removal.resourceName === bucketName
+        );
+        if (removed) {
+          const held = await useTigrisClient(input.options, (client) =>
+            client.isTigrisNameHeld(bucketName)
+          );
+          if (held) throw new TigrisNameStillHeldError(bucketName);
+        }
         const accepted = await useTigrisClient(input.options, (client) =>
           client.hasAcceptedTerms()
         );
@@ -323,7 +431,7 @@ export function createDefaultCommunityCreationDependencies(input: {
         tigrisCredentials = created.credentials;
         return tigrisIdentity(created.identity, input.plan, exactApp);
       },
-      inspect: async (id) => {
+      inspect: async (id, context) => {
         // The keys exist only in memory, so they go onto the app first: the bucket id is already
         // in the journal, create() already bound the bucket to this app, and any read below that
         // fails would otherwise lose them for good. A failed stage is not fatal here: the keys may
@@ -337,6 +445,20 @@ export function createDefaultCommunityCreationDependencies(input: {
         const found = await useTigrisClient(input.options, (client) => client.readTigris(id));
         const result = tigrisIdentity(found, input.plan, exactApp);
         await ensureTigrisSecrets(input.options, input.plan.fly.appName, found.addOnId);
+        // After an uncertain-create removal of an earlier bucket, its keys were unset and their
+        // digests recorded. The keys now on the app must be new ones: a digest equal to a removed
+        // bucket's means stale credentials, and the step stops instead of deploying with them.
+        const removedDigests = (context.journal.removals ?? []).flatMap((removal) =>
+          removal.provider === 'tigris' && removal.priorSecretDigests
+            ? [removal.priorSecretDigests]
+            : []
+        );
+        if (removedDigests.length > 0) {
+          verifyFreshTigrisSecrets(
+            await readFlySecretInventory(input.options.fly, input.plan.fly.appName),
+            removedDigests
+          );
+        }
         return result;
       },
     },

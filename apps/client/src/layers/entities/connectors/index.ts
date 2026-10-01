@@ -98,6 +98,7 @@ export type {
 } from '@dorkos/shared/connector-resource-schemas';
 
 export { serviceName } from './lib/access-copy';
+export { cloudFailure, type CloudFailureCopy } from './lib/cloud-failure';
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
 export { ServiceMark } from './ui/ServiceMark';
 export { serviceLogo, type ServiceLogo } from './lib/service-logo';

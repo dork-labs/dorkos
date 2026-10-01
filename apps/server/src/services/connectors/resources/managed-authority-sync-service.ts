@@ -106,6 +106,15 @@ export interface ManagedAuthorityCloudPort {
     commandId: string,
     signal?: AbortSignal
   ): Promise<ManagedConnectorAuthorityCommandStatus>;
+  /**
+   * Whether this computer holds a DorkOS account key right now. Read after an
+   * `unauthorized` refusal: the cloud link checks the key before that error
+   * reaches here and reports a kept key as a plain refused request, so an
+   * `unauthorized` means the refused key is gone. A key held anyway is a new
+   * link made since, and the change is sent again under it rather than
+   * waiting for another link.
+   */
+  isLinked(): boolean;
 }
 
 /** Input for replacing one managed agent's complete hosted operation grant set. */
@@ -203,6 +212,7 @@ function isManagedCloudError(
       'permission_upgrade_required',
       'not_found',
       'conflict',
+      'unavailable',
       'network_error',
       'request_failed',
       'invalid_response',
@@ -1532,6 +1542,15 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   ): DeliveryFailure {
     if (signal.aborted) return { code: 'interrupted' };
     if (deadline.aborted) return { code: 'timeout' };
+    // Only a refusal that left this computer with no key waits for a new
+    // link. Once a newer key is held, the change is tried again under it
+    // (DOR-2620).
+    if (
+      isManagedCloudError(error) &&
+      error.code === 'unauthorized' &&
+      this.options.cloud.isLinked()
+    )
+      return { code: 'request_failed', status: error.status };
     if (isManagedCloudError(error)) return { code: error.code, status: error.status };
     return { code: 'local_error', errorName: error instanceof Error ? error.name : typeof error };
   }
@@ -2064,6 +2083,8 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         return 'DorkOS’s servers didn’t answer in time.';
       case 'invalid_response':
         return 'DorkOS’s servers sent back an answer that didn’t make sense.';
+      case 'unavailable':
+        return 'DorkOS’s servers had a problem.';
       case 'request_failed':
       case 'not_found':
         return failure.status !== undefined && failure.status >= 500

@@ -12,6 +12,7 @@ import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import { createConnectorManagementRouter } from '../connector-management.js';
 import { ConnectorSubscriptionError } from '../../services/connectors/events/subscription-store.js';
+import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
 import { ApiError } from '../../../../../packages/cli/src/lib/api-client.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
@@ -405,6 +406,29 @@ describe('connector management routes', () => {
       .delete('/api/connectors/connections/connection-a/every-agent')
       .expect(200, { connectionId: 'connection-a', revokedCount: 2 });
     expect(reconciliation.revokeEveryAgent).toHaveBeenCalledWith(OWNER, 'connection-a');
+  });
+
+  it('answers a refused managed-cloud call behind a preview honestly instead of a 500', async () => {
+    const expected: Array<
+      [ConstructorParameters<typeof ManagedConnectorCloudError>[0], number, string]
+    > = [
+      ['unauthorized', 401, 'cloud_link_required'],
+      ['permission_upgrade_required', 409, 'cloud_link_needs_update'],
+      ['unavailable', 503, 'cloud_unavailable'],
+      ['network_error', 503, 'cloud_unavailable'],
+      ['request_failed', 502, 'cloud_refused'],
+      ['invalid_response', 502, 'cloud_refused'],
+      ['not_found', 502, 'cloud_refused'],
+      ['conflict', 502, 'cloud_refused'],
+    ];
+    for (const [code, status, routeCode] of expected) {
+      reconciliation.preview.mockRejectedValueOnce(new ManagedConnectorCloudError(code));
+      const response = await request(fixtureTarget.mount(buildApp()))
+        .post('/api/connectors/reconciliation/previews')
+        .send({ connectionId: 'connection-a' })
+        .expect(status);
+      expect(response.body.code).toBe(routeCode);
+    }
   });
 
   it('allows owner decisions from the app without accepting owner selectors', async () => {

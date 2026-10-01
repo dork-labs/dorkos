@@ -57,7 +57,7 @@ function SelectTrigger({ className, children, responsive = true, ...props }: Sel
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       className={cn(
-        'border-dui-input ring-offset-dui-background placeholder:text-dui-muted-foreground focus-visible:ring-dui-ring aria-invalid:ring-dui-destructive/20 dui-dark:aria-invalid:ring-dui-destructive/40 aria-invalid:border-dui-destructive flex w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-sm focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
+        'border-dui-input ring-offset-dui-background placeholder:text-dui-muted-foreground focus-visible:ring-dui-ring aria-invalid:border-dui-destructive aria-invalid:ring-dui-destructive flex w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-sm focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
         responsive ? TOUCH_TARGET_RESPONSIVE_H : 'h-9',
         className
       )}

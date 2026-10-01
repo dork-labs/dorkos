@@ -63,7 +63,7 @@
                     "items-end",
                     "p-1.5",
                     "ring-[1px]",
-                    "ring-ring/75",
+                    "ring-ring",
                     "rounded-md",
                     "shadow-xs",
                     "transition-[color,box-shadow]"

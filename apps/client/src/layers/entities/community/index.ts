@@ -33,6 +33,7 @@ export {
   MAX_COMMUNITY_DRAFTS,
   useCommunityDraft,
   useCommunityDraftStore,
+  useUnsentCommunityDrafts,
   type CommunityDraft,
   type CommunityDraftActions,
   type CommunityDraftAddress,
@@ -41,10 +42,16 @@ export {
 export {
   endCommunityConnection,
   eraseCommunityOwnerState,
-  unconfirmedDisconnectMessage,
   useEndCommunityConnection,
   type CommunityConnectionEnd,
 } from './model/community-lifecycle';
+export {
+  disconnectAgentsLine,
+  disconnectOutcome,
+  unknownDisconnectAgentsLine,
+  useCommunityDisconnectImpact,
+  type CommunityDisconnectOutcome,
+} from './model/community-disconnect';
 export {
   useRemoteCommunityRooms,
   useRemoteCommunityRoom,

@@ -44,8 +44,24 @@ const RecordSchema = z.strictObject({
 });
 type ConnectionRecord = z.infer<typeof RecordSchema>;
 
-/** `not-found-since.json`: owner-and-ref key to the ISO time of the first `404 NOT_FOUND`. */
-const NotFoundSinceSchema = z.record(z.string(), z.iso.datetime());
+/**
+ * The small records kept beside connections.json, each keyed by owner and ref:
+ * `not-found-since.json` holds the ISO time of the first `404 NOT_FOUND`, and
+ * `undelivered-when-gone.json` how many agent posts never arrived when the community was found
+ * deleted or taken down.
+ */
+const SIDE_RECORDS = {
+  'not-found': {
+    file: 'not-found-since.json',
+    schema: z.record(z.string(), z.iso.datetime()),
+  },
+  undelivered: {
+    file: 'undelivered-when-gone.json',
+    schema: z.record(z.string(), z.number().int().positive()),
+  },
+} as const;
+type SideRecordName = keyof typeof SIDE_RECORDS;
+type SideEntries<Name extends SideRecordName> = z.infer<(typeof SIDE_RECORDS)[Name]['schema']>;
 
 /** Non-secret status handed to the browser through the local route. */
 export type RemoteConnectionDescriptor = CommunityConnectionDescriptor;
@@ -245,33 +261,47 @@ export class RemoteConnectionStore {
       .map((record) => ({ communityRef: record.ref, ownerAuthorId: record.ownerKey }));
   }
 
-  // === "Not found" since (DOR-2334) ===
+  // === Side records: "not found" since (DOR-2334), undelivered when gone (DOR-2575) ===
   //
-  // Kept in a file of its own beside connections.json, not on the connection record: an older
-  // DorkOS parses connections.json strictly and would fail on a field it does not know.
+  // Each kept in a file of its own beside connections.json, not on the connection record: an
+  // older DorkOS parses connections.json strictly and would fail on a field it does not know.
+  // Both are keyed by owner and ref.
 
-  private get notFoundFile(): string {
-    return path.join(this.directory, 'not-found-since.json');
+  private sideFile(name: SideRecordName): string {
+    return path.join(this.directory, SIDE_RECORDS[name].file);
   }
 
-  private async readNotFound(): Promise<Record<string, string>> {
+  private async readSide<Name extends SideRecordName>(name: Name): Promise<SideEntries<Name>> {
     try {
-      return NotFoundSinceSchema.parse(JSON.parse(await readFile(this.notFoundFile, 'utf8')));
+      return SIDE_RECORDS[name].schema.parse(
+        JSON.parse(await readFile(this.sideFile(name), 'utf8'))
+      ) as SideEntries<Name>;
     } catch {
-      // Missing or unreadable: nothing has been seen missing, so nothing is prompted.
-      return {};
+      // Missing or unreadable: nothing recorded, so nothing is shown.
+      return {} as SideEntries<Name>;
     }
   }
 
-  private async writeNotFound(entries: Record<string, string>): Promise<void> {
+  private async writeSide(name: SideRecordName, entries: Record<string, unknown>): Promise<void> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    const temporary = path.join(this.directory, `.not-found-${randomUUID()}.tmp`);
+    const temporary = path.join(this.directory, `.${name}-${randomUUID()}.tmp`);
     try {
       await writeFile(temporary, JSON.stringify(entries), { mode: 0o600, flag: 'wx' });
-      await rename(temporary, this.notFoundFile);
+      await rename(temporary, this.sideFile(name));
     } finally {
       await rm(temporary, { force: true });
     }
+  }
+
+  /** Forget one connection's entry in one side record; a missing entry writes nothing. */
+  private async clearSide(name: SideRecordName, ref: CommunityRef, ownerKey: string) {
+    await this.exclusive(async () => {
+      const entries: Record<string, unknown> = await this.readSide(name);
+      const key = `${ownerKey}\0${ref}`;
+      if (!(key in entries)) return;
+      delete entries[key];
+      await this.writeSide(name, entries);
+    });
   }
 
   /**
@@ -279,28 +309,49 @@ export class RemoteConnectionStore {
    * deletion first, or `null`. What decides whether it "seems to be gone".
    */
   async notFoundSince(ref: CommunityRef, ownerKey: string): Promise<string | null> {
-    return (await this.readNotFound())[`${ownerKey}\0${ref}`] ?? null;
+    return (await this.readSide('not-found'))[`${ownerKey}\0${ref}`] ?? null;
   }
 
   /** Remember the first `404 NOT_FOUND`; a later one never moves the date. */
   async markNotFound(ref: CommunityRef, ownerKey: string, at: string): Promise<void> {
     await this.exclusive(async () => {
-      const entries = await this.readNotFound();
+      const entries = await this.readSide('not-found');
       const key = `${ownerKey}\0${ref}`;
       if (entries[key]) return;
-      await this.writeNotFound({ ...entries, [key]: at });
+      await this.writeSide('not-found', { ...entries, [key]: at });
     });
   }
 
   /** Forget it: the Community answered as a community that exists, or the connection ended. */
   async clearNotFound(ref: CommunityRef, ownerKey: string): Promise<void> {
+    await this.clearSide('not-found', ref, ownerKey);
+  }
+
+  /**
+   * How many of this owner's agent posts to the community never arrived there, counted when it
+   * was found deleted or taken down, just before its copy was removed (DOR-2575); `0` when none
+   * were or nothing was counted.
+   */
+  async undeliveredWhenGone(ref: CommunityRef, ownerKey: string): Promise<number> {
+    return (await this.readSide('undelivered'))[`${ownerKey}\0${ref}`] ?? 0;
+  }
+
+  /** Record the count taken before the purge; `0` forgets any earlier one. */
+  async recordUndeliveredWhenGone(
+    ref: CommunityRef,
+    ownerKey: string,
+    count: number
+  ): Promise<void> {
+    if (count <= 0) return this.clearUndeliveredWhenGone(ref, ownerKey);
     await this.exclusive(async () => {
-      const entries = await this.readNotFound();
-      const key = `${ownerKey}\0${ref}`;
-      if (!(key in entries)) return;
-      delete entries[key];
-      await this.writeNotFound(entries);
+      const entries = await this.readSide('undelivered');
+      await this.writeSide('undelivered', { ...entries, [`${ownerKey}\0${ref}`]: count });
     });
+  }
+
+  /** Forget it: the community answered as live again, or the connection ended. */
+  async clearUndeliveredWhenGone(ref: CommunityRef, ownerKey: string): Promise<void> {
+    await this.clearSide('undelivered', ref, ownerKey);
   }
 
   /** Remove expired pending proof before list/status can display it after restart. */

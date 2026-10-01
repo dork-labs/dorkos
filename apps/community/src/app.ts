@@ -26,47 +26,58 @@ import {
 } from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
-import { registerChannelRoutes } from './routes/channels.js';
-import { registerEntryRoutes } from './routes/entries.js';
-import { registerEventRoutes } from './routes/events.js';
-import { registerInviteRoutes } from './routes/invites.js';
-import { registerMemberRoutes } from './routes/members.js';
-import { registerPairingRoutes } from './routes/pairings.js';
-import { registerRedactionRoutes } from './routes/redactions.js';
-import { registerRemovalRoutes } from './routes/removals.js';
-import { registerAgentRoutes } from './routes/agents.js';
-import { registerAttachmentRoutes } from './routes/attachments.js';
-import { registerExportRoutes } from './routes/exports.js';
-import { registerHostRoutes } from './routes/host.js';
-import { registerMembershipRoutes } from './routes/memberships.js';
-import { registerHostLimitRoutes } from './routes/host-limits.js';
-import { registerHostLegalHoldRoutes } from './routes/host-legal-hold.js';
-import { registerHostLifecycleRoutes } from './routes/host-lifecycle.js';
-import { registerShortNameRoutes } from './routes/short-names.js';
+import { registerChannelRoutes } from './routes/community/channels.js';
+import { registerEntryRoutes } from './routes/community/entries.js';
+import { registerEventRoutes } from './routes/community/events.js';
+import { registerInviteRoutes } from './routes/community/invites.js';
+import { registerMemberRoutes } from './routes/community/members.js';
+import { registerPairingRoutes } from './routes/community/pairings.js';
+import { registerRedactionRoutes } from './routes/community/redactions.js';
+import { registerRemovalRoutes } from './routes/community/removals.js';
+import { registerAgentRoutes } from './routes/community/agents.js';
+import { registerAttachmentRoutes } from './routes/community/attachments.js';
+import { registerExportRoutes } from './routes/community/exports.js';
+import { registerHostRoutes } from './routes/host/host.js';
+import { registerMembershipRoutes } from './routes/account/memberships.js';
+import { registerHostLimitRoutes } from './routes/host/host-limits.js';
+import { registerHostLegalHoldRoutes } from './routes/host/host-legal-hold.js';
+import { registerHostErasureJournalRoutes } from './routes/host/host-erasure-journal.js';
+import { registerHostLifecycleRoutes } from './routes/host/host-lifecycle.js';
+import { registerShortNameRoutes } from './routes/host/short-names.js';
 import { callerAddress } from './caller-address.js';
-import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
-import { registerHostKeyRoutes } from './routes/host-keys.js';
-import { registerHostTakedownRoutes } from './routes/host-takedowns.js';
-import { registerTakedownNoticeRoutes } from './routes/takedown-notices.js';
-import { registerHostLinkRoutes } from './routes/host-links.js';
+import { registerOwnerClaimRoutes } from './routes/host/owner-claims.js';
+import { registerHostKeyRoutes } from './routes/host/host-keys.js';
+import { registerHostTakedownRoutes } from './routes/host/host-takedowns.js';
+import { registerHostOwnerReplacementRoutes } from './routes/host/host-owner-replacements.js';
+import { registerOwnerReplacementLinkRoutes } from './routes/account/owner-replacements.js';
+import { registerOwnerReplacementRoutes } from './routes/community/owner-replacement.js';
+import type { NoticeComposers } from './mail/worker.js';
+import { registerTakedownNoticeRoutes } from './routes/community/takedown-notices.js';
+import { registerHostLinkRoutes } from './routes/host/host-links.js';
 import {
   forgetAgeConfirmation,
   registerMinimumAgeRoutes,
   requireAgeConfirmation,
 } from './sign-up/minimum-age.js';
-import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
+import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/host/imports.js';
 import { IMPORT_PART_UPLOAD_PATH } from './imports/part-routes.js';
 import { UploadSlots } from './imports/upload.js';
-import { registerHistoryOriginRoute } from './routes/history-origin.js';
+import { registerHistoryOriginRoute } from './routes/community/history-origin.js';
 import { createHostAuthority } from './host/authority.js';
-import { registerAdministrationRoutes } from './routes/administration.js';
-import { registerAccountErasureRoutes, registerOwnerErasureRoutes } from './routes/erasures.js';
+import { registerAdministrationRoutes } from './routes/community/administration.js';
+import {
+  registerAccountErasureRoutes,
+  registerOwnerErasureRoutes,
+} from './routes/account/erasures.js';
 import { createBlobStore, type BlobStore } from './storage/index.js';
 import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
 import { registerCommunityTestControlRoutes } from './routes/test-control.js';
 import { resolveCommunityContext } from './tenant-context.js';
 import { createPasswordConfirmation } from './password-confirmation.js';
-import { accountHasPassword, registerAccountPasswordRoutes } from './routes/account-password.js';
+import {
+  accountHasPassword,
+  registerAccountPasswordRoutes,
+} from './routes/account/account-password.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -74,9 +85,23 @@ export function createCommunityApp({
   pool,
   hooks,
   blobStore = createBlobStore(config),
+  noticeComposers = {},
+  ownerReplacementOpen = false,
 }: {
   config: CommunityConfig;
   pool: Pool;
+  /**
+   * The mail composers the running mail worker has, by notice kind. A feature that must reach a
+   * person by mail refuses to start while its notice cannot be composed, so a queued notice is
+   * never one the worker would fail as unsupported. `main.ts` passes the worker's own set.
+   */
+  noticeComposers?: NoticeComposers;
+  /**
+   * Whether a host may start an owner replacement, or send its claim link again. Off until the
+   * owner can answer the notice end to end; `main.ts` holds the one switch and says what turns
+   * it on. With it off those two routes refuse as if the notice could not be sent.
+   */
+  ownerReplacementOpen?: boolean;
   hooks?: {
     afterSnapshotWatermark?: () => Promise<void>;
     afterEntryAttachmentLookup?: () => Promise<void>;
@@ -372,6 +397,7 @@ export function createCommunityApp({
   registerHostLimitRoutes(hostApi, { pool, config, authority, now });
   registerHostLifecycleRoutes(hostApi, { pool, config, blobStore, authority, now });
   registerHostLegalHoldRoutes(hostApi, { pool, authority, now });
+  registerHostErasureJournalRoutes(hostApi, { pool, config, authority });
   registerShortNameRoutes(hostApi, {
     pool,
     config,
@@ -406,6 +432,25 @@ export function createCommunityApp({
       afterSnapshot: hooks?.afterTakedownSnapshot,
       afterReverseLock: hooks?.afterTakedownReverseLock,
     },
+  });
+  registerHostOwnerReplacementRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword,
+    // Mail is set up and the worker can compose this kind of notice.
+    canSendNotice: (kind) =>
+      ownerReplacementOpen && config.mail !== null && noticeComposers[kind] !== undefined,
+    hasPassword: (userId) => accountHasPassword(pool, userId),
+  });
+  registerOwnerReplacementLinkRoutes(hostApi, {
+    pool,
+    auth,
+    config,
+    now,
+    limitAttempt: (c) =>
+      limitAttempts(`owner-replacement:${peer(c)}`, config.limits.bootstrapAttemptsPerMinute),
   });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
@@ -475,7 +520,7 @@ export function createCommunityApp({
       );
     },
   });
-  registerMemberRoutes(communityApi, { pool, auth, confirmPassword });
+  registerMemberRoutes(communityApi, { pool, auth, confirmPassword, now });
   registerPairingRoutes(communityApi, {
     pool,
     auth,
@@ -498,6 +543,12 @@ export function createCommunityApp({
   registerOwnerErasureRoutes(communityApi, { pool, auth });
   registerHistoryOriginRoute(communityApi, { pool, auth });
   registerTakedownNoticeRoutes(communityApi, { pool, auth });
+  registerOwnerReplacementRoutes(communityApi, {
+    pool,
+    auth,
+    now,
+    objectionCooldownDays: config.ownerReplacement.objectionCooldownDays,
+  });
   app.route('/api/v1', communityApi);
   app.route('/api/v1/communities/:communityId', communityApi);
   return app;

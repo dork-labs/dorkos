@@ -10,21 +10,24 @@ import { createSignalHandler, createStop } from './shutdown.js';
 import { reservedBoundShortNames, shortNameHoldKey } from './host/short-names.js';
 import { registerShortNamePages } from './short-names/pages.js';
 import { createBlobStore } from './storage/index.js';
-import { sweepExpiredAttachments } from './routes/attachments.js';
+import { sweepExpiredAttachments } from './routes/community/attachments.js';
 import { sweepExpiredExports } from './exports/sweep.js';
 import { startExportWorker } from './exports/worker.js';
-import { sweepExpiredAdmissions } from './routes/invites.js';
+import { sweepExpiredAdmissions } from './routes/community/invites.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
 import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';
-import { sweepExpiredPairings } from './routes/pairings.js';
+import { pruneErasureJournal } from './erasure/journal.js';
+import { sweepExpiredPairings } from './routes/community/pairings.js';
 import { IMPORT_POLL_MS, pruneImports, sweepImports } from './imports/worker.js';
 import { IMPORT_UPLOAD_LEASE_MS } from './imports/store.js';
 import { sweepImportTempDirs } from './imports/upload.js';
 import { configureServerTimeouts } from './http.js';
 import { createEvidenceSink, tidyEvidenceSink } from './takedown/evidence/sink.js';
 import { sweepTakedownEvidence } from './takedown/worker.js';
-import { startMailDelivery } from './mail/worker.js';
+import { startMailDelivery, type NoticeComposers } from './mail/worker.js';
+import { ownerReplacementComposers } from './owner-replacement/notices.js';
+import { startOwnerReplacementTimeline } from './owner-replacement/worker.js';
 import { pruneNoticeOutbox } from './mail/outbox.js';
 
 const config = parseConfig(process.env);
@@ -44,7 +47,21 @@ pool.on('error', (error: Error & { code?: string }) => {
 const blobStore = createBlobStore(config);
 const evidenceSink = createEvidenceSink(config.evidence);
 await tidyEvidenceSink(evidenceSink);
-const app = createCommunityApp({ config, pool, blobStore });
+// The mail worker's composers, by notice kind. The same set goes to the app, which refuses to
+// start anything whose notice the worker could not compose.
+const noticeComposers: NoticeComposers = { ...ownerReplacementComposers(config) };
+// Whether a host may start an owner replacement. It stays off until every way the owner is told
+// works. The server's routes and the /keep-ownership and /owner-replacement pages are in place;
+// it turns on once the owner is also told on their DorkOS connection (task 3.2). Until then the
+// worker still sends the notices of any request already open, and every new request is refused.
+const ownerReplacementOpen = false;
+const app = createCommunityApp({
+  config,
+  pool,
+  blobStore,
+  noticeComposers,
+  ownerReplacementOpen,
+});
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 app.use('/assets/*', serveStatic({ root: staticRoot }));
 app.get('/', serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) }));
@@ -62,6 +79,16 @@ app.get(
 );
 app.get(
   '/pairing',
+  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+);
+// The owner's object-only link from the email, and the new owner's claim link. Both carry their
+// token after `#`, so it never reaches this server's logs.
+app.get(
+  '/keep-ownership',
+  serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+);
+app.get(
+  '/owner-replacement',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );
 app.get(
@@ -157,6 +184,12 @@ const cleanup = setInterval(() => {
       error instanceof Error ? error.name : 'unknown'
     );
   });
+  void pruneErasureJournal(pool, config.erasureJournalRetentionDays).catch((error: unknown) => {
+    console.error(
+      'Community erasure journal cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
   void pruneErasureRequests(pool).catch((error: unknown) => {
     console.error(
       'Community erasure record cleanup unavailable',
@@ -240,14 +273,24 @@ const takedownEvidence = setInterval(() => {
     });
 }, 15_000);
 takedownEvidence.unref();
-// Off unless the host configured SMTP. No feature queues mail yet, so there is nothing to
-// compose; each one that does adds its messages here.
-const mail = startMailDelivery({ config, pool, composers: {} });
+// Off unless the host configured SMTP. Each feature that queues mail adds its composers to
+// `noticeComposers` above.
+const mail = startMailDelivery({ config, pool, composers: noticeComposers });
+// Moves owner replacements through their notice, wait, reminder, claim window, and expiry.
+const ownerReplacements = startOwnerReplacementTimeline({ pool, config });
 const onSignal = createSignalHandler(
   createStop({
     server,
     pool,
-    timers: [cleanup, erasures, exports, imports, takedownEvidence, ...(mail ? [mail] : [])],
+    timers: [
+      cleanup,
+      erasures,
+      exports,
+      imports,
+      takedownEvidence,
+      ownerReplacements,
+      ...(mail ? [mail] : []),
+    ],
   })
 );
 process.on('SIGINT', onSignal);

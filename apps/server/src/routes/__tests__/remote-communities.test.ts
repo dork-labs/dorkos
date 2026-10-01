@@ -238,6 +238,9 @@ vi.mock('../../services/communities/remote/remote-community-adapter.js', async (
     CommunityDeletedError: class CommunityDeletedError extends CommunityRoomNotFoundError {},
     isCommunityDeleted: (error: { status?: number; remoteCode?: string }) =>
       error?.status === 410 && error?.remoteCode === 'COMMUNITY_DELETED',
+    CommunityTakenDownError: class CommunityTakenDownError extends CommunityRoomNotFoundError {},
+    isCommunityTakenDown: (error: { status?: number; remoteCode?: string }) =>
+      error?.status === 423 && error?.remoteCode === 'COMMUNITY_TAKEN_DOWN',
     RemoteRedactionFeedUnsupportedError: class RemoteRedactionFeedUnsupportedError extends Error {},
     remoteSequenceOf: () => 1,
     remoteAuthorOf: (entry: { id: string }) =>
@@ -983,6 +986,44 @@ describe('qualified remote community writes and live projections', () => {
       expect(response.body).toEqual({ error: 'Community unavailable.' });
     }
   });
+
+  // DOR-2575. Purpose: once a community is recorded deleted or taken down it has no capabilities
+  // left, and a post or upload to it is answered with the gone refusal, not "not allowed", since
+  // the app returns a person's refused message to their draft only on the gone codes. It fails
+  // if a gone community answers 403 COMMUNITY_ACCESS_DENIED, or if either request reaches it.
+  it.each([
+    ['deleted', 410, 'COMMUNITY_DELETED', 'This community was deleted.'],
+    ['taken_down', 423, 'COMMUNITY_TAKEN_DOWN', 'The host took this community down.'],
+  ] as const)(
+    'answers a post and an upload to a %s community with its gone refusal',
+    async (lifecycle, status, code, error) => {
+      const none = { read: false, post: false, enrollAgent: false, stream: false };
+      const gone = connectionWithAccess({
+        state: 'verified',
+        effective: none,
+        lastKnown: { lifecycle, capabilities: none, verifiedAt: '2026-09-29T00:00:00.000Z' },
+      });
+      fixture.connectionStatus.mockResolvedValueOnce(gone).mockResolvedValueOnce(gone);
+      const post = await request(testServer)
+        .post(`/api/communities/${fixture.ref}/rooms/room-a/entries`)
+        .send({ text: 'hello', idempotencyKey: `gone-post-${lifecycle}` });
+      const upload = await request(testServer)
+        .post(`/api/communities/${fixture.ref}/rooms/room-a/attachments`)
+        .set('content-type', 'application/octet-stream')
+        .set('x-file-name', 'notes.txt')
+        .set('x-file-content-type', 'text/plain')
+        .set('x-file-size', '1')
+        .set('idempotency-key', `gone-upload-${lifecycle}`)
+        .send(Buffer.from('x'));
+
+      for (const response of [post, upload]) {
+        expect(response.status).toBe(status);
+        expect(response.body).toEqual({ code, error });
+      }
+      expect(fixture.adapter.postEntry).not.toHaveBeenCalled();
+      expect(fixture.adapter.uploadAttachment).not.toHaveBeenCalled();
+    }
+  );
 
   it('passes a read-only community through with its own reason', async () => {
     fixture.adapter.postEntry.mockRejectedValueOnce(

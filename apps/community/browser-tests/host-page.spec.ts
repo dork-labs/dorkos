@@ -142,6 +142,15 @@ test('a host operator creates a key, sees it once, replaces it, and revokes it',
     await page.goto(`${baseUrl}/host`);
     const section = page.getByRole('region', { name: 'API keys' });
     await expect(section.getByText('No keys yet.')).toBeVisible();
+    // The ownership permission says only what the server does now.
+    await expect(
+      section.getByText(
+        'This server refuses every request for now, until owners can answer them.',
+        {
+          exact: false,
+        }
+      )
+    ).toBeVisible();
     await expect(section.getByLabel('Key name')).toHaveAttribute('data-slot', 'input');
     await expect(section.getByRole('button', { name: 'Create key' })).toHaveAttribute(
       'type',

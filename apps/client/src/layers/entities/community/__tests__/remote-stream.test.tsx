@@ -282,6 +282,47 @@ describe('remote room stream lifecycle', () => {
 
   // DOR-2544. Purpose: the feed position from the snapshot and each revision is sent back on a
   // resume, so a message deleted or erased while disconnected still arrives.
+  // DOR-2575. Purpose: the local server answers a stream to a deleted community 410
+  // COMMUNITY_DELETED and to a taken-down one 423 COMMUNITY_TAKEN_DOWN. Either ends the room
+  // (no retry, which would ask the Community again every time) and reads the connection list
+  // again, so the gone panel shows now. It fails if the room goes offline and retries, or the
+  // connection list is left to the next poll.
+  it.each([
+    ['COMMUNITY_DELETED', 410, 'This community was deleted.'],
+    ['COMMUNITY_TAKEN_DOWN', 423, 'The host took this community down.'],
+  ] as const)('ends the room on %s and reads the connections again', async (code, status, text) => {
+    const { streams, subscribe, wrapper, client, authority } = setup();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    const hook = renderHook(() => useRemoteCommunityStream('a', 'same'), { wrapper });
+    act(() => streams[0].emit(snapshot()));
+    act(() => streams[0].reject(Object.assign(new Error(text), { status, code })));
+    await waitFor(() => expect(hook.result.current.status).toBe('removed'));
+    expect(hook.result.current.entries).toEqual([]);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: communityKeys.connections(authority) });
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    expect(subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  // Purpose: a stale cursor (410 COMMUNITY_CURSOR_STALE) is not a gone community: the room
+  // retries from a fresh snapshot, with no `since`. It fails if it ends the room or resumes from
+  // the stale cursor.
+  it('restarts from a fresh snapshot on a stale cursor', async () => {
+    const { streams, subscribe, wrapper } = setup();
+    const hook = renderHook(() => useRemoteCommunityStream('a', 'same'), { wrapper });
+    act(() => streams[0].emit(snapshot()));
+    act(() =>
+      streams[0].reject(
+        Object.assign(new Error('This channel changed since it was loaded. Refresh to catch up.'), {
+          status: 410,
+          code: 'COMMUNITY_CURSOR_STALE',
+        })
+      )
+    );
+    await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2), { timeout: 3_000 });
+    expect(subscribe.mock.calls[1]![3]).toMatchObject({ since: undefined });
+    expect(hook.result.current.status).not.toBe('removed');
+  });
+
   it('sends the last feed position back when it resumes', async () => {
     const { streams, subscribe, wrapper } = setup();
     renderHook(() => useRemoteCommunityStream('a', 'same'), { wrapper });

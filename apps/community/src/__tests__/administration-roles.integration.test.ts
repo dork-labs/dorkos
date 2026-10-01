@@ -27,18 +27,20 @@ import { createCommunityApp } from '../app.js';
 import { createCommunityAuth } from '../auth.js';
 import { parseConfig, type CommunityConfig } from '../config.js';
 import { migrate } from '../migrate.js';
-import { registerAdministrationRoutes } from '../routes/administration.js';
-import { registerHostRoutes } from '../routes/host.js';
-import { registerMembershipRoutes } from '../routes/memberships.js';
-import { registerHostLimitRoutes } from '../routes/host-limits.js';
-import { registerHostLegalHoldRoutes } from '../routes/host-legal-hold.js';
-import { registerHostLifecycleRoutes } from '../routes/host-lifecycle.js';
-import { registerShortNameRoutes } from '../routes/short-names.js';
-import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
-import { registerHostKeyRoutes } from '../routes/host-keys.js';
-import { registerImportRoutes } from '../routes/imports.js';
+import { registerAdministrationRoutes } from '../routes/community/administration.js';
+import { registerHostRoutes } from '../routes/host/host.js';
+import { registerMembershipRoutes } from '../routes/account/memberships.js';
+import { registerHostLimitRoutes } from '../routes/host/host-limits.js';
+import { registerHostLegalHoldRoutes } from '../routes/host/host-legal-hold.js';
+import { registerHostErasureJournalRoutes } from '../routes/host/host-erasure-journal.js';
+import { registerHostLifecycleRoutes } from '../routes/host/host-lifecycle.js';
+import { registerShortNameRoutes } from '../routes/host/short-names.js';
+import { registerOwnerClaimRoutes } from '../routes/host/owner-claims.js';
+import { registerHostKeyRoutes } from '../routes/host/host-keys.js';
+import { registerImportRoutes } from '../routes/host/imports.js';
 import { UploadSlots } from '../imports/upload.js';
-import { registerHostTakedownRoutes } from '../routes/host-takedowns.js';
+import { registerHostTakedownRoutes } from '../routes/host/host-takedowns.js';
+import { registerHostOwnerReplacementRoutes } from '../routes/host/host-owner-replacements.js';
 import { createHostAuthority } from '../host/authority.js';
 import { issueHostApiKey } from '../host/key-store.js';
 import { hashSecret, randomToken } from '../security.js';
@@ -664,6 +666,36 @@ async function closeLeavingInvitations(): Promise<void> {
   await pool.query("UPDATE communities SET admission_policy='closed' WHERE id=$1", [alphaId]);
 }
 
+/**
+ * Give A exactly one open owner replacement, withdrawing any earlier one, and return its id. It is
+ * written directly: this host has no mail, so the request route refuses to open one.
+ */
+async function openReplacement(): Promise<{ id: string }> {
+  await pool.query(
+    `UPDATE owner_replacements SET state='withdrawn',withdrawn_cause='cancelled',ended_at=now(),
+       claim_token_hash=NULL
+     WHERE community_id=$1 AND state IN ('notifying','waiting','claimable')`,
+    [alphaId]
+  );
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO owner_replacements(id,community_id,reason,claimant_named,claim_token_hash,
+       requested_by_host_actor,idempotency_key,payload_hash,after_objection,after_withdrawal,
+       prior_owner_member_id,requested_at)
+     VALUES($1,$2,'other',false,$3,$4,$7,$5,false,false,$6,now())`,
+    [
+      id,
+      alphaId,
+      hashSecret(randomToken()),
+      `person:${userIds.hostOnly}`,
+      createHash('sha256').update(id).digest('hex'),
+      ownerMemberId,
+      `matrix-${id}`,
+    ]
+  );
+  return { id };
+}
+
 const actions: Action<unknown>[] = [
   // ── Host plane ─────────────────────────────────────────────────────────────
   define({
@@ -855,6 +887,13 @@ const actions: Action<unknown>[] = [
     status: 200,
     call: () => ({ method: 'GET', path: '/api/v1/host/takedowns' }),
   }),
+  define({
+    rule: 'Read the erasure journal: host operator yes, community roles no',
+    route: 'GET /host/erasure-journal',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: '/api/v1/host/erasure-journal' }),
+  }),
   define<{ id: string }>({
     rule: 'Read one takedown: host operator yes, community roles no',
     route: 'GET /host/takedowns/:takedownId',
@@ -904,6 +943,67 @@ const actions: Action<unknown>[] = [
       ]);
       expect(row.rows).toEqual([{ evidence_state: 'not_configured' }]);
     },
+  }),
+  define({
+    rule: 'Ask to replace an owner: host operator with their password; no mail here, so refused',
+    route: 'POST /host/communities/:id/owner-replacements',
+    allowed: HOST_ROLES,
+    status: 409,
+    call: (_prepared, secret) => ({
+      method: 'POST',
+      path: `/api/v1/host/communities/${alphaId}/owner-replacements`,
+      body: {
+        idempotencyKey: randomUUID(),
+        lifecycleVersion: 1,
+        reason: 'owner_unreachable',
+        reference: null,
+        claimant: { oidcSubject: null },
+        password: secret,
+      },
+    }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8'))).toMatchObject({
+        code: 'NOTICE_DELIVERY_UNAVAILABLE',
+      });
+    },
+  }),
+  define({
+    rule: 'List owner replacements: host operator yes, community roles no',
+    route: 'GET /host/communities/:id/owner-replacements',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({
+      method: 'GET',
+      path: `/api/v1/host/communities/${alphaId}/owner-replacements`,
+    }),
+  }),
+  define<{ id: string }>({
+    rule: 'Cancel an owner replacement: host operator yes, community roles no',
+    route: 'POST /host/communities/:id/owner-replacements/:replacementId/cancel',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: () => openReplacement(),
+    call: ({ id }) => ({
+      method: 'POST',
+      path: `/api/v1/host/communities/${alphaId}/owner-replacements/${id}/cancel`,
+      body: {},
+    }),
+    effect: async (_body, _role, { id }) => {
+      const row = await pool.query('SELECT state FROM owner_replacements WHERE id=$1', [id]);
+      expect(row.rows).toEqual([{ state: 'withdrawn' }]);
+    },
+  }),
+  define<{ id: string }>({
+    rule: 'Reissue an owner replacement claim: host operator only; no mail here, so refused',
+    route: 'POST /host/communities/:id/owner-replacements/:replacementId/claim-token',
+    allowed: HOST_ROLES,
+    status: 409,
+    prepare: () => openReplacement(),
+    call: ({ id }) => ({
+      method: 'POST',
+      path: `/api/v1/host/communities/${alphaId}/owner-replacements/${id}/claim-token`,
+      body: {},
+    }),
   }),
   define<{ version: number }>({
     rule: 'Set community limits: host operator yes, community roles no',
@@ -1623,6 +1723,42 @@ const actions: Action<unknown>[] = [
     },
   }),
 
+  // ── Owner replacement ──────────────────────────────────────────────────────
+  define<{ id: string }>({
+    rule: "Read the owner-replacement notice: A's members; the owner and admins see an open request",
+    route: 'GET /owner-replacement',
+    allowed: MEMBERS_OF_A,
+    status: 200,
+    // An agent's credential reads nothing here, and says so rather than asking it to sign in.
+    refused: { agent: 403 },
+    prepare: () => openReplacement(),
+    call: () => ({ method: 'GET', path: scoped('/owner-replacement') }),
+    effect: async (body, role, { id }) => {
+      const { open } = JSON.parse(body.toString('utf8'));
+      if (role === 'owner') expect(open).toMatchObject({ role: 'owner', replacementId: id });
+      else if (role === 'admin') expect(open).toMatchObject({ role: 'admin', replacementId: id });
+      else expect(open).toBeNull();
+    },
+  }),
+  define<{ id: string }>({
+    rule: 'Keep ownership against a replacement request: owner only, from their own browser',
+    route: 'POST /owner-replacement/objection',
+    allowed: OWNER,
+    status: 204,
+    // Any bearer is refused before membership is read.
+    refused: { agent: 403 },
+    prepare: () => openReplacement(),
+    call: ({ id }) => ({
+      method: 'POST',
+      path: scoped('/owner-replacement/objection'),
+      body: { replacementId: id },
+    }),
+    effect: async (_body, _role, { id }) => {
+      const row = await pool.query('SELECT state FROM owner_replacements WHERE id=$1', [id]);
+      expect(row.rows).toEqual([{ state: 'objected' }]);
+    },
+  }),
+
   // ── Owner lifecycle ────────────────────────────────────────────────────────
   define<{ version: number }>({
     rule: 'Transfer ownership: owner only, with reauthentication',
@@ -2193,6 +2329,14 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
     'completed self-erasures only; member-erasure.integration.test.ts covers who may read it',
   'GET /takedowns':
     "the host's reasons: moderators see every one told, others their own; host-takedown.integration.test.ts",
+  'POST /owner-replacements/object-preflight':
+    'the emailed one-time token is the authority, whoever sends it; owner-replacement-objection.integration.test.ts',
+  'POST /owner-replacements/object':
+    'the emailed one-time token is the authority, whoever sends it; owner-replacement-objection.integration.test.ts',
+  'POST /owner-replacements/preflight':
+    'the emailed one-time claim token is the authority; owner-replacement-claim.integration.test.ts',
+  'POST /owner-replacements/claim':
+    'the claim cookie plus the account the host named; owner-replacement-claim.integration.test.ts',
 };
 
 function refusalStatus(action: Action<unknown>, role: Role): number {
@@ -2369,6 +2513,7 @@ it('classifies every registered route, and puts every host and settings route in
   registerHostLimitRoutes(modules, { pool, config, authority, now });
   registerHostLifecycleRoutes(modules, { pool, config, blobStore, authority, now });
   registerHostLegalHoldRoutes(modules, { pool, authority, now });
+  registerHostErasureJournalRoutes(modules, { pool, config, authority });
   registerShortNameRoutes(modules, { pool, config, authority, now, limitLookup: () => undefined });
   registerHostKeyRoutes(modules, { pool, auth, authority, now, confirmPassword: unused });
   registerImportRoutes(modules, {
@@ -2383,6 +2528,15 @@ it('classifies every registered route, and puts every host and settings route in
     uploadIdleMs: 1_000,
   });
   registerHostTakedownRoutes(modules, { pool, config, authority, now, confirmPassword: unused });
+  registerHostOwnerReplacementRoutes(modules, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword: unused,
+    canSendNotice: () => false,
+    hasPassword: async () => true,
+  });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [
     ...new Set(modules.routes.map((route) => `${route.method} ${route.path}`)),

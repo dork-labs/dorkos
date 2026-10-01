@@ -58,7 +58,7 @@ export function ChipPile({ chips, expanded, controls, onExpand }: ChipPileProps)
       onClick={onExpand}
       className={cn(
         'flex shrink-0 items-center gap-1.5 rounded-full py-0.5 pr-1.5 pl-0.5',
-        'hover:bg-accent focus-visible:ring-ring/50 outline-none focus-visible:ring-2'
+        'hover:bg-accent focus-visible:ring-ring outline-none focus-visible:ring-2'
       )}
     >
       <motion.span

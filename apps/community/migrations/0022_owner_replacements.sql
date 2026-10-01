@@ -7,8 +7,10 @@
 -- that starts one. It adds no audit actor kind: the host `system` actor (0019) and the tenant
 -- `host` actor (0020) already exist.
 --
--- Backout: cancel every open replacement first, then revert the code. Code that predates this
--- migration ignores both tables and never issues the new scope. This migration stays applied.
+-- Backout: cancel every open replacement and revoke every key holding communities:ownership
+-- first, then revert the code. Code that predates this migration ignores both tables and never
+-- issues the new scope, but it cannot list keys while one holds a scope it does not know. This
+-- migration stays applied.
 
 -- The host key scope that requests, lists, cancels, and reissues a replacement. No other scope
 -- implies it, as none implies communities:legal_hold. One more scope than before, so the

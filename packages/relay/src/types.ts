@@ -508,6 +508,13 @@ export interface TraceStoreLike {
       [key: string]: unknown;
     }
   ): void;
+  /**
+   * Delete up to `limit` delivery spans sent before `before` (Unix ms), returning how many went.
+   * Called by the Relay sweep; optional, so a store without retention is simply not pruned.
+   */
+  pruneDeliverySpans?(before: number, limit: number): number;
+  /** Delete each adapter's lifecycle events beyond the most its event log can show. */
+  capAdapterEvents?(): number;
 }
 
 /**

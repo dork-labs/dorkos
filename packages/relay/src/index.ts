@@ -64,6 +64,8 @@ export type { TurnCeilingLimits, TurnCeilingDecision, TurnCeilingScope } from '.
 export { InboundTurnBudgets } from './inbound-turn-budgets.js';
 export { CircuitBreakerManager, DEFAULT_CB_CONFIG } from './circuit-breaker.js';
 export { checkBackpressure, DEFAULT_BP_CONFIG } from './backpressure.js';
+// The trace-retention batch size, shared with the server's per-connection delete (DOR-2604).
+export { TRACE_PRUNE_BATCH } from './relay-gc.js';
 // Exported for the drift pin alone: `apps/server` can see both this mirror and
 // the canonical `isContentEvent` it copies, and pins them against each other
 // (`services/relay/__tests__/relay-content-event-parity.test.ts`).

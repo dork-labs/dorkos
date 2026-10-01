@@ -5,7 +5,7 @@ import type {
   ConnectorAppActions,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorReconciliationCandidate } from '@dorkos/shared/connector-schemas';
-import { useConnectorAppActions } from '@/layers/entities/connectors';
+import { cloudFailure, useConnectorAppActions } from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
 import {
   Button,
@@ -27,6 +27,7 @@ import {
   type ActionKind,
 } from '../lib/app-actions';
 import { LEVEL_LABELS } from './access/access-labels';
+import { RelinkButton } from './LoadFailedState';
 
 type Completeness = Extract<ConnectorAppActions, { status: 'listed' }>['completeness'];
 
@@ -95,9 +96,12 @@ export function AppActions({ toolkit, appName, providerInstanceId, grant }: AppA
   } else if (actions.isPending) {
     body = <Loading />;
   } else if (actions.isError) {
+    const failure = cloudFailure(actions.error);
     body = (
       <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-sm">
-        Couldn’t load what {appName} offers agents.
+        {failure
+          ? `${failure.title}. ${failure.description}`
+          : `Couldn’t load what ${appName} offers agents.`}
         <Button
           variant="link"
           size="xs"
@@ -107,6 +111,9 @@ export function AppActions({ toolkit, appName, providerInstanceId, grant }: AppA
         >
           Try again
         </Button>
+        {failure?.action === 'relink' && (
+          <RelinkButton variant="link" size="xs" className="h-auto p-0" />
+        )}
       </p>
     );
   } else if (!listed) {

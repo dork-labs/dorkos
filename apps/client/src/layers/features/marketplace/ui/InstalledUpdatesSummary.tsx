@@ -94,7 +94,7 @@ export function InstalledUpdatesSummary({
         tabIndex={-1}
         role="status"
         aria-live="polite"
-        className="focus-visible:ring-ring/50 min-w-0 rounded-sm text-sm outline-none focus-visible:ring-2"
+        className="focus-visible:ring-ring min-w-0 rounded-sm text-sm outline-none focus-visible:ring-2"
       >
         {isChecking ? (
           <span className="text-muted-foreground flex items-center gap-2">

@@ -1,10 +1,13 @@
 import { createHash, createHmac } from 'node:crypto';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { logger } from '../../../../lib/logger.js';
 import {
   DEVICE_GRANT_TYPE,
   INSTANCE_CLIENT_ID,
   buildInstanceDescriptor,
   linkProofForKey,
+  MANAGED_ERROR_BODY_LIMIT_BYTES,
+  readBoundedText,
   executeManagedConnectorOperation,
   pollForToken,
   requestManagedConnectorExecutionReceipt,
@@ -439,18 +442,33 @@ describe('managed connector authority commands', () => {
           async () =>
             new Response(
               JSON.stringify({
-                code: 'permission_upgrade_required',
-                private: 'SECRET_HOSTED_ERROR',
+                error: 'permission_upgrade_required',
+                reason: 'SECRET_HOSTED_ERROR',
               }),
               { status: 403 }
             )
         ),
-      })
-    ).rejects.toMatchObject({
+      }).catch((error: unknown) => error)
+    ).resolves.toMatchObject({
       code: 'permission_upgrade_required',
+      cloudCode: 'permission_upgrade_required',
+      reason: 'SECRET_HOSTED_ERROR',
       message:
         'Your DorkOS account link needs updating. Link this computer again in Settings › Access.',
     });
+    const refused = await submitManagedConnectorAuthorityCommand({
+      baseUrl: BASE,
+      accessToken: 'old-key',
+      command,
+      fetchImpl: vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ error: 'permission_upgrade_required', reason: 'SECRET_HOSTED_ERROR' }),
+            { status: 403 }
+          )
+      ),
+    }).catch((error: Error) => error);
+    expect((refused as Error).message).not.toContain('SECRET_HOSTED_ERROR');
     await expect(
       submitManagedConnectorAuthorityCommand({
         baseUrl: BASE,
@@ -743,5 +761,215 @@ describe('catalog authentication representation', () => {
       });
     }
     expect(String(fetchImpl.mock.calls[1][0])).toContain('cursor=page2');
+  });
+});
+
+describe('managed cloud refusals', () => {
+  const catalogRequest = { version: 1, limit: 10 } as const;
+  const catalog = (fetchImpl: ReturnType<typeof vi.fn>) =>
+    requestManagedConnectorCatalog({
+      baseUrl: BASE,
+      accessToken: 'dork_inst_secret',
+      request: catalogRequest,
+      fetchImpl,
+      signal: new AbortController().signal,
+    }).catch((error: unknown) => error);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reads the cloud error body on every status, not only 403', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    await expect(
+      catalog(
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({ error: 'managed_connectors_unavailable', reason: 'toolkit down' }),
+              { status: 503 }
+            )
+        )
+      )
+    ).resolves.toMatchObject({
+      code: 'unavailable',
+      status: 503,
+      cloudCode: 'managed_connectors_unavailable',
+      reason: 'toolkit down',
+      method: 'GET',
+      path: '/api/instances/connectors/catalog',
+    });
+    await expect(
+      catalog(vi.fn(async () => new Response('<html>bad gateway</html>', { status: 502 })))
+    ).resolves.toMatchObject({ code: 'unavailable', status: 502, cloudCode: undefined });
+    await expect(
+      catalog(
+        vi.fn(async () => new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 }))
+      )
+    ).resolves.toMatchObject({ code: 'request_failed', status: 403, cloudCode: 'forbidden' });
+    await expect(
+      catalog(
+        vi.fn(
+          async () => new Response(JSON.stringify({ error: 'invalid_request' }), { status: 400 })
+        )
+      )
+    ).resolves.toMatchObject({ code: 'request_failed', status: 400, cloudCode: 'invalid_request' });
+    expect(warn).toHaveBeenCalledTimes(4);
+  });
+
+  it('logs exactly one line per refusal, without the token, query string, or a long reason', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const longReason = 'r'.repeat(900);
+    const error = await catalog(
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'conflict', reason: longReason }), { status: 409 })
+      )
+    );
+    expect(error).toMatchObject({ code: 'conflict', reason: 'r'.repeat(200) });
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [line, context] = warn.mock.calls[0] as [string, Record<string, unknown>];
+    expect(line).toBe('[CloudLink] Managed cloud request refused');
+    expect(context).toMatchObject({
+      kind: 'catalog',
+      code: 'conflict',
+      status: 409,
+      cloudCode: 'conflict',
+      method: 'GET',
+      path: '/api/instances/connectors/catalog',
+    });
+    expect((context.reason as string).length).toBe(200);
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).not.toContain('dork_inst_secret');
+    expect(logged).not.toContain('limit=');
+  });
+
+  it('keeps the cloud code when another field of its body is oversize', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    await expect(
+      catalog(
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({ error: 'permission_upgrade_required', reason: 'r'.repeat(1_500) }),
+              { status: 403 }
+            )
+        )
+      )
+    ).resolves.toMatchObject({
+      code: 'permission_upgrade_required',
+      cloudCode: 'permission_upgrade_required',
+      reason: 'r'.repeat(200),
+    });
+    const longCode = (await catalog(
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'e'.repeat(150), reason: 7 }), { status: 403 })
+      )
+    )) as { code: string; cloudCode: string; reason?: string };
+    expect(longCode.code).toBe('request_failed');
+    expect(longCode.cloudCode).toBe('e'.repeat(100));
+    expect(longCode.reason).toBeUndefined();
+  });
+
+  it('reads at most 16 KiB of a refusal body, however large the body is', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const chunk = new TextEncoder().encode('<html>' + 'x'.repeat(1_018));
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulled += chunk.byteLength;
+          controller.enqueue(chunk);
+          if (pulled >= 4 * 1024 * 1024) controller.close();
+        },
+      },
+      { highWaterMark: 0 }
+    );
+    await expect(
+      catalog(vi.fn(async () => new Response(body, { status: 502 })))
+    ).resolves.toMatchObject({ code: 'unavailable', status: 502, cloudCode: undefined });
+    expect(pulled).toBeLessThanOrEqual(16 * 1024 + chunk.byteLength);
+  });
+
+  it('logs a network failure once for resources and both authority calls', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const offline = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    await expect(catalog(offline)).resolves.toMatchObject({ code: 'network_error' });
+    await expect(
+      submitManagedConnectorAuthorityCommand({
+        baseUrl: BASE,
+        accessToken: 'dork_inst_secret',
+        command: {
+          version: 1,
+          commandId: 'command-a',
+          managedConnectionId: 'managed-a',
+          scopeVersion: 1,
+          kind: 'set_connection_lifecycle',
+          lifecycle: 'paused',
+        },
+        fetchImpl: offline,
+      })
+    ).rejects.toMatchObject({ code: 'network_error' });
+    await expect(
+      readManagedConnectorAuthorityCommand({
+        baseUrl: BASE,
+        accessToken: 'dork_inst_secret',
+        commandId: 'command-a',
+        fetchImpl: offline,
+      })
+    ).rejects.toMatchObject({ code: 'network_error' });
+    expect(warn).toHaveBeenCalledTimes(3);
+    expect(warn.mock.calls.map((call) => (call[1] as { kind: string }).kind)).toEqual([
+      'catalog',
+      'authority_submit',
+      'authority_read',
+    ]);
+  });
+
+  it('logs an unexpected answer with issue paths only, never the values', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    await expect(
+      catalog(
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ version: 1, toolkits: 'SECRET_VALUE' }), { status: 200 })
+        )
+      )
+    ).resolves.toMatchObject({ code: 'invalid_response', status: 200 });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toBe('[CloudLink] Managed cloud answered something unexpected');
+    expect(warn.mock.calls[0][1]).toMatchObject({ kind: 'catalog', status: 200 });
+    expect((warn.mock.calls[0][1] as { issuePaths: string[] }).issuePaths).toContain('toolkits');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('SECRET_VALUE');
+  });
+});
+
+describe('the bounded refusal-body reader', () => {
+  /** A body that serves `chunkBytes`-sized chunks forever and records its cancel. */
+  function endlessBody(chunkBytes: number) {
+    const cancel = vi.fn();
+    const chunk = new Uint8Array(chunkBytes).fill(0x61);
+    const body = new ReadableStream<Uint8Array>(
+      { pull: (controller) => controller.enqueue(chunk), cancel },
+      { highWaterMark: 0 }
+    );
+    return { body, cancel };
+  }
+
+  it('releases the rest of the stream once it has read enough', async () => {
+    const { body, cancel } = endlessBody(1_024);
+    await readBoundedText(new Response(body, { status: 502 }));
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps exactly the limit when a chunk straddles it', async () => {
+    // 1,000 does not divide 16,384, so the seventeenth chunk crosses the limit.
+    const { body } = endlessBody(1_000);
+    const text = await readBoundedText(new Response(body, { status: 502 }));
+    expect(MANAGED_ERROR_BODY_LIMIT_BYTES).toBe(16 * 1024);
+    expect(text).toHaveLength(MANAGED_ERROR_BODY_LIMIT_BYTES);
   });
 });

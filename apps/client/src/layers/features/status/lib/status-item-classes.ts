@@ -17,4 +17,4 @@
  * active-state colour on top via `cn()`.
  */
 export const STATUS_ITEM_TRIGGER_CLASS =
-  'hover:text-foreground inline-flex min-w-0 rounded-sm outline-none transition-colors duration-150 focus-visible:ring-ring/50 focus-visible:ring-[3px]';
+  'hover:text-foreground inline-flex min-w-0 rounded-sm outline-none transition-colors duration-150 focus-visible:ring-ring focus-visible:ring-[3px]';

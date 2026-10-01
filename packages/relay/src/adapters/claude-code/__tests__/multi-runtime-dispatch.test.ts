@@ -781,6 +781,26 @@ describe('the relay adapter picks the runtime a message names', () => {
         expect(codex.sendMessage).toHaveBeenCalledOnce();
       });
 
+      it('logs a failed binding write with the session id as an argument, not in the format', async () => {
+        // The session id is runtime-minted text; inside the format string a
+        // `%s` in it would be read as a directive (CodeQL js/tainted-format-string).
+        bindSessionRuntime.mockRejectedValue(new Error('SQLITE_BUSY'));
+        const warn = vi.fn();
+        deps.logger = { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() };
+        const sticky = stickyAdapter();
+        await sticky.start(mockRelay());
+
+        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
+
+        const call = warn.mock.calls.find(([format]) =>
+          String(format).includes('could not record which runtime owns')
+        );
+        expect(call).toBeDefined();
+        expect(call![0]).not.toContain(SDK_ID);
+        expect(call![0]).toContain('%s');
+        expect(call![1]).toBe(SDK_ID);
+      });
+
       it('records nothing for a subject that names its own runtime', async () => {
         // That id is a session somebody else created and bound — the cockpit,
         // or the chat binding that minted it. A second opinion written from here

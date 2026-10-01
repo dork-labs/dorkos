@@ -1,4 +1,5 @@
 /** Exact-identity cleanup for the separately armed Community release gate. */
+import { tigrisAccessKeyName } from '../src/commands/community-deploy/provenance/tigris-access-key.js';
 
 /** Non-secret identities retained in the launcher's own recovery journal. */
 export interface CommunityLiveGateJournal {
@@ -11,8 +12,12 @@ export interface CommunityLiveGateJournal {
   resources: {
     flyAppId?: string;
     neonProjectId?: string;
+    neonBranchId?: string;
+    neonRoleId?: string;
     tigrisBucketId?: string;
   };
+  /** Values read back from the service when a create step completed. */
+  provenance?: { flyNetwork?: string };
   ownerBootstrapRotated?: boolean;
   secretDigests?: Record<string, string>;
 }
@@ -32,8 +37,21 @@ export interface CommunityLiveGateCleanupReceipt {
   cleaned: readonly string[];
   /** Resources already absent, proved so, which this cleanup did not delete. */
   alreadyGone: readonly string[];
-  /** Resources still present. */
+  /** Resources still present that this cleanup should have removed and did not. */
   retained: readonly string[];
+  /**
+   * The bucket's Tigris access key, which Fly leaves active after it deletes the bucket and which
+   * nothing the gate holds can delete (DOR-2646). An expected leftover, not a failed cleanup, so it
+   * is kept out of `retained`; the operator deletes it by hand.
+   */
+  accessKeyLeftAtTigris: TigrisAccessKeyLeftover;
+}
+
+/** The Tigris access key a deleted bucket left behind, by bucket and usual key name. */
+export interface TigrisAccessKeyLeftover {
+  bucket: string;
+  /** Usually the key's name in Tigris; unconfirmed for a bucket with a custom name. */
+  keyName: string;
 }
 
 /** Provider boundaries needed for one exact journal-identity cleanup. */
@@ -52,7 +70,9 @@ export interface CommunityLiveGateCleanupDependencies {
 export class CommunityLiveGateCleanupError extends Error {
   constructor(
     readonly step: string,
-    readonly retained: readonly string[]
+    readonly retained: readonly string[],
+    /** Set once the bucket is gone: its Tigris access key is left active either way. */
+    readonly accessKeyLeftAtTigris: TigrisAccessKeyLeftover | null = null
   ) {
     super(`Community live cleanup failed (${step}); retained: ${retained.join(', ') || 'unknown'}`);
     this.name = 'CommunityLiveGateCleanupError';
@@ -89,6 +109,7 @@ export async function cleanupCommunityLiveGate(
 ): Promise<CommunityLiveGateCleanupReceipt> {
   const { context, flyAppId, neonProjectId, tigrisBucketId } = required(journal);
   const retained = [flyAppId, neonProjectId, tigrisBucketId];
+  let accessKeyLeftAtTigris: TigrisAccessKeyLeftover | null = null;
   try {
     const fly = exactlyOne(
       await dependencies.readFlyApps(context.flyOrganization),
@@ -139,6 +160,12 @@ export async function cleanupCommunityLiveGate(
       alreadyGone.push(tigrisBucketId);
     }
     retained.splice(retained.indexOf(tigrisBucketId), 1);
+    // Deleting the bucket (here or earlier) never deletes its access key, so from here on every
+    // answer, success or failure, names it.
+    accessKeyLeftAtTigris = {
+      bucket: context.bucketName,
+      keyName: tigrisAccessKeyName(context.bucketName),
+    };
     await dependencies.deleteNeonProject(neon.id);
     retained.splice(retained.indexOf(neonProjectId), 1);
     await dependencies.destroyFlyApp(fly.name);
@@ -147,9 +174,10 @@ export async function cleanupCommunityLiveGate(
       cleaned: [tigrisBucketId, neonProjectId, flyAppId].filter((id) => !alreadyGone.includes(id)),
       alreadyGone,
       retained,
+      accessKeyLeftAtTigris,
     };
   } catch (error) {
     if (error instanceof CommunityLiveGateCleanupError) throw error;
-    throw new CommunityLiveGateCleanupError('provider-operation', retained);
+    throw new CommunityLiveGateCleanupError('provider-operation', retained, accessKeyLeftAtTigris);
   }
 }

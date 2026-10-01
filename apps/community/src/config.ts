@@ -412,6 +412,7 @@ const schema = z.object({
   COMMUNITY_IMPORT_PART_CONCURRENCY: between(1, 8, 64),
   COMMUNITY_IMPORT_MAX_BYTES: between(MIB, 1024 * MIB, 1024 * 1024 * MIB),
   COMMUNITY_IMPORT_UPLOAD_HOURS: between(1, 24, 168),
+  COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS: between(30, 400, 3650),
   COMMUNITY_ERASURE_JOURNAL: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.string().min(1).optional()
@@ -640,6 +641,11 @@ export function parseConfig(env: Record<string, unknown>) {
     },
     /** Where each completed erasure's id-only line is also appended, outside the database. */
     erasureJournal: value.COMMUNITY_ERASURE_JOURNAL,
+    /**
+     * Days an erasure journal row is kept: as long as a backup that could need it can exist.
+     * Hosts set their longest backup or point-in-time-recovery retention plus 30 days.
+     */
+    erasureJournalRetentionDays: value.COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS,
     hostLinks,
     /**
      * The age a person must confirm they have reached before any new account is created, by

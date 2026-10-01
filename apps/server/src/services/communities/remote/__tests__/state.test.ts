@@ -1,10 +1,15 @@
 /** @vitest-environment node */
 import { describe, expect, it } from 'vitest';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
+import { createTestDb } from '@dorkos/test-utils/db';
 import {
   getRemoteCommunityDeliverySnapshot,
+  getRemoteCommunityEnrollmentStore,
   getRemoteCommunityOriginIdempotencyKey,
+  readRemoteInstallationAgents,
+  setRemoteCommunityDb,
   setRemoteCommunityDeliveryProjection,
+  setRemoteCommunityLocalAgentResolver,
 } from '../state.js';
 
 const REF = CommunityRefSchema.parse('remote_owner_a');
@@ -73,5 +78,55 @@ describe('remote community delivery projection', () => {
         },
       ],
     });
+  });
+});
+
+// DOR-2603. Purpose: Disconnect removes exactly the agents this installation added to that
+// Community for that owner. Fails if it would reach an agent from another community or another
+// owner, drops one revoked only here, or loses the name the person knows it by.
+describe('the agents disconnecting removes', () => {
+  it('reads only this owner’s agents on this community, named as this app knows them', () => {
+    const OTHER = CommunityRefSchema.parse('remote_owner_b');
+    setRemoteCommunityDb(createTestDb());
+    setRemoteCommunityLocalAgentResolver((localAgentId) =>
+      localAgentId === 'scout' ? { authorId: 'author-scout', displayName: 'Scout' } : null
+    );
+    const store = getRemoteCommunityEnrollmentStore();
+    const add = (communityRef: typeof REF, localAgentId: string, owner: string) =>
+      store.activate({
+        communityRef,
+        localAgentId,
+        remoteMemberId: `member-${localAgentId}-${owner}-${communityRef}`,
+        ownerAuthorId: owner,
+      });
+    add(REF, 'scout', 'owner-a');
+    add(REF, 'renamed', 'owner-a');
+    add(REF, 'removed', 'owner-a');
+    store.revoke(REF, 'removed', 'owner-a');
+    add(REF, 'echo', 'owner-b');
+    add(OTHER, 'scout', 'owner-a');
+
+    // Revoked here is not removed there: a rejected grant revokes every enrollment locally
+    // without telling the Community, so those come back too, marked inactive.
+    expect(readRemoteInstallationAgents(REF, 'owner-a')).toEqual([
+      {
+        localAgentId: 'scout',
+        remoteMemberId: `member-scout-owner-a-${REF}`,
+        displayName: 'Scout',
+        active: true,
+      },
+      {
+        localAgentId: 'renamed',
+        remoteMemberId: `member-renamed-owner-a-${REF}`,
+        displayName: null,
+        active: true,
+      },
+      {
+        localAgentId: 'removed',
+        remoteMemberId: `member-removed-owner-a-${REF}`,
+        displayName: null,
+        active: false,
+      },
+    ]);
   });
 });

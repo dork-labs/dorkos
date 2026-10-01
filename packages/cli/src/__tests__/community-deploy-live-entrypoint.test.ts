@@ -116,8 +116,31 @@ describe('credentialed live gate entrypoint', () => {
     expect(tigrisRecheck).toBeLessThan(main.indexOf('credential.dispose();', cleanup));
     expect(tigrisRecheck).toBeLessThan(cleanedUp);
     expect(main.slice(afterRead, afterRead + 400)).toContain('tigrisBucketFound,');
+    // DOR-2646: the bucket's Tigris access key outlives the bucket. Its delete steps print on every
+    // path once the bucket is proved gone: the success path records it only after the re-read
+    // (never while the bucket still exists), a cleanup that stopped after the delete records it from
+    // its error, and the failure path prints it before the failure that points back at it.
+    const keyFromCleanup = main.indexOf('accessKeyLeft = cleanup.accessKeyLeftAtTigris;');
+    expect(keyFromCleanup).toBeGreaterThan(main.indexOf('if (tigrisBucketFound) {', cleanup));
+    expect(keyFromCleanup).toBeLessThan(main.indexOf('credential.dispose();', cleanup));
+    expect(main.slice(cleanup, tigrisRecheck)).toMatch(
+      /\.catch\(\(error: unknown\) => \{[^}]*if \(error instanceof CommunityLiveGateCleanupError\) \{\s*accessKeyLeft = error\.accessKeyLeftAtTigris;/u
+    );
+    const failurePath = main.slice(
+      main.indexOf('const explained = await explainCommunityLiveGateFailure(')
+    );
+    expect(failurePath.indexOf('writeAccessKeySteps(process.stderr);')).toBeGreaterThan(0);
+    expect(failurePath.indexOf('writeAccessKeySteps(process.stderr);')).toBeLessThan(
+      failurePath.indexOf('throw withDorkosHostsContacted(')
+    );
+    expect(main).toMatch(/writeAccessKeySteps\(process\.stdout\);/u);
     expect(main).toMatch(
-      /catch \(error\) \{\s*throw await explainCommunityLiveGateFailure\(\s*error,\s*\{ cleanedUp, recoveryCommand \}/u
+      /catch \(error\) \{\s*const explained = await explainCommunityLiveGateFailure\(\s*error,\s*\{ cleanedUp, recoveryCommand \}/u
+    );
+    // DOR-2593: every failure also names the DorkOS hosts the launcher tried, read before the
+    // finally removes the run directory that holds the guard's record.
+    expect(main).toMatch(
+      /throw withDorkosHostsContacted\(\s*explained,\s*await readDorkosHostsContacted\(dorkosHostsRecordPath, null\)/u
     );
     // A launcher that exits with a failure is reported with the code it saved in its journal.
     expect(main).toMatch(/return describeLauncherStop\(JSON\.parse\(journal\) as unknown\);/u);
@@ -177,5 +200,164 @@ describe('credentialed live gate entrypoint', () => {
     expect(guard).toBeGreaterThan(main.indexOf("requireClean('before packing');"));
     expect(guard).toBeLessThan(main.indexOf("['--filter', 'dorkos', 'build']"));
     expect(guard).toBeLessThan(main.indexOf('createCommunityLivePackDirectory('));
+  });
+
+  // The provenance receipt (DOR-2238 phase 2) is only worth anything if it reads the resources
+  // before cleanup deletes them. A real run costs money, so this pins the order in main; the probes
+  // themselves are unit-tested beside them.
+  it('records the provenance receipt before cleanup, with every probe inside the guard', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    // Whitespace-tolerant: the block moved into the held phase's cleanup callback (DOR-2591).
+    const probes = main.search(
+      /provenance = await guardCommunityLiveProvenance\(\(\) =>\s+probeCommunityLiveProvenance\(journal, \{/u
+    );
+    const cleanup = main.indexOf('await cleanupCommunityLiveGate(');
+    expect(probes).toBeGreaterThan(0);
+    expect(probes).toBeLessThan(cleanup);
+    expect(main).toMatch(
+      /\n\s+provenance: \{\s+\.\.\.provenance,\s+removal: buildCommunityLiveRemovalReceipt\(/u
+    );
+    expect(main).toContain("args: ['ssh', 'console', '--app', name, '--command', 'true']");
+    // Every probe call, including the unknown-app name, runs inside the guard's callback.
+    const guarded = main.slice(probes, cleanup);
+    expect(guarded).toContain('unknownAppName: () =>');
+    expect(main.slice(0, probes)).not.toContain('probeCommunityLiveProvenance(');
+    expect(main.slice(0, probes)).not.toContain('unknownAppName');
+    // Nothing in Fly's API reads a private network once its app is gone, so no step claims to.
+    expect(main).not.toContain('NetworkAfterCleanup');
+  });
+
+  // DOR-2606: the removal's own reads run against the real launch, read-only. A real run costs
+  // money, so this pins where main makes them; the reads themselves are unit-tested beside them.
+  it('times each create while the launcher runs, and reads the removal queries around cleanup', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    // The watch starts before the first launcher can write a create intent, and stops once the
+    // resumed launcher has exited; the finally stops it on every other path.
+    const watch = main.indexOf('createWatch = watchCommunityLiveCreates(readLiveJournal);');
+    expect(watch).toBeGreaterThan(0);
+    expect(watch).toBeLessThan(main.indexOf('runLauncherPty({'));
+    expect(main).toMatch(/await resumed;\s+const observedCreates = await createWatch\.stop\(\);/u);
+    expect(main.slice(main.lastIndexOf('} finally {'))).toContain('await createWatch?.stop();');
+    // The before-cleanup reads go through the removal's own probe, guarded, before cleanup.
+    const before = main.indexOf('removalBefore = await guardRemovalReadsBeforeCleanup(');
+    const cleanup = main.indexOf('await cleanupCommunityLiveGate(');
+    expect(before).toBeGreaterThan(
+      main.indexOf('provenance = await guardCommunityLiveProvenance(')
+    );
+    expect(before).toBeLessThan(cleanup);
+    expect(main.slice(before, cleanup)).toContain(
+      "removalProbes('tigris').find(intent, journal as unknown as LaunchJournal)"
+    );
+    // The after-cleanup name reads run only once cleanup has finished, guarded, before the receipt.
+    const after = main.indexOf('const removalAfter = await whileInterruptible(');
+    expect(after).toBeGreaterThan(main.indexOf('cleanedUp = true;'));
+    expect(after).toBeGreaterThan(main.indexOf('const { cleanup, provenance, tigrisBucketFound'));
+    expect(after).toBeLessThan(main.indexOf('await writeFile(\n      receiptPath'));
+    // The wait is announced, and a signal during it only cancels it: the receipt is still written.
+    const notice = main.indexOf('Waiting up to ${NAME_RELEASE_DEADLINE_MS / 60_000} minutes');
+    expect(notice).toBeGreaterThan(main.indexOf('cleanedUp = true;'));
+    expect(notice).toBeLessThan(after);
+    expect(main).toMatch(
+      /const removalAfter = await whileInterruptible\(process, \(interrupt\) =>\s+guardRemovalReadsAfterCleanup\(/u
+    );
+    expect(main.slice(after, main.indexOf('await writeFile('))).toContain('{ signal: interrupt }');
+    // The watch stops before the launcher is killed, in the finally.
+    const finallyBlock = main.slice(main.lastIndexOf('} finally {'));
+    expect(finallyBlock.indexOf('await createWatch?.stop();')).toBeLessThan(
+      finallyBlock.indexOf('launcher?.kill();')
+    );
+    // No new write: the removal's delete paths are never called from the gate.
+    expect(main).not.toMatch(/removalProbes\([^)]*\)\.(remove|clearBoundSecrets)/u);
+  });
+
+  // The hold (DOR-2591) runs after provider resources exist, so what matters is where main puts
+  // it: the second-member proof and the hold inside the held phase, and the whole existing cleanup
+  // inside that phase's cleanup callback, so no way out of the phase can skip it. The phase itself
+  // is unit-tested in community-deploy-live-hold.test.ts; a real run costs money.
+  it('runs the second-member proof and the hold inside the held phase, before cleanup', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const phase = main.indexOf('await runHeldPhaseThenCleanUp({');
+    const phaseCallback = main.indexOf('phase: async (signal) => {', phase);
+    const cleanupCallback = main.indexOf('cleanup: async () => {', phase);
+    expect(phase).toBeGreaterThan(main.indexOf('bootstrap-rotation'));
+    expect(phaseCallback).toBeGreaterThan(phase);
+    expect(cleanupCallback).toBeGreaterThan(phaseCallback);
+    const wiring = main.slice(phase, phaseCallback);
+    expect(wiring).toContain('signals: process,');
+    // Output errors after the terminal closes must not crash cleanup (DOR-2591 review).
+    expect(wiring).toContain('streams: [process.stdout, process.stderr],');
+    expect(wiring).toContain('write: quietWriter(process.stderr),');
+    const heldPhase = main.slice(phaseCallback, cleanupCallback);
+    expect(heldPhase).toContain('await runCommunityLiveSecondMemberProof(ownerProof.owner, {');
+    expect(heldPhase).toContain('await holdCommunityLive({');
+    expect(heldPhase).toContain('signal,');
+    expect(heldPhase).toContain('write: quietWriter(process.stdout),');
+    // Every provider read and write of cleanup, and the point it is called finished, are inside
+    // the cleanup callback, never before the phase.
+    for (const step of [
+      'readFlySessionCredential(fly);\n        const tigris',
+      'await cleanupCommunityLiveGate(',
+      'tigrisBucketFound = await tigris(',
+      'cleanedUp = true;',
+    ]) {
+      expect(main.indexOf(step)).toBeGreaterThan(cleanupCallback);
+    }
+    expect(main.slice(0, phase)).not.toContain('await cleanupCommunityLiveGate(');
+  });
+
+  // The handoff holds two passwords and the invitation. Only the hold may see them: the receipt
+  // takes the proofs' own receipt objects, and nothing else of theirs.
+  it('keeps the handoff access and the owner session out of the receipt', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    expect([...main.matchAll(/\.access\b/gu)].map((match) => match[0])).toEqual(['.access']);
+    expect(main).toContain('access: member.access,');
+    const receipt = main.slice(main.indexOf('await writeFile(\n      receiptPath,'));
+    const body = receipt.slice(0, receipt.indexOf("+ '\\n'"));
+    expect(body).toContain('...ownerProof.receipt,');
+    expect(body).toContain('...held.phase.member,');
+    expect(body).toMatch(/\.\.\.\(held\.phase\.hold \? \{ held: held\.phase\.hold \} : \{\}\)/u);
+    expect(body).not.toMatch(
+      /\baccess\b|ownerProof\.owner|ownerProof,|\.\.\.ownerProof\b(?!\.receipt)/u
+    );
+    // The phase returns only the member's receipt and the hold's record.
+    expect(main).toContain('return { member: member.receipt, hold };');
+  });
+
+  // The handoff must never land in this checkout, where it could be committed. A misplaced
+  // DORK_HOME is refused before anything is created.
+  it('refuses a hold whose retained directory is inside the repository, before any process', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const refusal = main.indexOf(
+      "throw new CommunityLiveGateError('hold-directory-inside-repository');"
+    );
+    // Real paths, not path text: a symlinked DORK_HOME must not slip past (DOR-2591 review). The
+    // comparison itself is tested in community-deploy-live-hold.test.ts.
+    const check = main.indexOf('await isWithinDirectory(liveGateHome,');
+    expect(check).toBeGreaterThan(0);
+    expect(check).toBeLessThan(refusal);
+    expect(main).not.toMatch(/relative\(/u);
+    expect(refusal).toBeGreaterThan(main.indexOf('parseCommunityLiveGateConfig(process.env)'));
+    expect(refusal).toBeLessThan(main.indexOf('await mkdtemp('));
+    expect(refusal).toBeLessThan(main.indexOf('await command('));
   });
 });

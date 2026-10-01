@@ -1081,7 +1081,10 @@ describe('Adapter routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(vi.mocked(adapterManager.removeAdapter)).toHaveBeenCalledWith('wh-github');
+      // A person removing a connection is the one removal that forgets its history (DOR-2604).
+      expect(vi.mocked(adapterManager.removeAdapter)).toHaveBeenCalledWith('wh-github', {
+        forgetHistory: true,
+      });
     });
 
     it('returns 404 when not found', async () => {

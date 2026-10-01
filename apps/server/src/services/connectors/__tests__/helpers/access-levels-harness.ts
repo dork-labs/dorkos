@@ -179,6 +179,7 @@ export function levelHarness(options: { managed?: boolean; type?: string } = {})
           if (!status) throw Object.assign(new Error('absent'), { code: 'not_found' });
           return status;
         },
+        isLinked: () => false,
       },
     });
 

@@ -112,7 +112,7 @@ The markers are **not secret**. They show up as a Fly network name and a Postgre
 ```ts
 // packages/cli/src/commands/community-deploy/provenance-gate.ts
 /** Services whose marker round trip a live-gate receipt has shown. Flip only in a PR that cites the receipt. */
-export const PROVENANCE_ROUND_TRIP_PROVED = { fly: false, neon: false } as const;
+export const PROVENANCE_ROUND_TRIP_PROVED = { fly: false, neon: false } as const; // as first committed; flipped in phase 4
 ```
 
 - While a flag is `false`, that service's verdict is always `unproved`, with the reason "DorkOS has not yet confirmed this proof with Fly (or Neon)". Tigris depends on the Fly flag.
@@ -281,7 +281,7 @@ No test contacts a live service. Everything runs at the provider seam.
   - After the launch and before cleanup, the gate runs the read-only probes and records in its receipt the Fly `network` against `provenance.flyNetwork`, the Neon role against `community_<marker>`, and the Tigris binding.
   - It also records that `fly ssh console --app <app> --command true` works on the custom network.
   - It records whether `createAddOn` set both `AWS_*` secrets on the app. The gate does not test whether the service overwrites names that already exist, because that would mean interfering with the launcher mid-run. The design does not depend on the answer: the removal unsets both names first (§1).
-  - After cleanup, it records whether the custom network still exists.
+  - ~~After cleanup, it records whether the custom network still exists.~~ Dropped on purpose (receipt `schema: 2`, see `specs/community-self-host-launcher/04-live-gate.md`): Fly's API has no read of a private network once its app is gone, so no run can record it.
   - That receipt is what the gate-flip PR cites. Deletion needs no new live proof: the gate already exercises the same three delete wrappers.
 
 ## Documentation
@@ -292,7 +292,7 @@ No test contacts a live service. Everything runs at the provider seam.
 ## Implementation phases
 
 1. **Markers and readback.** Journal fields; `create(marker)`; `--network`; the Neon role; the new Fly provenance query in `inspect()` and the #2012 fallback; `provenance.flyNetwork` from readback; the Tigris digest rule; fixtures; the fake `neonctl` role echo; `PROVENANCE_ROUND_TRIP_PROVED` committed as all `false`. Ships in a release.
-2. **Live receipt.** Run the live gate on that release, or on its unreleased tarball as phase 4 allows. It records the marker round trip, `fly ssh console` on the custom network, and whether the network is left behind.
+2. **Live receipt.** Run the live gate on that release, or on its unreleased tarball as phase 4 allows. It records the marker round trip and `fly ssh console` on the custom network. Whether the network is left behind cannot be read through Fly's API, so the receipt no longer claims to record it.
 3. **Removal command.** `uncertain-removal.ts`, the probes, the name-availability check in `prepare()`, the dispatcher flags and output, and the unit and concurrency tests with the gate overridden. The packaged scenario uses the committed gate. It asserts that a shape-A Fly orphan with the right marker gets `unproved`, with the reason "not yet confirmed", and survives. A second scenario seeds a same-name app without the marker and asserts that it survives.
 4. **Gate flip.** Its own PR, citing the phase-2 receipt, sets `fly` and `neon` to `true`. A receipt from the live gate's unreleased-tarball mode counts, because the marker round trip is service behaviour rather than release behaviour. It must record `source.kind: 'tarball'` with its `sha256` and `commit`, and the flip PR must show that commit is on `main` or on the pull request being proven. A tarball packed from the release tag plus cherry-picks, which is needed once `main` has Community migrations the release lacks, names a commit on neither. The flip PR then pushes and links that pack branch, shows that every commit in `v<version>..<commit>` is a cherry-pick of one on `main` or on that pull request (`git cherry` marks them all `-`), shows those changes are not reverted on `main` (patch ids cannot see a revert), and names the tag. It changes the packaged scenario to: the fake `fly` creates the app and then exits non-zero; `--remove-uncertain` proves it; a PTY answer with the internal id removes it; `--resume` completes. The final fake state shows exactly one app, one project and one bucket.
 

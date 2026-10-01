@@ -26,12 +26,20 @@ type Provider = OAuthProvider<Record<string, unknown>>;
 type UserInfo = Awaited<ReturnType<Provider['getUserInfo']>>;
 type Tokens = Parameters<Provider['getUserInfo']>[0];
 
+/**
+ * Whether a Better Auth endpoint context is the return from the host's OIDC issuer: the one
+ * request in which an OIDC sign-in, sign-up, or link happens.
+ */
+export function isOidcCallback(ctx: { path?: string; params?: unknown } | undefined): boolean {
+  if (ctx?.path === `/callback/${OIDC_PROVIDER_ID}`) return true;
+  const params = ctx?.params as { id?: string } | undefined;
+  return ctx?.path === '/callback/:id' && params?.id === OIDC_PROVIDER_ID;
+}
+
 /** Sign-in paths that act through the OIDC provider and so need its discovery document first. */
 function usesOidc(ctx: { path?: string; params?: unknown; body?: unknown }): boolean {
-  const params = ctx.params as { id?: string } | undefined;
   const body = ctx.body as { provider?: string } | undefined;
-  if (ctx.path === `/callback/${OIDC_PROVIDER_ID}`) return true;
-  if (ctx.path === '/callback/:id') return params?.id === OIDC_PROVIDER_ID;
+  if (isOidcCallback(ctx)) return true;
   return (
     (ctx.path === '/sign-in/social' || ctx.path === '/link-social') &&
     body?.provider === OIDC_PROVIDER_ID

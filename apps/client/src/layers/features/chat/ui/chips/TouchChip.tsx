@@ -142,7 +142,7 @@ export function TouchChip({
         'touch-chip relative inline-flex max-w-56 items-center gap-1.5 rounded-full border',
         'px-2 py-0.5 text-xs',
         'bg-card text-foreground border-border',
-        'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
+        'focus-visible:ring-ring outline-none focus-visible:ring-2',
         openable ? 'hover:bg-accent hover:text-accent-foreground' : 'cursor-default',
         tombstone && 'text-muted-foreground line-through opacity-60',
         chip.error && 'border-destructive/40 bg-destructive/10 text-destructive'

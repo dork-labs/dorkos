@@ -40,6 +40,7 @@ import {
 import { NANGO_SECRET_KEY_REF } from '../providers/nango.js';
 import { ManagedCloudConnectorProvider } from '../providers/managed/managed-cloud.js';
 import { ManagedConnectorCloudError } from '../../core/auth/cloud-link-client.js';
+import { logger } from '../../../lib/logger.js';
 import { NangoApiError, type NangoHttpClient } from '../providers/nango-client.js';
 import type { RawMcpServerDescriptor } from '../providers/raw-mcp.js';
 import { ConnectorOperatorQueryService } from '../resources/operator-query-service.js';
@@ -1905,17 +1906,75 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(bootstrapper.wayHealth(composioInstance, 'gmail')).not.toHaveProperty('nextCheckAt');
     });
 
+    it('names the cloud code and status when the managed recovery check fails', async () => {
+      const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
+      const managed = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      managed.listAccounts = () =>
+        Promise.reject(new ManagedConnectorCloudError('unavailable', { status: 503 }));
+      const bootstrapper = makeBootstrapper({
+        managedCloud: {
+          instanceId,
+          configured: () => true,
+          executionConfigDigest: () => 'linked-material',
+          create: () => managed,
+        },
+      });
+      const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+      await bootstrapper.recoverManagedCloud();
+      expect(error).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /DorkOS managed provider recovery check failed: .*\(code=unavailable, status=503\)$/
+        )
+      );
+      error.mockRestore();
+    });
+
+    it('names the cloud code and status when the managed provider fails its check', async () => {
+      const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+      const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
+      const managed = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      managed.listAccounts = () =>
+        Promise.reject(new ManagedConnectorCloudError('unavailable', { status: 503 }));
+      const bootstrapper = makeBootstrapper({
+        managedCloud: {
+          instanceId,
+          configured: () => true,
+          executionConfigDigest: () => 'linked-material',
+          create: () => managed,
+        },
+      });
+      await bootstrapper.registerBootProviders();
+      expect(error).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /DorkOS managed provider failed its connection check: .*\(code=unavailable, status=503\)$/
+        )
+      );
+      error.mockRestore();
+    });
+
     it.each([
-      ['unauthorized', 401, 1],
-      ['permission_upgrade_required', 403, 1],
+      // The link's key check backed the refusal up and dropped the key.
+      ['unauthorized', 401, false, 1],
+      // The key check vouched for the key: one refused route can pass (DOR-2620).
+      ['unauthorized', 401, true, 2],
+      ['permission_upgrade_required', 403, true, 1],
       // A plain refused request, even a 403, can pass: it is checked again.
-      ['request_failed', 403, 2],
+      ['request_failed', 403, true, 2],
     ] as const)(
-      'on a DorkOS account %s (%i), makes %i check(s) in the first minute',
-      async (code, status, expectedProbes) => {
+      'on a DorkOS account %s (%i), still linked after it: %s, makes %i check(s) in the first minute',
+      async (code, status, linkedAfter, expectedProbes) => {
         vi.useFakeTimers();
         const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
         let probes = 0;
+        let linked = true;
         const managed = new FakeConnectorProvider({
           instanceId,
           type: 'dorkos-managed',
@@ -1923,12 +1982,13 @@ describe('ConnectorProviderBootstrapper', () => {
         });
         managed.listAccounts = () => {
           probes += 1;
-          return Promise.reject(new ManagedConnectorCloudError(code, status));
+          linked = linkedAfter;
+          return Promise.reject(new ManagedConnectorCloudError(code, { status }));
         };
         const bootstrapper = makeBootstrapper({
           managedCloud: {
             instanceId,
-            configured: () => true,
+            configured: () => linked,
             executionConfigDigest: () => 'linked-material',
             create: () => managed,
           },

@@ -8,6 +8,7 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
+import { isEntryPostFor, readAllEntries, type EntryPage } from './entries.js';
 
 /**
  * The two packaged apps and the moves a person makes in them: launch (and
@@ -48,9 +49,14 @@ export interface LaunchContext {
    * process mid-cleanup; the runner uses this to take the signals back.
    */
   onLaunched: () => void;
+  /**
+   * Applied to every line the app's trails write (network, navigation and
+   * console), so a held community's credentials never reach a log file.
+   */
+  redact: (text: string) => string;
 }
 
-/** The password every person in the journey uses; the accounts are disposable. */
+/** The password every person in a local run uses; the accounts are disposable. */
 export const PASSWORD = 'desktop-acceptance-password';
 
 /**
@@ -161,18 +167,20 @@ export async function launchDesktop(
     )
       appendFileSync(
         trail,
-        `${new Date().toISOString()} ${response.request().method()} ${url.pathname}${url.search} ${response.status()}\n`
+        context.redact(
+          `${new Date().toISOString()} ${response.request().method()} ${url.pathname}${url.search} ${response.status()}\n`
+        )
       );
   });
   page.on('framenavigated', (frame) => {
     if (frame === page.mainFrame())
-      appendFileSync(trail, `${new Date().toISOString()} NAV ${frame.url()}\n`);
+      appendFileSync(trail, context.redact(`${new Date().toISOString()} NAV ${frame.url()}\n`));
   });
   page.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning')
       appendFileSync(
         path.join(context.runRoot, `${name}-console.log`),
-        `${new Date().toISOString()} ${message.type()} ${message.text()}\n`
+        context.redact(`${new Date().toISOString()} ${message.type()} ${message.text()}\n`)
       );
   });
   if (!relaunch) {
@@ -209,18 +217,20 @@ export const externalOpens = (local: Desktop) =>
  * @param local - The app that connects.
  * @param approver - The person's browser page on the Community.
  * @param origin - The Community's origin.
- * @param communityName - The Community's display name.
+ * @param communityName - The Community's display name, or `null` to take the
+ *   name the Community gives the new connection (a remote run does not know it
+ *   in advance).
  * @param installName - What this installation is called on the Community.
- * @param signInEmail - The account to sign in with first, or `null` when already signed in.
+ * @param signIn - The account to sign in with first, or `null` when already signed in.
  * @returns The new connection's local ref.
  */
 export async function connectDesktop(
   local: Desktop,
   approver: Page,
   origin: string,
-  communityName: string,
+  communityName: string | null,
   installName: string,
-  signInEmail: string | null
+  signIn: { email: string; password: string } | null
 ): Promise<string> {
   await local.page.goto(local.origin + '/');
   // Connect lives in the sidebar's switcher, under Add community.
@@ -240,10 +250,12 @@ export async function connectDesktop(
   await dialog.getByRole('button', { name: 'Connect community', exact: true }).click();
   const response = await started;
   assert.equal(response.status(), 201, 'connection start');
-  const result = (await response.json()) as { approvalUrl: string; connection: { ref: string } };
-  await local.page
-    .getByRole('link', { name: `Open ${communityName} to approve`, exact: true })
-    .click();
+  const result = (await response.json()) as {
+    approvalUrl: string;
+    connection: { ref: string; label: string };
+  };
+  const name = communityName ?? result.connection.label;
+  await local.page.getByRole('link', { name: `Open ${name} to approve`, exact: true }).click();
   await expect.poll(async () => (await externalOpens(local)).length).toBe(before + 1);
   const approval = (await externalOpens(local))[before];
   assert.equal(
@@ -252,19 +264,19 @@ export async function connectDesktop(
     'the app hands the approval URL to the system browser'
   );
   await approver.goto(approval!);
-  if (signInEmail) {
+  if (signIn) {
     await expect(
       approver.getByRole('button', { name: 'Sign in and review', exact: true })
     ).toBeVisible();
-    await approver.getByLabel('Email', { exact: true }).fill(signInEmail);
-    await approver.getByLabel('Password', { exact: true }).fill(PASSWORD);
+    await approver.getByLabel('Email', { exact: true }).fill(signIn.email);
+    await approver.getByLabel('Password', { exact: true }).fill(signIn.password);
     await approver.getByRole('button', { name: 'Sign in and review', exact: true }).click();
   }
   await approver.getByRole('button', { name: 'Approve connection', exact: true }).click();
   await expect(approver.getByRole('status')).toContainText('Approved');
   // Approved: the dialog closes by itself and the app selects the new
   // connection, by its ref, since an earlier, ended connection can share its name.
-  await expect(local.page.getByRole('dialog', { name: `Approve on ${communityName}` })).toBeHidden({
+  await expect(local.page.getByRole('dialog', { name: `Approve on ${name}` })).toBeHidden({
     timeout: 90_000,
   });
   await expect(local.page).toHaveURL(
@@ -377,16 +389,95 @@ export const messageRow = (scope: Locator, text: string) =>
     .filter({ has: scope.page().getByRole('button', { name: /Reply in thread|Open thread/ }) })
     .last();
 
+/** The line a Community channel shows while its live stream is still starting. */
+export const CONNECTING_LINE = 'Connecting to the community…';
+
 /**
- * Type a message into a composer and send it with Enter.
+ * Type a message into a Community composer, send it with Enter, and confirm
+ * the app actually posted it.
  *
- * @param box - The composer.
+ * The composer ignores Enter until the channel's live stream is up: a page
+ * that has just loaded shows "Connecting to the community…", greys Send, and
+ * an Enter pressed then leaves the words in the box and posts nothing
+ * (DOR-2650). So this waits for that line to go and for Send to be enabled,
+ * and after Enter waits for the app's own 201 `POST …/entries` carrying this
+ * text, failing with a message that says which of those never happened.
+ *
+ * @param box - The composer (a channel's or a thread's).
  * @param text - What to send.
+ * @returns How long the channel took to become ready for the post, and the
+ *   entry the Community confirmed, so a step can record a slow connect and
+ *   check where the message landed.
  */
-export async function send(box: Locator, text: string): Promise<void> {
+export async function send(box: Locator, text: string): Promise<SendReceipt> {
+  const page = box.page();
+  const preview = JSON.stringify(text.length > 60 ? `${text.slice(0, 60)}…` : text);
+  const waitStarted = Date.now();
+  await expect(
+    page.getByText(CONNECTING_LINE, { exact: true }),
+    `the channel was still connecting to the community, so ${preview} could not be sent`
+  ).toBeHidden({ timeout: 60_000 });
   await box.click();
   await box.fill(text);
+  // Close the @mention completion if it opened, so Enter sends rather than picks.
+  if (text.includes('@') && (await page.getByRole('listbox').isVisible()))
+    await box.press('Escape');
+  // Send appears once the box holds text, and stays disabled until the channel can take a post.
+  const sendButton = box
+    .locator('xpath=ancestor::*[.//button[@aria-label="Send message"]][1]')
+    .getByRole('button', { name: 'Send message', exact: true });
+  await expect(
+    sendButton,
+    `Send never became enabled for ${preview}: the channel is not ready for posts`
+  ).toBeEnabled({ timeout: 60_000 });
+  const liveWaitMs = Date.now() - waitStarted;
+  const posted = page.waitForResponse(
+    (r) => isEntryPostFor(r.request().method(), r.url(), r.request().postData(), text),
+    { timeout: 30_000 }
+  );
   await box.press('Enter');
+  const response = await posted.catch(async () => {
+    const left = await box.inputValue().catch(() => '(composer gone)');
+    throw new Error(
+      `Enter did not post ${preview}: no POST …/entries for it within 30 s; the composer still holds ${JSON.stringify(left)}`
+    );
+  });
+  assert.equal(response.status(), 201, `posting ${preview} answered ${response.status()}, not 201`);
+  const { entry } = (await response.json()) as { entry: PostedEntry };
+  return { liveWaitMs, entry };
+}
+
+/** The confirmed entry a send's 201 carries; only the fields the steps read. */
+export interface PostedEntry {
+  id: string;
+  text: string;
+  /** The entry at the head of this entry's thread, or `null` when top-level. */
+  threadRootEntryId: string | null;
+}
+
+/** What {@link send} reports about one confirmed post. */
+export interface SendReceipt {
+  /** From the start of the send until the channel was live and Send enabled. */
+  liveWaitMs: number;
+  entry: PostedEntry;
+}
+
+/**
+ * A channel's whole top-level history through an app's connection, oldest
+ * first, following the cursor to the end (see {@link readAllEntries}).
+ *
+ * @param local - The app whose connection reads.
+ * @param ref - That app's connection ref.
+ * @param roomId - The channel.
+ */
+export function channelEntries<T>(local: Desktop, ref: string, roomId: string): Promise<T[]> {
+  return readAllEntries((cursor) =>
+    json<EntryPage<T>>(
+      `${local.origin}/api/communities/${ref}/rooms/${roomId}/entries?limit=100${
+        cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''
+      }`
+    )
+  );
 }
 
 /**
@@ -401,7 +492,10 @@ export const timeline = (local: Desktop) =>
 export interface ConnectionRow {
   ref: string;
   status: string;
+  /** The Community's name. */
   label: string;
+  /** The Community's own id for itself. */
+  remoteCommunityId: string;
 }
 
 /**

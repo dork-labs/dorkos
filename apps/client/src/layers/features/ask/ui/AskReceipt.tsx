@@ -150,7 +150,7 @@ export function AskReceipt({
             onClick={() => setExpanded((prev) => !prev)}
             aria-expanded={expanded}
             className={cn(
-              'hover:text-foreground focus-visible:ring-ring/50 shrink-0 rounded underline',
+              'hover:text-foreground focus-visible:ring-ring shrink-0 rounded underline',
               'underline-offset-2 focus-visible:ring-2 focus-visible:outline-none'
             )}
           >

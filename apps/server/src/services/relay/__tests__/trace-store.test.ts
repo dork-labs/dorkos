@@ -420,193 +420,308 @@ describe('TraceStore', () => {
   // -------------------------------------------------------------------------
 
   describe('getObservedChats', () => {
-    it('returns empty array when no traces exist for adapter', () => {
-      const chats = store.getObservedChats('telegram-1');
-      expect(chats).toEqual([]);
-    });
-
-    it('returns empty array for unknown adapterId', () => {
+    /**
+     * Seed a span the way the publish pipeline writes one for a message a chat
+     * connection brought in: the chat lives in the subject, and the sender is
+     * the connection's `.bot` principal. The previous tests seeded
+     * `{ adapterId, chatId }` metadata, a shape no writer produces, so they
+     * passed while the list was empty in production.
+     */
+    function publishSpan(
+      messageId: string,
+      subject: string,
+      from?: string,
+      chat: { chatName?: string; emptyContent?: true } = {}
+    ): void {
+      const parsed = subject.split('.');
       store.insertSpan({
-        messageId: 'msg-001',
-        traceId: 'trace-001',
-        subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-1', chatId: '111', channelType: 'dm' },
-      });
-      const chats = store.getObservedChats('unknown-adapter');
-      expect(chats).toEqual([]);
-    });
-
-    it('returns aggregated chat from a single trace', () => {
-      store.insertSpan({
-        messageId: 'msg-001',
-        traceId: 'trace-001',
-        subject: 'relay.human.telegram',
+        messageId,
+        traceId: messageId,
+        subject,
+        status: 'delivered',
         metadata: {
-          adapterId: 'telegram-1',
-          chatId: '111',
-          channelType: 'dm',
-          displayName: 'Alice',
+          from: from ?? `relay.human.${parsed[2]}.${parsed[3]}.bot`,
+          ...chat,
+          deliveredTo: 1,
+          rejectedCount: 0,
+          hasAdapterResult: false,
+          durationMs: 1,
         },
       });
+    }
+
+    it('returns empty array when no traces exist for adapter', () => {
+      expect(store.getObservedChats('telegram-1')).toEqual([]);
+    });
+
+    it('returns a chat named in a delivery span subject', () => {
+      publishSpan('msg-001', 'relay.human.telegram.telegram-1.111');
 
       const chats = store.getObservedChats('telegram-1');
       expect(chats).toHaveLength(1);
-      expect(chats[0].chatId).toBe('111');
-      expect(chats[0].channelType).toBe('dm');
-      expect(chats[0].displayName).toBe('Alice');
-      expect(chats[0].messageCount).toBe(1);
+      expect(chats[0]).toMatchObject({ chatId: '111', channelType: 'dm', messageCount: 1 });
+      expect(chats[0].displayName).toBeUndefined();
       expect(typeof chats[0].lastMessageAt).toBe('string');
     });
 
-    it('groups multiple traces by chatId with correct message count', () => {
-      store.insertSpan({
-        messageId: 'msg-001',
-        traceId: 'trace-001',
-        subject: 'relay.human.telegram',
-        metadata: {
-          adapterId: 'telegram-1',
-          chatId: '111',
-          channelType: 'dm',
-          displayName: 'Alice',
-        },
-      });
-      store.insertSpan({
-        messageId: 'msg-002',
-        traceId: 'trace-002',
-        subject: 'relay.human.telegram',
-        metadata: {
-          adapterId: 'telegram-1',
-          chatId: '111',
-          channelType: 'dm',
-          displayName: 'Alice',
-        },
-      });
-      store.insertSpan({
-        messageId: 'msg-003',
-        traceId: 'trace-003',
-        subject: 'relay.human.telegram',
-        metadata: {
-          adapterId: 'telegram-1',
-          chatId: '222',
-          channelType: 'group',
-          displayName: 'Dev Team',
-        },
-      });
+    it('groups spans by chat and reads the group segment as a group chat', () => {
+      publishSpan('msg-001', 'relay.human.telegram.telegram-1.111');
+      publishSpan('msg-002', 'relay.human.telegram.telegram-1.111');
+      publishSpan('msg-003', 'relay.human.telegram.telegram-1.group.-222');
 
       const chats = store.getObservedChats('telegram-1');
       expect(chats).toHaveLength(2);
-
-      const chat111 = chats.find((c) => c.chatId === '111');
-      expect(chat111?.messageCount).toBe(2);
-      expect(chat111?.displayName).toBe('Alice');
-      expect(chat111?.channelType).toBe('dm');
-
-      const chat222 = chats.find((c) => c.chatId === '222');
-      expect(chat222?.messageCount).toBe(1);
-      expect(chat222?.channelType).toBe('group');
+      expect(chats.find((c) => c.chatId === '111')).toMatchObject({
+        channelType: 'dm',
+        messageCount: 2,
+      });
+      expect(chats.find((c) => c.chatId === '-222')).toMatchObject({
+        channelType: 'group',
+        messageCount: 1,
+      });
     });
 
     it('filters by adapterId and excludes other adapters', () => {
-      store.insertSpan({
-        messageId: 'msg-001',
-        traceId: 'trace-001',
-        subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-1', chatId: '111' },
-      });
-      store.insertSpan({
-        messageId: 'msg-002',
-        traceId: 'trace-002',
-        subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-2', chatId: '999' },
-      });
+      publishSpan('msg-001', 'relay.human.telegram.telegram-1.111');
+      publishSpan('msg-002', 'relay.human.telegram.telegram-2.999');
+      // An adapter id that merely contains the one asked for is a different connection.
+      publishSpan('msg-003', 'relay.human.telegram.telegram-10.555');
+      // The id appearing later in the subject is part of another connection's chat id.
+      publishSpan('msg-004', 'relay.human.telegram.other.telegram-1.777');
+
+      const chats = store.getObservedChats('telegram-1');
+      expect(chats.map((c) => c.chatId)).toEqual(['111']);
+    });
+
+    it('treats LIKE wildcards in an adapter id literally', () => {
+      publishSpan('msg-001', 'relay.human.slack.slack_a.C1');
+      publishSpan('msg-002', 'relay.human.slack.slackXa.C2');
+
+      expect(store.getObservedChats('slack_a').map((c) => c.chatId)).toEqual(['C1']);
+    });
+
+    it("counts only messages the connection brought in, not the agent's replies", () => {
+      publishSpan('msg-001', 'relay.human.telegram.telegram-1.111');
+      // The agent's reply and each stream event of its turn go to the same subject.
+      publishSpan('msg-002', 'relay.human.telegram.telegram-1.111', 'agent:session-1');
+      publishSpan('msg-003', 'relay.human.telegram.telegram-1.111', 'agent:session-1');
+      // A reply-only chat (the agent spoke first) is not one that messaged the connection.
+      publishSpan('msg-004', 'relay.human.telegram.telegram-1.222', 'agent:session-1');
+      // Another connection's sender is not this one's.
+      publishSpan('msg-005', 'relay.human.telegram.telegram-1.333', 'relay.human.slack.x.bot');
 
       const chats = store.getObservedChats('telegram-1');
       expect(chats).toHaveLength(1);
-      expect(chats[0].chatId).toBe('111');
+      expect(chats[0]).toMatchObject({ chatId: '111', messageCount: 1 });
+    });
+
+    it('names a chat by the latest non-empty name its messages recorded', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-10T08:00:00.000Z'));
+      publishSpan('msg-001', 'relay.human.telegram.tg-1.group.-100', undefined, {
+        chatName: 'Old Title',
+      });
+      vi.setSystemTime(new Date('2026-03-10T09:00:00.000Z'));
+      publishSpan('msg-002', 'relay.human.telegram.tg-1.group.-100', undefined, {
+        chatName: 'New Title',
+      });
+      vi.setSystemTime(new Date('2026-03-10T10:00:00.000Z'));
+      // A later message that recorded no name keeps the last one it had.
+      publishSpan('msg-003', 'relay.human.telegram.tg-1.group.-100');
+      publishSpan('msg-004', 'relay.human.telegram.tg-1.555');
+      vi.useRealTimers();
+
+      const chats = store.getObservedChats('tg-1');
+      expect(chats.find((c) => c.chatId === '-100')?.displayName).toBe('New Title');
+      expect(chats.find((c) => c.chatId === '555')?.displayName).toBeUndefined();
+    });
+
+    it('does not count a message that said nothing, but keeps the name it carried', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-10T08:00:00.000Z'));
+      publishSpan('msg-001', 'relay.human.telegram.tg-1.group.-100', undefined, {
+        chatName: 'Dev Team',
+        emptyContent: true,
+      });
+      vi.setSystemTime(new Date('2026-03-10T07:00:00.000Z'));
+      publishSpan('msg-002', 'relay.human.telegram.tg-1.group.-100');
+      // A chat seen only through a no-text event (the bot was added) is not listed.
+      publishSpan('msg-003', 'relay.human.telegram.tg-1.group.-200', undefined, {
+        chatName: 'Quiet',
+        emptyContent: true,
+      });
+      vi.useRealTimers();
+
+      const chats = store.getObservedChats('tg-1');
+      expect(chats).toHaveLength(1);
+      expect(chats[0]).toMatchObject({
+        chatId: '-100',
+        displayName: 'Dev Team',
+        messageCount: 1,
+        lastMessageAt: '2026-03-10T07:00:00.000Z',
+      });
+    });
+
+    it('skips a span with no recorded sender', () => {
+      store.insertSpan({
+        messageId: 'msg-001',
+        traceId: 'msg-001',
+        subject: 'relay.human.telegram.telegram-1.111',
+      });
+      expect(store.getObservedChats('telegram-1')).toEqual([]);
+    });
+
+    it('skips an adapter-root subject that names no chat', () => {
+      publishSpan('msg-001', 'relay.human.telegram.telegram-1');
+      expect(store.getObservedChats('telegram-1')).toEqual([]);
+    });
+
+    it('skips lifecycle events and non-human subjects', () => {
+      store.insertAdapterEvent('telegram-1', 'adapter.connected', 'Connected');
+      publishSpan('msg-001', 'relay.agent.telegram-1.session');
+      expect(store.getObservedChats('telegram-1')).toEqual([]);
     });
 
     it('respects the limit parameter', () => {
       for (let i = 0; i < 10; i++) {
-        store.insertSpan({
-          messageId: `msg-${i}`,
-          traceId: `trace-${i}`,
-          subject: 'relay.human.telegram',
-          metadata: { adapterId: 'telegram-1', chatId: String(i) },
-        });
+        publishSpan(`msg-${i}`, `relay.human.telegram.telegram-1.${i}`);
       }
-
-      const chats = store.getObservedChats('telegram-1', 3);
-      expect(chats).toHaveLength(3);
+      expect(store.getObservedChats('telegram-1', 3)).toHaveLength(3);
     });
 
     it('sorts by lastMessageAt descending', () => {
       vi.useFakeTimers();
-
       vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
-      store.insertSpan({
-        messageId: 'msg-001',
-        traceId: 'trace-001',
-        subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-1', chatId: 'older-chat' },
-      });
-
+      publishSpan('msg-001', 'relay.human.telegram.telegram-1.older-chat');
       vi.setSystemTime(new Date('2026-01-02T00:00:00.000Z'));
-      store.insertSpan({
-        messageId: 'msg-002',
-        traceId: 'trace-002',
-        subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-1', chatId: 'newer-chat' },
-      });
-
+      publishSpan('msg-002', 'relay.human.telegram.telegram-1.newer-chat');
       vi.useRealTimers();
 
       const chats = store.getObservedChats('telegram-1');
-      expect(chats[0].chatId).toBe('newer-chat');
-      expect(chats[1].chatId).toBe('older-chat');
+      expect(chats.map((c) => c.chatId)).toEqual(['newer-chat', 'older-chat']);
+      expect(chats[0].lastMessageAt).toBe('2026-01-02T00:00:00.000Z');
     });
 
-    it('skips rows with missing chatId in metadata', () => {
-      store.insertSpan({
-        messageId: 'msg-001',
-        traceId: 'trace-001',
-        subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-1' }, // no chatId
-      });
-      store.insertSpan({
-        messageId: 'msg-002',
-        traceId: 'trace-002',
-        subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-1', chatId: '111' },
-      });
+    it("moves a chat's lastMessageAt to its most recent message", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-10T08:00:00.000Z'));
+      publishSpan('msg-ts-1', 'relay.human.telegram.tg-ts.111');
+      vi.setSystemTime(new Date('2026-03-10T16:00:00.000Z'));
+      publishSpan('msg-ts-2', 'relay.human.telegram.tg-ts.111');
+      vi.useRealTimers();
 
-      const chats = store.getObservedChats('telegram-1');
+      const chats = store.getObservedChats('tg-ts');
       expect(chats).toHaveLength(1);
-      expect(chats[0].chatId).toBe('111');
+      expect(chats[0].lastMessageAt).toBe('2026-03-10T16:00:00.000Z');
+    });
+  });
+
+  describe('deleteConnectionTraces (DOR-2604)', () => {
+    /** Insert a delivery span and return its message id. */
+    function span(messageId: string, subject: string, metadata: Record<string, unknown> = {}) {
+      store.insertSpan({ messageId, traceId: messageId, subject, status: 'delivered', metadata });
+      return messageId;
+    }
+
+    /** Message ids still stored. */
+    function remaining(): string[] {
+      return db
+        .all<{ message_id: string }>(sql`SELECT message_id FROM relay_traces ORDER BY message_id`)
+        .map((r) => r.message_id);
+    }
+
+    it("deletes a removed connection's chats, their names and its events", () => {
+      span('dm-in', 'relay.human.telegram.tg.111', {
+        from: 'relay.human.telegram.tg.bot',
+        chatName: 'Ada',
+      });
+      span('group-in', 'relay.human.telegram.tg.group.-100', {
+        from: 'relay.human.telegram.tg.bot',
+        chatName: 'Launch crew',
+      });
+      span('reply', 'relay.human.telegram.tg.111', { from: 'relay.agent.session-1' });
+      // The chat's message forwarded to an agent keeps the chat's name and the
+      // connection as its sender, under the agent's subject.
+      span('forwarded', 'relay.agent.session-1', {
+        from: 'relay.human.telegram.tg.bot',
+        chatName: 'Ada',
+      });
+      span('bare', 'relay.human.telegram.tg');
+      store.insertAdapterEvent('tg', 'adapter.connected', 'Connected to relay');
+
+      const deleted = store.deleteConnectionTraces('tg', 1000);
+
+      expect(deleted).toBe(6);
+      expect(remaining()).toEqual([]);
+      expect(store.getObservedChats('tg')).toEqual([]);
+      expect(store.getAdapterEvents('tg')).toEqual([]);
     });
 
-    it('handles rows with null metadata gracefully', () => {
-      store.insertSpan({
-        messageId: 'msg-001',
-        traceId: 'trace-001',
-        subject: 'relay.human.telegram',
-        // no metadata field
+    it('leaves a connection whose id only starts with the removed one', () => {
+      span('tg-in', 'relay.human.telegram.tg.111', { from: 'relay.human.telegram.tg.bot' });
+      span('tg2-in', 'relay.human.telegram.tg-2.111', {
+        from: 'relay.human.telegram.tg-2.bot',
+        chatName: 'Grace',
       });
+      span('tg2-forwarded', 'relay.agent.session-2', { from: 'relay.human.telegram.tg-2.bot' });
+      span('tgx-in', 'relay.human.telegram.tgx.5', { from: 'relay.human.telegram.tgx.bot' });
+      store.insertAdapterEvent('tg-2', 'adapter.connected', 'Connected to relay');
 
-      const chats = store.getObservedChats('telegram-1');
-      expect(chats).toEqual([]);
+      store.deleteConnectionTraces('tg', 1000);
+
+      expect(remaining()).toEqual(expect.arrayContaining(['tg2-in', 'tg2-forwarded', 'tgx-in']));
+      expect(remaining()).not.toContain('tg-in');
+      expect(store.getObservedChats('tg-2')).toEqual([
+        expect.objectContaining({ chatId: '111', displayName: 'Grace' }),
+      ]);
+      expect(store.getAdapterEvents('tg-2')).toHaveLength(1);
     });
 
-    it('ignores unknown channelType values', () => {
-      store.insertSpan({
-        messageId: 'msg-001',
-        traceId: 'trace-001',
-        subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-1', chatId: '111', channelType: 'invalid-type' },
+    it('reads the id segment literally, never as a LIKE pattern', () => {
+      span('underscore', 'relay.human.slack.a_b.C1', { from: 'relay.human.slack.a_b.bot' });
+      span('lookalike', 'relay.human.slack.axb.C1', { from: 'relay.human.slack.axb.bot' });
+
+      store.deleteConnectionTraces('a_b', 1000);
+
+      expect(remaining()).toEqual(['lookalike']);
+    });
+
+    it("keeps agent traffic and other connections' rows", () => {
+      span('agent', 'relay.agent.session-1', { from: 'relay.agent.session-2' });
+      span('slack', 'relay.human.slack.sl.C1', { from: 'relay.human.slack.sl.bot' });
+      // The id appearing in another segment does not make the row this connection's.
+      span('other-segment', 'relay.human.slack.sl.tg', { from: 'relay.human.slack.sl.bot' });
+      span('not-human', 'relay.system.tg.111');
+      store.insertAdapterEvent('sl', 'adapter.connected', 'Connected to relay');
+
+      expect(store.deleteConnectionTraces('tg', 1000)).toBe(0);
+      expect(remaining()).toHaveLength(5);
+    });
+
+    it('deletes at most `limit` rows per call, until none are left', () => {
+      for (let i = 0; i < 7; i++) {
+        span(`m${i}`, `relay.human.telegram.tg.${i}`, { from: 'relay.human.telegram.tg.bot' });
+      }
+      span('keep', 'relay.human.telegram.tg-2.1', { from: 'relay.human.telegram.tg-2.bot' });
+
+      expect(store.deleteConnectionTraces('tg', 3)).toBe(3);
+      expect(remaining()).toHaveLength(5);
+      expect(remaining()).toContain('keep');
+      expect(store.deleteConnectionTraces('tg', 3)).toBe(3);
+      expect(store.deleteConnectionTraces('tg', 3)).toBe(1);
+      expect(remaining()).toEqual(['keep']);
+    });
+
+    it('deletes an event written before events had their own kind', () => {
+      // Stored as a delivery, but named by `metadata.adapterId` like any event.
+      span('legacy-event', 'adapter.connected', {
+        adapterId: 'tg',
+        eventType: 'adapter.connected',
       });
 
-      const chats = store.getObservedChats('telegram-1');
-      expect(chats).toHaveLength(1);
-      expect(chats[0].channelType).toBeUndefined();
+      store.deleteConnectionTraces('tg', 1000);
+
+      expect(remaining()).toEqual([]);
     });
   });
 
@@ -665,174 +780,6 @@ describe('TraceStore', () => {
       );
       expect(rows).toHaveLength(1);
       expect(typeof rows[0].sent_at).toBe('string');
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Observed chats
-  // -------------------------------------------------------------------------
-
-  describe('getObservedChats', () => {
-    it('returns aggregated chats grouped by chatId', () => {
-      vi.useFakeTimers();
-
-      vi.setSystemTime(new Date('2026-03-10T10:00:00.000Z'));
-      store.insertSpan({
-        messageId: 'msg-oc-1',
-        traceId: 'trace-oc-1',
-        subject: 'relay.agent.session-1',
-        metadata: {
-          adapterId: 'telegram-1',
-          chatId: '111',
-          channelType: 'dm',
-          displayName: 'Alice',
-        },
-      });
-
-      vi.setSystemTime(new Date('2026-03-10T11:00:00.000Z'));
-      store.insertSpan({
-        messageId: 'msg-oc-2',
-        traceId: 'trace-oc-2',
-        subject: 'relay.agent.session-2',
-        metadata: {
-          adapterId: 'telegram-1',
-          chatId: '111',
-          channelType: 'dm',
-          displayName: 'Alice',
-        },
-      });
-
-      vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
-      store.insertSpan({
-        messageId: 'msg-oc-3',
-        traceId: 'trace-oc-3',
-        subject: 'relay.agent.session-3',
-        metadata: {
-          adapterId: 'telegram-1',
-          chatId: '222',
-          channelType: 'group',
-          displayName: 'Dev Team',
-        },
-      });
-
-      vi.useRealTimers();
-
-      const chats = store.getObservedChats('telegram-1');
-      expect(chats).toHaveLength(2);
-
-      const chat111 = chats.find((c) => c.chatId === '111');
-      expect(chat111).toBeDefined();
-      expect(chat111!.messageCount).toBe(2);
-      expect(chat111!.displayName).toBe('Alice');
-      expect(chat111!.channelType).toBe('dm');
-
-      const chat222 = chats.find((c) => c.chatId === '222');
-      expect(chat222).toBeDefined();
-      expect(chat222!.messageCount).toBe(1);
-      expect(chat222!.displayName).toBe('Dev Team');
-      expect(chat222!.channelType).toBe('group');
-    });
-
-    it('returns empty array when no traces exist for the adapter', () => {
-      const chats = store.getObservedChats('nonexistent');
-      expect(chats).toEqual([]);
-    });
-
-    it('sorts by lastMessageAt descending', () => {
-      vi.useFakeTimers();
-
-      vi.setSystemTime(new Date('2026-03-10T08:00:00.000Z'));
-      store.insertSpan({
-        messageId: 'msg-sort-1',
-        traceId: 'trace-sort-1',
-        subject: 'relay.agent.s1',
-        metadata: { adapterId: 'tg-1', chatId: 'old-chat' },
-      });
-
-      vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
-      store.insertSpan({
-        messageId: 'msg-sort-2',
-        traceId: 'trace-sort-2',
-        subject: 'relay.agent.s2',
-        metadata: { adapterId: 'tg-1', chatId: 'new-chat' },
-      });
-
-      vi.useRealTimers();
-
-      const chats = store.getObservedChats('tg-1');
-      expect(chats[0].chatId).toBe('new-chat');
-      expect(chats[1].chatId).toBe('old-chat');
-    });
-
-    it('respects the limit parameter', () => {
-      for (let i = 0; i < 5; i++) {
-        store.insertSpan({
-          messageId: `msg-lim-${i}`,
-          traceId: `trace-lim-${i}`,
-          subject: 'relay.agent.s1',
-          metadata: { adapterId: 'tg-limit', chatId: `chat-${i}` },
-        });
-      }
-
-      const chats = store.getObservedChats('tg-limit', 3);
-      expect(chats).toHaveLength(3);
-    });
-
-    it('filters by adapterId and ignores other adapters', () => {
-      store.insertSpan({
-        messageId: 'msg-filter-1',
-        traceId: 'trace-f1',
-        subject: 'relay.agent.s1',
-        metadata: { adapterId: 'telegram-1', chatId: '111' },
-      });
-      store.insertSpan({
-        messageId: 'msg-filter-2',
-        traceId: 'trace-f2',
-        subject: 'relay.agent.s2',
-        metadata: { adapterId: 'webhook-1', chatId: '222' },
-      });
-
-      const chats = store.getObservedChats('telegram-1');
-      expect(chats).toHaveLength(1);
-      expect(chats[0].chatId).toBe('111');
-    });
-
-    it('skips traces without chatId in metadata', () => {
-      store.insertSpan({
-        messageId: 'msg-no-chat',
-        traceId: 'trace-nc',
-        subject: 'relay.agent.s1',
-        metadata: { adapterId: 'tg-nc', eventType: 'adapter.connected', message: 'ok' },
-      });
-
-      const chats = store.getObservedChats('tg-nc');
-      expect(chats).toEqual([]);
-    });
-
-    it('updates lastMessageAt to most recent for grouped chats', () => {
-      vi.useFakeTimers();
-
-      vi.setSystemTime(new Date('2026-03-10T08:00:00.000Z'));
-      store.insertSpan({
-        messageId: 'msg-ts-1',
-        traceId: 'trace-ts-1',
-        subject: 'relay.agent.s1',
-        metadata: { adapterId: 'tg-ts', chatId: '111' },
-      });
-
-      vi.setSystemTime(new Date('2026-03-10T16:00:00.000Z'));
-      store.insertSpan({
-        messageId: 'msg-ts-2',
-        traceId: 'trace-ts-2',
-        subject: 'relay.agent.s2',
-        metadata: { adapterId: 'tg-ts', chatId: '111' },
-      });
-
-      vi.useRealTimers();
-
-      const chats = store.getObservedChats('tg-ts');
-      expect(chats).toHaveLength(1);
-      expect(chats[0].lastMessageAt).toBe('2026-03-10T16:00:00.000Z');
     });
   });
 });

@@ -81,7 +81,7 @@ export function TestRunStrip({ testRun, onOpenRun, className }: TestRunStripProp
               type="button"
               data-slot="schedule-test-run-open"
               onClick={onOpenRun}
-              className="text-primary focus-visible:ring-ring/50 rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+              className="text-primary focus-visible:ring-ring rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
             >
               view what it did →
             </button>

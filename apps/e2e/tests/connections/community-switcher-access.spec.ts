@@ -244,22 +244,51 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await page.goto('/tasks');
     await new BasePage(page).waitForAppReady();
     const trigger = page.getByTestId('sidebar-header-block');
-    // What each page heading said at the moment it took focus: that is what a
-    // screen reader reads aloud, so it has to be the whole name, not "Beta".
+    // Everything that took focus, in order. A page heading is recorded as what
+    // it said at that moment: that is what a screen reader reads aloud, so it
+    // has to be the whole name, not "Beta". Anything else is recorded by role
+    // and name, so the test can say what took focus after a heading did.
     await page.evaluate(() => {
-      const spoken: string[] = [];
-      (window as unknown as { __spokenHeadings: string[] }).__spokenHeadings = spoken;
+      const focused: string[] = [];
+      (window as unknown as { __focused: string[] }).__focused = focused;
       document.addEventListener(
         'focusin',
         (event) => {
           const target = event.target as Element;
-          if (target.matches('h1[data-page-heading]')) spoken.push(target.textContent ?? '');
+          focused.push(
+            target.matches('h1[data-page-heading]')
+              ? `heading: ${target.textContent ?? ''}`
+              : `${target.getAttribute('role') ?? target.tagName.toLowerCase()}: ${target.getAttribute('aria-label') ?? ''}`
+          );
         },
         true
       );
     });
-    const spokenHeadings = () =>
-      page.evaluate(() => (window as unknown as { __spokenHeadings: string[] }).__spokenHeadings);
+    const focusedInOrder = () =>
+      page.evaluate(() => (window as unknown as { __focused: string[] }).__focused);
+    // Every message box that is drawn, by name, each time one is added to the
+    // page. A box that unmounts and mounts again is added twice, so this is a
+    // mount count a test can read (DOR-2616).
+    await page.evaluate(() => {
+      const drawn: string[] = [];
+      (window as unknown as { __boxesDrawn: string[] }).__boxesDrawn = drawn;
+      const box = '[role="combobox"][aria-label^="Message"]';
+      new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of record.addedNodes) {
+            if (!(node instanceof Element)) continue;
+            const boxes = [...(node.matches(box) ? [node] : []), ...node.querySelectorAll(box)];
+            for (const found of boxes) drawn.push(found.getAttribute('aria-label') ?? '');
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+    const boxesDrawn = () =>
+      page.evaluate(() => (window as unknown as { __boxesDrawn: string[] }).__boxesDrawn);
+    const spokenHeadings = async () =>
+      (await focusedInOrder())
+        .filter((entry) => entry.startsWith('heading: '))
+        .map((entry) => entry.slice('heading: '.length));
 
     // Into a Community: the heading names the Community and then the channel,
     // and it is where focus is once the channel has opened (DOR-2240).
@@ -288,13 +317,28 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await expect(page.getByPlaceholder(/Message General/)).toBeVisible();
     await expect(heading).toBeFocused();
 
-    // Back to this DorkOS: its page's heading takes focus the same way.
+    // Back to this DorkOS, which lands on Home: its heading takes focus the
+    // same way.
     await trigger.click();
+    await page.evaluate(() => {
+      (window as unknown as { __boxesDrawn: string[] }).__boxesDrawn.length = 0;
+    });
     await page.getByRole('dialog').getByRole('radio', { name: /team/ }).click();
     await expect(page).not.toHaveURL(/community=/);
-    await expect
-      .poll(() => page.evaluate(() => document.activeElement?.matches('h1[data-page-heading]')))
-      .toBe(true);
+    await expect(heading).toHaveAccessibleName('Home');
+    await expect(heading).toBeFocused();
+    // And keeps it once #team has drawn. The room arrives after the heading has
+    // focus, because Home reads it from the server first, and its composer's
+    // mount used to take focus straight back: the heading held it for a few
+    // dozen milliseconds, so a check that happened to look inside them passed
+    // (DOR-2613).
+    await expect(page.getByRole('combobox', { name: 'Message #team…' })).toBeVisible();
+    await expect(heading).toBeFocused();
+    expect(await spokenHeadings()).toEqual(['Beta · General', 'Home']);
+    // One message box was drawn on the way home: #team's, once. The channel
+    // being left used to be drawn again, composer and all, in the moment
+    // between the address changing and Home arriving (DOR-2616).
+    expect(await boxesDrawn()).toEqual(['Message #team…']);
 
     // Opening and closing without choosing still returns focus to the trigger.
     await trigger.click();
@@ -302,6 +346,13 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toBeHidden();
     await expect(trigger).toBeFocused();
+
+    // An order check, not a timing one: whenever the composer mounted, it did
+    // not take focus after Home was announced.
+    const order = await focusedInOrder();
+    const announced = order.lastIndexOf('heading: Home');
+    expect(announced, order.join(' → ')).toBeGreaterThan(-1);
+    expect(order.slice(announced), order.join(' → ')).not.toContain('combobox: Message #team…');
   });
 
   test('at 200% zoom every destination stays reachable without sideways scrolling', async ({

@@ -9,9 +9,11 @@ import {
 } from '../content-removal.js';
 import { transaction } from '../data.js';
 import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
+import { channelWatermarks } from '../content/watermark.js';
 import { deleteReadyExports, restartExportJobs } from '../exports/store.js';
-import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../mentions.js';
-import { remove } from '../routes/members.js';
+import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../content/mentions.js';
+import { remove } from '../routes/community/members.js';
+import { appendJournalRow, type ErasureJournalRecord } from './journal.js';
 
 /** Hours between a request and the erasure it schedules. A constant, not configuration. */
 export const ERASURE_WINDOW_HOURS = 72;
@@ -338,11 +340,7 @@ async function tombstone(target: Target): Promise<void> {
 }
 
 async function recordWatermark(target: Target): Promise<Watermark> {
-  const result = await target.pool.query<{ channel_id: string; seq: string }>(
-    'SELECT channel_id,max(seq)::text AS seq FROM entries WHERE community_id=$1 GROUP BY channel_id',
-    [target.communityId]
-  );
-  return new Map(result.rows.map((row) => [row.channel_id, Number(row.seq)]));
+  return channelWatermarks(target.pool, target.communityId);
 }
 
 async function addressTargets(
@@ -453,7 +451,18 @@ async function rewriteMentions(target: Target, above: Watermark | null): Promise
   }
 }
 
-async function writeLine(options: ErasureOptions, line: string): Promise<void> {
+/**
+ * Journal one finished erasure, inside the transaction that finishes it: a row in
+ * `erasure_journal`, which the host API serves (routes/host/host-erasure-journal.ts), and a line in
+ * the `COMMUNITY_ERASURE_JOURNAL` file when one is set.
+ */
+async function writeLine(
+  client: PoolClient,
+  options: ErasureOptions,
+  line: string,
+  record: ErasureJournalRecord
+): Promise<void> {
+  await appendJournalRow(client, record);
   if (options.journalPath) await appendFile(options.journalPath, `${line}\n`, { mode: 0o600 });
 }
 
@@ -521,7 +530,8 @@ async function applyHusk(
         [target.communityId, agent.id, agentHandle]
       );
       await client.query(
-        `UPDATE agents SET display_name=$3,handle=$4,local_agent_id=NULL,active=false,
+        `UPDATE agents SET display_name=$3,handle=$4,local_agent_id=NULL,enrolled_by_grant_id=NULL,
+           active=false,
            revoked_at=COALESCE(revoked_at,now())
          WHERE id=$2 AND community_id=$1`,
         [target.communityId, agent.id, ERASED_AGENT_NAME, agentHandle]
@@ -542,7 +552,11 @@ async function applyHusk(
     await target.options.hooks?.inBatch?.('seal');
     // Journal before commit: a completed erasure never lacks its line. A line whose commit then
     // fails only asks erasure:reapply to finish an erasure the worker is retrying anyway.
-    await writeLine(target.options, line);
+    await writeLine(client, target.options, line, {
+      kind: 'member',
+      communityId: target.communityId,
+      memberId: target.memberId,
+    });
     return 'erased';
   });
 }
@@ -691,7 +705,7 @@ export async function eraseAccount(
         [userId]
       );
       await client.query('DELETE FROM "user" WHERE id=$1', [userId]);
-      await writeLine(options, line);
+      await writeLine(client, options, line, { kind: 'account', userId });
       return 'erased' as const;
     });
     if (outcome === 'again') continue;

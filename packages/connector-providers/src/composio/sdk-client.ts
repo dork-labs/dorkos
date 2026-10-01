@@ -99,8 +99,13 @@ export interface ComposioOperationClient {
 
 /** Safe catalog failure that blocks an incomplete reconciliation snapshot. */
 export class ComposioCatalogError extends Error {
-  constructor(message: string) {
-    super(message);
+  /**
+   * Construct one safe discovery failure. The message stays fixed: a wrapped
+   * provider error rides along as `cause` so a log can name its class, and is
+   * never interpolated into what a caller may show.
+   */
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'ComposioCatalogError';
   }
 }
@@ -120,7 +125,9 @@ function throwIfAborted(signal: AbortSignal): void {
 /** Map SDK cancellation onto the provider-neutral discovery cancellation shape. */
 function rethrowDiscoveryError(error: unknown, signal: AbortSignal): never {
   if (signal.aborted || error instanceof ComposioRequestCancelledError) throw abortError();
-  throw new ComposioCatalogError('Composio catalog discovery failed. Check the provider status.');
+  throw new ComposioCatalogError('Composio catalog discovery failed. Check the provider status.', {
+    cause: error,
+  });
 }
 
 /**

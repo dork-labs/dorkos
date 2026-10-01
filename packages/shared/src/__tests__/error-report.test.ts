@@ -97,6 +97,15 @@ describe('redactUrlQueries', () => {
       'at https://a.example/p; retrying'
     );
   });
+
+  it('stays linear on a URL holding a long run of trailing-punctuation characters', () => {
+    // `/[).,;:]+$/` backtracked quadratically on a run that is not at the end
+    // of the URL (CodeQL js/polynomial-redos); log text is not ours to bound.
+    const url = `https://a.example/${')'.repeat(100_000)}x`;
+    const started = performance.now();
+    expect(redactUrlQueries(`${url}?q=1).`)).toBe(`${url}).`);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });
 
 describe('scrubMessage', () => {

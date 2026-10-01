@@ -1341,7 +1341,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getCommunityConnection: vi.fn(),
     pollCommunityConnection: vi.fn(),
     cancelCommunityConnection: vi.fn().mockResolvedValue(undefined),
-    disconnectCommunity: vi.fn().mockResolvedValue({ remoteRevoked: true }),
+    disconnectCommunity: vi.fn().mockResolvedValue({ remoteRevoked: true, agentsNotRemoved: [] }),
+    getCommunityDisconnectImpact: vi.fn().mockResolvedValue({ agents: [] }),
     getCommunityNavigation: vi
       .fn()
       .mockResolvedValue({ ownerKey: 'local-owner', order: [], destinations: [] }),
@@ -1366,6 +1367,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     }),
     getCloudLinkStatus: vi.fn().mockResolvedValue({ state: 'idle' }),
+    cancelCloudLink: vi.fn().mockResolvedValue({ state: 'idle' }),
     unlinkCloud: vi.fn().mockResolvedValue({ ok: true }),
     getCloudStatus: vi
       .fn()
@@ -1399,6 +1401,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getHostedCommunityClaimLink: vi.fn(),
     keepHostedCommunity: vi.fn(),
     restoreHostedCommunity: vi.fn(),
+    // The room check defaults to "fits", so a test about the move itself need not stub it.
+    checkHostedCommunityMoveRoom: vi.fn().mockResolvedValue({ ok: true }),
     startHostedCommunityMove: vi.fn(),
     getHostedCommunityMove: vi.fn().mockResolvedValue({ available: false }),
     cancelHostedCommunityMove: vi.fn(),
