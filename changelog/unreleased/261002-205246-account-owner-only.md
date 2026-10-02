@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(cloud): make DorkOS account money and account routes owner-only (DOR-2652)'
+  - 'fix(cloud): extend the owner bar to account settings, credits schedules and link cancel (DOR-2652)'
 ---
 
 ### Fixed

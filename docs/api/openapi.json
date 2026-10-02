@@ -17732,7 +17732,7 @@
             }
           },
           "403": {
-            "description": "Only a person can move or hold a session; an agent identity is refused. Moving onto DorkOS credits is for the person who owns this install alone (`person_only`, `owner_only`).",
+            "description": "Only a person can move or hold a session; an agent identity is refused. Moving onto DorkOS credits is for the owner of this DorkOS alone (`person_only`, `owner_only`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -18827,7 +18827,7 @@
             }
           },
           "403": {
-            "description": "The message names DorkOS credits (`account: \"dorkos-credits\"`) and the caller is not the person who owns this install (`person_only`, `owner_only`); nothing started",
+            "description": "The message names DorkOS credits (`account: \"dorkos-credits\"`) and the caller is not the owner of this DorkOS (`person_only`, `owner_only`); nothing started",
             "content": {
               "application/json": {
                 "schema": {
@@ -30691,7 +30691,7 @@
             }
           },
           "403": {
-            "description": "Only the person who owns this install may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
             "content": {
               "application/json": {
                 "schema": {
@@ -30814,7 +30814,7 @@
             }
           },
           "403": {
-            "description": "Only the person who owns this install may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
             "content": {
               "application/json": {
                 "schema": {
@@ -30852,7 +30852,7 @@
             }
           },
           "403": {
-            "description": "Only the person who owns this install may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
             "content": {
               "application/json": {
                 "schema": {
@@ -30957,7 +30957,7 @@
             }
           },
           "403": {
-            "description": "Only the person who owns this install may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31074,7 +31074,7 @@
             }
           },
           "403": {
-            "description": "Only the person who owns this install may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31130,7 +31130,7 @@
             }
           },
           "403": {
-            "description": "Only the person who owns this install may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31161,7 +31161,7 @@
             }
           },
           "403": {
-            "description": "Only the person who owns this install may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
             "content": {
               "application/json": {
                 "schema": {
