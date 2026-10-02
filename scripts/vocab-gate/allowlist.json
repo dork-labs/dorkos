@@ -489,6 +489,12 @@
     {
       "path": "docs/guides/communities.mdx",
       "terms": ["community", "communities"],
+      "contains": "the page says **No community at this address.**",
+      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
+    },
+    {
+      "path": "docs/guides/communities.mdx",
+      "terms": ["community", "communities"],
       "contains": "before choosing **Create community**",
       "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
     },

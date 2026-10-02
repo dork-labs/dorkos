@@ -98,12 +98,22 @@ export async function readDefaultCommunityPreflight(
       readFlyOrganizations(options.fly),
       readFlyRegions(options.fly),
       readFlyApps(options.fly, selection.flyOrganization),
-    ]).catch((error: unknown) => classifyCommunityProviderPreflightFailure('fly', error)),
+    ]).catch((error: unknown) =>
+      classifyCommunityProviderPreflightFailure('fly', error, {
+        env: options.fly.env,
+        organization: selection.flyOrganization,
+      })
+    ),
     Promise.all([
       readNeonOrganizations(options.neon),
       readNeonRegions(options.neon),
       readNeonProjects(options.neon, selection.neonOrganization),
-    ]).catch((error: unknown) => classifyCommunityProviderPreflightFailure('neon', error)),
+    ]).catch((error: unknown) =>
+      classifyCommunityProviderPreflightFailure('neon', error, {
+        env: options.neon.env,
+        organization: selection.neonOrganization,
+      })
+    ),
   ]);
   const [flyOrganizations, flyRegions, flyApps] = flyInventory;
   const [neonOrganizations, neonRegions, neonProjects] = neonInventory;
@@ -319,7 +329,8 @@ export function createDefaultCommunityCreationDependencies(input: {
           input.plan.fly.appName,
           input.plan.fly.organizationId,
           flyProvenanceNetwork(marker),
-          readAppProvenance
+          (appName) =>
+            useTigrisClient(input.options, (client) => client.readAppProvenanceOrNotFound(appName))
         );
         return {
           id: created.id,

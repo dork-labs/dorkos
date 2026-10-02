@@ -23,6 +23,7 @@ import { createWorkspaceMethods } from './workspace-methods';
 import { createProjectMethods } from './project-methods';
 import { createRoomMethods } from './room-methods';
 import { createSessionCanvasMethods } from './session-canvas-methods';
+import { createCanvasDocMethods } from './canvas-doc-methods';
 import { createReadCursorMethods } from './read-cursor-methods';
 import { createCloudMethods } from './cloud-methods';
 import { createCommunityMethods } from './community-methods';
@@ -65,6 +66,7 @@ export interface HttpTransport
     ReturnType<typeof createProjectMethods>,
     ReturnType<typeof createRoomMethods>,
     ReturnType<typeof createSessionCanvasMethods>,
+    ReturnType<typeof createCanvasDocMethods>,
     ReturnType<typeof createReadCursorMethods>,
     ReturnType<typeof createCloudMethods>,
     ReturnType<typeof createCommunityMethods>,
@@ -110,6 +112,7 @@ export class HttpTransport implements Transport {
       createProjectMethods(baseUrl),
       createRoomMethods(baseUrl),
       createSessionCanvasMethods(baseUrl),
+      createCanvasDocMethods(baseUrl),
       createReadCursorMethods(baseUrl),
       createCloudMethods(baseUrl),
       createCommunityMethods(baseUrl),

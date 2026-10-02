@@ -54,7 +54,8 @@ export interface DevtoolsScreenshotEntry {
  * injected rasterizer).
  */
 export type ScreenshotOutcome =
-  { ok: true; screenshot: DevtoolsScreenshotEntry } | { ok: false; error: string };
+  | { ok: true; screenshot: DevtoolsScreenshotEntry }
+  | { ok: false; error: string; provenance?: 'host' | 'page-reported' };
 
 /**
  * One window's claim on one browser document — a row in the session's driver
@@ -67,7 +68,28 @@ export type ScreenshotOutcome =
  * so resolving "the active one" in the client would give two windows the same
  * answer and put the race back with `act` verbs in it.
  */
+/** Expected host binding captured when the server issues a request; absent generation is explicitly legacy. */
+export interface BridgeRequestBinding {
+  clientId?: string;
+  documentId?: string;
+  bridgeGeneration?: string;
+}
+function matchesBinding(
+  expected: BridgeRequestBinding | undefined,
+  actual: BridgeRequestBinding
+): boolean {
+  return (
+    !!expected &&
+    expected.clientId === actual.clientId &&
+    expected.documentId === actual.documentId &&
+    expected.bridgeGeneration === actual.bridgeGeneration
+  );
+}
+
 export interface DriverClaim {
+  /** Host-reported address pinned to this claimed document, not the shared buffer. */
+  logicalUrl?: string;
+  bridgeGeneration?: string;
   /** The `X-Client-Id` of the window holding the page. */
   clientId: string;
   /** The canvas document id of the browser tab it is holding. */
@@ -91,6 +113,7 @@ export interface DriverClaim {
  * been asked for, and whether the ceiling has been reached.
  */
 export interface RecordingState {
+  bridgeGeneration?: string;
   /** ULID. Names the file the server writes and the upload that carries it. */
   id: string;
   /** Which browser document is being recorded. Resolved at start. */
@@ -124,12 +147,19 @@ export interface RecordingState {
 
 /** Where one finished recording's bytes belong, held while the upload is in flight. */
 export interface PendingRecordingUpload {
+  binding?: BridgeRequestBinding;
   /** The recording being uploaded. Names the file; never taken from the caller. */
   recordingId: string;
   /** The session working directory the file lands under. */
   cwd: string;
   /** How many frames were asked for, so the answer can say the ceiling was hit. */
   full: boolean;
+}
+
+/** Host-owned identity for one upload; never supplied by a page or inferred from a public snapshot. */
+export interface RecordingUploadLease {
+  readonly requestId: string;
+  readonly pending: Readonly<PendingRecordingUpload>;
 }
 
 /** What `browser_record_stop` awaits: a written file, or one plain sentence. */
@@ -147,10 +177,11 @@ export type RecordingOutcome =
       /** The last frame, as an MCP image block's two fields. */
       keyframe: { data: string; mimeType: string } | null;
     }
-  | { ok: false; error: string };
+  | { ok: false; error: string; provenance?: 'host' | 'page-reported' };
 
 /** How many windows-and-pages one session remembers before evicting the oldest. */
 const MAX_DRIVER_CLAIMS = 8;
+const MAX_RECORDING_START_WAITERS = 64;
 
 /** An entry retained with its approximate serialized size (byte accounting). */
 interface Sized<T> {
@@ -274,13 +305,21 @@ export class DevtoolsCaptureStore {
    * agnostic — see the rekey note in {@link ingest}). Entries are removed on
    * resolution or timeout, so the map never outgrows the in-flight captures.
    */
-  private readonly screenshotWaiters = new Map<string, (outcome: ScreenshotOutcome) => void>();
+  private readonly screenshotBindings = new Map<string, BridgeRequestBinding>();
+  private readonly actionBindings = new Map<string, BridgeRequestBinding>();
+  private readonly screenshotWaiters = new Map<
+    string,
+    (outcome: ScreenshotOutcome | undefined) => void
+  >();
   /**
    * Pending driving round-trips, keyed by requestId for exactly the reason the
    * screenshot waiters are: a session rekey between the request and the answer
    * must not strand a tool call.
    */
-  private readonly actionWaiters = new Map<string, (result: DevtoolsActionResult) => void>();
+  private readonly actionWaiters = new Map<
+    string,
+    (result: DevtoolsActionResult | undefined) => void
+  >();
   /**
    * Pending `browser_record_stop` round trips, keyed by requestId for the reason
    * the other two waiter maps are: a rekey between the request and the upload
@@ -295,6 +334,25 @@ export class DevtoolsCaptureStore {
    * property of the design rather than a rule the route remembers to follow.
    */
   private readonly pendingRecordings = new Map<string, PendingRecordingUpload>();
+  private readonly recordingStartWaiters = new Map<
+    string,
+    {
+      recordingId: string;
+      phase: 'reserved' | 'started';
+      binding: BridgeRequestBinding;
+      expiresAt: number;
+      timer: ReturnType<typeof setTimeout>;
+      resolve: (outcome: NonNullable<DevtoolsIngest['recordingStart']> | undefined) => void;
+    }
+  >();
+  private readonly recordingUploadOwners = new Map<
+    string,
+    {
+      lease: RecordingUploadLease;
+      entry: PendingRecordingUpload;
+      binding: BridgeRequestBinding;
+    }
+  >();
 
   /**
    * Append an ingest batch to a session's buffer, creating it on first ingest.
@@ -310,6 +368,75 @@ export class DevtoolsCaptureStore {
    *   ingests its captures and simply claims nothing.
    */
   ingest(sessionId: string, batch: DevtoolsIngest, clientId?: string): void {
+    if (batch.recordingStart) {
+      const outcome = batch.recordingStart;
+      const expected = this.recordingStartWaiters.get(outcome.requestId);
+      // Admission is standalone host data, not a telemetry/claim/reset envelope.
+      const allowed = new Set([
+        'recordingStart',
+        'hostOutcome',
+        'documentId',
+        'bridgeGeneration',
+        'seq',
+        'console',
+        'network',
+      ]);
+      if (
+        !expected ||
+        batch.hostOutcome !== 'host' ||
+        batch.seq !== 0 ||
+        batch.console.length ||
+        batch.network.length ||
+        Object.keys(batch).some((key) => !allowed.has(key)) ||
+        expected.phase !== outcome.phase ||
+        expected.recordingId !== outcome.recordingId ||
+        expected.expiresAt <= Date.now() ||
+        !matchesBinding(expected.binding, {
+          clientId,
+          documentId: batch.documentId,
+          bridgeGeneration: batch.bridgeGeneration,
+        })
+      )
+        return;
+      const liveRecording = [...this.buffers.values()].some(
+        (buffer) =>
+          buffer.recording?.id === expected.recordingId &&
+          buffer.drivers.some(
+            (claim) =>
+              claim.clientId === clientId &&
+              claim.documentId === batch.documentId &&
+              claim.bridgeGeneration === batch.bridgeGeneration &&
+              claim.activeAt >= Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS
+          )
+      );
+      if (!liveRecording) return;
+      this.recordingStartWaiters.delete(outcome.requestId);
+      clearTimeout(expected.timer);
+      expected.resolve(outcome);
+      return;
+    }
+    // Validate a correlated answer before reset, attribution, arrays, eviction or slot mutation.
+    if (batch.screenshot) {
+      const id = batch.screenshot.requestId;
+      if (
+        !this.screenshotWaiters.has(id) ||
+        !matchesBinding(this.screenshotBindings.get(id), {
+          clientId,
+          documentId: batch.documentId,
+          bridgeGeneration: batch.bridgeGeneration,
+        })
+      )
+        return;
+    } else if (batch.active === undefined) {
+      const claim = this.buffers
+        .get(sessionId)
+        ?.drivers.find((c) => c.clientId === clientId && c.documentId === batch.documentId);
+      if (
+        (claim && claim.bridgeGeneration !== batch.bridgeGeneration) ||
+        (!claim && batch.bridgeGeneration !== undefined)
+      )
+        return;
+    }
     let buffer = this.buffers.get(sessionId);
     if (!buffer) {
       this.evictIfFull();
@@ -353,6 +480,10 @@ export class DevtoolsCaptureStore {
       buffer.approxBytes += bytesOf(incoming);
       this.trimCount(buffer, 'network', WORKBENCH.DEVTOOLS_NETWORK_BUFFER);
     }
+    if (batch.dropped) {
+      buffer.consoleEvicted = true;
+      buffer.networkEvicted = true;
+    }
     this.trimBytes(buffer);
 
     if (batch.screenshot) {
@@ -363,7 +494,11 @@ export class DevtoolsCaptureStore {
         buffer.screenshot = entry; // single slot, latest wins
         outcome = { ok: true, screenshot: entry };
       } else {
-        outcome = { ok: false, error: error ?? 'The preview returned no screenshot data.' };
+        outcome = {
+          ok: false,
+          error: error ?? 'The preview returned no screenshot data.',
+          ...(batch.hostOutcome ? { provenance: batch.hostOutcome } : {}),
+        };
       }
       // Waiters are keyed by requestId ALONE (not session id) so the
       // first-turn canonical rekey — the client may ingest under the canonical
@@ -372,6 +507,7 @@ export class DevtoolsCaptureStore {
       const resolve = this.screenshotWaiters.get(requestId);
       if (resolve) {
         this.screenshotWaiters.delete(requestId);
+        this.screenshotBindings.delete(requestId);
         resolve(outcome);
       }
     }
@@ -379,6 +515,8 @@ export class DevtoolsCaptureStore {
     if (batch.active !== undefined && clientId && batch.documentId) {
       this.applyClaim(buffer, clientId, batch.documentId, batch.active, {
         instrumented: batch.instrumented === true,
+        bridgeGeneration: batch.bridgeGeneration,
+        logicalUrl: batch.logicalUrl,
         // Passed through as the THREE states it has, because absent is neither
         // of the other two. Absent is what a client that predates the field
         // sends on every report including its beat, so reading it as "yes, a
@@ -435,12 +573,18 @@ export class DevtoolsCaptureStore {
     clientId: string,
     documentId: string,
     active: boolean,
-    opts: { instrumented: boolean; activation: boolean | undefined }
+    opts: {
+      instrumented: boolean;
+      activation: boolean | undefined;
+      bridgeGeneration?: string;
+      logicalUrl?: string;
+    }
   ): void {
     const index = buffer.drivers.findIndex(
       (claim) => claim.clientId === clientId && claim.documentId === documentId
     );
     if (!active) {
+      if (index >= 0 && buffer.drivers[index].bridgeGeneration !== opts.bridgeGeneration) return;
       if (index >= 0) buffer.drivers.splice(index, 1);
       if (buffer.seat?.clientId === clientId && buffer.seat.documentId === documentId) {
         // The seat falls to whatever is left, which `resolveDriver` works out
@@ -470,6 +614,8 @@ export class DevtoolsCaptureStore {
         // it back.
         held.activeAt = Date.now();
         held.instrumented = opts.instrumented;
+        held.bridgeGeneration = opts.bridgeGeneration;
+        if (opts.logicalUrl !== undefined) held.logicalUrl = opts.logicalUrl;
         return;
       }
     }
@@ -482,6 +628,8 @@ export class DevtoolsCaptureStore {
       documentId,
       activeAt: Date.now(),
       instrumented: opts.instrumented,
+      bridgeGeneration: opts.bridgeGeneration,
+      ...(opts.logicalUrl !== undefined ? { logicalUrl: opts.logicalUrl } : {}),
     });
     if (buffer.drivers.length > MAX_DRIVER_CLAIMS) {
       buffer.drivers.splice(0, buffer.drivers.length - MAX_DRIVER_CLAIMS);
@@ -596,9 +744,15 @@ export class DevtoolsCaptureStore {
    * @param requestId - The round-trip id the tool stamped on its request.
    * @param timeoutMs - How long to wait before giving up.
    */
-  awaitAction(requestId: string, timeoutMs: number): Promise<DevtoolsActionResult | undefined> {
+  awaitAction(
+    requestId: string,
+    timeoutMs: number,
+    binding: BridgeRequestBinding = {}
+  ): Promise<DevtoolsActionResult | undefined> {
+    this.actionBindings.set(requestId, { ...binding });
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
+        this.actionBindings.delete(requestId);
         this.actionWaiters.delete(requestId);
         resolve(undefined);
       }, timeoutMs);
@@ -610,6 +764,17 @@ export class DevtoolsCaptureStore {
   }
 
   /**
+   * Cancel a request that was not published, releasing its timer and binding.
+   * @param requestId - The unpublished action request.
+   */
+  cancelAction(requestId: string): void {
+    const resolve = this.actionWaiters.get(requestId);
+    this.actionBindings.delete(requestId);
+    this.actionWaiters.delete(requestId);
+    resolve?.(undefined);
+  }
+
+  /**
    * Deliver one driving result to whatever is awaiting it. Keyed by requestId
    * alone, like the screenshot path and for the same rekey reason. A result for
    * a request nobody is awaiting (the tool already timed out, the turn ended) is
@@ -618,11 +783,67 @@ export class DevtoolsCaptureStore {
    *
    * @param result - The validated result relayed from the in-page shim.
    */
-  resolveAction(result: DevtoolsActionResult): void {
+  resolveAction(result: DevtoolsActionResult, clientId?: string): void {
     const resolve = this.actionWaiters.get(result.requestId);
-    if (!resolve) return;
+    if (
+      !resolve ||
+      !matchesBinding(this.actionBindings.get(result.requestId), {
+        clientId,
+        documentId: result.documentId,
+        bridgeGeneration: result.bridgeGeneration,
+      })
+    )
+      return;
+    this.actionBindings.delete(result.requestId);
     this.actionWaiters.delete(result.requestId);
     resolve(result);
+  }
+
+  /**
+   * Await one exact host recording-admission phase before publishing its request.
+   * @param requestId - The server-owned start identity, unchanged across phases/rekeys.
+   * @param options - Expected recording, phase, binding and bounded wait.
+   */
+  awaitRecordingStart(
+    requestId: string,
+    options: {
+      recordingId: string;
+      phase: 'reserved' | 'started';
+      binding: BridgeRequestBinding;
+      timeoutMs: number;
+    }
+  ): Promise<NonNullable<DevtoolsIngest['recordingStart']> | undefined> {
+    if (
+      this.recordingStartWaiters.size >= MAX_RECORDING_START_WAITERS ||
+      this.recordingStartWaiters.has(requestId)
+    )
+      return Promise.resolve(undefined);
+    return new Promise((resolve) => {
+      const entry = {
+        ...options,
+        binding: { ...options.binding },
+        expiresAt: Date.now() + options.timeoutMs,
+        timer: setTimeout(() => {
+          if (this.recordingStartWaiters.get(requestId) === entry) {
+            this.recordingStartWaiters.delete(requestId);
+            resolve(undefined);
+          }
+        }, options.timeoutMs),
+        resolve,
+      };
+      this.recordingStartWaiters.set(requestId, entry);
+    });
+  }
+
+  /** Release only this unpublished/failed start phase, including its timer.
+   * @param requestId - The exact server-owned start identity.
+   */
+  cancelRecordingStart(requestId: string): void {
+    const entry = this.recordingStartWaiters.get(requestId);
+    if (!entry) return;
+    this.recordingStartWaiters.delete(requestId);
+    clearTimeout(entry.timer);
+    entry.resolve(undefined);
   }
 
   /**
@@ -635,7 +856,7 @@ export class DevtoolsCaptureStore {
    */
   startRecording(
     sessionId: string,
-    state: Pick<RecordingState, 'id' | 'documentId' | 'clientId'>
+    state: Pick<RecordingState, 'id' | 'documentId' | 'clientId' | 'bridgeGeneration'>
   ): boolean {
     const buffer = this.buffers.get(sessionId);
     if (!buffer) return false;
@@ -697,6 +918,15 @@ export class DevtoolsCaptureStore {
     return recording;
   }
 
+  /** Roll back only the unpublished recording, including after a session-buffer rekey.
+   * @param recordingId - The server-owned recording created by this start call.
+   */
+  cancelRecording(recordingId: string): void {
+    for (const buffer of this.buffers.values()) {
+      if (buffer.recording?.id === recordingId) buffer.recording = null;
+    }
+  }
+
   /**
    * Register where one finished recording's bytes belong, and await them.
    *
@@ -739,6 +969,68 @@ export class DevtoolsCaptureStore {
     return pending ? { ...pending } : undefined;
   }
 
+  /** Recording uploads require the pinned live claim, even while decoder/encoder work is finishing. */
+  admitsRecording(requestId: string, actual: BridgeRequestBinding): boolean {
+    const pending = this.pendingRecordings.get(requestId);
+    if (!pending || !matchesBinding(pending.binding ?? {}, actual)) return false;
+    if (!pending.binding) return true; // explicitly issued legacy request
+    return [...this.buffers.values()].some((buffer) =>
+      buffer.drivers.some(
+        (claim) =>
+          matchesBinding(pending.binding, claim) &&
+          claim.activeAt >= Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS
+      )
+    );
+  }
+
+  /** Acquire exclusive ownership before any upload filesystem await or error result.
+   * @param requestId - The pending server-issued request.
+   * @param binding - The exact HTTP client and host lifetime fields.
+   * @returns An owned lease, or undefined for invalid or already owned requests.
+   */
+  claimRecordingUpload(
+    requestId: string,
+    binding: BridgeRequestBinding
+  ): RecordingUploadLease | undefined {
+    if (this.recordingUploadOwners.has(requestId) || !this.admitsRecording(requestId, binding))
+      return undefined;
+    const entry = this.pendingRecordings.get(requestId)!;
+    const lease = { requestId, pending: { ...entry } };
+    this.recordingUploadOwners.set(requestId, { lease, entry, binding: { ...binding } });
+    return lease;
+  }
+
+  /** Revalidate internal pending identity, exclusive owner and live binding after every await.
+   * @param lease - The identity returned by claimRecordingUpload.
+   */
+  isRecordingUploadCurrent(lease: RecordingUploadLease): boolean {
+    const owner = this.recordingUploadOwners.get(lease.requestId);
+    return (
+      owner?.lease === lease &&
+      this.pendingRecordings.get(lease.requestId) === owner.entry &&
+      this.admitsRecording(lease.requestId, owner.binding)
+    );
+  }
+
+  /** Settle only the waiter's current upload owner, never a replacement request.
+   * @param lease - The owned upload identity.
+   * @param outcome - The admitted page outcome or host failure.
+   */
+  resolveRecordingUpload(lease: RecordingUploadLease, outcome: RecordingOutcome): boolean {
+    if (!this.isRecordingUploadCurrent(lease) || !this.recordingWaiters.has(lease.requestId))
+      return false;
+    this.resolveRecording(lease.requestId, outcome);
+    return true;
+  }
+
+  /** Release exclusion after owner cleanup; stale finally callbacks cannot release another owner.
+   * @param lease - The identity whose resources finished unwinding.
+   */
+  releaseRecordingUpload(lease: RecordingUploadLease): void {
+    if (this.recordingUploadOwners.get(lease.requestId)?.lease === lease)
+      this.recordingUploadOwners.delete(lease.requestId);
+  }
+
   /**
    * Deliver one recording outcome to whatever is awaiting it. An outcome nobody
    * is waiting for is dropped, exactly as a late driving result is.
@@ -762,9 +1054,15 @@ export class DevtoolsCaptureStore {
    * @param requestId - The round-trip id the tool stamped on its capture request.
    * @param timeoutMs - How long to wait before giving up.
    */
-  awaitScreenshot(requestId: string, timeoutMs: number): Promise<ScreenshotOutcome | undefined> {
+  awaitScreenshot(
+    requestId: string,
+    timeoutMs: number,
+    binding: BridgeRequestBinding = {}
+  ): Promise<ScreenshotOutcome | undefined> {
+    this.screenshotBindings.set(requestId, { ...binding });
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
+        this.screenshotBindings.delete(requestId);
         this.screenshotWaiters.delete(requestId);
         resolve(undefined);
       }, timeoutMs);
@@ -773,6 +1071,17 @@ export class DevtoolsCaptureStore {
         resolve(outcome);
       });
     });
+  }
+
+  /**
+   * Cancel a request that was not published before a late reply can fill the slot.
+   * @param requestId - The unpublished screenshot request.
+   */
+  cancelScreenshot(requestId: string): void {
+    const resolve = this.screenshotWaiters.get(requestId);
+    this.screenshotBindings.delete(requestId);
+    this.screenshotWaiters.delete(requestId);
+    resolve?.(undefined);
   }
 
   /**
@@ -830,11 +1139,15 @@ export class DevtoolsCaptureStore {
 
   /** Drop every buffer and every pending waiter (test isolation). */
   clear(): void {
+    for (const requestId of this.recordingStartWaiters.keys()) this.cancelRecordingStart(requestId);
     this.buffers.clear();
+    this.screenshotBindings.clear();
+    this.actionBindings.clear();
     this.screenshotWaiters.clear();
     this.actionWaiters.clear();
     this.recordingWaiters.clear();
     this.pendingRecordings.clear();
+    this.recordingUploadOwners.clear();
   }
 
   /**

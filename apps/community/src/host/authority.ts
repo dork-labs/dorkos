@@ -59,13 +59,16 @@ export async function recordHostAudit(
     subjectApiKeyId?: string | null;
     /** SHA-256 of a takedown's record.json, on `takedown.evidence_stored`. */
     evidenceRecordSha256?: string | null;
+    /** The account closure an `account.close*` row is about; never the account itself. */
+    subjectAccountClosureId?: string | null;
   }
 ): Promise<void> {
   await client.query(
     `INSERT INTO host_audit_events(
        actor_kind,actor_user_id,actor_api_key_id,subject_api_key_id,
-       community_id,action,prior_state,next_state,changed_fields,evidence_record_sha256
-     ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10)`,
+       community_id,action,prior_state,next_state,changed_fields,evidence_record_sha256,
+       subject_account_closure_id
+     ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10,$11)`,
     [
       actor.kind,
       actor.kind === 'person' ? actor.userId : null,
@@ -77,6 +80,7 @@ export async function recordHostAudit(
       event.nextState ?? null,
       event.changedFields ?? [],
       event.evidenceRecordSha256 ?? null,
+      event.subjectAccountClosureId ?? null,
     ]
   );
 }

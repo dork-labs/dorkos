@@ -1517,6 +1517,12 @@ export const CommunityWireErrorCodeSchema = z.enum([
    * see an unknown code.
    */
   'COMMUNITY_TAKEN_DOWN',
+  /**
+   * `409`: the host asked to close an account that still owns a community. Ownership has to
+   * move first (an owner replacement or a transfer), or the community has to be deleted. Added
+   * later; older readers see an unknown code.
+   */
+  'ACCOUNT_OWNS_COMMUNITY',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

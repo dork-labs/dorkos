@@ -415,3 +415,45 @@ describe('watchAdapterConfig — watcher error handling', () => {
     expect(logger.warn).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('persisted webhook namespace validation', () => {
+  it.each(['relay.agent.codex.session', 'relay.doc.canvas-hash'])(
+    'refuses %s without deleting raw entries or valid neighbors',
+    async (subject) => {
+      vi.clearAllMocks();
+      const refused = {
+        id: 'unsafe',
+        type: 'webhook',
+        enabled: true,
+        config: {
+          inbound: { subject, secret: 'fixture-secret-at-least16' },
+          outbound: { url: 'https://example.com/hook', secret: 'fixture-secret-at-least16' },
+          unknown: { preserve: true },
+        },
+      };
+      const unknown = { id: 'unknown', type: 'future-type', config: { preserve: ['exact'] } };
+      vi.mocked(readFile).mockResolvedValue(
+        JSON.stringify({
+          adapters: [
+            refused,
+            unknown,
+            { id: 'valid', type: 'telegram', enabled: false, config: { token: 'valid-token' } },
+          ],
+        })
+      );
+      const loaded = await loadAdapterConfig(CONFIG_PATH);
+      expect(loaded.adapters.map((a) => a.id)).toEqual(['valid']);
+      expect(loaded.unparsed).toEqual([refused, unknown]);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("'unsafe'"),
+        expect.anything()
+      );
+      expect(writeFile).not.toHaveBeenCalled();
+      await saveAdapterConfig(CONFIG_PATH, loaded.adapters, loaded.unparsed);
+      const saved = JSON.parse(String(vi.mocked(writeFile).mock.calls.at(-1)![1]));
+      expect(saved.adapters).toContainEqual(refused);
+      expect(saved.adapters).toContainEqual(unknown);
+      expect(saved.adapters.some((a: { id: string }) => a.id === 'valid')).toBe(true);
+    }
+  );
+});

@@ -33,11 +33,17 @@ For a deployment outside Docker, stop all web processes and run `node dist-serve
 
 ## An owner who has left
 
-Password recovery never changes who owns a community. To give a community a new owner when its owner has left, use the online request in [Replacing an owner who has left](OPERATIONS.md#replacing-an-owner-who-has-left) first: it emails the owner, waits, lets them keep ownership with one click, and records every step. Changing the owner by editing the database is the last resort, for when that request cannot run: the owner is never told, and members see no record of it.
+Password recovery never changes who owns a community. To give a community a new owner when its owner has left, use the online request in [Replacing an owner who has left](OPERATIONS.md#replacing-an-owner-who-has-left) first: it emails the owner, waits, lets them keep ownership with one click, and records every step. It needs mail set up on this host and a host API key with the `communities:ownership` permission (or a host operator's password). Changing the owner by editing the database is the last resort, for when that request cannot run: the owner is never told, and members see no record of it.
 
 ## An account that holds someone else's email
 
 If a password account was created with an email address that belongs to someone else, the real owner of that address is refused by single sign-on. Password recovery is the wrong tool here: it would hand the account to whoever you give the password. Instead, if the account never joined a community, remove it with `node dist-server/host/release-unverified-account.js <email>` (see the single sign-on section of [DEPLOYMENT.md](DEPLOYMENT.md)). If it already joined, the community's owner removes the member first, or the person erases their own membership or account, and then you release it.
+
+## An import is not a backup
+
+Importing an owner's export brings a community onto another server. It does not recover one. The import makes a brand-new community with new IDs. Past members come back as former members with no account, so they cannot sign in to it, and connected DorkOS installations and agents must connect again. Nobody owns it until someone claims it.
+
+To recover this server after lost data or a bad upgrade, restore your own database and file backups together (see [Back up both the database and files](OPERATIONS.md#back-up-both-the-database-and-files) and [Rehearse a restore](OPERATIONS.md#rehearse-a-restore)). Keep taking those backups even if owners also download exports.
 
 ## After restoring a backup
 

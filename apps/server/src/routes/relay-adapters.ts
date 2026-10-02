@@ -761,28 +761,37 @@ export function createAdapterRouter(
   );
 
   // POST /webhooks/:adapterId — Inbound webhook receiver
-  router.post('/webhooks/:adapterId', express.raw({ type: '*/*' }), async (req, res) => {
-    const adapterInfo = adapterManager.getAdapter(req.params.adapterId);
-    if (!adapterInfo || adapterInfo.config.type !== 'webhook') {
-      return res.status(404).json({ error: 'Webhook adapter not found' });
+  router.post(
+    '/webhooks/:adapterId',
+    express.raw({ type: '*/*', limit: '1mb' }),
+    async (req, res) => {
+      const adapterInfo = adapterManager.getAdapter(req.params.adapterId);
+      if (!adapterInfo || adapterInfo.config.type !== 'webhook') {
+        return res.status(404).json({ error: 'Webhook adapter not found' });
+      }
+      const registry = adapterManager.getRegistry();
+      const adapter = registry.get(req.params.adapterId);
+      if (!adapter) return res.status(404).json({ error: 'Adapter not running' });
+      if (
+        !('handleInbound' in adapter) ||
+        typeof (adapter as Record<string, unknown>).handleInbound !== 'function'
+      ) {
+        return res.status(500).json({ error: 'Adapter does not support webhook ingestion' });
+      }
+      // Raw parsing skips requests without a content type. A cast cannot turn
+      // an absent body (or a body consumed by an earlier parser) back into bytes.
+      if (!Buffer.isBuffer(req.body)) {
+        return res.status(400).json({ error: 'Send a request body with a content type.' });
+      }
+      const webhookAdapter = adapter as WebhookAdapter;
+      const result = await webhookAdapter.handleInbound(
+        req.body,
+        req.headers as Record<string, string | string[] | undefined>
+      );
+      if (result.ok) return res.status(200).json({ ok: true });
+      return res.status(result.status ?? 401).json({ error: result.error });
     }
-    const registry = adapterManager.getRegistry();
-    const adapter = registry.get(req.params.adapterId);
-    if (!adapter) return res.status(404).json({ error: 'Adapter not running' });
-    if (
-      !('handleInbound' in adapter) ||
-      typeof (adapter as Record<string, unknown>).handleInbound !== 'function'
-    ) {
-      return res.status(500).json({ error: 'Adapter does not support webhook ingestion' });
-    }
-    const webhookAdapter = adapter as WebhookAdapter;
-    const result = await webhookAdapter.handleInbound(
-      req.body as Buffer,
-      req.headers as Record<string, string | string[] | undefined>
-    );
-    if (result.ok) return res.status(200).json({ ok: true });
-    return res.status(result.status ?? 401).json({ error: result.error });
-  });
+  );
 
   return router;
 }

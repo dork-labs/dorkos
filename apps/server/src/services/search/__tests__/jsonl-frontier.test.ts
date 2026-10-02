@@ -1,9 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
-import { createReadStream } from 'fs';
 import os from 'os';
 import path from 'path';
-import readline from 'readline';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { messages, searchSources, eq, type Db } from '@dorkos/db';
 import { DISCOVERY_FAILURE_KEY, SOURCE_ERROR_MARK } from '../frontier-store.js';
@@ -552,15 +550,11 @@ describe('M1 — the failure modes that lose data quietly', () => {
 describe('M1 — `\\n` is the only line terminator', () => {
   /**
    * U+2028 and U+2029 are legal raw inside a JSON string and `JSON.stringify`
-   * escapes neither, so a runtime writing whole records emits them as written.
-   * Node's `readline` splits on both, tearing a record into fragments that the
-   * error handling meant to make a reader robust then discards — 64 real
-   * messages lost on the operator's machine (spec Amendment 3).
-   *
-   * Built with code-point arithmetic, never a literal: a literal U+2028 in a
-   * `.ts` file is itself a JavaScript line terminator and a syntax error, and an
-   * escape inside a shell-bound string renders to a literal before it reaches
-   * the file.
+   * escapes neither. Node24's `readline` treats both as line terminators;
+   * Node22's does not. The production reader must preserve them on either
+   * runtime, so the negative control explicitly uses an incorrect Unicode
+   * delimiter rather than assuming every stock reader splits these bytes.
+   * Code-point construction keeps the invisible fixture separators readable.
    */
   const LS = String.fromCharCode(0x2028);
   const PS = String.fromCharCode(0x2029);
@@ -579,16 +573,16 @@ describe('M1 — `\\n` is the only line terminator', () => {
     expect(indexedBodies('s1')[0]).toContain(NEL);
   });
 
-  it('is what `readline` would have got wrong — three fragments, none of them JSON', async () => {
-    // Not a test of the implementation: a test that the trap is real, on the
-    // exact bytes the implementation reads correctly above. A record holding k
-    // tearing separators becomes k+1 fragments, not two.
+  it('an incorrect Unicode-delimiter reference tears one valid JSON record into three invalid fragments', async () => {
+    // Same actual file bytes as the production roundtrip above. The deliberately
+    // incorrect reference is independent of stock readline's runtime version.
     const file = await writeTranscript('s1', [saidLine(torn)]);
+    const serialized = await fs.readFile(file, 'utf8');
+    const lfLines = serialized.split('\n').filter((line) => line.length > 0);
+    expect(lfLines).toEqual([serialized.slice(0, -1)]);
+    expect(JSON.parse(lfLines[0]).message.content).toBe(torn);
 
-    const fragments: string[] = [];
-    const lines = readline.createInterface({ input: createReadStream(file), crlfDelay: Infinity });
-    for await (const fragment of lines) fragments.push(fragment);
-
+    const fragments = lfLines[0].split(/\u2028|\u2029/);
     expect(fragments).toHaveLength(3);
     expect(
       fragments.filter((fragment) => {

@@ -4,8 +4,8 @@ flowchart TB
   repo["Marketplace sources<br/>Dork Labs + third-party repositories"]
   site["Website marketplace<br/>Discovery + README pages"]
   user["DorkOS client / CLI / MCP caller"]
-  installer["Local MarketplaceInstaller<br/>Resolve → fetch/cache → validate → preview"]
-  txn["File transaction<br/>Stage → backup → rename → restore on failure"]
+  installer["Local MarketplaceInstaller<br/>Resolve → stage once → validate → preview<br/>Approval binds staged content"]
+  txn["File transaction<br/>Stage → backup → rename → restore on failure<br/>Recovery backups excluded from discovery"]
   disk[("Installed packages<br/>User / project / agent scope")]
   activate["Activation by package type<br/>Extensions · messaging · agents · shapes"]
   harness["Harness Sync<br/>Project skills, commands, hooks and MCP config"]
@@ -17,6 +17,8 @@ flowchart TB
   installer -->|"Authorized install"| txn
   txn --> disk
   disk --> activate
+  restore["Connection rollback / reinstall<br/>Undo only this install’s entry<br/>Preserve existing secrets + agent links"]
+  activate -->|"Messaging package failure / reinstall"| restore
   disk --> harness
   harness --> runtime
   installer -->|"Install outcome, subject to telemetry settings"| telemetry

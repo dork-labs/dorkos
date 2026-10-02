@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { describe, it, expect, vi, afterAll, afterEach, beforeEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -108,6 +108,21 @@ function manifest(overrides: { name: string; version?: string }): MarketplacePac
  */
 /** An empty staged package directory every canned preview points at. */
 const STAGED_DIR = mkdtempSync(join(tmpdir(), 'tool-install-staged-'));
+afterAll(() => rmSync(STAGED_DIR, { recursive: true, force: true }));
+
+/** Temp roots this file made, removed after each test so none outlive the run. */
+const tempRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempRoots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+/** A fresh temp folder under the OS temp dir that is removed after the test. */
+async function tempRoot(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  tempRoots.push(dir);
+  return dir;
+}
 
 function previewResult(overrides: {
   name: string;
@@ -222,7 +237,7 @@ function parseToolPayload<T = unknown>(result: { content: { type: 'text'; text: 
 async function boundedProjectPath(): Promise<string> {
   // Realpath'd, because the handler hands its effects the canonical path and
   // macOS's tmpdir (`/var/…`) is itself a symlink to `/private/var/…`.
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'mcp-install-boundary-')));
+  const root = await realpath(await tempRoot('mcp-install-boundary-'));
   await initBoundary(root);
   return join(root, 'some-project');
 }

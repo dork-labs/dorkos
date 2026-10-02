@@ -1,12 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Nightly Docker orphan sweep for macOS: a TEMPLATE, not installed by anything.
+  Nightly sweeps for macOS: a TEMPLATE, not installed by anything.
 
-  It runs scripts/sweep-docker-orphans.sh every night at 03:17 local time and
-  appends its output to ~/Library/Logs/dorkos-docker-sweep.log. If the Mac is
-  asleep at 03:17, launchd runs it once on wake. When Docker is not running the
-  sweep prints a notice and exits 0.
+  Every night at 03:17 local time it runs two sweeps, one after the other, and
+  appends their output to ~/Library/Logs/dorkos-docker-sweep.log:
+
+    1. scripts/sweep-test-tmp.sh removes the temp folders our test suites left
+       in $TMPDIR (allowlisted names only, older than 24 hours, not in use).
+    2. scripts/sweep-docker-orphans.sh removes Docker objects nobody owns.
+
+  The temp sweep runs first and the second runs whatever the first returned,
+  so a sleeping Docker never stops the temp sweep and the other way round. The
+  job fails if either sweep failed. launchd does not always hand a job $TMPDIR,
+  so the command fills it from `getconf DARWIN_USER_TEMP_DIR` when it is
+  missing. If the Mac is asleep at 03:17, launchd runs it once on wake. When
+  Docker is not running the Docker sweep prints a notice and exits 0.
+
+  The label keeps its original name so an existing install is updated in place.
+  To also sweep the temp folders of test suites that live outside this repo,
+  add a prefix file argument to the temp sweep (its header says how).
 
   To install, from the repo root:
 
@@ -21,7 +34,7 @@
   The log is appended to and never rotated; it grows by a few lines a night.
 
   Point __REPO__ at a checkout that stays put (the main checkout, not a
-  worktree that will be removed). Run the script by hand in its dry-run mode
+  worktree that will be removed). Run each script by hand in its dry-run mode
   first to see what it would remove. (The flag itself cannot be spelled here:
   an XML comment may not contain two hyphens in a row.)
 -->
@@ -33,7 +46,8 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>__REPO__/scripts/sweep-docker-orphans.sh</string>
+    <string>-c</string>
+    <string>export TMPDIR="${TMPDIR:-$(getconf DARWIN_USER_TEMP_DIR)}"; /bin/bash "__REPO__/scripts/sweep-test-tmp.sh"; t=$?; /bin/bash "__REPO__/scripts/sweep-docker-orphans.sh"; d=$?; [ "$t" -eq 0 ] &amp;&amp; [ "$d" -eq 0 ]</string>
   </array>
 
   <!-- launchd starts jobs with a bare PATH; the docker CLI lives in one of these. -->

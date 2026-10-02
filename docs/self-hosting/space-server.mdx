@@ -38,7 +38,7 @@ dorkos community deploy --remove-uncertain <run-id>   # Check, and maybe remove,
 
 ## If setup stops partway
 
-Sometimes setup stops without knowing whether it created something. `--remove-uncertain` checks that one thing. It removes it only when it can prove your setup made it and you type the id it shows. Otherwise it removes nothing and tells you why. After a removal, `--resume` carries on.
+Sometimes setup stops without knowing whether it created something. `--remove-uncertain` checks that one thing. It removes it only when it can prove your setup made it and you type the id it shows. Otherwise it removes nothing and tells you why. After a removal, `--resume` carries on. If it finds that nothing was made, and the setup had made nothing else, it clears that setup so `--list-incomplete` stops showing it. Right after a stop it waits a few minutes first, in case the create is still finishing, and tells you when to run it again.
 
 If it removes a Tigris bucket, Fly leaves the bucket's access key working in Tigris. DorkOS tells you so and shows you how to delete that key.
 
@@ -50,6 +50,8 @@ Setup creates a new Fly app and a new Neon project, so each token has to be allo
 
 - For Fly, use an organization token, not a deploy token.
 - For Neon, use an organization key, not a project key.
+
+If a token can't do what setup needs, setup stops and tells you which token and which organization. It never prints the token. If nothing was made yet, start setup again with a token that can. If something was, resume with the command it prints.
 
 Setup has not yet been tested end to end with a limited Fly token. Signing in with `fly auth login` is the tested path.
 

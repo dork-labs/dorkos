@@ -68,6 +68,20 @@ type PreparedTarget = {
 /** Event adapter never owns a queue: it consumes the leased inbox in the caller's transaction. */
 export class ConnectorEventSessionSourceAdapter implements PrivateSessionMessageSourceAdapter<EventRef> {
   readonly kind = 'connector_event' as const;
+  /** Only observed source/content/target authority changes can retire accepted work. */
+  isPreclaimRefusal(error: unknown): boolean {
+    return (
+      error instanceof PrivateSessionMessageRefusalError &&
+      [
+        'event_target_changed',
+        'event_content_unavailable',
+        'event_content_changed',
+        'event_target_unavailable',
+        'event_source_unavailable',
+        'event_authority_changed',
+      ].includes(error.code)
+    );
+  }
   private readonly targets = new Map<string, PreparedTarget>();
   private readonly preparing = new Map<string, Promise<EventRef>>();
   private readonly prepared = new WeakMap<

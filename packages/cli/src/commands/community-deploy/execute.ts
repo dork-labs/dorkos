@@ -82,6 +82,31 @@ export class CommunityCreationUncertainError extends Error {
   }
 }
 
+/**
+ * The service refused this run's credential at a create, so nothing was made by that request.
+ *
+ * Not uncertain: the creation intent is cleared before this is thrown, and nothing is left for
+ * `--remove-uncertain`. The dispatcher words the message, since only it knows which credential
+ * the service was given.
+ */
+export class CommunityCreationRefusedError extends Error {
+  /** Service that refused the create. */
+  readonly service: CreationService;
+  /** Organization the create was for, as the plan names it. */
+  readonly organizationId: string;
+  /** Planned name of the resource that was refused. */
+  readonly resourceName: string;
+
+  /** Create a secret-free refusal for one creation step. */
+  constructor(service: CreationService, organizationId: string, resourceName: string) {
+    super(`Community creation was refused (${service})`);
+    this.name = 'CommunityCreationRefusedError';
+    this.service = service;
+    this.organizationId = organizationId;
+    this.resourceName = resourceName;
+  }
+}
+
 interface CreationStep {
   service: CreationService;
   state: CreatedState;
@@ -187,6 +212,13 @@ async function executeCreationStep(
           pendingIntent: null,
           lastSafeError: { category: safeErrorCategory(safeCode), code: safeCode },
         });
+        if (safeCode === 'ACCESS_DENIED') {
+          throw new CommunityCreationRefusedError(
+            step.service,
+            step.organizationId,
+            step.resourceName
+          );
+        }
         throw error;
       }
       await persistUncertain(dependencies, current);

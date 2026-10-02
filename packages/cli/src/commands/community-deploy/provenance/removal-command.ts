@@ -8,7 +8,12 @@
  */
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
-import { readLaunchJournal, writeLaunchJournal, type LaunchJournal } from '../journal.js';
+import {
+  deleteLaunchJournal,
+  readLaunchJournal,
+  writeLaunchJournal,
+  type LaunchJournal,
+} from '../journal.js';
 import type { CommunityServiceOptions } from '../runtime/default-services.js';
 import { createDefaultRemovalProbes } from '../runtime/default-removal.js';
 import {
@@ -104,6 +109,7 @@ export async function runRemoveUncertainCommand(
     readJournal: () => readLaunchJournal(input.journalPath),
     persist: (next, expectedRevision) =>
       writeLaunchJournal(input.journalPath, next, expectedRevision),
+    discard: (expectedRevision) => deleteLaunchJournal(input.journalPath, expectedRevision),
     probeFor:
       input.probeFor ?? createDefaultRemovalProbes(input.serviceOptions(cancellation.signal)),
     confirm: async (target, notFromRun) => {

@@ -1,3 +1,8 @@
+import type {
+  PageEvent,
+  CanvasChannelEventReceipt,
+  CanvasChannelReplayResponse,
+} from './canvas-channel-schemas.js';
 /**
  * Transport interface — the hexagonal architecture port that decouples the React client
  * from its backend. The supported `HttpTransport` uses HTTP/SSE to Express.
@@ -532,6 +537,9 @@ export type DevtoolsRecordingPayload =
   | {
       /** The round trip id the stop request carried. */
       requestId: string;
+      bridgeGeneration?: string;
+      hostOutcome?: 'host' | 'page-reported';
+      documentId?: string;
       /** How many frames the encoded recording holds. */
       frames: number;
       /** How long the recording covers, in milliseconds. */
@@ -545,6 +553,9 @@ export type DevtoolsRecordingPayload =
   | {
       /** The round trip id the stop request carried. */
       requestId: string;
+      bridgeGeneration?: string;
+      hostOutcome?: 'host' | 'page-reported';
+      documentId?: string;
       /** Why there is no file, in one sentence the agent can act on. */
       error: string;
     };
@@ -1079,6 +1090,16 @@ export interface Transport
    */
   mediaUrl(cwd: string, filePath: string): string | null;
 
+  /** Record a document event; its receipt does not imply a completed agent turn. */
+  ingestCanvasEvent(documentId: string, event: PageEvent): Promise<CanvasChannelEventReceipt>;
+  /** Read a bounded document event page and current state. Honor resetRequired before retrying old inputs. */
+  getCanvasChannel(
+    documentId: string,
+    query?: { since?: number; limit?: number }
+  ): Promise<CanvasChannelReplayResponse>;
+  /** Inspect a retained event receipt without replaying or launching work. */
+  getCanvasEventReceipt(documentId: string, eventId: string): Promise<CanvasChannelEventReceipt>;
+
   // --- Session canvas (server-owned; spec `canvas-agent-seat` §1.6) ---
 
   /**
@@ -1274,7 +1295,11 @@ export interface Transport
    * @param upload - The round trip id, the frame count, the length, and the two
    *   files.
    */
-  uploadDevtoolsRecording(sessionId: string, upload: DevtoolsRecordingPayload): Promise<void>;
+  uploadDevtoolsRecording(
+    sessionId: string,
+    upload: DevtoolsRecordingPayload,
+    options?: { signal?: AbortSignal }
+  ): Promise<void>;
 
   // --- Workbench file service (explorer + viewers; DOR-217) ---
 

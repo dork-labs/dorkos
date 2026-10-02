@@ -1,3 +1,4 @@
+import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
 /**
  * Driving the DorkOS window, and reading back what is in it — the handlers
  * behind `control_ui` and `get_ui_state` (spec `canvas-agent-seat` §5).
@@ -168,6 +169,8 @@ const TARGET_IGNORED_MESSAGE =
 
 /** Who is calling a `ui` verb, as much of it as these two handlers read. */
 export interface UiCallerContext {
+  /** Verified current runtime principal from the capability boundary, never tool arguments. */
+  principal?: ServerPrincipalProof;
   /** The calling session, from the surface's own resolution. */
   sessionId?: string;
   /** That session's working directory, when the surface carries one. */
@@ -299,7 +302,7 @@ export async function controlUi(
   // the `canvas` event the service published, in every window of the session
   // rather than just the one that asked.
   if (isSessionCanvasWrite(command)) {
-    const applied = applyToSessionCanvasSafely(sessionId, caller.cwd, command);
+    const applied = applyToSessionCanvasSafely(sessionId, caller.cwd, command, caller.principal);
     if (applied !== null) {
       if (!applied.applied) {
         throw new CapabilityToolError({
@@ -449,7 +452,8 @@ function isSessionCanvasWrite(command: UiCommand): boolean {
 function applyToSessionCanvas(
   sessionId: string,
   cwd: string | undefined,
-  command: UiCommand
+  command: UiCommand,
+  principal?: ServerPrincipalProof
 ): CanvasApplyResult | null {
   const canvas = peekCanvasService();
   // A boot that has not reached the rooms subsystem has no canvas service.
@@ -460,6 +464,7 @@ function applyToSessionCanvas(
     scope: sessionScope(sessionId),
     authorId: SESSION_AGENT_AUTHOR,
     command,
+    principal,
     // A session has one directory, and a file document records it so the agent
     // can read the document back through the same boundary check the file route
     // makes. No labels: there is only one tree and one reader.
@@ -500,10 +505,11 @@ function applyToSessionCanvas(
 function applyToSessionCanvasSafely(
   sessionId: string,
   cwd: string | undefined,
-  command: UiCommand
+  command: UiCommand,
+  principal?: ServerPrincipalProof
 ): CanvasApplyResult | null {
   try {
-    return applyToSessionCanvas(sessionId, cwd, command);
+    return applyToSessionCanvas(sessionId, cwd, command, principal);
   } catch (err) {
     logger.warn('[canvas] a session canvas write faulted', {
       sessionId,

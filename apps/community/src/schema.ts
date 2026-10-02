@@ -235,7 +235,7 @@ export const hostApiKeys = pgTable(
     check('host_api_keys_secret_hash', sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
     check(
       'host_api_keys_scopes',
-      sql`cardinality(${table.scopes}) BETWEEN 1 AND 8 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership','communities:erasure_journal']::text[]`
+      sql`cardinality(${table.scopes}) BETWEEN 1 AND 9 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership','communities:erasure_journal','accounts:close']::text[]`
     ),
     check(
       'host_api_keys_issuer',
@@ -268,6 +268,8 @@ export const hostAuditEvents = pgTable(
     changedFields: text('changed_fields').array().notNull().default([]),
     /** SHA-256 of a takedown's record.json, on its `takedown.evidence_stored` row (0020). */
     evidenceRecordSha256: text('evidence_record_sha256'),
+    /** The account closure a closure row is about (0030). Never the account itself. */
+    subjectAccountClosureId: uuid('subject_account_closure_id'),
     createdAt: time('created_at'),
   },
   (table) => [
@@ -1520,6 +1522,69 @@ export const erasureRequests = pgTable(
       .where(sql`${table.state} IN ('scheduled','running')`),
     index('erasure_requests_community_idx').on(table.communityId, table.state),
     index('erasure_requests_parent_idx').on(table.parentRequestId),
+  ]
+);
+
+/**
+ * A host's closure of someone's account (0030): their access ended at once, and their account
+ * erasure waits its window. `userId` has no foreign key, so the row outlives the account until
+ * the cleanup sweep deletes it 30 days after it ends.
+ */
+export const accountClosures = pgTable(
+  'account_closures',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id').notNull(),
+    erasureRequestId: uuid('erasure_request_id').references(() => erasureRequests.id, {
+      onDelete: 'set null',
+    }),
+    state: text('state').notNull().default('closed'),
+    reason: text('reason').notNull(),
+    reference: text('reference'),
+    personRequested: boolean('person_requested').notNull(),
+    requestedByHostActor: text('requested_by_host_actor').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    payloadHash: text('payload_hash').notNull(),
+    createdAt: time('created_at'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('account_closures_open_unique')
+      .on(table.userId)
+      .where(sql`${table.state} = 'closed'`),
+    uniqueIndex('account_closures_idempotency_unique').on(
+      table.requestedByHostActor,
+      table.idempotencyKey
+    ),
+    index('account_closures_user_idx').on(table.userId, table.createdAt),
+    index('account_closures_erasure_idx').on(table.erasureRequestId),
+    check(
+      'account_closures_state_check',
+      sql`${table.state} IN ('closed','cancelled','completed')`
+    ),
+    check(
+      'account_closures_reason_check',
+      sql`${table.reason} IN ('under_minimum_age','legal_order','other')`
+    ),
+    check('account_closures_reference_check', sql`${table.reference} ~ '^[A-Za-z0-9 ._#-]{1,80}$'`),
+    check(
+      'account_closures_requested_by_host_actor_check',
+      sql`${table.requestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$'`
+    ),
+    check(
+      'account_closures_idempotency_key_check',
+      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
+    ),
+    check('account_closures_payload_hash_check', sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'account_closures_other_reference',
+      sql`${table.reason} <> 'other' OR ${table.reference} IS NOT NULL`
+    ),
+    check(
+      'account_closures_state_times',
+      sql`(${table.state} = 'closed' AND ${table.cancelledAt} IS NULL AND ${table.completedAt} IS NULL) OR (${table.state} = 'cancelled' AND ${table.cancelledAt} IS NOT NULL AND ${table.completedAt} IS NULL) OR (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.cancelledAt} IS NULL)`
+    ),
   ]
 );
 

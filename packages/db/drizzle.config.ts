@@ -32,6 +32,7 @@ export default defineConfig({
     './src/schema/connectors/connector-execution-state.ts',
     './src/schema/connectors/connector-local-state.ts',
     './src/schema/rooms.ts',
+    './src/schema/canvas/channel.ts',
     './src/schema/room-coordination.ts',
     './src/schema/read-cursors.ts',
     './src/schema/bridges.ts',
@@ -42,5 +43,7 @@ export default defineConfig({
     './src/schema/extensions/extension-decisions.ts',
   ],
   out: './drizzle',
+  // Snapshot baselines are sorted by filename; keep future names after the timestamp migration.
+  migrations: { prefix: 'timestamp' },
   dialect: 'sqlite',
 });

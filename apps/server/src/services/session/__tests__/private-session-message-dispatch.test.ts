@@ -454,6 +454,7 @@ describe('private receipt adoption', () => {
         return prepared;
       },
       revalidate: (tx, receipt, prepared) => source.revalidate(tx, receipt, prepared),
+      isPreclaimRefusal: (error) => source.isPreclaimRefusal(error),
       onCancelled: (tx, receipt) => source.onCancelled(tx, receipt),
     };
     service = new PrivateSessionMessageAcceptanceService(

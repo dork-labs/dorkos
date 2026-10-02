@@ -399,6 +399,13 @@ export const CommunityAdminHostApiKeyScopeSchema = z.enum([
    * scope implies it.
    */
   'communities:erasure_journal',
+  /**
+   * Close someone else's account on this host: find it by its single sign-on identity, close it
+   * (the person is signed out and cannot sign in, and the account is erased after the same
+   * waiting period a person's own request has), read the closure, and cancel it during the wait.
+   * No other scope implies it.
+   */
+  'accounts:close',
 ]);
 /** A key holds each scope at most once, so it can hold at most every scope there is. */
 const hostApiKeyScopes = z
@@ -461,14 +468,25 @@ export const CommunityAdminErasureJournalQuerySchema = z.strictObject({
 });
 
 /**
- * One finished erasure, by id only: the same object the server logs and writes to
- * `COMMUNITY_ERASURE_JOURNAL`. Written one per line, the lines are what `erasure:reapply` reads.
+ * One finished erasure, by id only: the object the server logs and writes to
+ * `COMMUNITY_ERASURE_JOURNAL`, plus `finishedAt`, when the erasure finished on the server (the
+ * time its journal retention counts from; the same on every read). Written one per line, the
+ * lines are what `erasure:reapply` reads; it ignores `finishedAt`.
+ *
+ * `finishedAt` is required here because this is what the server sends. Servers released before
+ * it was added send lines without it, so a reader that may talk to one should accept its absence.
  */
 export const CommunityAdminErasureJournalLineSchema = z.discriminatedUnion('event', [
-  z.strictObject({ event: z.literal('community.member_erased'), communityId: id, memberId: id }),
+  z.strictObject({
+    event: z.literal('community.member_erased'),
+    communityId: id,
+    memberId: id,
+    finishedAt: timestamp,
+  }),
   z.strictObject({
     event: z.literal('community.account_erased'),
     userId: z.string().min(1).max(128),
+    finishedAt: timestamp,
   }),
 ]);
 
@@ -572,6 +590,97 @@ export const CommunityAdminOwnerReplacementClaimTokenSchema = z.strictObject({
   claimToken: z.string().min(1),
   claimUrl: z.url(),
 });
+
+/**
+ * A host account's id, as Better Auth stores it. Opaque: never an email or a sign-in identity.
+ */
+export const CommunityAdminAccountIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,128}$/, 'An account id is 1 to 128 letters, digits, `_` or `-`.');
+
+/**
+ * Find the host account that signs in through this host's single sign-on with one identity. The
+ * issuer must be the one this host is configured with; only an exact match answers, so the
+ * lookup cannot list or guess other accounts.
+ */
+export const CommunityAdminAccountLookupRequestSchema = z.strictObject({
+  issuer: z.string().min(1).max(2048),
+  subject: z.string().min(1).max(255),
+});
+/** The account that signs in with the identity asked about. A miss is `404 NOT_FOUND`. */
+export const CommunityAdminAccountLookupResponseSchema = z.strictObject({
+  accountId: CommunityAdminAccountIdSchema,
+});
+
+/** Why a host closed someone's account. Recorded on the closure; never shown to members. */
+export const CommunityAdminAccountClosureReasonSchema = z.enum([
+  /** The person is younger than the host's minimum age. */
+  'under_minimum_age',
+  /** A court or other legal authority ordered it. */
+  'legal_order',
+  /** Anything else; the request must carry the host's own `reference` for it. */
+  'other',
+]);
+/**
+ * Close an account. A host person must send their `password`; a key must not. `reference` is the
+ * host's own pointer to its record of why (a ticket or case number, the same characters an owner
+ * replacement's reference allows); it is required when `reason` is `other`.
+ */
+export const CommunityAdminAccountClosureRequestSchema = z
+  .strictObject({
+    idempotencyKey: z.string().min(1).max(200),
+    reason: CommunityAdminAccountClosureReasonSchema,
+    reference: z.string().regex(COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN).nullable(),
+    password: z.string().min(1).optional(),
+  })
+  .refine((body) => body.reason !== 'other' || body.reference !== null, {
+    message: 'Give a reference when the reason is other.',
+    path: ['reference'],
+  });
+/**
+ * Where a closure stands. `closed`: the person is signed out and cannot sign in, and the account
+ * waits to be erased. `erasing`: the erasure has started and can no longer be cancelled.
+ * `erased`: the account is gone. `cancelled`: the host cancelled it; the person can sign in again.
+ */
+export const CommunityAdminAccountClosureStateSchema = z.enum([
+  'closed',
+  'erasing',
+  'erased',
+  'cancelled',
+]);
+/** Host view of one account closure: ids, states, and dates, never the person's name or email. */
+export const CommunityAdminAccountClosureSchema = z.strictObject({
+  closureId: id,
+  accountId: CommunityAdminAccountIdSchema,
+  state: CommunityAdminAccountClosureStateSchema,
+  reason: CommunityAdminAccountClosureReasonSchema,
+  reference: z.string().regex(COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN).nullable(),
+  /**
+   * The person had already asked to delete their own account when the host closed it. Their
+   * request is the erasure, so cancelling the closure gives them their access back but leaves
+   * their own request waiting, as they asked.
+   */
+  personRequested: z.boolean(),
+  /** Who closed it: a host person's account id, or a key's id. */
+  actor: z.strictObject({ kind: z.enum(['person', 'api_key']), id: z.string().min(1) }),
+  closedAt: timestamp,
+  /** When the erasure may start; null once its record has been cleaned up. */
+  eraseAfter: timestamp.nullable(),
+  /**
+   * What the erasure is waiting on while the account is closed: a legal hold on a community the
+   * person belongs to, or a takedown copy the host has not finished saving. Null when nothing.
+   */
+  waitingOn: z.enum(['legal_hold', 'takedown_evidence']).nullable(),
+  cancelledAt: timestamp.nullable(),
+  erasedAt: timestamp.nullable(),
+});
+/** A new closure, or the first one again on a replay of the same key (`replayed: true`). */
+export const CommunityAdminAccountClosureCreateResponseSchema = z.strictObject({
+  closure: CommunityAdminAccountClosureSchema,
+  replayed: z.boolean(),
+});
+/** Cancelling an account closure takes no input. */
+export const CommunityAdminAccountClosureCancelRequestSchema = z.strictObject({});
 
 /** Start importing an owner export into a new, unclaimed community. The export arrives separately. */
 export const CommunityAdminImportCreateRequestSchema = z.strictObject({

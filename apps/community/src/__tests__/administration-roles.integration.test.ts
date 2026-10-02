@@ -32,6 +32,7 @@ import { registerHostRoutes } from '../routes/host/host.js';
 import { registerMembershipRoutes } from '../routes/account/memberships.js';
 import { registerHostLimitRoutes } from '../routes/host/host-limits.js';
 import { registerHostLegalHoldRoutes } from '../routes/host/host-legal-hold.js';
+import { registerHostAccountClosureRoutes } from '../routes/host/host-account-closures.js';
 import { registerHostErasureJournalRoutes } from '../routes/host/host-erasure-journal.js';
 import { registerHostLifecycleRoutes } from '../routes/host/host-lifecycle.js';
 import { registerShortNameRoutes } from '../routes/host/short-names.js';
@@ -1002,6 +1003,63 @@ const actions: Action<unknown>[] = [
     call: ({ id }) => ({
       method: 'POST',
       path: `/api/v1/host/communities/${alphaId}/owner-replacements/${id}/claim-token`,
+      body: {},
+    }),
+  }),
+  define({
+    rule: 'Find an account by sign-on identity: host operator only; no single sign-on here',
+    route: 'POST /host/accounts/lookup',
+    allowed: HOST_ROLES,
+    status: 409,
+    call: () => ({
+      method: 'POST',
+      path: '/api/v1/host/accounts/lookup',
+      body: { issuer: 'https://issuer.example.test', subject: 'someone' },
+    }),
+  }),
+  define<{ id: string }>({
+    rule: 'Close an account: host operator with their password; no community role',
+    route: 'POST /host/accounts/:accountId/closure',
+    allowed: HOST_ROLES,
+    status: 201,
+    prepare: async () => {
+      const id = `close-${randomUUID()}`;
+      await pool.query(
+        `INSERT INTO "user"(id,name,email,"emailVerified") VALUES($1,'Closed Person',$2,true)`,
+        [id, `${id}@x.test`]
+      );
+      return { id };
+    },
+    call: ({ id }, secret) => ({
+      method: 'POST',
+      path: `/api/v1/host/accounts/${id}/closure`,
+      body: {
+        idempotencyKey: randomUUID(),
+        reason: 'under_minimum_age',
+        reference: null,
+        password: secret,
+      },
+    }),
+    effect: async (_body, _role, { id }) => {
+      const row = await pool.query('SELECT state FROM account_closures WHERE user_id=$1', [id]);
+      expect(row.rows).toEqual([{ state: 'closed' }]);
+    },
+  }),
+  define({
+    rule: 'Read an account closure: host operator yes, community roles no',
+    route: 'GET /host/accounts/:accountId/closure',
+    allowed: HOST_ROLES,
+    status: 404,
+    call: () => ({ method: 'GET', path: '/api/v1/host/accounts/never-closed/closure' }),
+  }),
+  define({
+    rule: 'Cancel an account closure: host operator yes, community roles no',
+    route: 'POST /host/accounts/:accountId/closure/cancel',
+    allowed: HOST_ROLES,
+    status: 404,
+    call: () => ({
+      method: 'POST',
+      path: '/api/v1/host/accounts/never-closed/closure/cancel',
       body: {},
     }),
   }),
@@ -2535,6 +2593,14 @@ it('classifies every registered route, and puts every host and settings route in
     now,
     confirmPassword: unused,
     canSendNotice: () => false,
+    hasPassword: async () => true,
+  });
+  registerHostAccountClosureRoutes(modules, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword: unused,
     hasPassword: async () => true,
   });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });

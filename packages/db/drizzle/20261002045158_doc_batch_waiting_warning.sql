@@ -1,0 +1,1 @@
+ALTER TABLE `canvas_doc_batches` ADD `waiting_warning_at` text DEFAULT NULL;

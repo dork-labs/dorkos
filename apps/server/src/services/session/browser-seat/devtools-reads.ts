@@ -32,6 +32,7 @@
  *
  * @module services/session/browser-seat/devtools-reads
  */
+import { PAGE_REPORTED_EVIDENCE } from '@dorkos/shared/canvas-bridge-wire';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { DevtoolsConsoleEntry, DevtoolsNetworkEntry } from '@dorkos/shared/schemas';
@@ -75,7 +76,7 @@ const FIELD_ELIDE_CHARS = 2_048;
 /** The subset of {@link DevtoolsCaptureStore} these verbs depend on. */
 export type DevtoolsReadStore = Pick<
   DevtoolsCaptureStore,
-  'read' | 'awaitScreenshot' | 'resolveDriver'
+  'read' | 'awaitScreenshot' | 'cancelScreenshot' | 'resolveDriver'
 >;
 
 /**
@@ -215,6 +216,7 @@ function matchesNetworkStatus(
 /** Header fields every read result carries so the agent can judge freshness. */
 function bufferHeader(buffer: CaptureBufferView | undefined) {
   return {
+    evidence: PAGE_REPORTED_EVIDENCE,
     documentUrl: buffer?.logicalUrl,
     capturedAt: buffer?.updatedAt,
   };
@@ -480,19 +482,33 @@ export async function takeScreenshot(
   // untargeted request, which is what keeps a client that predates the seat
   // working.
   const claim = store.resolveDriver(session);
+  const header = {
+    ...bufferHeader(buffer),
+    // Another live document may own the latest buffer. A selected request must
+    // keep its own claim's address, including an unknown address on an old claim.
+    documentUrl: claim ? claim.logicalUrl : buffer.logicalUrl,
+  };
+  const waiter = store.awaitScreenshot(requestId, timeoutMs, claim ?? {});
   const reached = emitToSession(session, {
     type: 'devtools_capture_request',
     requestId,
-    ...(claim ? { targetClientId: claim.clientId, documentId: claim.documentId } : {}),
+    ...(claim
+      ? {
+          targetClientId: claim.clientId,
+          documentId: claim.documentId,
+          bridgeGeneration: claim.bridgeGeneration,
+        }
+      : {}),
   } as RawSessionEvent);
   if (!reached) {
-    return { ...bufferHeader(buffer), captured: false, note: NO_PREVIEW_NOTE };
+    store.cancelScreenshot(requestId);
+    return { ...header, captured: false, note: NO_PREVIEW_NOTE };
   }
 
-  const outcome = await store.awaitScreenshot(requestId, timeoutMs);
+  const outcome = await waiter;
   if (outcome === undefined) {
     return {
-      ...bufferHeader(buffer),
+      ...header,
       captured: false,
       note:
         `The preview didn't return a screenshot within ${Math.round(timeoutMs / 1000)}s. ` +
@@ -503,9 +519,17 @@ export async function takeScreenshot(
   }
   if (!outcome.ok) {
     return {
-      ...bufferHeader(buffer),
+      ...header,
       captured: false,
-      note: `The preview could not be rasterized: ${outcome.error}`,
+      evidence:
+        outcome.provenance === 'host' ? { source: 'host', verified: true } : PAGE_REPORTED_EVIDENCE,
+      note:
+        outcome.provenance === 'host'
+          ? 'The host ended the screenshot request.'
+          : 'The preview reported that it could not take a screenshot.',
+      ...(outcome.provenance === 'host'
+        ? { hostError: outcome.error }
+        : { pageError: outcome.error }),
     };
   }
 
@@ -518,13 +542,14 @@ export async function takeScreenshot(
   const image = parseScreenshotDataUrl(outcome.screenshot.dataUrl);
   if (!image) {
     return {
-      ...bufferHeader(buffer),
+      ...header,
       captured: false,
       note: 'The preview returned malformed screenshot data. Try again.',
     };
   }
   return new CapabilityImageResult(image, {
-    documentUrl: buffer.logicalUrl,
+    evidence: PAGE_REPORTED_EVIDENCE,
+    documentUrl: header.documentUrl,
     capturedAt: outcome.screenshot.capturedAt,
   });
 }

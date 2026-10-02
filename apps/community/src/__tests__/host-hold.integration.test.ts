@@ -38,6 +38,8 @@ let clockOffsetMs = 0;
 const clock = () => new Date(Date.now() + clockOffsetMs);
 let operator: TenancyMember;
 let member: TenancyMember;
+/** A member who leaves A while it is held, and under a legal hold too. */
+let leaver: TenancyMember;
 let a = '';
 let b = '';
 let channelA = '';
@@ -255,6 +257,20 @@ beforeAll(async () => {
     }),
     201,
     'post before hold'
+  );
+  leaver = await admit(h, a, operator.cookie, { name: 'Leaver', email: 'leaver@hold.test' });
+  await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/join`, { cookie: leaver.cookie, body: {} }),
+    200,
+    'leaver joins'
+  );
+  await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/entries`, {
+      cookie: leaver.cookie,
+      body: { text: 'Said before leaving', idempotencyKey: 'leaver-before' },
+    }),
+    201,
+    'leaver posts before hold'
   );
   memberGrant = await pairInstall(h, a, member.cookie);
   const enrolled = await expectStatus(
@@ -708,6 +724,54 @@ it('keeps invitations waiting: preview says held, joining answers 423 and writes
     204,
     'revoke an invitation while held'
   );
+});
+
+it('lets a member leave a held community under a legal hold, keeping what they said', async () => {
+  // Purpose: fails if a hold blocks leaving again (`/me/leave` without `allowHeld` answered 423
+  // COMMUNITY_HELD), if a legal hold starts refusing it (that would also tell the member a legal
+  // hold exists), or if leaving starts deleting the member's messages, which a legal hold keeps.
+  const legalHold = `/api/v1/host/communities/${a}/legal-hold`;
+  await expectStatus(
+    await h.call(legalHold, { method: 'PUT', cookie: operator.cookie, body: { reference: null } }),
+    200,
+    'place a legal hold'
+  );
+  try {
+    await expectStatus(
+      await h.call(`${tenant(a)}/me/leave`, {
+        cookie: leaver.cookie,
+        body: { password: TENANCY_PASSWORD, communityName: 'Operator Community' },
+      }),
+      204,
+      'leave while held and legally held'
+    );
+    const row = await h.pool.query<{ active: boolean }>(
+      'SELECT active FROM members WHERE id=$1 AND community_id=$2',
+      [leaver.memberId, a]
+    );
+    expect(row.rows).toEqual([{ active: false }]);
+    const history = await expectStatus(
+      await h.call(`${tenant(a)}/channels/${channelA}/entries`, { cookie: member.cookie }),
+      200,
+      'history after the leave'
+    );
+    expect(JSON.stringify(await history.json())).toContain('Said before leaving');
+    // The owner still has to hand the community on first, and a hold allows no transfer.
+    const owner = await h.call(`${tenant(a)}/me/leave`, {
+      cookie: operator.cookie,
+      body: { password: TENANCY_PASSWORD, communityName: 'Operator Community' },
+    });
+    expect(owner.status).toBe(403);
+    expect((await owner.json()).message).toBe('Transfer ownership before leaving.');
+  } finally {
+    // Later tests delete A, which a legal hold left in place would stop.
+    await expectStatus(
+      await h.call(legalHold, { method: 'DELETE', cookie: operator.cookie }),
+      200,
+      'release the legal hold'
+    );
+  }
+  expect((await lifecycle()).lifecycle).toBe('held');
 });
 
 it('approves a pairing started before the hold as read-only history access (AC-6)', async () => {

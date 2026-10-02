@@ -107,6 +107,8 @@ import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import { AgentRegistry } from '@dorkos/mesh';
 import { AgentMcpServerService } from '../../../mesh/agent-mcp-server-service.js';
+import { DocRouteGrantError } from '../../../canvas/doc-channel/grant-policy.js';
+import { DocDownstreamError } from '../../../canvas/doc-channel/downstream/service.js';
 
 /** A tmp path that need not exist — the fakes never touch real disk. */
 const SANDBOX_CWD = path.join(os.tmpdir(), 'capability-conformance-sandbox');
@@ -498,6 +500,28 @@ capabilityConformance(registry, {
   cliVerbs: CLI_VERBS,
   readOnlyToolNames: READ_ONLY_MCP_TOOL_NAMES,
   docsRegistry: composeCapabilityRegistryForDocs(),
+  expectedInvokeRefusal: {
+    'ui.configure_doc_channel': (error) =>
+      error instanceof DocRouteGrantError &&
+      error.code === 'INVALID_PRINCIPAL' &&
+      error.status === 403,
+    'ui.approve_doc_route': (error) =>
+      error instanceof DocRouteGrantError &&
+      error.code === 'INVALID_PRINCIPAL' &&
+      error.status === 403,
+    'ui.revoke_doc_route': (error) =>
+      error instanceof DocRouteGrantError &&
+      error.code === 'INVALID_PRINCIPAL' &&
+      error.status === 403,
+    'ui.send_canvas_event': (error) =>
+      error instanceof DocDownstreamError &&
+      error.code === 'DOC_CHANNEL_UNAVAILABLE' &&
+      error.status === 503,
+    'ui.patch_canvas_state': (error) =>
+      error instanceof DocDownstreamError &&
+      error.code === 'DOC_CHANNEL_UNAVAILABLE' &&
+      error.status === 503,
+  },
   sampleInputs: {
     'operator.update_agent': { cwd: SANDBOX_CWD, displayName: 'Conformance' },
     // Destructive, and `nopeContent` is REQUIRED — a fixture without it fails the
@@ -621,6 +645,25 @@ capabilityConformance(registry, {
     // session in context and gets the sentence that says so. That is the verb
     // really running: a wiring fault would throw instead.
     'ui.read_canvas_document': { documentId: 'conformance-document' },
+    'ui.configure_doc_channel': { documentId: 'conformance-document', channel: { routes: [] } },
+    'ui.approve_doc_route': {
+      documentId: 'conformance-document',
+      routeId: 'route',
+      expiresAt: '2026-10-02T00:00:00.000Z',
+    },
+    'ui.revoke_doc_route': { documentId: 'conformance-document', grantId: 'grant' },
+    'ui.send_canvas_event': {
+      documentId: 'conformance-document',
+      eventId: '00000000-0000-4000-8000-000000000001',
+      type: 'task.updated',
+      payload: {},
+    },
+    'ui.patch_canvas_state': {
+      documentId: 'conformance-document',
+      eventId: '00000000-0000-4000-8000-000000000002',
+      expectedStateRev: 0,
+      operations: [{ op: 'set', path: '/checked', value: true }],
+    },
     // The rest of the `ui` domain (spec `canvas-agent-seat` §5). None of them
     // takes a session argument — the surface supplies that, which is the whole
     // security property — so every one of these runs with no session in context

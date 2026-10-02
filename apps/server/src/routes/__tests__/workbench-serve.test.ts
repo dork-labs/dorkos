@@ -50,6 +50,9 @@ beforeAll(async () => {
     'utf8'
   );
   await fs.writeFile(path.join(root, 'style.css'), 'body{color:red}', 'utf8');
+  await fs.writeFile(path.join(root, 'image.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  await fs.writeFile(path.join(root, 'document.pdf'), '%PDF-1.7');
+  await fs.writeFile(path.join(root, 'opaque.bin'), 'opaque');
   // A file OUTSIDE the served root, to prove the path-escape rejection is real.
   outside = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'wb-outside-')));
   await fs.writeFile(path.join(outside, 'secret.txt'), 'TOP SECRET', 'utf8');
@@ -165,6 +168,36 @@ describe('POST /api/workbench/probe', () => {
 
 describe('GET /api/workbench/serve/:token/*', () => {
   const validToken = () => workbenchTokenSigner.mint({ kind: 'serve', cwd: root });
+
+  it.each(['index.html', 'image.svg', 'document.pdf', 'opaque.bin', 'style.css'])(
+    'isolates %s at the response boundary, including direct navigation',
+    async (file) => {
+      const res = await request(testServer).get(`/api/workbench/serve/${validToken()}/${file}`);
+      expect(res.status).toBe(200);
+      const policy = res.headers['content-security-policy'];
+      expect(policy).toContain('sandbox allow-scripts allow-forms allow-popups allow-modals;');
+      expect(policy).not.toContain('allow-same-origin');
+      expect(policy).toContain("frame-ancestors 'self'");
+      expect(res.headers['x-frame-options']).toBeUndefined();
+    }
+  );
+
+  it('allows concrete desktop and live tunnel app origins, excluding wildcard config', async () => {
+    const previous = process.env.DORKOS_CORS_ORIGIN;
+    process.env.DORKOS_CORS_ORIGIN = 'http://localhost:5199,https://*.example.com,null';
+    tunnelManager.status.url = 'https://isolation.ngrok.app';
+    try {
+      const res = await request(testServer).get(`/api/workbench/serve/${validToken()}/index.html`);
+      expect(res.headers['content-security-policy']).toContain('http://localhost:5199');
+      expect(res.headers['content-security-policy']).toContain('https://isolation.ngrok.app');
+      expect(res.headers['content-security-policy']).not.toContain('*');
+      expect(res.headers['content-security-policy']).not.toContain('null');
+    } finally {
+      if (previous === undefined) delete process.env.DORKOS_CORS_ORIGIN;
+      else process.env.DORKOS_CORS_ORIGIN = previous;
+      tunnelManager.status.url = null;
+    }
+  });
 
   it('serves a relative asset within the cwd, with no-referrer so the token URL cannot leak', async () => {
     const res = await request(testServer).get(`/api/workbench/serve/${validToken()}/style.css`);

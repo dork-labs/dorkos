@@ -3,17 +3,22 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { renderHook, cleanup, act } from '@testing-library/react';
-import { useRef, type RefObject } from 'react';
-import type { DevtoolsIngest } from '@dorkos/shared/schemas';
-import { WORKBENCH_SANDBOX_ISOLATED } from '../lib/browser-url';
+import { type RefObject } from 'react';
+import type { DevtoolsRecordingPayload } from '@dorkos/shared/transport';
+import type { DevtoolsActionResult, DevtoolsIngest } from '@dorkos/shared/schemas';
+import { parseCanvasBridgeReport } from '@dorkos/shared/canvas-bridge-wire';
+vi.mock('@dorkos/shared/canvas-bridge-wire', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@dorkos/shared/canvas-bridge-wire')>();
+  return { ...original, parseCanvasBridgeReport: vi.fn(original.parseCanvasBridgeReport) };
+});
 
-const ingestDevtoolsCapture = vi.fn(async () => {});
+const ingestDevtoolsCapture = vi.fn(async (_sessionId: string, _batch: DevtoolsIngest) => {});
 
 /**
  * ONE transport object for the life of the suite, deliberately.
  *
  * The real `useTransport` is a context read: it returns the same object across
- * renders, so the bridge's listener effect (keyed on `[transport, iframeRef]`)
+ * renders, so the bridge's listener effect (using current controller refs)
  * mounts once and its pending flush timer survives every re-render. A mock
  * returning a fresh object per render re-ran that effect on each render, which
  * tore the listener down and cleared the timer with it — so no test could ever
@@ -21,7 +26,9 @@ const ingestDevtoolsCapture = vi.fn(async () => {});
  * changes. The flush-window session bleed lived in that blind spot.
  */
 const postDevtoolsAction = vi.fn(async () => {});
-const uploadDevtoolsRecording = vi.fn(async () => {});
+const uploadDevtoolsRecording = vi.fn(
+  async (_sessionId: string, _upload: DevtoolsRecordingPayload) => {}
+);
 const transport = {
   ingestDevtoolsCapture,
   postDevtoolsAction,
@@ -45,7 +52,9 @@ function relayedBatches(): [string, DevtoolsIngest][] {
 
 /** The capture relays only. */
 function captureCalls(): [string, DevtoolsIngest][] {
-  return relayedBatches().filter(([, batch]) => batch.active === undefined);
+  return relayedBatches().filter(
+    ([, batch]) => batch.active === undefined && batch.hostOutcome !== 'host'
+  );
 }
 
 /** The seat claims only — the mirror image of {@link captureCalls}. */
@@ -54,7 +63,7 @@ function claimCalls(): [string, DevtoolsIngest][] {
 }
 
 /**
- * The routed cockpit's `?session=`.
+ * The routed app's `?session=`.
  */
 let searchSession: string | undefined;
 
@@ -106,87 +115,120 @@ const encodeGif = vi.fn(async () => encodeResults.shift() ?? OK_GIF);
 vi.mock('../lib/encode-recording', () => ({
   drawFrames: (dataUrls: readonly string[], longEdgePx: number) => drawFrames(dataUrls, longEdgePx),
   encodeGif: () => encodeGif(),
+  halveFrames: (...args: unknown[]) => halveFrames(...args),
 }));
 
+const halveFrames = vi.fn();
 import { useAppStore } from '@/layers/shared/model';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
 
-/** Attach a session the way the browser and desktop app do: in the URL. */
-function attachInUrl(id: string): void {
-  searchSession = id;
-}
-
-/** No conversation open at all — neither address carries one. */
-function detachSession(): void {
-  searchSession = undefined;
-  useAppStore.getState().setSessionId(null);
-}
-
+const PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 let iframe: HTMLIFrameElement;
-
-/** A window that is NOT our iframe's contentWindow, standing in for a foreign frame. */
 let foreignFrame: HTMLIFrameElement;
-
-/** What the last mounted bridge handed back, for a test that drives it. */
-const bridge: { current: ReturnType<typeof useDevtoolsBridge> | null } = { current: null };
-
-function mount(previewOrigin: string | null = null): { current: HTMLIFrameElement | null } {
-  const { result } = renderHook(() => {
-    const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
-    bridge.current = useDevtoolsBridge({
-      iframeRef: ref,
-      documentId: 'doc',
-      logicalUrl: 'preview.html',
-      reloadNonce: 0,
-      previewOrigin,
-    });
-    return ref;
-  });
-  return result.current;
-}
-
-/** Dispatch a message as though it came from `source`. */
-/**
- * Dispatch a message as though it came from `source`.
- *
- * The default origin is `"null"` because that is what every frame carrying the
- * shim reports: the shim is injected only into what DorkOS serves or proxies,
- * and those render in an opaque-origin sandbox. Pass an origin explicitly to
- * stand in for a frame that is NOT one of ours.
- */
-function postFrom(source: Window | null, data: unknown, origin = 'null'): void {
-  window.dispatchEvent(new MessageEvent('message', { data, source, origin }));
-}
-
-/** The bridge's seat-refresh beat, mirrored so a reload test can advance past one. */
-const SEAT_REFRESH_BEAT_MS = 15_000;
-
-const consoleEntry = { level: 'error' as const, text: 'boom', timestamp: 1 };
-const networkEntry = {
-  method: 'GET',
-  url: '/x',
-  status: 200,
-  ok: true,
-  durationMs: 1,
-  timestamp: 1,
+const entry = { level: 'error', text: 'boom', timestamp: 1 };
+const defaults = {
+  documentId: 'doc',
+  logicalUrl: 'preview.html',
+  reloadNonce: 0,
+  previewOrigin: null,
+  bridgeEligibility: 'served-document' as const,
+  resolvedSource: '/signed/preview',
 };
-
+function generation(): string {
+  return vi
+    .mocked(iframe.contentWindow!.postMessage)
+    .mock.calls.filter(([m]) => m.__dorkosDevtools === 'init')
+    .at(-1)![0].bridgeGeneration;
+}
+function raw(data: unknown, source: Window | null = iframe.contentWindow, origin = 'null'): void {
+  act(() => window.dispatchEvent(new MessageEvent('message', { data, source, origin })));
+}
+function report(data: object, gen = generation(), origin = 'null'): void {
+  raw({ bridgeGeneration: gen, ...data }, iframe.contentWindow, origin);
+}
+function ready(origin = 'null'): void {
+  report({ __dorkosDevtools: 'ready', pageInstanceId: 'page' }, generation(), origin);
+}
+function emit(event: object): void {
+  act(() => {
+    for (const listener of sessionEventListeners) listener('session-1', event);
+  });
+}
+function request(requestId: string, extra: object = {}): void {
+  emit({
+    type: 'devtools_capture_request',
+    requestId,
+    targetClientId: transport.clientId,
+    documentId: 'doc',
+    bridgeGeneration: generation(),
+    ...extra,
+  });
+}
+function mount(overrides: Partial<Parameters<typeof useDevtoolsBridge>[0]> = {}, handshake = true) {
+  const ref = { current: iframe } as RefObject<HTMLIFrameElement | null>;
+  const hook = renderHook((p) => useDevtoolsBridge({ ...defaults, iframeRef: ref, ...p }), {
+    initialProps: overrides,
+  });
+  act(() => hook.result.current.noteFrameLoaded());
+  if (handshake) ready(overrides.previewOrigin ?? 'null');
+  return { ...hook, ref };
+}
+function capture(requestId: string, data: object = {}, gen = generation()): void {
+  report({ __dorkosDevtools: 'capture-result', requestId, dataUrl: PNG, ...data }, gen);
+}
+async function settle(): Promise<void> {
+  await act(() => vi.advanceTimersByTimeAsync(0));
+}
+function frameRequest(): string {
+  return vi
+    .mocked(iframe.contentWindow!.postMessage)
+    .mock.calls.filter(([m]) => m.__dorkosDevtools === 'capture-request')
+    .at(-1)![0].requestId;
+}
+function record(action: 'start' | 'stop', requestId: string, recordingId = 'film'): void {
+  emit({
+    type: 'devtools_recording_request',
+    action,
+    ...(action === 'start' ? { reservationTimeoutMs: 8_000 } : {}),
+    requestId,
+    recordingId,
+    targetClientId: transport.clientId,
+    documentId: 'doc',
+    bridgeGeneration: generation(),
+    bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8388608 },
+  });
+  if (action === 'start')
+    emit({
+      type: 'devtools_recording_request',
+      action: 'confirm-start',
+      requestId,
+      recordingId,
+      targetClientId: transport.clientId,
+      documentId: 'doc',
+      bridgeGeneration: generation(),
+    });
+}
 beforeEach(() => {
   vi.useFakeTimers();
+  searchSession = 'session-1';
   useAppStore.getState().setSessionId(null);
-  attachInUrl('session-1');
-  ingestDevtoolsCapture.mockClear();
+  ingestDevtoolsCapture.mockReset();
+  ingestDevtoolsCapture.mockResolvedValue(undefined);
   postDevtoolsAction.mockClear();
-  uploadDevtoolsRecording.mockClear();
+  uploadDevtoolsRecording.mockReset();
+  uploadDevtoolsRecording.mockResolvedValue(undefined);
+  loadRasterizerSource.mockReset();
+  loadRasterizerSource.mockResolvedValue('RASTERIZER_SRC');
   drawFrames.mockClear();
   encodeGif.mockClear();
+  halveFrames.mockClear();
   encodeResults = [OK_GIF];
-  loadRasterizerSource.mockClear();
   sessionEventListeners.clear();
   iframe = document.createElement('iframe');
-  document.body.appendChild(iframe);
   foreignFrame = document.createElement('iframe');
-  document.body.appendChild(foreignFrame);
+  document.body.append(iframe, foreignFrame);
+  vi.spyOn(iframe.contentWindow!, 'postMessage');
 });
 afterEach(() => {
   cleanup();
@@ -194,1252 +236,1123 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
-  it('ignores a batch from a foreign/nested frame (source is not our contentWindow)', () => {
-    mount();
-    postFrom(foreignFrame.contentWindow, {
-      __dorkosDevtools: 'batch',
-      seq: 1,
-      console: [consoleEntry],
-      network: [],
-    });
-    vi.advanceTimersByTime(500);
-    expect(captureCalls()).toHaveLength(0);
-  });
-
-  it('ignores a batch from the top window', () => {
-    mount();
-    postFrom(window, { __dorkosDevtools: 'batch', seq: 1, console: [consoleEntry], network: [] });
-    vi.advanceTimersByTime(500);
-    expect(captureCalls()).toHaveLength(0);
-  });
-
-  it('ignores a non-DevTools message from our own frame', () => {
-    mount();
-    postFrom(iframe.contentWindow, { some: 'other-app-message' });
-    vi.advanceTimersByTime(500);
-    expect(captureCalls()).toHaveLength(0);
-  });
-
-  it('ignores a frame with a real origin — only our own opaque frames carry the shim', () => {
-    // A directly framed dev server IS `iframeRef.current.contentWindow`, so
-    // source identity alone lets its own page code speak as if it were the shim.
-    // Nothing injects a shim there, so anything arriving from a real origin is
-    // the page impersonating one.
-    mount();
-    postFrom(
-      iframe.contentWindow,
-      { __dorkosDevtools: 'batch', seq: 1, console: [consoleEntry], network: [] },
-      'http://localhost:5173'
-    );
-    vi.advanceTimersByTime(500);
-    expect(captureCalls()).toHaveLength(0);
-  });
-
-  it('never acks a hello from a frame with a real origin', () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' }, 'http://localhost:5173');
-    expect(postSpy).not.toHaveBeenCalled();
-  });
-
-  it('accepts the preview origin this document was minted on', () => {
-    // A dev server on a DorkOS preview listener has a REAL origin and does carry
-    // the shim, so its exact origin — and only that one — is allowed through.
-    mount('http://localhost:4390');
-    postFrom(
-      iframe.contentWindow,
-      { __dorkosDevtools: 'batch', seq: 1, console: [consoleEntry], network: [] },
-      'http://localhost:4390'
-    );
-    vi.advanceTimersByTime(500);
-    expect(captureCalls()).toHaveLength(1);
-  });
-
-  it('still rejects a different real origin while a preview origin is allowed', () => {
-    mount('http://localhost:4390');
-    postFrom(
-      iframe.contentWindow,
-      { __dorkosDevtools: 'batch', seq: 1, console: [consoleEntry], network: [] },
-      'http://localhost:4391'
-    );
-    vi.advanceTimersByTime(500);
-    expect(captureCalls()).toHaveLength(0);
-  });
+it('drops an unsolicited current-frame screenshot before Transport', async () => {
+  mount();
+  capture('unknown');
+  expect(captureCalls()).toHaveLength(0);
+  request('known');
+  await settle();
+  capture('known');
+  expect(captureCalls()).toHaveLength(1);
+  expect(captureCalls()[0][1].screenshot?.requestId).toBe('known');
 });
-
-describe('useDevtoolsBridge — resource errors the canvas can show', () => {
-  /** Mount the bridge and keep hold of what it returns, plus a way to re-render it. */
-  function mountCounting() {
-    return renderHook(
-      (props: { logicalUrl: string; reloadNonce: number }) => {
-        const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
-        return useDevtoolsBridge({
-          iframeRef: ref,
-          documentId: 'doc',
-          previewOrigin: null,
-          ...props,
-        });
-      },
-      { initialProps: { logicalUrl: 'http://localhost:5173/', reloadNonce: 0 } }
-    );
-  }
-
-  it('counts each failed resource the shim reports for our own frame', () => {
-    const { result } = mountCounting();
-    expect(result.current.resourceErrorCount).toBe(0);
-
-    act(() => {
-      postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
-      postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/style.css' });
-    });
-    expect(result.current.resourceErrorCount).toBe(2);
-  });
-
-  it('counts them with no session attached — the banner is for the person watching', () => {
-    // Relaying captures to a session is gated on attach; telling the user their
-    // page is broken is not.
-    detachSession();
-    const { result } = mountCounting();
-    act(() => {
-      postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
-    });
-    expect(result.current.resourceErrorCount).toBe(1);
-  });
-
-  it('ignores a resource error from a foreign frame', () => {
-    const { result } = mountCounting();
-    act(() => {
-      postFrom(foreignFrame.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
-    });
-    expect(result.current.resourceErrorCount).toBe(0);
-  });
-
-  it('ignores one from a real origin, so a direct frame cannot fake the banner', () => {
-    const { result } = mountCounting();
-    act(() => {
-      postFrom(
-        iframe.contentWindow,
-        { __dorkosDevtools: 'resource-error', url: '/main.js' },
-        'http://localhost:5173'
-      );
-    });
-    expect(result.current.resourceErrorCount).toBe(0);
-  });
-
-  it('starts over on navigation and on reload — the count belongs to one document', () => {
-    const { result, rerender } = mountCounting();
-    act(() => {
-      postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
-    });
-    expect(result.current.resourceErrorCount).toBe(1);
-
-    rerender({ logicalUrl: 'http://localhost:5173/other', reloadNonce: 0 });
-    expect(result.current.resourceErrorCount).toBe(0);
-
-    act(() => {
-      postFrom(iframe.contentWindow, { __dorkosDevtools: 'resource-error', url: '/main.js' });
-    });
-    expect(result.current.resourceErrorCount).toBe(1);
-
-    rerender({ logicalUrl: 'http://localhost:5173/other', reloadNonce: 1 });
-    expect(result.current.resourceErrorCount).toBe(0);
-  });
+it('rejects missing generation and never downgrades on a legacy hello', async () => {
+  mount();
+  request('known');
+  await settle();
+  raw({ __dorkosDevtools: 'capture-result', requestId: 'known', dataUrl: PNG });
+  raw({ __dorkosDevtools: 'hello' });
+  expect(captureCalls()).toHaveLength(0);
+  capture('known');
+  expect(captureCalls()).toHaveLength(1);
 });
-
-describe('useDevtoolsBridge — handshake', () => {
-  it('acks a hello from our own frame', () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
-    expect(postSpy).toHaveBeenCalledWith({ __dorkosDevtools: 'ack' }, '*');
-  });
-
-  it('acks a hello even before a session is attached (the shim stops retrying)', () => {
-    // A preview can finish loading before session attach; the shim gives up
-    // after ~15 hello retries, so a gated ack would leave that page load
-    // permanently un-instrumented. The ack carries no captured data — the
-    // attached-session gate applies to CAPTURES only.
-    detachSession();
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
-    expect(postSpy).toHaveBeenCalledWith({ __dorkosDevtools: 'ack' }, '*');
-  });
-
-  it('never acks a hello from a foreign frame, attached or not', () => {
-    detachSession();
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    postFrom(foreignFrame.contentWindow, { __dorkosDevtools: 'hello' });
-    expect(postSpy).not.toHaveBeenCalled();
-  });
+it('rejects a wrong-generation response to a known pending request without consuming it', async () => {
+  mount();
+  request('known');
+  await settle();
+  capture('known', {}, `${generation()}-other`);
+  expect(captureCalls()).toHaveLength(0);
+  capture('known');
+  expect(captureCalls()).toHaveLength(1);
+  expect(captureCalls()[0][1].screenshot?.requestId).toBe('known');
 });
-
-describe('useDevtoolsBridge — relay', () => {
-  it('coalesces batches and relays once for the attached session', () => {
-    mount();
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'batch',
-      seq: 1,
-      console: [consoleEntry],
-      network: [networkEntry],
-    });
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'batch',
-      seq: 2,
-      console: [{ ...consoleEntry, text: 'second' }],
-      network: [],
-    });
-    vi.advanceTimersByTime(300);
-
-    expect(captureCalls()).toHaveLength(1);
-    const [sid, batch] = captureCalls()[0];
-    expect(sid).toBe('session-1');
-    expect(batch.console).toHaveLength(2);
-    expect(batch.network).toHaveLength(1);
-    expect(batch.seq).toBe(2); // latest shim seq
-    expect(batch.documentId).toBe('doc');
-    expect(batch.logicalUrl).toBe('preview.html');
-    expect(batch.reset).toBeUndefined();
-  });
-
-  it('does not relay when no session is attached', () => {
-    detachSession();
-    mount();
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'batch',
-      seq: 1,
-      console: [consoleEntry],
-      network: [],
-    });
-    vi.advanceTimersByTime(500);
+it('rejects an outcome-less known capture without consuming its pending request', async () => {
+  mount();
+  request('known');
+  await settle();
+  report({ __dorkosDevtools: 'capture-result', requestId: 'known' });
+  expect(captureCalls()).toHaveLength(0);
+  capture('known');
+  expect(captureCalls()).toHaveLength(1);
+  capture('known');
+  expect(captureCalls()).toHaveLength(1);
+});
+it('requires ready and hello cannot create a new generation or instrumented claim', async () => {
+  mount({}, false);
+  const gen = generation();
+  report({ __dorkosDevtools: 'batch', seq: 1, console: [entry], network: [] });
+  raw({ __dorkosDevtools: 'hello', bridgeVersion: 2, pageInstanceId: 'page' });
+  expect(generation()).toBe(gen);
+  await settle();
+  expect(claimCalls().every(([, b]) => !b.instrumented)).toBe(true);
+  ready();
+  request('known');
+  await settle();
+  capture('known');
+  expect(captureCalls()).toHaveLength(1);
+});
+it('denies opaque external frames even when their origin is null', () => {
+  mount({ bridgeEligibility: null, resolvedSource: 'https://external.example' }, false);
+  raw({ __dorkosDevtools: 'hello', bridgeVersion: 2, pageInstanceId: 'p' });
+  expect(iframe.contentWindow!.postMessage).not.toHaveBeenCalled();
+  expect(relayedBatches()).toHaveLength(0);
+});
+it('requires exact preview origin and exact source, including nested opaque frames', async () => {
+  mount({ bridgeEligibility: 'preview-listener', previewOrigin: 'http://preview.local:4444' });
+  request('known');
+  await settle();
+  const data = {
+    __dorkosDevtools: 'capture-result',
+    bridgeGeneration: generation(),
+    requestId: 'known',
+    dataUrl: PNG,
+  };
+  raw(data, foreignFrame.contentWindow, 'http://preview.local:4444');
+  raw(data);
+  raw(data, iframe.contentWindow, 'http://preview.local:4445');
+  expect(captureCalls()).toHaveLength(0);
+  raw(data, iframe.contentWindow, 'http://preview.local:4444');
+  expect(captureCalls()).toHaveLength(1);
+});
+it.each(['documentId', 'logicalUrl', 'resolvedSource', 'reloadNonce'] as const)(
+  'retires requests and queued batches on %s replacement',
+  async (key) => {
+    const hook = mount();
+    request('known');
+    await settle();
+    const old = generation();
+    report({ __dorkosDevtools: 'batch', seq: 1, console: [entry], network: [] });
+    hook.rerender({ [key]: key === 'reloadNonce' ? 1 : 'replacement' });
+    act(() => hook.result.current.noteFrameLoaded());
+    expect(generation()).not.toBe(old);
+    capture('known', {}, old);
+    await act(() => vi.advanceTimersByTimeAsync(300));
     expect(captureCalls()).toHaveLength(0);
-  });
-
-  it('relays a reset (and clears stale captures) on a navigation boundary', () => {
-    mount();
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'batch',
-      seq: 1,
-      console: [consoleEntry],
-      network: [],
-    });
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'navigated' });
-    vi.advanceTimersByTime(300);
-
-    expect(captureCalls()).toHaveLength(1);
-    const [, batch] = captureCalls()[0];
-    expect(batch.reset).toBe(true);
-    expect(batch.console).toHaveLength(0); // pre-navigation captures dropped
-  });
+  }
+);
+it('retires on actual frame load and ignores repeated ready from the previous page', async () => {
+  const hook = mount();
+  const old = generation();
+  request('known');
+  await settle();
+  act(() => hook.result.current.noteFrameLoaded());
+  expect(generation()).not.toBe(old);
+  report({ __dorkosDevtools: 'ready', pageInstanceId: 'p' }, old);
+  capture('known', {}, old);
+  expect(captureCalls()).toHaveLength(0);
 });
-
-describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', () => {
-  /** Post one console batch from the frame and let the debounce fire. */
-  function sendOneBatch(): void {
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'batch',
-      seq: 1,
-      console: [consoleEntry],
-      network: [],
-    });
-    vi.advanceTimersByTime(500);
-  }
-
-  it('relays in the browser app, where the conversation lives in the URL', () => {
-    attachInUrl('session-from-url');
-    useAppStore.getState().setSessionId(null); // the store is empty here, as it really is
-    mount();
-    sendOneBatch();
-
-    expect(captureCalls()).toHaveLength(1);
-    expect(captureCalls()[0][0]).toBe('session-from-url');
-  });
-
-  it('relays a screenshot result in the browser app too', () => {
-    attachInUrl('session-from-url');
-    useAppStore.getState().setSessionId(null);
-    mount();
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: 'r1',
-      dataUrl: 'data:image/png;base64,AAAA',
-    });
-
-    expect(captureCalls()).toHaveLength(1);
-    expect(captureCalls()[0][0]).toBe('session-from-url');
-  });
-
-  /**
-   * Mount the bridge so the test can re-render it after moving the address —
-   * which is how the attached session changes for a mounted preview.
-   */
-  function mountSwitchable() {
-    return renderHook(() => {
-      const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
-      useDevtoolsBridge({
-        iframeRef: ref,
-        documentId: 'doc',
-        logicalUrl: 'preview.html',
-        reloadNonce: 0,
-        previewOrigin: null,
-      });
-      return ref;
-    });
-  }
-
-  /** Post a console batch carrying `text`, without letting the debounce fire. */
-  function sendBatch(text: string, seq: number): void {
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'batch',
-      seq,
-      console: [{ ...consoleEntry, text }],
-      network: [],
-    });
-  }
-
-  it('relays a batch to the session it was captured under, not the one open when it flushes', () => {
-    // The coalescing window is 300ms, which is plenty of time to switch
-    // conversations. Reading the CURRENT session at flush time put this preview's
-    // console into whichever conversation happened to be open by then.
-    attachInUrl('session-a');
-    const { rerender } = mountSwitchable();
-    sendBatch('captured-under-a', 1);
-
-    attachInUrl('session-b');
-    act(() => rerender()); // the address moved; the bridge re-renders under B
-    act(() => void vi.advanceTimersByTime(500));
-
-    expect(captureCalls()).toHaveLength(1);
-    const [sid, batch] = captureCalls()[0];
-    expect(sid).toBe('session-a');
-    expect(batch.console[0].text).toBe('captured-under-a');
-  });
-
-  it('closes the pending group on a switch, so neither session gets the other’s captures', () => {
-    // The reciprocal leak: with only the send-time binding fixed, a batch
-    // arriving under B during A's still-open window would have joined A's group
-    // and gone out under A's id.
-    attachInUrl('session-a');
-    const { rerender } = mountSwitchable();
-    sendBatch('captured-under-a', 1);
-
-    attachInUrl('session-b');
-    act(() => rerender());
-    sendBatch('captured-under-b', 2);
-    act(() => void vi.advanceTimersByTime(500));
-
-    expect(captureCalls()).toHaveLength(2);
-    const [firstSid, firstBatch] = captureCalls()[0];
-    expect(firstSid).toBe('session-a');
-    expect(firstBatch.console.map((e: { text: string }) => e.text)).toEqual(['captured-under-a']);
-    const [secondSid, secondBatch] = captureCalls()[1];
-    expect(secondSid).toBe('session-b');
-    expect(secondBatch.console.map((e: { text: string }) => e.text)).toEqual(['captured-under-b']);
-  });
+it('retires on session attachment, including a preview that loaded before any conversation', async () => {
+  searchSession = undefined;
+  const hook = mount();
+  const old = generation();
+  report({ __dorkosDevtools: 'resource-error' });
+  await act(() => vi.advanceTimersByTimeAsync(20));
+  expect(hook.result.current.resourceErrorCount).toBe(1);
+  expect(relayedBatches()).toHaveLength(0);
+  searchSession = 'session-1';
+  hook.rerender({});
+  expect(hook.result.current.resourceErrorCount).toBe(0);
+  expect(generation()).not.toBe(old);
+  report({ __dorkosDevtools: 'batch', seq: 1, console: [entry], network: [] }, old);
+  ready();
+  request('new');
+  await settle();
+  capture('new');
+  expect(captureCalls()[0][0]).toBe('session-1');
 });
-
-describe('workbench sandbox regression (DOR-213 must not weaken DOR-216)', () => {
-  it('keeps the isolated sandbox string byte-for-byte (no allow-same-origin)', () => {
-    expect(WORKBENCH_SANDBOX_ISOLATED).toBe('allow-scripts allow-forms allow-popups allow-modals');
-  });
+it('does not forward a lazy import into a replacement generation', async () => {
+  let resolve!: (value: string) => void;
+  loadRasterizerSource.mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  const hook = mount();
+  request('old');
+  hook.rerender({ reloadNonce: 1 });
+  act(() => hook.result.current.noteFrameLoaded());
+  ready();
+  resolve('LATE');
+  await settle();
+  expect(
+    vi.mocked(iframe.contentWindow!.postMessage).mock.calls.some(([m]) => m.requestId === 'old')
+  ).toBe(false);
+  request('new');
+  await settle();
+  capture('new');
+  expect(captureCalls()).toHaveLength(1);
 });
-
-describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => {
-  function emitCaptureRequest(requestId: string): void {
-    for (const handler of sessionEventListeners) {
-      handler('session-1', { type: 'devtools_capture_request', requestId, seq: 1 });
-    }
-  }
-
-  /** Flush the loader promise chain under fake timers. */
-  async function flushAsync(): Promise<void> {
-    await vi.advanceTimersByTimeAsync(0);
-  }
-
-  it('forwards a capture request into the frame with the rasterizer source', async () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    emitCaptureRequest('r1');
-    await flushAsync();
-
-    expect(postSpy).toHaveBeenCalledWith(
-      { __dorkosDevtools: 'capture-request', requestId: 'r1', lib: 'RASTERIZER_SRC' },
-      '*'
-    );
-  });
-
-  it('loads the rasterizer source lazily — never before the first request', async () => {
-    mount();
-    expect(loadRasterizerSource).not.toHaveBeenCalled();
-    emitCaptureRequest('r1');
-    await flushAsync();
-    expect(loadRasterizerSource).toHaveBeenCalledTimes(1);
-  });
-
-  it('still forwards the request when the rasterizer source fails to load', async () => {
-    // The shim then fails fast with an error result instead of the tool
-    // waiting out its full timeout.
-    loadRasterizerSource.mockRejectedValueOnce(new Error('chunk failed'));
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    emitCaptureRequest('r1');
-    await flushAsync();
-
-    expect(postSpy).toHaveBeenCalledWith(
-      { __dorkosDevtools: 'capture-request', requestId: 'r1', lib: undefined },
-      '*'
-    );
-  });
-
-  it('ignores other session events', async () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    for (const handler of sessionEventListeners) {
-      handler('session-1', { type: 'turn_start', seq: 1 });
-    }
-    await flushAsync();
-    expect(postSpy).not.toHaveBeenCalled();
-    expect(loadRasterizerSource).not.toHaveBeenCalled();
-  });
-
-  it('ingests a capture-result immediately (no debounce), tagged with its requestId', () => {
-    mount();
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: 'r1',
-      dataUrl: 'data:image/png;base64,AAAA',
-    });
-
-    // Immediate — the awaiting tool must not eat the 300ms batch debounce.
-    expect(captureCalls()).toHaveLength(1);
-    const [sid, batch] = captureCalls()[0];
-    expect(sid).toBe('session-1');
-    expect(batch.screenshot).toEqual({
-      requestId: 'r1',
-      dataUrl: 'data:image/png;base64,AAAA',
-    });
-    expect(batch.console).toHaveLength(0);
-    expect(batch.network).toHaveLength(0);
-  });
-
-  it('relays a shim-side rasterization error result', () => {
-    mount();
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: 'r1',
-      error: 'CSP blocked the rasterizer',
-    });
-
-    expect(captureCalls()).toHaveLength(1);
-    const [, batch] = captureCalls()[0];
-    expect(batch.screenshot).toEqual({ requestId: 'r1', error: 'CSP blocked the rasterizer' });
-  });
-
-  it('ignores a capture-result from a foreign frame (anti-spoofing)', () => {
-    mount();
-    postFrom(foreignFrame.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: 'r1',
-      dataUrl: 'data:image/png;base64,AAAA',
-    });
-    expect(captureCalls()).toHaveLength(0);
-  });
-
-  it('drops a capture-result when no session is attached', () => {
-    detachSession();
-    mount();
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: 'r1',
-      dataUrl: 'data:image/png;base64,AAAA',
-    });
-    expect(captureCalls()).toHaveLength(0);
-  });
+it('admits at most 64 requests and expires them before accepting a later reply', async () => {
+  mount();
+  for (let i = 0; i < 65; i++) request(`r${i}`);
+  await settle();
+  const calls = vi
+    .mocked(iframe.contentWindow!.postMessage)
+    .mock.calls.filter(([m]) => m.__dorkosDevtools === 'capture-request');
+  expect(calls).toHaveLength(64);
+  await act(() => vi.advanceTimersByTimeAsync(8000));
+  capture('r0');
+  expect(captureCalls()).toHaveLength(0);
+  request('fresh');
+  await settle();
+  capture('fresh');
+  expect(captureCalls()).toHaveLength(1);
 });
-
-describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)', () => {
-  /** Push one addressed request onto the stream, the way the server does. */
-  function emitActionRequest(
-    requestId: string,
-    addressing: { targetClientId?: string; documentId?: string } = {}
-  ): void {
-    for (const handler of sessionEventListeners) {
-      handler('session-1', {
-        type: 'devtools_action_request',
-        requestId,
-        targetClientId: 'web-this-window',
-        documentId: 'doc',
-        command: { action: 'click', target: { selector: '#pay' } },
-        seq: 1,
-        ...addressing,
-      });
-    }
-  }
-
-  /** Mount, and let the chained claim actually go out. */
-  async function mountAndSettle(): Promise<void> {
-    mount();
-    await vi.advanceTimersByTimeAsync(0);
-  }
-
-  /** Put `doc` in this window's table, as one of the two paths a document arrives by. */
-  function seedDocument({ openedHere }: { openedHere: boolean }): void {
-    const store = useAppStore.getState();
-    store.loadCanvasForSession('session-1');
-    if (openedHere) {
-      // The person opened it HERE. `openCanvasDocument` mints the row this
-      // window owns; the id is `pending:` until the POST answers, so the row is
-      // renamed to the id the bridge is mounted on.
-      store.openCanvasDocument({ type: 'url', url: 'https://example.test/page' });
-      useAppStore.setState((prior) => ({
-        openDocuments: prior.openDocuments.map((d) => ({ ...d, id: 'doc' })),
-      }));
-      return;
-    }
-    // It arrived from the server — another window opened it, or this one
-    // hydrated a cold snapshot.
-    store.applyCanvasEvent('session-1', {
+it('consumes only the first valid response and does not consume malformed or wrong-kind responses', async () => {
+  mount();
+  request('known');
+  await settle();
+  report({ __dorkosDevtools: 'act-result', requestId: 'known', ok: true });
+  capture('known', { dataUrl: 'not-a-png' });
+  expect(captureCalls()).toHaveLength(0);
+  capture('known');
+  capture('known');
+  expect(captureCalls()).toHaveLength(1);
+  expect(postDevtoolsAction).not.toHaveBeenCalled();
+});
+it('pins metadata on an accepted result before a canonical session switch', async () => {
+  const hook = mount();
+  request('known');
+  await settle();
+  capture('known');
+  const accepted = captureCalls()[0];
+  searchSession = 'canonical';
+  hook.rerender({});
+  await settle();
+  expect(accepted[0]).toBe('session-1');
+  expect(accepted[1]).toMatchObject({ documentId: 'doc', logicalUrl: 'preview.html' });
+  capture('known', {}, accepted[1].bridgeGeneration);
+  expect(captureCalls()).toHaveLength(1);
+});
+it('rate bounds batches, preserves monotonic seq and reports observable loss', async () => {
+  mount();
+  report({ __dorkosDevtools: 'batch', seq: 1, console: [entry], network: [] });
+  report({
+    __dorkosDevtools: 'batch',
+    seq: 2,
+    console: [{ ...entry, text: 'dropped' }],
+    network: [],
+  });
+  report({
+    __dorkosDevtools: 'batch',
+    seq: 1,
+    console: [{ ...entry, text: 'duplicate' }],
+    network: [],
+  });
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  expect(captureCalls()[0][1]).toMatchObject({ seq: 1, dropped: true, console: [entry] });
+});
+it('never throws on raw BigInt/cycle reports and keeps the next valid report usable', async () => {
+  mount();
+  const cycle: unknown[] = [];
+  cycle.push(cycle);
+  for (const args of [[1n], cycle])
+    report({ __dorkosDevtools: 'batch', seq: 1, console: [{ ...entry, args }], network: [] });
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  report({ __dorkosDevtools: 'batch', seq: 1, console: [entry], network: [] });
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  expect(captureCalls()[0][1].console).toEqual([entry]);
+});
+it('coalesces resource renders to one RAF and caps the reported counter', async () => {
+  const hook = mount();
+  for (let i = 0; i < 10001; i++) report({ __dorkosDevtools: 'resource-error' });
+  expect(hook.result.current.resourceErrorCount).toBe(0);
+  await act(() => vi.advanceTimersByTimeAsync(20));
+  expect(hook.result.current.resourceErrorCount).toBe(10000);
+  act(() => hook.result.current.noteFrameLoaded());
+  expect(hook.result.current.resourceErrorCount).toBe(0);
+});
+it('keeps seat heartbeats nonactivating, and explicit person navigation activates it', async () => {
+  const hook = mount();
+  await settle();
+  await act(() => vi.advanceTimersByTimeAsync(15000));
+  expect(claimCalls().at(-1)![1].activation).toBe(false);
+  act(() => hook.result.current.notePersonNavigated());
+  await settle();
+  expect(claimCalls().at(-1)![1].activation).toBe(true);
+  hook.unmount();
+  await settle();
+  expect(claimCalls().at(-1)![1].active).toBe(false);
+});
+it('forwards action only to the addressed generation and relays a page failure as data', async () => {
+  mount();
+  const command = { action: 'click', target: { text: 'Pay' } };
+  emit({
+    type: 'devtools_action_request',
+    requestId: 'wrong',
+    targetClientId: 'other',
+    documentId: 'doc',
+    bridgeGeneration: generation(),
+    command,
+  });
+  report({ __dorkosDevtools: 'act-result', requestId: 'wrong', ok: false, error: 'page says no' });
+  expect(postDevtoolsAction).not.toHaveBeenCalled();
+  emit({
+    type: 'devtools_action_request',
+    requestId: 'known',
+    targetClientId: transport.clientId,
+    documentId: 'doc',
+    bridgeGeneration: generation(),
+    command,
+  });
+  report({
+    __dorkosDevtools: 'act-result',
+    requestId: 'known',
+    ok: false,
+    error: 'page says no',
+    evidence: { source: 'host', verified: true },
+  });
+  expect(postDevtoolsAction).toHaveBeenCalledWith(
+    'session-1',
+    expect.objectContaining({ requestId: 'known', ok: false, error: 'page says no' })
+  );
+  expect(
+    (postDevtoolsAction.mock.calls as unknown as [string, unknown][])[0][1]
+  ).not.toHaveProperty('evidence');
+});
+it('keeps recording frames local and uploads only on stop', async () => {
+  mount();
+  record('start', 'start');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  expect(captureCalls()).toHaveLength(0);
+  expect(uploadDevtoolsRecording).not.toHaveBeenCalled();
+  record('stop', 'stop');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  expect(uploadDevtoolsRecording).toHaveBeenCalledWith(
+    'session-1',
+    expect.objectContaining({
+      requestId: 'stop',
       documentId: 'doc',
-      change: 'opened',
-      document: {
-        id: 'doc',
-        scope: 'session:session-1',
-        roomId: null,
-        content: { type: 'url', url: 'https://example.test/page' },
-        title: 'page',
-        contentType: 'url',
-        authorId: 'owner',
-        pinned: false,
-        rev: 1,
-        lastTouchedBy: 'owner',
-        lastTouchedAt: '2026-09-12T10:00:00.000Z',
-        openedAt: '2026-09-12T09:00:00.000Z',
-        lastActiveAt: '2026-09-12T10:00:00.000Z',
-      } as never,
-    });
-  }
-
-  it('claims the seat for a page a person opened HERE, before any handshake', async () => {
-    seedDocument({ openedHere: true });
-    await mountAndSettle();
-    const claims = claimCalls();
-    expect(claims).toHaveLength(1);
-    expect(claims[0][0]).toBe('session-1');
-    // `activation: true` is what makes the seat MOVE here: the server reads
-    // anything a window says about a page it already holds as a keep-alive
-    // unless the claim says otherwise, so a silent activation would land as a
-    // beat and leave the seat wherever it already was.
-    expect(claims[0][1]).toMatchObject({ active: true, instrumented: false, activation: true });
-  });
-
-  /**
-   * The rule the server-owned canvas made necessary (PR #1822, `browser-driving`
-   * shard red).
-   *
-   * The table is shared, so a page opened in ONE window mounts in every other
-   * window of the session. A mount that always announced an activation therefore
-   * handed the seat to whichever window mounted last — including a background tab
-   * nobody is looking at — and the agent's clicks landed in a page the person
-   * could not see. Nobody did anything in this window, so the claim is a
-   * KEEP-ALIVE: the window still becomes reachable (the server's
-   * first-appearance rule), it just does not displace a live seat.
-   */
-  it('claims only a KEEP-ALIVE for a page that arrived from the server', async () => {
-    seedDocument({ openedHere: false });
-    await mountAndSettle();
-    expect(claimCalls()[0][1]).toMatchObject({ active: true, activation: false });
-  });
-
-  it('and the handshake does not upgrade that into an activation', async () => {
-    // The page finishing its handshake is the PAGE talking, not a person. A
-    // background window whose mount was a keep-alive must not take the seat one
-    // handshake later — which is the whole fix, undone.
-    seedDocument({ openedHere: false });
-    await mountAndSettle();
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true, activation: false });
-  });
-
-  it('re-activates when the person types an address in this window', async () => {
-    // The path the second window really takes: its page arrived over the wire,
-    // so the mount was a keep-alive — and then the person used it. Typing an
-    // address is local navigation, so nothing but this says a person did it.
-    seedDocument({ openedHere: false });
-    await mountAndSettle();
-    expect(claimCalls()[0][1]).toMatchObject({ activation: false });
-
-    act(() => bridge.current?.notePersonNavigated());
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, activation: true });
-
-    // …and it STAYS a person's window: the shim's own `navigated` report, which
-    // follows, does not quietly demote the claim back to a beat.
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'navigated' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, activation: true });
-  });
-
-  it('re-activates when the person acts in this window', async () => {
-    // The other half: a window the person takes to IS an activation, whatever
-    // put the document there. This is how a second window claims the seat after
-    // its page arrived over the wire.
-    seedDocument({ openedHere: false });
-    await mountAndSettle();
-    window.dispatchEvent(new Event('focus'));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, activation: true });
-  });
-
-  it('upgrades the claim to instrumented once the shim says hello', async () => {
-    await mountAndSettle();
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
-    await vi.advanceTimersByTimeAsync(0);
-    const claims = claimCalls();
-    expect(claims).toHaveLength(2);
-    expect(claims[1][1]).toMatchObject({ active: true, instrumented: true });
-  });
-
-  it('releases the seat when the page goes away', async () => {
-    await mountAndSettle();
-    cleanup();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ active: false });
-  });
-
-  it('releases the seat on pagehide, with a request that can outlive the page', async () => {
-    // The one release a window that is being closed can still send. Without it,
-    // a killed tab leaves a seat nobody is sitting in and every verb addresses a
-    // window that no longer answers. `keepalive` is what lets the request leave
-    // at all; the server's staleness rule is what makes it not have to.
-    await mountAndSettle();
-    ingestDevtoolsCapture.mockClear();
-    window.dispatchEvent(new Event('pagehide'));
-    await vi.advanceTimersByTimeAsync(0);
-
-    const release = claimCalls().at(-1);
-    expect(release![1]).toMatchObject({ active: false });
-    expect((ingestDevtoolsCapture as Mock).mock.calls.at(-1)![2]).toEqual({ keepalive: true });
-  });
-
-  it('keeps reporting that it is still showing the page', async () => {
-    // A window that goes quiet loses its seat after three missed beats, so a
-    // window that is genuinely still there has to say so. Asserted on the beat,
-    // because a claim posted only at mount would expire under a person who left
-    // the preview open and went to lunch.
-    await mountAndSettle();
-    ingestDevtoolsCapture.mockClear();
-    await vi.advanceTimersByTimeAsync(15_000);
-    expect(claimCalls()).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(claimCalls()).toHaveLength(3);
-    // Still here, and NOT a person putting the page in front — the distinction
-    // the server arbitrates the seat on. A beat that claimed to be an
-    // activation made two open windows trade the seat every 15 s.
-    for (const [, batch] of claimCalls()) {
-      expect(batch).toMatchObject({ active: true, activation: false });
-    }
-  });
-
-  it('re-reports the moment the tab becomes visible again', async () => {
-    // A tab hidden for more than five minutes has its timers aligned to one wake
-    // per minute (Chrome), so the 15s beat that should have reported is late and
-    // the seat may already have yielded. Coming back has to take it straight
-    // back rather than waiting for the next beat.
-    //
-    // The THROTTLING itself is not reproducible here, and not in Playwright
-    // either — the browser is launched with `--disable-background-timer-throttling`,
-    // which is what makes the rest of the suite deterministic. What is asserted
-    // is the half this code owns: the event fires, the claim goes out.
-    await mountAndSettle();
-    ingestDevtoolsCapture.mockClear();
-
-    Object.defineProperty(document, 'visibilityState', {
-      configurable: true,
-      get: () => 'visible',
-    });
-    document.dispatchEvent(new Event('visibilitychange'));
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(claimCalls()).toHaveLength(1);
-    expect(claimCalls()[0][1]).toMatchObject({ active: true });
-  });
-
-  it('does not re-report when the tab is going AWAY, only when it comes back', async () => {
-    await mountAndSettle();
-    ingestDevtoolsCapture.mockClear();
-
-    Object.defineProperty(document, 'visibilityState', {
-      configurable: true,
-      get: () => 'hidden',
-    });
-    document.dispatchEvent(new Event('visibilitychange'));
-    await vi.advanceTimersByTimeAsync(0);
-
-    // Hiding a tab is not closing it: the preview is still there, and claiming
-    // on the way out would be a claim about nothing while `pagehide` already
-    // covers the real departure.
-    expect(claimCalls()).toHaveLength(0);
-  });
-
-  it('re-reports when the page is restored from the back/forward cache', async () => {
-    // A restored page ran no timers at all while it was away, so the beat did
-    // not merely run late — it never happened.
-    await mountAndSettle();
-    ingestDevtoolsCapture.mockClear();
-    window.dispatchEvent(new Event('pageshow'));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls()).toHaveLength(1);
-    expect(claimCalls()[0][1]).toMatchObject({ active: true });
-  });
-
-  it('stops claiming for a session it is no longer attached to', async () => {
-    // The frame OUTLIVES the conversation: the session goes away while the
-    // preview stays mounted, so the claim effect tears down and the message
-    // listener — keyed on the transport and the ref, not the session — does not.
-    // A `hello` arriving after that must not re-claim a seat under the id the
-    // torn-down closure captured, because that is not the session on screen.
-    //
-    // Unmounting instead would prove nothing: it takes the listener with it, so
-    // the `hello` would reach nothing whether or not the claim was nulled.
-    const { rerender } = renderHook(() => {
-      const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
-      useDevtoolsBridge({
-        iframeRef: ref,
-        documentId: 'doc',
-        logicalUrl: 'preview.html',
-        reloadNonce: 0,
-        previewOrigin: null,
-      });
-      return ref;
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls()).toHaveLength(1);
-
-    detachSession();
-    rerender();
-    await vi.advanceTimersByTimeAsync(0);
-    ingestDevtoolsCapture.mockClear();
-
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls()).toHaveLength(0);
-  });
-
-  it('stops reporting a page as instrumented once it navigates away', async () => {
-    // A frame outlives its page. Before this, `instrumented` was a plain boolean
-    // set once by `hello` and never reset — so after a same-tab navigation from
-    // an instrumented preview to a page carrying no shim (an external site, a
-    // directly framed dev server), the seat still said the page could be driven.
-    // Every driving verb then minted a real request and waited out the whole
-    // timeout instead of refusing in a sentence.
-    await mountAndSettle();
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, instrumented: true });
-
-    ingestDevtoolsCapture.mockClear();
-    // The shim's own last word before its document is replaced.
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'navigated' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, instrumented: false });
-
-    // And the new page says hello, so it is drivable again.
-    ingestDevtoolsCapture.mockClear();
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true });
-  });
-
-  it('reports the new page honestly when the address changes before the shim says so', async () => {
-    // The other order the two signals can arrive in: the parent re-points the
-    // frame and the old page's `navigated` is still in flight, or never comes at
-    // all. Keying the handshake to the document rather than resetting a flag is
-    // what covers this — the old answer simply stops matching.
-    const { rerender } = renderHook(
-      ({ url }: { url: string }) => {
-        const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
-        useDevtoolsBridge({
-          iframeRef: ref,
-          documentId: 'doc',
-          logicalUrl: url,
-          reloadNonce: 0,
-          previewOrigin: null,
-        });
-        return ref;
-      },
-      { initialProps: { url: 'preview.html' } }
-    );
-    await vi.advanceTimersByTimeAsync(0);
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true });
-
-    ingestDevtoolsCapture.mockClear();
-    rerender({ url: 'https://example.com/' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: false });
-  });
-
-  it('treats a reload of the same address as a new page it has not heard from', async () => {
-    const { rerender } = renderHook(
-      ({ nonce }: { nonce: number }) => {
-        const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
-        useDevtoolsBridge({
-          iframeRef: ref,
-          documentId: 'doc',
-          logicalUrl: 'preview.html',
-          reloadNonce: nonce,
-          previewOrigin: null,
-        });
-        return ref;
-      },
-      { initialProps: { nonce: 0 } }
-    );
-    await vi.advanceTimersByTimeAsync(0);
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true });
-
-    // A reload leaves the URL alone, so only the nonce says the document
-    // changed. The next claim — the refresh beat — must report the truth.
-    ingestDevtoolsCapture.mockClear();
-    rerender({ nonce: 1 });
-    await vi.advanceTimersByTimeAsync(SEAT_REFRESH_BEAT_MS);
-    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: false });
-  });
-
-  it('holds a release until the claim before it has actually gone out', async () => {
-    // Two fire-and-forget POSTs can arrive either way round. On an in-preview
-    // navigation the pair is a release then a claim, and arriving swapped the
-    // release lands last — dropping a seat the window is still holding.
-    //
-    // The assertion is that the second POST has not been MADE yet while the
-    // first is still in flight. Asserting only on the final order would pass
-    // with no chain at all, because both calls land either way.
-    let letFirstFinish: (() => void) | undefined;
-    ingestDevtoolsCapture.mockImplementationOnce(
-      async () =>
-        new Promise<void>((resolve) => {
-          letFirstFinish = resolve;
-        })
-    );
-    mount();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-
-    cleanup();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(
-      ingestDevtoolsCapture,
-      'the release was posted while the claim before it was still in flight'
-    ).toHaveBeenCalledTimes(1);
-
-    letFirstFinish!();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(claimCalls().map(([, batch]) => batch.active)).toEqual([true, false]);
-  });
-
-  it('forwards a request addressed to this window and this page', () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    emitActionRequest('a1');
-
-    expect(postSpy).toHaveBeenCalledWith(
-      {
-        __dorkosDevtools: 'act-request',
-        requestId: 'a1',
-        documentId: 'doc',
-        command: { action: 'click', target: { selector: '#pay' } },
-      },
-      '*'
-    );
-  });
-
-  it('ignores a request addressed to another window, however active this one is', () => {
-    // The bug this closes, in its new place: re-deriving "am I the active one"
-    // locally gives two windows on one session the same answer.
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    emitActionRequest('a2', { targetClientId: 'web-the-other-window' });
-    expect(postSpy).not.toHaveBeenCalled();
-  });
-
-  it('ignores a request for a page this window is not holding', () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    emitActionRequest('a3', { documentId: 'some-other-doc' });
-    expect(postSpy).not.toHaveBeenCalled();
-  });
-
-  it('applies the same addressing to a screenshot request', async () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    for (const handler of sessionEventListeners) {
-      handler('session-1', {
-        type: 'devtools_capture_request',
-        requestId: 'c1',
-        targetClientId: 'web-the-other-window',
-        documentId: 'doc',
-        seq: 1,
-      });
-    }
-    await vi.advanceTimersByTimeAsync(0);
-    expect(postSpy).not.toHaveBeenCalled();
-  });
-
-  it('still forwards a request that names nobody, the way an older server sends it', async () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
-    mount();
-    for (const handler of sessionEventListeners) {
-      handler('session-1', { type: 'devtools_capture_request', requestId: 'c2', seq: 1 });
-    }
-    await vi.advanceTimersByTimeAsync(0);
-    expect(postSpy).toHaveBeenCalledWith(
-      { __dorkosDevtools: 'capture-request', requestId: 'c2', lib: 'RASTERIZER_SRC' },
-      '*'
-    );
-  });
-
-  it('relays an act-result immediately, with no debounce', () => {
-    mount();
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'act-result',
-      requestId: 'a1',
-      ok: true,
-      did: 'Clicked button "Pay $42.00".',
-      matched: 1,
+      bridgeGeneration: generation(),
+      frames: 2,
+    }),
+    expect.objectContaining({ signal: expect.any(AbortSignal) })
+  );
+});
+it('retries from normalized pixels without a second decode after compressed inputs are released', async () => {
+  encodeResults = [{ ok: false, error: 'too large' }, OK_GIF];
+  mount();
+  record('start', 'start');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  record('stop', 'stop');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  expect(drawFrames).toHaveBeenCalledTimes(1);
+  expect(halveFrames).toHaveBeenCalledTimes(1);
+  expect(encodeGif).toHaveBeenCalledTimes(2);
+});
+it('retains a finishing job across generations and cancels after deferred drawing before encode/upload', async () => {
+  let release!: (
+    frames: { data: Uint8ClampedArray<ArrayBuffer>; width: number; height: number }[]
+  ) => void;
+  drawFrames.mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        release = r;
+      })
+  );
+  const hook = mount();
+  record('start', 'start');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  record('stop', 'stop');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  hook.rerender({ reloadNonce: 1 });
+  act(() => hook.result.current.noteFrameLoaded());
+  ready();
+  const calls = vi.mocked(iframe.contentWindow!.postMessage).mock.calls.length;
+  record('start', 'second', 'second-film');
+  await settle();
+  expect(vi.mocked(iframe.contentWindow!.postMessage).mock.calls.length).toBe(calls);
+  const pixels = [{ data: new Uint8ClampedArray(4), width: 1, height: 1 }];
+  release(pixels);
+  await settle();
+  expect(pixels).toHaveLength(0);
+  expect(encodeGif).not.toHaveBeenCalled();
+  expect(uploadDevtoolsRecording).not.toHaveBeenCalled();
+  record('start', 'third', 'third-film');
+  await settle();
+  expect(vi.mocked(iframe.contentWindow!.postMessage).mock.calls.length).toBeGreaterThan(calls);
+});
+it('keeps canonical rekey and ready upgrades from reactivating a background seat', async () => {
+  useAppStore.setState({ openDocuments: [{ id: 'doc', openedHere: true }] as never });
+  const hook = mount();
+  await settle();
+  expect(
+    claimCalls()
+      .filter(([, c]) => c.instrumented)
+      .at(-1)![1].activation
+  ).toBe(false);
+  searchSession = 'canonical';
+  hook.rerender({});
+  ready();
+  await settle();
+  expect(
+    claimCalls()
+      .filter(([sid, c]) => sid === 'canonical' && c.active)
+      .every(([, c]) => c.activation === false)
+  ).toBe(true);
+});
+it('retains the finishing slot until a cancelled encoder await unwinds, then releases every normalized frame', async () => {
+  let release!: (result: EncodeOutcome) => void;
+  encodeGif.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      })
+  );
+  const hook = mount();
+  record('start', 'start');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  record('stop', 'stop');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  hook.rerender({ reloadNonce: 1 });
+  act(() => hook.result.current.noteFrameLoaded());
+  ready();
+  record('start', 'second', 'second-film');
+  await settle();
+  expect(drawFrames).toHaveBeenCalledTimes(1);
+  release(OK_GIF);
+  await settle();
+  expect(uploadDevtoolsRecording).not.toHaveBeenCalled();
+  record('start', 'third', 'third-film');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  record('stop', 'third-stop', 'third-film');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  expect(uploadDevtoolsRecording).toHaveBeenCalledTimes(1);
+});
+it('reports a host-only stop failure for a recording the current frame does not hold', async () => {
+  mount();
+  record('stop', 'stop', 'missing');
+  await settle();
+  expect(uploadDevtoolsRecording).toHaveBeenCalledWith(
+    'session-1',
+    expect.objectContaining({
+      requestId: 'stop',
+      error: expect.stringContaining('stopped recording'),
+      bridgeGeneration: generation(),
       documentId: 'doc',
-      page: { title: 'Checkout', url: 'https://preview/checkout', focused: null },
-    });
-
-    // Not a capture batch, and not waiting out the 300ms flush window: a tool
-    // call is awaiting this requestId server-side.
-    expect(postDevtoolsAction).toHaveBeenCalledTimes(1);
-    expect((postDevtoolsAction as Mock).mock.calls[0]).toEqual([
-      'session-1',
-      {
-        requestId: 'a1',
-        ok: true,
-        did: 'Clicked button "Pay $42.00".',
-        matched: 1,
-        documentId: 'doc',
-        page: { title: 'Checkout', url: 'https://preview/checkout', focused: null },
-      },
-    ]);
-  });
-
-  it('relays a page-side failure as a failure, keeping its sentence', () => {
-    mount();
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'act-result',
-      requestId: 'a1',
-      ok: false,
-      matched: 4,
-      error: '4 things matched that. Pass nth to pick one, or name it more exactly.',
-    });
-
-    expect((postDevtoolsAction as Mock).mock.calls[0][1]).toMatchObject({
-      ok: false,
-      matched: 4,
-      error: '4 things matched that. Pass nth to pick one, or name it more exactly.',
-    });
-  });
-
-  it('drops a malformed page summary rather than posting a body the route rejects', () => {
-    mount();
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'act-result',
-      requestId: 'a1',
-      ok: true,
-      page: { title: 42, url: null },
-    });
-
-    expect((postDevtoolsAction as Mock).mock.calls[0][1]).not.toHaveProperty('page');
-  });
-
-  it('ignores an act-result from a foreign frame (anti-spoofing)', () => {
-    mount();
-    postFrom(foreignFrame.contentWindow, {
-      __dorkosDevtools: 'act-result',
-      requestId: 'a1',
-      ok: true,
-      did: 'Clicked something nobody asked for.',
-    });
-    expect(postDevtoolsAction).not.toHaveBeenCalled();
-  });
-
-  it('drops an act-result when no session is attached', () => {
-    detachSession();
-    mount();
-    postFrom(iframe.contentWindow, { __dorkosDevtools: 'act-result', requestId: 'a1', ok: true });
-    expect(postDevtoolsAction).not.toHaveBeenCalled();
-  });
+    })
+  );
 });
 
-describe('useDevtoolsBridge — recording a run', () => {
-  /** Deliver one server→client event to every mounted bridge. */
-  function emit(event: unknown): void {
-    for (const handler of sessionEventListeners) handler('session-1', event);
-  }
+it('preserves person address submission while frame resolution has no eligible lifetime', async () => {
+  const hook = mount({ bridgeEligibility: null, resolvedSource: null }, false);
+  act(() => hook.result.current.notePersonNavigated());
+  hook.rerender({ ...defaults });
+  act(() => hook.result.current.noteFrameLoaded());
+  await settle();
+  expect(claimCalls().some(([, claim]) => claim.active === true && claim.activation === true)).toBe(
+    true
+  );
+  ready();
+  await settle();
+  expect(claimCalls().at(-1)![1].activation).toBe(false);
+});
 
-  /** The start/stop event the server sends, with this window's address on it. */
-  function recordingEvent(action: 'start' | 'stop', requestId: string) {
-    return {
-      type: 'devtools_recording_request',
-      seq: 1,
-      requestId,
-      targetClientId: 'web-this-window',
-      documentId: 'doc',
-      action,
-      recordingId: 'rec-1',
-      bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8 * 1024 * 1024 },
-    };
-  }
-
-  /** The id of the keyframe round trip this window just asked the page for. */
-  function lastFrameRequestId(postSpy: Mock): string {
-    const calls = postSpy.mock.calls.filter(
-      ([message]) =>
-        (message as { __dorkosDevtools?: string }).__dorkosDevtools === 'capture-request'
-    );
-    return (calls.at(-1)?.[0] as { requestId: string }).requestId;
-  }
-
-  it('asks the page for a frame on start, and keeps it out of the screenshot slot', async () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
-    mount();
-
-    emit(recordingEvent('start', 'r1'));
-    await vi.advanceTimersByTimeAsync(0);
-    const frameId = lastFrameRequestId(postSpy);
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: frameId,
-      dataUrl: 'data:image/png;base64,AAAA',
-    });
-    await vi.advanceTimersByTimeAsync(500);
-
-    // A recording frame is NOT a `browser_screenshot` answer: relaying it would
-    // overwrite the screenshot slot an agent may be about to read.
-    expect(captureCalls()).toHaveLength(0);
+it('keeps pagehide release ordered behind a deferred claim and restores through pageshow', async () => {
+  let release!: () => void;
+  ingestDevtoolsCapture.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      })
+  );
+  const hook = mount();
+  await settle();
+  act(() => window.dispatchEvent(new Event('pagehide')));
+  await settle();
+  expect(claimCalls()).toHaveLength(1);
+  release();
+  await settle();
+  expect(claimCalls().at(-1)![1].active).toBe(false);
+  act(() => window.dispatchEvent(new Event('pageshow')));
+  await settle();
+  expect(claimCalls().at(-1)![1]).toMatchObject({
+    active: true,
+    activation: true,
+    instrumented: false,
   });
-
-  it('sends the rasterizer with a capturing action, and nothing extra without one', async () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
-    mount();
-
+  act(() => hook.result.current.noteFrameLoaded());
+  ready();
+  await settle();
+  expect(claimCalls().at(-1)![1]).toMatchObject({
+    active: true,
+    activation: false,
+    instrumented: true,
+  });
+});
+it('forwards a known capture after rasterizer loading fails and relays its page error immediately', async () => {
+  loadRasterizerSource.mockRejectedValueOnce(new Error('chunk unavailable'));
+  mount();
+  request('capture-error');
+  await settle();
+  expect(frameRequest()).toBe('capture-error');
+  report({
+    __dorkosDevtools: 'capture-result',
+    requestId: 'capture-error',
+    error: 'page rasterizer failed',
+  });
+  expect(captureCalls().at(-1)![1].screenshot).toEqual({
+    requestId: 'capture-error',
+    error: 'page rasterizer failed',
+  });
+  expect(captureCalls().at(-1)![1].hostOutcome).toBe('page-reported');
+});
+it('caps retained recording frames and only claims captures requested by the host', async () => {
+  mount();
+  record('start', 'start');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  for (let i = 0; i < 65; i++) {
     emit({
       type: 'devtools_action_request',
-      seq: 1,
-      requestId: 'a1',
-      targetClientId: 'web-this-window',
+      requestId: `action-${i}`,
+      targetClientId: transport.clientId,
       documentId: 'doc',
-      command: { action: 'click', target: { text: 'Pay' } },
+      bridgeGeneration: generation(),
+      command: { action: 'read_page', maxChars: 4000 },
       capture: true,
     });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(postSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        __dorkosDevtools: 'act-request',
-        requestId: 'a1',
-        capture: true,
-        lib: 'RASTERIZER_SRC',
-      }),
-      '*'
-    );
+    await settle();
+    report({ __dorkosDevtools: 'act-result', requestId: `action-${i}`, ok: true, dataUrl: PNG });
+  }
+  expect(
+    (postDevtoolsAction.mock.calls as unknown as [string, { captured?: boolean }][]).filter(
+      ([, r]) => r.captured
+    )
+  ).toHaveLength(60);
+  emit({
+    type: 'devtools_action_request',
+    requestId: 'not-requested',
+    targetClientId: transport.clientId,
+    documentId: 'doc',
+    bridgeGeneration: generation(),
+    command: { action: 'read_page', maxChars: 4000 },
+  });
+  report({
+    __dorkosDevtools: 'act-result',
+    requestId: 'not-requested',
+    ok: true,
+    dataUrl: PNG,
+    captured: true,
+  });
+  expect(
+    (postDevtoolsAction.mock.calls.at(-1) as unknown as [string, { captured?: boolean }])[1]
+      .captured
+  ).toBeUndefined();
+  record('stop', 'stop');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  expect(uploadDevtoolsRecording).toHaveBeenCalledWith(
+    'session-1',
+    expect.objectContaining({ frames: 62 }),
+    expect.anything()
+  );
+});
+it('reports an encoder refusal after one normalized-pixel retry and releases the job for a new recording', async () => {
+  encodeResults = [
+    { ok: false, error: 'too large' },
+    { ok: false, error: 'still too large' },
+  ];
+  mount();
+  record('start', 'start');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  record('stop', 'stop');
+  await settle();
+  capture(frameRequest());
+  await settle();
+  expect(uploadDevtoolsRecording).toHaveBeenCalledWith(
+    'session-1',
+    expect.objectContaining({ requestId: 'stop', hostOutcome: 'host', error: 'still too large' }),
+    expect.anything()
+  );
+  expect(encodeGif).toHaveBeenCalledTimes(2);
+  const before = vi.mocked(iframe.contentWindow!.postMessage).mock.calls.length;
+  record('start', 'new', 'new-film');
+  await settle();
+  expect(vi.mocked(iframe.contentWindow!.postMessage).mock.calls.length).toBeGreaterThan(before);
+});
 
-    postSpy.mockClear();
-    loadRasterizerSource.mockClear();
-    emit({
-      type: 'devtools_action_request',
-      seq: 2,
-      requestId: 'a2',
-      targetClientId: 'web-this-window',
+it('resets buffered attribution at real page boundaries but preserves canonical-session rekey data', async () => {
+  const hook = mount();
+  await settle();
+  expect(claimCalls().some(([, claim]) => claim.reset)).toBe(true);
+  ingestDevtoolsCapture.mockClear();
+  searchSession = 'canonical';
+  hook.rerender({});
+  await settle();
+  expect(claimCalls().every(([, claim]) => !claim.reset)).toBe(true);
+  ingestDevtoolsCapture.mockClear();
+  hook.rerender({ logicalUrl: 'next-page' });
+  await settle();
+  expect(
+    claimCalls()
+      .filter(([, claim]) => claim.active)
+      .at(-1)![1]
+  ).toMatchObject({ reset: true, logicalUrl: 'next-page', instrumented: false });
+  ingestDevtoolsCapture.mockClear();
+  act(() => hook.result.current.noteFrameLoaded());
+  await settle();
+  expect(
+    claimCalls()
+      .filter(([, claim]) => claim.active)
+      .at(-1)![1].reset
+  ).toBe(true);
+});
+
+it('rate-admits batch processing before deep parsing while capture responses and later telemetry remain usable', async () => {
+  mount();
+  request('known');
+  await settle();
+  vi.mocked(parseCanvasBridgeReport).mockClear();
+  report({ __dorkosDevtools: 'batch', seq: 1, console: [entry], network: [] });
+  for (let seq = 2; seq <= 100; seq++)
+    report({ __dorkosDevtools: 'batch', seq, console: [{ ...entry, args: [1n] }], network: [] });
+  report(
+    { __dorkosDevtools: 'batch', seq: 200, console: [entry], network: [] },
+    'wrong-generation'
+  );
+  expect(parseCanvasBridgeReport).toHaveBeenCalledTimes(1);
+  capture('known');
+  expect(parseCanvasBridgeReport).toHaveBeenCalledTimes(2);
+  expect(captureCalls()).toHaveLength(1);
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  expect(captureCalls().find(([, batch]) => batch.console.length)![1].dropped).toBe(true);
+  report({
+    __dorkosDevtools: 'batch',
+    seq: 2,
+    console: [{ ...entry, text: 'later' }],
+    network: [],
+  });
+  expect(parseCanvasBridgeReport).toHaveBeenCalledTimes(3);
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  expect(captureCalls().at(-1)![1].console[0].text).toBe('later');
+});
+
+it('bounds queue work and UTF-8 bytes while discarding older network before newer console evidence', async () => {
+  mount();
+  const stringify = vi.spyOn(JSON, 'stringify');
+  const console = Array.from({ length: 60 }, (_, i) => ({
+    level: 'log',
+    text: `${i}:` + '😀'.repeat(5000),
+    timestamp: 100 + i,
+  }));
+  const network = [
+    { method: 'GET', url: 'x'.repeat(2048), status: 200, ok: true, durationMs: 1, timestamp: 1 },
+  ];
+  report({ __dorkosDevtools: 'batch', seq: 1, console, network });
+  const fullBatchWalks = stringify.mock.calls.filter(
+    ([value]) =>
+      typeof value === 'object' &&
+      value !== null &&
+      'console' in value &&
+      Array.isArray(value.console) &&
+      value.console.length > 1
+  ).length;
+  expect(fullBatchWalks).toBeLessThanOrEqual(1);
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  const sent = captureCalls()[0][1];
+  expect(sent.network).toHaveLength(0);
+  expect(sent.console.length).toBeGreaterThan(0);
+  expect(sent.console.length).toBeLessThan(60);
+  expect(sent.console.at(-1)!.text.startsWith('59:')).toBe(true);
+  expect(new TextEncoder().encode(JSON.stringify(sent)).length).toBeLessThanOrEqual(1048576);
+  expect(sent.dropped).toBe(true);
+  stringify.mockRestore();
+});
+
+it('page-reported navigation retires a visible resource lifetime without minting from its rerender or focus', async () => {
+  const hook = mount();
+  report({ __dorkosDevtools: 'resource-error' });
+  await act(() => vi.advanceTimersByTimeAsync(20));
+  expect(hook.result.current.resourceErrorCount).toBe(1);
+  const old = generation();
+  const initCount = () =>
+    vi
+      .mocked(iframe.contentWindow!.postMessage)
+      .mock.calls.filter(([m]) => m.__dorkosDevtools === 'init').length;
+  const before = initCount();
+  ingestDevtoolsCapture.mockClear();
+  report({ __dorkosDevtools: 'navigated' });
+  hook.rerender({});
+  act(() => window.dispatchEvent(new Event('focus')));
+  act(() => window.dispatchEvent(new Event('pageshow')));
+  await settle();
+  expect(hook.result.current.resourceErrorCount).toBe(0);
+  expect(initCount()).toBe(before);
+  expect(claimCalls().filter(([, claim]) => claim.active)).toHaveLength(0);
+  act(() => hook.result.current.noteFrameLoaded());
+  ready();
+  await settle();
+  expect(generation()).not.toBe(old);
+  expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, instrumented: true });
+});
+
+it('does not reactivate on visibility loss and reactivates only when the current tab becomes visible', async () => {
+  mount();
+  await settle();
+  ingestDevtoolsCapture.mockClear();
+  const visibility = vi.spyOn(document, 'visibilityState', 'get');
+  try {
+    visibility.mockReturnValue('hidden');
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await settle();
+    expect(claimCalls()).toHaveLength(0);
+    visibility.mockReturnValue('visible');
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await settle();
+    expect(claimCalls()).toHaveLength(1);
+    expect(claimCalls()[0][1]).toMatchObject({ active: true, activation: true });
+  } finally {
+    visibility.mockRestore();
+  }
+});
+
+describe('complete host request bindings', () => {
+  for (const type of [
+    'devtools_capture_request',
+    'devtools_action_request',
+    'devtools_recording_request',
+  ]) {
+    it.each(['targetClientId', 'documentId', 'bridgeGeneration'])(
+      'rejects ' + type + ' without %s and still admits a fully bound request',
+      async (field) => {
+        mount();
+        const event: Record<string, unknown> = {
+          type,
+          requestId: 'bound',
+          targetClientId: transport.clientId,
+          documentId: 'doc',
+          bridgeGeneration: generation(),
+          ...(type === 'devtools_action_request'
+            ? { command: { action: 'read_page', maxChars: 4000 } }
+            : {}),
+          ...(type === 'devtools_recording_request'
+            ? {
+                action: 'start',
+                reservationTimeoutMs: 8_000,
+                recordingId: 'film',
+                bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8388608 },
+              }
+            : {}),
+        };
+        const incomplete = { ...event };
+        delete incomplete[field];
+        emit(incomplete);
+        await settle();
+        const forwarded = () =>
+          vi
+            .mocked(iframe.contentWindow!.postMessage)
+            .mock.calls.filter(([message]) =>
+              ['capture-request', 'act-request'].includes(message.__dorkosDevtools)
+            );
+        expect(forwarded()).toHaveLength(0);
+        emit(event);
+        if (type === 'devtools_recording_request') emit({ ...event, action: 'confirm-start' });
+        await settle();
+        expect(forwarded()).toHaveLength(1);
+      }
+    );
+  }
+});
+it.each(['capture', 'action'])(
+  'refuses a new %s immediately at the pending cap without cancelling an existing request',
+  async (kind) => {
+    mount();
+    const send = (id: string) => {
+      if (kind === 'capture') request(id);
+      else
+        emit({
+          type: 'devtools_action_request',
+          requestId: id,
+          targetClientId: transport.clientId,
+          documentId: 'doc',
+          bridgeGeneration: generation(),
+          command: { action: 'read_page', maxChars: 4000 },
+        });
+    };
+    for (let i = 0; i < 65; i++) send('overflow-' + i);
+    await settle();
+    const forwarded = () =>
+      vi
+        .mocked(iframe.contentWindow!.postMessage)
+        .mock.calls.filter(([message]) =>
+          ['capture-request', 'act-request'].includes(message.__dorkosDevtools)
+        );
+    expect(forwarded()).toHaveLength(64);
+    const failures = () =>
+      kind === 'capture'
+        ? relayedBatches().filter(([, body]) => body.hostOutcome === 'host')
+        : (postDevtoolsAction.mock.calls as unknown as [string, DevtoolsActionResult][]).filter(
+            ([, body]) => body.hostOutcome === 'host'
+          );
+    expect(failures()).toHaveLength(1);
+    expect(failures()[0][1]).toMatchObject({
       documentId: 'doc',
-      command: { action: 'click', target: { text: 'Pay' } },
+      bridgeGeneration: generation(),
+      hostOutcome: 'host',
     });
-    await vi.advanceTimersByTimeAsync(0);
-    // No recording, no rasterizer chunk: an ordinary click costs no download.
-    expect(loadRasterizerSource).not.toHaveBeenCalled();
-    expect(postSpy).toHaveBeenCalledWith(expect.not.objectContaining({ capture: true }), '*');
+    send('overflow-0');
+    await settle();
+    expect(failures()).toHaveLength(1);
+    expect(forwarded()).toHaveLength(64);
+    if (kind === 'capture') capture('overflow-0');
+    else report({ __dorkosDevtools: 'act-result', requestId: 'overflow-0', ok: true });
+    send('after-release');
+    await settle();
+    expect(forwarded()).toHaveLength(65);
+  }
+);
+
+function recordingAdmissionReplies() {
+  return ingestDevtoolsCapture.mock.calls
+    .filter(([, batch]) => batch.recordingStart)
+    .map(([, batch]) => batch.recordingStart!);
+}
+function startAdmission(requestId = 'start', recordingId = 'film', extra: object = {}) {
+  emit({
+    type: 'devtools_recording_request',
+    action: 'start',
+    requestId,
+    recordingId,
+    targetClientId: transport.clientId,
+    documentId: 'doc',
+    bridgeGeneration: generation(),
+    reservationTimeoutMs: 8000,
+    ...extra,
   });
-
-  it('keeps an action frame here and tells the server only that it kept one', async () => {
-    mount();
-    emit(recordingEvent('start', 'r1'));
-    await vi.advanceTimersByTimeAsync(0);
-
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'act-result',
-      requestId: 'a1',
-      ok: true,
-      did: 'Clicked Pay.',
-      dataUrl: 'data:image/png;base64,FRAME',
-    });
-
-    const relayed = (postDevtoolsAction as Mock).mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    expect(relayed.captured).toBe(true);
-    // The picture itself never crosses the wire.
-    expect(relayed).not.toHaveProperty('dataUrl');
+}
+function admissionControl(
+  action: 'confirm-start' | 'cancel-start',
+  requestId = 'start',
+  recordingId = 'film'
+) {
+  emit({
+    type: 'devtools_recording_request',
+    action,
+    requestId,
+    recordingId,
+    targetClientId: transport.clientId,
+    documentId: 'doc',
+    bridgeGeneration: generation(),
   });
-
-  it('does not claim a frame it was never given', () => {
+}
+function admissionFrames() {
+  return vi
+    .mocked(iframe.contentWindow!.postMessage)
+    .mock.calls.filter(([message]) => message.__dorkosDevtools === 'capture-request');
+}
+it('reserves without capture and acknowledges actual activation only after exact confirmation', async () => {
+  mount();
+  startAdmission();
+  expect(admissionFrames()).toHaveLength(0);
+  expect(recordingAdmissionReplies().at(-1)).toMatchObject({ phase: 'reserved', ok: true });
+  admissionControl('confirm-start', 'wrong-request');
+  expect(admissionFrames()).toHaveLength(0);
+  admissionControl('confirm-start');
+  await settle();
+  expect(admissionFrames()).toHaveLength(1);
+  expect(recordingAdmissionReplies().at(-1)).toMatchObject({ phase: 'started', ok: true });
+  admissionControl('confirm-start');
+  await settle();
+  expect(admissionFrames()).toHaveLength(1);
+});
+it('expires a relative reservation and cannot revive it with a late confirmation', async () => {
+  mount();
+  startAdmission();
+  await act(() => vi.advanceTimersByTimeAsync(8001));
+  admissionControl('confirm-start');
+  await settle();
+  expect(admissionFrames()).toHaveLength(0);
+  startAdmission('later', 'later-film');
+  admissionControl('confirm-start', 'later', 'later-film');
+  await settle();
+  expect(admissionFrames()).toHaveLength(1);
+});
+it('refuses elapsed confirmation even before its reservation timer dispatches and permits a later start', async () => {
+  let monotonicNow = 100;
+  const monotonicClock = vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow);
+  try {
     mount();
-    emit(recordingEvent('start', 'r1'));
-
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'act-result',
-      requestId: 'a1',
+    startAdmission();
+    const undispatchedTimers = vi.getTimerCount();
+    monotonicNow += 8000;
+    expect(vi.getTimerCount()).toBe(undispatchedTimers);
+    admissionControl('confirm-start');
+    await settle();
+    expect(admissionFrames()).toHaveLength(0);
+    expect(recordingAdmissionReplies().at(-1)).toMatchObject({ phase: 'started', ok: false });
+    startAdmission('later', 'later-film');
+    admissionControl('confirm-start', 'later', 'later-film');
+    await settle();
+    expect(admissionFrames()).toHaveLength(1);
+    expect(recordingAdmissionReplies().at(-1)).toMatchObject({
+      requestId: 'later',
+      phase: 'started',
       ok: true,
-      did: 'Clicked Pay.',
     });
-
-    const relayed = (postDevtoolsAction as Mock).mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    expect(relayed.captured).toBeUndefined();
-  });
-
-  it('encodes and uploads the run on stop, with the last frame beside it', async () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
+  } finally {
+    monotonicClock.mockRestore();
+  }
+});
+it('acknowledges an active duplicate confirmation beyond its old reservation deadline', async () => {
+  let monotonicNow = 100;
+  const monotonicClock = vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow);
+  try {
     mount();
-    emit(recordingEvent('start', 'r1'));
-    await vi.advanceTimersByTimeAsync(0);
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: lastFrameRequestId(postSpy),
-      dataUrl: 'data:image/png;base64,AAAA',
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'act-result',
-      requestId: 'a1',
-      ok: true,
-      dataUrl: 'data:image/png;base64,BBBB',
-    });
-
-    emit(recordingEvent('stop', 'r2'));
-    await vi.advanceTimersByTimeAsync(0);
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: lastFrameRequestId(postSpy),
-      dataUrl: 'data:image/png;base64,CCCC',
-    });
-    await vi.advanceTimersByTimeAsync(0);
-
-    // Three frames: the one on start, the one the action produced, the one on stop.
-    expect(drawFrames).toHaveBeenCalledWith(
-      ['data:image/png;base64,AAAA', 'data:image/png;base64,BBBB', 'data:image/png;base64,CCCC'],
-      800
+    startAdmission();
+    admissionControl('confirm-start');
+    await settle();
+    expect(admissionFrames()).toHaveLength(1);
+    monotonicNow += 8001;
+    admissionControl('confirm-start');
+    await settle();
+    expect(admissionFrames()).toHaveLength(1);
+    expect(recordingAdmissionReplies().at(-1)).toMatchObject({ phase: 'started', ok: true });
+  } finally {
+    monotonicClock.mockRestore();
+  }
+});
+it('refuses a current bound START without a relative timeout', async () => {
+  mount();
+  startAdmission('invalid', 'invalid-film', { reservationTimeoutMs: undefined });
+  expect(recordingAdmissionReplies().at(-1)).toMatchObject({ phase: 'reserved', ok: false });
+  expect(admissionFrames()).toHaveLength(0);
+  startAdmission();
+  admissionControl('confirm-start');
+  await settle();
+  expect(admissionFrames()).toHaveLength(1);
+});
+it('a late or wrong-ID cancel cannot dispose a newer active recording', async () => {
+  mount();
+  startAdmission();
+  admissionControl('confirm-start');
+  await settle();
+  admissionControl('cancel-start', 'start', 'different-film');
+  const before = recordingAdmissionReplies().length;
+  admissionControl('confirm-start');
+  expect(recordingAdmissionReplies()).toHaveLength(before + 1);
+  expect(recordingAdmissionReplies().at(-1)).toMatchObject({ phase: 'started', ok: true });
+  admissionControl('cancel-start');
+  startAdmission('later', 'later-film');
+  admissionControl('confirm-start', 'later', 'later-film');
+  admissionControl('cancel-start');
+  const newerBefore = recordingAdmissionReplies().length;
+  admissionControl('confirm-start', 'later', 'later-film');
+  expect(recordingAdmissionReplies()).toHaveLength(newerBefore + 1);
+});
+it.each(['same-binding', 'new-generation'])(
+  'occupied finishing job refuses START across %s until actual disposal',
+  async (boundary) => {
+    const hook = mount();
+    let release!: (outcome: EncodeOutcome) => void;
+    encodeGif.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
     );
-    const [sid, upload] = (uploadDevtoolsRecording as Mock).mock.calls.at(-1) as [
-      string,
-      Record<string, { name: string; type: string }> & { requestId: string; frames: number },
-    ];
-    expect(sid).toBe('session-1');
-    expect(upload.requestId).toBe('r2');
-    expect(upload.frames).toBe(3);
-    expect(upload.recording.type).toBe('image/gif');
-    expect(upload.keyframe.type).toBe('image/png');
-  });
+    record('start', 'a-start', 'a-film');
+    await settle();
+    capture(frameRequest());
+    record('stop', 'a-stop', 'a-film');
+    await settle();
+    capture(frameRequest());
+    await settle();
+    expect(release).toBeDefined();
+    if (boundary === 'new-generation') {
+      hook.rerender({ reloadNonce: 1 });
+      act(() => hook.result.current.noteFrameLoaded());
+      ready();
+    }
+    startAdmission('b-start', 'b-film');
+    expect(recordingAdmissionReplies().at(-1)).toMatchObject({
+      requestId: 'b-start',
+      phase: 'reserved',
+      ok: false,
+    });
+    admissionControl('cancel-start', 'b-start', 'b-film');
+    release(OK_GIF);
+    await settle();
+    startAdmission('c-start', 'c-film');
+    expect(recordingAdmissionReplies().at(-1)).toMatchObject({
+      requestId: 'c-start',
+      phase: 'reserved',
+      ok: true,
+    });
+  }
+);
 
-  it('redraws once at half the size before giving up, and says which happened', async () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
+function deferredRasterizer() {
+  let resolve!: (source: string) => void;
+  let reject!: (error: Error) => void;
+  loadRasterizerSource.mockImplementationOnce(
+    () =>
+      new Promise<string>((accept, refuse) => {
+        resolve = accept;
+        reject = refuse;
+      })
+  );
+  return {
+    resolve: (source = 'RASTERIZER_SRC') => resolve(source),
+    reject: () => reject(new Error('late import failure')),
+  };
+}
+function captureBackedAction(requestId: string) {
+  emit({
+    type: 'devtools_action_request',
+    requestId,
+    targetClientId: transport.clientId,
+    documentId: 'doc',
+    bridgeGeneration: generation(),
+    command: { action: 'click', target: { selector: '#pay' } },
+    capture: true,
+  });
+}
+function forwardedRequests() {
+  return vi
+    .mocked(iframe.contentWindow!.postMessage)
+    .mock.calls.filter(([message]) =>
+      ['capture-request', 'act-request'].includes(message.__dorkosDevtools)
+    );
+}
+for (const kind of ['capture', 'action', 'frame'] as const) {
+  for (const completion of ['success', 'failure'] as const) {
+    it.each([8000, 8001])(
+      `expires lazy ${kind} ${completion} at %sms without timer dispatch and admits a later request`,
+      async (elapsed) => {
+        mount();
+        const lazy = deferredRasterizer();
+        if (kind === 'capture') request('expired');
+        else if (kind === 'action') captureBackedAction('expired');
+        else record('start', 'start');
+        const timers = vi.getTimerCount();
+        vi.setSystemTime(Date.now() + elapsed);
+        expect(vi.getTimerCount()).toBe(timers);
+        if (completion === 'success') lazy.resolve();
+        else lazy.reject();
+        await settle();
+        expect(forwardedRequests()).toHaveLength(0);
+        if (kind === 'frame') {
+          record('stop', 'stop');
+          await settle();
+          capture(frameRequest());
+          await settle();
+          expect(uploadDevtoolsRecording).toHaveBeenCalledTimes(1);
+          expect(uploadDevtoolsRecording.mock.calls.at(-1)![1]).toMatchObject({ frames: 1 });
+        }
+        request('later');
+        await settle();
+        capture('later');
+        expect(captureCalls().at(-1)![1].screenshot).toMatchObject({
+          requestId: 'later',
+          dataUrl: PNG,
+        });
+      }
+    );
+  }
+}
+it.each(['success', 'failure'] as const)(
+  'an old lazy %s cannot forward under a replacement same-ID capture',
+  async (completion) => {
     mount();
-    emit(recordingEvent('start', 'r1'));
-    await vi.advanceTimersByTimeAsync(0);
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: lastFrameRequestId(postSpy),
-      dataUrl: 'data:image/png;base64,AAAA',
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    // Over the cap at full size, under it at half — the case the spec's one
-    // retry exists for, and the one that used to lose the run outright.
-    encodeResults = [{ ok: false, error: 'The recording came out bigger than 8 MB.' }, OK_GIF];
-
-    emit(recordingEvent('stop', 'r2'));
-    await vi.advanceTimersByTimeAsync(0);
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: lastFrameRequestId(postSpy),
-      dataUrl: 'data:image/png;base64,CCCC',
-    });
-    await vi.advanceTimersByTimeAsync(0);
-
-    // Drawn twice: once at the recording size the server set, once at half it.
-    const sizes = drawFrames.mock.calls.map(([, longEdgePx]) => longEdgePx);
-    expect(sizes).toEqual([800, 400]);
-    // And the file really went, rather than the run being lost with a sentence.
-    const upload = (uploadDevtoolsRecording as Mock).mock.calls.at(-1)?.[1] as {
-      requestId: string;
-      error?: string;
-    };
-    expect(upload.requestId).toBe('r2');
-    expect(upload.error).toBeUndefined();
-  });
-
-  it('reports the encoder`s refusal instead of leaving the tool to time out', async () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
+    const old = deferredRasterizer();
+    request('reused');
+    capture('reused');
+    const newer = deferredRasterizer();
+    request('reused');
+    if (completion === 'success') old.resolve('OLD');
+    else old.reject();
+    await settle();
+    expect(forwardedRequests()).toHaveLength(0);
+    newer.resolve('NEW');
+    await settle();
+    expect(forwardedRequests()).toHaveLength(1);
+    expect(forwardedRequests()[0][0].lib).toBe('NEW');
+    capture('reused');
+    expect(captureCalls()).toHaveLength(2);
+  }
+);
+it('an old dispatched timer callback cannot delete a replacement same-ID pending entry', async () => {
+  mount();
+  const timers = vi.spyOn(globalThis, 'setTimeout');
+  try {
+    request('reused');
+    const oldCallback = timers.mock.calls.find(([, delay]) => delay === 8000)![0] as () => void;
+    await settle();
+    capture('reused');
+    request('reused');
+    oldCallback();
+    await settle();
+    capture('reused');
+    expect(captureCalls()).toHaveLength(2);
+  } finally {
+    timers.mockRestore();
+  }
+});
+it.each(['success', 'failure'] as const)(
+  'an old frame import %s cannot touch a replacement same-ID frame',
+  async (completion) => {
     mount();
-    emit(recordingEvent('start', 'r1'));
-    await vi.advanceTimersByTimeAsync(0);
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: lastFrameRequestId(postSpy),
-      dataUrl: 'data:image/png;base64,AAAA',
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    const tooBig = { ok: false as const, error: 'The recording came out bigger than 8 MB.' };
-    encodeResults = [tooBig, tooBig];
-
-    emit(recordingEvent('stop', 'r2'));
-    await vi.advanceTimersByTimeAsync(0);
-    postFrom(iframe.contentWindow, {
-      __dorkosDevtools: 'capture-result',
-      requestId: lastFrameRequestId(postSpy),
-      dataUrl: 'data:image/png;base64,CCCC',
-    });
-    await vi.advanceTimersByTimeAsync(0);
-
-    // The sentence names what was actually tried. Saying "it was not saved"
-    // without the redraw would describe a retry that had not happened; saying it
-    // here would describe one that had not, before the retry existed.
-    expect((uploadDevtoolsRecording as Mock).mock.calls.at(-1)?.[1]).toEqual({
-      requestId: 'r2',
-      error:
-        'The recording came out bigger than 8 MB. It was redrawn at half the size and was ' +
-        'still too big, so it was not saved.',
-    });
-  });
-
-  it('reports a stop for a recording this window is not holding', async () => {
-    mount();
-
-    emit(recordingEvent('stop', 'r2'));
-    await vi.advanceTimersByTimeAsync(0);
-
-    const upload = (uploadDevtoolsRecording as Mock).mock.calls.at(-1)?.[1] as {
-      requestId: string;
-      error: string;
-    };
-    expect(upload.requestId).toBe('r2');
-    expect(upload.error).toContain('stopped recording');
-  });
-
-  it('ignores a recording request addressed to another window', async () => {
-    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
-    mount();
-
-    emit({ ...recordingEvent('start', 'r1'), targetClientId: 'some-other-window' });
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(
-      postSpy.mock.calls.filter(
-        ([message]) =>
-          (message as { __dorkosDevtools?: string }).__dorkosDevtools === 'capture-request'
-      )
-    ).toHaveLength(0);
-  });
+    const uuid = vi
+      .spyOn(crypto, 'randomUUID')
+      .mockReturnValue('00000000-0000-4000-8000-000000000001');
+    try {
+      const old = deferredRasterizer();
+      record('start', 'start');
+      await act(() => vi.advanceTimersByTimeAsync(8000));
+      const newer = deferredRasterizer();
+      record('stop', 'stop');
+      if (completion === 'success') old.resolve('OLD');
+      else old.reject();
+      await settle();
+      expect(forwardedRequests()).toHaveLength(0);
+      expect(encodeGif).not.toHaveBeenCalled();
+      newer.resolve('NEW');
+      await settle();
+      expect(forwardedRequests()).toHaveLength(1);
+      expect(forwardedRequests()[0][0].lib).toBe('NEW');
+      capture(frameRequest());
+      await settle();
+      expect(uploadDevtoolsRecording).toHaveBeenCalledTimes(1);
+    } finally {
+      uuid.mockRestore();
+    }
+  }
+);
+it('refuses a response at the exact pending deadline and permits a later ordinary response', async () => {
+  mount();
+  request('expired');
+  await settle();
+  vi.setSystemTime(Date.now() + 8000);
+  capture('expired');
+  expect(captureCalls()).toHaveLength(0);
+  request('later');
+  await settle();
+  capture('later');
+  expect(captureCalls()).toHaveLength(1);
 });

@@ -88,14 +88,26 @@ describe('DEVTOOLS_AGENT_SCRIPT runs in a real page', () => {
   it('installs and says hello, as this test file compiles it', async () => {
     const { messages, installed } = await runInPage(DEVTOOLS_AGENT_SCRIPT);
     expect(installed).toBe(true);
-    expect(messages).toContainEqual({ __dorkosDevtools: 'hello' });
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        __dorkosDevtools: 'hello',
+        bridgeVersion: 2,
+        pageInstanceId: expect.any(String),
+      })
+    );
   });
 
   it('installs and says hello, as `tsx` compiles it (how `pnpm dev` runs)', async () => {
     const script = await emitUnderTsx();
     const { messages, installed } = await runInPage(script);
     expect(installed).toBe(true);
-    expect(messages).toContainEqual({ __dorkosDevtools: 'hello' });
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        __dorkosDevtools: 'hello',
+        bridgeVersion: 2,
+        pageInstanceId: expect.any(String),
+      })
+    );
   }, 30_000);
 
   it('needs no compiler helper the emitted script does not define', async () => {

@@ -124,7 +124,19 @@ Then watch for failed notices. The server logs each attempt that does not delive
 
 ## Host API keys
 
-A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, `communities:takedown` to take down content by its ID, `communities:erasure_journal` to copy the [erasure journal](#erasure-requests) off the server, and `communities:ownership` to ask to replace an owner who has left (see [below](#replacing-an-owner-who-has-left)). No other permission includes `communities:ownership`, so a key that suspends communities cannot replace owners. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
+A program that creates or manages communities on this host, such as a provisioning script, should use its own host API key rather than a person's password. Create one on the host page under **API keys**, or with the offline command. Give each program only the permissions it needs: `communities:read` to list communities, `communities:write` to create unclaimed communities and send owner claims, `communities:lifecycle` to suspend and resume, hold and release, set deletion notice dates, and delete a held community or cancel that deletion, `communities:import` to [bring a community in from another server](#imports), `communities:legal_hold` to place and release a [legal hold](#legal-holds), `communities:takedown` to take down content by its ID, `communities:erasure_journal` to copy the [erasure journal](#erasure-requests) off the server, `communities:ownership` to ask to replace an owner who has left (see [below](#replacing-an-owner-who-has-left)), and `accounts:close` to [close someone's account](#closing-someones-account). No other permission includes `communities:ownership`, so a key that suspends communities cannot replace owners. No key can read what happens inside a community, and no key can create, replace, or revoke keys. A key with `communities:write` can create a community and hand out the link that makes someone its owner, so give that permission only to programs you trust to decide who owns a community.
+
+Keep `communities:lifecycle` off a provisioning key. A program that creates communities and sets their limits needs `communities:read` and `communities:write`, nothing more. `communities:lifecycle` can suspend a community, which cuts off every member's DorkOS connections and agents at once, and it can delete a held community once its notice date passes. Give it to a separate key, used by the few people or programs that decide when a community stops.
+
+That does not make a write key harmless. `communities:write` reaches far beyond new communities. It can:
+
+- create unclaimed communities, and reissue or revoke their owner claim links, including the link for a finished import, so whoever holds the key can make themselves its owner;
+- abandon an unclaimed community, including a finished import nobody has claimed yet;
+- change the web address of any community that is not being deleted, so it can move a live community's address to one of its own choosing;
+- release a community's old address, and end any address's cool-off early;
+- set community limits and one member's agent limit.
+
+Treat a key with `communities:write` like a host operator's own account. If one leaks, revoke or replace it at once.
 
 To create the first key on a host without a browser, run the offline command with `COMMUNITY_DATABASE_URL` set. It prints the key once on standard output, so pipe it straight into your secret store:
 
@@ -133,7 +145,7 @@ docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
   node dist-server/host-keys.js issue --label "Provisioning" --scope communities:read --scope communities:write --expires-in-days 90
 ```
 
-`list` shows every key without its secret, and `revoke <id>` stops one at once. Anyone who can run these commands already controls the database, so treat that access like the database password. Each command writes a host audit row.
+Repeat `--scope` once per permission. Without `--expires-in-days` (1 to 365), the key never expires. `list` shows every key without its secret, one JSON line each, and `revoke <id>` stops one at once. Anyone who can run these commands already controls the database, so treat that access like the database password. Each command writes a host audit row.
 
 Failed key attempts are limited per network address (`COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`). Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` (see the start of this guide); without it every caller shares the proxy's address and one limit, and a program that keeps sending a wrong key can briefly block other programs' failed attempts. Programs with a valid key are never blocked.
 
@@ -149,7 +161,9 @@ When a local DorkOS install asks to connect, the server keeps a pairing request 
 
 Each community record on the host page has **Limits**: the most active members and the most file space, each shown beside what the community uses now. Leave a field empty for no limit. A lower limit never removes anyone or anything; it only stops new members or new files once the community is at the limit, and people see "This community is full" or "out of file space" instead of a retry. Exports never count, so an owner can always take their data out.
 
-Agents are limited per person by `COMMUNITY_AGENTS_PER_OWNER` (20 by default, at most 100). A program with a `communities:write` key can raise or lower that for one member, up to 1,000, with `PUT /api/v1/host/communities/:id/members/:memberId/limits`. Ask the member or owner for the member id; no host route lists members.
+Agents are limited per person by `COMMUNITY_AGENTS_PER_OWNER` (20 by default, at most 100). A program with a `communities:write` key can raise or lower that for one member, up to 1,000, with `PUT /api/v1/host/communities/:id/members/:memberId/limits` and `{ "agentsPerMember": 50 }`; send `null` to go back to the host-wide number. Ask the member or owner for the member id; no host route lists members.
+
+A program with `communities:read` can read usage: `GET /api/v1/host/communities/:id/usage` for one community, or `GET /api/v1/host/usage` for every community, 100 at a time. Each answer counts active members and agents, file space by kind (attachments, the icon, exports, imports still being checked, and files waiting to be deleted or held after a takedown), the limits, and the day of the newest message. It never names anyone or shows any message or file. Only attachments and the icon count against the file-space limit.
 
 ## Holding and deleting a community
 
@@ -163,11 +177,9 @@ A suspended community can be put on hold directly. It goes from suspended to on 
 
 Sometimes the person who owns a community leaves, and nobody can manage it any more. If they can still sign in, ask them to hand it over themselves from the community's Settings.
 
-This server has both sides of replacing an owner (`POST /api/v1/host/communities/:id/owner-replacements`, see [the API](API.md#replace-an-owner-who-has-left)): the host's request, and the routes the owner uses to keep ownership and the new owner uses to take it. The pages those emailed links open are in place, but the owner is not yet told on their DorkOS connection, so until they are, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE`, even with mail set up. Nothing changes for any community.
+Otherwise, a host can ask for a new owner (`POST /api/v1/host/communities/:id/owner-replacements`, see [the API](API.md#replace-an-owner-who-has-left), or the Owner part of the community's record on the host page). The server emails the owner and tells them in the community and on their DorkOS connection. It waits 14 days by default (30 days by default whenever the notice could not be delivered, the address was never confirmed by a sign-in service, the owner kept ownership before, the request comes within 30 days of a withdrawn one, or the reason is that the owner left the group), reminds them 2 days before the end, and then gives the new owner 14 days before the request expires. What you need:
 
-Once requests open, the server emails the owner, waits at least 7 days (30 whenever the notice could not be delivered, the address was never confirmed by a sign-in service, the owner kept ownership before, or the reason is that the owner left the group), reminds them 2 days before the end, and then gives the new owner 14 days before the request expires. What you can prepare now:
-
-- **Mail.** Requests need it, because the owner must be told outside the community they may have left (see [Mail](#mail)).
+- **Mail.** Requests need it, because the owner must be told outside the community they may have left (see [Mail](#mail)). Without it, every request is refused with `409 NOTICE_DELIVERY_UNAVAILABLE`.
 - **Who can ask.** A host API key with `communities:ownership`, or a host operator with their password. An operator who signs in only through single sign-on has no password to confirm, so they use a key with that permission instead.
 - **Naming the new owner.** When this host uses single sign-on, every request must name the new owner by the ID your sign-in service gives that person for this site, and only that account will be able to take ownership. Some sign-in services give each site a different ID for the same person. Use the one your service gives this host, not one another app sees: find it in your own records (for example, a sign-in by that person on this host) or in your sign-in service's admin tools.
 - **What ends a request.** Cancelling it, suspending the community, deleting it, or taking it down. The owner handing it on or asking to delete it ends it too. Holds, archiving, limits, web addresses, and legal holds do not.
@@ -179,7 +191,7 @@ Once requests open, the server emails the owner, waits at least 7 days (30 whene
 
 When you must preserve a community, for example under a court order or while litigation is pending, place a **legal hold** with `PUT /api/v1/host/communities/:id/legal-hold`. It needs a key with the `communities:legal_hold` permission, which suspend-and-delete keys do not have. Nothing in the community changes for anyone, but it can't be permanently deleted until you release the hold. Your own delete and abandon actions are refused. If the owner asks to delete it, their request is accepted and the community closes as they asked, but nothing is removed until you release the hold. The owner and members are not told a legal hold exists. A hold placed while a deletion is already running stops it before the next file. Release it with `DELETE` on the same address, and a deletion that was waiting then goes ahead.
 
-A legal hold does not stop someone removing their own messages or asking to be erased. If you must keep specific content, take a copy through your own database and file backups while the hold stands.
+A legal hold does not stop someone removing their own messages or asking to be erased. It does stop the erasure of an account you closed, while the person belongs to the held community (see [Closing someone's account](#closing-someones-account)). If you must keep specific content, take a copy through your own database and file backups while the hold stands.
 
 Before you roll back to a release without holds, release every hold and cancel every deletion you started. Older releases do not know the held state. Release every legal hold first too: an older release would start a deletion that the legal hold was stopping. The database still refuses to delete the community's own records, but the older release would already have deleted its files by then.
 
@@ -187,7 +199,7 @@ Only you (signed in) and keys with the legal-holds permission see a hold's note.
 
 ## Web addresses
 
-Give a community a short **web address** under **Web address** on its host record, so people can open it at `https://your-host/<name>`. Changing the address keeps the old one working and moves visitors to the new one; no other community can take it. Release an old address only on purpose, for example after a trademark request. A released address, or the address of a deleted community, stays unavailable for `COMMUNITY_SHORT_NAME_COOLOFF_DAYS` (90 days unless you change it). Rotating `COMMUNITY_AUTH_SECRET` ends those cool-offs early. To keep names for yourself, list them in `COMMUNITY_RESERVED_SHORT_NAMES`, separated by commas. If a community already has an address that later becomes reserved, by an upgrade or by your own list, that address stops opening it; the server names each such community in its log when it starts, so you can give it another.
+Give a community a short **web address** under **Web address** on its host record, so people can open it at `https://your-host/<name>`. Changing the address keeps the old one working and moves visitors to the new one; no other community can take it. Release an old address only on purpose, for example after a trademark request, with **Release** beside it or `DELETE /api/v1/host/communities/:id/short-names/:name`. A released address, or the address of a deleted community, stays unavailable for `COMMUNITY_SHORT_NAME_COOLOFF_DAYS` (90 days unless you change it). To end one address's cool-off early, use `DELETE /api/v1/host/short-name-holds/:name`. Rotating `COMMUNITY_AUTH_SECRET` ends every cool-off early. To keep names for yourself, list them in `COMMUNITY_RESERVED_SHORT_NAMES`, separated by commas. If a community already has an address that later becomes reserved, by an upgrade or by your own list, that address stops opening it; the server names each such community in its log when it starts, so you can give it another.
 
 ## Removed messages and files
 
@@ -237,13 +249,39 @@ docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
 
 `node dist-server/takedown/commands.js evidence-retry <takedown id>` sends a failed or held copy back to the worker. Removed messages keep their tombstones after a rollback.
 
+## Closing someone's account
+
+Sometimes you have to close an account yourself: for example when you learn the person is younger than your minimum age, or a court orders it. Use a program with a host API key that has `accounts:close`, or sign in as a host operator and confirm with your password. [The API reference](API.md#close-someones-account) has the routes.
+
+Here is what happens when you close an account:
+
+- **At once,** the person is signed out everywhere and cannot sign in again. Their DorkOS apps lose their connection, their agents stop working, and invitation links they made stop working. Nothing they wrote changes yet.
+- **After 72 hours,** the server erases the account, exactly as if the person had asked. Their name, messages, files and agents go from every community, and the erasure journal gets its line.
+- **Until the erasure starts,** you can cancel the closure. That is at least 72 hours, and longer while the erasure waits on a legal hold or a takedown copy. The person can sign in again straight away and reconnect their apps. Invitation links they made stay revoked, so they make new ones. That is what the wait is for: if you closed the wrong account, or the reason turns out to be wrong, nothing is lost.
+
+You pick a reason each time: `under_minimum_age`, `legal_order`, or `other`. You can also add your own case or ticket number. It is required for `other`. Keep your notes about why in your own records, not on this server.
+
+Some accounts cannot be closed:
+
+- **An owner.** First replace them as owner (see [Replacing an owner who has left](#replacing-an-owner-who-has-left)) or delete the community. The refusal names the communities they own.
+- **A host operator,** for the same reason they cannot delete their own account.
+- **An account already being erased.** If the person had asked to delete their account but it has not started yet, your closure joins their request. They are signed out at once, and their own date stands. Cancelling your closure then gives them their access back and leaves their request waiting.
+
+If the person belongs to a community under a [legal hold](#legal-holds), the erasure waits until you release the hold, and a hold placed while it runs stops it before the next community. It also waits for any takedown copy you have not finished saving. A person's own request is never held this way.
+
+A person or key can close at most `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY` accounts (10 by default) in any 24 hours, cancelled ones included, so a leaked key cannot quietly lock everyone out. The limit is per actor, so every extra key with `accounts:close` raises what a leak could do: issue them sparingly. Every closure, and every refused one, logs `{"event":"community.account.close",…}` with IDs only. Alert on it.
+
+If your sign-in service tells you who someone is, look up their account here by the identity it gives you (its issuer and the person's subject). Only an exact match answers, so the lookup cannot be used to list accounts.
+
+The server keeps each closure's record, with its reason and your reference, until 30 days after it ends. Your host audit trail keeps a row for every close and cancel, naming who did it but not whose account it was.
+
 ## Erasure requests
 
-People erase themselves. A member can erase their messages from one community, or delete their account and be erased from every community on this host. Each request waits 72 hours, then the server removes their name, handle, account link, messages, files, agents, and connections, and deletes every live export in that community. Host operators cannot start, cancel, speed up, or read an erasure. If someone emails you because they cannot sign in to do it themselves, use [account recovery](RECOVERY.md) so they can sign in and erase themselves.
+People erase themselves. A member can erase their messages from one community, or delete their account and be erased from every community on this host. Each request waits 72 hours, then the server removes their name, handle, account link, messages, files, agents, and connections, and deletes every live export in that community. Host operators cannot cancel or speed up a person's own erasure, and cannot list anyone's. The one thing a host can start is [closing someone's account](#closing-someones-account), which ends in the same erasure. If you close an account whose owner has already asked to delete it, the closure tells you so (`personRequested`) and when their erasure starts (`eraseAfter`). That is the only way a host learns of a person's own request. If someone emails you because they cannot sign in to do it themselves, use [account recovery](RECOVERY.md) so they can sign in and erase themselves.
 
 An account that has ever been a host operator cannot be deleted online, because host audit records must keep naming who acted. That person can still erase each of their memberships.
 
-Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`, and adds the same line to the **erasure journal** in the database. A restored backup brings back everyone erased since it was taken, and it takes the journal back to the same moment. So keep a copy of the journal **outside the server and outside your backups, for at least as long as you keep backups.**
+Each finished erasure writes one line to the app log, with IDs only, such as `{"event":"community.member_erased","communityId":"…","memberId":"…"}`, and adds the same line, with the time it finished (`finishedAt`), to the **erasure journal** in the database. A restored backup brings back everyone erased since it was taken, and it takes the journal back to the same moment. So keep a copy of the journal **outside the server and outside your backups, for at least as long as you keep backups.**
 
 The server keeps each journal line for `COMMUNITY_ERASURE_JOURNAL_RETENTION_DAYS` (400 days unless you change it; at least 30), then deletes it. Set it to your longest backup or point-in-time-recovery retention plus 30 days: a line is needed only while a backup older than it can still be restored. The most it allows is 3,650 days, so if you keep backups for longer than about ten years, the server's journal cannot cover the oldest of them; keep your own copy's month files for as long as those backups.
 
@@ -314,12 +352,26 @@ To return to a release from before background exports, first run `pnpm --filter 
 
 ## Imports
 
-A host can bring a community in from another server by importing its owner's export (see the [API](API.md#import-an-owner-export)). Exports up to 1 GiB can arrive in one upload; larger ones, up to `COMMUNITY_IMPORT_MAX_BYTES` (1 GiB unless you change it, at most 1 TiB), arrive in numbered parts of at most `COMMUNITY_EXPORT_SEGMENT_BYTES`, and a broken upload resumes from the last part received.
+A host can bring a community in from another server by importing its owner's export (see the [API](API.md#import-an-owner-export)). Ask the owner for the community export, not their personal one: only an owner export can be imported. An import makes a new community that nobody owns yet. You never see its messages or files.
+
+1. **Start.** On the host page, under **Move a community here**, enter the community's name. Choose the export file to send it from this browser, or leave it empty, then choose **Start import**. The page then shows **Upload details** (an upload address and token) that whoever has the file can use. The token is shown once and works for `COMMUNITY_IMPORT_UPLOAD_HOURS`. The browser sends the file in one piece, so it takes exports up to 1 GiB; anything larger is refused as `IMPORT_TOO_LARGE`. For a larger export, leave the file empty and give the upload details to a program that uploads it in parts (see the [API](API.md#import-an-owner-export)). A program can also start the import itself, with a key that has `communities:import`.
+2. **Watch.** The import's line on its record shows where it stands: "Waiting for the export file", "Checking the export", "Checked. Ready to import.", "Importing", then "Imported. Send an owner claim to finish." While it is checking or importing, the page refreshes on its own. Once checked, it shows counts: channels, messages, files and their size, and past members and agents. A failed import says why, for example "This is a personal export. Ask the owner for the community export."
+3. **Commit.** Choose **Import now** once the export is checked. Nothing from the export is restored until you do, and an import left checked for seven days is cancelled on its own. A program can skip this step by starting the import with `autoCommit: true`.
+4. **Hand it over.** When it reads "Imported", choose **Reissue owner claim** and send the link to the owner. Whoever claims it takes over the old owner's place and past messages. Everyone else comes back only as former members, with their messages but no account, and joins again by invitation.
+
+**Cancel import** works at any point before the import finishes. The unfinished community and every uploaded file are then removed in the background. An upload window that closes, or a failure, ends the import the same way. Under a [legal hold](#legal-holds), cancelling is refused, and a failed or expired import keeps its files until you release the hold.
+
+Exports up to 1 GiB can arrive in one upload; larger ones, up to `COMMUNITY_IMPORT_MAX_BYTES` (1 GiB unless you change it, at most 1 TiB), arrive in numbered parts of at most `COMMUNITY_EXPORT_SEGMENT_BYTES`, and a broken upload resumes from the last part received.
 
 - **Time to upload.** Whoever holds the upload link has `COMMUNITY_IMPORT_UPLOAD_HOURS` (24 hours unless you change it, 1 to 168) from when the import was started. Raise it for very large exports on slow connections.
 - **Disk.** Each part being received is written to the temporary folder and then stored, so it can use up to twice its size there. A server receives at most `COMMUNITY_IMPORT_PART_CONCURRENCY` parts at once (8 unless you change it, 1 to 64) and at most four per import; others are asked to wait a few seconds. Plan for twice that many parts of free temporary space, beside the single uploads `COMMUNITY_IMPORT_UPLOADS` allows.
 - **Storage.** The uploaded parts show in usage as import staging and never count against a community's storage limit. They are deleted once the import is ready, cancelled, or failed.
 - **Restarts.** Checking and restoring run in the background. A server that stops part-way through a restore loses at most one batch of rows or one file, and any server carries on from there about five minutes later.
+- **Not a backup.** An import makes a new community with new IDs, and past members come back without accounts. Use it to move a community between servers, never to recover this one. Your own database and file backups are the recovery path (see [Back up both the database and files](#back-up-both-the-database-and-files)).
+
+## Your terms, privacy, and report links
+
+Three optional settings put your own pages in front of people: `COMMUNITY_TERMS_URL`, `COMMUNITY_PRIVACY_URL`, and `COMMUNITY_REPORT_ABUSE_URL` (see [the deployment guide](DEPLOYMENT.md#optional-terms-privacy-and-report-links)). Terms and privacy show under the sign-in form. All three show under **Settings**, **Account**, in a section called **This host**, and the report link also shows on each message. Leave one unset and nothing shows for it. A report reaches you with IDs only, so you can act on it without reading the content (see [Taking down illegal content](#taking-down-illegal-content)). Any program can read the same three links, without signing in, from `GET /api/v1/host-links`. Restart the service after changing one.
 
 ## Storage and hosting choices
 

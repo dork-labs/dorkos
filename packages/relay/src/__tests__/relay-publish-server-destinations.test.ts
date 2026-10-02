@@ -31,10 +31,17 @@ describe('the server-destination rule', () => {
     // Adding an entry is a security decision. Change this list only with a
     // reason on the entry saying why its handler is safe to reach.
     expect(AGENT_SENDABLE_SERVER_SUBJECTS).toEqual([]);
-    expect(SERVER_DESTINATION_PREFIXES).toEqual(['relay.system.', 'relay.control.']);
+    expect(SERVER_DESTINATION_PREFIXES).toEqual(['relay.system.', 'relay.control.', 'relay.doc.']);
   });
 
   it.each([
+    'relay.doc.canvas-hash',
+    'relay.doc.>',
+    'relay.doc',
+    'relay.*',
+    '*.doc',
+    '*.*',
+    'relay.*.canvas-hash',
     'relay.system.tasks.task-1',
     'relay.system.approval.agent-1',
     'relay.system.console',
@@ -55,6 +62,7 @@ describe('the server-destination rule', () => {
   });
 
   it.each([
+    'relay.docx.canvas-hash',
     'relay.agent.ns.agent-1',
     'relay.inbox.query.abc',
     'relay.human.console.client-1',
@@ -92,6 +100,7 @@ describe('the server-destination rule', () => {
     ['relay.webhook.hook-1', false],
     ['relay.human.console', false],
     ['relay.bridge.reply.tg1.chat-42', false],
+    ['relay.doc.canvas-hash', false],
     ['plugin.my-adapter', false],
     ['a2a-gateway', false],
   ])('%s may reach a server destination: %s', (from, expected) => {
@@ -122,6 +131,10 @@ describe('publish pipeline — only server senders reach server-owned addresses'
   }
 
   it.each([
+    ['relay.external.mcp', 'relay.doc.canvas-hash'],
+    ['relay.agent.ns.agent-1', 'relay.doc.>'],
+    ['relay.webhook.x', 'relay.doc.canvas-hash'],
+    ['relay.doc.canvas-hash', 'relay.system.tasks.task-1'],
     ['relay.agent.ns.agent-1', 'relay.system.tasks.task-1'],
     ['relay.session.project-1a2b3c4d', 'relay.system.approval.agent-1'],
     ['relay.external.mcp', 'relay.system.tasks.task-1'],
@@ -144,6 +157,17 @@ describe('publish pipeline — only server senders reach server-owned addresses'
     );
     expect(received).toHaveLength(0);
   });
+
+  it.each(['relay.*', '*.doc', '*.*'])(
+    'refuses %s reaching the bare Doc mailbox',
+    async (subject) => {
+      await relay.registerEndpoint('relay.doc');
+      await expect(
+        relay.publish(subject, { hi: 1 }, { from: 'relay.external.mcp' })
+      ).rejects.toThrow(SERVER_DESTINATION_REFUSAL);
+      expect((await relay.readInbox('relay.doc')).messages).toHaveLength(0);
+    }
+  );
 
   it('refuses a wildcard that would land in the system console mailbox', async () => {
     await relay.registerEndpoint('relay.system.console');

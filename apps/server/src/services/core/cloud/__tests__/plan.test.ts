@@ -160,6 +160,28 @@ describe('the plan reads', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it('leaves a trace and keeps the inference rows when the charges read fails', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    // Only the longer window fails, so the breakdown must still arrive.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const asked = new URL(url);
+        const days = windowDays(asked);
+        const body = days > 30 ? { code: 'internal', status: 500, title: 'Down' } : usageFixture;
+        return new Response(JSON.stringify(body), {
+          status: days > 30 ? 500 : 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      })
+    );
+    const usage = await readUsage('seat');
+    expect(usage?.rows).toEqual(usageFixture.rows);
+    expect(usage).not.toHaveProperty('otherCharges');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/not inference/);
+  });
+
   it('reads the nudge as the service reduced it', async () => {
     stubFetch({ '/v1/nudge': { status: 200, body: nudgeFixture } });
     const nudge = await readNudge();
@@ -201,5 +223,219 @@ describe('the plan reads', () => {
     await expect(assignSeat('seat_0001', { kind: 'user', id: 'acct_0001' })).rejects.toThrow(
       /not linked/i
     );
+  });
+});
+
+/** A window's length in days, from a `/v1/usage` request's own query. */
+function windowDays(asked: URL): number {
+  const from = Date.parse(asked.searchParams.get('from')!);
+  const to = Date.parse(asked.searchParams.get('to')!);
+  return (to - from) / (24 * 60 * 60 * 1000);
+}
+
+/** One billing period the fake service knows, and when its close settled it. */
+interface FakePeriod {
+  start: string;
+  end: string;
+  settledAt: string;
+  displayName?: string;
+  unit?: string;
+  micro?: string;
+}
+
+/**
+ * Stand in for `/v1/usage` the way the contract defines it: a period appears
+ * once it has settled, and only in a window it STARTED in (`from` inclusive,
+ * `to` exclusive). The inference rows are the same in every window, so what a
+ * test sees under `otherCharges` is decided by the window the app asked for.
+ */
+function stubContractUsage(periods: FakePeriod[]) {
+  const fetchMock = vi.fn(async (url: string) => {
+    const asked = new URL(url);
+    const from = Date.parse(asked.searchParams.get('from')!);
+    const to = Date.parse(asked.searchParams.get('to')!);
+    const now = Date.now();
+    const rows = periods
+      .filter((p) => Date.parse(p.settledAt) <= now)
+      .filter((p) => Date.parse(p.start) >= from && Date.parse(p.start) < to)
+      .map((p) => ({
+        periodStart: p.start,
+        periodEnd: p.end,
+        units: 1.5,
+        unit: p.unit ?? 'GB-month',
+        displayName: p.displayName ?? 'Extra storage',
+        dorkosPriceMicro: p.micro ?? '100',
+        costBasis: 'published_price',
+      }));
+    const body = {
+      ...usageFixture,
+      from: new Date(from).toISOString(),
+      to: new Date(to).toISOString(),
+      groupBy: asked.searchParams.get('groupBy'),
+      ...(rows.length === 0
+        ? {}
+        : {
+            otherCharges: {
+              rows,
+              dorkosPriceMicro: rows
+                .reduce((sum, r) => sum + BigInt(r.dorkosPriceMicro), 0n)
+                .toString(),
+            },
+          }),
+    };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+/** A calendar month's period that settled an hour after it ended. */
+function month(start: string, end: string): FakePeriod {
+  return { start, end, settledAt: new Date(Date.parse(end) + 60 * 60 * 1000).toISOString() };
+}
+
+/** The periods `readUsage` surfaced, as `start → end` pairs. */
+async function shownPeriods(): Promise<string[]> {
+  const usage = await readUsage('seat');
+  return (usage?.otherCharges?.rows ?? []).map((r) => `${r.periodStart} → ${r.periodEnd}`);
+}
+
+// DOR-2589. The old read asked for one rolling 30-day window, and the contract
+// lists a period only in the window it started in. A settled month-long period
+// always started before that window, so the card never showed a storage
+// charge. Every case below fails against that read.
+describe('the latest settled charge', () => {
+  const AUG = month('2026-08-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z');
+  const SEP = month('2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z');
+  const OCT = month('2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z');
+
+  beforeEach(() => {
+    config.cloud = { instanceToken: 'tok_test' };
+    vi.useFakeTimers({ toFake: ['Date'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('shows last month in the middle of this one', async () => {
+    vi.setSystemTime(new Date('2026-10-15T12:00:00.000Z'));
+    stubContractUsage([AUG, SEP, OCT]);
+    expect(await shownPeriods()).toEqual(['2026-09-01T00:00:00.000Z → 2026-10-01T00:00:00.000Z']);
+  });
+
+  it('shows the month just closed once it settles, the day the next one starts', async () => {
+    vi.setSystemTime(new Date('2026-10-01T03:00:00.000Z'));
+    stubContractUsage([AUG, SEP, OCT]);
+    expect(await shownPeriods()).toEqual(['2026-09-01T00:00:00.000Z → 2026-10-01T00:00:00.000Z']);
+  });
+
+  it('keeps showing the month before while the one just ended has not settled', async () => {
+    vi.setSystemTime(new Date('2026-10-01T00:30:00.000Z'));
+    stubContractUsage([AUG, SEP, OCT]);
+    expect(await shownPeriods()).toEqual(['2026-08-01T00:00:00.000Z → 2026-09-01T00:00:00.000Z']);
+  });
+
+  it('shows a 31-day period on the last day of the month after it', async () => {
+    vi.setSystemTime(new Date('2026-09-30T23:00:00.000Z'));
+    stubContractUsage([AUG, SEP]);
+    expect(await shownPeriods()).toEqual(['2026-08-01T00:00:00.000Z → 2026-09-01T00:00:00.000Z']);
+  });
+
+  it('shows the oldest a latest settled period can be: two 31-day months, before the second settles', async () => {
+    // December and January are both 31 days. Half an hour into February,
+    // January has not settled, so December is the latest: it started 62 days
+    // and half an hour ago.
+    vi.setSystemTime(new Date('2027-02-01T00:30:00.000Z'));
+    stubContractUsage([
+      month('2026-12-01T00:00:00.000Z', '2027-01-01T00:00:00.000Z'),
+      month('2027-01-01T00:00:00.000Z', '2027-02-01T00:00:00.000Z'),
+    ]);
+    expect(await shownPeriods()).toEqual(['2026-12-01T00:00:00.000Z → 2027-01-01T00:00:00.000Z']);
+  });
+
+  it('shows a period that starts in the middle of a month', async () => {
+    vi.setSystemTime(new Date('2026-10-14T12:00:00.000Z'));
+    stubContractUsage([
+      month('2026-08-15T00:00:00.000Z', '2026-09-15T00:00:00.000Z'),
+      month('2026-09-15T00:00:00.000Z', '2026-10-15T00:00:00.000Z'),
+    ]);
+    expect(await shownPeriods()).toEqual(['2026-08-15T00:00:00.000Z → 2026-09-15T00:00:00.000Z']);
+  });
+
+  it('keeps the latest period of each charge, and totals only what it keeps', async () => {
+    // Early in October the window reaches back past August 1, so it holds two
+    // storage periods; only September's is shown. A second charge last seen in
+    // August stays only while August can still be its latest period.
+    vi.setSystemTime(new Date('2026-10-01T03:00:00.000Z'));
+    const ARCHIVE = { displayName: 'Archive space', unit: 'widget-days' };
+    stubContractUsage([
+      { ...AUG, micro: '300' },
+      { ...SEP, micro: '500' },
+      { ...month('2026-08-15T00:00:00.000Z', '2026-09-15T00:00:00.000Z'), ...ARCHIVE, micro: '7' },
+    ]);
+    const usage = await readUsage('seat');
+    expect(usage?.otherCharges?.rows.map((r) => [r.displayName, r.periodStart])).toEqual([
+      ['Extra storage', SEP.start],
+      ['Archive space', '2026-08-15T00:00:00.000Z'],
+    ]);
+    expect(usage?.otherCharges?.dorkosPriceMicro).toBe('507');
+  });
+
+  it('shows no charge once the month after a charged one has ended with none', async () => {
+    // September was charged; October charged nothing, so it sent no row.
+    // September still started inside the window, but it is not the latest
+    // charge any more.
+    stubContractUsage([SEP]);
+    vi.setSystemTime(new Date('2026-10-31T12:00:00.000Z'));
+    expect(await shownPeriods()).toEqual(['2026-09-01T00:00:00.000Z → 2026-10-01T00:00:00.000Z']);
+    vi.setSystemTime(new Date('2026-11-02T12:00:00.000Z'));
+    expect(await readUsage('seat')).not.toHaveProperty('otherCharges');
+  });
+
+  it('drops an older period of one charge but keeps the current period of another', async () => {
+    vi.setSystemTime(new Date('2026-10-15T12:00:00.000Z'));
+    stubContractUsage([
+      { ...month('2026-08-14T00:00:00.000Z', '2026-09-13T00:00:00.000Z'), micro: '40' },
+      { ...SEP, displayName: 'Archive space', unit: 'widget-days', micro: '9' },
+    ]);
+    const usage = await readUsage('seat');
+    expect(usage?.otherCharges?.rows.map((r) => r.displayName)).toEqual(['Archive space']);
+    expect(usage?.otherCharges?.dorkosPriceMicro).toBe('9');
+  });
+
+  it('keeps both rows when one charge has two for the same period', async () => {
+    // August is in the window too, so the total is recomputed, not passed on.
+    vi.setSystemTime(new Date('2026-10-01T03:00:00.000Z'));
+    stubContractUsage([
+      { ...AUG, micro: '50' },
+      { ...SEP, micro: '100' },
+      { ...SEP, micro: '200' },
+    ]);
+    const usage = await readUsage('seat');
+    expect(usage?.otherCharges?.rows.map((r) => r.dorkosPriceMicro)).toEqual(['100', '200']);
+    expect(usage?.otherCharges?.dorkosPriceMicro).toBe('300');
+  });
+
+  it('still reads inference over the last 30 days, and says so on the response', async () => {
+    vi.setSystemTime(new Date('2026-10-15T12:00:00.000Z'));
+    const fetchMock = stubContractUsage([AUG, SEP]);
+    const usage = await readUsage('seat');
+    const windows = fetchMock.mock.calls.map(([url]) => windowDays(new URL(url as string)));
+    expect(windows.sort((a, b) => a - b)).toEqual([30, 63]);
+    expect(usage?.from).toBe('2026-09-15T12:00:00.000Z');
+    expect(usage?.to).toBe('2026-10-15T12:00:00.000Z');
+    expect(usage?.rows).toEqual(usageFixture.rows);
+  });
+
+  it('shows nothing when no period has settled in the window', async () => {
+    vi.setSystemTime(new Date('2026-10-15T12:00:00.000Z'));
+    stubContractUsage([OCT]);
+    expect(await readUsage('seat')).not.toHaveProperty('otherCharges');
   });
 });

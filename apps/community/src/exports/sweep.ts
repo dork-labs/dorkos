@@ -1,7 +1,11 @@
 import type { Pool } from 'pg';
 import { transaction } from '../data.js';
 import type { BlobStore } from '../storage/index.js';
-import { cleanupBackoffSql } from '../storage/pending-deletions.js';
+import {
+  BLOB_DELETE_TIMEOUT_MS,
+  cleanupBackoffSql,
+  communityFilesDeletable,
+} from '../storage/pending-deletions.js';
 import { dropSegments } from './store.js';
 
 /** How long a failed or cancelled job stays listed before its row is removed. */
@@ -16,6 +20,14 @@ const ENDED_RETENTION_DAYS = 7;
  * failures for retry with backoff. Failed and cancelled jobs queued their segments when they
  * ended, so their rows are simply removed once they stop being listed. A ready evidence export
  * never expires here: the takedown worker deletes it once it has copied it to the evidence store.
+ *
+ * Nor does an archive of a community under a host legal hold. An export is a copy, but a hold
+ * does not stop item removals, so an archive taken before one may be the last copy of what was
+ * removed. It stays exactly as it is, segments and all, and expires on the first sweep after the
+ * release. Nobody can download it meanwhile: downloads end at `expires_at` whatever this sweep
+ * has done. Held archives are not candidates, so they never fill a batch, and the hold is read
+ * again under the community row, held `FOR SHARE` through the delete, for a hold placed after
+ * that read.
  */
 export async function sweepExpiredExports(
   pool: Pool,
@@ -24,11 +36,14 @@ export async function sweepExpiredExports(
 ): Promise<{ deleted: number; failed: number }> {
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100)
     throw new Error('Invalid export sweep batch size');
-  const result = await pool.query<{ id: string }>(
-    `SELECT id FROM export_archives
-     WHERE state='ready' AND deleted_at IS NULL AND expires_at<$2 AND cleanup_next_attempt_at<=now()
-       AND scope<>'evidence'
-     ORDER BY cleanup_next_attempt_at,expires_at,id LIMIT $1`,
+  const result = await pool.query<{ id: string; community_id: string }>(
+    `SELECT e.id,e.community_id FROM export_archives e
+     WHERE e.state='ready' AND e.deleted_at IS NULL AND e.expires_at<$2
+       AND e.cleanup_next_attempt_at<=now() AND e.scope<>'evidence'
+       AND NOT EXISTS(
+         SELECT 1 FROM communities c WHERE c.id=e.community_id AND c.legal_hold_at IS NOT NULL
+       )
+     ORDER BY e.cleanup_next_attempt_at,e.expires_at,e.id LIMIT $1`,
     [batchSize, now]
   );
   let deleted = 0;
@@ -39,6 +54,7 @@ export async function sweepExpiredExports(
     };
     try {
       await transaction(pool, async (client) => {
+        if (!(await communityFilesDeletable(client, row.community_id))) return;
         const current = await client.query<{ blob_key: string | null; community_id: string }>(
           `SELECT blob_key,community_id FROM export_archives
            WHERE id=$1 AND state='ready' AND deleted_at IS NULL AND expires_at<$2
@@ -50,7 +66,9 @@ export async function sweepExpiredExports(
         if (!archive) return;
         if (archive.blob_key) {
           try {
-            await blobStore.delete(archive.blob_key);
+            await blobStore.delete(archive.blob_key, {
+              signal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
+            });
           } catch (error) {
             await client.query(
               `UPDATE export_archives

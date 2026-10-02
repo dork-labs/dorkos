@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import { ContentChangeError } from '../content-removal.js';
 import { transaction } from '../data.js';
-import { ERASURE_WAITS_ON_TAKEDOWN_SQL } from './guards.js';
+import { ERASURE_WAITS_ON_LEGAL_HOLD_SQL, ERASURE_WAITS_ON_TAKEDOWN_SQL } from './guards.js';
 import { eraseAccount, eraseMembership, ErasureError, type ErasureOptions } from './erasure.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 
@@ -34,11 +34,13 @@ export async function sweepErasures(
   const request = await transaction(pool, async (client) => {
     // A whole community's takedown preserves it as it was: while that evidence has not settled,
     // no erasure runs in it, and no account erasure runs for anyone who belongs to it, since
-    // erasing an account also husks its members' rows in every community.
+    // erasing an account also husks its members' rows in every community. A host's closure
+    // of an account likewise waits while a community the person belongs to is under a legal
+    // hold.
     const due = await client.query<ClaimedRequest>(
       `SELECT r.id,r.kind,r.user_id,r.community_id,r.member_id FROM erasure_requests r
        WHERE r.state IN ('scheduled','running') AND r.execute_after<=$1 AND r.next_attempt_at<=$1
-         AND NOT ${ERASURE_WAITS_ON_TAKEDOWN_SQL}
+         AND NOT ${ERASURE_WAITS_ON_TAKEDOWN_SQL} AND NOT ${ERASURE_WAITS_ON_LEGAL_HOLD_SQL}
        ORDER BY r.next_attempt_at,r.id LIMIT 1 FOR UPDATE OF r SKIP LOCKED`,
       [now]
     );
@@ -83,8 +85,17 @@ export async function sweepErasures(
   }
 }
 
-/** Delete completed and cancelled requests 30 days after they ended, children first. */
+/**
+ * Delete completed and cancelled requests 30 days after they ended, children first, and host
+ * account closures 30 days after they ended. A closure's request outlives it only while open.
+ */
 export async function pruneErasureRequests(pool: Pool, now = new Date()): Promise<number> {
+  await pool.query(
+    `DELETE FROM account_closures
+     WHERE state IN ('completed','cancelled')
+       AND COALESCE(completed_at,cancelled_at) < $1::timestamptz - ${RETENTION}`,
+    [now]
+  );
   const result = await pool.query(
     `DELETE FROM erasure_requests r
      WHERE r.state IN ('completed','cancelled')

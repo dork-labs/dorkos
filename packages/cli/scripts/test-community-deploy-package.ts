@@ -224,7 +224,7 @@ globalThis.fetch=async (input,init={})=>{
   if(query.includes('DorkosAppNameAvailable')) return json({data:{appNameAvailable:!state.flyApp}});
   if(query.includes('DorkosReadAppProvenance')) {
     const app=state.flyApp;
-    if(!app||app.Name!==body.variables?.name) return json({data:{app:null},errors:[{message:'Could not find App'}]});
+    if(!app||app.Name!==body.variables?.name) return json({data:{app:null},errors:[{message:'Could not find App',path:['app'],extensions:{code:'NOT_FOUND'}}]});
     return json({data:{app:{id:app.ID,internalNumericId:4817203,name:app.Name,network:state.flyNetwork,createdAt:state.flyCreatedAt,organization:{slug:app.Organization.Slug},machines:{totalCount:state.deployed?1:0},volumes:{totalCount:0},ipAddresses:{totalCount:state.deployed?1:0},certificates:{totalCount:0},secrets:Object.keys(state.secrets).map((name)=>({name}))}}});
   }
   return json({},500);

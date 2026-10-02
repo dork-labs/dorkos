@@ -19,7 +19,7 @@ extendZodWithOpenApiOnce();
  * `packages/relay/src/lib/subjects.ts`, which is the single authoritative
  * grammar; this is only the shape, and it lives in `@dorkos/shared` because
  * `@dorkos/relay` is a server-side package the client cannot import while the
- * cockpit still shows this format to a person (the agent-settings context
+ * app still shows this format to a person (the agent-settings context
  * preview). `packages/relay/src/__tests__/subject-matcher.test.ts` asserts the
  * built subject against this template, so the two cannot drift.
  *
@@ -488,23 +488,38 @@ export const TASK_SCHEDULER_PRINCIPAL = 'relay.system.tasks.scheduler';
 
 // === Server-owned destinations ===
 
+/** Namespace reserved for document-origin messages, with opaque document IDs. */
+export const DOC_SUBJECT_PREFIX = 'relay.doc.';
+
 /**
- * Destination namespaces only the server may send to (DOR-2432).
+ * Whether an address is in the reserved document namespace, including its root.
+ * @param subject - A sender or concrete address; lookalike namespaces are distinct.
+ */
+export function isDocumentSubject(subject: string): boolean {
+  const lower = subject.toLowerCase();
+  return lower === 'relay.doc' || lower.startsWith(DOC_SUBJECT_PREFIX);
+}
+
+/**
+ * Destination namespaces only the server may send to.
  *
  * `relay.system.*` carries the server's own traffic: a scheduled run's
  * dispatch (`relay.system.tasks.*`), a tool approval's answer
  * (`relay.system.approval.*`), and the notices DorkOS posts. `relay.control.*`
- * carries its stop signals. A handler on one of these subjects acts on what the
+ * carries its stop signals; `relay.doc.*` reserves document-origin routing. A handler on one of these subjects acts on what the
  * message says, so an agent that can send here can forge a task run or answer
  * its own approval (DOR-2416, DOR-2431). Those handlers also check the sender;
  * this is the door in front of them.
  *
  * The bus holds the matching sender rule (`SERVER_DESTINATION_SENDERS` in
  * `@dorkos/relay`); refusing a mailbox here (`SERVER_MANAGED_PREFIXES`) is a
- * third, separate rule. This lives in shared so the adapter config schemas can
- * refuse a webhook whose inbound subject lands here.
+ * third, separate rule. Public HTTP and MCP sends use this same reachability guard.
  */
-export const SERVER_DESTINATION_PREFIXES = ['relay.system.', 'relay.control.'] as const;
+export const SERVER_DESTINATION_PREFIXES = [
+  'relay.system.',
+  'relay.control.',
+  DOC_SUBJECT_PREFIX,
+] as const;
 
 /** One server-owned subject agents may still send to, with the reason it is safe. */
 export interface AgentSendableServerSubject {
@@ -531,7 +546,8 @@ export const AGENT_SENDABLE_SERVER_SUBJECTS: readonly AgentSendableServerSubject
  * Names the rule, so the model reading it knows not to retry another spelling.
  */
 export const SERVER_DESTINATION_REFUSAL =
-  'relay.system.* and relay.control.* addresses belong to DorkOS; agents cannot send to them.';
+  'relay.system.* and relay.control.* addresses belong to DorkOS; agents cannot send to them. ' +
+  'Document addresses under relay.doc.* are reserved for DorkOS too.';
 
 /**
  * Whether a message sent to `subject` could land in a server-owned namespace,
@@ -546,6 +562,7 @@ export const SERVER_DESTINATION_REFUSAL =
  * @param subject - The destination (or reply address) a caller asked for.
  */
 export function reachesServerDestination(subject: string): boolean {
+  if (isDocumentSubject(subject)) return true;
   if (AGENT_SENDABLE_SERVER_SUBJECTS.some((entry) => entry.subject === subject)) return false;
   const tokens = subject.split('.');
   return SERVER_DESTINATION_PREFIXES.some((prefix) => {
@@ -557,8 +574,9 @@ export function reachesServerDestination(subject: string): boolean {
       if (token === '*') continue;
       if (token.toLowerCase() !== prefixTokens[i]) return false;
     }
-    // A server subject has at least one token past the prefix.
-    return tokens.length > prefixTokens.length;
+    // Doc also reserves its bare root, including two-token wildcard patterns.
+    // System/control retain their existing descendant-only root semantics.
+    return prefix === DOC_SUBJECT_PREFIX || tokens.length > prefixTokens.length;
   });
 }
 

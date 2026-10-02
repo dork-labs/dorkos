@@ -121,8 +121,10 @@ export function describeResourceError(target: unknown): { tag: string; url: stri
  * The shim body. Self-contained except the injected `serialize`,
  * `describeResource` and `installDriving` parameters and browser globals. Wraps
  * `console.*`, uncaught errors, and `fetch`/XHR, batches
- * captures on a short debounce, and delivers them to `window.parent` — only after
- * a handshake ack, so it is inert anywhere that is not our browser pane. Every
+ * captures on a short debounce, and delivers them to `window.parent` after
+ * init/ready, or an initial legacy ack from an old host. These correlate parent
+ * and frame; they authenticate no script. All reported evidence remains
+ * page-reported and unverified. Every
  * hook swallows its own errors: instrumentation must never break the page.
  *
  * It also answers two kinds of parent request by `requestId`: a screenshot
@@ -174,6 +176,8 @@ function installDevtoolsShim(
     const MAX_URL = 2_048;
 
     let acked = false;
+    let generation: string | undefined;
+    const pageInstanceId = crypto.randomUUID();
     let seq = 0;
     /**
      * How many `fetch`/XHR calls have started and not yet settled.
@@ -194,7 +198,10 @@ function installDevtoolsShim(
 
     function post(msg: unknown): void {
       try {
-        parent.postMessage(msg, '*');
+        parent.postMessage(
+          { ...(msg as object), ...(generation ? { bridgeGeneration: generation } : {}) },
+          '*'
+        );
       } catch {
         /* parent gone / cross-origin throw — ignore */
       }
@@ -529,8 +536,12 @@ function installDevtoolsShim(
       );
     }
     function captureScreenshot(requestId: string, lib: unknown): void {
+      const capturedGeneration = generation;
+      const report = (msg: unknown): void => {
+        if (generation === capturedGeneration) post(msg);
+      };
       function fail(error: unknown): void {
-        post({
+        report({
           __dorkosDevtools: 'capture-result',
           requestId,
           error: clamp(error instanceof Error ? error.message : error, 2_000),
@@ -539,7 +550,7 @@ function installDevtoolsShim(
       try {
         rasterize(lib)
           .then((dataUrl) => {
-            post({ __dorkosDevtools: 'capture-result', requestId, dataUrl });
+            report({ __dorkosDevtools: 'capture-result', requestId, dataUrl });
           })
           .catch(fail);
       } catch (err) {
@@ -551,7 +562,20 @@ function installDevtoolsShim(
     // `canvas-agent-seat` §2). Built here rather than inside the listener so the
     // handler and its element tables are constructed once per page, not once per
     // click.
-    const drive = installDriving({ post, inFlight: () => inFlight, rasterize }, truncateOutline);
+    let drive = installDriving({ post, inFlight: () => inFlight, rasterize }, truncateOutline);
+    function bindDriving(): void {
+      const bound = generation;
+      drive = installDriving(
+        {
+          post: (msg) => {
+            if (bound === generation) post(msg);
+          },
+          inFlight: () => inFlight,
+          rasterize,
+        },
+        truncateOutline
+      );
+    }
 
     // --- Handshake + parent requests: ack starts delivery; capture-request
     // rasterizes on demand; act-request drives the page. Source identity
@@ -560,6 +584,7 @@ function installDevtoolsShim(
       if (ev.source !== parent) return;
       const d = ev.data as {
         __dorkosDevtools?: string;
+        bridgeGeneration?: unknown;
         requestId?: unknown;
         lib?: unknown;
         documentId?: unknown;
@@ -567,6 +592,30 @@ function installDevtoolsShim(
         capture?: unknown;
       } | null;
       if (!d || typeof d.__dorkosDevtools !== 'string') return;
+      if (
+        d.__dorkosDevtools === 'init' &&
+        typeof d.bridgeGeneration === 'string' &&
+        d.bridgeGeneration.length > 0 &&
+        d.bridgeGeneration.length <= 128
+      ) {
+        if (generation !== d.bridgeGeneration) {
+          const rebound = acked;
+          generation = d.bridgeGeneration;
+          if (rebound) {
+            consoleQ = [];
+            networkQ = [];
+          }
+          seq = 0;
+          if (flushTimer !== null) clearTimeout(flushTimer);
+          flushTimer = null;
+          bindDriving();
+        }
+        acked = true;
+        post({ __dorkosDevtools: 'ready', pageInstanceId });
+        scheduleFlush();
+        return;
+      }
+      if (generation !== undefined && d.bridgeGeneration !== generation) return;
       if (d.__dorkosDevtools === 'ack') {
         if (!acked) {
           acked = true;
@@ -594,7 +643,7 @@ function installDevtoolsShim(
     let tries = 0;
     function hello(): void {
       if (acked) return;
-      post({ __dorkosDevtools: 'hello' });
+      post({ __dorkosDevtools: 'hello', bridgeVersion: 2, pageInstanceId });
       tries += 1;
       if (tries < HELLO_MAX_TRIES) setTimeout(hello, HELLO_RETRY_MS);
     }

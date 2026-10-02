@@ -7,9 +7,10 @@ import { z } from 'zod';
 import { ExternalIdentifierSchema, parseExternalJson } from './provider-contract.js';
 import { ProviderMutationError, runProviderMutation, writeDeadline } from './provider-mutation.js';
 import type { FlySessionReadOptions, FlySecretInventoryItem } from './tigris-session.js';
-import type { FlyAppProvenance } from './fly-graphql-contract.js';
+import { FLY_APP_NOT_FOUND, type FlyAppProvenance } from './fly-graphql-contract.js';
 import {
   FlyAppResponseSchema,
+  readFlyApps,
   toFlyAppIdentity,
   type FlyAppIdentity,
   type FlyRuntimeInventory,
@@ -43,25 +44,36 @@ export interface FlyMutationReceipt {
  * created. `apps list` is never used for this, because it always reports an empty network. A
  * response naming a different app or organization is never adopted.
  *
+ * A refusal (`Error: unauthorized`) is not taken on its word. flyctl creates the app and then
+ * waits for it and reads it back, and either step can end in the same refusal after the app exists
+ * (fly-go `flaps.WaitForApp` retries a 401). So it is `ACCESS_DENIED` only when absence is proved
+ * twice over: the provenance read answers with Fly's exact `NOT_FOUND` on `app` (a bare null, or
+ * a null beside any other error, can come from a server error), AND the organization's app listing,
+ * a separate read, lacks the name too. Anything else is uncertain; a marker match is adopted as
+ * above.
+ *
  * @param options - Pinned Fly executable and bounded process settings.
  * @param appName - Planned app name.
  * @param organizationSlug - Planned organization slug.
  * @param network - Private network name carrying the run's provenance marker.
- * @param readProvenance - Provenance read by app name, used only when create output is unreadable.
+ * @param readProvenance - Provenance read by app name, used only when create output is unreadable
+ *   or the create was refused. It returns `FLY_APP_NOT_FOUND` only for Fly's exact not-found.
  */
 export async function createFlyApp(
   options: FlySessionReadOptions,
   appName: string,
   organizationSlug: string,
   network: string,
-  readProvenance: (appName: string) => Promise<FlyAppProvenance | null>
+  readProvenance: (appName: string) => Promise<FlyAppProvenance | typeof FLY_APP_NOT_FOUND | null>
 ): Promise<FlyAppIdentity> {
   const app = parseInput(ExternalIdentifierSchema, appName);
   const organization = parseInput(ExternalIdentifierSchema, organizationSlug);
   const networkName = parseInput(ExternalIdentifierSchema, network);
+  let refused = false;
   const created = await runProviderMutation({
     ...options,
     timeoutMs: writeDeadline(options.timeoutMs),
+    refusalIsDefinite: true,
     args: [
       'apps',
       'create',
@@ -87,13 +99,25 @@ export async function createFlyApp(
       }
       return toFlyAppIdentity(parsed.data);
     },
+  }).catch((error: unknown) => {
+    if (!(error instanceof ProviderMutationError) || error.code !== 'ACCESS_DENIED') throw error;
+    refused = true;
+    return null;
   });
   if (created) return created;
   const found = await readProvenance(app).catch(() => {
     throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
   });
+  if (refused && found === FLY_APP_NOT_FOUND) {
+    const listed = await readFlyApps(options, organization).catch(() => null);
+    if (listed !== null && !listed.some((listedApp) => listedApp.name === app)) {
+      throw new ProviderMutationError('ACCESS_DENIED');
+    }
+    throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
+  }
   if (
-    !found ||
+    found === null ||
+    found === FLY_APP_NOT_FOUND ||
     found.name !== app ||
     found.organizationSlug !== organization ||
     found.network !== networkName

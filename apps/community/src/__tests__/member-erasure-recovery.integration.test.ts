@@ -34,6 +34,8 @@ import {
 } from './member-erasure-scenes.js';
 import { drainExports, openArchive } from './export-test-helpers.js';
 
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 // Purpose: crash safety and idempotence (AC-8), the export and upload races (AC-4), lock
 // behaviour (AC-11), pairing cleanup, and re-applying erasures after a backup restore (AC-12).
 
@@ -708,6 +710,10 @@ describe('backup re-application (AC-12)', () => {
         if (!page.hasMore) return 200;
       }
     };
+    // A line older than the backup, so the restore keeps one the copy already has.
+    await h.pool.query(`INSERT INTO erasure_journal(kind,user_id) VALUES('account',$1)`, [
+      `gone_${randomUUID().slice(0, 8)}`,
+    ]);
     expect(await pull()).toBe(200);
     const email = (await h.pool.query('SELECT email FROM "user" WHERE id=$1', [s.p.userId])).rows[0]
       .email as string;
@@ -734,9 +740,21 @@ describe('backup re-application (AC-12)', () => {
         .split('\n')
         .map((line) => JSON.parse(line))
     ).toEqual([
-      { event: 'community.member_erased', communityId: s.communityId, memberId: s.p.memberId },
-      { event: 'community.account_erased', userId: s.p.userId },
+      {
+        event: 'community.member_erased',
+        communityId: s.communityId,
+        memberId: s.p.memberId,
+        finishedAt: expect.stringMatching(ISO_TIME),
+      },
+      {
+        event: 'community.account_erased',
+        userId: s.p.userId,
+        finishedAt: expect.stringMatching(ISO_TIME),
+      },
     ]);
+    // The lines the backup also holds, as the host's copy has them.
+    const beforeBackup = copy.slice(0, pulledFrom).trim().split('\n').filter(Boolean);
+    expect(beforeBackup.length).toBeGreaterThan(0);
     expect(needles.some((needle) => copy.includes(needle))).toBe(false);
 
     await restore(backup);
@@ -756,10 +774,13 @@ describe('backup re-application (AC-12)', () => {
       (hit) => hit.communityId === s.communityId || hit.communityId === null
     );
     expect(hits).toEqual([]);
-    // Re-applying wrote the lines again, so a pull from the start has them once more.
+    // Re-applying wrote the lines again, so a pull from the start has them once more. The lines
+    // the restore kept come back exactly as copied, finish time included (DOR-2621).
     cursor = undefined;
     copy = '';
     expect(await pull()).toBe(200);
+    const again = copy.trim().split('\n');
+    for (const line of beforeBackup) expect(again).toContain(line);
     expect(copy).toContain(`"memberId":"${s.p.memberId}"`);
     expect(copy).toContain(`"userId":"${s.p.userId}"`);
     await h.pool.query('DROP SCHEMA IF EXISTS erasure_backup CASCADE');

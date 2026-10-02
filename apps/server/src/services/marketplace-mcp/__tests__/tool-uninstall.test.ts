@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +19,20 @@ import {
 } from '../confirmation-provider.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { ApprovalService } from '../../core/approvals/index.js';
+
+/** Temp roots this file made, removed after each test so none outlive the run. */
+const tempRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempRoots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+/** A fresh temp folder under the OS temp dir that is removed after the test. */
+async function tempRoot(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  tempRoots.push(dir);
+  return dir;
+}
 
 /**
  * A token provider over a fresh approval store, plus the two things the cockpit
@@ -147,7 +161,7 @@ describe('createUninstallHandler — path safety', () => {
     confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
     uninstallFlow = createStubUninstallFlow({ result: uninstallResult({ packageName: 'sentry' }) });
     deps = createStubDeps({ confirmationProvider, uninstallFlow });
-    await initBoundary(await mkdtemp(join(tmpdir(), 'mcp-uninstall-boundary-')));
+    await initBoundary(await tempRoot('mcp-uninstall-boundary-'));
   });
 
   it('refuses a traversal name without ever asking the person to confirm', async () => {
@@ -452,7 +466,7 @@ describe('createUninstallHandler — purge flag', () => {
     // An in-bounds project path: the handler confines projectPath the same way
     // the HTTP route does, so the boundary has to contain it. Realpath'd, because
     // the flow receives the canonical path and macOS's tmpdir is a symlink.
-    const boundary = await realpath(await mkdtemp(join(tmpdir(), 'mcp-uninstall-boundary-')));
+    const boundary = await realpath(await tempRoot('mcp-uninstall-boundary-'));
     await initBoundary(boundary);
     const projectPath = join(boundary, 'some-project');
 
@@ -537,7 +551,7 @@ describe('createUninstallHandler — plugins-changed notification (DOR-2057)', (
     onPluginsChanged = vi.fn();
     // Realpath'd: the handler notifies with the canonical path, and macOS's
     // tmpdir (`/var/…`) is a symlink to `/private/var/…`.
-    boundaryRoot = await realpath(await mkdtemp(join(tmpdir(), 'mcp-uninstall-notify-')));
+    boundaryRoot = await realpath(await tempRoot('mcp-uninstall-notify-'));
     await initBoundary(boundaryRoot);
   });
 

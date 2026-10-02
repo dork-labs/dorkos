@@ -45,10 +45,40 @@ import { uiDomain } from '../ui-capabilities.js';
 
 /** Every `ui` verb: its tool name, its tier, and the arguments it takes. */
 const EXPECTED: Record<string, { tool: string; tier: string; args: string[] }> = {
+  'ui.configure_doc_channel': {
+    tool: 'configure_doc_channel',
+    tier: 'act',
+    args: ['documentId', 'channel', 'openerAgentId'],
+  },
+  'ui.approve_doc_route': {
+    tool: 'approve_doc_route',
+    tier: 'act',
+    args: [
+      'documentId',
+      'routeId',
+      'allowedTypes',
+      'limits',
+      'expiresAt',
+      'write',
+      'routeApprovalToken',
+    ],
+  },
+  'ui.revoke_doc_route': { tool: 'revoke_doc_route', tier: 'act', args: ['documentId', 'grantId'] },
+  'ui.send_canvas_event': {
+    tool: 'canvas_send',
+    tier: 'act',
+    args: ['documentId', 'eventId', 'type', 'payload', 'roomId'],
+  },
+  'ui.patch_canvas_state': {
+    tool: 'canvas_patch_state',
+    tier: 'act',
+    args: ['documentId', 'eventId', 'expectedStateRev', 'roomId', 'operations'],
+  },
   'ui.control': {
     tool: 'control_ui',
     tier: 'act',
     args: [
+      'channel',
       'action',
       'panel',
       'content',
@@ -119,7 +149,9 @@ describe('the `ui` capability domain', () => {
     for (const [id, expected] of Object.entries(EXPECTED)) {
       const capability = registry.get(id);
       expect(capability, id).toBeDefined();
-      const shape = (capability!.input as z.ZodObject<z.ZodRawShape>).shape;
+      let input = capability!.input;
+      while (input instanceof z.ZodPipe) input = input.out as z.ZodType;
+      const shape = (input as z.ZodObject<z.ZodRawShape>).shape;
       expect(Object.keys(shape), `${id} advertises the wrong arguments`).toEqual(expected.args);
     }
   });
@@ -169,12 +201,16 @@ describe('the `ui` capability domain', () => {
     }
   });
 
-  it('reaches the in-session surface and no other', () => {
+  it('limits preview actions to a session and exposes document-scoped writes externally', () => {
     // A verb that acts inside somebody's preview has to know whose window is
     // holding it, and the external `/mcp` surface is session-less by
     // construction. Nothing here may reach it.
     for (const capability of registry.capabilities) {
-      expect(capability.surfaces.mcp?.servers, capability.id).toEqual(['in-session']);
+      expect(capability.surfaces.mcp?.servers, capability.id).toEqual(
+        ['ui.send_canvas_event', 'ui.patch_canvas_state'].includes(capability.id)
+          ? ['in-session', 'external']
+          : ['in-session']
+      );
       expect(capability.surfaces.http, capability.id).toBeUndefined();
       expect(capability.surfaces.cli, capability.id).toBeUndefined();
     }

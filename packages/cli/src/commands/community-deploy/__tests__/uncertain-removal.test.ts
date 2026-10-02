@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  deleteLaunchJournal,
   initializeLaunchJournal,
   launchJournalPath,
   readLaunchJournal,
@@ -74,9 +75,11 @@ function deps(
   const persist = vi.fn((next: LaunchJournal, expected: number) =>
     writeLaunchJournal(journalPath, next, expected)
   );
+  const discard = vi.fn((expected: number) => deleteLaunchJournal(journalPath, expected));
   const dependencies: UncertainRemovalDependencies = {
     readJournal: () => readLaunchJournal(journalPath),
     persist,
+    discard,
     probeFor: () => probe,
     confirm,
     now: () => '2026-09-23T11:00:00.000Z',
@@ -85,7 +88,7 @@ function deps(
     absenceDeadlineMs: 5_000,
     ...update,
   };
-  return { dependencies, confirm, persist };
+  return { dependencies, confirm, persist, discard };
 }
 
 const confirmWith = (token: string): RemovalAnswer => ({ kind: 'token', token });
@@ -126,21 +129,89 @@ describe('uncertain removal command', () => {
     expect(probeFor).not.toHaveBeenCalled();
   });
 
-  it('reports absent and unreachable without changing the journal', async () => {
-    await setup(shapeA('fly'));
-    const { probe, state } = memoryProbe('fly');
+  it('reports absent and unreachable without changing the journal of a run that made something', async () => {
+    // The Fly app exists, so the run must stay listed: its journal is what points at that app.
+    const journal = shapeA('neon');
+    await setup(journal);
+    const { probe, state } = memoryProbe('neon');
     state.present = false;
-    const { dependencies, persist } = deps(probe, confirmWith('4817203'));
+    const { dependencies, persist, discard } = deps(probe, confirmWith('project-1'));
     await expect(runUncertainRemoval(dependencies)).resolves.toEqual({
       outcome: 'absent',
-      provider: 'fly',
+      provider: 'neon',
+      cleared: false,
     });
     probe.find.mockRejectedValueOnce(new Error('server error'));
     await expect(runUncertainRemoval(dependencies)).resolves.toEqual({
       outcome: 'unreachable',
-      provider: 'fly',
+      provider: 'neon',
     });
     expect(persist).not.toHaveBeenCalled();
+    expect(discard).not.toHaveBeenCalled();
+    await expect(readLaunchJournal(journalPath)).resolves.toEqual(journal);
+  });
+
+  // DOR-2656: after `--remove-uncertain` said nothing exists, `--list-incomplete` still listed the
+  // run, and nothing could clear it. Catches the absent verdict leaving such a journal behind.
+  it('deletes the journal when the one create is absent and the run made nothing else', async () => {
+    await setup(shapeA('fly'));
+    const { probe, state } = memoryProbe('fly');
+    state.present = false;
+    const { dependencies, persist, discard } = deps(probe, confirmWith('4817203'));
+    await expect(runUncertainRemoval(dependencies)).resolves.toEqual({
+      outcome: 'absent',
+      provider: 'fly',
+      cleared: true,
+    });
+    expect(discard).toHaveBeenCalledExactlyOnceWith(0);
+    expect(persist).not.toHaveBeenCalled();
+    await expect(readLaunchJournal(journalPath)).resolves.toBeNull();
+  });
+
+  // Catches the clear ignoring the create window: a create cut off at its deadline can still land,
+  // and deleting its journal then would lose the only marker that proves it.
+  it.each([
+    ['inside the window', '2026-09-23T10:35:00.000Z', 483_000],
+    ['one second before it closes', '2026-09-23T10:43:02.000Z', 1_000],
+    ['as it closes', '2026-09-23T10:43:03.000Z', null],
+  ] as const)(
+    'clears an absent run only once its create window and margin have passed (%s)',
+    async (_label, now, waitMs) => {
+      const cleared = waitMs === null;
+      // REQUESTED_AT is 10:31:03; the create deadline is two minutes, and the margin ten.
+      await setup(shapeA('fly'));
+      const { probe, state } = memoryProbe('fly');
+      state.present = false;
+      const { dependencies, discard } = deps(probe, confirmWith('4817203'), { now: () => now });
+      await expect(runUncertainRemoval(dependencies)).resolves.toEqual(
+        cleared
+          ? { outcome: 'absent', provider: 'fly', cleared: true }
+          : {
+              outcome: 'absent',
+              provider: 'fly',
+              cleared: false,
+              clearableAfter: '2026-09-23T10:43:03.000Z',
+              clearableInMs: waitMs,
+            }
+      );
+      expect(discard).toHaveBeenCalledTimes(cleared ? 1 : 0);
+      expect(await readLaunchJournal(journalPath)).toEqual(cleared ? null : shapeA('fly'));
+    }
+  );
+
+  // Catches the clear racing a `--resume` that wrote the journal after the verdict was read.
+  it('keeps the journal when it changed between the verdict and the clear', async () => {
+    await setup(shapeA('fly'));
+    const { probe, state } = memoryProbe('fly');
+    state.present = false;
+    probe.find.mockImplementationOnce(async () => {
+      const current = (await readLaunchJournal(journalPath))!;
+      await writeLaunchJournal(journalPath, { ...current, revision: 1 }, 0);
+      return { kind: 'absent' } as const;
+    });
+    const { dependencies } = deps(probe, confirmWith('4817203'));
+    await expect(runUncertainRemoval(dependencies)).resolves.toEqual({ outcome: 'changed' });
+    await expect(readLaunchJournal(journalPath)).resolves.toMatchObject({ revision: 1 });
   });
 
   it('removes a proved Fly app with the right token and rewinds the journal for --resume', async () => {

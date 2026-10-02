@@ -27,6 +27,16 @@ import { ApiError, json, readJson } from '../../http.js';
  * Placing the hold locks the community row `FOR UPDATE`. The deletion worker re-checks the flag
  * under `FOR SHARE` on that row before each blob and before the final row deletion, so once the
  * hold commits the worker removes nothing further. Owners and members are never told.
+ *
+ * Every other path that deletes a community's files checks it the same way and leaves the bytes
+ * until the release (DOR-2581): the pending-deletion sweep (files removed, erased, or replaced),
+ * the unposted-upload sweep, export expiry, and discarding a write that was stored but never
+ * used. None of these is told apart as "not content": an unposted upload is still a file someone
+ * put here, and an export may be the last copy of something removed since, which a legal hold
+ * does not stop. What people can reach does not change: an expired export still cannot be
+ * downloaded, and an unposted upload leaves the community after its hour as usual, its bytes
+ * queued for the pending-deletion sweep (so they no longer count toward the storage limit).
+ * Only a write the storage layer itself abandons mid-way is not kept: it never became a file.
  */
 export function registerHostLegalHoldRoutes(
   app: Hono,

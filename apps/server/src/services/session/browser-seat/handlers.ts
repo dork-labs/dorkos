@@ -22,6 +22,7 @@
  *
  * @module services/session/browser-seat/handlers
  */
+import { PAGE_REPORTED_EVIDENCE } from '@dorkos/shared/canvas-bridge-wire';
 import { randomUUID } from 'node:crypto';
 import type {
   BrowserActCommand,
@@ -49,6 +50,7 @@ export type BrowserSeatStore = Pick<
   | 'hasDrivers'
   | 'resolveDriver'
   | 'awaitAction'
+  | 'cancelAction'
   | 'recordingFor'
   | 'noteRecordedFrame'
   | 'noteMissedFrame'
@@ -148,17 +150,27 @@ async function dispatch(
   const sessionId = deps.sessionId;
 
   // Nothing has ever captured for this session: no preview was ever opened.
-  if (!deps.store.read(sessionId)) return { payload: { ok: false, note: NO_PREVIEW_NOTE } };
+  if (!deps.store.read(sessionId))
+    return {
+      payload: { evidence: { source: 'host', verified: true }, ok: false, note: NO_PREVIEW_NOTE },
+    };
 
   const claim = deps.store.resolveDriver(sessionId, documentId);
   if (!claim) {
     // A named page nobody holds, and "nothing open at all", are different
     // things to do next: list what is open, or open something.
     const note = deps.store.hasDrivers(sessionId) ? UNKNOWN_DOCUMENT_NOTE : NO_DRIVER_NOTE;
-    return { payload: { ok: false, note } };
+    return { payload: { evidence: { source: 'host', verified: true }, ok: false, note } };
   }
   if (!claim.instrumented) {
-    return { payload: { ok: false, documentId: claim.documentId, note: NOT_INSTRUMENTED_NOTE } };
+    return {
+      payload: {
+        evidence: { source: 'host', verified: true },
+        ok: false,
+        documentId: claim.documentId,
+        note: NOT_INSTRUMENTED_NOTE,
+      },
+    };
   }
 
   // A recording running on THIS window and THIS page turns every action into a
@@ -175,20 +187,27 @@ async function dispatch(
   const outOfShot = recording !== undefined && !onTheRecordedPage;
 
   const requestId = randomUUID();
+  const waiter = deps.store.awaitAction(requestId, timeoutMs, claim);
   const reached = deps.emit({
     type: 'devtools_action_request',
     requestId,
     targetClientId: claim.clientId,
     documentId: claim.documentId,
+    bridgeGeneration: claim.bridgeGeneration,
     command,
     ...(capture ? { capture: true } : {}),
   } as RawSessionEvent);
   // No live stream means no window is reading, so nothing was ever going to
   // answer. Saying so at once beats waiting out the round-trip timeout and then
   // blaming the page.
-  if (!reached) return { payload: { ok: false, note: NO_DRIVER_NOTE } };
+  if (!reached) {
+    deps.store.cancelAction(requestId);
+    return {
+      payload: { evidence: { source: 'host', verified: true }, ok: false, note: NO_DRIVER_NOTE },
+    };
+  }
 
-  const result = await deps.store.awaitAction(requestId, timeoutMs);
+  const result = await waiter;
   // Counted from what the WINDOW said came back, never from what was asked for:
   // a page whose CSP blocks the rasterizer answers the action and keeps no
   // frame, and counting the request would make the stop answer claim a picture
@@ -208,6 +227,7 @@ async function dispatch(
       payload: {
         ok: false,
         documentId: claim.documentId,
+        evidence: { source: 'host', verified: true },
         note: drivingTimeoutNote(verb, timeoutMs),
       },
     };
@@ -229,12 +249,15 @@ function describeResult(result: DevtoolsActionResult, documentId: string): Recor
       ok: false,
       documentId,
       ...(result.matched !== undefined ? { matched: result.matched } : {}),
+      evidence:
+        result.hostOutcome === 'host' ? { source: 'host', verified: true } : PAGE_REPORTED_EVIDENCE,
       note: result.error ?? 'The page could not do that, and said nothing about why.',
       ...(result.page ? { page: result.page } : {}),
     };
   }
   return {
     ok: true,
+    evidence: PAGE_REPORTED_EVIDENCE,
     documentId,
     ...(result.did !== undefined ? { did: result.did } : {}),
     ...(result.matched !== undefined ? { matched: result.matched } : {}),
@@ -247,7 +270,7 @@ function describeResult(result: DevtoolsActionResult, documentId: string): Recor
 
 /** A refusal decided before anything was minted. */
 function refusal(error: string): DrivingAnswer {
-  return { payload: { ok: false, note: error } };
+  return { payload: { evidence: { source: 'host', verified: true }, ok: false, note: error } };
 }
 
 /**

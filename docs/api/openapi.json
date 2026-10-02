@@ -4718,6 +4718,11 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "bridgeGeneration": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -4746,6 +4751,11 @@
               "seq": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "bridgeGeneration": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
               },
               "type": {
                 "type": "string",
@@ -4785,6 +4795,11 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "bridgeGeneration": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -4804,8 +4819,15 @@
                 "type": "string",
                 "enum": [
                   "start",
-                  "stop"
+                  "stop",
+                  "confirm-start",
+                  "cancel-start"
                 ]
+              },
+              "reservationTimeoutMs": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 8000
               },
               "recordingId": {
                 "type": "string"
@@ -5200,6 +5222,144 @@
                   "open_canvas"
                 ]
               },
+              "channel": {
+                "type": "object",
+                "properties": {
+                  "routes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "on": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                        },
+                        "to": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "log"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "agent:owner"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "room:self"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "maxLength": 206,
+                              "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                            }
+                          ]
+                        },
+                        "turn": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "immediate"
+                                  ]
+                                },
+                                "maxBatch": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "maxBatch"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "coalesce"
+                                  ]
+                                },
+                                "windowMs": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxBatch": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "windowMs",
+                                "maxBatch"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "coalescibleTypes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                          },
+                          "maxItems": 128
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "on",
+                        "to",
+                        "turn"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 16
+                  }
+                },
+                "required": [
+                  "routes"
+                ],
+                "additionalProperties": false
+              },
               "content": {
                 "$ref": "#/components/schemas/UiCanvasContent"
               },
@@ -5300,6 +5460,144 @@
                   "open_file"
                 ]
               },
+              "channel": {
+                "type": "object",
+                "properties": {
+                  "routes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "on": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                        },
+                        "to": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "log"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "agent:owner"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "room:self"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "maxLength": 206,
+                              "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                            }
+                          ]
+                        },
+                        "turn": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "immediate"
+                                  ]
+                                },
+                                "maxBatch": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "maxBatch"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "coalesce"
+                                  ]
+                                },
+                                "windowMs": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxBatch": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "windowMs",
+                                "maxBatch"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "coalescibleTypes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                          },
+                          "maxItems": 128
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "on",
+                        "to",
+                        "turn"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 16
+                  }
+                },
+                "required": [
+                  "routes"
+                ],
+                "additionalProperties": false
+              },
               "sourcePath": {
                 "type": "string",
                 "minLength": 1
@@ -5321,6 +5619,144 @@
                 "enum": [
                   "open_diff"
                 ]
+              },
+              "channel": {
+                "type": "object",
+                "properties": {
+                  "routes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "on": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                        },
+                        "to": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "log"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "agent:owner"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "room:self"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "maxLength": 206,
+                              "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                            }
+                          ]
+                        },
+                        "turn": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "immediate"
+                                  ]
+                                },
+                                "maxBatch": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "maxBatch"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "coalesce"
+                                  ]
+                                },
+                                "windowMs": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxBatch": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "windowMs",
+                                "maxBatch"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "coalescibleTypes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                          },
+                          "maxItems": 128
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "on",
+                        "to",
+                        "turn"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 16
+                  }
+                },
+                "required": [
+                  "routes"
+                ],
+                "additionalProperties": false
               },
               "sourcePath": {
                 "type": "string",
@@ -5360,6 +5796,144 @@
                 "enum": [
                   "browser_navigate"
                 ]
+              },
+              "channel": {
+                "type": "object",
+                "properties": {
+                  "routes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "on": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                        },
+                        "to": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "log"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "agent:owner"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "room:self"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "maxLength": 206,
+                              "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                            }
+                          ]
+                        },
+                        "turn": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "immediate"
+                                  ]
+                                },
+                                "maxBatch": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "maxBatch"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "coalesce"
+                                  ]
+                                },
+                                "windowMs": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 9007199254740991
+                                },
+                                "maxBatch": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "windowMs",
+                                "maxBatch"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "coalescibleTypes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                          },
+                          "maxItems": 128
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "on",
+                        "to",
+                        "turn"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 16
+                  }
+                },
+                "required": [
+                  "routes"
+                ],
+                "additionalProperties": false
               },
               "url": {
                 "type": "string",
@@ -5903,6 +6477,144 @@
           },
           "content": {
             "$ref": "#/components/schemas/UiCanvasContent"
+          },
+          "channel": {
+            "type": "object",
+            "properties": {
+              "routes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "on": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                    },
+                    "to": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "log"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "agent:owner"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "room:self"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "maxLength": 206,
+                          "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                        }
+                      ]
+                    },
+                    "turn": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "none"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "mode"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "immediate"
+                              ]
+                            },
+                            "maxBatch": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "maxBatch"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "coalesce"
+                              ]
+                            },
+                            "windowMs": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "maxBatch": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "windowMs",
+                            "maxBatch"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "coalescibleTypes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                      },
+                      "maxItems": 128
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "on",
+                    "to",
+                    "turn"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 16
+              }
+            },
+            "required": [
+              "routes"
+            ],
+            "additionalProperties": false
           },
           "title": {
             "type": "string"
@@ -13596,6 +14308,144 @@
               }
             ]
           },
+          "channel": {
+            "type": "object",
+            "properties": {
+              "routes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "on": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                    },
+                    "to": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "log"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "agent:owner"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "room:self"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "maxLength": 206,
+                          "pattern": "^agent:[A-Za-z0-9_-]+$/u"
+                        }
+                      ]
+                    },
+                    "turn": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "none"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "mode"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "immediate"
+                              ]
+                            },
+                            "maxBatch": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "maxBatch"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "coalesce"
+                              ]
+                            },
+                            "windowMs": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "maxBatch": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "windowMs",
+                            "maxBatch"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "coalescibleTypes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                      },
+                      "maxItems": 128
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "on",
+                    "to",
+                    "turn"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 16
+              }
+            },
+            "required": [
+              "routes"
+            ],
+            "additionalProperties": false
+          },
           "pinned": {
             "type": "boolean",
             "description": "Pin it, so it sorts first and is never dropped to make room."
@@ -19103,6 +19953,11 @@
                           "type": "integer",
                           "minimum": 0
                         },
+                        "bridgeGeneration": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
                         "type": {
                           "type": "string",
                           "enum": [
@@ -19131,6 +19986,11 @@
                         "seq": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "bridgeGeneration": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
                         },
                         "type": {
                           "type": "string",
@@ -19170,6 +20030,11 @@
                           "type": "integer",
                           "minimum": 0
                         },
+                        "bridgeGeneration": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
                         "type": {
                           "type": "string",
                           "enum": [
@@ -19189,8 +20054,15 @@
                           "type": "string",
                           "enum": [
                             "start",
-                            "stop"
+                            "stop",
+                            "confirm-start",
+                            "cancel-start"
                           ]
+                        },
+                        "reservationTimeoutMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 8000
                         },
                         "recordingId": {
                           "type": "string"
@@ -21163,6 +22035,7 @@
           "Relay"
         ],
         "summary": "Send a relay message",
+        "description": "Publish a message using the caller-supplied `from`. Reserved server senders, destinations, and reply addresses are refused. `from` is a caller's claim, not authenticated attribution. HTTP authentication permits the request but does not bind the sender to the authenticated person. A program run by an agent can also choose a permitted `relay.human.*` address.\n\nWith login off, no app credential is required. The Host allowlist permits loopback addresses, configured trusted hosts, and the live tunnel unless `DORKOS_ALLOW_INSECURE_BIND` disables it. With login on, a session cookie or per-user bearer API key is required and the Host guard is off. CORS browser-origin policy still applies and permits requests without Origin; it does not authenticate the sender.\n\nA permitted human sender may supply `payload.cwd`, `payload.forAgent` (agent home path), and `payload.__bindingPermissions.permissionMode`. Existing folder and agent checks apply. The nested mode defaults to `default`; top-level `payload.permissionMode` does not set it. Supported approval modes depend on the receiving runtime. MCP send tools instead publish a server-resolved sender under separate MCP authentication and tool permissions. Agent, session, and external MCP sender addresses cannot use those three turn-shaping fields. Account selection follows separate host policy for new conversations and grants no sender authority.",
         "requestBody": {
           "content": {
             "application/json": {

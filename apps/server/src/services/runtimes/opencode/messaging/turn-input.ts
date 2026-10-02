@@ -1,3 +1,4 @@
+import { renderDocEvents } from '../../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
 /**
  * Per-turn input shaping for the OpenCode runtime: the `session.promptAsync`
@@ -63,6 +64,7 @@ export function parseModelSelection(
  * exceptions — see {@link renderContextBody}.
  */
 function renderContextEntry(entry: AdditionalContextEntry): string {
+  if (entry.kind === 'doc_events') return renderDocEvents(entry.data);
   const tag = CONTEXT_TAG[entry.kind];
   return `<${tag}>\n${renderContextBody(entry)}\n</${tag}>`;
 }

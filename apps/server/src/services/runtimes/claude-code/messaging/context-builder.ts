@@ -1,3 +1,4 @@
+import { renderDocEvents } from '../../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
 import type {
   AdditionalContextEntry,
@@ -733,6 +734,8 @@ export async function buildSystemPromptAppend(
 export function renderContextEntry(entry: AdditionalContextEntry): string {
   const tag = CONTEXT_TAG[entry.kind];
   switch (entry.kind) {
+    case 'doc_events':
+      return renderDocEvents(entry.data);
     case 'git_status':
       return wrapTag(tag, formatGitStatus(entry.data));
     case 'ui_state':
