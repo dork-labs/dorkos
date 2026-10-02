@@ -52,6 +52,7 @@ export function DeleteAccount() {
   const [typed, setTyped] = useState('');
   const confirmField = useRef<HTMLInputElement>(null);
   const note = useRef<HTMLParagraphElement>(null);
+  const opener = useRef<HTMLButtonElement>(null);
 
   if (!data?.available) return null;
 
@@ -108,7 +109,13 @@ export function DeleteAccount() {
           <p className="text-muted-foreground text-sm">
             Ends your plan and erases the account for good. Everything on this computer stays.
           </p>
-          <Button type="button" size="sm" variant="destructive" onClick={() => setOpen(true)}>
+          <Button
+            ref={opener}
+            type="button"
+            size="sm"
+            variant="destructive"
+            onClick={() => setOpen(true)}
+          >
             Delete your DorkOS account…
           </Button>
         </>
@@ -123,11 +130,13 @@ export function DeleteAccount() {
             confirmField.current?.focus();
           }}
           onCloseAutoFocus={(event) => {
-            // The button that opened it is gone once a link is out: land on the
-            // note that says what happens next instead.
-            if (note.current === null) return;
+            // Back to the button that opened it on Cancel or Escape. Once a link
+            // is out that button is gone: land on the note that says what
+            // happens next instead.
+            const target = note.current ?? opener.current;
+            if (target === null) return;
             event.preventDefault();
-            note.current.focus();
+            target.focus();
           }}
         >
           <ResponsiveDialogHeader>

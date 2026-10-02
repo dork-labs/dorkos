@@ -144,10 +144,21 @@ export function createCloudMethods(baseUrl: string) {
       });
     },
 
-    requestCloudAccountDeletion(): Promise<CloudAccountDeletionResponse> {
-      return fetchJSON<CloudAccountDeletionResponse>(baseUrl, '/cloud/account/deletion', {
-        method: 'POST',
-      });
+    async requestCloudAccountDeletion(): Promise<CloudAccountDeletionResponse> {
+      try {
+        return await fetchJSON<CloudAccountDeletionResponse>(baseUrl, '/cloud/account/deletion', {
+          method: 'POST',
+        });
+      } catch (err) {
+        // The person-only bar answers 403 with a sentence of its own; return
+        // it as the refusal it is, so it is not read as "couldn't reach".
+        const body = (err as { body?: unknown }).body as
+          { ok?: unknown; message?: unknown } | undefined;
+        if (body?.ok === false && typeof body.message === 'string') {
+          return { ok: false, message: body.message };
+        }
+        throw err;
+      }
     },
 
     getCloudCredits(): Promise<CloudCreditsStatus> {

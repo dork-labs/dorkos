@@ -53,9 +53,14 @@ function LinkedCard({ usage, children }: { usage: CloudUsageResponse; children?:
       },
       // Asking to delete deletes nothing anywhere: it shows the "check your
       // email" state, and the link check keeps answering linked.
+      // The deadline is a day from now, so the showcase reads as sent rather
+      // than as an expired link (the fixture's own date is fixed).
       requestCloudAccountDeletion: {
         ok: true,
-        deletion: deletionFixture,
+        deletion: {
+          ...deletionFixture,
+          confirmBy: new Date(Date.now() + 86_400_000).toISOString(),
+        },
       },
       checkCloudLink: { linked: true, accountLabel: null, lastHeartbeatAt: null },
     };

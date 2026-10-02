@@ -119,6 +119,19 @@ describe('deleting the DorkOS account', () => {
     await waitFor(() => expect(within(dialog).getByLabelText(/to confirm/i)).toHaveFocus());
   });
 
+  it.each([
+    ['Cancel', () => userEvent.click(screen.getByRole('button', { name: 'Cancel' }))],
+    ['Escape', () => userEvent.keyboard('{Escape}')],
+  ])('returns focus to the button that opened it on %s', async (_how, close) => {
+    renderDelete(linkedTransport());
+    await openDialog();
+    await close();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Delete your DorkOS account…' })).toHaveFocus()
+    );
+  });
+
   it('sends nothing until the word is typed', async () => {
     const transport = linkedTransport();
     renderDelete(transport);
