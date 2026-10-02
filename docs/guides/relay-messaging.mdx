@@ -57,6 +57,8 @@ curl -X POST http://localhost:4242/api/relay/messages \
   }'
 ```
 
+This HTTP example lets you choose a human sender address. Read [Sending from local programs](#sending-from-local-programs) for access checks and sender authority.
+
 </Step>
 <Step>
 
@@ -80,6 +82,28 @@ That's the whole loop: publish a message to a subject, Relay routes it, the reci
 ## Reference
 
 The rest of this page is a deeper look at how Relay works: the built-in tools, the chat apps it bridges, budgets, and configuration. Agent-to-agent chains are still a newer part of DorkOS, so if you're chaining more than a couple of hops, set explicit budgets (below) to keep things bounded.
+
+### Sending from local programs
+
+`POST /api/relay/messages` lets a program send a Relay message through the HTTP API.
+
+With sign-in off, this endpoint needs no app credential. DorkOS checks the request's `Host` header against loopback addresses, configured trusted hosts, and the live tunnel. `DORKOS_ALLOW_INSECURE_BIND` disables that check. With sign-in on, send a valid session cookie or a per-user API key as `Authorization: Bearer <key>`. The Host check is off in this mode.
+
+Browser requests still follow CORS (the browser rule that controls which sites may call your server). Requests without an `Origin` header are allowed by this policy. CORS does not authenticate the sender.
+
+You choose `from`. DorkOS refuses reserved server senders, destinations, and reply addresses. It permits human addresses such as `relay.human.console.my-client`. This address is a caller's claim; it does not prove who sent the request. Signing in permits the request but does not bind `from` to the signed-in person. A program run by an agent can also choose a permitted human address through HTTP.
+
+A permitted `relay.human.*` sender can supply three fields that shape a receiving turn:
+
+- `payload.cwd`: the working folder.
+- `payload.forAgent`: the agent's home path.
+- `payload.__bindingPermissions.permissionMode`: the approval mode.
+
+Existing folder and agent checks still apply. Without the nested approval mode, the Relay turn handler uses `default`. A top-level `payload.permissionMode` does not set it. The receiving runtime determines which approval modes it supports.
+
+MCP (the standard that lets AI tools talk to each other) send tools use the sender DorkOS assigns them. They do not accept a caller-chosen `from`. MCP authentication and tool permissions are separate checks. Messages from agent, session, or external MCP sender addresses cannot use those three fields to shape the receiving turn. This restriction follows the sender address, not the program making an HTTP call.
+
+An `account` request follows separate host account rules. It applies to a new conversation and grants no sender authority.
 
 ### Using MCP tools
 
