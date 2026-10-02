@@ -41,17 +41,22 @@ const NOPE_DISCLAIMER =
  * Advisory that has to stay wherever MEMORY.md is edited.
  *
  * Two facts an operator cannot get from looking at the editor, and both change
- * what they would type into it: the agent writes here itself, and everything
- * here can surface in a room with other people in it. The visibility rule is
- * the same sentence the file's own header carries, so a person reads it whether
- * they arrive through this page or through the file.
+ * what they would type into it: everything here can come up in any chat the
+ * agent joins (this advisory, under the heading), and the agent writes here
+ * itself ({@link MEMORY_NOTE}, under the editor). Both stay visible. The
+ * visibility rule says what the file's own header says
+ * (`packages/memory/src/scaffold.ts`), so a person reads it whether they arrive
+ * through this page or through the file.
  */
 const MEMORY_DISCLAIMER =
-  'Can surface in rooms shared with other people. Never keep secrets, passwords or keys here.';
+  'Anything here can come up in any chat. Never keep secrets, passwords or keys here.';
 
-/** The rest of what MEMORY.md's advisory used to say, behind "More details". */
+/** The second visible MEMORY.md fact: nobody else is the only author here. */
+const MEMORY_NOTE = 'Your agent writes notes here as it works.';
+
+/** The rest of what MEMORY.md's advisory says, behind "More details". */
 const MEMORY_DETAILS = [
-  'Your agent writes notes here as it works. Each note says where it was written.',
+  'Each note says where it was written.',
   'Deleting a line makes your agent forget it.',
 ] as const;
 
@@ -67,6 +72,8 @@ interface ConventionFile {
   maxChars: number;
   /** The advisory under the heading, when the file needs one. */
   disclaimer?: string;
+  /** One visible line under the editor, when the file needs one. */
+  note?: string;
   /** Extra paragraphs behind "More details", under the editor. */
   details?: readonly string[];
   /** What the operator actually edits, out of what is on disk. */
@@ -120,6 +127,7 @@ const FILES: Record<'instructions' | 'boundaries' | 'memory', ConventionFile> = 
     key: 'memory',
     maxChars: MEMORY_MAX_CHARS,
     disclaimer: MEMORY_DISCLAIMER,
+    note: MEMORY_NOTE,
     details: MEMORY_DETAILS,
     read: (agent) => agent.memoryContent ?? '',
     write: (_agent, draft) => ({ memoryContent: draft }),
@@ -238,6 +246,7 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
         onChange={setDraft}
         onToggle={(enabled) => update({ conventions: { ...conventions, [file.key]: enabled } })}
       />
+      {file.note && <p className="text-muted-foreground shrink-0 text-xs">{file.note}</p>}
       {file.details && (
         <MoreDetails className="shrink-0">
           {file.details.map((line) => (

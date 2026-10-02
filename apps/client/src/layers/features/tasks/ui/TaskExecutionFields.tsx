@@ -72,7 +72,7 @@ export function TaskExecutionFields({
       <legend className="mb-1.5 text-sm font-medium">Runs on</legend>
 
       <div className="space-y-1.5">
-        <Label htmlFor="schedule-runtime">Runtime</Label>
+        <Label htmlFor="schedule-runtime">Runs on</Label>
         <Select
           value={runtime || INHERIT}
           onValueChange={(value) => onRuntimeChange(value === INHERIT ? '' : value)}

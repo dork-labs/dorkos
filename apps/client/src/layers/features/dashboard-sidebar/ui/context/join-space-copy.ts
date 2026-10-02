@@ -38,11 +38,11 @@ export function startErrorMessage(error: unknown, address: string | undefined): 
       : {};
   switch (refusal.code) {
     case 'COMMUNITY_SELECTION_REQUIRED':
-      return `That address has several spaces. Use one space’s link, like ${shortAddressExample(address)}, or its /c/ link.`;
+      return `That address has several spaces. Use one space’s own link, like ${shortAddressExample(address)}.`;
     case 'COMMUNITY_NAME_NOT_FOUND':
       return 'No space uses that address. Check the spelling, or ask for its full link.';
     case 'COMMUNITY_RATE_LIMITED':
-      return `Too many tries on that space. Wait ${describeCommunityRetryWait(refusal.body?.retryAfterSeconds)}, then try again.`;
+      return `Too many tries. Your address may be fine. Wait ${describeCommunityRetryWait(refusal.body?.retryAfterSeconds)}, then try again.`;
     case 'COMMUNITY_UPGRADE_REQUIRED':
       return 'This space’s server is too old for this DorkOS. Ask its owner to update it.';
     default:

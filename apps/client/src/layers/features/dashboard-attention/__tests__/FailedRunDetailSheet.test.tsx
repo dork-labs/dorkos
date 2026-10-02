@@ -175,7 +175,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByText('Failed')).toBeInTheDocument();
+    expect(screen.getByText('Didn’t finish')).toBeInTheDocument();
     expect(screen.getByText('Scheduled')).toBeInTheDocument();
   });
 
@@ -237,7 +237,7 @@ describe('FailedRunDetailSheet', () => {
       renderBlocked();
 
       expect(screen.getByText('Blocked')).toBeInTheDocument();
-      expect(screen.queryByText('Failed')).not.toBeInTheDocument();
+      expect(screen.queryByText('Didn’t finish')).not.toBeInTheDocument();
     });
 
     it('titles it as a run that could not act, not one that did not finish', () => {
@@ -286,7 +286,7 @@ describe('FailedRunDetailSheet', () => {
       });
       renderSheet();
 
-      expect(screen.getByText('Failed')).toBeInTheDocument();
+      expect(screen.getByText('Didn’t finish')).toBeInTheDocument();
       expect(screen.getByText('Error')).toBeInTheDocument();
       expect(screen.getByText('exit 1').className).toContain('destructive');
     });

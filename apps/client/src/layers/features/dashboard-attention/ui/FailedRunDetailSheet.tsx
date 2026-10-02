@@ -75,7 +75,7 @@ function runVerdict(status: TaskRun['status']): {
       };
     case 'failed':
       return {
-        label: 'Failed',
+        label: 'Didn’t finish',
         badge: 'destructive',
         tone: 'error',
         heading: 'Error',

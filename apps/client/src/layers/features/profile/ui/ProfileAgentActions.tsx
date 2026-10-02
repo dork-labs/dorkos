@@ -191,7 +191,7 @@ export function ProfileAgentActions({
                 <div className="space-y-2">
                   <p>It leaves your team and channels. Its schedules pause.</p>
                   <p>Its messages and your project files are kept.</p>
-                  <p>Add it back later, then re-add it to channels.</p>
+                  <p>You can add it back later. It may need re-adding to channels.</p>
                 </div>
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>

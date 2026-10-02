@@ -101,7 +101,7 @@ describe('TaskRunHistoryPanel', () => {
 
     await waitFor(() => {
       expect(screen.getByTitle('Completed')).toBeTruthy();
-      expect(screen.getByTitle('Failed')).toBeTruthy();
+      expect(screen.getByTitle('Didn’t finish')).toBeTruthy();
       expect(screen.getByTitle('Running')).toBeTruthy();
     });
   });
@@ -460,7 +460,7 @@ describe('TaskRunHistoryPanel', () => {
           expect.objectContaining({ status: 'skipped' } as Partial<ListTaskRunsQuery>)
         );
       });
-      expect(screen.getByText('No skipped runs')).toBeTruthy();
+      expect(screen.getByText('No runs match this filter')).toBeTruthy();
     });
   });
 

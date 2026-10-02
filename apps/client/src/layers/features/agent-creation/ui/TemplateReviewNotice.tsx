@@ -158,7 +158,7 @@ export function TemplateReviewNotice({
     >
       <p className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
         <ShieldAlert className="size-4 shrink-0" aria-hidden />
-        This template brings things that run
+        This template brings things that run in your agent’s chats
       </p>
       <p className="text-muted-foreground text-xs [overflow-wrap:anywhere]">
         From {template.source}. Check each before you create the agent.

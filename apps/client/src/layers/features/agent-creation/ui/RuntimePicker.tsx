@@ -22,7 +22,7 @@ export function RuntimePicker({ value, onChange }: RuntimePickerProps) {
   return (
     <div
       role="radiogroup"
-      aria-label="Runtime"
+      aria-label="Runs on"
       className="flex gap-1.5"
       data-testid="runtime-picker"
     >

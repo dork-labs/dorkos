@@ -41,14 +41,14 @@ type PackageOwnedBy = 'record' | 'legacy';
  */
 const PACKAGE_NOTICE: Record<PackageOwnedBy, readonly string[]> = {
   record: [
-    'This schedule came with a package. Its updates replace edits here.',
+    'This schedule came with a package. Only the package can change what it does.',
     'You can still turn it on or off, or change when it runs.',
   ],
   legacy: [
     'This schedule came with a package from an older DorkOS.',
     'DorkOS can’t yet tell its files from yours.',
     'You can still turn it on or off, or change when it runs.',
-    'To edit the rest, choose Check files on it in Marketplace › Installed.',
+    'To edit the rest, choose Check files on its package in Marketplace › Installed.',
   ],
 };
 

@@ -37,7 +37,7 @@ vi.mock('../ui/HomeRoomChips', () => ({
   HomeRoomChips: () => <span data-testid="home-members-chip" />,
 }));
 vi.mock('../ui/NewTaskAction', () => ({
-  NewTaskAction: () => <button type="button">New Schedule</button>,
+  NewTaskAction: () => <button type="button">New schedule</button>,
 }));
 
 import { HomeSurfaceBar } from '../ui/HomeSurfaceBar';
@@ -255,12 +255,12 @@ describe('HomeSurfaceBar', () => {
     renderAt('/');
     await screen.findByTestId('home-page');
     expect(screen.getByTestId('home-members-chip')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'New Schedule' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New schedule' })).not.toBeInTheDocument();
     cleanup();
 
     renderAt('/tasks');
     await screen.findByTestId('tasks-page');
-    expect(screen.getByRole('button', { name: 'New Schedule' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New schedule' })).toBeInTheDocument();
     expect(screen.queryByTestId('home-members-chip')).not.toBeInTheDocument();
     cleanup();
 
@@ -269,7 +269,7 @@ describe('HomeSurfaceBar', () => {
     renderAt('/workspaces');
     await screen.findByTestId('workspaces-page');
     expect(screen.queryByTestId('home-members-chip')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'New Schedule' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New schedule' })).not.toBeInTheDocument();
   });
 
   it('keeps ONE tab strip mounted across a tab press — the node survives', async () => {

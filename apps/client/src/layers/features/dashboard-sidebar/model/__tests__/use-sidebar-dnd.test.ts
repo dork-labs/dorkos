@@ -451,7 +451,7 @@ describe('R3 — a drop into a computed zone', () => {
 
   it('says how to keep the row in place, rather than only refusing', () => {
     expect(COMPUTED_ZONE_REJECTION).toBe(
-      'Heads up and Today are computed. Pin it to Library to keep it in place.'
+      'Heads up and Today fill themselves. Pin it to Library to keep it in place.'
     );
   });
 

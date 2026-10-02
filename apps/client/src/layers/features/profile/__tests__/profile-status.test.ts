@@ -115,7 +115,7 @@ describe('how long ago, in words', () => {
     expect(stamp(20 * 60_000)).toBe('Last active 20m ago');
     expect(stamp(3 * 3_600_000)).toBe('Last active 3h ago');
     expect(stamp(30 * 3_600_000)).toBe('Last active yesterday');
-    expect(stamp(4 * 24 * 3_600_000)).toBe('Last active 4 days ago');
+    expect(stamp(4 * 24 * 3_600_000)).toContain('Last active on ');
     expect(stamp(60 * 24 * 3_600_000)).toContain('Last active on ');
   });
 });

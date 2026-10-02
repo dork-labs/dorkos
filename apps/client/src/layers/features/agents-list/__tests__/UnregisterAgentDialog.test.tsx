@@ -95,7 +95,9 @@ describe('UnregisterAgentDialog', () => {
       screen.getByText('It leaves your team and channels. Its schedules pause.')
     ).toBeInTheDocument();
     expect(screen.getByText('Its messages and your project files are kept.')).toBeInTheDocument();
-    expect(screen.getByText('Add it back later, then re-add it to channels.')).toBeInTheDocument();
+    expect(
+      screen.getByText('You can add it back later. It may need re-adding to channels.')
+    ).toBeInTheDocument();
   });
 
   it('calls unregister mutation with agent ID on confirm', () => {

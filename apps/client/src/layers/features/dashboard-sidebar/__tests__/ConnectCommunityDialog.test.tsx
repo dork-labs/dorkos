@@ -193,8 +193,7 @@ describe('ConnectCommunityDialog', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('That address has several spaces.');
     // The example is on the host the person typed, so it is one they can use as it stands.
-    expect(alert).toHaveTextContent('like https://spaces.example.com/your-space,');
-    expect(alert).toHaveTextContent('/c/');
+    expect(alert).toHaveTextContent('like https://spaces.example.com/your-space.');
     expect(alert).not.toHaveTextContent('Check the space’s address');
     // The address stays, so the person can add the community's part to it.
     expect(address).toHaveValue('https://spaces.example.com');
@@ -219,7 +218,7 @@ describe('ConnectCommunityDialog', () => {
     address.closest('form')?.setAttribute('novalidate', '');
     await user.type(address, 'spaces');
     await user.click(screen.getByRole('button', { name: 'Connect' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('like https://example.com/acme,');
+    expect(await screen.findByRole('alert')).toHaveTextContent('like https://example.com/acme.');
   });
 
   // Purpose: a join link that is not a secure invitation is refused in words
@@ -290,7 +289,7 @@ describe('ConnectCommunityDialog', () => {
       coded(429, 'COMMUNITY_RATE_LIMITED', { retryAfterSeconds: 17 })
     );
     expect(alert).toHaveTextContent(
-      'Too many tries on that space. Wait 17 seconds, then try again.'
+      'Too many tries. Your address may be fine. Wait 17 seconds, then try again.'
     );
     expect(alert).not.toHaveTextContent('Check the space’s address');
   });

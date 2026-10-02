@@ -38,7 +38,7 @@ import {
  * than only the refusal: the row CAN be kept in place, by pinning it.
  */
 export const COMPUTED_ZONE_REJECTION =
-  'Heads up and Today are computed. Pin it to Library to keep it in place.';
+  'Heads up and Today fill themselves. Pin it to Library to keep it in place.';
 
 /**
  * The three Library sections a row can sit in without belonging to a group.

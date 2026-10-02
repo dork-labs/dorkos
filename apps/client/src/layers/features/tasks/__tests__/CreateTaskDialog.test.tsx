@@ -485,7 +485,9 @@ describe('CreateTaskDialog', () => {
       await open(transportWith());
 
       expect(
-        screen.getByText('This schedule came with a package. Its updates replace edits here.')
+        screen.getByText(
+          'This schedule came with a package. Only the package can change what it does.'
+        )
       ).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Make a copy' })).toBeTruthy();
       expect(screen.getByDisplayValue('nightly-sweep')).toBeDisabled();

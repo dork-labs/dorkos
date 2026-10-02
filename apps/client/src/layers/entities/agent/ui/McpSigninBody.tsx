@@ -49,14 +49,17 @@ function connectedCopy(toolCount: number | null): string {
  *
  * The server always composes one today, so this is the type's tail rather than a
  * path a person is expected to reach — but a custody panel with a blank second
- * line would be worse than any wording, so it carries the founder-approved
- * sentence. It promises only what ships: removing the server is the undo, because
- * there is no sign-out route yet.
+ * line would be worse than any wording, so it carries the custody facts of the
+ * founder-approved sentence, cut to the app-copy cap: DorkOS keeps the key on
+ * this machine, the agent never sees it, and removing the server deletes it.
+ * Approving on the provider's site is left to the button below it. It promises
+ * only what ships: removing the server is the undo, because there is no
+ * sign-out route yet.
  *
- * @param serverName - The provider whose site the person will approve on.
+ * @param serverName - The provider the key comes from.
  */
 function fallbackCustody(serverName: string): string {
-  return `Approve on ${serverName}’s site. Agents never see the key; removing the server deletes it.`;
+  return `DorkOS keeps the key from ${serverName} here, never your agent. Removing the server deletes it.`;
 }
 
 /**
