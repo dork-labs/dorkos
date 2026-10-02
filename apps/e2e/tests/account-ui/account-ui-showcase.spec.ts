@@ -89,11 +89,12 @@ async function scan(page: Page, selector: string, what: string): Promise<string[
 }
 
 test.describe('Claude account UI showcases @smoke', () => {
-  // Tall enough for the tallest section (Settings' accounts, ~5800px since each
+  // Tall enough for the tallest section (Settings' accounts, ~7850px since each
   // row gained its "Only for" line and "Limit to projects…" and the section a
-  // "Project limits" list, DOR-2526): axe does not look at text outside the
+  // "Project limits" list, DOR-2526, then a DorkOS credits entry and its notes
+  // in each Runs on showcase, DOR-2623): axe does not look at text outside the
   // viewport, and `scan` fails rather than pass a region it could not see.
-  test.use({ viewport: { width: 1440, height: 7000 } });
+  test.use({ viewport: { width: 1440, height: 9000 } });
   test.describe.configure({ timeout: 240_000 });
 
   for (const theme of ['light', 'dark'] as const) {
