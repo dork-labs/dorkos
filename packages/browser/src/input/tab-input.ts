@@ -161,8 +161,11 @@ class InputQueue implements TabInput {
 
   private refusal(binding: BrowserBinding): InputReason | null {
     if (this.stopped || !this.ports.stopGate.accepts(binding)) return 'stopped';
-    if (this.barrier || !this.identityMatches(binding) || !sameBinding(this.readBinding(), binding))
-      return 'staleBinding';
+    if (this.barrier || !this.identityMatches(binding)) return 'staleBinding';
+    const observed = this.readBinding();
+    // Registry observation can synchronously stop or reset admission before returning.
+    if (this.stopped || !this.ports.stopGate.accepts(binding)) return 'stopped';
+    if (this.barrier || !sameBinding(observed, binding)) return 'staleBinding';
     return null;
   }
 
