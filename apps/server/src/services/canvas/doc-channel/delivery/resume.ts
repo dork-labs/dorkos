@@ -8,6 +8,10 @@ import {
   canvasDocBatches,
   sessionMessageAcceptanceReceipts,
 } from '@dorkos/db';
+import { CanvasAppManifestError } from '@dorkos/shared/canvas-app-manifest';
+import { PrivateSessionMessageRefusalError } from '../../../session/private-messages/refusal.js';
+import { DocChannelArchivedError, DocChannelNotFoundError } from '../authorization.js';
+import { DocRouteGrantError } from '../grant-policy.js';
 import type { DocBatchPumpOptions } from './pump.js';
 /** A scheduler retry is not an authoritative budget hold and cannot postpone runtime dispatch. */
 export const DOC_RESUME_RETRY_CODE = 'document_resume_retry';
@@ -37,7 +41,9 @@ export async function consumeAcceptedDocWakes(
       continue;
     try {
       await options.admission.acceptance.prepare(receipt.id);
-    } catch {
+    } catch (error) {
+      // Unavailable storage or blocked identity recovery proves no authority loss. Let the host retry.
+      if (!provenRecoveryRefusal(error)) throw error;
       options.admission.acceptance.cancel(receipt.id, 'document_recovery_authority_refused');
       continue;
     }
@@ -79,4 +85,17 @@ export async function consumeAcceptedDocWakes(
     if (sessionId) sessions.add(sessionId);
   }
   return sessions;
+}
+
+/** Only typed source/authority refusals justify retiring accepted durable work. */
+function provenRecoveryRefusal(error: unknown): boolean {
+  return (
+    error instanceof PrivateSessionMessageRefusalError ||
+    error instanceof DocChannelNotFoundError ||
+    error instanceof DocChannelArchivedError ||
+    error instanceof CanvasAppManifestError ||
+    (error instanceof DocRouteGrantError &&
+      error.code !== 'AUTHORITY_REFRESH_REQUIRES_COMMIT_BOUNDARY' &&
+      [403, 404, 409, 422].includes(error.status))
+  );
 }

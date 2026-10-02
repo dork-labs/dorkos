@@ -2,6 +2,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import {
   createDb,
   sql,
@@ -33,6 +34,7 @@ import {
   getOrCreateProjector,
 } from '../../../session/session-state-projector.js';
 const databases: Db[] = [];
+const nativeConnections: Database.Database[] = [];
 const directories: string[] = [];
 async function settle() {
   for (let i = 0; i < 8; i++) await Promise.resolve();
@@ -46,6 +48,7 @@ afterEach(async () => {
   disposeProjector('session-1');
   disposeProjector('canonical');
   for (const db of databases.splice(0)) db.$client.close();
+  for (const connection of nativeConnections.splice(0)) connection.close();
   for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 function options(
@@ -259,6 +262,80 @@ describe('document pump identity and recovery', () => {
       admissionReceiptId: original.id,
     });
     expect(f.db.select().from(sessionMessageQueue).all()[0]?.id).toBe(original.queueMessageId);
+  });
+  it('preserves accepted work when a second file connection locks source preparation', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'doc-pump-locked-'));
+    directories.push(dir);
+    const file = join(dir, 'state.db');
+    let time = Date.parse(NOW);
+    const now = () => new Date(time);
+    const f = batchFixture(file, null, undefined, 'boot-1', 'claude-code', now);
+    databases.push(f.db);
+    f.db.$client.pragma('busy_timeout = 0');
+    f.db.$client.pragma('journal_mode = DELETE');
+    const locker = new Database(file);
+    nativeConnections.push(locker);
+    locker.pragma('busy_timeout = 0');
+    let nudges = 0;
+    const pump = new DocBatchDeliveryPump(
+      options(f, now, () => {
+        nudges++;
+        return undefined;
+      })
+    );
+    f.input();
+    time += 1001;
+    expect(pump.run().admitted).toBe(1);
+    const original = f.db.select().from(sessionMessageAcceptanceReceipts).all()[0]!;
+    const batch = f.store.getBatch(original.sourceId);
+    const queued = f.db.select().from(sessionMessageQueue).all();
+    const prepare = f.admission.source.prepare.bind(f.admission.source);
+    f.admission.source.prepare = (receipt) => {
+      locker.exec('BEGIN EXCLUSIVE');
+      try {
+        return prepare(receipt);
+      } finally {
+        // Release before recovery catches the rejection: cancellation would otherwise succeed.
+        locker.exec('ROLLBACK');
+      }
+    };
+    nudges = 0;
+    await expect(pump.resumeAccepted()).rejects.toMatchObject({ code: 'SQLITE_BUSY' });
+    expect(nudges).toBe(0);
+    expect(f.db.select().from(sessionMessageAcceptanceReceipts).all()).toEqual([original]);
+    expect(f.store.getBatch(original.sourceId)).toEqual(batch);
+    expect(f.db.select().from(sessionMessageQueue).all()).toEqual(queued);
+    f.admission.source.prepare = prepare;
+    expect(await pump.resumeAccepted()).toBe(1);
+    expect(nudges).toBe(1);
+    expect(f.db.select().from(sessionMessageAcceptanceReceipts).all()).toEqual([original]);
+  });
+  it('cancels accepted recovery after a proven current grant revocation', async () => {
+    const f = batchFixture();
+    databases.push(f.db);
+    f.input();
+    const accepted = f.admission.admit(f.batchId());
+    f.grants.revoke(f.documentId, f.grantId, f.actor);
+    let nudges = 0;
+    const pump = new DocBatchDeliveryPump(
+      options(
+        f,
+        () => new Date(NOW),
+        () => {
+          nudges++;
+          return undefined;
+        }
+      )
+    );
+    expect(await pump.resumeAccepted()).toBe(0);
+    expect(nudges).toBe(0);
+    expect(f.db.select().from(sessionMessageAcceptanceReceipts).all()[0]).toMatchObject({
+      id: accepted.receipt.id,
+      state: 'cancelled',
+      cancellationCode: 'document_recovery_authority_refused',
+    });
+    expect(f.store.getBatch(accepted.receipt.sourceId)?.status).toBe('cancelled');
+    expect(f.db.select().from(sessionMessageQueue).all()).toEqual([]);
   });
   it.each(['claimed', 'started'] as const)(
     'quarantines a previous-boot %s receipt instead of resuming uncertain effects',
