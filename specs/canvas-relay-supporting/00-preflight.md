@@ -1,6 +1,6 @@
 # Canvas and Relay supporting lane preflight
 
-Prepared 2026-10-01. Preparatory source audit, not a frozen specification or canonical DECOMPOSE task list. DOR-2663 is merged and Flow DONE. DOR-2660 is claimed for bounded source work in its own worktree; the historical source findings below remain investigation pointers.
+Prepared 2026-10-01. Preparatory source audit, not a frozen specification or canonical DECOMPOSE task list. DOR-2663 is merged and Flow DONE. DOR-2660 is merged and Flow DONE; DOR-2661 is claimed for bounded source work in its own worktree; the historical source findings below remain investigation pointers.
 
 ## Run boundaries and assumptions
 
@@ -98,3 +98,5 @@ Doc owns private-session acceptance changes. Relay receipts remain a distinct ou
 Explicit human shipping authority permits normal queue entry after truthful exact-pushed-head independent review and Flow REVIEW. Preserve forge checks, verify merge, then Flow DONE. Never impersonate a person or fabricate reviewer tokens/calibration.
 
 Next: fresh verification, review and isolation delivery; converge bridge/receipt designs. No issue is merged or DONE yet.
+
+Current checkpoint: isolation PR2457 and namespace PR2459 are merged and Flow DONE. Namespace actual merge is `6b7309b9fc13d8580c890f707b839d5527277f0b`; its routing gate is released. Signed JSON PR2461 was reviewed on f9c3d578 and is now integrated onto that actual namespace merge; fresh combined gates and independent new-pushed-head review remain pending. Bridge/receipt source remains pending; docs authority preparation is independently converged. Historical findings above are investigation pointers, not current completion claims.

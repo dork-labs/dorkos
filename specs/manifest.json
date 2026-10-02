@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261001-213235",
+      "slug": "relay-signed-json",
+      "title": "Preserve signed Relay JSON through the full application",
+      "created": "2026-10-01",
+      "status": "implemented",
+      "linearIssue": "DOR-2661"
+    },
+    {
       "id": "261001-212400",
       "slug": "relay-namespace-ownership",
       "title": "Relay namespace ownership and boundary routing",

@@ -1,0 +1,10 @@
+# DOR-2661 implementation tasks
+
+All four worker tasks are complete: real red/green, bounded implementation, mutation sensitivity, fresh local verification and stable handoff. Independent implementation review and delivery remain parent-owned and pending.
+
+1. **RED full-app signed JSON regression.** Compose createApp, real Relay receiver and finalizeApp; start a real WebhookAdapter; sign whitespace/Unicode bytes using actual HMAC/timestamp/nonce; assert exact accepted publication. Record the intended failure before any product edit. Add capturing downstream controls without mocking inbound/signature logic.
+2. **Bounded parser fix.** Insert exact-path POST raw parser before global JSON, after upstream security/auth mounts. Keep sessionGate and handler downstream. Give both raw parsers an explicit 1mb limit. Preserve neighboring parser behavior.
+3. **Adversarial and compatibility controls.** Wrong signature, modified bytes, replay, malformed signed versus unsigned JSON, >100kb success and >1mb refusal; ordinary parsed/malformed/oversized JSON; real auth/host/origin/admission refusals. Establish that baseline malformed application/json returns finalized-app 500 before receiver dispatch with no nonce consumption. After repair, verify restored adapter semantics: valid-HMAC malformed JSON returns 401 Publish failed and consumes its verified nonce; invalid-HMAC malformed JSON returns 401 Invalid signature without consuming it. Ordinary malformed JSON retains 500. Exact attempt/publication counts, positive controls, adapter timer/listener cleanup.
+4. **Verify and independent review handoff.** Fresh targeted suites, package typecheck/lint, diff review and red-to-green record. Update implementation evidence and resume state. Parent owns independent review and all tracker/delivery operations.
+
+Implementation was explicitly released by the parent on verified main e3210be2 after namespace implementation and exact-head review convergence. Namespace delivery remains independently tracked by the parent.
