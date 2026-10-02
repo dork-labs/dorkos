@@ -34,7 +34,7 @@ export function RequestedAccess({
       <p className="text-muted-foreground text-xs">{ASKED_FOR[access](serviceName)}</p>
       {access === 'read-write' && level === 'read' && (
         <p className="text-xs" role="status">
-          With Read, {agentName} can’t change anything in {serviceName}.
+          With Read, {agentName} can’t change {serviceName}.
         </p>
       )}
     </div>

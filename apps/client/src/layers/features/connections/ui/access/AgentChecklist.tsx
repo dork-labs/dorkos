@@ -33,7 +33,7 @@ interface AgentChecklistProps {
 }
 
 /**
- * The page card's "Only agents I pick" answer: agents most relevant first,
+ * The page card's "Only agents you pick" answer: agents most relevant first,
  * each with what it holds today, and a plain line for every agent that would
  * lose access or lose write access on Save.
  *

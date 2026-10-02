@@ -48,7 +48,7 @@ export function ConnectionEventSourceSetup({
   if (currentStatus.setupMode === 'unavailable') {
     return (
       <p className="text-muted-foreground bg-muted/40 rounded-lg p-3 text-sm">
-        {currentStatus.reason ?? 'Notification delivery setup is unavailable for this account.'}
+        {currentStatus.reason ?? 'Notification setup isn’t available for this account.'}
       </p>
     );
   }
@@ -60,8 +60,10 @@ export function ConnectionEventSourceSetup({
       <div>
         <p className="text-sm font-medium">Service delivery</p>
         <p className="text-muted-foreground text-xs">
-          Add your public DorkOS address and the signing secret from Composio. The secret is sent
-          once and is never shown again.
+          Add your public DorkOS address and Composio’s signing secret.
+        </p>
+        <p className="text-muted-foreground text-xs">
+          The secret is sent once and never shown again.
         </p>
       </div>
       {currentStatus.configured && currentStatus.endpoint && (
@@ -92,7 +94,7 @@ export function ConnectionEventSourceSetup({
       </div>
       {configure.isError && (
         <p role="alert" className="text-destructive text-sm">
-          We couldn’t save delivery setup. Re-enter the signing secret to try again.
+          Couldn’t save delivery setup. Enter the signing secret again.
         </p>
       )}
       <Button

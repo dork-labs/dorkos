@@ -29,6 +29,8 @@ House punctuation rule: no em dashes. They invite run-on sentences that smuggle 
 - `contributing/` developer guides and API reference pages → `writing-developer-guides`
 - Code comments → keep them technical (`.claude/rules/conventions.md`)
 
+In-app copy (UI microcopy and error messages the app renders) follows these rules and a stricter set on top: `writing-app-copy`, which adds the word-count cap, the no-"we" voice, and the rules for buttons, errors, empty states and approvals.
+
 A reply to one person about their own report or question (a GitHub issue comment, a feedback email, a decline) follows these rules and adds its own: `writing-to-users`, which enforces the standard in `meta/user-care.md`.
 
 When a page mixes both (a user guide with a developer-reference tail), split it with a clear heading like `## Reference` and a framing sentence so the reader knows the audience just shifted.

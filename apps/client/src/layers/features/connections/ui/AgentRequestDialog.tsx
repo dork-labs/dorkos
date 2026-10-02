@@ -56,9 +56,7 @@ export function AgentRequestDialog({
         {/* The card carries its own visible question; the dialog's name is for assistive tech. */}
         <ResponsiveDialogHeader className="sr-only">
           <ResponsiveDialogTitle>{title}</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            Answer it here the same way you would in the chat.
-          </ResponsiveDialogDescription>
+          <ResponsiveDialogDescription>Answer it here, as in the chat.</ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="pb-4">
           {request.isPending ? (

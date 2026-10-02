@@ -26,7 +26,7 @@ export function MetricsSummary({ enabled }: MetricsSummaryProps) {
     { label: 'Total', value: metrics.totalMessages, variant: 'default' as const },
     { label: 'Delivered', value: metrics.deliveredCount, variant: 'success' as const },
     {
-      label: 'Failed',
+      label: 'Errors',
       value: metrics.failedCount,
       variant: metrics.failedCount > 0 ? 'danger' : 'default',
     },

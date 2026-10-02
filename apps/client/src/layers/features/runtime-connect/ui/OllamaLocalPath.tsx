@@ -26,7 +26,7 @@ import type {
 import { OLLAMA_TAG_PATTERN } from '@dorkos/shared/runtime-connect';
 import type { ModelTier } from '@dorkos/shared/types';
 import { Badge, Button, Input, Label, Spinner } from '@/layers/shared/ui';
-import { cn, localDeviceNoun } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
 import { RuntimeIdentity, type RuntimeConnectSuccess } from '@/layers/entities/runtime';
 import {
   useConnectOllama,
@@ -170,21 +170,20 @@ export function OllamaLocalPath({ active, onConnected, onConnectDirectly }: Olla
           data-testid="local-connect-directly"
           className="focus-ring text-muted-foreground hover:text-foreground block rounded-md text-left text-xs transition-colors"
         >
-          Run local models with LM Studio or another server?{' '}
-          <span className="underline">Connect it directly</span>
+          Using LM Studio or another server? <span className="underline">Connect it directly</span>
         </button>
       )}
     </div>
   );
 }
 
-/** Honest status line: running, install count, and the zero-auth privacy line. */
+/** Honest status line: running and the install count. */
 function StatusLine({ count }: { count: number }) {
   return (
     <p className="flex items-center gap-1.5 text-xs" data-testid="ollama-status-line">
       <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
       <span>
-        Ollama is running · {count} models installed · nothing you type leaves {localDeviceNoun()}
+        Ollama is running · {count} {count === 1 ? 'model' : 'models'} installed
       </span>
     </p>
   );
@@ -313,7 +312,7 @@ function CuratedShelf({
                   <PullProgress progress={pull.progress} />
                 ) : (
                   <ConnectErrorRow
-                    message={pull.errorMessage ?? 'The pull could not be completed.'}
+                    message={pull.errorMessage ?? 'Couldn’t download the model.'}
                     onRetry={handleGet}
                   />
                 )}
@@ -370,7 +369,7 @@ function PullByNameInput({
   if (activePull && pull.isPending) {
     return (
       <div className="space-y-2">
-        <p className="text-sm font-medium">Pulling {activePull}…</p>
+        <p className="text-sm font-medium">Downloading {activePull}…</p>
         <PullProgress progress={pull.progress} />
       </div>
     );
@@ -385,7 +384,7 @@ function PullByNameInput({
   return (
     <form onSubmit={handleSubmit} className="space-y-1.5">
       <Label htmlFor="ollama-pull-tag" className="text-xs font-normal">
-        Pull any model by name
+        Download any model by name
       </Label>
       <div className="flex gap-2">
         <Input
@@ -397,17 +396,17 @@ function PullByNameInput({
           aria-invalid={trimmed.length > 0 && !valid}
         />
         <Button type="submit" size="sm" disabled={!valid || pull.isPending}>
-          Pull
+          Download
         </Button>
       </div>
       {trimmed.length > 0 && !valid && (
         <p className="text-muted-foreground text-2xs">
-          Enter a valid Ollama tag, like <code className="text-2xs">qwen2.5-coder:32b</code>.
+          Use a tag like <code className="text-2xs">qwen2.5-coder:32b</code>.
         </p>
       )}
       {activePull && pull.isError && (
         <ConnectErrorRow
-          message={pull.errorMessage ?? 'The pull could not be completed.'}
+          message={pull.errorMessage ?? 'Couldn’t download the model.'}
           onRetry={() => onSubmit(activePull)}
         />
       )}

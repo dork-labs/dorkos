@@ -34,7 +34,7 @@ export function ConfirmStep({
     <div className="space-y-3">
       {!isEditMode && agentName && (
         <p className="bg-accent/30 rounded-md border px-3 py-2 text-sm">
-          Messages that arrive here go to <span className="font-medium">{agentName}</span>.
+          Messages here go to <span className="font-medium">{agentName}</span>.
         </p>
       )}
       {!isEditMode && (

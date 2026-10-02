@@ -204,7 +204,7 @@ export interface EveryAgentDecision {
 
 /**
  * Where the page card starts: "Every agent" when the account is shared with
- * every agent now, otherwise "Only agents I pick".
+ * every agent now, otherwise "Only agents you pick".
  *
  * @param preview - Server snapshot.
  */
@@ -221,13 +221,13 @@ export function initialWhoCanUse(preview: ConnectorReconciliationPreview): WhoCa
  *   holds that level. A set the card can't express (exact actions) is left
  *   alone until the person touches the level switch, as for an agent. A level
  *   with nothing in it yet shares nothing.
- * - "Only agents I pick" stops sharing when it is shared now, and otherwise
+ * - "Only agents you pick" stops sharing when it is shared now, and otherwise
  *   sends nothing, so a card that never touched the question never writes it.
  * - Where sharing with every agent is unavailable, nothing is ever sent.
  *
  * @param preview - Server snapshot.
  * @param choice - What the person chose.
- * @param choice.who - "Only agents I pick" or "Every agent".
+ * @param choice.who - "Only agents you pick" or "Every agent".
  * @param choice.level - The chosen level, or `null` while the switch is mixed.
  * @param choice.levelTouched - Whether the person picked a level on the switch.
  */

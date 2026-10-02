@@ -69,7 +69,7 @@ export function LoginConnect({
           <ConnectedRow message="Signed in" />
         ) : login.isError ? (
           <ConnectErrorRow
-            message={login.errorMessage ?? 'Sign-in failed.'}
+            message={login.errorMessage ?? 'Couldn’t sign in.'}
             onRetry={login.login}
           />
         ) : (
@@ -195,9 +195,7 @@ function PasteKeyForm({
           invalidateAnswers();
         }}
         placeholder={
-          saved
-            ? `Saved · ends in ${saved.last4} — paste a new key to replace it`
-            : copy.keyPlaceholder
+          saved ? `Saved key ends in ${saved.last4}. Paste to replace.` : copy.keyPlaceholder
         }
         autoComplete="off"
         spellCheck={false}

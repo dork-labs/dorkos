@@ -29,7 +29,7 @@ export function useChatAppSetup() {
         setManifest(entry.manifest);
         return;
       }
-      toast.error('Chat apps aren’t ready yet. Try again in a moment.');
+      toast.error('Chat apps aren’t ready. Try again in a moment.');
     },
     [catalog.data, relay.enabled]
   );

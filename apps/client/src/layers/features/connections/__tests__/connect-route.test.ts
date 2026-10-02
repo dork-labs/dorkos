@@ -89,7 +89,7 @@ describe('needsFirstConnectStep', () => {
 describe('signInLine', () => {
   it('names the app itself when it signs in under its own name', () => {
     expect(signInLine(route('a', { signInThrough: 'Nango' }), notion)).toBe(
-      'Notion will ask you to allow Nango — that’s the service DorkOS uses to connect.'
+      'Notion will ask you to allow Nango. DorkOS connects through it.'
     );
   });
 
@@ -159,7 +159,7 @@ describe('firstConnectReason', () => {
         { ways: [], newApps: { status: 'setup_needed', reason: 'own_key_unavailable' } },
         notion
       )
-    ).toBe('Your saved key didn’t work the last time DorkOS checked it.');
+    ).toBe('Your saved key didn’t work at the last check.');
     expect(
       firstConnectReason(
         {

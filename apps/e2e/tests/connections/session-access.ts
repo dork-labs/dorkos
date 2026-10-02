@@ -216,7 +216,7 @@ export function registerSessionAccessTests(harness: SessionAccessHarness): void 
         // Arranged before the chat opens, so the first read already sees it.
         insertChatOnlyAccess(db, chat);
         const { row, reload } = await openChatAccess(page, chat);
-        await expect(row.getByText('Allowed only in this session')).toBeVisible();
+        await expect(row.getByText('Only in this chat')).toBeVisible();
         const scoped = await request.get(
           `${harness.apiUrl}/api/connectors/sessions/${chat.sessionId}/connections`
         );
@@ -259,14 +259,14 @@ export function registerSessionAccessTests(harness: SessionAccessHarness): void 
         const { row, reload } = await openChatAccess(page, chat);
         await expect(row.getByText('Not available')).toBeVisible();
         await expect(row.getByText('Updating who can use it…')).toBeVisible();
-        await expect(row.getByText(/actions available/)).toHaveCount(0);
+        await expect(row.getByText(/available in this chat/)).toHaveCount(0);
 
         db.prepare(
           `UPDATE connector_managed_authority_outbox SET state = 'applied'
           WHERE command_id = ?`
         ).run(commandId);
         await reload();
-        await expect(row.getByText('Allowed only in this session')).toBeVisible();
+        await expect(row.getByText('Only in this chat')).toBeVisible();
       } finally {
         if (commandId) removePendingHostedUpdate(db, chat, commandId);
         removeChatOnlyAccess(db, chat);
@@ -282,14 +282,14 @@ export function registerSessionAccessTests(harness: SessionAccessHarness): void 
       const db = new Database(harness.databasePath);
       try {
         const { group, row, reload } = await openChatAccess(page, chat);
-        await expect(row.getByText('Inherited from agent')).toBeVisible();
+        await expect(row.getByText('From the agent')).toBeVisible();
 
         // The owner's per-chat switch (DOR-2448) is exactly reversible: off hides
         // the app from this chat's agent, and on puts back what the chat had —
         // here its own hand-picked access, never the agent's account-wide access.
         insertChatOnlyAccess(db, chat);
         await reload();
-        await expect(row.getByText('Allowed only in this session')).toBeVisible();
+        await expect(row.getByText('Only in this chat')).toBeVisible();
         const toggle = row.getByRole('switch', { name: 'Gmail (work) in this chat' });
         await expect(toggle).toBeChecked();
         await toggle.click();
@@ -297,7 +297,7 @@ export function registerSessionAccessTests(harness: SessionAccessHarness): void 
         await expect(toggle).not.toBeChecked();
         await toggle.click();
         await expect(toggle).toBeChecked();
-        await expect(row.getByText('Allowed only in this session')).toBeVisible();
+        await expect(row.getByText('Only in this chat')).toBeVisible();
         const restored = await request.get(
           `${harness.apiUrl}/api/connectors/sessions/${chat.sessionId}/connections`
         );

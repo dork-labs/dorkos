@@ -12,8 +12,8 @@ import { ServiceMark } from './ServiceMark';
 
 /** Where a chat's usable access comes from, as its badge says it. */
 const SESSION_SOURCE_COPY = {
-  agent: 'Inherited from agent',
-  this_chat: 'Allowed only in this session',
+  agent: 'From the agent',
+  this_chat: 'Only in this chat',
 } as const;
 
 /** Canonical account grants shown from one agent profile. */
@@ -33,7 +33,7 @@ export function AgentConnectionAccessList({
     return (
       <QueryErrorState
         title="Couldn’t load account access"
-        description="No access details were changed. Try again."
+        description="Nothing changed. Try again."
         onRetry={() => void query.refetch()}
         isRetrying={query.isFetching}
       />
@@ -48,9 +48,7 @@ export function AgentConnectionAccessList({
           <h3 id="agent-account-access" className="text-sm font-semibold">
             Account access
           </h3>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            Accounts this agent may use for approved actions.
-          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">Accounts this agent can use.</p>
         </div>
         {onManage && (
           <Button variant="ghost" size="sm" onClick={onManage}>
@@ -63,7 +61,7 @@ export function AgentConnectionAccessList({
         <div className="bg-muted/40 rounded-lg p-4 text-sm">
           <p className="font-medium">No account access</p>
           <p className="text-muted-foreground mt-1 text-xs">
-            Grant an account from Connections when this agent needs it.
+            Give access from the Connections page.
           </p>
         </div>
       ) : (
@@ -109,10 +107,10 @@ export function AgentConnectionAccessList({
 
 /** What the per-chat switch does, said once above the list. */
 const THIS_CHAT_SWITCH_NOTE =
-  'Turning an app off here only affects this chat. Turning it back on puts back the access this chat had, and never adds any.';
+  'This only affects this chat. Turning an app back on never adds access.';
 
 /** Why a switch did not change, when the server gave no reason of its own. */
-const THIS_CHAT_SWITCH_FAILED = 'Couldn’t change it. Nothing changed. Try again.';
+const THIS_CHAT_SWITCH_FAILED = 'Couldn’t change access for this chat. Try again.';
 
 /**
  * What to say when a switch did not change. A refusal the owner can't retry
@@ -191,7 +189,7 @@ export function SessionConnectionAccessList({
           <div>
             <p className="text-sm font-medium">No account access</p>
             <p className="text-muted-foreground mt-1 text-xs">
-              Ask this agent to request the service and actions it needs.
+              Ask this agent to request the access it needs.
             </p>
           </div>
           {emptyAction}
@@ -246,7 +244,7 @@ function SessionConnectionRow({
             }
           >
             {ready
-              ? `${connection.operationRevisionIds.length} actions available in this session.`
+              ? `${connection.operationRevisionIds.length} ${connection.operationRevisionIds.length === 1 ? 'action' : 'actions'} available in this chat.`
               : connection.readiness.copy.owner}
           </p>
         </div>

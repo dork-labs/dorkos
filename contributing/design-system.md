@@ -406,6 +406,8 @@ Never nest accordions, and keep nav trees to **one indent level** — depth past
 
 #### Casing: sentence case everywhere
 
+The casing and punctuation rules below are the mechanics. Voice, the word-count cap and the rules for buttons, errors, empty states and approvals are the `writing-app-copy` skill.
+
 The rule above is not a sidebar rule, it is the house rule. **Every string a person reads is sentence case** — headings, section labels, buttons, menu items, tab titles, dialog titles, settings rows, tooltips, `aria-label`s. Capitalise the first word and nothing else.
 
 The only exceptions are proper nouns: product names (DorkOS, Claude Code, Codex, OpenCode, Obsidian, Slack, Telegram, GitHub), named surfaces that are titles in their own right (Control Center, Dev Playground), and acronyms (ID, MCP, URL). "Reset all data", not "Reset All Data". "Open in a new tab", not "Open in New Tab". "Marketplace sources", not "Marketplace Sources".
@@ -463,6 +465,18 @@ Standard shadcn Radix tooltip from `shared/ui/tooltip.tsx`. Used for:
 - Contextual information on icon-only buttons
 
 `TooltipProvider` is mounted in `AppShell.tsx`. Use `<Tooltip>` + `<TooltipTrigger>` + `<TooltipContent>` pattern.
+
+### InfoTip and MoreDetails
+
+Two primitives for rung 3 of the copy overflow ladder (`writing-app-copy` skill): the label or description stays short, and the rest moves somewhere a person can open it. Each paragraph inside is still one block of 15 words or fewer.
+
+| Use           | When                                                                                       | From                         |
+| ------------- | ------------------------------------------------------------------------------------------ | ---------------------------- |
+| `Tooltip`     | One short line on hover or focus: an icon button's name, why a control is disabled         | `shared/ui/tooltip.tsx`      |
+| `InfoTip`     | A note about one control or label, up to a few short paragraphs. Opens on click or tap     | `shared/ui/info-tip.tsx`     |
+| `MoreDetails` | Extra paragraphs under a description, read in the page flow. An inline "More details" link | `shared/ui/more-details.tsx` |
+
+Never put a paragraph in a `Tooltip`: it has no touch path and hides as soon as the pointer leaves. `InfoTip` takes a required `label` for its accessible name ("About background agents"), and opens a popover on desktop and a drawer on a phone.
 
 ### Toast Notifications (Sonner)
 

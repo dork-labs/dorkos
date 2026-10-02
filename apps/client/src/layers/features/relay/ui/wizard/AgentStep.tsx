@@ -67,16 +67,14 @@ export function AgentStep({
         role="alert"
         className="text-muted-foreground rounded-md border border-dashed px-4 py-6 text-center text-sm"
       >
-        You have no agents yet. Add one from the Team page, then come back and set this up.
+        No agents yet. Add one from the Team page first.
       </p>
     );
   }
 
   return (
     <div className="space-y-4">
-      <p className="text-muted-foreground text-sm">
-        Messages that arrive here go to this agent. Nothing is set up until you pick one.
-      </p>
+      <p className="text-muted-foreground text-sm">Messages here go to this agent.</p>
 
       {onlyAgent ? (
         <div className="bg-accent/30 rounded-md border px-4 py-3 text-sm">

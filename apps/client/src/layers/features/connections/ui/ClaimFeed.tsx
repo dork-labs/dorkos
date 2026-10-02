@@ -58,8 +58,8 @@ export function ClaimFeed({ enabled, adapterId }: { enabled: boolean; adapterId?
         </h3>
         <p className="text-muted-foreground mt-1 text-sm">
           {pending.length === 1
-            ? 'Someone reached a bot that has no agent set to answer.'
-            : `${pending.length} chats reached a bot that has no agent set to answer.`}
+            ? 'Someone messaged a bot with no agent to answer.'
+            : `${pending.length} chats reached a bot with no agent to answer.`}
         </p>
       </div>
 
@@ -82,7 +82,7 @@ export function ClaimFeed({ enabled, adapterId }: { enabled: boolean; adapterId?
                     return;
                   }
                   if (bridge && binding.roomId) {
-                    toast.success(`${name} will answer this chat in a new channel.`);
+                    toast.success(`${name} will answer in a new channel.`);
                     void navigate({ to: '/channels', search: { id: binding.roomId } });
                     return;
                   }
@@ -108,17 +108,17 @@ export function ClaimFeed({ enabled, adapterId }: { enabled: boolean; adapterId?
           }}
           onIgnore={() =>
             ignore.mutate(chat.id, {
-              onSuccess: () => toast.success('Ignored. You will not see this chat again.'),
+              onSuccess: () => toast.success('Ignored. This chat won’t show again.'),
             })
           }
           onBlock={() =>
             block.mutate(chat.id, {
-              onSuccess: () => toast.success('Blocked. Nothing from this chat is recorded now.'),
+              onSuccess: () => toast.success('Blocked. This chat is no longer recorded.'),
             })
           }
           onLeave={() =>
             leave.mutate(chat.id, {
-              onSuccess: () => toast.success('Left the group. Nothing from it is recorded now.'),
+              onSuccess: () => toast.success('Left the group. It’s no longer recorded.'),
             })
           }
         />

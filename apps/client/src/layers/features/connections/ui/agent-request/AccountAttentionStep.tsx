@@ -94,7 +94,7 @@ export function AccountAttentionStep({
       )}
       {failed && (
         <p role="alert" className="text-destructive text-sm">
-          That didn’t work. Nothing changed. Try again.
+          Couldn’t finish that. Nothing changed. Try again.
         </p>
       )}
       <div className="flex flex-wrap items-center justify-end gap-2">

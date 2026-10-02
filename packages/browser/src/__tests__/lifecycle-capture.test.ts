@@ -1,3 +1,4 @@
+import { createBrowserLifetime } from '../lifecycle/ownership.js';
 import { it, expect, vi } from 'vitest';
 import type { Page } from 'playwright-core';
 import { parseBrowserCommand } from '../contracts.js';
@@ -31,6 +32,7 @@ async function setup(screenshot: () => Promise<Uint8Array>) {
     pending: 0,
   };
   const record: BrowserRecord = {
+    lifetime: createBrowserLifetime(tab.binding.browserId, 0),
     browserId: tab.binding.browserId,
     browserGeneration: 0,
     mode: 'ephemeral',

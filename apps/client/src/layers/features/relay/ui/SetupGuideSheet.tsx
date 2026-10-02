@@ -34,11 +34,9 @@ export function SetupGuideSheet({ open, onOpenChange, title, content }: SetupGui
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <BookOpen className="size-4" />
-            {title} Setup Guide
+            {title} setup guide
           </SheetTitle>
-          <SheetDescription>
-            Step-by-step instructions for setting up this connection.
-          </SheetDescription>
+          <SheetDescription>Step-by-step setup instructions.</SheetDescription>
         </SheetHeader>
         <div className="mt-4 px-4">
           <MarkdownContent content={content} />

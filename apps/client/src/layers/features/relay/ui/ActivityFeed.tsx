@@ -170,7 +170,7 @@ export function ActivityFeed({
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="delivered">Delivered</SelectItem>
-              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="failed">Error</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
             </SelectContent>
           </Select>
@@ -250,7 +250,7 @@ export function ActivityFeed({
             <div className="space-y-1">
               <p className="text-sm font-medium">No activity yet</p>
               <p className="text-muted-foreground text-sm">
-                Messages will appear here as your agents communicate
+                Messages between your agents show up here.
               </p>
             </div>
           </div>
@@ -259,7 +259,7 @@ export function ActivityFeed({
             <Search className="text-muted-foreground/50 size-10" />
             <div className="space-y-1">
               <p className="text-sm font-medium">No messages match your filters</p>
-              <p className="text-muted-foreground text-sm">Try adjusting your filter criteria.</p>
+              <p className="text-muted-foreground text-sm">Try different filters.</p>
             </div>
             <Button variant="ghost" size="sm" onClick={clearFilters}>
               Clear filters

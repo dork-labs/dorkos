@@ -15,7 +15,6 @@ import type {
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { localDeviceNoun } from '@/layers/shared/lib';
 import { RuntimeSetupDialog } from '@/layers/entities/runtime';
 import { renderRuntimeConnect } from '../ui/RuntimeConnectFlow';
 import { OllamaLocalPath, type OllamaLocalPathProps } from '../ui/OllamaLocalPath';
@@ -129,7 +128,9 @@ describe('OllamaLocalPath — Ollama not installed', () => {
 
     expect(await screen.findByTestId('ollama-absent')).toBeInTheDocument();
     // Plain-language explainer (what Ollama is + why it keeps things private).
-    expect(screen.getByTestId('ollama-explainer')).toHaveTextContent(/free, open-source app/i);
+    expect(screen.getByTestId('ollama-explainer')).toHaveTextContent(
+      /free app that runs ai models/i
+    );
     // The official one-line command is offered to copy (needs admin, runs in a terminal).
     const manual = screen.getByTestId('ollama-manual-install');
     expect(manual).toHaveTextContent('curl -fsSL https://ollama.com/install.sh | sh');
@@ -221,7 +222,7 @@ describe('OllamaLocalPath — Ollama not installed', () => {
     await user.click(await screen.findByTestId('ollama-install-oneclick'));
 
     expect(await screen.findByTestId('ollama-installed-not-running')).toHaveTextContent(
-      /not running yet/i
+      /isn’t running\. open the ollama app/i
     );
   });
 
@@ -255,9 +256,7 @@ describe('OllamaLocalPath — running with an installed model', () => {
     });
 
     const statusLine = await screen.findByTestId('ollama-status-line');
-    expect(statusLine).toHaveTextContent(
-      `Ollama is running · 1 models installed · nothing you type leaves ${localDeviceNoun()}`
-    );
+    expect(statusLine).toHaveTextContent('Ollama is running · 1 model installed');
 
     const installedItem = await screen.findByTestId('ollama-installed-item');
     expect(installedItem).toHaveTextContent('llama3.1:8b');
@@ -351,7 +350,7 @@ describe('OllamaLocalPath — pull any model by name', () => {
     renderLocalPath({ pullOllamaModel });
 
     await user.type(await screen.findByTestId('ollama-pull-by-name'), 'qwen2.5-coder:32b');
-    await user.click(screen.getByRole('button', { name: /^pull$/i }));
+    await user.click(screen.getByRole('button', { name: /^download$/i }));
 
     await waitFor(() => {
       expect(pullOllamaModel).toHaveBeenCalledWith('qwen2.5-coder:32b', expect.any(Function));
@@ -364,7 +363,7 @@ describe('OllamaLocalPath — pull any model by name', () => {
     renderLocalPath({ pullOllamaModel });
 
     await user.type(await screen.findByTestId('ollama-pull-by-name'), 'Not A Tag!');
-    const submit = screen.getByRole('button', { name: /^pull$/i });
+    const submit = screen.getByRole('button', { name: /^download$/i });
     expect(submit).toBeDisabled();
 
     await user.click(submit);

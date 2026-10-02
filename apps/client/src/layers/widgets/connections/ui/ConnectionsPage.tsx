@@ -203,7 +203,7 @@ export function ConnectionsPage() {
             the heading stays for the outline and as the place focus lands. */}
         <PageHeading>Connections</PageHeading>
         <p className="text-muted-foreground text-sm">
-          Apps your agents can use, and places you can reach them.
+          Apps your agents use, and where you reach them.
         </p>
       </header>
 

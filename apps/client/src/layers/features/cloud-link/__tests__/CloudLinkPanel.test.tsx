@@ -85,7 +85,7 @@ describe('CloudLinkPanel', () => {
     // Pending: the code and the activation link are shown.
     expect(screen.getByText('WXYZ7890')).toBeInTheDocument();
     // A first link: nothing is linked yet, so no "stays linked" line.
-    expect(screen.queryByText(/stays linked until you approve/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/stays linked until you approve/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /open the approval page/i })).toBeInTheDocument();
 
     // Poll fires → linked. Same panel instance updates in place.
@@ -98,13 +98,13 @@ describe('CloudLinkPanel', () => {
     expect(cache.getQueryState(accountSignInKeys.all)?.isInvalidated).toBe(true);
   });
 
-  it('expired: renders the copy and a "Generate a new code" action', async () => {
+  it('expired: renders the copy and a "Get a new code" action', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'expired' });
     renderPanel(transport);
 
     expect(await screen.findByText(/your code expired/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /generate a new code/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /get a new code/i })).toBeInTheDocument();
   });
 
   it('denied: renders the copy and a retry action', async () => {
@@ -113,7 +113,7 @@ describe('CloudLinkPanel', () => {
     renderPanel(transport);
 
     expect(await screen.findByText(/link request denied/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /link this computer/i })).toBeInTheDocument();
   });
 
   it('revoked: renders "This computer was unlinked" and a re-link action', async () => {
@@ -282,7 +282,7 @@ describe('CloudLinkPanel', () => {
 
     // The consent checkbox is off by default.
     const checkbox = await screen.findByRole('checkbox', {
-      name: /connect this app’s usage data/i,
+      name: /link usage counts to your account/i,
     });
     expect(checkbox).not.toBeChecked();
 
@@ -491,7 +491,7 @@ describe('CloudLinkPanel', () => {
 
       expect(openSpy).not.toHaveBeenCalled();
       expect(screen.getByRole('alert')).toHaveTextContent(
-        'We could not open the approval page. Copy the code and open it in your browser.'
+        'Couldn’t open the approval page. Copy the code and open it in your browser.'
       );
       // The code the sentence points at is still on screen, with its copy button.
       expect(screen.getByText('WXYZ7890')).toBeInTheDocument();

@@ -76,7 +76,7 @@ export function QuickBindingPopover({
         <Command>
           <CommandInput placeholder="Search agents…" />
           <CommandList>
-            <CommandEmpty>No agents registered</CommandEmpty>
+            <CommandEmpty>No agents to add</CommandEmpty>
             {availableAgents.map((agent) => (
               <CommandItem
                 key={agent.id}

@@ -51,7 +51,7 @@ describe('MetricsSummary', () => {
     const noListener = screen.getByText('No listener').parentElement;
     expect(noListener).toHaveTextContent('5');
 
-    const failed = screen.getByText('Failed').parentElement;
+    const failed = screen.getByText('Errors').parentElement;
     expect(failed).toHaveTextContent('3');
   });
 
@@ -66,7 +66,7 @@ describe('MetricsSummary', () => {
   it('shows every headline count and the average latency', () => {
     render(<MetricsSummary enabled />);
 
-    for (const label of ['Total', 'Delivered', 'Failed', 'No listener', 'Never arrived']) {
+    for (const label of ['Total', 'Delivered', 'Errors', 'No listener', 'Never arrived']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     expect(screen.getByText('Never arrived').parentElement).toHaveTextContent('2');

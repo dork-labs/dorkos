@@ -50,7 +50,7 @@ async function decisionOptionsFor(props: ConnectionAccessCardProps) {
       </TransportProvider>
     </QueryClientProvider>
   );
-  await screen.findByText(/has no actions agents can use yet/);
+  await screen.findByText(/has no actions for agents yet/);
   return vi.mocked(cardDecision).mock.calls.at(-1)?.[1];
 }
 

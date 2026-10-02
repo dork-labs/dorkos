@@ -13,7 +13,7 @@ describe('SetupGuideSheet', () => {
         content="Follow these steps."
       />
     );
-    expect(screen.getByText('Slack Setup Guide')).toBeTruthy();
+    expect(screen.getByText('Slack setup guide')).toBeTruthy();
     expect(screen.getByText(/Follow these steps/)).toBeTruthy();
   });
 

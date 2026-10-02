@@ -66,16 +66,16 @@ function authenticationGuidance(
   const setup = route.authenticationSetup;
   if (!setup) return null;
   if (setup.source === 'configured') {
-    return `${serviceName} signs in with the sign-in page set up for it.`;
+    return `${serviceName} uses its own sign-in page.`;
   }
   if (setup.kind === 'oauth') {
-    return `A sign-in page opens next, where you let DorkOS use ${serviceName}.`;
+    return `A ${serviceName} sign-in page opens next.`;
   }
   if (setup.kind === 'fields' && route.mode === 'managed') {
-    return `Enter the account details ${serviceName} asks for on dorkos.ai. DorkOS passes them on without saving them.`;
+    return `Enter your ${serviceName} details on dorkos.ai. DorkOS doesn’t save them.`;
   }
   if (setup.kind === 'none' && route.mode === 'managed') {
-    return `Review and confirm this ${serviceName} connection on dorkos.ai. No account details are needed.`;
+    return `Confirm this ${serviceName} connection on dorkos.ai. No account details needed.`;
   }
   return null;
 }
@@ -189,10 +189,10 @@ export function ConnectDialog({
             <ResponsiveDialogTitle>Connect {serviceName}</ResponsiveDialogTitle>
             <ResponsiveDialogDescription>
               {activeFlow
-                ? 'Finish this connection, then choose which agents may use it.'
+                ? 'Finish, then choose which agents can use it.'
                 : firstConnect
-                  ? 'First, pick how DorkOS reaches your apps. Once a way works, Connect goes straight to sign-in.'
-                  : 'Name the account and review who handles its sign-in.'}
+                  ? 'First, pick how DorkOS reaches your apps. You only do this once.'
+                  : 'Name the account and check who handles sign-in.'}
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
           <ResponsiveDialogBody className="space-y-4 pb-4">
@@ -202,7 +202,7 @@ export function ConnectDialog({
             appConnections?.newApps.status === 'ready' ? (
               <QueryErrorState
                 title={`Couldn’t reach ${serviceName} just now`}
-                description={`${wayName(appConnections.newApps.way)} didn’t answer. Nothing needs setting up — try again in a moment.`}
+                description={`${wayName(appConnections.newApps.way)} didn’t answer. Try again in a moment.`}
                 onRetry={() => void lookup.refetch()}
                 isRetrying={lookup.isFetching}
               />
@@ -223,7 +223,7 @@ export function ConnectDialog({
                     autoComplete="off"
                   />
                   <p className="text-muted-foreground text-xs">
-                    A label keeps several {serviceName} accounts easy to tell apart.
+                    Tells several {serviceName} accounts apart.
                   </p>
                 </div>
 
@@ -302,7 +302,7 @@ export function ConnectDialog({
                 {start.isError && (
                   <QueryErrorState
                     title="Couldn’t start the connection"
-                    description="No account was connected. Try again when the service is ready."
+                    description="Nothing was connected. Try again in a moment."
                     onRetry={begin}
                     isRetrying={start.isPending}
                   />
@@ -347,12 +347,12 @@ export function ConnectDialog({
                   </p>
                 )}
                 <p className="text-muted-foreground text-xs">
-                  You can reload or come back to this page without starting over.
+                  You can reload or leave without starting over.
                 </p>
                 {flow.isError && (
                   <QueryErrorState
                     title="Couldn’t check the connection"
-                    description="Sign-in may still finish. Check its current state again."
+                    description="Sign-in may still finish. Check again."
                     onRetry={() => void flow.refetch()}
                     isRetrying={flow.isFetching}
                   />
@@ -388,7 +388,7 @@ export function ConnectDialog({
                 <p role="alert" className="text-destructive text-sm font-medium">
                   {activeFlow.state === 'expired'
                     ? 'This connection request expired.'
-                    : 'The connection was not completed.'}
+                    : 'The connection didn’t finish.'}
                 </p>
                 {'reason' in activeFlow && (
                   <p className="text-muted-foreground text-xs">{activeFlow.reason}</p>

@@ -102,9 +102,7 @@ describe('NeedsYou', () => {
     });
     renderStrip(transport);
 
-    expect(
-      await screen.findByText('Couldn’t check for requests waiting on you.')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Couldn’t check for waiting requests.')).toBeInTheDocument();
     vi.mocked(transport.getConnectorAgentRequests).mockResolvedValue([REQUEST]);
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(

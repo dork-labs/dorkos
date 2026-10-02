@@ -187,7 +187,7 @@ describe('BindingDialog', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
       // Session strategy lives inside the collapsible Advanced section — open it first.
       fireEvent.click(screen.getByText('Advanced'));
-      expect(screen.getByText('Session strategy')).toBeInTheDocument();
+      expect(screen.getByText('How the agent remembers')).toBeInTheDocument();
     });
 
     it('renders label input with placeholder', () => {
@@ -206,7 +206,7 @@ describe('BindingDialog', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
       // Description is visible only when the Advanced section is expanded.
       fireEvent.click(screen.getByText('Advanced'));
-      expect(screen.getByText(/one session per chat\/conversation/i)).toBeInTheDocument();
+      expect(screen.getByText(/shares the same thread of memory/i)).toBeInTheDocument();
     });
 
     it('calls onConfirm with correct values on submit', async () => {
@@ -297,9 +297,9 @@ describe('BindingDialog', () => {
   });
 
   describe('chat filter section', () => {
-    it('renders the "Chat Filter" collapsible trigger', () => {
+    it('renders the "Chat filter" collapsible trigger', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
-      expect(screen.getByText('Chat Filter')).toBeInTheDocument();
+      expect(screen.getByText('Chat filter')).toBeInTheDocument();
     });
 
     it('does not show "Active" badge when no filters set', () => {
@@ -309,7 +309,7 @@ describe('BindingDialog', () => {
 
     it('opens chat filter section on trigger click', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
-      const trigger = screen.getByText('Chat Filter');
+      const trigger = screen.getByText('Chat filter');
       fireEvent.click(trigger);
       expect(screen.getByLabelText('Chat ID')).toBeInTheDocument();
       expect(screen.getByLabelText('Chat type')).toBeInTheDocument();

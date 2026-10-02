@@ -99,7 +99,7 @@ export function FirstConnectStep({ reason, onLeave }: FirstConnectStepProps) {
               Use my Composio key
             </Button>
             <p className="text-muted-foreground text-center text-xs">
-              If you have a Composio account, paste its key.
+              Have a Composio account? Paste its key.
             </p>
           </div>
         ))}
@@ -115,7 +115,7 @@ export function FirstConnectStep({ reason, onLeave }: FirstConnectStepProps) {
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-2 pt-3">
             <p className="text-muted-foreground text-xs">
-              My own Nango server: you run Nango yourself, and sign-ins stay in your database.
+              Your own Nango server. Sign-ins stay in your database.
             </p>
             <KeyEntry status={nango} />
           </CollapsibleContent>

@@ -346,7 +346,7 @@ export function buildYourApps(input: YourAppsInput): YourAppRow[] {
       ...logoOf(pending.toolkit, input.services),
       account: null,
       identity: null,
-      detail: `Waiting for you to finish signing in on ${service?.signInName ?? name}…`,
+      detail: `Finish signing in on ${service?.signInName ?? name}…`,
       tone: 'busy',
       action: 'cancel',
       waiting: 0,
