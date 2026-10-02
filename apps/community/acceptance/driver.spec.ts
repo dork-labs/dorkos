@@ -386,7 +386,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // confirmed attachment rows belong to the channel feed.
       await expect(localPage.getByRole('feed', { name: 'Space messages' })).toBeVisible();
       await expect(
-        localPage.getByText('Waiting for space confirmation…', { exact: true })
+        localPage.getByText('Waiting for the space to confirm…', { exact: true })
       ).toBeVisible();
       type Entry = {
         id: string;
@@ -432,7 +432,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       expect(confirmed).toHaveLength(1);
       await expect(
-        localPage.getByText('Waiting for space confirmation…', { exact: true })
+        localPage.getByText('Waiting for the space to confirm…', { exact: true })
       ).toHaveCount(0);
       await expect(localPage.getByText('Here is what I saw.', { exact: true })).toHaveCount(1);
       // Read the attachment through the local browser surface. The remote-owner
@@ -985,7 +985,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         afterPersistChannel.getByText('Here is what I saw.', { exact: true })
       ).toHaveCount(entriesBeforeAfterPersist.length + 1);
       await expect(
-        localPage.getByText('Waiting for space confirmation…', { exact: true })
+        localPage.getByText('Waiting for the space to confirm…', { exact: true })
       ).toHaveCount(0);
       await expect(
         afterPersistChannel.getByText(`@${handle} ${afterPersistMarker}`, { exact: true })
@@ -1019,7 +1019,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         afterPersistChannel.getByText('Here is what I saw.', { exact: true })
       ).toHaveCount(entriesBeforeAfterPersist.length + 1);
       await expect(
-        localPage.getByText('Waiting for space confirmation…', { exact: true })
+        localPage.getByText('Waiting for the space to confirm…', { exact: true })
       ).toHaveCount(0);
       await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
         method: 'POST',
