@@ -91,6 +91,30 @@ class InputQueue implements TabInput {
 
   reset(): Promise<ResetResult> {
     if (this.resetPromise) return this.resetPromise;
+    let complete!: (result: ResetResult) => void;
+    const operation = new Promise<ResetResult>((resolve) => {
+      complete = resolve;
+    });
+    // External registry/native callbacks can reenter; publish the shared barrier first.
+    this.resetPromise = operation;
+    this.barrier = true;
+    this.rejectPending('staleBinding');
+    void operation.then(() => {
+      if (this.resetPromise === operation) this.resetPromise = null;
+    });
+    const failed = () => {
+      this.ports.stopGate.stop();
+      complete(Object.freeze({ binding: this.initial, status: 'stopped' }));
+    };
+    try {
+      void this.beginReset().then(complete, failed);
+    } catch {
+      failed();
+    }
+    return operation;
+  }
+
+  private beginReset(): Promise<ResetResult> {
     const observed = this.readBinding();
     const current = observed ?? this.initial;
     if (!observed || this.stopped || !this.identityMatches(current)) {
@@ -99,8 +123,6 @@ class InputQueue implements TabInput {
         Object.freeze({ binding: Object.freeze({ ...current }), status: 'stopped' })
       );
     }
-    this.barrier = true;
-    this.rejectPending('staleBinding');
     let next: BrowserBinding;
     try {
       next = Object.freeze({
@@ -117,12 +139,7 @@ class InputQueue implements TabInput {
     }
     this.active?.cancel.abort();
     const end = performance.now() + INPUT_BUDGET_MS;
-    const operation = this.resetHeld(next, end);
-    this.resetPromise = operation;
-    void operation.then(() => {
-      this.resetPromise = null;
-    });
-    return operation;
+    return this.resetHeld(next, end);
   }
 
   private readBinding(): BrowserBinding | null {
