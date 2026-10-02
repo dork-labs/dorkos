@@ -23,10 +23,10 @@ describe('signInRowCopy', () => {
       clientOrigin: 'manual',
     });
 
-    expect(copy).toContain('Using your own app credentials');
+    expect(copy).toContain('Your own app credentials');
     expect(copy).toContain('signed in');
     // The custody promise holds either way — it is the reason the row exists.
-    expect(copy).toContain('The agent never sees the key');
+    expect(copy).toContain('DorkOS holds the key, not the agent');
   });
 
   it('does not claim a sign-in that has not happened yet', () => {
@@ -36,7 +36,7 @@ describe('signInRowCopy', () => {
       clientOrigin: 'manual',
     });
 
-    expect(copy).toContain('Using your own app credentials');
+    expect(copy).toContain('Your own app credentials');
     expect(copy).toContain('not signed in yet');
     expect(copy).not.toContain('renews automatically');
   });

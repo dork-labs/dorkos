@@ -51,8 +51,12 @@ function describeWriteFailure(err: unknown): string {
 /** The full-power promise, one line each, in plain words. */
 const FULL_POWER_POINTS: ReadonlyArray<{ lead: string; rest: string }> = [
   {
-    lead: 'No approval prompts.',
-    rest: 'Agents still ask when something needs your call, or you said to.',
+    lead: 'Edits and commands run without asking.',
+    rest: 'Agents still ask when something needs your call.',
+  },
+  {
+    lead: 'Your instructions still hold.',
+    rest: 'If you told an agent to check first, it does.',
   },
   {
     lead: 'Agents reach across projects.',

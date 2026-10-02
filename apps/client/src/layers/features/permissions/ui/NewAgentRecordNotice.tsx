@@ -12,11 +12,12 @@ export function NewAgentRecordNotice() {
   if (!data?.newAgentRecordUnreadable) return null;
   return (
     <div
-      role="status"
       data-testid="permissions-record-unreadable"
       className="text-muted-foreground rounded-md border px-3 py-2 text-sm"
     >
-      <p>Some agents may do less than their own settings allow.</p>
+      {/* Only the short line is live: a toggle inside a status region would be
+          re-announced, and the details are for reading, not for hearing. */}
+      <p role="status">Some agents may do less than their own settings allow.</p>
       <MoreDetails className="mt-1">
         <p>DorkOS couldn’t read its list of checked agents.</p>
         <p>Each agent gets the stricter of its own and everyone’s settings.</p>

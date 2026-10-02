@@ -189,13 +189,14 @@ export function signInRowCopy(args: {
   if (connection.transport === 'stdio') return 'None. This server doesn’t need one.';
   if (connection.authKind === 'oauth2') {
     if (clientOrigin === 'manual') {
-      const held = authStatus === 'connected' ? 'signed in' : 'not signed in yet';
-      return `Using your own app credentials, ${held}. The agent never sees the key.`;
+      const held =
+        authStatus === 'connected' ? 'signed in, renews automatically' : 'not signed in yet';
+      return `Your own app credentials, ${held}. DorkOS holds the key, not the agent.`;
     }
     if (authStatus === 'connected') {
-      return 'Signed in, and it renews automatically. The agent never sees the key.';
+      return 'Signed in, and it renews automatically. DorkOS holds the key, not the agent.';
     }
-    return 'DorkOS keeps the key. The agent never sees it.';
+    return 'DorkOS will hold the key, not the agent.';
   }
   const hasOwnHeader = Object.keys(connection.headers).some(
     (header) => header.toLowerCase() === 'authorization'

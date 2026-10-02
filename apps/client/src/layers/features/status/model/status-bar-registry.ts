@@ -613,7 +613,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   // They are set together in Settings → Notifications, which is also where the
   // browser-notification and escalation settings live.
   //
-  // `polling` ("Watch for agents you started somewhere else") is gone for the same reason
+  // `polling` ("Watch for work started elsewhere") is gone for the same reason
   // (DOR-1758): it read the global `enableMessagePolling` store field, so a
   // person flipping it inside one session's panel changed every window on the
   // machine. Settings → Preferences is its one home now.

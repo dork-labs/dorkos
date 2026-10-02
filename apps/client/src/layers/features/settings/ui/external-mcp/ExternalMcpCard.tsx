@@ -331,7 +331,7 @@ function LocalTokenAuthRow({
             <AlertDialogHeader>
               <AlertDialogTitle>Rotate the local MCP token?</AlertDialogTitle>
               <AlertDialogDescription>
-                The old token stops working at once. Every app using it needs the new one.
+                The old token stops working. Apps need the new one. This can’t be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

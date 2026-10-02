@@ -256,7 +256,7 @@ describe('ExternalMcpCard', () => {
     await expandCard(user);
     await user.click(screen.getByRole('button', { name: 'Rotate' }));
     expect(screen.getByText('Rotate the local MCP token?')).toBeInTheDocument();
-    expect(screen.getByText(/every app using it needs the new one/i)).toBeInTheDocument();
+    expect(screen.getByText(/apps need the new one\. this can’t be undone/i)).toBeInTheDocument();
   });
 
   it('rotates the token, reveals the fresh value, and invalidates the config query', async () => {

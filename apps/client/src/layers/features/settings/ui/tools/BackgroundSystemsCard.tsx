@@ -112,7 +112,7 @@ export function BackgroundSystemsCard({
             description={describe(
               tasks,
               'DORKOS_TASKS_ENABLED',
-              'Runs scheduled tasks when they’re due.'
+              'Runs scheduled tasks when they’re due. Off means nothing runs on a schedule.'
             )}
             checked={switchPosition(tasks)}
             onCheckedChange={onTasksChange}
@@ -123,7 +123,7 @@ export function BackgroundSystemsCard({
             description={describe(
               relay,
               'DORKOS_RELAY_ENABLED',
-              'Carries messages between agents, and to and from chat apps.'
+              'Carries messages between agents and chat apps. Off stops Telegram and Slack too.'
             )}
             checked={switchPosition(relay)}
             onCheckedChange={onRelayChange}

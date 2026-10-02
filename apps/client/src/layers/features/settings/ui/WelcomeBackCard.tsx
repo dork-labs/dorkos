@@ -72,7 +72,7 @@ export function WelcomeBackCard() {
             label="Welcome-back notes"
             description={
               <>
-                {`Agents leave a short note in your team channel after ${humanizeMinutes(absenceThresholdMinutes)} away.`}{' '}
+                {`Agents may leave a short note in your team channel after ${humanizeMinutes(absenceThresholdMinutes)} away.`}{' '}
                 <InfoTip label="About welcome-back notes">
                   <p>Off means no note, and no agent time spent checking.</p>
                   <p>This setting follows you to every device.</p>

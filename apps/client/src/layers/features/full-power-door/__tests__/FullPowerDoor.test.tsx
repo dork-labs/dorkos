@@ -95,14 +95,15 @@ describe('FullPowerDoor', () => {
 
   afterEach(cleanup);
 
-  it('renders the heading, the four-line promise, and the honest scope note', () => {
+  it('renders the heading, the five-line promise, and the honest scope note', () => {
     renderDoor();
 
     expect(screen.getByText('DorkOS runs at full power')).toBeInTheDocument();
-    expect(screen.getByText(/no approval prompts/i)).toBeInTheDocument();
+    expect(screen.getByText(/edits and commands run without asking/i)).toBeInTheDocument();
     // The nuance the reword exists to protect: full power turns off the approval
     // gate, it does not stop the agent asking or override your instructions.
     expect(screen.getByText(/still ask when something needs your call/i)).toBeInTheDocument();
+    expect(screen.getByText(/your instructions still hold/i)).toBeInTheDocument();
     expect(screen.getByText(/agents reach across projects/i)).toBeInTheDocument();
     expect(screen.getByText(/approvals can stick/i)).toBeInTheDocument();
     // Standing permissions are retired: the promise names Always allow, which

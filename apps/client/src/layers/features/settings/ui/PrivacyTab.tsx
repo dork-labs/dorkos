@@ -33,7 +33,7 @@ export function PrivacyTab() {
         {/* No heading here: the Settings dialog draws the panel's own "Privacy
             & Data" header. This is the explainer that sits under it. */}
         <p className="text-muted-foreground text-xs">
-          Nothing is shared until you turn it on.{' '}
+          Nothing is shared unless a switch below is on.{' '}
           <a
             href="https://dorkos.ai/telemetry"
             target="_blank"
@@ -45,8 +45,11 @@ export function PrivacyTab() {
           .
         </p>
         <MoreDetails className="text-xs">
-          <p>Everything shared is anonymous. Nothing sends before the first-run notice.</p>
-          <p>No prompts, code, file paths or chats are ever sent.</p>
+          <p>
+            The three count switches are anonymous. They never send prompts, code or file paths.
+          </p>
+          <p>The counts never send before the first-run notice.</p>
+          <p>Crash reports and AI run data are separate. Both start off.</p>
         </MoreDetails>
       </div>
 
@@ -75,7 +78,7 @@ export function PrivacyTab() {
           />
           <SwitchSettingRow
             label="Share AI run metadata"
-            description="Model, tokens, time and cost of each agent turn. Never what was said."
+            description="Model, tokens, time and cost per turn. Never your prompts, code or conversations."
             checked={telemetry?.aiMetadata ?? false}
             onCheckedChange={(v) => setChannel('aiMetadata', v)}
             disabled={updateConfig.isPending}

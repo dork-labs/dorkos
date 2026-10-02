@@ -138,7 +138,7 @@ describe('RoomsTab', () => {
     const user = userEvent.setup();
     const { transport } = renderTab();
 
-    expect(screen.queryByText(/Only Stop halts them/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/until you press Stop/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('switch', { name: 'Limit automatic replies' }));
 
@@ -146,8 +146,12 @@ describe('RoomsTab', () => {
       expect(transport.updateConfig).toHaveBeenCalledWith({ rooms: { turnLimitsEnabled: false } })
     );
     expect(
-      await screen.findByText('Agents reply to each other without limit. Only Stop halts them.')
+      await screen.findByText('Agents reply to each other without limit until you press Stop.')
     ).toBeInTheDocument();
+    // The "on" line would contradict it, so it gives way rather than sitting beside it.
+    expect(
+      screen.queryByText('Agents pause when they reach a limit below.')
+    ).not.toBeInTheDocument();
   });
 
   it('keeps every number on screen while the limits are off, and holds them', () => {
@@ -197,7 +201,7 @@ describe('RoomsTab', () => {
       )
     );
     await waitFor(() => expect(master).toBeChecked());
-    expect(screen.queryByText(/Only Stop halts them/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/until you press Stop/)).not.toBeInTheDocument();
   });
 
   it('refuses a number the schema would refuse, and does not clamp it', async () => {

@@ -154,20 +154,17 @@ export function RoomsTab() {
           <FieldCardContent>
             <SwitchSettingRow
               label="Limit automatic replies"
-              description="Agents pause when they reach a limit below."
+              // Off says its consequence plainly, in place of the "on" line: a
+              // real choice with a real consequence, not an alert to dismiss.
+              // The Control Center's switch uses the same sentence, word for word.
+              description={
+                limits.turnLimitsEnabled
+                  ? 'Agents pause when they reach a limit below.'
+                  : 'Agents reply to each other without limit until you press Stop.'
+              }
               checked={limits.turnLimitsEnabled}
               onCheckedChange={(on) => setLimits({ turnLimitsEnabled: on })}
             />
-
-            {/* Said only when it is true, and said plainly. Turning this off is
-                a real choice with a real consequence, and the consequence is one
-                sentence — not an alert somebody has to dismiss to get on with
-                what they already decided to do. */}
-            {!limits.turnLimitsEnabled && (
-              <p className="text-muted-foreground text-xs">
-                Agents reply to each other without limit. Only Stop halts them.
-              </p>
-            )}
 
             {/* Vertical, per `SettingRow`'s own guidance for number inputs, and
                 because these descriptions are two sentences long: side by side

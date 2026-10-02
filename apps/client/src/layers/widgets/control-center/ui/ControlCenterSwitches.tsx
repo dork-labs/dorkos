@@ -99,7 +99,7 @@ export function ControlCenterSwitches() {
           label="Warm agents"
           description={
             <>
-              Replies start about 4× faster, using up to 1 GB per agent.{' '}
+              Replies start about 4× faster. Each warm agent uses up to about 1 GB.{' '}
               <InfoTip label="About warm agents">
                 <p>Your agent stays running between messages.</p>
                 <p>At most twelve agents stay warm at once.</p>

@@ -410,5 +410,17 @@ describe('Undo in the history', () => {
         skipped: [{ change, current: 'ask', reason: 'floor' }],
       })
     ).toBe('Undid 1 change. 1 can’t be set to Allowed and was left alone.');
+    // Two reasons at once would make a paragraph, so the note collapses to one
+    // count; the history list still shows each row as it now stands.
+    expect(
+      partialUndoNote({
+        changes: [change],
+        skipped: [
+          { change, current: 'ask', reason: 'floor' },
+          { change, current: 'act', reason: 'changed-since' },
+          { change, current: 'act', reason: 'changed-since' },
+        ],
+      })
+    ).toBe('Undid 1 change. 3 were left alone.');
   });
 });
