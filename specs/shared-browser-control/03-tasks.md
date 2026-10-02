@@ -18,7 +18,7 @@ Native/AT/phone/tunnel/distribution/network/performance are core acceptance, not
 ## Active phase4 projection (parent-owned tracker mirror)
 
 - [x] 4.1 Establish private engine package types and validation — depends on none.
-- [ ] 4.2 Implement retained and clean browser lifecycle with real capture — depends on 4.1.
+- [x] 4.2 Implement retained and clean browser lifecycle with real capture — depends on 4.1.
 - [ ] 4.3 Prove exact-owned crash recovery and profile exclusion — depends on 4.2.
 - [ ] 4.4 Implement serialized generation-bound engine input and reset — depends on 4.2.
 - [ ] 4.5 Implement canonical capture pointer caret and bounded telemetry — depends on 4.4.
@@ -47,6 +47,11 @@ Reassess actual inseparable size rather than labeling XL to aggregate already sp
 XL/DOR-2668/DOR-2667 retained. Critical implementation path:4.1→4.2→4.4→4.5→6.3/6.4→
 7.4/7.5/7.6→8.4/native/platform/performance→9.1→9.2→9.3; network and identity gates join9.1,
 Chrome-compatible complete acceptance also gates9.3. Failed/unobserved receipts are never readiness.
+
+The default-off Shared browser rollout is a new user-requested addendum pending independent review.
+It adds task9.4; earlier frozen design receipts do not accept it. DOR-2671 is a later graduation
+decision outside initial rollout and full-programme closure dependencies. Original task statuses
+and history remain unchanged in this plan checkout; parent owns current execution projection.
 
 ## Tasks
 
@@ -178,11 +183,11 @@ Completion evidence: [PR2463](https://github.com/dork-labs/dorkos/pull/2463), re
 
 ### Task 4.2: Implement retained and clean browser lifecycle with real capture
 
-Status: in_progress · Size: large · Priority: high · Phase: Private engine foundation
+Status: completed · Size: large · Priority: high · Phase: Private engine foundation
 
 Dependencies: 4.1. Parallel with: none declared.
 
-Worker: `/root/prototype_manager`; isolated source checkout: `/Users/doriancollier/.codex/worktrees/browser-engine-lifecycle/dorkos`. Original source `27712fd9c600237d15c100d3672204423fc1b73a` received blocking ownership review. Correction `030309cf07db3a8460ee5ff7756fea6032d377b1` is frozen for fresh parent integration and review, with original failures and history preserved; this task is not shipped or production-ready.
+Worker: `/root/prototype_manager`; isolated source checkout: `/Users/doriancollier/.codex/worktrees/browser-engine-lifecycle/dorkos`. Private fixture lifecycle merged in PR #2465 at `359784d7c08af054291d2598bd416e4ada19895b`; both whole reviews passed exact `36963e4a2e9f07d9fce7f67c617744ba55645eca` and all 34 owned merged blobs match. Original failures and corrected history are preserved. Only task 4.2 is completed; full production acceptance remains open.
 
 Implement first complete private engine constructor/open/close/tab-list/capture slice using reviewed Playwright and explicit executable descriptor; never resolve/download implicitly. Persistent named profiles and unseeded separate clean browser receive fresh browser/tab IDs, fixed canonical viewport and truthful stopped/uncertain outcomes. Inject roots/process observation; register cleanup before launch and bound IPC/acquisition/teardown. Reserve profiles atomically with manager/Chromium PID-birth and launch phase; no losing attempt modifies seeded profile. Capture actual named fixture Page JPEG/receipt through narrow API, keeping raw engine objects private. Real tests cover open/capture/clean close/return, absent/corrupt executable, concurrent same-profile open in independent processes, zero-viewer browser lifetime and idempotent shutdown. This is fixture-only lifecycle capability, not permission for public egress or mode activation.
 
@@ -232,9 +237,11 @@ Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkou
 
 ### Task 5.1: Implement canonical destination parser DNS and grant policy
 
-Status: pending · Size: large · Priority: high · Phase: Runtime network and identity gates
+Status: in_progress · Size: large · Priority: high · Phase: Runtime network and identity gates
 
 Dependencies: 4.1. Parallel with: 6.1.
+
+Worker: `/root/prototype_manager`; isolated source checkout: `/Users/doriancollier/.codex/worktrees/browser-egress-policy/dorkos`. Frozen source `b65503dd3c968fb6546c711d924105451ac33c40` is integrated for fresh parent verification and whole-change review. No actual merge, broker/runtime activation or full task completion is claimed.
 
 Implement services/browser/egress policy primitives without opening production browser access: canonicalize authority once, reject userinfo/ambiguous hosts/Host mismatch/forbidden schemes and ports. Public HTTP(S)/WS(S) initially ports80/443; deny all nonglobal/mapped-IPv6/private/metadata/host-interface destinations and configured app/admin authorities/aliases before any allow grant. Bounded resolver/CNAME validates every A/AAAA answer, rejects mixed sets and yields pinned numeric endpoints with policy revision. Local-dev grant is owner/workspace/browser-bound exact literal scheme/host/port with expiry; cannot override admin deny. Test rebind/mixed/CNAME/mapped-IP/adjacent-port/alias cases and allowed shared-CDN hostname independent of denied app authority, using injected resolver and socket fixtures.
 
@@ -325,9 +332,11 @@ Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkou
 
 ### Task 6.1: Add strict browser and semantic shared schemas
 
-Status: pending · Size: medium · Priority: high · Phase: Shared contracts and server authority
+Status: in_progress · Size: medium · Priority: high · Phase: Shared contracts and server authority
 
 Dependencies: 4.1. Parallel with: 5.1.
+
+Worker: `/root/prototype_contracts`; isolated source checkout: `/Users/doriancollier/.codex/worktrees/browser-shared-contracts/dorkos`. Frozen source `92d9068f34cca6c5775dab1da344d3aac37bf798` is integrated for fresh parent verification and whole-change review. No actual merge, broker/runtime activation or full task completion is claimed.
 
 Add exported browser-safe strict Zod schemas for lifecycle, grants, generations, actions,
 frames/real render receipts, errors, diagnostics and exact version-1 semantic/event/continuation
@@ -687,9 +696,9 @@ Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkou
 
 Status: pending · Size: large · Priority: high · Phase: Readiness migration and delivery
 
-Dependencies: 9.1, 6.8, 7.8. Parallel with: none declared.
+Dependencies: 9.1, 6.8, 7.8, 9.4. Parallel with: none declared.
 
-After accepted selected-mode readiness, switch managed MCP preset across all runtimes to scoped managed_browser capabilities and remove superseded managed paths in the same reviewed PR. Preserve iframe ui/devtools/Doc behavior; no mandatory Chromium for lightweight documents. Existing browser login/status/forget and agent-browser site summaries get explicit compatibility; authorized import creates new named profile from storage-state snapshot, not fullclone/personal Chrome reuse/clean seed. Actual migration tests all runtime callers, view/control/grant revocation, profile ownership and absent-mode refusal. Native-only migration may remain scoped but cannot mark full user compatibility goal complete; Chrome preference unresolved unless complete gate passes.
+After task9.4 establishes the default-off experiment and task9.1 accepts exact selected-mode readiness, retain the existing browser path while browser.enabled is false. While on, provide explicit managed-browser selection across every runtime through scoped managed_browser capabilities; reject unavailable requested modes without silent native/legacy fallback or uncertain action replay. Do not unconditionally remove legacy browser/preset paths in this initial opt-in migration. Preserve iframe ui/devtools/Doc behavior with no mandatory Chromium for lightweight documents. Existing browser login/status/forget and agent-browser site summaries get explicit compatibility; authorized storage-state import creates a new named profile, not a full clone, personal Chrome reuse or clean-mode seed. No automatic live-page/state migration to legacy on disable. Test all runtime callers, off/on selection, cached tools, absent-mode refusal, revoked views/control/grants and profile ownership. Native-only rollout cannot close the full user compatibility goal; Chrome preference remains unresolved until its complete gate passes.
 
 Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.
 
@@ -700,5 +709,23 @@ Status: pending · Size: medium · Priority: high · Phase: Readiness migration 
 Dependencies: 9.2, 5.8. Parallel with: none declared.
 
 Update profile/login/sharing/install/repair/recovery guides and developer engine/Transport/capability/packaging/failure taxonomy using plain truthful language. Explain private-content signed-in controller disclosure, clean state separation, uncertain lost effects/no replay, actual runtime identity choices, installation vs readiness and explicit stop vs detach. Retain Windows alpha and unverified native/AT/tunnel combinations; no challenge-bypass/indistinguishability/lossless-crash claim. Require independent exact pushed-branch compliance/quality review and affected gates before final parent merge; parent alone updates ADR/manifest only when implemented acceptance qualifies. Completed prototype receipts retained. Full parent closure additionally requires Chrome-compatible preference5.8and every5full delivery requirement; task dependencies do not turn an unverified gate into success.
+
+Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.
+
+Historical parent source-integration note, before the later lifecycle merge: destination-policy and strict-schema source gates were bounded evidence. Lifecycle PR2465 remained unmerged following an inherited Doc ingestion timeout; all six browser queue shards passed. Full production and native/Chrome-compatible gates remained open.
+
+Current observed state: private fixture lifecycle PR2465 merged at359784d7c08af054291d2598bd416e4ada19895b on2026-10-02T07:06:16Z; exact reviewed36963e4a2e9f07d9fce7f67c617744ba55645eca matches all34 owned merged blobs. Task4.2 completes only that fixture slice; tasks5.1/6.1 remain in_progress and full production readiness remains open.
+
+### Task 9.4: Roll out default-off Shared browser experiment with safe live disable
+
+Status: pending · Size: large · Priority: high · Phase: Readiness migration and delivery
+
+Dependencies: 6.3, 6.7, 6.8, 7.4, 9.1. Parallel with: none declared.
+
+Implement persistent browser.enabled default false in UserConfigSchema and its enclosing factory, append the implementation-release idempotent config migration, and prove fresh defaults plus actual on-disk stale-config behavior without a vacuous migration assertion. Classify config exposure and operator-only writes, mirror configuration references, and add the existing EXPERIMENTS/describeExperiments/ExperimentsTab row titled Shared browser with plain benefit/cost copy and graduationIssue DOR-2671. No temporary environment-only switch or second settings system. Server guarded global config authority applies across users and all runtime callers; preserve the existing login-on cookie/agent checks and document login-off local-trust limits, without claiming a new owner-only route or granting access to others' profiles.
+
+Gate instance/action/grant/control/view/semantic admission, dynamic managed tool discovery and dispatch, direct routes and live streams on the server setting and exact selected-mode readiness. Off preserves legacy browsing and lightweight Doc/iframe without Chromium. Enable refuses missing/failed/unverified selected-mode readiness with truthful bounded reasons, leaves off and never installs/downloads implicitly or substitutes native/legacy. Serialize live disable with config writes, acquisition/close/recovery: persist false and linearize admission closure, revoke grants/views/control, invalidate queues, advance input generation, drain/reset held input within the existing <=2s control barrier and prove bounded exact-owned stop. Timeout is not cancellation proof. If config persistence fails, keep admission fenced and attempt cleanup, expose the write failure without off-success, and reconcile persisted setting, pending shutdown evidence and exact owned-process inventory on restart. Startup never resumes stale browser metadata, queued actions or grants; ambiguous persistence/cleanup refuses acquisition until reconciled. Preserve named profiles and uncertain outcomes; no automatic page migration or replay. Keep stopping/stopped-uncertain visible until cleanup is observed, retain reservation/ownership evidence on failure, and forbid unsafe re-enable or stale callback/grant resurrection.
+
+Meaningful fixtures: off direct/cached-tool/view/semantic calls fail their intended admission cause; on exact-ready mode succeeds; installation-only/stale hash/wrong policy/unavailable Chrome fails without fallback or download. Disable during queued and in-flight input, held keys/buttons/composition, two viewers and unattended browsers; assert no post-barrier effect, stream/grant invalidation, exact process disappearance and preserved named stores. Inject config-write failure and restart reconciliation, failed/never-resolving reset, unavailable inventory, stop failure and concurrent re-enable; assert no false off-success, unsafe relaunch, uncertain replay or profile deletion. Prove all runtime selection and multiuser global authority without cross-owner access, and lightweight Doc/iframe positives while off. Retain original failures and exact nonzero subjects/results. DOR-2671 is a separate future graduation decision, not a rollout/full-parent dependency; no default-on implementation in this task. Preserve every original readiness gate and the five full-delivery requirements.
 
 Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.
