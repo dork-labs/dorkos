@@ -1,0 +1,67 @@
+{
+  "spec": "specs/relay-signed-json/02-specification.md",
+  "slug": "relay-signed-json",
+  "generatedAt": "2026-10-01T21:35:14.266279+00:00",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Signed JSON isolation",
+      "subject": "[relay-signed-json] RED full-app exact-byte webhook regression",
+      "description": "RED full-app exact-byte webhook regression; acceptance and scope in 02-specification.md and 03-tasks.md.",
+      "activeForm": "RED full-app exact-byte webhook regression",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "status": "completed"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Signed JSON isolation",
+      "subject": "[relay-signed-json] Preserve webhook bytes before global JSON parsing",
+      "description": "Preserve webhook bytes before global JSON parsing; acceptance and scope in 02-specification.md and 03-tasks.md.",
+      "activeForm": "Preserve webhook bytes before global JSON parsing",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "status": "completed"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Signed JSON isolation",
+      "subject": "[relay-signed-json] Verify adversarial, size and gate controls",
+      "description": "Verify adversarial, size and gate controls; acceptance and scope in 02-specification.md and 03-tasks.md. Baseline malformed application/json: global parser rejects before receiver/sessionGate, finalized-app 500 INTERNAL_ERROR, no adapter call or nonce consumption. Repaired signed path: valid HMAC restores direct-adapter 401 Publish failed and verified nonce consumption; invalid HMAC gives 401 Invalid signature without consuming nonce. Ordinary malformed JSON retains 500.",
+      "activeForm": "Verify adversarial, size and gate controls",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [],
+      "status": "completed"
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "Signed JSON isolation",
+      "subject": "[relay-signed-json] Fresh package verification and independent review handoff",
+      "description": "Fresh package verification and independent review handoff; acceptance and scope in 02-specification.md and 03-tasks.md. Local verification and stable handoff complete; independent implementation review and all tracker/delivery operations remain parent-owned and pending.",
+      "activeForm": "Fresh package verification and independent review handoff",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "1.3"
+      ],
+      "parallelWith": [],
+      "status": "completed"
+    }
+  ]
+}

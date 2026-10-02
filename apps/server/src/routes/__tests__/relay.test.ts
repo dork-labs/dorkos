@@ -805,6 +805,8 @@ describe('Adapter routes', () => {
     relayCore = createMockRelayCore();
     adapterManager = createMockAdapterManager();
     const app = express();
+    // Match createApp: signed receivers capture bytes before ordinary JSON.
+    app.post('/api/relay/webhooks/:adapterId', express.raw({ type: '*/*', limit: '1mb' }));
     app.use(express.json());
     app.use(
       '/api/relay',
