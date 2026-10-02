@@ -163,7 +163,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByText('This item has been resolved.')).toBeInTheDocument();
+    expect(screen.getByText('Already resolved.')).toBeInTheDocument();
   });
 
   it('renders run details with status and trigger badges', () => {
@@ -315,7 +315,7 @@ describe('FailedRunDetailSheet', () => {
     expect(screen.getByText(/Duration:/)).toBeInTheDocument();
   });
 
-  it('renders View Session button when run has a sessionId', () => {
+  it('renders View session button when run has a sessionId', () => {
     mockUseRun.mockReturnValue({
       data: makeRun({ sessionId: 'sess-xyz' }),
       isLoading: false,
@@ -324,10 +324,10 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByRole('button', { name: 'View Session' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View session' })).toBeInTheDocument();
   });
 
-  it('does not render View Session button when run has no sessionId', () => {
+  it('does not render View session button when run has no sessionId', () => {
     mockUseRun.mockReturnValue({
       data: makeRun({ sessionId: null }),
       isLoading: false,
@@ -336,10 +336,10 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.queryByRole('button', { name: 'View Session' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View session' })).not.toBeInTheDocument();
   });
 
-  it('View Session button navigates to /session with correct session param', () => {
+  it('View session button navigates to /session with correct session param', () => {
     mockUseRun.mockReturnValue({
       data: makeRun({ sessionId: 'sess-xyz' }),
       isLoading: false,
@@ -348,7 +348,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View Session' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View session' }));
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
@@ -368,7 +368,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel run' })).toBeInTheDocument();
   });
 
   it('does not render Cancel button when run is not running', () => {
@@ -380,7 +380,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel run' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancelling…' })).not.toBeInTheDocument();
   });
 
@@ -395,7 +395,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
 
     expect(mutate).toHaveBeenCalledWith('run-abc123');
   });

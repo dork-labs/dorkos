@@ -29,7 +29,7 @@ interface TasksEmptyStateProps {
 export function TasksEmptyState({ onCreateWithPreset, onCreateBlank }: TasksEmptyStateProps) {
   return (
     <div className="flex flex-col items-center pb-8 md:pb-12">
-      <h3 className="mb-2 text-lg font-medium">No schedules yet.</h3>
+      <h3 className="mb-2 text-lg font-medium">No schedules yet</h3>
       <p className="text-muted-foreground mb-6 max-w-sm text-center text-sm">
         Put a skill on a timer and it runs without you.
       </p>

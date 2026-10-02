@@ -40,7 +40,7 @@ function WorkingLine({ children }: { children: React.ReactNode }) {
  * @param toolCount - Tools the server exposes, or `null` when unreported.
  */
 function connectedCopy(toolCount: number | null): string {
-  if (toolCount === null) return 'Signed in. The server’s tools are available on the next turn.';
+  if (toolCount === null) return 'Signed in. Its tools are available on the next turn.';
   return `Connected · ${toolCount} tool${toolCount === 1 ? '' : 's'}.`;
 }
 
@@ -56,7 +56,7 @@ function connectedCopy(toolCount: number | null): string {
  * @param serverName - The provider whose site the person will approve on.
  */
 function fallbackCustody(serverName: string): string {
-  return `You approve access on ${serverName}'s own site. DorkOS keeps the resulting key here. The agent never sees it, and removing the server removes the key.`;
+  return `Approve on ${serverName}’s site. Agents never see the key; removing the server deletes it.`;
 }
 
 /**
@@ -73,9 +73,7 @@ function politeCopy(flow: McpSigninFlow): React.ReactNode {
   if (state.step === 'waiting') {
     return (
       <div className="space-y-1">
-        <WorkingLine>
-          Waiting for you to finish signing in… You can close the tab when done.
-        </WorkingLine>
+        <WorkingLine>Waiting for you to sign in… Close the tab when done.</WorkingLine>
         {state.retryNotice && <p className="text-muted-foreground text-xs">{state.retryNotice}</p>}
       </div>
     );
@@ -212,7 +210,7 @@ export function McpSigninBody({
       {state.step === 'failed' && (
         <div className={cn('mt-1 space-y-2', className)}>
           <p role="alert" className="text-destructive text-xs leading-relaxed">
-            {state.error ?? 'The sign-in did not complete.'}
+            {state.error ?? 'Sign-in didn’t finish. Try again.'}
           </p>
           {state.errorDetail && (
             <details className="text-muted-foreground text-xs">

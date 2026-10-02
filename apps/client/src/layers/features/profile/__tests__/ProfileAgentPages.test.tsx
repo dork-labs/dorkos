@@ -458,7 +458,7 @@ describe('About, where an agent is named', () => {
     // Not silently blank: the field goes back to what the agent is called, and
     // the reason sits under it.
     expect(name).toHaveValue('Warden');
-    expect(screen.getByText(/An agent needs a name/)).toBeInTheDocument();
+    expect(screen.getByText(/A name can’t be empty/)).toBeInTheDocument();
   });
 
   it('never becomes an editor on DorkBot', async () => {
@@ -597,7 +597,7 @@ describe('Instructions and Boundaries', () => {
     // Still on the page, with the text intact.
     expect(screen.getByPlaceholderText('Write markdown here…')).toHaveValue('Be careful. More.');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Warden' })).toBeInTheDocument();
   });
@@ -615,7 +615,7 @@ describe('Instructions and Boundaries', () => {
   it('keeps the NOPE disclaimer wherever boundaries are edited', async () => {
     await renderProfile(MANAGED, { start: 'boundaries' });
 
-    expect(await screen.findByText(/not enforced at the tool level/)).toBeInTheDocument();
+    expect(await screen.findByText(/aren’t enforced/)).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Write markdown here…')).toHaveValue('Never force-push.');
   });
 
@@ -1027,11 +1027,11 @@ describe('the kebab', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Unregister' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Unregister' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Unregister agent' }));
 
     await waitFor(() =>
       expect(toasts.message).toHaveBeenCalledWith(
-        expect.stringContaining('blocked from scans'),
+        expect.stringContaining('scans skip it'),
         expect.anything()
       )
     );
@@ -1044,7 +1044,7 @@ describe('the kebab', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Unregister' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Unregister' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Unregister agent' }));
 
     await waitFor(() =>
       expect(toasts.message).toHaveBeenCalledWith('Warden unregistered', expect.anything())

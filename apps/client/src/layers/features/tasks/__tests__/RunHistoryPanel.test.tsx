@@ -512,7 +512,7 @@ describe('TaskRunHistoryPanel', () => {
       await renderBlocked();
 
       expect(
-        screen.getByText('Could not use Bash and gmail: search — nobody was there to approve them.')
+        screen.getByText('Couldn’t use Bash and gmail: search. Nobody was there to approve them.')
       ).toBeTruthy();
     });
 
@@ -533,7 +533,7 @@ describe('TaskRunHistoryPanel', () => {
       expect(screen.queryByText(REFUSAL)).toBeNull();
       expect(screen.getByText('I could not read the mail.')).toBeTruthy();
       expect(
-        screen.getByText('Could not use Bash and gmail: search — nobody was there to approve them.')
+        screen.getByText('Couldn’t use Bash and gmail: search. Nobody was there to approve them.')
       ).toBeTruthy();
     });
 
@@ -542,7 +542,7 @@ describe('TaskRunHistoryPanel', () => {
 
       expect(screen.queryByText(REFUSAL)).toBeNull();
       expect(
-        screen.getByText('Could not use Bash and gmail: search — nobody was there to approve them.')
+        screen.getByText('Couldn’t use Bash and gmail: search. Nobody was there to approve them.')
       ).toBeTruthy();
     });
 

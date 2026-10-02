@@ -166,7 +166,7 @@ export function TaskExecutionFields({
           <div className="space-y-1.5" data-testid="task-effort-stranded">
             <Label>Effort</Label>
             <p className={WARNING_CLASS}>
-              {effortWarning ?? 'This runtime has no effort setting, so this one does nothing.'}
+              {effortWarning ?? 'No effort setting here, so this does nothing.'}
             </p>
             {/* Reads as a control beside the amber sentence, not as more of it —
                 the same treatment its sibling in Settings gives the same job

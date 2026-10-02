@@ -58,8 +58,8 @@ export function AgentRosterFilterEmpty({ peopleOnly }: { peopleOnly: boolean }) 
       <Users className="text-muted-foreground/50 size-10" />
       <p className="text-muted-foreground max-w-xs text-sm">
         {peopleOnly
-          ? 'This table lists agents. Switch to Cards to see the people on your team.'
-          : 'No agents match what the roster is filtered to. Switch to Cards to change it.'}
+          ? 'This table lists agents. Switch to Cards to see people.'
+          : 'No agents match this filter. Change it in Cards.'}
       </p>
     </motion.div>
   );

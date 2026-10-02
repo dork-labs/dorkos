@@ -20,8 +20,7 @@ export function PermissionsPage({ member }: ProfilePageContentProps) {
     <div className="space-y-6">
       {supportsDorkTools ? null : (
         <p className="text-muted-foreground text-sm">
-          This agent’s runtime can’t use DorkOS tools, so these settings don’t change anything for
-          it.
+          This agent can’t use DorkOS tools, so these don’t apply.
         </p>
       )}
       <PermissionList scope={{ kind: 'agent', agentId: member.id }} />

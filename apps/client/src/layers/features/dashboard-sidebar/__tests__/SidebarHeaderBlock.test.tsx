@@ -1735,7 +1735,7 @@ describe('the context switcher’s lifecycle actions', () => {
     // Back on Connect: the space's own address, never the invite.
     expect(field).toHaveValue('https://a.example.com/c/remote-a');
     expect(field).toHaveAccessibleDescription(
-      'Finish joining on a.example.com in the tab that opened, then come back and connect.'
+      'Finish joining on a.example.com in the new tab, then connect.'
     );
     // Connect waits for this DorkOS's owner, which this test never confirms.
     expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
@@ -1774,7 +1774,7 @@ describe('the context switcher’s lifecycle actions', () => {
     );
     expect(field).toHaveValue('https://a.example.com/c/remote-a');
     expect(field).toHaveAccessibleDescription(
-      'Join on a.example.com with your DorkOS account in the tab that opened, then come back and connect.'
+      'Join on a.example.com with your DorkOS account in the new tab, then connect.'
     );
   });
 

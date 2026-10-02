@@ -62,7 +62,7 @@ export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetai
       <SheetContent side="right">
         <SheetHeader>
           <SheetTitle>Messages that never arrived</SheetTitle>
-          <SheetDescription>{source ?? 'We don’t know where these came from'}</SheetDescription>
+          <SheetDescription>{source ?? 'Source unknown'}</SheetDescription>
         </SheetHeader>
 
         <ScrollArea className="flex-1 px-4">
@@ -71,8 +71,7 @@ export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetai
               {/* Summary */}
               <div className="space-y-2">
                 <p className="text-muted-foreground text-sm">
-                  These messages were meant for an agent and never got there. Clearing them does not
-                  send them.
+                  These never reached an agent. Clearing them doesn’t send them.
                 </p>
                 <p className="text-foreground text-sm">
                   {group.count} message{group.count === 1 ? '' : 's'} couldn’t be delivered

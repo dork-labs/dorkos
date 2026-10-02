@@ -508,7 +508,7 @@ function BlockedToolsLine({ run }: { run: TaskRun }) {
   const named = listRefusedTools((run.refusedTools ?? []).map(readableToolName));
   const line =
     named !== null
-      ? `Could not use ${named.list} — nobody was there to approve ${named.them}.`
+      ? `Couldn’t use ${named.list}. Nobody was there to approve ${named.them}.`
       : (run.error ?? 'Nobody was there to approve the tools this run needed.');
 
   return (

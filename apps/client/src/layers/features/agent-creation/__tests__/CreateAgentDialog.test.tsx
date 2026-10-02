@@ -419,12 +419,12 @@ describe('CreateAgentDialog', () => {
     });
   });
 
-  it('labels the primary action "Bring {name} to life"', async () => {
+  it('labels the primary action "Create {name}"', async () => {
     const user = userEvent.setup();
     renderDialog();
     const nameInput = await reachNamingViaDesign(user);
     await user.type(nameInput, 'Scout');
-    expect(screen.getByTestId('create-button')).toHaveTextContent('Bring Scout to life');
+    expect(screen.getByTestId('create-button')).toHaveTextContent('Create Scout');
   });
 
   it('disables create until a name is entered', async () => {
@@ -642,7 +642,7 @@ describe('CreateAgentDialog', () => {
     expect(screen.getByText('my-cool-agent')).toBeInTheDocument();
   });
 
-  it('offers "Import instead?" when the target folder already holds a project', async () => {
+  it('offers "Import it instead" when the target folder already holds a project', async () => {
     const user = userEvent.setup();
     const { transport } = renderDialog();
     vi.mocked(transport.browseDirectory).mockResolvedValue({
@@ -655,7 +655,7 @@ describe('CreateAgentDialog', () => {
     await user.type(nameInput, 'taken-agent');
 
     await waitFor(() =>
-      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Existing project detected')
+      expect(screen.getByTestId('conflict-status')).toHaveTextContent('This folder has a project')
     );
     await user.click(screen.getByTestId('import-instead-link'));
     // "Import instead?" leaves creation for the standalone import dialog.
@@ -663,7 +663,7 @@ describe('CreateAgentDialog', () => {
     expect(useImportProjectsStore.getState().isOpen).toBe(true);
   });
 
-  it('reports "Will create new directory" for a fresh path', async () => {
+  it('reports "Creates a new folder" for a fresh path', async () => {
     const user = userEvent.setup();
     renderDialog();
     const nameInput = await reachNamingViaDesign(user);
@@ -671,7 +671,7 @@ describe('CreateAgentDialog', () => {
     await user.click(screen.getByTestId('details-toggle'));
 
     await waitFor(() =>
-      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Will create new directory')
+      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Creates a new folder')
     );
   });
 
@@ -740,7 +740,7 @@ describe('CreateAgentDialog', () => {
     );
   });
 
-  it('reports "Cannot access this path" on a permission error and blocks create', async () => {
+  it('reports "Can’t open this folder" on a permission error and blocks create', async () => {
     const user = userEvent.setup();
     const { transport } = renderDialog();
     vi.mocked(transport.browseDirectory).mockRejectedValue(new Error('EACCES: permission denied'));
@@ -750,7 +750,9 @@ describe('CreateAgentDialog', () => {
     await user.click(screen.getByTestId('details-toggle'));
 
     await waitFor(() =>
-      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Cannot access this path')
+      expect(screen.getByTestId('conflict-status')).toHaveTextContent(
+        'Can’t open this folder. Pick another.'
+      )
     );
     expect(screen.getByTestId('create-button')).toBeDisabled();
   });

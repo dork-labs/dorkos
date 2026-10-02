@@ -43,8 +43,8 @@ function agoWords(iso: string, now: Date): string | null {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return null;
   const { value, unit } = bucketElapsedMs(now.getTime() - then);
-  if (unit === 'minute') return value < 1 ? 'just now' : `${value} min ago`;
-  if (unit === 'hour') return `${value} h ago`;
+  if (unit === 'minute') return value < 1 ? 'just now' : `${value}m ago`;
+  if (unit === 'hour') return `${value}h ago`;
   if (value < 2) return 'yesterday';
   if (value < 30) return `${value} days ago`;
   return `on ${new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;

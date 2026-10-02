@@ -221,7 +221,7 @@ describe('TeamPage — claiming an account on another platform (DOR-1778)', () =
 
     const miguel = screen.getByText('Miguel Ferreira-Santos').closest('article')!;
     expect(await within(miguel).findByRole('alert')).toHaveTextContent(
-      'Only the person who owns this install can say which accounts are theirs.'
+      'Only this install’s owner can link accounts.'
     );
     // …and nowhere else on the page, which is the half a boolean would fail.
     expect(screen.getAllByRole('alert')).toHaveLength(1);

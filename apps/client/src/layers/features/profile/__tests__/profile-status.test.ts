@@ -47,7 +47,7 @@ describe('an agent', () => {
       lastActiveAt: ago(3 * 3_600_000),
     });
 
-    expect(profileStatusText(idle, NOW)).toEqual({ text: 'Last active 3 h ago', live: false });
+    expect(profileStatusText(idle, NOW)).toEqual({ text: 'Last active 3h ago', live: false });
   });
 
   it('says an agent that has never run has never run', () => {
@@ -99,7 +99,7 @@ describe('a person', () => {
       person: { role: null, lastSeenAt: ago(3 * 3_600_000) },
     };
 
-    expect(profileStatusText(priya, NOW).text).toBe('Last seen 3 h ago');
+    expect(profileStatusText(priya, NOW).text).toBe('Last seen 3h ago');
   });
 });
 
@@ -112,8 +112,8 @@ describe('how long ago, in words', () => {
 
   it('reads at every scale it has to', () => {
     expect(stamp(10_000)).toBe('Last active just now');
-    expect(stamp(20 * 60_000)).toBe('Last active 20 min ago');
-    expect(stamp(3 * 3_600_000)).toBe('Last active 3 h ago');
+    expect(stamp(20 * 60_000)).toBe('Last active 20m ago');
+    expect(stamp(3 * 3_600_000)).toBe('Last active 3h ago');
     expect(stamp(30 * 3_600_000)).toBe('Last active yesterday');
     expect(stamp(4 * 24 * 3_600_000)).toBe('Last active 4 days ago');
     expect(stamp(60 * 24 * 3_600_000)).toContain('Last active on ');

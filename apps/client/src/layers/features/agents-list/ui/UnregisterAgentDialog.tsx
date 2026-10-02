@@ -40,10 +40,12 @@ export function UnregisterAgentDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Unregister {agentName}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            It leaves your team and every channel it was in, and any schedules it has are paused.
-            Its messages stay. Your own project files are not touched. You can add the folder as an
-            agent again later, but you may need to add it back to its channels.
+          <AlertDialogDescription asChild>
+            <div className="space-y-2">
+              <p>It leaves your team and channels. Its schedules pause.</p>
+              <p>Its messages and your project files are kept.</p>
+              <p>Add it back later, then re-add it to channels.</p>
+            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -52,7 +54,7 @@ export function UnregisterAgentDialog({
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60"
             onClick={() => unregister(agentId)}
           >
-            Unregister
+            Unregister agent
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -65,7 +65,7 @@ describe('TemplateReviewNotice', () => {
     const files = screen.getAllByTestId('template-settings-file');
     expect(files).toHaveLength(2);
     expect(files[0]).toHaveTextContent('Show .codex/config.toml');
-    expect(files[1]).toHaveTextContent('Too long to show here (40000 bytes)');
+    expect(files[1]).toHaveTextContent('Too long to show (40000 bytes)');
     // The button says what the person has not seen.
     expect(
       screen.getByRole('button', { name: 'Create without seeing .codex/hooks.json' })
@@ -105,8 +105,8 @@ describe('TemplateReviewNotice', () => {
 
     const review = screen.getByTestId('template-review');
     expect(review).toHaveTextContent('git push');
-    expect(review).toHaveTextContent('Runs when the skill "ship" is used');
-    expect(review).toHaveTextContent('It uses the text typed after the command');
+    expect(review).toHaveTextContent('Runs when skill “ship” is used');
+    expect(review).toHaveTextContent('Reads the text typed after it');
     expect(review).toHaveTextContent('echo <U+202E>ok');
   });
 });

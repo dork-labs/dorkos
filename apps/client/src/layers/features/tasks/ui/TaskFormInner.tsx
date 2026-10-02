@@ -39,16 +39,17 @@ type PackageOwnedBy = 'record' | 'legacy';
  * edit is tried (DOR-2272). The server's own sentence replaces it when an edit
  * is refused.
  */
-const PACKAGE_NOTICE: Record<PackageOwnedBy, string> = {
-  record:
-    'This schedule came with an installed package. DorkOS doesn’t change what it does, because ' +
-    'the package’s next update would put its own version back. You can switch it on or off, or ' +
-    'change when it runs, here.',
-  legacy:
-    'This schedule sits in a package installed by an older version of DorkOS, which kept no ' +
-    'list of the package’s files, so DorkOS can’t yet tell them from yours. You can switch it on ' +
-    'or off, or change when it runs, here. To change the rest, choose Check files on the ' +
-    'package in Marketplace’s Installed tab, then try again.',
+const PACKAGE_NOTICE: Record<PackageOwnedBy, readonly string[]> = {
+  record: [
+    'This schedule came with a package. Its updates replace edits here.',
+    'You can still turn it on or off, or change when it runs.',
+  ],
+  legacy: [
+    'This schedule came with a package from an older DorkOS.',
+    'DorkOS can’t yet tell its files from yours.',
+    'You can still turn it on or off, or change when it runs.',
+    'To edit the rest, choose Check files on it in Marketplace › Installed.',
+  ],
 };
 
 /**
@@ -266,7 +267,11 @@ export function ScheduleForm({
               data-slot="package-owned-notice"
               className="bg-muted/40 space-y-2 rounded-md border px-3 py-2 text-xs"
             >
-              <p>{refusal?.message ?? PACKAGE_NOTICE[ownedBy]}</p>
+              {refusal ? (
+                <p>{refusal.message}</p>
+              ) : (
+                PACKAGE_NOTICE[ownedBy].map((line) => <p key={line}>{line}</p>)
+              )}
               {ownedBy === 'record' && onMakeCopy && (
                 <Button
                   type="button"
@@ -275,7 +280,7 @@ export function ScheduleForm({
                   onClick={() => onMakeCopy(form.state.values)}
                 >
                   <Copy />
-                  Make my own copy
+                  Make a copy
                 </Button>
               )}
             </div>
@@ -468,9 +473,7 @@ export function ScheduleForm({
                           data-testid="trust-dial-unavailable"
                           className="text-muted-foreground px-1 text-xs leading-relaxed"
                         >
-                          This scheduled task is set to “{modeLabel}”. The agent that runs it hasn’t
-                          said what it can do, so there is nothing to choose from yet. Saving keeps
-                          it as it is.
+                          Set to “{modeLabel}”. No other options to choose yet. Saving keeps it.
                         </p>
                       </fieldset>
                     );
@@ -500,8 +503,8 @@ export function ScheduleForm({
                         strandsWorkingMode
                         strandedNote={
                           <>
-                            This scheduled task is set to “{modeLabel}”, which is not one of these.
-                            Saving keeps it as it is. Pick a stop to change it.
+                            Set to “{modeLabel}”, which isn’t listed. Saving keeps it. Pick a stop
+                            to change it.
                           </>
                         }
                       />
@@ -518,14 +521,16 @@ export function ScheduleForm({
                           "Run now" too, because that trigger does NOT carry the
                           flag and its cards stay answerable. */}
                       {current !== undefined && current.asks !== 'never' && (
-                        <p
+                        <div
                           data-testid="task-unattended-note"
-                          className="text-muted-foreground px-1 text-xs leading-relaxed"
+                          className="text-muted-foreground space-y-1 px-1 text-xs leading-relaxed"
                         >
-                          Nobody is watching a scheduled run, so anything it stops to ask about is
-                          turned down right away. The run carries on without that tool and tells you
-                          what it skipped. “Run now” is different: you are watching, so it asks you.
-                        </p>
+                          <p>Nobody watches a scheduled run, so any ask is turned down.</p>
+                          <p>
+                            The run carries on without that tool and says so. “Run now” still asks
+                            you.
+                          </p>
+                        </div>
                       )}
                       <PermissionModeScopeNote
                         mode={field.state.value}
@@ -542,7 +547,7 @@ export function ScheduleForm({
                   <div className="space-y-1.5">
                     <Label htmlFor="schedule-max-runtime">Stop after</Label>
                     <p className="text-muted-foreground text-xs leading-relaxed">
-                      Give up if the run takes longer than this.
+                      Ends the run if it takes longer.
                     </p>
                     <input
                       id="schedule-max-runtime"
@@ -563,8 +568,7 @@ export function ScheduleForm({
                     <div className="space-y-0.5">
                       <Label htmlFor="schedule-sticky">Remember the last run</Label>
                       <p className="text-muted-foreground text-xs leading-relaxed">
-                        Resume the same session each run, so the agent remembers what it did last
-                        time. Off starts fresh every run.
+                        Pick up where the last run left off. Off starts fresh each time.
                       </p>
                     </div>
                     <Switch
@@ -628,7 +632,7 @@ export function ScheduleForm({
               form="schedule-form"
               disabled={!isFormValid || isPending}
             >
-              {isPending ? 'Saving…' : editTask ? 'Save' : 'Create'}
+              {isPending ? 'Saving…' : editTask ? 'Save' : 'Create task'}
             </Button>
           )}
         </form.Subscribe>

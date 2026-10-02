@@ -228,7 +228,7 @@ export function getSimplePreview(config: SimpleConfig): string {
   }
 }
 
-const INVALID_CRON_MESSAGE = 'Invalid cron expression';
+const INVALID_CRON_MESSAGE = 'Can’t read this timing. Check the format.';
 
 /**
  * Whether a cron expression is one this builder can read back to the person.
