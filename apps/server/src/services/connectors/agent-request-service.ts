@@ -2011,6 +2011,15 @@ export class ConnectorAgentRequestService {
 /** Source adapter that turns one resolved request into one protected follow-up. */
 export class ConnectorAgentRequestSourceAdapter implements PrivateSessionMessageSourceAdapter<AgentRequestRef> {
   readonly kind = 'connector_agent_request' as const;
+  /** Unavailability is retryable; an exact missing outcome or expired authority is not. */
+  isPreclaimRefusal(error: unknown): boolean {
+    return (
+      error instanceof ConnectorAgentRequestError &&
+      ['authority_expired', 'request_not_found', 'request_expired', 'principal_required'].includes(
+        error.code
+      )
+    );
+  }
 
   /** Construct the fixed adapter beside its request service. */
   constructor(

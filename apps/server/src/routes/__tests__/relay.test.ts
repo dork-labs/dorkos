@@ -107,6 +107,8 @@ describe('Relay routes', () => {
     // gate trusts as exempt (system / reply / inbound-echo) and thereby deliver
     // to a bound human channel with canInitiate off. Rejected BEFORE publish.
     it.each([
+      ['relay.doc.canvas-hash', 'document principal'],
+      ['relay.doc', 'document namespace root'],
       ['relay.system.tasks.notifier', 'system notifier'],
       ['agent:session-abc', 'reply-forwarding'],
       ['relay.human.telegram.tg1.bot', 'inbound adapter echo'],
@@ -134,6 +136,13 @@ describe('Relay routes', () => {
     // the keyboard, and no server publisher uses it, so a server-owned
     // destination or reply address is refused for every caller.
     it.each([
+      ['relay.doc.canvas-hash', undefined],
+      ['relay.doc', undefined],
+      ['relay.*', undefined],
+      ['*.doc', undefined],
+      ['*.*', undefined],
+      ['relay.agent.some-agent', '*.doc'],
+      ['relay.agent.some-agent', 'relay.doc.canvas-hash'],
       ['relay.system.tasks.task-1', undefined],
       ['relay.system.approval.agent-1', undefined],
       ['relay.control.task-cancel.run-1', undefined],
@@ -252,6 +261,14 @@ describe('Relay routes', () => {
         })
       );
     });
+  });
+
+  it('refuses public document mailbox ownership before registration', async () => {
+    const result = await request(server)
+      .post('/api/relay/endpoints')
+      .send({ subject: 'relay.doc.canvas-hash' });
+    expect(result.status).toBe(403);
+    expect(relayCore.registerEndpoint).not.toHaveBeenCalled();
   });
 
   describe('GET /api/relay/messages', () => {
@@ -788,6 +805,8 @@ describe('Adapter routes', () => {
     relayCore = createMockRelayCore();
     adapterManager = createMockAdapterManager();
     const app = express();
+    // Match createApp: signed receivers capture bytes before ordinary JSON.
+    app.post('/api/relay/webhooks/:adapterId', express.raw({ type: '*/*', limit: '1mb' }));
     app.use(express.json());
     app.use(
       '/api/relay',

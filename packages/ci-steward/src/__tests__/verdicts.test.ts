@@ -103,6 +103,9 @@ const series = seriesFrom(
 const mergedAt = new Map(Object.entries(rec.merged_at).map(([k, v]) => [Number(k), v]));
 const NOW = new Date('2026-09-19T05:00:00Z');
 const entry = (id: string) => ledger.find((e) => e.id === id)!;
+// #1391's entry was closed as withdrawn on 2026-10-01 (261001-130114) with the
+// shards kept; it is judged here as it was while active.
+const shards = (): LedgerEntry => ({ ...entry('260830-213616'), status: 'active' });
 
 function verdict(e: LedgerEntry, pool: readonly LedgerEntry[] = [e], now = NOW) {
   return computeVerdict({ entry: e, mergedAt, ledger: pool, files: files!, series, now })!;
@@ -115,7 +118,7 @@ describe('verdicts on the recorded backfill fixtures', () => {
   });
 
   it('#1391 (queue test sweep in four shards): partial, 26 -> 12.2 min on the queue leg against a 10-minute target', () => {
-    const v = verdict(entry('260830-213616'));
+    const v = verdict(shards());
     expect(v.verdict).toBe('partial');
     // test-shard did not exist before #1391, so the ledger's baseline stands in.
     expect(v.before.n).toBe(0);
@@ -171,6 +174,9 @@ describe('verdicts on the recorded backfill fixtures', () => {
   it('against the whole real ledger, #1135 and #1246 confound each other in turn', () => {
     // #1246 changed browser-test inside #1135's after-window, and #1391 changed
     // test inside #1246's. The rule says inconclusive, and it is right to.
+    // #1391's entry is withdrawn in the real ledger, with its PR merged and the
+    // shards kept, so it still confounds: the gate change happened.
+    expect(entry('260830-213616').status).toBe('withdrawn');
     expect(verdict(entry('260819-235925'), ledger)).toMatchObject({
       verdict: 'inconclusive',
       confounders: ['260824-121951'],
@@ -179,18 +185,18 @@ describe('verdicts on the recorded backfill fixtures', () => {
       verdict: 'inconclusive',
       confounders: ['260830-213616'],
     });
-    expect(verdict(entry('260830-213616'), ledger).verdict).toBe('partial');
+    expect(verdict(shards(), ledger).verdict).toBe('partial');
   });
 
   it('is pending until the after-window closes, and says when', () => {
-    const v = verdict(entry('260830-213616'), undefined, new Date('2026-09-10T00:00:00Z'));
+    const v = verdict(shards(), undefined, new Date('2026-09-10T00:00:00Z'));
     expect(v.verdict).toBe('pending');
     expect(v.reason).toContain(addDays('2026-08-30', 15));
   });
 });
 
 describe('verdict rules on synthetic data', () => {
-  const base = entry('260830-213616');
+  const base = shards();
   const withTarget = (target: number): LedgerEntry => ({
     ...base,
     hypothesis: { ...base.hypothesis!, target },
@@ -244,18 +250,19 @@ describe('verdict rules on synthetic data', () => {
     expect(at('2026-12-10T05:00:00Z').reason).toContain('never collected');
   });
 
-  it('no verdict for a proposed entry, a hygiene entry, or one whose PR has not merged', () => {
-    const e = entry('260830-213616');
-    expect(
-      computeVerdict({
-        entry: { ...e, status: 'proposed' },
-        mergedAt,
-        ledger,
-        files: files!,
-        series,
-        now: NOW,
-      })
-    ).toBeNull();
+  it('no verdict for a proposed or withdrawn entry, a hygiene entry, or one whose PR has not merged', () => {
+    const e = shards();
+    for (const status of ['proposed', 'withdrawn'] as const)
+      expect(
+        computeVerdict({
+          entry: { ...e, status },
+          mergedAt,
+          ledger,
+          files: files!,
+          series,
+          now: NOW,
+        })
+      ).toBeNull();
     expect(
       computeVerdict({
         entry: { ...e, hypothesis: undefined },

@@ -13,6 +13,7 @@ import { channelWatermarks } from '../content/watermark.js';
 import { deleteReadyExports, restartExportJobs } from '../exports/store.js';
 import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../content/mentions.js';
 import { remove } from '../routes/community/members.js';
+import { erasureHeldByLegalHold } from './guards.js';
 import { appendJournalRow, type ErasureJournalRecord } from './journal.js';
 
 /** Hours between a request and the erasure it schedules. A constant, not configuration. */
@@ -656,6 +657,10 @@ export async function eraseAccount(
       [userId]
     );
     for (const membership of memberships.rows) {
+      // A legal hold placed after the worker claimed a host's closure stops it before the next
+      // community; the worker retries it, and does not claim it again until the hold is released.
+      if (options.requestId && (await erasureHeldByLegalHold(pool, options.requestId)))
+        throw new ErasureError('LEGAL_HOLD');
       await pool.query(
         `WITH adopted AS (
            UPDATE erasure_requests SET state='running',started_at=COALESCE(started_at,now()),
@@ -702,6 +707,12 @@ export async function eraseAccount(
         `UPDATE erasure_requests SET state='completed',started_at=COALESCE(started_at,now()),
            completed_at=now(),last_error_class=NULL
          WHERE kind='account' AND user_id=$1 AND state IN ('scheduled','running')`,
+        [userId]
+      );
+      // A host's open closure of this account ends with it.
+      await client.query(
+        `UPDATE account_closures SET state='completed',completed_at=now()
+         WHERE user_id=$1 AND state='closed'`,
         [userId]
       );
       await client.query('DELETE FROM "user" WHERE id=$1', [userId]);

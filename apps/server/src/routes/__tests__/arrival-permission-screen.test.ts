@@ -242,12 +242,9 @@ describe('a folder cannot widen the agent it registers', () => {
   it('through the reconciler adopting a folder it found', { timeout: 20_000 }, async () => {
     const dir = await wideFolder(agentsHome, 'found-wide', '01JKARRIVESCAN000000000000');
     mesh.startPeriodicReconciliation(20);
-    await vi.waitFor(
-      async () =>
-        expect((await readManifest(dir))?.permissions).toEqual({ areas: { agents: 'blocked' } }),
-      { timeout: 15_000 }
-    );
-    await expectScreened(dir);
+    // Manifest replacement precedes observer snapshot persistence and the activity record.
+    // Wait for the complete arrival outcome rather than its intermediate file state.
+    await vi.waitFor(() => expectScreened(dir), { timeout: 15_000 });
   });
 
   it('stays on the defaults when its settings file cannot be written back', async () => {

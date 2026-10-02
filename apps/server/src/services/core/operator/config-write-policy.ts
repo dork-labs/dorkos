@@ -146,7 +146,7 @@
  *   `persistentSession` and `scheduler.maxConcurrentRuns` are the Control
  *   Center's "Warm agents" switch and "Scheduled runs at once" stepper
  *   (`ControlCenterSwitches.tsx`, #1209 — `maxConcurrentRuns` is also in
- *   Settings → Tools), and `uploads.max*` and `harness.autoSync` have no screen of their own and
+ *   Settings → Advanced → Tools), and `uploads.max*` and `harness.autoSync` have no screen of their own and
  *   take `dorkos config set`. The person flips it where they already would; the
  *   agent cannot flip it back.
  * - **Versioned migrations are the one deliberate exception, and they are not a

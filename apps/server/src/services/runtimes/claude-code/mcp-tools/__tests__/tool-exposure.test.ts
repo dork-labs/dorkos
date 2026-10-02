@@ -453,8 +453,18 @@ describe('in-session tool exposure', () => {
     // 112 -> 113 for `session_start` (spec `claude-account-fleet` D5),
     // DEFERRED: starting a session is a deliberate step a turn can search for.
     // Both counts move by the same one.
-    expect(tools).toHaveLength(113);
-    expect(deferred).toHaveLength(103);
+    // Five document-channel verbs are searchable deferred tools.
+    expect(tools).toHaveLength(118);
+    expect(deferred).toHaveLength(108);
+    for (const name of [
+      'configure_doc_channel',
+      'approve_doc_route',
+      'revoke_doc_route',
+      'canvas_send',
+      'canvas_patch_state',
+    ]) {
+      expect(deferred.map((tool) => tool.name)).toContain(name);
+    }
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

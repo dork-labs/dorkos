@@ -141,4 +141,55 @@ test.describe('Browser — an agent records what it did @smoke', () => {
     expect(bytes.subarray(0, 6).toString('latin1')).toBe('GIF89a');
     expect(bytes.byteLength).toBeGreaterThan(0);
   });
+  test('half-size retry uses released-input normalized pixels and produces a smaller real GIF', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const result = await page.evaluate(async () => {
+      const modulePath = '/src/layers/features/canvas/lib/encode-recording.ts';
+      const { drawFrames, encodeGif, halveFrames } = await import(/* @vite-ignore */ modulePath);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 128;
+      const context = canvas.getContext('2d')!;
+      const inputs: string[] = [];
+      for (let frame = 0; frame < 3; frame++) {
+        const image = context.createImageData(128, 128);
+        for (let i = 0; i < image.data.length; i += 4) {
+          image.data[i] = (i * 31 + frame * 73) % 256;
+          image.data[i + 1] = (i * 17 + frame * 11) % 256;
+          image.data[i + 2] = (i * 7 + frame * 19) % 256;
+          image.data[i + 3] = 255;
+        }
+        context.putImageData(image, 0, 0);
+        inputs.push(canvas.toDataURL('image/png'));
+      }
+      const normalized = await drawFrames(inputs, 800);
+      const full = await encodeGif(normalized, { frameMs: 500, maxBytes: 8388608 });
+      if (!full.ok) throw new Error(full.error);
+      const bounds = { frameMs: 500, maxBytes: full.bytes.length - 1 };
+      const over = await encodeGif(normalized, bounds);
+      halveFrames(normalized);
+      const retry = await encodeGif(normalized, bounds);
+      if (!retry.ok) throw new Error(retry.error);
+      return {
+        inputs: inputs.length,
+        refusedFull: !over.ok,
+        normalized: normalized.map((f: { width: number; height: number }) => [f.width, f.height]),
+        header: String.fromCharCode(...retry.bytes.slice(0, 6)),
+        width: retry.bytes[6] + retry.bytes[7] * 256,
+        height: retry.bytes[8] + retry.bytes[9] * 256,
+        fullBytes: full.bytes.length,
+        retryBytes: retry.bytes.length,
+      };
+    });
+    expect(result.inputs).toBe(0);
+    expect(result.refusedFull).toBe(true);
+    expect(result.normalized).toEqual([
+      [64, 64],
+      [64, 64],
+      [64, 64],
+    ]);
+    expect(result).toMatchObject({ header: 'GIF89a', width: 64, height: 64 });
+    expect(result.retryBytes).toBeLessThan(result.fullBytes);
+  });
 });

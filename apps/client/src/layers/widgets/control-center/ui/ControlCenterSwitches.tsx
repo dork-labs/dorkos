@@ -36,7 +36,7 @@ const DEFAULT_CONCURRENCY = 4;
  * - **Open mesh** — the shared {@link OpenMeshSwitch}, wired to the topology
  *   query, so it reads the real `openMesh` rule rather than a local boolean.
  * - **Limit automatic replies** — `rooms.turnLimitsEnabled`, through the same
- *   {@link useRoomTurnLimits} hook Settings → Rooms writes with, so the two
+ *   {@link useRoomTurnLimits} hook Settings → Room limits writes with, so the two
  *   surfaces cannot disagree. The four numbers behind it stay in Settings: this
  *   panel is for the switches a person reaches for, not for tuning.
  * - **Warm agents** — `runtimes.claudeCode.persistentSession`. This is the new
@@ -69,7 +69,7 @@ export function ControlCenterSwitches() {
 
         <OpenMeshSwitch />
 
-        {/* The off state says the consequence in the same words Settings → Rooms
+        {/* The off state says the consequence in the same words Settings → Room limits
             uses, because it is the same consequence and a person who read it
             there must not have to re-derive it here. Disabled until the limits
             land: `turnLimitsEnabled` ships on, so guessing would draw the right
@@ -79,7 +79,7 @@ export function ControlCenterSwitches() {
           description={
             limits?.turnLimitsEnabled === false
               ? 'Agents can reply to each other without limit. The Stop button is the only brake.'
-              : 'Agents stop replying to each other once a back-and-forth has run far enough. Your next message starts the count over. Set the numbers in Settings → Rooms.'
+              : 'Agents stop replying to each other once a back-and-forth has run far enough. Your next message starts the count over. Set the numbers in Settings → Advanced → Room limits.'
           }
           checked={limits?.turnLimitsEnabled ?? true}
           disabled={limits === null}

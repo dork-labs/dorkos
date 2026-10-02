@@ -32,7 +32,7 @@ export interface RoomTurnLimits {
 }
 
 /**
- * A change to any of the settings Settings → Rooms offers: the five limits
+ * A change to any of the settings Settings → Room limits offers: the five limits
  * above, and how many conversations one agent may work in at once.
  */
 export type RoomSettingsPatch = Partial<RoomTurnLimits> & {

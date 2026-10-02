@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * Settings → Tools tab (spec team-room-home D6, task 4.6).
+ * Settings → Advanced → Tools tab (spec team-room-home D6, task 4.6).
  *
  * The **background-system** switches write `scheduler.enabled` and
  * `relay.enabled`. They decide whether DorkOS starts those subsystems at all,

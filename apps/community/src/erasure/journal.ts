@@ -5,13 +5,20 @@ export type ErasureJournalRecord =
   { kind: 'member'; communityId: string; memberId: string } | { kind: 'account'; userId: string };
 
 /**
- * One journal line as the host API returns it: the same JSON object the server logs and writes
- * to `COMMUNITY_ERASURE_JOURNAL`, so each one, written as a line, is input `erasure:reapply`
- * reads.
+ * One journal line as the host API returns it: the JSON object the server logs and writes to
+ * `COMMUNITY_ERASURE_JOURNAL`, plus `finishedAt`, so each one, written as a line, is input
+ * `erasure:reapply` reads (it ignores `finishedAt`).
  */
-export type ErasureJournalLine =
+export type ErasureJournalLine = (
   | { event: 'community.member_erased'; communityId: string; memberId: string }
-  | { event: 'community.account_erased'; userId: string };
+  | { event: 'community.account_erased'; userId: string }
+) & {
+  /**
+   * When the erasure finished: the row's `created_at`, set in the transaction that finishes it
+   * and the time retention counts from. A row never changes, so neither does this.
+   */
+  finishedAt: string;
+};
 
 /** Where a reader stands: after row `id`, whose random `nonce` it saw. `id` 0 is the start. */
 export interface ErasureJournalPosition {
@@ -79,6 +86,7 @@ interface JournalRow {
   community_id: string | null;
   member_id: string | null;
   user_id: string | null;
+  created_at: Date;
 }
 
 /**
@@ -108,7 +116,7 @@ export async function readErasureJournal(
     // `id` is selected as the bigint it is (pg hands it over as a string): cast to text in the
     // select list, ORDER BY would sort that output column as text and put 10 before 9.
     const rows = await client.query<JournalRow>(
-      `SELECT id,nonce,kind,community_id,member_id,user_id FROM erasure_journal
+      `SELECT id,nonce,kind,community_id,member_id,user_id,created_at FROM erasure_journal
        WHERE id>$1 ORDER BY id LIMIT $2`,
       [after.id, limit + 1]
     );
@@ -116,15 +124,16 @@ export async function readErasureJournal(
     const page = rows.rows.slice(0, limit);
     const last = page.at(-1);
     return {
-      lines: page.map((row) =>
-        row.kind === 'member'
+      lines: page.map((row) => ({
+        ...(row.kind === 'member'
           ? {
               event: 'community.member_erased' as const,
               communityId: row.community_id!,
               memberId: row.member_id!,
             }
-          : { event: 'community.account_erased' as const, userId: row.user_id! }
-      ),
+          : { event: 'community.account_erased' as const, userId: row.user_id! }),
+        finishedAt: row.created_at.toISOString(),
+      })),
       next: last ? { id: Number(last.id), nonce: last.nonce } : after,
       hasMore: rows.rows.length > limit,
     };

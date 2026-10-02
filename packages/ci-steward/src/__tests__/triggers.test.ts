@@ -209,7 +209,7 @@ describe('trigger rules', () => {
     expect(ids(third)).toEqual([]);
   });
 
-  it('3. fires on a failed or partial verdict, and clears when the entry is reverted', () => {
+  it('3. fires on a failed or partial verdict, and clears when the entry is reverted or withdrawn', () => {
     const e = entry({ id: '260901-120000', status: 'active' });
     const { first, second } = fireThenClear(
       { ledger: [e], verdicts: [verdict(e.id, 'failed')] },
@@ -218,6 +218,12 @@ describe('trigger rules', () => {
     expect(ids(first)).toEqual([`verdict:${e.id}`]);
     expect(first.open[0]!.severity).toBe('red');
     expect(ids(second)).toEqual([]);
+    // Withdrawn closes it too, with the failed verdict still on record: how a
+    // change that missed its target but is kept is put to rest.
+    const withdrawn = triage(
+      input({ ledger: [{ ...e, status: 'withdrawn' }], verdicts: [verdict(e.id, 'failed')] })
+    );
+    expect(ids(withdrawn)).toEqual([]);
     const partial = triage(input({ ledger: [e], verdicts: [verdict(e.id, 'partial')] }));
     expect(partial.open[0]!.severity).toBe('amber');
     // A verified verdict is not a trigger.

@@ -29,7 +29,12 @@ function parseInput<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 
-/** Create one project without allowing the Neon CLI to print connection credentials. */
+/**
+ * Create one project without allowing the Neon CLI to print connection credentials.
+ *
+ * @throws ProviderMutationError `ACCESS_DENIED` when Neon refuses the key or sign-in outright, and
+ *   `CREATION_OUTCOME_UNCERTAIN` for any other failure after the command starts.
+ */
 export async function createNeonProject(
   options: NeonReadOptions,
   input: {
@@ -50,6 +55,12 @@ export async function createNeonProject(
   const { project } = await runProviderMutation({
     ...options,
     timeoutMs: writeDeadline(options.timeoutMs),
+    // neonctl (7.x forwards to the `neon` CLI) may send requests of its own before the create
+    // (its `ensureAuth` middleware), and re-runs the whole command once after a 401 or a sign-in
+    // recovery (`src/index.ts`, `MAX_ATTEMPTS`). But it re-runs only after an attempt failed, and
+    // after `createProject` it calls nothing else, so a refusal it prints is a 4xx answer and no
+    // attempt made a project.
+    refusalIsDefinite: true,
     args: [
       'projects',
       'create',

@@ -161,17 +161,14 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
 
 - [ ] **Operator only:** a Neon project-scoped API key, made in the Neon console for a throwaway project in the designated org. It must not be able to create projects. Record only the key's name.
 - [ ] **Operator only:** read-only, note which Fly org roles and which Neon org roles can create resources, from each console's members page. Record the role names, not member names.
-- [ ] **How the restricted credentials reach the launcher.** The launcher does not pass `FLY_API_TOKEN` or `NEON_API_KEY` to `fly` and `neonctl`. It runs them with a fixed, short list of variables (`PATH`, `HOME`, `XDG_CONFIG_HOME`, `XDG_RUNTIME_DIR`, `WAYLAND_DISPLAY`, `FLY_CONFIG_DIR`, `GH_CONFIG_DIR` and the Windows equivalents; see `packages/cli/src/cli.ts`). An exported token is silently ignored, and the run would use the normal sign-in instead. So:
-  - **Fly:** make a private `0700` folder, put the read-only token in a `config.yml` there as `access_token: <token>` with mode `0600`, and export `FLY_CONFIG_DIR=<that folder>` for step (a). Prove it first with `FLY_CONFIG_DIR=<that folder> fly orgs list`: it must show only the designated org, and `fly auth whoami` must not show the operator's normal session.
-  - **Neon:** pending, not yet proved. The key has to reach `neonctl` through its own config folder under `XDG_CONFIG_HOME` or `HOME`, since `NEON_API_KEY` is dropped. Before any spend, prove a method with a dry run (below) that shows the launcher reading through the restricted key, and write the method here. **Moving `XDG_CONFIG_HOME` or `HOME` moves more than Neon's sign-in:** `gh` reads its sign-in from `XDG_CONFIG_HOME` (or `~/.config`), and moving `HOME` also moves `~/.fly`. So when you move either, pin the others back to the real folders: `GH_CONFIG_DIR=<your real gh config folder>` always, and `FLY_CONFIG_DIR=<your real ~/.fly>` too when `HOME` moves. Without that, the launcher fails at the release download (no `gh` sign-in) or at the Fly preflight, and the run proves nothing about Neon. If no method works, stop and ask the operator: A4(b) needs a different credential shape or a launcher change, filed as its own bug.
-  - This corrects the earlier spec text, which assumed the environment variables reach the provider CLIs; `01-ideation.md`, `02-specification.md` and `03-tasks.json` are corrected in the same PR. The launcher gap is DOR-2602: once it ships, an exported token reaches `fly` and `neonctl` directly and this workaround can go.
+- [ ] **How the restricted credentials reach the launcher.** Export them. Since DOR-2602 (v0.94.0), the launcher hands a non-empty `FLY_API_TOKEN` (or `FLY_ACCESS_TOKEN`) and `NEON_API_KEY` to `fly` and `neonctl` unchanged, and prints one line naming which variable it uses. Prove each first: `FLY_API_TOKEN=<token> fly orgs list` shows only the designated org, and `NEON_API_KEY=<key> neonctl projects list` shows only the throwaway project. The earlier `FLY_CONFIG_DIR` and config-folder workarounds are no longer needed.
 - [ ] Before inventory saved.
 
 ### L3 steps
 
 **(a) Fly credential that cannot create apps.**
 
-1. `export FLY_CONFIG_DIR=<read-only folder>`. Keep your normal `neonctl` sign-in.
+1. `export FLY_API_TOKEN=<read-only token>`. Keep your normal `neonctl` sign-in.
 2. Dry run first; it must complete and create nothing:
 
    ```sh
@@ -183,13 +180,13 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
    **Watch for:** if the read-only token already fails a read-only check (the org listing, regions, or the app-name lookup), setup stops before consent. Record the message. That is not an A4(a) pass: A4(a) needs consent, then a refusal at the first write. Stop and ask the operator how to proceed.
 
 3. Run it again without `--dry-run`. Type `<app-a>` at the consent prompt and `COPY TEST` at the clipboard check.
-4. Expect: the first write (the Fly app create) is refused with a clear permission message, and setup stops. Record the exact message, the journal state and the recovery table it printed.
+4. Expect: the first write (the Fly app create) is refused with a clear permission message naming `FLY_API_TOKEN` and the org, and setup stops with no resume command (DOR-2656). `--list-incomplete` does not list the run. Record the exact message.
 5. Inventory: nothing new in Fly or Neon. If a resource exists, that is a defect (rule 5).
-6. `unset FLY_CONFIG_DIR`.
+6. `unset FLY_API_TOKEN`.
 
 **(b) Neon credential that cannot create projects, after the Fly app exists.**
 
-1. Normal Fly sign-in. Point `neonctl` at the restricted key by the method proved in the preconditions.
+1. Normal Fly sign-in. `export NEON_API_KEY=<restricted key>`.
 2. Dry run with `--app-name <app-b>`. **Watch for:** if the restricted key already fails the read-only preflight (it may not be able to read the org or its regions), setup stops before consent. Record the message. That is a pass for "refused with zero resources" but not for A4(b), which needs the refusal after the Fly app exists. Stop and ask the operator how to proceed.
 3. Run without `--dry-run`. Type `<app-b>` and `COPY TEST`.
 4. Expect: the Fly app is created and verified; the Neon project create is refused; setup stops.
@@ -198,7 +195,7 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
 
 **(c) Resume, interrupt during the deploy, resume again.**
 
-1. Switch `neonctl` back to the operator's normal sign-in.
+1. `unset NEON_API_KEY`, so `neonctl` uses the operator's normal sign-in.
 2. Run the exact resume command step (b) printed.
 3. Expect: the Neon project and the Tigris bucket are created. If Fly asks for Tigris terms, accept them in Fly and type `accept`.
 4. When the launcher prints `Applying private secrets and deploying the pinned Community image…`, press Control-C once while `fly deploy` is running.
@@ -225,8 +222,7 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
 
 - [ ] `fly tokens list --org <fly-org>`, then `fly tokens revoke <token-id>` for `dor-2170-l3`.
 - [ ] Delete the Neon project-scoped key in the Neon console, and delete its throwaway project if one was made for it.
-- [ ] Stop the Fly agent that ran under the read-only folder, so no background process keeps the token: `FLY_CONFIG_DIR=<read-only folder> fly agent stop`.
-- [ ] Then delete the private Fly and Neon config folders made for this run.
+- [ ] Stop the Fly agent that ran with the read-only token, so no background process keeps it: `FLY_API_TOKEN=<read-only token> fly agent stop`.
 - [ ] Record that both are revoked, with the time.
 
 ### L3 pass criteria

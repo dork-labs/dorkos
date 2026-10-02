@@ -683,7 +683,7 @@ describe('server-injected sender identity (M6)', () => {
     await handler({
       subject: 'relay.agent.victim',
       payload: {},
-      from: 'relay.agent.ns.someone-else',
+      from: 'relay.doc.canvas-hash',
     } as Parameters<typeof handler>[0]);
 
     expect(deps.relayCore!.publish).toHaveBeenCalledWith(
@@ -1240,6 +1240,8 @@ describe('relay endpoint ownership (DOR-506)', () => {
     // Registering another agent's address would INTERCEPT its mail, not merely
     // read it, so this is refused before the registry is touched at all.
     const reserved = [
+      'relay.doc.canvas-hash',
+      'relay.doc',
       'relay.agent.other',
       'relay.system.console',
       'relay.human.console.abc',
@@ -1376,6 +1378,11 @@ describe('server-owned destinations are refused before anything is sent (DOR-243
   const RULE =
     'relay.system.* and relay.control.* addresses belong to DorkOS; agents cannot send to them.';
   const refused = [
+    'relay.*',
+    '*.doc',
+    '*.*',
+    'relay.doc.canvas-hash',
+    'relay.doc',
     'relay.system.tasks.task-1',
     'relay.system.approval.agent-1',
     'relay.system.console',

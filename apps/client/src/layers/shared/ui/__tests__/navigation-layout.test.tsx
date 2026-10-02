@@ -267,8 +267,10 @@ describe('className merging', () => {
         </NavigationLayoutContent>
       </NavigationLayout>
     );
-    const sidebar = screen.getByRole('tablist');
-    expect(sidebar.className).toContain('custom-sidebar');
+    // The class lands on the scrolling sidebar, which holds the tablist (and
+    // any footer) rather than being the tablist itself.
+    const sidebar = screen.getByRole('tablist').closest('[data-slot="navigation-layout-sidebar"]');
+    expect(sidebar?.className).toContain('custom-sidebar');
   });
 
   it('merges custom className on NavigationLayoutPanel', () => {

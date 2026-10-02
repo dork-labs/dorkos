@@ -10,6 +10,8 @@ export const STORAGE_KEYS = {
   RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts',
   PIP_PANEL_STATE: 'dorkos-pip-panel-state',
   ROOM_THREAD_WIDTH: 'dorkos-room-thread-width',
+  /** Whether Settings' folded Advanced group is open (DOR-2629). */
+  SETTINGS_ADVANCED_OPEN: 'dorkos-settings-advanced-open',
 } as const;
 
 /**
@@ -144,3 +146,78 @@ export const CELEBRATIONS = {
   /** Idle timeout for celebration engine (ms). */
   IDLE_TIMEOUT_MS: 30_000,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Settings tabs
+// ---------------------------------------------------------------------------
+
+/** The Settings tabs DorkOS itself ships — every {@link SettingsTab} but an extension's. */
+export type BuiltInSettingsTab =
+  | 'profile'
+  | 'account'
+  | 'appearance'
+  | 'preferences'
+  | 'notifications'
+  | 'server'
+  | 'tools'
+  | 'security'
+  | 'remote-access'
+  | 'runtimes'
+  | 'rooms'
+  | 'connections'
+  | 'permissions'
+  | 'privacy'
+  | 'danger'
+  | 'experiments';
+
+/** The sidebar group that starts folded, at the bottom of Settings (DOR-2629). */
+export const SETTINGS_ADVANCED_GROUP = 'Advanced';
+
+/** One built-in Settings tab, as every door into it names it. */
+export interface SettingsTabEntry {
+  /** The id `?settings=` links and `open(tab)` calls are minted with. Never renamed. */
+  id: BuiltInSettingsTab;
+  /** What the sidebar, the panel header and the command palette call it. */
+  label: string;
+  /** The sidebar group it sits under. */
+  group: 'You' | 'Agents' | 'This computer' | typeof SETTINGS_ADVANCED_GROUP;
+}
+
+/**
+ * The built-in Settings tabs, in sidebar order — the one list the dialog and
+ * the command palette both read, so a tab cannot be renamed in one and not the
+ * other.
+ *
+ * You, Agents and This computer are the eleven everyday tabs. Advanced folds
+ * away the five most people set once or never; folding is not hiding, since
+ * every one keeps its id and so its links.
+ */
+export const SETTINGS_TAB_DIRECTORY: readonly SettingsTabEntry[] = [
+  // `profile` is what the profile drawer's Edit button deep-links to.
+  { id: 'profile', label: 'Profile', group: 'You' },
+  // The DorkOS account's one home, directly after Profile: who you are, then
+  // the account attached to you (DOR-2628).
+  { id: 'account', label: 'DorkOS account', group: 'You' },
+  { id: 'appearance', label: 'Appearance', group: 'You' },
+  { id: 'preferences', label: 'Preferences', group: 'You' },
+  // "How loud may this be?" is a personal preference, not a system question.
+  { id: 'notifications', label: 'Notifications', group: 'You' },
+  { id: 'runtimes', label: 'Runtimes', group: 'Agents' },
+  // What agents may do, for everyone — the answer to "why did my agent ask".
+  { id: 'permissions', label: 'Permissions', group: 'Agents' },
+  // How DorkOS reaches your apps; the Connections page is for the apps.
+  { id: 'connections', label: 'Connections', group: 'Agents' },
+  // The local half of what was the Access tab (DOR-2628).
+  { id: 'security', label: 'Login & security', group: 'This computer' },
+  { id: 'remote-access', label: 'Remote access', group: 'This computer' },
+  { id: 'privacy', label: 'Privacy & Data', group: 'This computer' },
+  { id: 'server', label: 'Server', group: SETTINGS_ADVANCED_GROUP },
+  { id: 'tools', label: 'Tools', group: SETTINGS_ADVANCED_GROUP },
+  // Only the DEFAULTS every room follows: each room keeps its own limits in
+  // its own panel. The id stays `rooms` for old links.
+  { id: 'rooms', label: 'Room limits', group: SETTINGS_ADVANCED_GROUP },
+  // A place to try things; every flag keeps a direct link (DOR-1304).
+  { id: 'experiments', label: 'Experiments', group: SETTINGS_ADVANCED_GROUP },
+  // Only the three actions you cannot take back by hand (DOR-1758).
+  { id: 'danger', label: 'Danger zone', group: SETTINGS_ADVANCED_GROUP },
+];

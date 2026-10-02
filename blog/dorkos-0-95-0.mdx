@@ -1,0 +1,68 @@
+---
+title: DorkOS 0.95.0
+description: Your DorkOS account gets its own home in Settings, communities are now called spaces, and account problems now come with the fix.
+date: 2026-10-01
+author: DorkOS Team
+category: release
+tags: [release, account, spaces, settings]
+---
+
+DorkOS 0.95.0 gives your DorkOS account one clear home and calls communities spaces. Settings is shorter, and when something goes wrong with your account, the app tells you what happened and how to fix it.
+
+## Highlights
+
+### Your DorkOS account has a home
+
+Settings now has a **DorkOS account** tab, right after Profile. It shows your plan, your credits and your seats, and one click takes you to the website to change your plan or see your invoices.
+
+### Communities are now spaces
+
+Everywhere the app said "community", it now says "space". The menu at the top left offers **Join a space** to everyone, and **Start a space** when you have a DorkOS account. On spaces that run on DorkOS, you sign in with your DorkOS account instead of making a second one.
+
+### A shorter Settings
+
+The tabs you use every day come first. Power-user tabs like Server, Tools and Danger zone now sit under **Advanced**, folded until you open them. You can also jump to any tab from the command palette.
+
+### Account problems come with the fix
+
+If an app connected through your DorkOS account can't load, DorkOS now says whether the problem is on our servers or on this computer. When the computer needs linking again, one button does it, and your computer stays linked until you approve the new link.
+
+## All Changes
+
+> DorkOS 0.95.0 gives your DorkOS account its own home in Settings, and calls communities spaces. You can start and join a space on DorkOS with your DorkOS account, Settings is shorter, and when your account has a problem the app now says what went wrong and how to fix it.
+
+### Added
+
+- Replacing a Community owner who has left can now finish on the server. The owner can keep ownership with one click from the email, with no sign-in, or from the community while signed in. The person the host asked for can then take ownership, signing up first if they need to. When the host uses single sign-on, only the exact account the host named can do this. Asking for a replacement is still turned off for now. It will open up in a later release (DOR-2541)
+- If someone asks to make someone else the owner of a space you own, DorkOS now tells you. The space's row in the switcher gets a warning dot, and its page shows when the change could happen, only what you can do about it, and an **Open space** button to keep ownership. Your Inbox gets one notification when DorkOS first sees the request and one if it goes through, even after DorkOS restarts or updates. DorkOS checks while the app is open, and a finished request is only shown for a week. Admins and members see nothing (DOR-2543)
+- The Community site now has every page for replacing an owner who has left. Hosts get an Owner part on each community's record: ask to replace the owner, see each request's progress in plain words, cancel it, or send the claim link again. The owner sees a banner with Keep ownership and only the choices they really have, and an owner without a password is no longer told a password would let them hand on a community that is archived or on hold. Admins see that a request is open. Everyone sees a note for a week after a new owner takes over. The emailed link opens a page with one Keep ownership button and no sign-in, and the new owner's link opens a page that says when they can take over. Asking for a replacement is still turned off for now. It will open up in a later release (DOR-2542)
+- Change your plan, add credits and see your invoices on the DorkOS website, one click from Settings › DorkOS account. Each button opens the page in your browser, and every plan name and price you see comes from your DorkOS account. If you're already on a plan, changing it happens on your billing page. If something isn't available on your account yet, the app says so (DOR-2632)
+- Download a copy of everything your DorkOS account holds, from the same place (DOR-2632)
+- Where a space's site signs people in with your DorkOS account, starting or joining it no longer asks for a second account. The pages DorkOS opens for you there (making the space yours, an invitation, approving this DorkOS) lead with **Continue with** your DorkOS account, and every other way to sign in stays one step away. Everywhere else, including a space you run on your own server, nothing changes. (DOR-2634)
+
+### Changed
+
+- On the pricing page, the paid plans now have a **Request early access** button in place of **Create your account**. It opens the early-access page. The free plan's button is the same as before.
+- Your DorkOS account has one home now: a **DorkOS account** tab in Settings, right after Profile. Before you link, it says plainly what an account adds on this computer and offers one button. Once you link, it shows your plan, your credits (what is included this period and what you added), which runtimes run on your credits, what is on your account, your seats if you have any, and **Unlink this computer** at the bottom (DOR-2628)
+- The team-name menu at the top of the sidebar now opens with you (your face and name, onto your profile), then **DorkOS account**, which says whether this computer is signed in, then **Settings**. "Workspace settings" is now just "Settings", and the extra "Account" row that opened your profile is gone. The You tab on a phone starts with the same two rows (DOR-2628)
+- The Access tab in Settings is gone. Its login half is now **Login & security**, under **This computer**. Old links to `?settings=account`, `?settings=security` and `?settings=access` still open the right tab (DOR-2628)
+- What the app called a community is now a space, everywhere you read it: menus, dialogs, messages and the docs. The menu at the top left now offers **Add a space**. **Join a space** is there for everyone. With a DorkOS account you also get **Start a space**, and **Your spaces**, where you can move a space you run elsewhere over to DorkOS. Running a space on your own server now sits under **Advanced** (DOR-2631)
+- **Join a space** is now one dialog. Paste a space's address to connect, or paste an invitation link: it opens on the space's own site so you can join, and the dialog stays open with the space's address filled in, ready to connect when you come back. A join link that is incomplete or not secure is refused with a plain message instead of being sent anywhere (DOR-2631)
+- Settings is shorter. You see the tabs you use day to day, in three groups: You, Agents, and This computer. Server, Tools, Room limits, Experiments and Danger zone now sit under **Advanced** at the bottom, folded until you open it. Settings remembers whether you left it open, and a link to any of those tabs opens it for you. Each built-in Settings tab is also in the command palette now, so typing "danger" or "room limits" takes you straight there. Room limits holds the defaults every room follows; a room can still set its own limits in its own panel. (DOR-2629)
+- The docs now give your DorkOS account its own section. It says what linking gives you today and what still works without an account, with fresh screenshots of the DorkOS account tab. Old links to the account page still work. The pages for running DorkOS yourself (Docker, tunnels, your own server) now sit together under "Advanced: running DorkOS yourself". **Run your own space server** in the app now opens a page just for that. (DOR-2635)
+
+### Fixed
+
+- When an app connected through your DorkOS account can't load, the app now says where the problem is. It tells you whether DorkOS's servers aren't answering, or whether this computer needs to be linked to your account again (DOR-2622).
+- When the link needs to be made again, a "Link my DorkOS account again" button opens Settings and starts a new link for you. Your computer stays linked until you approve the new one (DOR-2622).
+- A computer whose DorkOS account link needed updating can now pick up the update by linking again. Before, the app never recognized the message DorkOS's servers send for that case, and a linked computer had no way to link again (DOR-2622).
+- If a new link is turned down, its code times out, or it can't finish, Settings keeps showing this computer as linked, with a short note you can dismiss. Before, it showed an error until the next check, up to 15 minutes later. You can also cancel a new link while its code is showing. If the new link finishes at the moment you cancel, it is kept rather than lost, and Settings shows this computer as linked (DOR-2622).
+- The dorkos.ai fallback that lists apps and their actions for a DorkOS account no longer fails the whole list when an app sends extra details, such as a logo or an action's display name. It now leaves those details out (DOR-2622).
+- When `dorkos community deploy --remove-uncertain` removes a Tigris bucket, it no longer says the bucket's access key was removed. Fly deletes the bucket but leaves its access key working in Tigris, so DorkOS now tells you, and shows you how to delete it: in the Tigris console, or with the Tigris command-line tool (run `tigris login oauth` and choose "Sign in with Fly", then find the key named after the bucket, usually `<bucket>_access_key`, and delete it by its id, which starts with `tid_`) (DOR-2646)
+- The app no longer swaps itself out for "DorkOS can't reach its server" about 15 seconds after a quick reload when the server is fine. That brief swap could clear what you had open, like a channel mid-conversation, before putting it back. If the server really is down or stuck, you still see the message. (DOR-2649)
+
+### Security
+
+- A few spots that tidy up text, like the end of a web address, an error report or a model name, could slow to a crawl on a very long, oddly repeated piece of text. They now take the same short time on any input, and give the same results as before.
+- A log line about an agent's conversation no longer lets the conversation's id change how the rest of the line is written.
+- The link in the "your report shipped" email is now escaped so that no web address can break out of it.

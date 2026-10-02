@@ -2,11 +2,11 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import * as React from 'react';
 import { Settings, User, Bell } from 'lucide-react';
-import { TabbedDialog, type TabbedDialogTab } from '../tabbed-dialog';
+import { TabbedDialog, type TabbedDialogFoldedGroup, type TabbedDialogTab } from '../tabbed-dialog';
 import type { SettingsTabContribution } from '@/layers/shared/model';
 
 // ---------------------------------------------------------------------------
@@ -14,10 +14,11 @@ import type { SettingsTabContribution } from '@/layers/shared/model';
 // ---------------------------------------------------------------------------
 
 const mockUseSlotContributions = vi.fn<() => SettingsTabContribution[]>(() => []);
+const viewport = vi.hoisted(() => ({ mobile: false }));
 
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  useIsMobile: () => false,
+  useIsMobile: () => viewport.mobile,
   useSlotContributions: () => mockUseSlotContributions(),
 }));
 
@@ -132,6 +133,8 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   mockUseSlotContributions.mockReturnValue([]);
+  viewport.mobile = false;
+  localStorage.clear();
 });
 
 // ---------------------------------------------------------------------------
@@ -163,6 +166,7 @@ interface RenderOptions {
   headerSlot?: React.ReactNode;
   description?: string;
   title?: React.ReactNode;
+  foldedGroup?: TabbedDialogFoldedGroup;
 }
 
 function renderDialog(options: RenderOptions = {}) {
@@ -179,6 +183,7 @@ function renderDialog(options: RenderOptions = {}) {
     headerSlot,
     description,
     title = 'Test Dialog',
+    foldedGroup,
   } = options;
 
   const onOpenChange = vi.fn();
@@ -197,6 +202,7 @@ function renderDialog(options: RenderOptions = {}) {
       maxWidth={maxWidth}
       minHeight={minHeight}
       maximized={maximized}
+      foldedGroup={foldedGroup}
       testId={testId}
     />
   );
@@ -588,6 +594,131 @@ describe('TabbedDialog', () => {
       ).map((el) => el.textContent);
       // Only one "Group One" header — the extension tab joined the existing group.
       expect(headers).toEqual(['Group One']);
+    });
+  });
+
+  // ── Folded group (DOR-2629) ────────────────────────────────────
+  describe('folded group', () => {
+    const FOLD: TabbedDialogFoldedGroup = { group: 'Later', storageKey: 'test-fold-open' };
+    const FOLD_TABS: TabbedDialogTab<TabId>[] = [
+      // Declared FIRST on purpose: a folded group renders last regardless.
+      { id: 'gamma', label: 'Gamma', icon: Bell, component: TabGamma, group: 'Later' },
+      { id: 'alpha', label: 'Alpha', icon: Settings, component: TabAlpha, group: 'Now' },
+      { id: 'beta', label: 'Beta', icon: User, component: TabBeta, group: 'Now' },
+    ];
+    const toggle = () => screen.getByRole('button', { name: 'Later' });
+    const labels = () => screen.getAllByRole('tab').map((t) => t.textContent);
+
+    it('starts folded, with no list rendered and nothing named in aria-controls', () => {
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD });
+      expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+      expect(labels()).toEqual(['Alpha', 'Beta']);
+      expect(screen.getAllByRole('tablist')).toHaveLength(1);
+      expect(toggle()).not.toHaveAttribute('aria-controls');
+    });
+
+    it('sits outside every tablist and opens a second, named tablist', () => {
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD });
+      // A tablist may own only tabs.
+      expect(toggle().closest('[role="tablist"]')).toBeNull();
+      fireEvent.click(toggle());
+      const later = screen.getByRole('tablist', { name: 'Later' });
+      expect(toggle()).toHaveAttribute('aria-controls', later.id);
+      expect(
+        within(later)
+          .getAllByRole('tab')
+          .map((t) => t.textContent)
+      ).toEqual(['Gamma']);
+    });
+
+    it('keeps the active tab showing when folded while it is selected', () => {
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD, initialTab: 'gamma' });
+      fireEvent.click(toggle());
+      expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+      const later = screen.getByRole('tablist', { name: 'Later' });
+      const gamma = within(later).getByRole('tab', { name: 'Gamma' });
+      expect(gamma).toHaveAttribute('aria-selected', 'true');
+      // The panel's label still points at a tab that exists.
+      const panel = screen.getByRole('tabpanel');
+      expect(document.getElementById(panel.getAttribute('aria-labelledby')!)).toBe(gamma);
+    });
+
+    it('walks the arrow keys across both lists as one sequence', () => {
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD, initialTab: 'beta' });
+      fireEvent.click(toggle());
+      fireEvent.keyDown(screen.getByRole('tab', { name: 'Beta' }), { key: 'ArrowDown' });
+      expect(screen.getByRole('tab', { name: 'Gamma' })).toHaveAttribute('aria-selected', 'true');
+      fireEvent.keyDown(screen.getByRole('tab', { name: 'Gamma' }), { key: 'ArrowDown' });
+      expect(screen.getByRole('tab', { name: 'Alpha' })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('never switches tabs on a key pressed on the toggle', () => {
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD });
+      fireEvent.click(toggle());
+      fireEvent.keyDown(toggle(), { key: 'ArrowDown' });
+      fireEvent.keyDown(toggle(), { key: 'End' });
+      expect(screen.getByRole('tab', { name: 'Alpha' })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('renders below every other group, an extension group included', () => {
+      mockUseSlotContributions.mockReturnValue([
+        { id: 'ext1', label: 'Extension Tab', icon: Settings, component: TabAlpha },
+      ]);
+      const { container } = renderDialog({
+        tabs: FOLD_TABS,
+        foldedGroup: FOLD,
+        extensionSlot: 'settings.tabs',
+      });
+      fireEvent.click(toggle());
+      expect(labels()).toEqual(['Alpha', 'Beta', 'Extension Tab', 'Gamma']);
+      const sidebar = container.querySelector('[data-slot="navigation-layout-sidebar"]')!;
+      expect(sidebar.lastElementChild?.textContent).toBe('Gamma');
+    });
+
+    it('unfolds itself when the dialog opens on one of its tabs', () => {
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD, initialTab: 'gamma' });
+      expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('tab', { name: 'Gamma' })).toHaveAttribute('aria-selected', 'true');
+      // A reveal is not a remembered choice.
+      expect(localStorage.getItem('test-fold-open')).toBeNull();
+    });
+
+    it('re-reads the remembered state each time the dialog opens', () => {
+      const { rerender } = renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD });
+      fireEvent.click(toggle());
+      expect(localStorage.getItem('test-fold-open')).toBe('true');
+      const props = {
+        onOpenChange: vi.fn(),
+        title: 'Test Dialog',
+        defaultTab: 'alpha' as const,
+        tabs: FOLD_TABS,
+        foldedGroup: FOLD,
+      };
+      rerender(<TabbedDialog<TabId> {...props} open={false} />);
+      localStorage.setItem('test-fold-open', 'false');
+      rerender(<TabbedDialog<TabId> {...props} open={true} />);
+      expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('works as a tappable row in the phone list', () => {
+      viewport.mobile = true;
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      renderDialog({ tabs: FOLD_TABS, foldedGroup: FOLD });
+      const list = screen.getByRole('list');
+      // Every row of the drill-in list is a list item, the toggle's included.
+      const rows = within(list).getAllByRole('listitem');
+      expect(rows.map((row) => row.textContent)).toEqual(['Alpha', 'Beta', 'Later']);
+      expect(rows[2]).toContainElement(toggle());
+      expect(screen.queryByText('Gamma')).toBeNull();
+      fireEvent.click(toggle());
+      // Opening scrolls the first revealed row into view, at the list's foot.
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect((scrollIntoView.mock.contexts[0] as HTMLElement).textContent).toBe('Gamma');
+      fireEvent.click(screen.getByText('Gamma'));
+      // Drilled in: the list is gone and Gamma's panel is showing.
+      expect(screen.getByTestId('panel-gamma')).toBeInTheDocument();
+      expect(screen.queryByRole('list')).toBeNull();
     });
   });
 });

@@ -1,3 +1,4 @@
+import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
 import type {
   AgentRuntime,
   DependencyCheck,
@@ -201,7 +202,13 @@ export class TestModeRuntime implements AgentRuntime {
     // The gate is what makes an interactive scenario possible: it hands the
     // scenario the handle it parks on, and gives `approveTool`/`submitAnswers`/
     // `submitElicitation`/`interruptQuery` something real to resolve.
-    const ctx = interactionGate.open(sessionId);
+    const ctx = {
+      ...interactionGate.open(sessionId),
+      docEventsPrompt: opts?.additionalContext
+        ?.filter((entry) => entry.kind === 'doc_events')
+        .map((entry) => renderDocEvents(entry.data))
+        .join('\n\n'),
+    };
     // Boots this session's scripted process if it opted in and holds none yet,
     // and counts the turn against it — which is what later makes a warm second
     // turn distinguishable from a fresh one. `undefined` for a session on the

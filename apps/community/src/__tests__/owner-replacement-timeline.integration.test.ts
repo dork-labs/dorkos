@@ -9,6 +9,7 @@
  * own community and reads only its own owner's mail.
  */
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CommunityAdminOwnerReplacementCreateResponseSchema } from '@dorkos/shared/community-admin-wire';
 import { queueNotice } from '../mail/outbox.js';
@@ -53,10 +54,14 @@ const DAY_NAME =
 let h: TenancyHarness;
 /** A host whose worker can write every notice but the claim-reissued one. */
 let partial: TenancyHarness;
-/** A host with every composer, as main.ts has, but owner replacements not yet switched on. */
-let closed: TenancyHarness;
-let closedOperator = '';
-let closedOwnership = '';
+/** A host started as main.ts starts one: mail, every composer, the wall clock, nothing else. */
+let asMain: TenancyHarness;
+let asMainOperator = '';
+let asMainOwnership = '';
+/** A host with every composer but no mail. */
+let noMail: TenancyHarness;
+let noMailOperator = '';
+let noMailOwnership = '';
 let smtp: SmtpFake;
 let clockMs = Date.now();
 const clock = () => new Date(clockMs);
@@ -275,18 +280,21 @@ beforeAll(async () => {
     now: clock,
     env,
     noticeComposers: COMPOSERS,
-    ownerReplacementOpen: true,
   });
-  closed = await startTenancyHarness('owner_timeline_closed', { env, noticeComposers: COMPOSERS });
+  asMain = await startTenancyHarness('owner_timeline_as_main', { env, noticeComposers: COMPOSERS });
+  noMail = await startTenancyHarness('owner_timeline_no_mail', {
+    env: { COMMUNITY_PUBLIC_URL: PUBLIC_URL },
+    noticeComposers: COMPOSERS,
+  });
   const { 'owner_replacement.claim_reissued': _missing, ...withoutReissue } = COMPOSERS;
   partial = await startTenancyHarness('owner_timeline_partial', {
     env,
     noticeComposers: withoutReissue,
-    ownerReplacementOpen: true,
   });
   operator = (await bootstrapHost(h, 'Tia Host', 'tia@host.test')).cookie;
   partialOperator = (await bootstrapHost(partial, 'Pat Host', 'pat@host.test')).cookie;
-  closedOperator = (await bootstrapHost(closed, 'Cy Host', 'cy@host.test')).cookie;
+  asMainOperator = (await bootstrapHost(asMain, 'Cy Host', 'cy@host.test')).cookie;
+  noMailOperator = (await bootstrapHost(noMail, 'Nell Host', 'nell@host.test')).cookie;
   const issue = async (harness: TenancyHarness, cookie: string) => {
     const issued = await harness.call('/api/v1/host/api-keys', {
       cookie,
@@ -302,13 +310,15 @@ beforeAll(async () => {
   };
   ownership = await issue(h, operator);
   partialOwnership = await issue(partial, partialOperator);
-  closedOwnership = await issue(closed, closedOperator);
+  asMainOwnership = await issue(asMain, asMainOperator);
+  noMailOwnership = await issue(noMail, noMailOperator);
 }, 120_000);
 
 afterAll(async () => {
   await h?.close();
   await partial?.close();
-  await closed?.close();
+  await asMain?.close();
+  await noMail?.close();
   await smtp?.close();
 });
 
@@ -1086,19 +1096,66 @@ describe('object-only links through a lost reply (AC-19)', () => {
   });
 });
 
-describe('owner replacements not yet switched on', () => {
-  it('refuses a request on a host with every composer until main.ts turns them on', async () => {
-    // Purpose: fails if the request gate opens as soon as the notices can be written, before
-    // the owner's "Keep ownership" link leads anywhere (tasks 2.4 and 3.1). The other hosts in
-    // this file prove the harness can turn it on.
-    const c = await ownedCommunity(closed, closedOperator);
-    const refused = await closed.call(
+describe('requests are open on a host with mail', () => {
+  it("main.ts gives the app the worker's composers and nothing else, and runs mail and the timeline", async () => {
+    // Purpose: fails if main.ts puts a rollout switch (or any other option) back between a host
+    // and a request, gives the app other composers than the mail worker's, or stops starting the
+    // mail worker or the timeline. The next test runs the app built the same way.
+    const startup = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
+    expect(startup).toContain(
+      'const noticeComposers: NoticeComposers = { ...ownerReplacementComposers(config) };'
+    );
+    expect(startup).toMatch(
+      /createCommunityApp\(\{\s*config,\s*pool,\s*blobStore,\s*noticeComposers,\s*\}\)/u
+    );
+    expect(startup).toContain('startMailDelivery({ config, pool, composers: noticeComposers })');
+    expect(startup).toContain('startOwnerReplacementTimeline({ pool, config })');
+    expect(startup).not.toContain('ownerReplacementOpen');
+  });
+
+  it('takes a request on a host built as main.ts builds the app, and the owner gets the email', async () => {
+    // Purpose: fails if anything but mail and the worker's composers stands between a host and a
+    // request, or if the accepted request does not reach the owner by email with a working
+    // keep-ownership link.
+    const c = await ownedCommunity(asMain, asMainOperator);
+    const created = await requestReplacement(c, {}, asMain, asMainOwnership);
+    const id = created.replacement.replacementId;
+    expect(created.replacement.state).toBe('notifying');
+    expect(created.claimToken).toEqual(expect.any(String));
+    const outbox = await asMain.pool.query<{ kind: string; state: string }>(
+      'SELECT kind,state FROM notice_outbox WHERE subject_id=$1',
+      [id]
+    );
+    expect(outbox.rows).toEqual([{ kind: 'owner_replacement.notice', state: 'pending' }]);
+
+    const transport = createSmtpTransport(smtp.mail, FAST);
+    const attempt = await deliverNextNotice({
+      pool: asMain.pool,
+      transport,
+      composers: COMPOSERS,
+      now: () => new Date(),
+    });
+    expect(attempt?.outcome).toBe('accepted');
+    const [mail] = mailsTo(c.ownerEmail);
+    expect(mail.text).toContain(c.name);
+    const token = objectToken(mail);
+    expect(token).not.toBeNull();
+    const preflight = await asMain.call('/api/v1/owner-replacements/object-preflight', {
+      body: { token },
+    });
+    await expectStatus(preflight, 200, 'object preflight');
+  });
+
+  it('still refuses on a host without mail, with every composer, and writes nothing', async () => {
+    // Purpose: fails if opening requests let one start on a host that cannot email the owner.
+    const c = await ownedCommunity(noMail, noMailOperator);
+    const refused = await noMail.call(
       `/api/v1/host/communities/${c.communityId}/owner-replacements`,
       {
-        bearer: closedOwnership,
+        bearer: noMailOwnership,
         body: {
-          idempotencyKey: `closed-${++counter}`,
-          lifecycleVersion: await lifecycleVersion(c.communityId, closed),
+          idempotencyKey: `no-mail-${++counter}`,
+          lifecycleVersion: await lifecycleVersion(c.communityId, noMail),
           reason: 'owner_unreachable',
           reference: null,
           claimant: { oidcSubject: null },
@@ -1108,9 +1165,9 @@ describe('owner replacements not yet switched on', () => {
     expect(refused.status).toBe(409);
     expect(await refused.json()).toEqual({
       code: 'NOTICE_DELIVERY_UNAVAILABLE',
-      message: "This server can't send the owner's notice yet, so it can't replace an owner.",
+      message: "This host can't send email, so it can't give the owner notice. Set up mail first.",
     });
-    const written = await closed.pool.query(
+    const written = await noMail.pool.query(
       'SELECT 1 FROM owner_replacements UNION ALL SELECT 1 FROM notice_outbox'
     );
     expect(written.rowCount).toBe(0);

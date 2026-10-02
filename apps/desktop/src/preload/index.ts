@@ -127,7 +127,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   saveDiagnosticReport: (): Promise<void> => ipcRenderer.invoke(DIAGNOSTICS_CHANNEL),
   /**
-   * Restart the DorkOS server, for Settings → Danger zone (DOR-542).
+   * Restart the DorkOS server, for Settings → Advanced → Danger zone (DOR-542).
    *
    * The desktop replacement for `POST /api/admin/restart`, which the server
    * refuses here: it restarts by re-execing itself, and inside this app there is
@@ -142,7 +142,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartServer: (): Promise<AdminActionResult> => ipcRenderer.invoke(RESTART_SERVER_CHANNEL),
   /**
    * Delete everything DorkOS has stored and bring the server back on an empty
-   * data directory — Settings → Danger zone's "Reset all data".
+   * data directory — Settings → Advanced → Danger zone's "Reset all data".
    *
    * The deletion happens between the stop and the start, and is abandoned (with
    * nothing deleted) if another DorkOS holds the data directory at that moment.

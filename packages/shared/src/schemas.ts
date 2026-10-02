@@ -1,3 +1,4 @@
+import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
 /**
  * Zod schemas — single source of truth for all shared types and OpenAPI metadata.
  *
@@ -6010,6 +6011,7 @@ export const UiCommandSchema = z
     // Canvas commands
     z.object({
       action: z.literal('open_canvas'),
+      channel: CanvasChannelDeclarationSchema.optional(),
       content: UiCanvasContentSchema.optional(),
       preferredWidth: z.number().min(20).max(80).optional(),
       target: UiCommandTargetSchema.optional(),
@@ -6056,6 +6058,7 @@ export const UiCommandSchema = z
 
     z.object({
       action: z.literal('open_file'),
+      channel: CanvasChannelDeclarationSchema.optional(),
       /**
        * Path of the file to open in the canvas. Workspace-relative or absolute;
        * resolved and confined to the session's working directory. The client
@@ -6067,6 +6070,7 @@ export const UiCommandSchema = z
     }),
     z.object({
       action: z.literal('open_diff'),
+      channel: CanvasChannelDeclarationSchema.optional(),
       /**
        * Path of the file whose agent edits to review. Workspace-relative or
        * absolute; resolved and confined to the session's working directory. Opens
@@ -6089,6 +6093,7 @@ export const UiCommandSchema = z
     }),
     z.object({
       action: z.literal('browser_navigate'),
+      channel: CanvasChannelDeclarationSchema.optional(),
       /**
        * The page to open in the embedded browser: an external URL, a
        * `localhost` dev-server URL, or a local (cwd-confined) file path. Opens
@@ -6516,9 +6521,23 @@ export type DevtoolsScreenshotResult = z.infer<typeof DevtoolsScreenshotResultSc
  */
 export const DevtoolsIngestSchema = z
   .object({
+    /** Host recording admission; never supplied by the injected page shim. */
+    recordingStart: z
+      .object({
+        requestId: z.string().min(1).max(128),
+        recordingId: z.string().min(1).max(128),
+        phase: z.enum(['reserved', 'started']),
+        ok: z.boolean(),
+        error: z.string().max(2_048).optional(),
+      })
+      .strict()
+      .optional(),
+    hostOutcome: z.enum(['host', 'page-reported']).optional(),
+    bridgeGeneration: z.string().min(1).max(128).optional(),
     documentId: z.string().max(256).optional(),
     logicalUrl: z.string().max(2_048).optional(),
     seq: z.number(),
+    dropped: z.boolean().optional(),
     reset: z.boolean().optional(),
     console: z.array(DevtoolsConsoleEntrySchema).max(DEVTOOLS_CONSOLE_BATCH_MAX),
     network: z.array(DevtoolsNetworkEntrySchema).max(DEVTOOLS_NETWORK_BATCH_MAX),
@@ -6655,6 +6674,8 @@ export const DEVTOOLS_OUTLINE_MAX_CHARS = 65_536;
  */
 export const DevtoolsActionResultSchema = z
   .object({
+    hostOutcome: z.enum(['host', 'page-reported']).optional(),
+    bridgeGeneration: z.string().min(1).max(128).optional(),
     requestId: z.string().max(128),
     ok: z.boolean(),
     did: z.string().max(2_048).optional(),
@@ -6691,9 +6712,12 @@ export type DevtoolsActionResult = z.infer<typeof DevtoolsActionResultSchema>;
  */
 export const DevtoolsRecordingUploadSchema = z
   .object({
+    hostOutcome: z.enum(['host', 'page-reported']).optional(),
+    bridgeGeneration: z.string().min(1).max(128).optional(),
+    documentId: z.string().max(256).optional(),
     requestId: z.string().min(1).max(128),
     /** How many frames the window actually encoded, which is what the tool reports. */
-    frames: z.coerce.number().int().min(1).max(1_000).optional(),
+    frames: z.coerce.number().int().min(1).max(62).optional(),
     /** Wall-clock length of the recording in milliseconds, as the window measured it. */
     durationMs: z.coerce
       .number()

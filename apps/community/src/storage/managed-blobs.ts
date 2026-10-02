@@ -4,6 +4,8 @@ import { transaction } from '../data.js';
 import { ApiError } from '../http.js';
 import { isReadOnlyLifecycle } from '../tenant-context.js';
 import type { BlobStore, StoredBlob } from './blob-store.js';
+// A cycle, but only through functions called long after both modules load.
+import { BLOB_DELETE_TIMEOUT_MS, communityFilesDeletable } from './pending-deletions.js';
 
 /** Maximum time an attachment or export writer owns an active reservation. */
 export const MANAGED_BLOB_RESERVATION_TTL_MS = 60 * 60 * 1000;
@@ -284,7 +286,19 @@ export async function queueCommittedBlobDeletion(
   );
 }
 
-/** Delete an uncommitted object or retain tenant-qualified retry work on failure. */
+/**
+ * Delete an uncommitted object or retain tenant-qualified retry work on failure.
+ *
+ * The object is queued first, so the pending-deletion sweep finishes the job if this cannot.
+ * It is then deleted at once only when its community lets files go (see
+ * {@link communityFilesDeletable}): under a host legal hold, even a write that never committed
+ * stays, with its queue row, until the hold is released, and the sweep removes it then. A
+ * community row someone holds `FOR UPDATE` is not waited for either; the sweep tries later.
+ *
+ * Accepted trade-off, as in the pending-deletion sweep: the community row stays held `FOR SHARE`
+ * for as long as the storage delete runs (at most `BLOB_DELETE_TIMEOUT_MS`, on a request's
+ * failure path), so an admin write to that community, or placing a hold, waits for it.
+ */
 export async function discardManagedBlob(
   pool: Pool,
   blobStore: BlobStore,
@@ -305,47 +319,56 @@ export async function discardManagedBlob(
       ]
     );
     if (result.rowCount !== 1) return null;
+    // A writer that returned its StoredBlob has finished, so whoever deletes the file settles it;
+    // the error timestamp marks that for the sweep, which otherwise keeps a tombstone (see below)
+    // after deleting a file this skipped under a legal hold. Import teardown does the same.
     await client.query(
-      `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at)
-       VALUES($1,0,now())
+      `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at,last_error_at)
+       VALUES($1,0,now(),CASE WHEN $2 THEN now() END)
        ON CONFLICT(blob_key) DO NOTHING`,
-      [reservation.key]
+      [reservation.key, stored !== undefined]
     );
     return { writerUncertain: stored === undefined };
   });
   if (!transitioned) return;
-  try {
-    await blobStore.delete(reservation.key);
-  } catch (error) {
-    await pool.query(
-      transitioned.writerUncertain
-        ? `UPDATE pending_blob_deletions
-           SET attempts=attempts+1,next_attempt_at=now()+interval '1 minute'
-           WHERE blob_key=$1`
-        : `UPDATE pending_blob_deletions
-           SET attempts=attempts+1,last_error_at=now(),next_attempt_at=now()+interval '1 minute'
-           WHERE blob_key=$1`,
-      [reservation.key]
-    );
-    console.error(
-      'Community managed blob cleanup deferred',
-      error instanceof Error ? error.name : 'unknown'
-    );
-    return;
-  }
-  // A provider write may reject or abort before it stops publishing bytes. When the writer did not
-  // return a StoredBlob, absence after this delete proves only this instant. Retain the NULL
-  // settlement marker and tenant-owned tombstone so every later sweep can remove a delayed publish.
-  if (transitioned.writerUncertain) {
-    await pool.query(
-      `UPDATE pending_blob_deletions
-       SET attempts=attempts+1,next_attempt_at=now()+interval '1 hour'
-       WHERE blob_key=$1`,
-      [reservation.key]
-    );
-    return;
-  }
+  // Lock order, as in the pending-deletion sweep: the community, then `managed_blobs`, then the
+  // queue. The community row stays held FOR SHARE until the delete below is settled.
   await transaction(pool, async (client) => {
+    if (!(await communityFilesDeletable(client, reservation.communityId))) return;
+    try {
+      await blobStore.delete(reservation.key, {
+        signal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
+      });
+    } catch (error) {
+      await client.query(
+        transitioned.writerUncertain
+          ? `UPDATE pending_blob_deletions
+             SET attempts=attempts+1,next_attempt_at=now()+interval '1 minute'
+             WHERE blob_key=$1`
+          : `UPDATE pending_blob_deletions
+             SET attempts=attempts+1,last_error_at=now(),next_attempt_at=now()+interval '1 minute'
+             WHERE blob_key=$1`,
+        [reservation.key]
+      );
+      console.error(
+        'Community managed blob cleanup deferred',
+        error instanceof Error ? error.name : 'unknown'
+      );
+      return;
+    }
+    // A provider write may reject or abort before it stops publishing bytes. When the writer did
+    // not return a StoredBlob, absence after this delete proves only this instant. Retain the NULL
+    // settlement marker and tenant-owned tombstone so every later sweep can remove a delayed
+    // publish.
+    if (transitioned.writerUncertain) {
+      await client.query(
+        `UPDATE pending_blob_deletions
+         SET attempts=attempts+1,next_attempt_at=now()+interval '1 hour'
+         WHERE blob_key=$1`,
+        [reservation.key]
+      );
+      return;
+    }
     await client.query(
       `DELETE FROM managed_blobs m
        WHERE m.blob_key=$1 AND m.community_id=$2 AND m.state='pending_delete'

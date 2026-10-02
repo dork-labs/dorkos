@@ -19,6 +19,7 @@ interface BrowserHistoryEntry {
 // round-trip so a remount can restore a stack (guard-on-removal lives in the
 // real store and is covered by the store unit tests).
 const mockState = {
+  openDocuments: [],
   selectedCwd: '/work' as string | null,
   // Null by default: every test below the room describe is about the PRIVATE
   // canvas, where an address bar navigates this frame and nothing else.
@@ -429,11 +430,32 @@ describe('CanvasBrowserContent — a preview that loads badly', () => {
       <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: 'preview.html' }} />
     );
     const frame = (await screen.findByTitle('Embedded browser')) as HTMLIFrameElement;
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage');
+    fireEvent.load(frame);
+    const generation = post.mock.calls.find(([m]) => m.__dorkosDevtools === 'init')![0]
+      .bridgeGeneration;
+    await act(async () =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            __dorkosDevtools: 'ready',
+            pageInstanceId: 'test-page',
+            bridgeGeneration: generation,
+          },
+          source: frame.contentWindow,
+          origin: 'null',
+        })
+      )
+    );
 
     await act(async () => {
       window.dispatchEvent(
         new MessageEvent('message', {
-          data: { __dorkosDevtools: 'resource-error', url: '/main.js' },
+          data: {
+            __dorkosDevtools: 'resource-error',
+            bridgeGeneration: generation,
+            url: '/main.js',
+          },
           source: frame.contentWindow,
           // What a served preview reports: it renders opaque, so its origin is
           // the literal "null". The bridge rejects anything else.
@@ -441,18 +463,41 @@ describe('CanvasBrowserContent — a preview that loads badly', () => {
         })
       );
     });
-    expect(screen.getByText(/This page hit 1 error while loading\./i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(/This page hit 1 error while loading\./i)).toBeInTheDocument()
+    );
 
     await act(async () => {
       window.dispatchEvent(
         new MessageEvent('message', {
-          data: { __dorkosDevtools: 'resource-error', url: '/app.css' },
+          data: {
+            __dorkosDevtools: 'resource-error',
+            bridgeGeneration: generation,
+            url: '/app.css',
+          },
           source: frame.contentWindow,
           origin: 'null',
         })
       );
     });
-    expect(screen.getByText(/This page hit 2 errors while loading\./i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(/This page hit 2 errors while loading\./i)).toBeInTheDocument()
+    );
+    await act(async () => {
+      for (let i = 0; i < 10000; i++)
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: { __dorkosDevtools: 'resource-error', bridgeGeneration: generation },
+            source: frame.contentWindow,
+            origin: 'null',
+          })
+        );
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByText(/This page hit at least 10,000 errors while loading\./i)
+      ).toBeInTheDocument()
+    );
     expect(
       screen.getAllByRole('button', { name: /open in system browser/i }).length
     ).toBeGreaterThanOrEqual(2);

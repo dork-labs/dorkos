@@ -493,6 +493,19 @@ jobs:
       - name: Docker orphan sweep fixtures
         run: bash scripts/test-sweep-docker-orphans.sh
 
+      # sweep-test-tmp.sh is the same kind of backstop for $TMPDIR: it removes
+      # the mkdtemp folders our own test suites leave behind, and nothing else.
+      # No gate runs it (the same LaunchAgent as the Docker sweep does), but it
+      # deletes on shared developer machines, so its keep side is pinned here:
+      # names off the allowlist or off mkdtemp's exact shape, young entries (at
+      # any depth), entries lsof says are open, unreadable folders and symlinks
+      # are all kept, each with a positive control, and a TMPDIR that is not the
+      # per-user temp folder is refused. Hermetic: a fake root that the sweep
+      # only accepts with an explicit fixture switch plus a marker file, and a
+      # stub lsof on PATH. A few seconds.
+      - name: Test temp sweep fixtures
+        run: bash scripts/test-sweep-test-tmp.sh
+
       # run-credential-free.sh (DOR-2081) is the environment scrub behind the
       # `credential-free-build` check, and it is the only thing standing behind
       # this repo's promise that it clones, builds, tests and runs with no

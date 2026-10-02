@@ -126,7 +126,7 @@ Same as macOS: sign in to your Claude account, or paste your Anthropic API key, 
 
 The desktop app runs the same DorkOS server the CLI does, so it has a web address on your own machine. You need that address to bookmark DorkOS in a browser, to point another app at the [MCP server](/docs/integrations/mcp-server), or to run any of the `curl` examples in these docs.
 
-Open **Settings → Server**. The **Address** at the top is yours, with a button to copy it and a button to open it in your browser. The **MCP endpoint** right below it is the one to paste into Claude Code, Cursor, or Windsurf.
+Open **Settings → Advanced → Server**. The **Address** at the top is yours, with a button to copy it and a button to open it in your browser. The **MCP endpoint** right below it is the one to paste into Claude Code, Cursor, or Windsurf.
 
 Almost always it is `http://localhost:4242`, the same address the CLI uses, and it stays that way every time you open the app. If something else on your machine already has port 4242, DorkOS quietly moves to the next free one (4243, then 4244, and so on) and Settings shows you where it landed. It keeps that address until you quit, and asks for 4242 again the next time you open the app.
 

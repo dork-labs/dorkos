@@ -6,6 +6,46 @@
 import { spawn } from 'node:child_process';
 
 const DEFAULT_MAX_BYTES = 1024 * 1024;
+/** How much of stderr is held, in memory only, to recognise an access refusal. */
+const REFUSAL_SCAN_BYTES = 4096;
+// Terminal colour codes: flyctl colours its `Error: ` prefix when it thinks it has a terminal.
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPE = /\u001b\[[0-9;]*m/gu;
+/**
+ * flyctl prints a Machines API refusal as `Error: <body.error>`, then any request and trace ids
+ * (flyctl `internal/cli/cli.go` `printError`; fly-go `flaps/flaps.go` `handleAPIError`). A token
+ * that may not act in an organization gets `unauthorized` (DOR-2170 L3, flyctl v0.4.110:
+ * `Error: unauthorized (Request ID: …)`). Only the whole line counts, so a local error that merely
+ * ends in "permission denied" (a file path, say) never matches.
+ */
+const FLY_REFUSAL =
+  /^Error: (?:unauthorized|forbidden)(?: \(Request ID: [^)]*\))?(?: \(Trace ID: [^)]*\))?$/u;
+/**
+ * neonctl prints an API refusal's own message as `ERROR: <message>` (neonctl `src/index.ts`
+ * `handleError`, `src/log.ts`). These are Neon's answers to a key that may not act there, seen
+ * live in DOR-2170 L3: "not allowed to perform actions outside the project this key is scoped to"
+ * and "project-scoped keys are not allowed to create projects".
+ */
+const NEON_REFUSAL =
+  /^ERROR: (?:not allowed to |[a-z-]+ keys are not allowed to |permission denied\b)/u;
+
+/**
+ * Whether a provider CLI's error output is a definite access refusal: the service answered and
+ * said this credential may not do that, so the request did nothing.
+ *
+ * Deliberately narrow. Anything else, including a refusal worded some other way, stays unknown,
+ * because calling a lost or garbled answer a refusal could hide a resource that was made.
+ *
+ * @param stderr - The command's error output.
+ * @returns True only for a line in one of the known refusal shapes.
+ */
+export function isProviderAccessRefusal(stderr: string): boolean {
+  return stderr
+    .replace(ANSI_ESCAPE, '')
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .some((line) => FLY_REFUSAL.test(line) || NEON_REFUSAL.test(line));
+}
 
 /**
  * Deadline for each Community launch service read: every `fly` and `neonctl` process and every Fly
@@ -45,16 +85,23 @@ export interface ProviderCommandOptions<T> {
 export class ProviderCommandError extends Error {
   /** Stable failure category safe for logs and journals. */
   readonly code: 'SPAWN' | 'TIMEOUT' | 'OUTPUT_LIMIT' | 'EXIT' | 'INVALID_RESPONSE' | 'CANCELLED';
+  /**
+   * True only for an `EXIT` whose error output was a definite access refusal
+   * ({@link isProviderAccessRefusal}). The output itself is never kept.
+   */
+  readonly refused: boolean;
 
   /**
    * Create a provider command error without raw stdout or stderr.
    *
    * @param code - Stable failure category.
+   * @param refused - Whether the service definitely refused the credential.
    */
-  constructor(code: ProviderCommandError['code']) {
+  constructor(code: ProviderCommandError['code'], refused = false) {
     super(`Provider command failed (${code})`);
     this.name = 'ProviderCommandError';
     this.code = code;
+    this.refused = code === 'EXIT' && refused;
   }
 }
 
@@ -76,6 +123,8 @@ export function runProviderCommand<T>(
       windowsHide: true,
     });
     const stdout: Buffer[] = [];
+    // The start of stderr, held only to tell a refusal apart and zeroed once the command ends.
+    const stderrHead: Buffer[] = [];
     let stdoutBytes = 0;
     let stderrBytes = 0;
     let settled = false;
@@ -83,8 +132,9 @@ export function runProviderCommand<T>(
     let terminationTimer: NodeJS.Timeout | undefined;
 
     const scrubStdout = (): void => {
-      for (const chunk of stdout) chunk.fill(0);
+      for (const chunk of [...stdout, ...stderrHead]) chunk.fill(0);
       stdout.length = 0;
+      stderrHead.length = 0;
     };
 
     const failAfterClose = (error: ProviderCommandError): void => {
@@ -117,6 +167,8 @@ export function runProviderCommand<T>(
     });
     child.stderr.on('data', (chunk: Buffer) => {
       if (settled || pendingError) return;
+      const held = Math.min(chunk.length, Math.max(0, REFUSAL_SCAN_BYTES - stderrBytes));
+      if (held > 0) stderrHead.push(Buffer.from(chunk.subarray(0, held)));
       stderrBytes += chunk.length;
       if (stderrBytes > maxBytes) failAfterClose(new ProviderCommandError('OUTPUT_LIMIT'));
     });
@@ -131,8 +183,11 @@ export function runProviderCommand<T>(
         return reject(pendingError);
       }
       if (code !== 0) {
+        const errorOutput = Buffer.concat(stderrHead);
+        const refused = isProviderAccessRefusal(errorOutput.toString('utf8'));
+        errorOutput.fill(0);
         scrubStdout();
-        return reject(new ProviderCommandError('EXIT'));
+        return reject(new ProviderCommandError('EXIT', refused));
       }
       const output = Buffer.concat(stdout);
       try {

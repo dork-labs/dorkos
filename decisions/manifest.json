@@ -2,6 +2,37 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261001-185204",
+      "slug": "granted-document-events-use-a-durable-outbox",
+      "title": "Granted document events use a durable outbox and remain untrusted",
+      "status": "proposed",
+      "created": "2026-10-01",
+      "extractedFrom": "doc-channel",
+      "specSlug": "doc-channel",
+      "supersedes": null,
+      "amends": "260911-200302",
+      "affects": [
+        "apps/server/src/services/canvas/",
+        "packages/relay/src/",
+        "apps/server/src/services/rooms/"
+      ]
+    },
+    {
+      "id": "261001-185211",
+      "slug": "document-live-state-is-independent-of-editable-content",
+      "title": "Document live state is independent of editable content",
+      "status": "proposed",
+      "created": "2026-10-01",
+      "extractedFrom": "doc-channel",
+      "specSlug": "doc-channel",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/canvas/",
+        "packages/shared/src/canvas-schemas.ts",
+        "apps/client/src/layers/features/canvas/"
+      ]
+    },
+    {
       "id": "260929-071355",
       "slug": "access-levels-are-stored-as-intent",
       "title": "Access levels are stored as intent and follow the app, never wider than their class",
@@ -6871,6 +6902,41 @@
         "packages/shared/src/agent-runtime.ts",
         "packages/test-utils/src/runtime-conformance.ts",
         "AGENTS.md"
+      ]
+    },
+    {
+      "id": "261001-150212",
+      "slug": "host-account-closure-ends-access-now-erases-after-the-window",
+      "title": "A host may close someone's account; access ends at once, erasure waits the ordinary window",
+      "status": "proposed",
+      "created": "2026-10-01",
+      "extractedFrom": null,
+      "specSlug": null,
+      "amends": ["260923-134616", "260924-215422"],
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/host/account-closures.ts",
+        "apps/community/src/routes/host/host-account-closures.ts",
+        "apps/community/src/erasure/",
+        "packages/shared/src/community-admin-wire.ts"
+      ]
+    },
+    {
+      "id": "261001-201136",
+      "slug": "page-reported-bridge-lifetime",
+      "title": "Keep browser bridge evidence page-reported and bind its lifetime",
+      "status": "accepted",
+      "created": "2026-10-01",
+      "extractedFrom": "canvas-bridge-lifetime",
+      "specSlug": "canvas-bridge-lifetime",
+      "supersedes": null,
+      "affects": [
+        "apps/client/src/layers/features/canvas/",
+        "apps/server/src/services/workbench-serve/",
+        "apps/server/src/services/session/browser-seat/",
+        "apps/server/src/services/session/devtools-capture-store.ts",
+        "apps/server/src/routes/session-devtools.ts",
+        "packages/shared/src/schemas.ts"
       ]
     }
   ]

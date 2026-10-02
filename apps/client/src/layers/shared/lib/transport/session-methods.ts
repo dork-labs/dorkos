@@ -455,27 +455,38 @@ export function createSessionMethods(
      */
     async uploadDevtoolsRecording(
       sessionId: string,
-      upload: DevtoolsRecordingPayload
+      upload: DevtoolsRecordingPayload,
+      options?: { signal?: AbortSignal }
     ): Promise<void> {
       const body = new FormData();
       body.append('requestId', upload.requestId);
+      if (upload.hostOutcome) body.append('hostOutcome', upload.hostOutcome);
+      if (upload.bridgeGeneration) body.append('bridgeGeneration', upload.bridgeGeneration);
+      if (upload.documentId) body.append('documentId', upload.documentId);
+      options?.signal?.throwIfAborted();
       if (upload.error !== undefined) {
         body.append('error', upload.error);
       } else {
         body.append('frames', String(upload.frames));
         body.append('durationMs', String(upload.durationMs));
+        const recordingBytes = await upload.recording.arrayBuffer();
+        options?.signal?.throwIfAborted();
         body.append(
           'recording',
-          new Blob([await upload.recording.arrayBuffer()], { type: upload.recording.type }),
+          new Blob([recordingBytes], { type: upload.recording.type }),
           upload.recording.name
         );
+        const keyframeBytes = await upload.keyframe.arrayBuffer();
+        options?.signal?.throwIfAborted();
         body.append(
           'keyframe',
-          new Blob([await upload.keyframe.arrayBuffer()], { type: upload.keyframe.type }),
+          new Blob([keyframeBytes], { type: upload.keyframe.type }),
           upload.keyframe.name
         );
       }
+      options?.signal?.throwIfAborted();
       const res = await fetch(`${baseUrl}/sessions/${sessionId}/devtools/recording`, {
+        signal: options?.signal,
         method: 'POST',
         headers: { 'X-Client-Id': getClientId() },
         credentials: 'include',

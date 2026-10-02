@@ -3,6 +3,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { AdapterManager, AdapterError, normalizeAgentRuntimes } from '../adapter-manager.js';
 import { AdapterRegistry, ClaudeCodeAdapter, TRACE_PRUNE_BATCH } from '@dorkos/relay';
 import type { AdapterStatus, RelayAdapter, RelayPublisher } from '@dorkos/relay';
+import { logger } from '../../../lib/logger.js';
 import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import type { AdapterManagerDeps, AdapterMeshCoreLike } from '../adapter-manager.js';
 import { BridgeStore } from '../chat-bridge/bridge-store.js';
@@ -171,8 +172,12 @@ const VALID_CONFIG = JSON.stringify({
 /** Create a mock AdapterRegistry with all methods stubbed. */
 function createMockRegistry(): AdapterRegistry {
   const adapters = new Map<string, RelayAdapter>();
-  return {
+  const registry = {
     setRelay: vi.fn(),
+    reserveOwnership: vi.fn(() => ({
+      register: (adapter: RelayAdapter) => registry.register(adapter),
+      release: vi.fn(),
+    })),
     register: vi.fn(async (adapter: RelayAdapter) => {
       adapters.set(adapter.id, adapter);
     }),
@@ -187,6 +192,7 @@ function createMockRegistry(): AdapterRegistry {
     deliver: vi.fn().mockResolvedValue(false),
     shutdown: vi.fn().mockResolvedValue(undefined),
   } as unknown as AdapterRegistry;
+  return registry;
 }
 
 /**
@@ -743,7 +749,7 @@ describe('AdapterManager', () => {
       expect(config.mode).toBe('polling');
     });
 
-    it('handles missing nested paths gracefully', async () => {
+    it('does not expose an incomplete saved webhook as a valid connection', async () => {
       // Config with a flat structure but webhook manifest expects nested keys
       const configWithFlat = JSON.stringify({
         adapters: [
@@ -758,11 +764,13 @@ describe('AdapterManager', () => {
       vi.mocked(readFile).mockResolvedValue(configWithFlat);
       await initAndStart(manager);
 
-      // Should not throw even though inbound.secret path doesn't exist
-      const adapters = manager.listAdapters();
-      expect(adapters).toHaveLength(1);
-      const config = adapters[0].config.config as Record<string, unknown>;
-      expect(config.someKey).toBe('value');
+      // Strict webhook loading keeps this raw entry, but never exposes or starts it.
+      expect(manager.listAdapters()).toHaveLength(0);
+      expect(registry.register).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("'wh-flat'"),
+        expect.anything()
+      );
     });
   });
 
@@ -1122,7 +1130,7 @@ describe('AdapterManager', () => {
         });
         await expect(attempt).rejects.toThrow(AdapterError);
         await expect(attempt).rejects.toThrow(
-          'relay.system.* and relay.control.* belong to DorkOS'
+          'A webhook must use its own address under relay.webhook.'
         );
         expect(writeFile).not.toHaveBeenCalled();
         expect(registry.register).not.toHaveBeenCalled();
@@ -1148,7 +1156,7 @@ describe('AdapterManager', () => {
           inbound: { subject: 'relay.system.approval.agent-1', secret: 'secret-16-chars!!' },
           outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
         })
-      ).rejects.toThrow('relay.system.* and relay.control.* belong to DorkOS');
+      ).rejects.toThrow('A webhook must use its own address under relay.webhook.');
       expect(writeFile).not.toHaveBeenCalled();
     });
 

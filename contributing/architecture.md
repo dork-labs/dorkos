@@ -796,7 +796,7 @@ The GitHub Actions workflow (`.github/workflows/cli-smoke-test.yml`) runs smoke 
 
 ## A2A Gateway
 
-The A2A gateway (`packages/a2a-gateway/src/`) exposes DorkOS agents to external A2A-compatible clients using Google's Agent-to-Agent protocol. It is gated on the `a2a.enabled` setting (default `false`, switchable from Settings -> Experiments), with `DORKOS_A2A_ENABLED` overruling that setting in both directions when present, and requires Relay.
+The A2A gateway (`packages/a2a-gateway/src/`) exposes DorkOS agents to external A2A-compatible clients using Google's Agent-to-Agent protocol. It is gated on the `a2a.enabled` setting (default `false`, switchable from Settings -> Advanced -> Experiments), with `DORKOS_A2A_ENABLED` overruling that setting in both directions when present, and requires Relay.
 
 ### Key Modules
 

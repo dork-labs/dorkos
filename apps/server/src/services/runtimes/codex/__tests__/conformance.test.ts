@@ -1,3 +1,8 @@
+import {
+  DOC_VISIBLE_TRIGGER,
+  docBoundaryEntry,
+  assertDocBoundary,
+} from '../../__tests__/doc-events-boundary-fixture.js';
 /**
  * @vitest-environment node
  *
@@ -573,5 +578,33 @@ runtimeConformance(
               driveReloadedHistory(runtime, sessionId, content, projectDir),
           },
         }),
+  }
+);
+
+it.skipIf(LIVE)(
+  'doc SDK boundary: Codex runStreamed receives the fenced document on start and resume',
+  async () => {
+    const runtime = new CodexRuntime({
+      threadMap: new CodexThreadMap(createTestDb()),
+      resolveBinary: async () => '/bin/codex',
+    });
+    const sessionId = 'doc-sdk-boundary';
+    runtime.ensureSession(sessionId, { cwd: projectDir, permissionMode: 'default' });
+    const before = sdkPrompts.length,
+      mintsBefore = threadMints.length;
+    for (let turn = 0; turn < 2; turn++) {
+      for await (const _event of runtime.sendMessage(sessionId, DOC_VISIBLE_TRIGGER, {
+        cwd: projectDir,
+        additionalContext: [docBoundaryEntry],
+      })) {
+        /* Drain actual runtime SDK request. */
+      }
+    }
+    const sent = sdkPrompts.slice(before);
+    expect(sent).toHaveLength(2);
+    const nonces = sent.map((prompt) => assertDocBoundary(prompt));
+    expect(nonces[0]).not.toBe(nonces[1]);
+    expect(threadMints.slice(mintsBefore)).toEqual(['start', 'resume']);
+    for (const prompt of sent) expect(prompt.endsWith(DOC_VISIBLE_TRIGGER)).toBe(true);
   }
 );

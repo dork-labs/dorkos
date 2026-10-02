@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { transaction } from '../data.js';
 import type { BlobStore } from './blob-store.js';
 import { MANAGED_BLOB_RESERVATION_TTL_MS } from './managed-blobs.js';
@@ -23,6 +23,35 @@ export function cleanupBackoffSql(
 export const BLOB_LOCK_TIMEOUT_MS = 5_000;
 /** How long one storage delete may take while the community row is held. */
 export const BLOB_DELETE_TIMEOUT_MS = 60_000;
+
+/**
+ * Take a community's row `FOR SHARE` before deleting one of its files, and say what may happen
+ * to them: `free` to delete, `held` under a host legal hold, or `unavailable` when the row is gone
+ * or someone holds it `FOR UPDATE` (placing a hold, among others). A locked row is skipped rather
+ * than waited for, so a cleanup never stalls behind it and tries again later.
+ *
+ * Keep the transaction open until the storage delete finishes. Placing a hold takes the row
+ * `FOR UPDATE`, so it waits for that delete, and once it commits no further file goes.
+ */
+export async function lockCommunityFiles(
+  client: PoolClient,
+  communityId: string
+): Promise<'free' | 'held' | 'unavailable'> {
+  const community = await client.query<{ legal_hold_at: Date | null }>(
+    'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE SKIP LOCKED',
+    [communityId]
+  );
+  if (!community.rows[0]) return 'unavailable';
+  return community.rows[0].legal_hold_at ? 'held' : 'free';
+}
+
+/** {@link lockCommunityFiles}, for a cleanup that can only delete a file now or leave it. */
+export async function communityFilesDeletable(
+  client: PoolClient,
+  communityId: string
+): Promise<boolean> {
+  return (await lockCommunityFiles(client, communityId)) === 'free';
+}
 
 /**
  * Retry a bounded batch of unreferenced blobs left by failed metadata operations.
@@ -92,13 +121,8 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
           'SELECT community_id FROM managed_blobs WHERE blob_key=$1',
           [candidate.blob_key]
         );
-        if (owner.rows[0]) {
-          const community = await client.query<{ legal_hold_at: Date | null }>(
-            'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE SKIP LOCKED',
-            [owner.rows[0].community_id]
-          );
-          if (!community.rows[0] || community.rows[0].legal_hold_at) return;
-        }
+        if (owner.rows[0] && !(await communityFilesDeletable(client, owner.rows[0].community_id)))
+          return;
         const managed = await client.query<{
           state: string;
           lease_expired: boolean;

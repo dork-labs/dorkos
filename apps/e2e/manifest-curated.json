@@ -1,6 +1,19 @@
 {
   "version": 1,
   "tests": {
+    "served-document-isolation": {
+      "relatedCode": [
+        "apps/server/src/routes/workbench-serve.ts",
+        "apps/server/src/lib/trusted-origins.ts",
+        "apps/server/src/services/workbench-serve/devtools-inject.ts"
+      ],
+      "explorationNotes": [
+        "Full createApp on OS-assigned listeners with a throwaway home, no operator data or inference. Synthetic API controls cross the real CORS/session/host middleware.",
+        "Direct HTML and SVG navigation must fail to read the synthetic app secret. Count ingress attempts before CORS and prove the same endpoint readable/writable from an app page.",
+        "The shim sends hello until ack; the host fixture must acknowledge it before asserting console capture. Cross-origin desktop framing uses an exact DORKOS_CORS_ORIGIN entry.",
+        "Fast local proof: playwright test --config served-document-isolation.config.ts. The same file is also discovered by the normal chromium project."
+      ]
+    },
     "agent-reactions": {
       "relatedCode": [
         "apps/server/src/routes/rooms.ts",

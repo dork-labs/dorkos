@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
-import { ChannelTypeSchema, reachesServerDestination } from './relay-envelope-schemas.js';
+import { ChannelTypeSchema } from './relay-envelope-schemas.js';
 import { PermissionModeSchema } from './schemas.js';
 
 extendZodWithOpenApiOnce();
@@ -242,27 +242,28 @@ export const TelegramPlatformDataSchema = z
 
 export type TelegramPlatformData = z.infer<typeof TelegramPlatformDataSchema>;
 
-/**
- * Why a webhook's inbound subject may not be a DorkOS address (DOR-2432).
- *
- * A webhook publishes whatever a signed request carries to this subject, and
- * the adapter also receives every message sent under it. Pointed at
- * `relay.system.*` it would let anyone holding the secret start task runs or
- * answer approvals, and would forward the scheduler's dispatches to the
- * outbound URL.
- */
+/** Why a webhook may own only a literal address in its own namespace. */
 export const WEBHOOK_SERVER_SUBJECT_REFUSAL =
-  "A webhook's inbound subject cannot be a DorkOS address: relay.system.* and " +
-  'relay.control.* belong to DorkOS. Use your own subject, such as relay.webhook.my-service.';
+  'A webhook must use its own address under relay.webhook., such as relay.webhook.my-service. ' +
+  'Use letters, numbers, hyphens or underscores in each part; wildcards are not allowed.';
+
+/**
+ * Whether a configured webhook address owns only its literal webhook namespace.
+ * @param subject - The configured inbound address, also used for outbound routing.
+ */
+export function isWebhookSubject(subject: string): boolean {
+  return (
+    subject.startsWith('relay.webhook.') &&
+    subject.split('.').length <= 16 &&
+    /^relay\.webhook\.[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/.test(subject)
+  );
+}
 
 export const WebhookInboundConfigSchema = z
   .object({
-    subject: z
-      .string()
-      .min(1)
-      .refine((subject) => !reachesServerDestination(subject), {
-        message: WEBHOOK_SERVER_SUBJECT_REFUSAL,
-      }),
+    subject: z.string().min(1).refine(isWebhookSubject, {
+      message: WEBHOOK_SERVER_SUBJECT_REFUSAL,
+    }),
     secret: z.string().min(16),
     previousSecret: z.string().optional(),
   })

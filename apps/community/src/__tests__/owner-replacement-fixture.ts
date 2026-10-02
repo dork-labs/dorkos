@@ -1,6 +1,6 @@
 /**
  * Shared set-up for the owner-replacement route tests (specs/community-owner-replacement, task
- * 2.4): hosts with mail and owner replacements switched on, communities with an owner, requests,
+ * 2.4): hosts with mail and the worker's notice composers, communities with an owner, requests,
  * and the real timeline to move them. Real PostgreSQL through the tenancy harness.
  */
 import { randomUUID } from 'node:crypto';
@@ -52,7 +52,7 @@ export class TestClock {
   }
 }
 
-/** A running host with owner replacements switched on, its operator, and an ownership key. */
+/** A running host with mail and the worker's notice composers, its operator, and an ownership key. */
 export interface ReplacementHost {
   h: TenancyHarness;
   clock: TestClock;
@@ -71,7 +71,7 @@ export function oidcEnv(issuer: FakeIssuer, issuerUrl = issuer.issuer): Record<s
 }
 
 /**
- * Start a host with mail and owner replacements on. With `sharesDatabaseOf` it is the same host
+ * Start a host with mail and the worker's notice composers. With `sharesDatabaseOf` it is the same host
  * restarted with other settings: same database, operator, and key.
  */
 export async function startReplacementHost(
@@ -80,14 +80,12 @@ export async function startReplacementHost(
   options: {
     env?: Record<string, unknown>;
     sharesDatabaseOf?: ReplacementHost;
-    ownerReplacementOpen?: boolean;
   } = {}
 ): Promise<ReplacementHost> {
   const h = await startTenancyHarness(label, {
     now: clock.now,
     env: { ...ENV, ...options.env },
     noticeComposers: COMPOSERS,
-    ownerReplacementOpen: options.ownerReplacementOpen ?? true,
     sharesDatabaseOf: options.sharesDatabaseOf?.h,
   });
   if (options.sharesDatabaseOf)

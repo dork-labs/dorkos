@@ -19,6 +19,39 @@ import type {
 } from './types.js';
 import { describeError } from './lib/describe-error.js';
 
+/** A pending ownership claim held across configuration persistence and startup. */
+export interface AdapterOwnershipReservation {
+  /** Start and install the matching adapter while retaining this claim. */
+  register(adapter: RelayAdapter): Promise<void>;
+  /** Release this claim; calling again cannot release another operation's claim. */
+  release(): void;
+}
+
+/** Match a route at whole dot-token boundaries; a trailing dot means descendants only. */
+function matchesPrefix(subject: string, prefix: string): boolean {
+  return prefix.endsWith('.')
+    ? subject.startsWith(prefix)
+    : subject === prefix || subject.startsWith(`${prefix}.`);
+}
+
+/**
+ * Whether two claims have ambiguous ownership rather than intentional specialization.
+ * @param first - An adapter routing prefix.
+ * @param second - Another adapter routing prefix.
+ */
+export function adapterPrefixesConflict(first: string, second: string): boolean {
+  const a = first.endsWith('.') ? first.slice(0, -1) : first;
+  const b = second.endsWith('.') ? second.slice(0, -1) : second;
+  if (a === b) return true;
+  const overlaps = matchesPrefix(a, b) || matchesPrefix(b, a);
+  const webhook = (p: string) => p === 'relay.webhook' || p.startsWith('relay.webhook.');
+  return overlaps && (webhook(a) || webhook(b));
+}
+
+function prefixesOf(prefix: string | readonly string[]): readonly string[] {
+  return typeof prefix === 'string' ? [prefix] : prefix;
+}
+
 /**
  * Registry that manages the lifecycle of external channel adapters and routes
  * outbound messages to the correct adapter by subject prefix.
@@ -36,6 +69,8 @@ const ADAPTER_START_TIMEOUT_MS = 30_000;
 export class AdapterRegistry implements AdapterRegistryLike {
   private readonly adapters = new Map<string, RelayAdapter>();
   private relay: RelayPublisher | null = null;
+  private readonly stopping = new WeakMap<RelayAdapter, Promise<void>>();
+  private readonly pending = new Map<string, { prefixes: readonly string[]; token: symbol }>();
   private logger: Logger = console;
 
   /** Inject a structured logger to replace default console output. */
@@ -55,9 +90,57 @@ export class AdapterRegistry implements AdapterRegistryLike {
   }
 
   /**
+   * Reserve routing ownership before any persistence or asynchronous startup.
+   * @param id - The owner, excluding only its current active claims on replacement.
+   * @param subjectPrefix - Prospective routing prefixes.
+   * @returns An operation-bound claim; the caller must release it in a finally block.
+   */
+  reserveOwnership(
+    id: string,
+    subjectPrefix: string | readonly string[]
+  ): AdapterOwnershipReservation {
+    if (this.pending.has(id)) throw new Error(`Routing ownership for '${id}' is already changing`);
+    const prefixes = [...prefixesOf(subjectPrefix)];
+    const owners = [
+      ...[...this.adapters.values()]
+        .filter((a) => a.id !== id)
+        .map((a) => ({ id: a.id, prefixes: prefixesOf(a.subjectPrefix) })),
+      ...[...this.pending].map(([owner, claim]) => ({ id: owner, prefixes: claim.prefixes })),
+    ];
+    for (const owner of owners) {
+      if (prefixes.some((p) => owner.prefixes.some((other) => adapterPrefixesConflict(p, other)))) {
+        throw new Error(
+          `Routing ownership conflicts with '${owner.id}'; choose a different address`
+        );
+      }
+    }
+    const token = Symbol(id);
+    this.pending.set(id, { prefixes, token });
+    let used = false;
+    return {
+      release: () => {
+        if (this.pending.get(id)?.token === token) this.pending.delete(id);
+      },
+      register: async (adapter) => {
+        if (
+          used ||
+          this.pending.get(id)?.token !== token ||
+          adapter.id !== id ||
+          JSON.stringify(prefixesOf(adapter.subjectPrefix)) !== JSON.stringify(prefixes)
+        ) {
+          throw new Error('Routing ownership reservation does not match this registration');
+        }
+        used = true;
+        await this.registerReserved(adapter, () => this.pending.get(id)?.token === token);
+      },
+    };
+  }
+
+  /**
    * Register and start an adapter.
    *
-   * If an adapter with the same ID already exists, performs a hot-reload:
+   * Registering the identical active instance is a no-op. A different instance
+   * with the same ID performs a hot-reload:
    * 1. Start the new adapter first
    * 2. Swap it into the registry
    * 3. Stop the old adapter (drain in-flight messages)
@@ -68,6 +151,15 @@ export class AdapterRegistry implements AdapterRegistryLike {
    * @throws If relay has not been set via {@link setRelay}
    */
   async register(adapter: RelayAdapter): Promise<void> {
+    const claim = this.reserveOwnership(adapter.id, adapter.subjectPrefix);
+    try {
+      await claim.register(adapter);
+    } finally {
+      claim.release();
+    }
+  }
+
+  private async registerReserved(adapter: RelayAdapter, ownsClaim: () => boolean): Promise<void> {
     if (!this.relay) {
       throw new Error(
         'AdapterRegistry: relay not set — call setRelay() before registering adapters'
@@ -75,17 +167,18 @@ export class AdapterRegistry implements AdapterRegistryLike {
     }
 
     const existing = this.adapters.get(adapter.id);
+    // Re-registering the active object is not a replacement. Starting/stopping
+    // it again would disconnect the very instance retained as the route owner.
+    if (existing === adapter) return;
 
     // Start the new adapter first — if this throws, abort (old adapter stays active)
     this.logger.info(`AdapterRegistry: starting adapter '${adapter.id}'`);
     let timer: ReturnType<typeof setTimeout>;
-    let timedOut = false;
     try {
       await Promise.race([
         adapter.start(this.relay),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
-            timedOut = true;
             reject(
               new Error(
                 `Adapter '${adapter.id}' start timed out after ${ADAPTER_START_TIMEOUT_MS / 1000}s`
@@ -94,20 +187,18 @@ export class AdapterRegistry implements AdapterRegistryLike {
           }, ADAPTER_START_TIMEOUT_MS);
         }),
       ]);
+      if (!ownsClaim())
+        throw new Error('Routing ownership reservation was released during startup');
     } catch (err) {
-      // On timeout the underlying start() is still running in the background.
-      // Stop it best-effort so a late-succeeding start() doesn't leave an
-      // unmanaged polling loop behind (e.g. Telegram 409 conflicts on reload).
-      if (timedOut) {
-        void Promise.resolve()
-          .then(() => adapter.stop())
-          .catch((stopErr) => {
-            this.logger.warn(
-              `AdapterRegistry: failed to stop timed-out adapter '${adapter.id}':`,
-              describeError(stopErr)
-            );
-          });
-      }
+      // A failed start may already have acquired resources. Never stop the old owner.
+      void Promise.resolve()
+        .then(() => adapter.stop())
+        .catch((stopErr) => {
+          this.logger.warn(
+            `AdapterRegistry: failed to stop unsuccessful adapter '${adapter.id}':`,
+            describeError(stopErr)
+          );
+        });
       throw err;
     } finally {
       clearTimeout(timer!);
@@ -120,7 +211,7 @@ export class AdapterRegistry implements AdapterRegistryLike {
     // Stop the old adapter (non-blocking, errors are isolated)
     if (existing) {
       try {
-        await existing.stop();
+        await this.stopInstance(existing);
       } catch (err) {
         // Log but don't throw — new adapter is already active
         this.logger.warn(
@@ -129,6 +220,21 @@ export class AdapterRegistry implements AdapterRegistryLike {
         );
       }
     }
+  }
+
+  /** Share teardown only while this same instance is already stopping. */
+  private stopInstance(adapter: RelayAdapter): Promise<void> {
+    const existing = this.stopping.get(adapter);
+    if (existing) return existing;
+    // Unregister can overlap hot replacement cleanup. Both must await the same
+    // teardown; a second stop can race the first on the connection's resources.
+    const stopping = Promise.resolve()
+      .then(() => adapter.stop())
+      .finally(() => {
+        this.stopping.delete(adapter); // A failed stop remains retryable.
+      });
+    this.stopping.set(adapter, stopping);
+    return stopping;
   }
 
   /**
@@ -154,7 +260,7 @@ export class AdapterRegistry implements AdapterRegistryLike {
    * `adapter.error` event rather than swallowing it.
    *
    * The adapter's own status is left in the `error` state (see
-   * `BaseRelayAdapter.stop`), so the cockpit shows a connection that would not
+   * `BaseRelayAdapter.stop`), so the app shows a connection that would not
    * let go instead of one that looks cleanly gone.
    *
    * @param id - The adapter ID to remove
@@ -165,7 +271,7 @@ export class AdapterRegistry implements AdapterRegistryLike {
     const adapter = this.adapters.get(id);
     if (!adapter) return false;
     try {
-      await adapter.stop();
+      await this.stopInstance(adapter);
     } catch (err) {
       this.logger.warn(
         `AdapterRegistry: adapter '${id}' failed to stop and is still registered — ` +
@@ -174,7 +280,7 @@ export class AdapterRegistry implements AdapterRegistryLike {
       );
       throw err;
     }
-    this.adapters.delete(id);
+    if (this.adapters.get(id) === adapter) this.adapters.delete(id);
     return true;
   }
 
@@ -204,7 +310,7 @@ export class AdapterRegistry implements AdapterRegistryLike {
         ? adapter.subjectPrefix
         : [adapter.subjectPrefix];
       for (const p of prefixes) {
-        if (subject.startsWith(p) && (!best || p.length > best.length)) {
+        if (matchesPrefix(subject, p) && (!best || p.length > best.length)) {
           best = { adapter, length: p.length };
         }
       }

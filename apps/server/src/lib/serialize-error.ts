@@ -500,7 +500,7 @@ export function clipLogArgs(args: unknown[]): unknown[] {
  * **The `error` field can end up on screen.** Three call sites in `index.ts`
  * pass it to `setTasksInitError`, `setRelayInitError` and `setMeshInitError`,
  * which surface it as `features.*.initError` on the config route and render it
- * in Settings → Tools. So the marker below is not only log text: in the
+ * in Settings → Advanced → Tools. So the marker below is not only log text: in the
  * overflow case a person reads it, which is why the words after its ellipsis
  * name the size in plain language instead of leaving the cut unexplained.
  *

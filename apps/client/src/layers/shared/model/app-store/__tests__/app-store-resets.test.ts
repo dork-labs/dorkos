@@ -17,6 +17,7 @@ const CROSS_SLICE_KEYS = [
   'dorkos-right-panel-layouts',
   'dorkos-pip-panel-state',
   'dorkos-dismissed-promo-ids',
+  'dorkos-settings-advanced-open',
 ];
 
 function seed() {
@@ -29,6 +30,7 @@ function seed() {
   localStorage.setItem('dorkos-right-panel-state', '{"open":true,"activeTab":"profile"}');
   localStorage.setItem('dorkos-right-panel-layouts', '{"a1":{"open":true}}');
   localStorage.setItem('dorkos-dismissed-promo-ids', '["welcome"]');
+  localStorage.setItem('dorkos-settings-advanced-open', 'true');
   s.setFontSize('large');
   s.setFontFamily('geist');
 }

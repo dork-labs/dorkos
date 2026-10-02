@@ -772,3 +772,77 @@ describe('cutting an outline to its budget', () => {
     expect(cut.outline).toBe(exact.outline);
   });
 });
+
+describe('generation protocol and explicit initial legacy acknowledgement', () => {
+  it('keeps old-host/new-shim generation-less action and telemetry working after ack', async () => {
+    const page = installShim('<button>Pay</button>');
+    try {
+      page.send({ __dorkosDevtools: 'ack' });
+      page.frame.console.log('legacy telemetry');
+      page.send({
+        __dorkosDevtools: 'act-request',
+        requestId: 'legacy',
+        command: { action: 'read_page', maxChars: 4000 },
+      });
+      const result = await page.result('legacy');
+      expect(result.ok).toBe(true);
+      expect(result.bridgeGeneration).toBeUndefined();
+      await page.until(() => page.messages.some((m) => m.__dorkosDevtools === 'batch'));
+      expect(page.messages.find((m) => m.__dorkosDevtools === 'batch')).not.toHaveProperty(
+        'bridgeGeneration'
+      );
+    } finally {
+      page.close();
+    }
+  });
+  it('does not downgrade after init, preserves same-generation pending work and drops old asynchronous completion', async () => {
+    const page = installShim('<button>Pay</button>');
+    try {
+      page.send({ __dorkosDevtools: 'init', bridgeGeneration: 'first' });
+      page.send({
+        __dorkosDevtools: 'act-request',
+        bridgeGeneration: 'first',
+        requestId: 'wait',
+        command: { action: 'wait_for', text: 'Arrived', timeoutMs: 1000 },
+      });
+      page.send({ __dorkosDevtools: 'init', bridgeGeneration: 'first' });
+      page.document.body.appendChild(
+        Object.assign(page.document.createElement('p'), { textContent: 'Arrived' })
+      );
+      expect(await page.result('wait')).toMatchObject({ bridgeGeneration: 'first', ok: true });
+      page.send({
+        __dorkosDevtools: 'act-request',
+        bridgeGeneration: 'first',
+        requestId: 'old',
+        command: { action: 'wait_for', text: 'Later', timeoutMs: 1000 },
+      });
+      page.send({ __dorkosDevtools: 'init', bridgeGeneration: 'second' });
+      page.send({ __dorkosDevtools: 'ack' });
+      page.send({
+        __dorkosDevtools: 'act-request',
+        requestId: 'downgrade',
+        command: { action: 'read_page', maxChars: 4000 },
+      });
+      page.send({
+        __dorkosDevtools: 'act-request',
+        bridgeGeneration: 'second',
+        requestId: 'new',
+        command: { action: 'read_page', maxChars: 4000 },
+      });
+      expect(await page.result('new')).toMatchObject({ bridgeGeneration: 'second', ok: true });
+      page.document.body.appendChild(
+        Object.assign(page.document.createElement('p'), { textContent: 'Later' })
+      );
+      await page.until(() =>
+        page.messages.some((m) => m.__dorkosDevtools === 'ready' && m.bridgeGeneration === 'second')
+      );
+      // Allow the old wait's poll to finish; its callback cannot report under the new generation.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(page.messages.some((m) => m.requestId === 'old' || m.requestId === 'downgrade')).toBe(
+        false
+      );
+    } finally {
+      page.close();
+    }
+  });
+});

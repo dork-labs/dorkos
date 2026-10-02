@@ -320,10 +320,12 @@ describe('ConnectorRuntimePrincipalService', () => {
       return true;
     });
 
+    expect(service.isPrincipalCurrent(resolved.principal)).toBe(true);
     const revalidation = service.revalidatePrincipal(resolved.principal);
     await started;
     await service.revoke(opened.bindingId, 'turn_cancelled');
     releaseValidation();
+    expect(service.isPrincipalCurrent(resolved.principal)).toBe(false);
     await expect(revalidation).resolves.toBe(false);
   });
 

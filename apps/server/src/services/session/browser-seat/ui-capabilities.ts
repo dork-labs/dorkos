@@ -59,6 +59,8 @@
  * @module server/services/session/browser-seat/ui-capabilities
  */
 import { z } from 'zod';
+import { createDocChannelDownstreamCapabilities } from '../../canvas/doc-channel/downstream/capabilities.js';
+import { createDocChannelGrantCapabilities } from '../../canvas/doc-channel/grant-capabilities.js';
 import {
   CONTROL_UI_DESCRIPTION,
   CONTROL_UI_INPUT,
@@ -135,6 +137,7 @@ function callerOf(context: CapabilityHandlerContext): UiCallerContext {
   return {
     ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
     ...(context.cwd !== undefined ? { cwd: context.cwd } : {}),
+    ...(context.serverPrincipal ? { principal: context.serverPrincipal } : {}),
     ...(context.serverPrincipal?.claims.kind === 'runtime' ? { fromRuntimeSurface: true } : {}),
   };
 }
@@ -226,6 +229,8 @@ export const uiDomain: CapabilityDomain = {
   name: 'ui',
   assertDeps: () => undefined,
   capabilities: [
+    ...createDocChannelGrantCapabilities(),
+    ...createDocChannelDownstreamCapabilities(),
     defineCapability({
       id: 'ui.control',
       title: 'Drive the DorkOS app',

@@ -101,7 +101,7 @@ import type { LockActivity } from './session-lock.js';
 import { feedProjector } from './session-event-normalizer.js';
 import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { createCanonicalRekey } from './turn-identity/canonical-rekey.js';
-import { assembleAdditionalContext } from './context-assembler.js';
+import { assembleAdditionalContext, appendDocEventsContext } from './context-assembler.js';
 import { takeStagedContext } from './staged-context-store.js';
 import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import { withStallGuard } from './stall-guard.js';
@@ -109,7 +109,7 @@ import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
 import type {
-  ClaimedPrivateSessionMessage,
+  PrivateSessionMessageClaimResult,
   PreparedPrivateSessionMessage,
 } from './private-messages/acceptance.js';
 
@@ -407,10 +407,13 @@ export interface TriggerTurnDeps {
   /** Revalidate and exclusively claim immediately before the runtime call. */
   claimPrivateMessage?(
     receiptId: string,
-    prepared: PreparedPrivateSessionMessage
-  ): ClaimedPrivateSessionMessage;
+    prepared: PreparedPrivateSessionMessage,
+    sessionId?: string
+  ): PrivateSessionMessageClaimResult;
   /** Cancel an accepted receipt when final authority fails before any runtime effect. */
   cancelPrivateMessage?(receiptId: string, reason: string): void;
+  /** Classify a proven authority denial without treating storage/unavailability as revocation. */
+  isPrivatePreclaimRefusal?(receiptId: string, error: unknown): boolean;
   /** Quarantine a claim if no turn start can be observed. */
   markPrivateOutcomeUnknown?(receiptId: string, reason: string): void;
 }
@@ -555,6 +558,8 @@ export interface TriggerTurnOpts {
   messageId?: string;
   /** Server-owned receipt for a protected automatic follow-up. */
   privateReceiptId?: string;
+  /** Host shutdown suspends protected work before claim, preserving its durable receipt. */
+  privateDispatchSignal?: AbortSignal;
   /**
    * Nobody is watching THIS turn (an automatic carry-over to another
    * account): an approval card does not hold it (spec `agent-permissions` D6)
@@ -617,6 +622,10 @@ export interface TriggerTurnResult {
   accepted: boolean;
   /** The canonical session id to return in the 202 body (when accepted). */
   canonicalId?: string;
+  /** The host stopped before protected claim; leave durable work for another boot. */
+  suspended?: true;
+  /** A durable protected-source budget wait; no runtime effect has been claimed. */
+  deferred?: { reason: string; nextEligibleAt: string };
 }
 
 /**
@@ -798,12 +807,6 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       ...(approvalVerdict ? { approvalVerdict } : {}),
       nativeContext: deps.getCapabilities().nativeContext,
     });
-    // Fold in any context a person STAGED for a runtime that cannot append to
-    // its own transcript (the fold-into-next fallback, task 4.2). Taken — not
-    // peeked — so each note rides exactly this one dispatch; the ordinary case
-    // holds nothing and pays a single map lookup. A native-staging runtime never
-    // fills this hold, so its dispatches are untouched.
-    additionalContext.push(...takeStagedContext(sessionId));
     // Nothing below may open a turn while this session still has one open
     // (DOR-1295) — `feedProjector` mints this turn's `turn_start` before it pulls
     // the generator once, so a turn settled any later than here settles INSIDE
@@ -823,10 +826,30 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       }
       privatePreflightStarted = true;
       const prepared = await deps.preparePrivateMessage(opts.privateReceiptId);
-      const claimed = deps.claimPrivateMessage(opts.privateReceiptId, prepared);
+      if (opts.privateDispatchSignal?.aborted) {
+        releaseOnce();
+        turnSpan.end();
+        return { accepted: false, suspended: true };
+      }
+      const claimed = deps.claimPrivateMessage(opts.privateReceiptId, prepared, sessionId);
+      if (claimed.deferred === true) {
+        releaseOnce();
+        turnSpan.end();
+        return {
+          accepted: false,
+          deferred: { reason: claimed.reason, nextEligibleAt: claimed.nextEligibleAt },
+        };
+      }
       privateDispatchClaimed = true;
       dispatchContent = claimed.content;
+      if (claimed.docEvents) appendDocEventsContext(additionalContext, claimed.docEvents);
     }
+    // Fold in any context a person STAGED for a runtime that cannot append to
+    // its own transcript (the fold-into-next fallback, task 4.2). Taken — not
+    // peeked — so each note rides exactly this one dispatch; the ordinary case
+    // holds nothing and pays a single map lookup. A native-staging runtime never
+    // fills this hold, so its dispatches are untouched.
+    additionalContext.push(...takeStagedContext(sessionId));
     // **What the `ui` verbs need to know about this turn, bound runtime-neutrally**
     // (spec `canvas-agent-seat` §5). `control_ui` and `get_ui_state` answer about
     // the ROOM when a room triggered the turn and about the session otherwise,
@@ -865,8 +888,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
         ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
-        // A protected message is a connector's (an event, or an agent request's
-        // continuation), never a person typing, so nobody is watching this turn
+        // A protected message comes from a server-owned source, never a person typing, so nobody is watching this turn
         // for an approval card and it must not hold for one (spec
         // `agent-permissions` D6). The card still reaches the inbox, and the
         // verdict wakes the session.
@@ -966,7 +988,11 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     releaseOnce();
     if (privateDispatchClaimed && opts.privateReceiptId !== undefined) {
       deps.markPrivateOutcomeUnknown?.(opts.privateReceiptId, 'runtime_effect_not_observed');
-    } else if (privatePreflightStarted && opts.privateReceiptId !== undefined) {
+    } else if (
+      privatePreflightStarted &&
+      opts.privateReceiptId !== undefined &&
+      deps.isPrivatePreclaimRefusal?.(opts.privateReceiptId, err) === true
+    ) {
       deps.cancelPrivateMessage?.(opts.privateReceiptId, 'authority_changed_before_dispatch');
     }
     throw err;

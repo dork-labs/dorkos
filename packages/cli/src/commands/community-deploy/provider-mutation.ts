@@ -9,7 +9,11 @@ import { ProviderCommandError, runProviderCommand } from './provider-process.js'
 export class ProviderMutationError extends Error {
   /** Safe classification suitable for the launch journal. */
   readonly code:
-    'INVALID_INPUT' | 'INVALID_RESPONSE' | 'PROVIDER_UNAVAILABLE' | 'CREATION_OUTCOME_UNCERTAIN';
+    | 'INVALID_INPUT'
+    | 'INVALID_RESPONSE'
+    | 'PROVIDER_UNAVAILABLE'
+    | 'ACCESS_DENIED'
+    | 'CREATION_OUTCOME_UNCERTAIN';
 
   /** Create a mutation error without provider output. */
   constructor(code: ProviderMutationError['code']) {
@@ -61,20 +65,32 @@ export interface ProviderMutationOptions<T> {
   stdin?: string;
   /** Sanitizing parser for machine-readable output, or a constant receipt. */
   parse: (stdout: string) => T;
+  /**
+   * Report a definite access refusal as `ACCESS_DENIED` instead of uncertain. Set only for a
+   * create that is one request, so a refusal proves nothing was made. Off by default.
+   */
+  refusalIsDefinite?: boolean;
 }
 
 /**
  * Run a mutation and classify every post-spawn failure as uncertain.
  *
  * A command can mutate remotely before its output is lost, its response becomes malformed, or the
- * local process exits. Only a local spawn failure proves that no provider request was made.
+ * local process exits. Only a local spawn failure proves that no provider request was made, and,
+ * when the caller opts in with `refusalIsDefinite`, a service answer that refuses the credential
+ * outright (`ACCESS_DENIED`). A timeout, a cut-off or garbled answer, or any other exit stays
+ * uncertain.
  */
 export async function runProviderMutation<T>(options: ProviderMutationOptions<T>): Promise<T> {
+  const { refusalIsDefinite, ...command } = options;
   try {
-    return (await runProviderCommand(options)).value;
+    return (await runProviderCommand(command)).value;
   } catch (error) {
     if (error instanceof ProviderCommandError && error.code === 'SPAWN') {
       throw new ProviderMutationError('PROVIDER_UNAVAILABLE');
+    }
+    if (refusalIsDefinite && error instanceof ProviderCommandError && error.refused) {
+      throw new ProviderMutationError('ACCESS_DENIED');
     }
     throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
   }

@@ -29,6 +29,11 @@ import {
 } from '@dorkos/db';
 import { UiCanvasContentSchema, type UiCanvasContent } from '@dorkos/shared/schemas';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
+import {
+  DocChannelLifecycle,
+  type DocChannelLifecycleOptions,
+  type DocChannelInitialization,
+} from './doc-channel/lifecycle.js';
 import { logger } from '../../lib/logger.js';
 
 /** Everything a fresh row is written from. */
@@ -145,7 +150,48 @@ export class CanvasDocumentStore {
    *
    * @param db - The consolidated DB handle.
    */
-  constructor(private readonly db: Db) {}
+  readonly lifecycle: DocChannelLifecycle;
+  constructor(
+    private readonly db: Db,
+    lifecycleOptions: DocChannelLifecycleOptions = {}
+  ) {
+    this.lifecycle = new DocChannelLifecycle(db, lifecycleOptions);
+    this.lifecycle.initializeExistingDocuments();
+    this.lifecycle.recoverIdentityMoves();
+  }
+
+  /** Allocate a fresh incarnation when a natural ID has retained channel evidence. */
+  freshDocumentId(candidate: string): string {
+    return this.lifecycle.freshId(candidate);
+  }
+
+  /** Private identity-only lookup; authorization must precede content projection. */
+  lookupIdentity(
+    documentId: string
+  ): { id: string; scope: string; sourceKey: string | null } | undefined {
+    return this.db
+      .select({
+        id: canvasDocuments.id,
+        scope: canvasDocuments.scope,
+        sourceKey: canvasDocuments.sourceKey,
+      })
+      .from(canvasDocuments)
+      .where(eq(canvasDocuments.id, documentId))
+      .get();
+  }
+
+  /** Raw identities include corrupt content rows that still need atomic teardown. */
+  identities(scope: string): { id: string; scope: string; sourceKey: string | null }[] {
+    return this.db
+      .select({
+        id: canvasDocuments.id,
+        scope: canvasDocuments.scope,
+        sourceKey: canvasDocuments.sourceKey,
+      })
+      .from(canvasDocuments)
+      .where(eq(canvasDocuments.scope, scope))
+      .all();
+  }
 
   /**
    * Every live document in one scope — pinned first, then most recently active.
@@ -214,18 +260,16 @@ export class CanvasDocumentStore {
    *
    * @param input - Everything the row is written from.
    */
-  insert(input: CanvasDocumentInsert): void {
-    this.db
-      .insert(canvasDocuments)
-      .values({
-        ...input,
-        editingBy: null,
-        editingHeartbeatAt: null,
-        // A fresh document has no discussion. The column is the first Discuss's
-        // to write, and only ever once.
-        threadRootEntryId: null,
-      })
-      .run();
+  insert(
+    input: CanvasDocumentInsert,
+    channel?: DocChannelInitialization | ((tx: DbTransaction) => DocChannelInitialization)
+  ): void {
+    this.db.transaction((tx) => {
+      tx.insert(canvasDocuments)
+        .values({ ...input, editingBy: null, editingHeartbeatAt: null, threadRootEntryId: null })
+        .run();
+      this.lifecycle.opened(tx, input, typeof channel === 'function' ? channel(tx) : channel);
+    });
   }
 
   /**
@@ -295,12 +339,25 @@ export class CanvasDocumentStore {
    * @param documentId - The document.
    * @returns Whether a row was there to remove.
    */
-  remove(scope: string, documentId: string): boolean {
-    const result = this.db
-      .delete(canvasDocuments)
+  remove(scope: string, documentId: string, tx?: DbTransaction): boolean {
+    if (!tx) return this.db.transaction((current) => this.remove(scope, documentId, current));
+    const row = tx
+      .select({
+        id: canvasDocuments.id,
+        scope: canvasDocuments.scope,
+        sourceKey: canvasDocuments.sourceKey,
+      })
+      .from(canvasDocuments)
       .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.id, documentId)))
-      .run();
-    return result.changes > 0;
+      .get();
+    if (!row) return false;
+    this.lifecycle.close(tx, row);
+    return (
+      tx
+        .delete(canvasDocuments)
+        .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.id, documentId)))
+        .run().changes > 0
+    );
   }
 
   /**
@@ -404,29 +461,18 @@ export class CanvasDocumentStore {
   /**
    * Move every row of one scope to another, in ONE statement.
    *
-   * What a canonical-id rekey needs (spec `canvas-agent-seat` §1.1): a
-   * brand-new session's canvas is written under the request UUID the client
-   * minted, and the SDK renames the session mid-first-turn. One statement inside
-   * one implicit transaction means a concurrent reader sees every row under the
-   * old scope or every row under the new one, never a split table.
-   *
-   * **It rewrites `scope` only, and leaves `id` alone.** A document id is a hash
-   * of the scope it was opened under, so recomputing it would change every id
-   * already handed to the model in this turn's tool results. The id is opaque,
-   * the unique index is on `(scope, source_key)`, and that is still unique after
-   * the rewrite — so re-opening the same source afterwards finds the same row
-   * rather than inserting a second.
+   * The durable ownership intent precedes an atomic move of document/channel
+   * scopes, grants, linked accepted receipts and their safe queue placeholders.
+   * Source-owned rebinding proves the new receipt digest. IDs and generations
+   * remain stable; collisions retain both documents and block admission until
+   * recovery. Claimed work keeps its observed authority and is quarantined.
    *
    * @param from - The scope to move out of.
    * @param to - The scope to move into.
    * @returns How many rows moved. `0` is the common case and not an error.
    */
   rekeyScope(from: string, to: string): number {
-    return this.db
-      .update(canvasDocuments)
-      .set({ scope: to })
-      .where(eq(canvasDocuments.scope, from))
-      .run().changes;
+    return this.lifecycle.rekeyScope(from, to);
   }
 
   /**
@@ -457,7 +503,14 @@ export class CanvasDocumentStore {
    * @returns How many rows went.
    */
   removeScope(scope: string): number {
-    return this.db.delete(canvasDocuments).where(eq(canvasDocuments.scope, scope)).run().changes;
+    return this.db.transaction((tx) => {
+      const rows = tx
+        .select({ id: canvasDocuments.id })
+        .from(canvasDocuments)
+        .where(eq(canvasDocuments.scope, scope))
+        .all();
+      return rows.reduce((count, row) => count + Number(this.remove(scope, row.id, tx)), 0);
+    });
   }
 }
 
