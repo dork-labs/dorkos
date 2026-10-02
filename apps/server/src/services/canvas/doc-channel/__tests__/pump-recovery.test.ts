@@ -7,6 +7,7 @@ import {
   sql,
   eq,
   canvasDocChannels,
+  canvasDocBatches,
   sessionMessageAcceptanceReceipts,
   sessionMessageQueue,
   type Db,
@@ -133,7 +134,7 @@ describe('document pump identity and recovery', () => {
     );
     noteRuntimeTurnOpen('canonical');
     expect(await resumed.resumeAccepted()).toBe(1);
-    expect(await resumed.resumeAccepted()).toBe(1);
+    expect(await resumed.resumeAccepted()).toBe(0);
     await settle();
     expect(runtime.sendMessage).not.toHaveBeenCalled();
     noteRuntimeTurnClosed('canonical');
@@ -153,6 +154,111 @@ describe('document pump identity and recovery', () => {
     });
     expect(db.select().from(sessionMessageQueue).all()).toEqual([]);
     expect(reboot.store.getBatch(original.sourceId)?.scope).toBe(TO);
+  });
+  it('consumes an accepted deadline once while busy and advances its scheduler wake without changing durable identity', async () => {
+    let time = Date.parse(NOW);
+    const now = () => new Date(time);
+    const f = batchFixture(':memory:', null, undefined, 'boot-1', 'claude-code', now);
+    databases.push(f.db);
+    f.input();
+    time += 1001;
+    const runtime = new FakeAgentRuntime('claude-code');
+    runtime.getInternalSessionId.mockReturnValue(undefined);
+    runtime.withScenarios([
+      async function* (): AsyncGenerator<StreamEvent> {
+        yield { type: 'done', data: {} };
+      },
+    ]);
+    setMessageQueueStore(f.queue);
+    setPrivateSessionMessageAcceptanceService(f.admission.acceptance);
+    noteRuntimeTurnOpen('session-1');
+    let nudges = 0;
+    const configuration = options(f, now, (id) => {
+      nudges++;
+      adoptAcceptedPrivateMessages({ sessionId: id, projector: getOrCreateProjector(id), runtime });
+      return undefined;
+    });
+    const pump = new DocBatchDeliveryPump(configuration);
+    expect(pump.run().admitted).toBe(1);
+    await settle();
+    const original = f.db.select().from(sessionMessageAcceptanceReceipts).all()[0]!;
+    const before = f.store.getBatch(original.sourceId)!;
+    const deadline = new Date(time + 60000).toISOString();
+    f.db
+      .update(canvasDocBatches)
+      .set({ leaseUntil: deadline, errorCode: 'document_final_budget_defer' })
+      .where(eq(canvasDocBatches.batchId, before.batchId))
+      .run();
+    expect(await pump.resumeAccepted()).toBe(0);
+    expect(pump.run().nextEligibleAt).toBe(deadline);
+    time += 60001;
+    nudges = 0;
+    const competing = new DocBatchDeliveryPump(configuration);
+    const resumed = await Promise.all([pump.resumeAccepted(), competing.resumeAccepted()]);
+    expect(resumed.sort()).toEqual([0, 1]);
+    const next = new Date(time + 60000).toISOString();
+    expect(pump.run().nextEligibleAt).toBe(next);
+    expect(pump.run().nextEligibleAt).toBe(next);
+    expect(await pump.resumeAccepted()).toBe(0);
+    expect(nudges).toBe(1);
+    expect(f.db.select().from(sessionMessageAcceptanceReceipts).all()).toEqual([original]);
+    expect(f.store.getBatch(original.sourceId)).toMatchObject({
+      batchId: before.batchId,
+      generation: before.generation,
+      scope: before.scope,
+      admissionReceiptId: original.id,
+      status: 'accepted',
+      leaseUntil: next,
+      errorCode: 'document_resume_retry',
+    });
+    expect(f.db.select().from(sessionMessageQueue).all()[0]?.id).toBe(original.queueMessageId);
+    await settle();
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    // A scheduler retry wake cannot postpone the existing dispatcher's actual capacity release.
+    noteRuntimeTurnClosed('session-1');
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(f.db.select().from(sessionMessageAcceptanceReceipts).all()[0]).toMatchObject({
+      id: original.id,
+      state: 'settled',
+    });
+  });
+  it('retains accepted identity and its original deadline when consuming the wake cannot commit', async () => {
+    let time = Date.parse(NOW);
+    const now = () => new Date(time);
+    const f = batchFixture(':memory:', null, undefined, 'boot-1', 'claude-code', now);
+    databases.push(f.db);
+    f.input();
+    time += 1001;
+    let nudges = 0;
+    const pump = new DocBatchDeliveryPump(
+      options(f, now, () => {
+        nudges++;
+        return undefined;
+      })
+    );
+    pump.run();
+    const original = f.db.select().from(sessionMessageAcceptanceReceipts).all()[0]!;
+    const deadline = now().toISOString();
+    f.db
+      .update(canvasDocBatches)
+      .set({ leaseUntil: deadline })
+      .where(eq(canvasDocBatches.batchId, original.sourceId))
+      .run();
+    f.db.$client
+      .exec(`CREATE TRIGGER refuse_doc_resume BEFORE UPDATE OF lease_until ON canvas_doc_batches
+      WHEN NEW.error_code='document_resume_retry' BEGIN SELECT RAISE(ABORT, 'resume write refused'); END`);
+    nudges = 0;
+    await expect(pump.resumeAccepted()).rejects.toThrow();
+    expect(nudges).toBe(0);
+    expect(f.db.select().from(sessionMessageAcceptanceReceipts).all()).toEqual([original]);
+    expect(f.store.getBatch(original.sourceId)).toMatchObject({
+      status: 'accepted',
+      leaseUntil: deadline,
+      generation: original.sourceGeneration,
+      admissionReceiptId: original.id,
+    });
+    expect(f.db.select().from(sessionMessageQueue).all()[0]?.id).toBe(original.queueMessageId);
   });
   it.each(['claimed', 'started'] as const)(
     'quarantines a previous-boot %s receipt instead of resuming uncertain effects',

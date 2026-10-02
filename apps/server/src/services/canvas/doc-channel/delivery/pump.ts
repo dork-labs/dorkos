@@ -27,6 +27,7 @@ import { PrivateSessionMessageRefusalError } from '../../../session/private-mess
 import { appendDocStatus } from '../status.js';
 import { DocBatchAdmission } from './batch-admission.js';
 import { replayExpiredDocBatch } from './replay.js';
+import { consumeAcceptedDocWakes } from './resume.js';
 
 /** A gate observes current capacity without acquiring a runtime slot. */
 export type DocPumpGate =
@@ -305,37 +306,7 @@ export class DocBatchDeliveryPump {
   }
   /** Boot recovery must finish first; only unclaimed receipts may resume through the existing pump. */
   async resumeAccepted(): Promise<number> {
-    const rows = this.options.db
-      .select()
-      .from(sessionMessageAcceptanceReceipts)
-      .where(
-        and(
-          eq(sessionMessageAcceptanceReceipts.sourceKind, 'document_event_batch'),
-          eq(sessionMessageAcceptanceReceipts.state, 'accepted')
-        )
-      )
-      .all();
-    const sessions = new Set<string>();
-    for (const receipt of rows) {
-      const batch = this.options.store.getBatch(receipt.sourceId);
-      if (
-        batch?.status === 'accepted' &&
-        batch.leaseUntil &&
-        batch.leaseUntil > this.options.now().toISOString()
-      )
-        continue;
-      try {
-        await this.options.admission.acceptance.prepare(receipt.id);
-        const current = this.options.db
-          .select()
-          .from(sessionMessageAcceptanceReceipts)
-          .where(eq(sessionMessageAcceptanceReceipts.id, receipt.id))
-          .get();
-        if (current?.state === 'accepted') sessions.add(current.sessionId);
-      } catch {
-        this.options.admission.acceptance.cancel(receipt.id, 'document_recovery_authority_refused');
-      }
-    }
+    const sessions = await consumeAcceptedDocWakes(this.options);
     for (const session of sessions) this.notify(() => this.options.nudge(session));
     return sessions.size;
   }
