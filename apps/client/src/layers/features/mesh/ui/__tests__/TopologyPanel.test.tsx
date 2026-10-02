@@ -97,7 +97,7 @@ describe('TopologyPanel — default vs explicit access rule affordances (DOR-336
     });
 
     // Wait for the access rules section to render.
-    expect(await screen.findByText('Cross-Project Access Rules')).toBeInTheDocument();
+    expect(await screen.findByText('Cross-project access rules')).toBeInTheDocument();
 
     // The default rule (ns-a -> ns-a) must not have a remove button — removing
     // it wouldn't stick (re-asserted on the next agent registration) and would

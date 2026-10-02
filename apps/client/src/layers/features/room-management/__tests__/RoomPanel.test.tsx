@@ -670,7 +670,9 @@ describe('RoomPanel', () => {
       await rosterSection();
       openScale();
 
-      expect(await screen.findByText(/then for 3 minutes or 7 messages/)).toBeInTheDocument();
+      expect(
+        await screen.findByText(/keeps answering for 3 minutes or 7 messages/)
+      ).toBeInTheDocument();
     });
 
     it('shows a direct message’s stored engaged value as engaged, and says what it does', async () => {

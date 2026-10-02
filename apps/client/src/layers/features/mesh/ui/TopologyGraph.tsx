@@ -311,7 +311,7 @@ function TopologyGraphInner({
     <div
       className={cn('topology-container absolute inset-0', connectingFrom && 'is-connecting')}
       role="group"
-      aria-roledescription="network topology graph"
+      aria-roledescription="agent map"
       aria-label="Map of your agents"
       aria-describedby="topology-graph-summary"
     >
@@ -444,7 +444,7 @@ function TopologyGraphInner({
               onClick={confirmDeleteBinding}
               className={buttonVariants({ variant: 'destructive' })}
             >
-              Remove
+              Remove connection
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

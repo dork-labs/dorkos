@@ -52,7 +52,9 @@ describe('roomDocumentReading — a document that names a file', () => {
     );
     expect(reading.kind).toBe('elsewhere');
     expect(reading.kind === 'elsewhere' && reading.sentence).toContain('Ana');
-    expect(reading.kind === 'elsewhere' && reading.sentence).toContain('Ask them to share it');
+    expect(reading.kind === 'elsewhere' && reading.sentence).toContain(
+      'isn’t open to you. Ask them to share it'
+    );
   });
 
   it('refuses a file in somebody’s own project in a room with no files of its own', () => {
@@ -70,7 +72,9 @@ describe('roomDocumentReading — a document that names a file', () => {
     const reading = roomDocumentReading(
       doc({ content: { type: 'file', sourcePath: 'x.ts' }, treeKind: 'worktree' })
     );
-    expect(reading.kind === 'elsewhere' && reading.sentence).toContain('another member');
+    expect(reading.kind === 'elsewhere' && reading.sentence).toContain(
+      'Another member’s project isn’t open to you'
+    );
   });
 
   it('still draws markdown read out of a tree it cannot reach — the text came with the row', () => {

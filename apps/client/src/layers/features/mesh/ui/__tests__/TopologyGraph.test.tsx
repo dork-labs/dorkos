@@ -1109,7 +1109,7 @@ describe('TopologyGraph', () => {
       });
 
       removeEdge('binding:bind-1');
-      fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Remove connection' }));
 
       // The "binding:" prefix is stripped before hitting the mutation.
       expect(mockDeleteBindingMutate).toHaveBeenCalledWith('bind-1');

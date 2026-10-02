@@ -35,7 +35,7 @@ const completed: CommunityConnectionOwnerNotice = {
 describe('what the owner reads', () => {
   it('names the date and offers every option this owner has', () => {
     expect(ownerNoticeBanner(open, 'active', UTC)).toEqual([
-      'Someone asked to become this space’s owner',
+      'Someone asked to replace you as owner',
       'That can happen on or after Sunday, October 4, 2026, unless you keep ownership.',
       'Open the space to keep ownership.',
       'You can also hand it over, or delete it.',

@@ -120,7 +120,7 @@ describe('explainRung', () => {
       const { sentence } = explainRung('engaged', roomKind, WINDOW);
 
       expect(sentence).toBe(
-        'Answers when @mentioned, then for 3 minutes or 7 messages, whichever ends first.'
+        'Answers when @mentioned, then keeps answering for 3 minutes or 7 messages, whichever ends first.'
       );
     }
   );
@@ -150,7 +150,7 @@ describe('explainRung', () => {
     ]) {
       const { sentence, note } = explainRung('engaged', 'channel', off);
 
-      expect(sentence).not.toContain('then for');
+      expect(sentence).not.toContain('keeps answering');
       expect(note).toContain('are off');
     }
   });
@@ -181,6 +181,6 @@ describe('explainRung', () => {
     expect(explainRung('engaged', 'dm', WINDOW).sentence).not.toBe(
       explainRung('mention', 'dm', WINDOW).sentence
     );
-    expect(explainRung('engaged', 'dm', WINDOW).sentence).toContain('then for');
+    expect(explainRung('engaged', 'dm', WINDOW).sentence).toContain('keeps answering');
   });
 });

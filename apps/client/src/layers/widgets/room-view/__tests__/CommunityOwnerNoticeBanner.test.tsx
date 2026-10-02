@@ -98,7 +98,7 @@ describe('the owner banner on a community’s page', () => {
     const banner = await screen.findByRole('region', {
       name: 'Request to take over this space',
     });
-    expect(banner).toHaveTextContent('Someone asked to become this space’s owner');
+    expect(banner).toHaveTextContent('Someone asked to replace you as owner');
     expect(banner).toHaveTextContent(
       'That can happen in 7 days or more, unless you keep ownership.'
     );

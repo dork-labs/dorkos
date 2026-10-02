@@ -117,7 +117,7 @@ export function disconnectOutcome(
   if (!remoteRevoked)
     return {
       tone: 'warning',
-      message: `Disconnected here. On ${label}, remove ${names} under Agents and this DorkOS under Connected installations.`,
+      message: `Couldn’t reach ${label}. There, remove ${names} under Agents and this DorkOS under Connected installations.`,
     };
   return {
     tone: 'warning',

@@ -6,7 +6,7 @@
  */
 import { useId, useState, type FormEvent } from 'react';
 import type { CloudCommunityMove } from '@dorkos/shared/cloud-schemas';
-import { Button, Input, Label, MoreDetails, Progress, Spinner } from '@/layers/shared/ui';
+import { Button, Input, Label, Progress, Spinner } from '@/layers/shared/ui';
 import { CloudEligibilityNote } from '@/layers/features/cloud-link';
 import { formatBytes, moveFailureCopy, readWebAddress } from '../model/hosting-copy';
 import { useClaimAndConnect } from '../model/use-claim-and-connect';
@@ -35,10 +35,8 @@ export function moveExplainStep(onNext: () => void, onCancel: () => void): Hosti
     description: 'This copies your space’s history and files to DorkOS.',
     body: (
       <div className="space-y-2 text-sm">
-        <MoreDetails>
-          <p>Everyone joins again and reconnects their DorkOS.</p>
-          <p>Your old space keeps running until you delete it.</p>
-        </MoreDetails>
+        <p>Everyone joins again and reconnects their DorkOS.</p>
+        <p className="text-muted-foreground">Your old space keeps running until you delete it.</p>
         <p className="font-medium">First, export the old space:</p>
         <ol className="text-muted-foreground list-decimal space-y-1 pl-5">
           <li>Sign in to the old space as its owner.</li>
@@ -291,10 +289,12 @@ export function moveProgressStep(
               <p className="text-muted-foreground text-sm">
                 Cancel the move and start again with the same export.
               </p>
-              <MoreDetails>
-                <p>Or finish it on the computer that started it.</p>
-                <p>For safety, the upload is only allowed while DorkOS stays running.</p>
-              </MoreDetails>
+              <p className="text-muted-foreground text-sm">
+                Or finish it on the computer that started it.
+              </p>
+              <p className="text-muted-foreground text-sm">
+                For safety, uploads only work while DorkOS stays running.
+              </p>
               {notice}
             </>
           ),

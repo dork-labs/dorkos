@@ -208,7 +208,7 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     // cockpit has not changed them.
     await pill.click();
     await expect(
-      panel.getByText('keeps answering for 10 more minutes or 5 more messages', { exact: false })
+      panel.getByText('keeps answering for 10 minutes or 5 messages', { exact: false })
     ).toBeVisible();
   });
 

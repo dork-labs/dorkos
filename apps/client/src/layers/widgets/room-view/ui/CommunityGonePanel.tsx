@@ -170,17 +170,21 @@ export function CommunityGonePanel({ connection, onRemoved }: CommunityGonePanel
             <AlertDialogTitle>
               {deleted ? `Remove ${label} from DorkOS?` : `Remove your copy of ${label}?`}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleted
-                ? `${label} leaves this app. Nothing else is stored here.`
-                : 'This deletes its channels, messages and files from this computer.'}
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  {deleted
+                    ? `${label} leaves this app. Nothing else is stored here.`
+                    : 'This deletes its channels, messages and files from this computer.'}
+                </p>
+                {!deleted && (
+                  <p>
+                    Your agents stop answering there. If it’s still around, you can connect again.
+                  </p>
+                )}
+                {draftsCleared && <p>{draftsCleared}</p>}
+              </div>
             </AlertDialogDescription>
-            {!deleted && (
-              <p className="text-muted-foreground text-sm">
-                Your agents stop answering there. You can connect again later.
-              </p>
-            )}
-            {draftsCleared && <p className="text-muted-foreground text-sm">{draftsCleared}</p>}
           </AlertDialogHeader>
           {end.isError && (
             <p role="alert" className="text-destructive text-sm">

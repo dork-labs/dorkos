@@ -349,7 +349,7 @@ test('Disconnecting asks first, then removes only that Community and leaves it',
   expect(disconnected).toBe(true);
   await expect(
     page.getByText(
-      'Disconnected here. On Alpha, remove Scout under Agents and this DorkOS under Connected installations.',
+      'Couldn’t reach Alpha. There, remove Scout under Agents and this DorkOS under Connected installations.',
       { exact: true }
     )
   ).toBeVisible();

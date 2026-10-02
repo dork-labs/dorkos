@@ -274,7 +274,9 @@ describe('Move a space here', () => {
     expect(
       screen.getByText('This copies your space’s history and files to DorkOS.')
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'More details' }));
+    expect(
+      screen.getByText('Everyone joins again and reconnects their DorkOS.')
+    ).toBeInTheDocument();
     expect(
       screen.getByText('Your old space keeps running until you delete it.')
     ).toBeInTheDocument();
@@ -360,6 +362,7 @@ describe('Move a space here', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/DorkOS restarted, or the move began/)).toBeInTheDocument();
     expect(screen.getByText(/start again with the same export/)).toBeInTheDocument();
+    expect(screen.getByText('Or finish it on the computer that started it.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel move' })).toBeInTheDocument();
     first.unmount();
     const expired = moveStepOf(

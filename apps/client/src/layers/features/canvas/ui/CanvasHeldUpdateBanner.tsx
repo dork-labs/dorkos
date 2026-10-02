@@ -30,7 +30,7 @@ export function CanvasHeldUpdateBanner({ onReload, onKeepMine }: CanvasHeldUpdat
       role="status"
       className="border-border/60 bg-muted/40 mx-2 mt-2 space-y-2 rounded-md border px-3 py-2 text-sm"
     >
-      <p>Your agent changed this while you were editing.</p>
+      <p>Your agent changed this while you were editing. Your edit is safe.</p>
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" size="sm" onClick={onReload}>
           Reload

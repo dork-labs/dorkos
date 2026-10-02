@@ -163,7 +163,9 @@ describe('the room panel fixture reaches every state', () => {
     // the shipped defaults when the config read has not landed. A fixture that
     // stopped answering `getConfig` would leave the sentence looking finished
     // and quietly wrong about somebody's install.
-    expect(await screen.findByText(/then for 10 minutes or 5 messages/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/keeps answering for 10 minutes or 5 messages/)
+    ).toBeInTheDocument();
   });
 
   it('a room with nobody in it opens its picker itself', async () => {

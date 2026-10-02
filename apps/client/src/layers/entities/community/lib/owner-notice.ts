@@ -70,7 +70,7 @@ export function ownerNoticeBanner(
 ): string[] {
   const { options } = notice;
   const lines = [
-    'Someone asked to become this space’s owner',
+    'Someone asked to replace you as owner',
     `That can happen ${when(notice, format)}, unless you keep ownership.`,
     'Open the space to keep ownership.',
   ];

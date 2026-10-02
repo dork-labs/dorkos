@@ -1,6 +1,6 @@
 import { User, X } from 'lucide-react';
 import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
-import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import { runtimeLabel } from '@/layers/entities/runtime';
 import { Badge } from '@/layers/shared/ui/badge';
 import { useMeshAgentHealth } from '@/layers/entities/mesh';
 import { useProfileDeepLink } from '@/layers/shared/model';
@@ -116,7 +116,7 @@ export function AgentHealthDetail({ agentId, onClose }: AgentHealthDetailProps) 
         <div>
           <span className="text-muted-foreground">Runs on: </span>
           <Badge size="xs" variant="secondary">
-            {runtimeDisplayName(health.runtime)}
+            {runtimeLabel(health.runtime)}
           </Badge>
         </div>
 
