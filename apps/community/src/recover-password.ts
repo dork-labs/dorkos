@@ -42,7 +42,7 @@ export async function recoverPassword(
       [email.toLowerCase()]
     );
     const userId = account.rows[0]?.id;
-    if (!userId) throw new Error('No host account has that email address.');
+    if (!userId) throw new Error('No server account has that email address.');
     const memberships = await client.query<{ id: string; community_id: string }>(
       `SELECT id,community_id FROM members WHERE user_id=$1
        ORDER BY community_id,id FOR UPDATE`,

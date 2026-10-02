@@ -88,7 +88,7 @@ describe('releaseUnverifiedAccount', () => {
       ['linked@example.com', 'signs in through another service'],
       ['member@example.com', 'has joined a space'],
       ['operator@example.com', 'has operated this server'],
-      ['nobody@example.com', 'No host account'],
+      ['nobody@example.com', 'No server account'],
     ])
       await expect(releaseUnverifiedAccount(pool, email), email).rejects.toThrow(reason);
     for (const id of ['verified', 'linked', 'member', 'operator'])

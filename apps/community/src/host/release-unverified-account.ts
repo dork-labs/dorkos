@@ -33,7 +33,7 @@ export async function releaseUnverifiedAccount(pool: Pool, email: string): Promi
       [email.toLowerCase()]
     );
     const user = account.rows[0];
-    if (!user) throw new Error('No host account has that email address.');
+    if (!user) throw new Error('No server account has that email address.');
     if (user.emailVerified)
       throw new Error('That account has a verified email address, so it is kept.');
     const links = await client.query<{ providerId: string }>(
@@ -107,7 +107,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       // Refusals above are written for the operator; a database error may carry connection
       // details, so it is reported without its text.
       const message =
-        error instanceof Error && /^(No host account|That account|Provide)/u.test(error.message)
+        error instanceof Error && /^(No server account|That account|Provide)/u.test(error.message)
           ? error.message
           : 'Release failed. Check database access and applied migrations.';
       process.stderr.write(`${message}\n`);
