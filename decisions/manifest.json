@@ -6899,6 +6899,24 @@
         "apps/community/src/erasure/",
         "packages/shared/src/community-admin-wire.ts"
       ]
+    },
+    {
+      "id": "261001-201136",
+      "slug": "page-reported-bridge-lifetime",
+      "title": "Keep browser bridge evidence page-reported and bind its lifetime",
+      "status": "accepted",
+      "created": "2026-10-01",
+      "extractedFrom": "canvas-bridge-lifetime",
+      "specSlug": "canvas-bridge-lifetime",
+      "supersedes": null,
+      "affects": [
+        "apps/client/src/layers/features/canvas/",
+        "apps/server/src/services/workbench-serve/",
+        "apps/server/src/services/session/browser-seat/",
+        "apps/server/src/services/session/devtools-capture-store.ts",
+        "apps/server/src/routes/session-devtools.ts",
+        "packages/shared/src/schemas.ts"
+      ]
     }
   ]
 }

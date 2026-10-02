@@ -391,6 +391,9 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       if (requestId === undefined) return null;
       const captureRequest: RawOf<'devtools_capture_request'> = {
         type: 'devtools_capture_request',
+        ...(typeof data.bridgeGeneration === 'string'
+          ? { bridgeGeneration: data.bridgeGeneration }
+          : {}),
         requestId: String(requestId),
         ...(data.targetClientId !== undefined
           ? { targetClientId: String(data.targetClientId) }
@@ -420,6 +423,9 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       }
       const actionRequest: RawOf<'devtools_action_request'> = {
         type: 'devtools_action_request',
+        ...(typeof data.bridgeGeneration === 'string'
+          ? { bridgeGeneration: data.bridgeGeneration }
+          : {}),
         requestId: String(requestId),
         targetClientId: String(targetClientId),
         documentId: String(documentId),
@@ -444,17 +450,24 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         targetClientId === undefined ||
         documentId === undefined ||
         recordingId === undefined ||
-        (action !== 'start' && action !== 'stop') ||
+        typeof action !== 'string' ||
+        !['start', 'stop', 'confirm-start', 'cancel-start'].includes(action) ||
         bounds === undefined
       ) {
         return null;
       }
       const recordingRequest: RawOf<'devtools_recording_request'> = {
         type: 'devtools_recording_request',
+        ...(typeof data.bridgeGeneration === 'string'
+          ? { bridgeGeneration: data.bridgeGeneration }
+          : {}),
         requestId: String(requestId),
         targetClientId: String(targetClientId),
         documentId: String(documentId),
-        action,
+        action: action as RawOf<'devtools_recording_request'>['action'],
+        ...(typeof data.reservationTimeoutMs === 'number'
+          ? { reservationTimeoutMs: data.reservationTimeoutMs }
+          : {}),
         recordingId: String(recordingId),
         bounds: bounds as RawOf<'devtools_recording_request'>['bounds'],
       };

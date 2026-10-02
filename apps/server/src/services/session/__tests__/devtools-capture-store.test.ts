@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type {
   DevtoolsConsoleEntry,
   DevtoolsIngest,
@@ -208,6 +208,7 @@ describe('DevtoolsCaptureStore', () => {
 
     it('stores an ingested screenshot in the single slot and exposes it on read', () => {
       const store = new DevtoolsCaptureStore();
+      void store.awaitScreenshot('r1', 5000);
       store.ingest('s1', batch({ screenshot: { requestId: 'r1', dataUrl: PNG } }));
       const shot = store.read('s1')!.screenshot;
       expect(shot?.dataUrl).toBe(PNG);
@@ -258,5 +259,316 @@ describe('DevtoolsCaptureStore', () => {
       expect(outcome?.ok).toBe(true);
       expect(store.read('canonical')!.screenshot?.dataUrl).toBe(PNG);
     });
+  });
+});
+
+describe('bound bridge responses are atomic before buffer mutation', () => {
+  const binding = { clientId: 'host', documentId: 'doc', bridgeGeneration: 'generation' };
+  const base = {
+    documentId: 'doc',
+    logicalUrl: 'preview.html',
+    bridgeGeneration: 'generation',
+    seq: 1,
+    console: [],
+    network: [],
+  };
+  it('rejects every wrong/missing binding and unknown screenshot without changing any buffer field', async () => {
+    const store = new DevtoolsCaptureStore();
+    store.ingest('s', { ...base, active: true, instrumented: true }, 'host');
+    store.ingest(
+      's',
+      { ...base, console: [{ level: 'log', text: 'original', timestamp: 1 }] },
+      'host'
+    );
+    const original = store.read('s');
+    const pending = store.awaitScreenshot('known', 5000, binding);
+    const hostile = {
+      ...base,
+      reset: true,
+      logicalUrl: 'forged',
+      console: [{ level: 'error' as const, text: 'forged', timestamp: 2 }],
+      network: [
+        { method: 'GET', url: '/forged', status: 500, ok: false, durationMs: 0, timestamp: 2 },
+      ],
+      screenshot: { requestId: 'known', dataUrl: 'data:image/png;base64,AAAA' },
+    };
+    for (const [client, override] of [
+      ['other', {}],
+      [undefined, {}],
+      ['host', { documentId: 'other' }],
+      ['host', { documentId: undefined }],
+      ['host', { bridgeGeneration: 'old' }],
+      ['host', { bridgeGeneration: undefined }],
+    ] as const) {
+      store.ingest('s', { ...hostile, ...override }, client);
+      expect(store.read('s')).toEqual(original);
+    }
+    store.ingest(
+      's',
+      { ...hostile, screenshot: { ...hostile.screenshot, requestId: 'unknown' } },
+      'host'
+    );
+    expect(store.read('s')).toEqual(original);
+    store.ingest('s', { ...base, screenshot: hostile.screenshot }, 'host');
+    expect(await pending).toMatchObject({ ok: true });
+    const accepted = store.read('s');
+    store.ingest('s', hostile, 'host');
+    expect(store.read('s')).toEqual(accepted);
+  });
+  it('allows one host-accepted pinned result after canonical rekey and claim retirement', async () => {
+    const store = new DevtoolsCaptureStore();
+    store.ingest('temporary', { ...base, active: true, instrumented: true }, 'host');
+    const action = store.awaitAction('action', 5000, binding);
+    const screenshot = store.awaitScreenshot('capture', 5000, binding);
+    // The host already accepted these immutable results before deferring HTTP delivery.
+    const acceptedScreenshot = {
+      ...base,
+      screenshot: { requestId: 'capture', dataUrl: 'data:image/png;base64,AAAA' },
+    };
+    const acceptedAction = {
+      requestId: 'action',
+      ok: true,
+      documentId: 'doc',
+      bridgeGeneration: 'generation',
+    };
+    store.ingest('temporary', { ...base, active: false }, 'host');
+    store.rekeySession('temporary', 'canonical');
+    store.ingest('canonical', { ...base, bridgeGeneration: 'replacement', active: true }, 'host');
+    store.ingest('canonical', acceptedScreenshot, 'host');
+    store.resolveAction(acceptedAction, 'host');
+    expect(await screenshot).toMatchObject({ ok: true });
+    expect(await action).toMatchObject({ ok: true });
+    const accepted = store.read('canonical');
+    store.ingest('canonical', acceptedScreenshot, 'host');
+    expect(store.read('canonical')).toEqual(accepted);
+    store.ingest(
+      'canonical',
+      { ...base, reset: true, console: [{ level: 'log', text: 'late page', timestamp: 2 }] },
+      'host'
+    );
+    expect(store.read('canonical')).toEqual(accepted);
+  });
+  it('keeps explicitly issued legacy waiters working but never lets a bound waiter downgrade', async () => {
+    const store = new DevtoolsCaptureStore();
+    const legacy = store.awaitAction('legacy', 5000, { clientId: 'host', documentId: 'doc' });
+    store.resolveAction({ requestId: 'legacy', documentId: 'doc', ok: true }, 'host');
+    expect(await legacy).toMatchObject({ ok: true });
+    const bound = store.awaitAction('bound', 5000, binding);
+    store.resolveAction({ requestId: 'bound', documentId: 'doc', ok: false }, 'host');
+    store.resolveAction(
+      { requestId: 'bound', documentId: 'doc', bridgeGeneration: 'generation', ok: true },
+      'host'
+    );
+    expect(await bound).toMatchObject({ ok: true });
+  });
+});
+
+describe('exclusive recording upload ownership', () => {
+  it('uses internal pending identity, rejects competing owners and preserves ownership across canonical rekey', async () => {
+    const store = new DevtoolsCaptureStore();
+    const binding = { clientId: 'host', documentId: 'doc', bridgeGeneration: 'generation' };
+    const claim = {
+      ...binding,
+      seq: 0,
+      console: [],
+      network: [],
+      active: true,
+      instrumented: true,
+    };
+    store.ingest('old', claim, 'host');
+    const pending = store.awaitRecording(
+      'upload',
+      { recordingId: 'recording', cwd: '/tmp', full: false, binding },
+      1000
+    );
+    expect(store.pendingRecording('upload')).not.toBe(store.pendingRecording('upload'));
+    expect(
+      store.claimRecordingUpload('upload', { ...binding, documentId: 'wrong' })
+    ).toBeUndefined();
+    const lease = store.claimRecordingUpload('upload', binding)!;
+    expect(store.isRecordingUploadCurrent(lease)).toBe(true);
+    expect(store.claimRecordingUpload('upload', binding)).toBeUndefined();
+    store.releaseRecordingUpload({ ...lease });
+    expect(store.isRecordingUploadCurrent(lease)).toBe(true);
+    store.rekeySession('old', 'canonical');
+    expect(store.isRecordingUploadCurrent(lease)).toBe(true);
+    expect(store.resolveRecordingUpload({ ...lease }, { ok: false, error: 'Forged owner.' })).toBe(
+      false
+    );
+    expect(
+      store.resolveRecordingUpload(lease, {
+        ok: false,
+        error: 'Controlled host failure.',
+        provenance: 'host',
+      })
+    ).toBe(true);
+    expect(await pending).toMatchObject({ ok: false, provenance: 'host' });
+    expect(store.isRecordingUploadCurrent(lease)).toBe(false);
+    store.releaseRecordingUpload(lease);
+  });
+
+  it('an expired owner cannot settle or release a replacement request and holds exclusion until cleanup', async () => {
+    vi.useFakeTimers();
+    const store = new DevtoolsCaptureStore();
+    const binding = { clientId: 'host', documentId: 'doc', bridgeGeneration: 'generation' };
+    store.ingest(
+      'session',
+      { ...binding, seq: 0, console: [], network: [], active: true, instrumented: true },
+      'host'
+    );
+    try {
+      const old = store.awaitRecording(
+        'upload',
+        { recordingId: 'old', cwd: '/tmp', full: false, binding },
+        50
+      );
+      const oldLease = store.claimRecordingUpload('upload', binding)!;
+      await vi.advanceTimersByTimeAsync(50);
+      expect(await old).toBeUndefined();
+      const replacement = store.awaitRecording(
+        'upload',
+        { recordingId: 'new', cwd: '/tmp', full: false, binding },
+        1000
+      );
+      expect(store.claimRecordingUpload('upload', binding)).toBeUndefined();
+      expect(store.resolveRecordingUpload(oldLease, { ok: false, error: 'Stale catch.' })).toBe(
+        false
+      );
+      expect(store.pendingRecording('upload')?.recordingId).toBe('new');
+      store.releaseRecordingUpload(oldLease);
+      const nextLease = store.claimRecordingUpload('upload', binding)!;
+      store.releaseRecordingUpload(oldLease);
+      expect(store.isRecordingUploadCurrent(nextLease)).toBe(true);
+      expect(
+        store.resolveRecordingUpload(nextLease, {
+          ok: false,
+          error: 'Host cleanup.',
+          provenance: 'host',
+        })
+      ).toBe(true);
+      await replacement;
+      store.releaseRecordingUpload(nextLease);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      store.clear();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('host recording START admission', () => {
+  it.each([
+    'request',
+    'recording',
+    'phase',
+    'client',
+    'document',
+    'generation',
+    'missing-generation',
+    'mixed',
+  ])(
+    'rejects %s without consuming the phase or mutating any capture/claim state',
+    async (mismatch) => {
+      vi.useFakeTimers();
+      const store = new DevtoolsCaptureStore();
+      try {
+        const binding = { clientId: 'host', documentId: 'doc', bridgeGeneration: 'gen' };
+        store.ingest(
+          's1',
+          batch({
+            ...binding,
+            active: true,
+            instrumented: true,
+            console: [consoleEntry('retained')],
+          }),
+          'host'
+        );
+        store.startRecording('s1', { id: 'film', ...binding });
+        let settled = false;
+        const wait = store
+          .awaitRecordingStart('request', {
+            recordingId: 'film',
+            phase: 'reserved',
+            binding,
+            timeoutMs: 100,
+          })
+          .then((outcome) => {
+            settled = true;
+            return outcome;
+          });
+        const valid: DevtoolsIngest = {
+          hostOutcome: 'host',
+          documentId: 'doc',
+          bridgeGeneration: 'gen',
+          seq: 0,
+          console: [],
+          network: [],
+          recordingStart: {
+            requestId: 'request',
+            recordingId: 'film',
+            phase: 'reserved',
+            ok: true,
+          },
+        };
+        const wrong = structuredClone(valid);
+        if (mismatch === 'request') wrong.recordingStart!.requestId = 'unknown';
+        if (mismatch === 'recording') wrong.recordingStart!.recordingId = 'different';
+        if (mismatch === 'phase') wrong.recordingStart!.phase = 'started';
+        if (mismatch === 'document') wrong.documentId = 'different';
+        if (mismatch === 'generation') wrong.bridgeGeneration = 'different';
+        if (mismatch === 'missing-generation') delete wrong.bridgeGeneration;
+        if (mismatch === 'mixed')
+          Object.assign(wrong, {
+            reset: true,
+            logicalUrl: 'forged',
+            active: false,
+            console: [consoleEntry('forged')],
+            network: [networkEntry('/forged')],
+          });
+        const before = store.read('s1');
+        const recording = store.recordingFor('s1');
+        store.ingest('s1', wrong, mismatch === 'client' ? 'different' : 'host');
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        expect(store.read('s1')).toEqual(before);
+        expect(store.recordingFor('s1')).toEqual(recording);
+        store.ingest('canonical-url', valid, 'host');
+        expect(await wait).toEqual(valid.recordingStart);
+        store.ingest('s1', valid, 'host');
+        expect(store.read('s1')).toEqual(before);
+      } finally {
+        store.clear();
+        vi.useRealTimers();
+      }
+    }
+  );
+  it('drops an expired phase and releases its waiter and timer promptly on cancellation', async () => {
+    vi.useFakeTimers();
+    const store = new DevtoolsCaptureStore();
+    try {
+      const binding = { clientId: 'host', documentId: 'doc', bridgeGeneration: 'gen' };
+      const wait = store.awaitRecordingStart('request', {
+        recordingId: 'film',
+        phase: 'reserved',
+        binding,
+        timeoutMs: 100,
+      });
+      expect(vi.getTimerCount()).toBe(1);
+      store.cancelRecordingStart('request');
+      expect(await wait).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+      const expired = store.awaitRecordingStart('request', {
+        recordingId: 'film',
+        phase: 'started',
+        binding,
+        timeoutMs: 100,
+      });
+      await vi.advanceTimersByTimeAsync(101);
+      expect(await expired).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      store.clear();
+      vi.useRealTimers();
+    }
   });
 });

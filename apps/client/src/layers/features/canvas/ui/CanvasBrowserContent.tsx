@@ -137,12 +137,14 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     cwd,
     reloadNonce,
   });
-  const { resourceErrorCount, notePersonNavigated } = useDevtoolsBridge({
+  const { resourceErrorCount, notePersonNavigated, noteFrameLoaded } = useDevtoolsBridge({
     iframeRef,
     documentId,
     logicalUrl: currentUrl,
     reloadNonce,
     previewOrigin: resolved?.previewOrigin ?? null,
+    bridgeEligibility: resolved?.bridgeEligibility ?? null,
+    resolvedSource: resolved?.src ?? null,
   });
 
   // Which room this browser is showing a page FOR, or null where the canvas is
@@ -206,6 +208,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     (value: string) => {
       const next = normalizeAddressInput(value);
       if (!next || next === currentUrl) {
+        notePersonNavigated();
         setReloadNonce((n) => n + 1);
         return;
       }
@@ -276,8 +279,12 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
         resourceErrorCount={resourceErrorCount}
         title={content.title ?? 'Embedded browser'}
         onOpenExternally={openExternally}
-        onReload={() => setReloadNonce((n) => n + 1)}
+        onReload={() => {
+          notePersonNavigated();
+          setReloadNonce((n) => n + 1);
+        }}
         iframeRef={iframeRef}
+        onFrameLoad={noteFrameLoaded}
       />
     </div>
   );
@@ -404,6 +411,7 @@ interface BrowserBodyProps {
   onReload: () => void;
   /** Ref attached to the rendered iframe so the DevTools bridge can identify it. */
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  onFrameLoad: () => void;
 }
 
 /**
@@ -457,6 +465,7 @@ function BrowserBody({
   onOpenExternally,
   onReload,
   iframeRef,
+  onFrameLoad,
 }: BrowserBodyProps) {
   if (target.mode === 'blocked') {
     return <BrowserMessage>This address can’t be displayed for security reasons.</BrowserMessage>;
@@ -490,6 +499,7 @@ function BrowserBody({
       sandbox={resolved.sandbox}
       title={title}
       iframeRef={iframeRef}
+      onFrameLoad={onFrameLoad}
       // An external site's slowness is the site's, and its escape hatch is
       // already below the frame; the deadline is for previews DorkOS put there.
       watchLoadDeadline={!external}
@@ -506,6 +516,7 @@ interface PreviewFrameProps {
   sandbox: string;
   title: string;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  onFrameLoad: () => void;
   /** Whether to warn when this frame takes too long to fire `load`. */
   watchLoadDeadline: boolean;
   resourceErrorCount: number;
@@ -526,6 +537,7 @@ function PreviewFrame({
   sandbox,
   title,
   iframeRef,
+  onFrameLoad,
   watchLoadDeadline,
   resourceErrorCount,
   showEmbedFallback,
@@ -552,15 +564,18 @@ function PreviewFrame({
       )}
       {resourceErrorCount > 0 && (
         <FrameBanner onOpenExternally={onOpenExternally}>
-          This page hit {resourceErrorCount} {resourceErrorCount === 1 ? 'error' : 'errors'} while
-          loading.
+          This page hit {resourceErrorCount === 10000 ? 'at least 10,000' : resourceErrorCount}{' '}
+          {resourceErrorCount === 1 ? 'error' : 'errors'} while loading.
         </FrameBanner>
       )}
       <iframe
         ref={iframeRef}
         src={src}
         sandbox={sandbox}
-        onLoad={() => setLoaded(true)}
+        onLoad={() => {
+          setLoaded(true);
+          onFrameLoad();
+        }}
         className="min-h-0 w-full flex-1 border-0"
         title={title}
       />

@@ -1885,3 +1885,23 @@ describe('feedProjector — a normal turn grows no ghost window', () => {
     expect(reopeners).toEqual([]);
   });
 });
+
+it.each(['start', 'confirm-start', 'cancel-start'])(
+  'normalizes recording %s with its relative reservation budget',
+  (action) => {
+    const data = {
+      requestId: 'request',
+      targetClientId: 'host',
+      documentId: 'doc',
+      bridgeGeneration: 'gen',
+      recordingId: 'film',
+      action,
+      reservationTimeoutMs: 8000,
+      bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8 * 1024 * 1024 },
+    };
+    expect(toRawSessionEvent({ type: 'devtools_recording_request', data })).toEqual({
+      type: 'devtools_recording_request',
+      ...data,
+    });
+  }
+);

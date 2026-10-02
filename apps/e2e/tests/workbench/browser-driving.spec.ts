@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import type { Page, Request } from '@playwright/test';
@@ -187,5 +189,290 @@ test.describe('Browser — an agent uses the page @smoke', () => {
     await expect(firstFrame.getByText(DRIVING_DONE_TEXT)).toHaveCount(0);
 
     await second.close();
+  });
+  test('bounds hostile served-page reports and admits known forgery only as unverified evidence', async ({
+    page,
+  }) => {
+    const sessionId = randomUUID();
+    await selectDrivingScenario(page);
+    // Install before the response-injected shim: window message listeners in
+    // Chromium run in registration order even for a later capture:true listener.
+    await page.addInitScript(() => {
+      if (window === window.top || !location.pathname.includes('/api/workbench/serve')) return;
+      window.addEventListener('message', (event) => {
+        if (event.source !== parent || event.data?.__dorkosDevtools !== 'capture-request') return;
+        event.stopImmediatePropagation();
+        window.dispatchEvent(new CustomEvent('bridge-test-capture', { detail: event.data }));
+      });
+    });
+    await writeFile(
+      join(agentDir, 'index.html'),
+      '<!doctype html><title>Bridge adversary</title><h1>Bridge adversary</h1>'
+    );
+    await page.request.post('/api/test/scenario', {
+      data: { name: 'browser-bridge-evidence', sessionId },
+    });
+    const snapshots: {
+      active?: boolean;
+      instrumented?: boolean;
+      bridgeGeneration?: string;
+      screenshot?: { requestId: string; dataUrl?: string; error?: string };
+    }[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/devtools/ingest'))
+        snapshots.push(request.postDataJSON());
+    });
+    await openInCanvasBrowser(page, new RightPanelPage(page), './index.html', sessionId, agentDir);
+    await expect
+      .poll(() =>
+        snapshots.some((s) => s.instrumented === true && typeof s.bridgeGeneration === 'string')
+      )
+      .toBe(true);
+    const gen = snapshots.filter((s) => s.instrumented === true).at(-1)!.bridgeGeneration!;
+    const child = page.frames().find((f) => f.url().includes('/api/workbench/serve'))!;
+    expect(child, 'the attack must run inside the real signed served iframe').toBeDefined();
+    const attempts = await child.evaluate(
+      async ({ gen }) => {
+        const png =
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        const cycle: unknown[] = [];
+        cycle.push(cycle);
+        const messages = [
+          { __dorkosDevtools: 'capture-result', requestId: 'unsolicited', dataUrl: png },
+          {
+            __dorkosDevtools: 'capture-result',
+            bridgeGeneration: gen,
+            requestId: 'unsolicited',
+            dataUrl: png,
+          },
+          ...[[1n], cycle].map((args) => ({
+            __dorkosDevtools: 'batch',
+            bridgeGeneration: gen,
+            seq: 1,
+            console: [{ level: 'log', text: 'hostile clone', timestamp: 1, args }],
+            network: [],
+          })),
+        ];
+        for (const report of messages) parent.postMessage(report, '*');
+        // Attack a known pending request from a real nested frame and from the
+        // current page with the wrong generation or no outcome. Hold the valid page forgery
+        // until the test observes zero HTTP captures, then prove the waiter survives.
+        const state = window as Window & {
+          __bridgeKnownReply?: Record<string, unknown>;
+          __bridgeAttacksSent?: number;
+        };
+        const nested = document.createElement('iframe');
+        nested.srcdoc = `<script>addEventListener('message', e => {
+          top.postMessage(e.data, '*');
+          parent.postMessage({ __bridgeNestedSent: true }, '*');
+        });</script>`;
+        const loaded = new Promise<void>((resolve) => {
+          nested.addEventListener('load', () => resolve(), { once: true });
+        });
+        document.body.append(nested);
+        await loaded;
+        window.addEventListener('message', (event) => {
+          if (event.source === nested.contentWindow && event.data?.__bridgeNestedSent)
+            state.__bridgeAttacksSent = (state.__bridgeAttacksSent ?? 0) + 1;
+        });
+        window.addEventListener('bridge-test-capture', (event) => {
+          const data = (event as CustomEvent<{ bridgeGeneration: string; requestId: string }>)
+            .detail;
+          const reply = {
+            __dorkosDevtools: 'capture-result',
+            bridgeGeneration: data.bridgeGeneration,
+            requestId: data.requestId,
+            dataUrl: png,
+            evidence: { source: 'host', verified: true },
+          };
+          state.__bridgeKnownReply = reply;
+          state.__bridgeAttacksSent = 2;
+          parent.postMessage(
+            {
+              __dorkosDevtools: 'capture-result',
+              bridgeGeneration: data.bridgeGeneration,
+              requestId: data.requestId,
+            },
+            '*'
+          );
+          parent.postMessage({ ...reply, bridgeGeneration: `${gen}-other` }, '*');
+          nested.contentWindow!.postMessage(reply, '*');
+        });
+        return messages.length;
+      },
+      { gen }
+    );
+    expect(attempts).toBe(4);
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    );
+    expect(snapshots.filter((s) => s.screenshot)).toHaveLength(0);
+    const turn = new ChatPage(page).sendAndLand('read the bridge evidence', 60000);
+    await expect
+      .poll(() =>
+        child.evaluate(
+          () => (window as Window & { __bridgeAttacksSent?: number }).__bridgeAttacksSent
+        )
+      )
+      .toBe(3);
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    );
+    const premature = snapshots.filter((snapshot) => snapshot.screenshot);
+    expect(premature, JSON.stringify(premature)).toHaveLength(0);
+    await child.evaluate(() => {
+      const state = window as Window & { __bridgeKnownReply?: Record<string, unknown> };
+      if (!state.__bridgeKnownReply) throw new Error('The known capture request was not observed');
+      parent.postMessage(state.__bridgeKnownReply, '*');
+    });
+    await turn;
+    const answer = page.locator('[data-testid="message-item"][data-role="assistant"]').last();
+    await expect(answer).toContainText('bridgeEvidence', { timeout: 60000 });
+    const text = await answer.innerText();
+    expect(text).toContain('page-reported');
+    expect(text).toContain('"verified":false');
+    expect(text).toContain('image/png');
+    await expect.poll(() => snapshots.filter((s) => s.screenshot).length).toBe(1);
+    expect(snapshots.find((s) => s.screenshot)!.screenshot!.requestId).not.toBe('unsolicited');
+  });
+  test('delivers already host-accepted action and screenshot once after real canonical rekey and generation retirement', async ({
+    page,
+  }) => {
+    const sessionId = randomUUID();
+    const canonicalId = randomUUID();
+    await selectDrivingScenario(page);
+    await openFixture(page, sessionId);
+    expect(
+      (
+        await page.request.post('/api/test/scenario', { data: { name: 'browser-bridge-rekey' } })
+      ).ok()
+    ).toBe(true);
+    expect(
+      (await page.request.post('/api/test/canonical-id', { data: { sessionId, canonicalId } })).ok()
+    ).toBe(true);
+    const claims: { active?: boolean; instrumented?: boolean; bridgeGeneration?: string }[] = [];
+    const held: {
+      url: string;
+      body: { requestId?: string; bridgeGeneration: string; screenshot?: { requestId: string } };
+    }[] = [];
+    let release!: () => void;
+    const delivery = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/api/sessions/*/devtools/*', async (route) => {
+      const request = route.request();
+      const body = request.postDataJSON();
+      if (body.active !== undefined) claims.push(body);
+      if (body.screenshot || request.url().endsWith('/devtools/action')) {
+        held.push({ url: request.url(), body });
+        await delivery;
+        // Delivery may use the canonical route even though host acceptance was
+        // under the temporary session. Header/body binding stays byte-for-byte.
+        await route.continue({
+          url: request.url().replace(`/sessions/${sessionId}/`, `/sessions/${canonicalId}/`),
+        });
+      } else await route.continue();
+    });
+    const turn = new ChatPage(page).sendAndLand('read across the canonical rename', 60000);
+    await expect.poll(() => held.length, { timeout: 10000 }).toBe(2);
+    expect(held.every((response) => response.url.includes(sessionId))).toBe(true);
+    const generation = held[0].body.bridgeGeneration;
+    expect(held[1].body.bridgeGeneration).toBe(generation);
+    await expect.poll(() => page.url(), { timeout: 10000 }).toContain(canonicalId);
+    await expect
+      .poll(() => claims.some((c) => c.active === false && c.bridgeGeneration === generation))
+      .toBe(true);
+    release();
+    await turn;
+    const answer = page.locator('[data-testid="message-item"][data-role="assistant"]').last();
+    await expect(answer).toContainText('bridgeRekey');
+    const text = await answer.innerText();
+    expect(text).toContain('image/png');
+    expect(text).toContain('page-reported');
+    expect(text).toContain('"verified":false');
+    expect(text).toContain('Mark as done');
+    // Canonical hydration follows the server canvas row; local address navigation
+    // may have been showing a different page. Explicitly reopen the fixture to
+    // prove a fresh eligible lifetime cannot admit the retired page's result.
+    await openFixture(page, canonicalId);
+    await expect
+      .poll(() =>
+        claims.some(
+          (c) => c.active === true && c.instrumented === true && c.bridgeGeneration !== generation
+        )
+      )
+      .toBe(true);
+    await page
+      .frameLocator('iframe[title="Web Page"]')
+      .locator('body')
+      .evaluate(
+        (_body, { generation, held }) => {
+          for (const response of held)
+            parent.postMessage(
+              {
+                __dorkosDevtools: response.body.screenshot ? 'capture-result' : 'act-result',
+                bridgeGeneration: generation,
+                requestId: response.body.screenshot?.requestId ?? response.body.requestId,
+                ok: true,
+                dataUrl:
+                  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+              },
+              '*'
+            );
+        },
+        { generation, held }
+      );
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    );
+    expect(held).toHaveLength(2);
+  });
+  test('caps the real resource warning and clears it through keyboard reload', async ({
+    page,
+  }, testInfo) => {
+    await selectDrivingScenario(page);
+    const claims: { instrumented?: boolean; bridgeGeneration?: string }[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/devtools/ingest'))
+        claims.push(request.postDataJSON());
+    });
+    await openFixture(page, randomUUID());
+    await expect.poll(() => claims.some((claim) => claim.instrumented)).toBe(true);
+    const generation = claims.filter((claim) => claim.instrumented).at(-1)!.bridgeGeneration!;
+    const warning = page.getByText(/This page hit .* errors? while loading\./);
+    await expect(warning).toHaveCount(0);
+    const empty = testInfo.outputPath('resource-warning-empty.png');
+    await page.screenshot({ path: empty });
+    await testInfo.attach('resource-warning-empty', { path: empty, contentType: 'image/png' });
+    const sent = await page
+      .frameLocator('iframe[title="Web Page"]')
+      .locator('body')
+      .evaluate((_body, generation) => {
+        const count = 10_001;
+        for (let i = 0; i < count; i++)
+          parent.postMessage(
+            { __dorkosDevtools: 'resource-error', bridgeGeneration: generation },
+            '*'
+          );
+        return count;
+      }, generation);
+    expect(sent).toBe(10_001);
+    await expect(warning).toHaveText('This page hit at least 10,000 errors while loading.');
+    const saturated = testInfo.outputPath('resource-warning-saturated.png');
+    await page.screenshot({ path: saturated });
+    await testInfo.attach('resource-warning-saturated', {
+      path: saturated,
+      contentType: 'image/png',
+    });
+    const reload = page.getByRole('button', { name: 'Reload', exact: true });
+    await reload.focus();
+    await expect(reload).toBeFocused();
+    await reload.press('Enter');
+    await expect(warning).toHaveCount(0);
+    await expect
+      .poll(() =>
+        claims.some((claim) => claim.instrumented && claim.bridgeGeneration !== generation)
+      )
+      .toBe(true);
   });
 });

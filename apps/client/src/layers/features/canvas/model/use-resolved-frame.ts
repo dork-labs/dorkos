@@ -55,6 +55,8 @@ export interface ResolvedFrame {
    * the only real origin DorkOS injects the shim into.
    */
   previewOrigin: string | null;
+  /** Host-resolved source family; page messages cannot enable it. */
+  bridgeEligibility: 'served-document' | 'preview-listener' | null;
 }
 
 /** What {@link useResolvedFrame} is asked to resolve. */
@@ -90,6 +92,8 @@ export function useResolvedFrame({
   cwd,
   reloadNonce,
 }: UseResolvedFrameParams): UseResolvedFrame {
+  const resolutionKey = JSON.stringify([currentUrl, strategy, cwd, reloadNonce]);
+  const [resolvedFor, setResolvedFor] = useState<string | null>(null);
   const [resolved, setResolved] = useState<ResolvedFrame | null>(null);
   const [resolveError, setResolveError] = useState<ResolveError | null>(null);
 
@@ -109,6 +113,10 @@ export function useResolvedFrame({
   useEffect(() => {
     const transport = transportRef.current;
     let cancelled = false;
+    const publishResolved = (frame: ResolvedFrame): void => {
+      setResolvedFor(resolutionKey);
+      setResolved(frame);
+    };
 
     async function resolveServe(path: string): Promise<void> {
       if (cwd === null) {
@@ -122,7 +130,13 @@ export function useResolvedFrame({
         const url = await transport.createServeUrl(cwd, path);
         if (cancelled) return;
         if (url === null) setResolveError({ kind: 'unsupported' });
-        else setResolved({ src: url, sandbox: WORKBENCH_SANDBOX_ISOLATED, previewOrigin: null });
+        else
+          publishResolved({
+            src: url,
+            sandbox: WORKBENCH_SANDBOX_ISOLATED,
+            previewOrigin: null,
+            bridgeEligibility: 'served-document',
+          });
       } catch {
         if (!cancelled) setResolveError({ kind: 'failed' });
       }
@@ -178,10 +192,11 @@ export function useResolvedFrame({
               // Its own origin, so it gets the external sandbox — and it is the
               // one framed page carrying our shim, so the bridge is told which
               // origin may speak.
-              setResolved({
+              publishResolved({
                 src,
                 sandbox: WORKBENCH_SANDBOX_EXTERNAL,
                 previewOrigin: origin.origin,
+                bridgeEligibility: 'preview-listener',
               });
               return;
             }
@@ -199,10 +214,11 @@ export function useResolvedFrame({
       //    address may work even when the preview origin does not.
       if (strategy === 'direct' && (await probeDirect(currentUrl))) {
         if (cancelled) return;
-        setResolved({
+        publishResolved({
           src: currentUrl,
           sandbox: WORKBENCH_SANDBOX_EXTERNAL,
           previewOrigin: null,
+          bridgeEligibility: null,
         });
         return;
       }
@@ -219,10 +235,11 @@ export function useResolvedFrame({
       setResolved(null);
       if (target.mode === 'blocked') return;
       if (target.mode === 'external') {
-        setResolved({
+        publishResolved({
           src: target.url,
           sandbox: WORKBENCH_SANDBOX_EXTERNAL,
           previewOrigin: null,
+          bridgeEligibility: null,
         });
         return;
       }
@@ -234,7 +251,7 @@ export function useResolvedFrame({
     return () => {
       cancelled = true;
     };
-  }, [target, currentUrl, strategy, cwd, reloadNonce]);
+  }, [target, currentUrl, strategy, cwd, reloadNonce, resolutionKey]);
 
-  return { resolved, resolveError };
+  return { resolved: resolvedFor === resolutionKey ? resolved : null, resolveError };
 }

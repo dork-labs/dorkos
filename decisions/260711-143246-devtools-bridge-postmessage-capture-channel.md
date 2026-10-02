@@ -11,7 +11,8 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Accepted. Report provenance and lifetime admission are amended by
+[ADR 261001-201136](261001-201136-page-reported-bridge-lifetime.md).
 
 ## Context
 
@@ -35,10 +36,13 @@ itself, via a small, dependency-free script injected as the first `<head>` child
 `console.log/info/warn/error/debug`, `window.fetch`/`XMLHttpRequest`, and uncaught
 error/rejection listeners, and — on an explicit request from the parent — rasterizes the page
 client-side with a lazy-loaded `html-to-image` import. It delivers everything to its parent
-**exclusively via `window.parent.postMessage`**, and the parent identifies it by
-`event.source === iframe.contentWindow` (origin is `"null"`, so identity is the check); the
+**exclusively via `window.parent.postMessage`**, and the parent identifies the current frame by
+`event.source === iframe.contentWindow` plus the expected origin. These checks identify the
+frame, not which script authored a report: page code can imitate the injected shim. Reports
+remain page-reported and unverified; host-owned generation and pending-request bindings limit
+their lifetime and admitted responses without authenticating same-page code. The
 injected script **never calls `/api/*` directly** — it has no origin or credentials to do so
-safely. Only the same-origin, authenticated DorkOS client relays batched messages to
+safely. The same-origin DorkOS client relays admitted batched messages to
 `POST /api/sessions/:id/devtools/ingest`, which appends to a bounded, per-session ring-buffer
 store (console 500 entries, network 200, screenshot latest-1). Three session-bound, in-process MCP
 tools read that store synchronously; they ship **Claude-Code-only in v1**, mirroring the existing
@@ -57,7 +61,7 @@ beyond the session's in-memory buffer; it is dropped on session close.
   from the opaque-origin frame is cross-origin against the DorkOS API, which would require either
   opening a CORS-`*` ingestion endpoint any page on the internet could POST to, or being subject to
   the served page's own CSP `connect-src`. `postMessage` to `window.parent` sidesteps both.
-- One in-page capture channel covers everything an agent needs to self-verify frontend work —
+- One in-page capture channel supplies page-reported evidence for frontend work —
   cross-origin fetches, real client-side timing, and console — that a proxy-side-only approach
   would miss entirely.
 - Client-side rasterization (`html-to-image`, ~11 KB gzipped, lazy-loaded inside the shim) keeps

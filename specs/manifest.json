@@ -3503,6 +3503,14 @@
       "status": "specified",
       "project": "Canvas and Browser in Rooms",
       "linearIssue": "DOR-2667"
+    },
+    {
+      "id": "261001-201135",
+      "slug": "canvas-bridge-lifetime",
+      "title": "Bound browser bridge reports to their page lifetime",
+      "created": "2026-10-01",
+      "status": "specified",
+      "linearIssue": "DOR-2662"
     }
   ]
 }

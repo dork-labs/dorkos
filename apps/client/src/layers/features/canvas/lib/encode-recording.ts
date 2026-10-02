@@ -18,6 +18,7 @@
  *
  * @module features/canvas/lib/encode-recording
  */
+import { inspectBridgeImage } from '@dorkos/shared/canvas-bridge-wire';
 import { loadGifEncoder } from './load-gif-encoder';
 
 /** One frame's pixels, as the encoder wants them. */
@@ -51,9 +52,8 @@ export type EncodeResult = { ok: true; bytes: Uint8Array } | { ok: false; error:
  * closely.
  *
  * Over the byte cap it answers with a sentence rather than an enormous file —
- * the caller re-draws smaller and asks again (spec §3.3's one retry at half the
- * long edge), which is a decision that belongs
- * where the canvas is, not here.
+ * the caller halves retained normalized pixels and asks again once. Compressed
+ * inputs have already been released, so retrying never decodes them again.
  *
  * @param frames - The frames, in order, all the same size.
  * @param bounds - Frame delay and the byte ceiling.
@@ -61,12 +61,15 @@ export type EncodeResult = { ok: true; bytes: Uint8Array } | { ok: false; error:
  */
 export async function encodeGif(
   frames: readonly RecordingFrame[],
-  bounds: EncodeBounds
+  bounds: EncodeBounds,
+  assertLive: () => void = () => {}
 ): Promise<EncodeResult> {
   if (frames.length === 0) {
     return { ok: false, error: 'The recording has no frames in it.' };
   }
+  assertLive();
   const { GIFEncoder, quantize, applyPalette } = await loadGifEncoder();
+  assertLive();
 
   // One palette for the whole recording, sampled from the two frames most
   // likely to differ. Concatenated rather than averaged: `quantize` wants one
@@ -80,6 +83,7 @@ export async function encodeGif(
 
   const gif = GIFEncoder();
   for (let i = 0; i < frames.length; i++) {
+    assertLive();
     const frame = frames[i];
     gif.writeFrame(applyPalette(frame.data, palette), frame.width, frame.height, {
       // The palette rides the first frame as the GLOBAL colour table; repeating
@@ -87,6 +91,11 @@ export async function encodeGif(
       ...(i === 0 ? { palette, repeat: 0 } : {}),
       delay: bounds.frameMs,
     });
+    if (gif.bytesView().byteLength > bounds.maxBytes)
+      return {
+        ok: false,
+        error: `The recording came out bigger than ${Math.round(bounds.maxBytes / 1024 / 1024)} MB, so it was not saved.`,
+      };
   }
   gif.finish();
 
@@ -111,56 +120,114 @@ export async function encodeGif(
  *
  * @param dataUrls - The captured frames, in order, as PNG data URLs.
  * @param longEdgePx - The long edge, in pixels, to draw them to.
- * @returns The drawn frames, skipping any that could not be decoded.
+ * @returns Normalized frames; each compressed input and decoded image is released sequentially.
  */
 export async function drawFrames(
-  dataUrls: readonly string[],
-  longEdgePx: number
+  dataUrls: string[],
+  longEdgePx: number,
+  assertLive: () => void = () => {}
 ): Promise<RecordingFrame[]> {
-  const images: HTMLImageElement[] = [];
-  for (const dataUrl of dataUrls) {
-    const image = await decode(dataUrl);
-    // A frame that will not decode is one frame missing from a slideshow, not a
-    // reason to lose the run: the recording is evidence, and partial evidence
-    // beats none.
-    if (image) images.push(image);
-  }
-  if (images.length === 0) return [];
-
-  const source = images[0];
-  const scale = Math.min(1, longEdgePx / Math.max(source.width, source.height, 1));
-  const width = Math.max(1, Math.round(source.width * scale));
-  const height = Math.max(1, Math.round(source.height * scale));
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return [];
-
   const frames: RecordingFrame[] = [];
-  for (const image of images) {
-    // Cleared first: a shorter page drawn over a taller one would otherwise
-    // leave the previous frame showing through underneath it.
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, width, height);
-    const fit = Math.min(width / image.width, height / image.height);
-    context.drawImage(image, 0, 0, Math.round(image.width * fit), Math.round(image.height * fit));
-    frames.push({ data: context.getImageData(0, 0, width, height).data, width, height });
+  const canvas = document.createElement('canvas');
+  let width = 0,
+    height = 0;
+  try {
+    for (let i = 0; i < Math.min(dataUrls.length, 62); i++) {
+      assertLive();
+      const input = dataUrls[i];
+      if (!inspectBridgeImage(input)) {
+        dataUrls[i] = '';
+        continue;
+      }
+      const image = await decode(input);
+      dataUrls[i] = ''; // compressed inputs are released as each sequential decode finishes
+      try {
+        assertLive();
+        if (!image) continue;
+        if (!width) {
+          const scale = Math.min(
+            1,
+            Math.min(800, longEdgePx) / Math.max(image.width, image.height, 1)
+          );
+          width = Math.max(1, Math.round(image.width * scale));
+          height = Math.max(1, Math.round(image.height * scale));
+          canvas.width = width;
+          canvas.height = height;
+        }
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) return [];
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, width, height);
+        const fit = Math.min(width / image.width, height / image.height);
+        context.drawImage(
+          image,
+          0,
+          0,
+          Math.round(image.width * fit),
+          Math.round(image.height * fit)
+        );
+        assertLive();
+        frames.push({ data: context.getImageData(0, 0, width, height).data, width, height });
+      } finally {
+        if (image) image.src = '';
+      }
+    }
+    return frames;
+  } catch (error) {
+    frames.length = 0;
+    throw error;
+  } finally {
+    dataUrls.length = 0;
+    canvas.width = 0;
+    canvas.height = 0;
   }
-  return frames;
 }
 
-/**
- * Decode one data URL into an image, or `null` if it will not decode.
- *
- * @param dataUrl - The PNG data URL to decode.
- */
+/** Replace normalized pixels sequentially for one half-size retry; never decode PNGs again. */
+export function halveFrames(frames: RecordingFrame[], assertLive: () => void = () => {}): void {
+  const canvas = document.createElement('canvas');
+  const source = document.createElement('canvas');
+  try {
+    for (let i = 0; i < frames.length; i++) {
+      assertLive();
+      const frame = frames[i];
+      source.width = frame.width;
+      source.height = frame.height;
+      canvas.width = Math.max(1, Math.round(frame.width / 2));
+      canvas.height = Math.max(1, Math.round(frame.height / 2));
+      const input = source.getContext('2d');
+      const output = canvas.getContext('2d', { willReadFrequently: true });
+      if (!input || !output) throw new Error('Canvas pixels are unavailable');
+      input.putImageData(
+        new ImageData(new Uint8ClampedArray(frame.data), frame.width, frame.height),
+        0,
+        0
+      );
+      output.drawImage(source, 0, 0, canvas.width, canvas.height);
+      frames[i] = {
+        data: output.getImageData(0, 0, canvas.width, canvas.height).data,
+        width: canvas.width,
+        height: canvas.height,
+      };
+    }
+  } finally {
+    source.width = source.height = canvas.width = canvas.height = 0;
+  }
+}
+
+/** Decode just one bounded input at a time. */
 function decode(dataUrl: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => resolve(null);
+    image.onload = () => {
+      image.onload = image.onerror = null;
+      resolve(image);
+    };
+    image.onerror = () => {
+      image.onload = image.onerror = null;
+      image.src = '';
+      resolve(null);
+    };
     image.src = dataUrl;
   });
 }
