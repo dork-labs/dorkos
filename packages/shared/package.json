@@ -125,6 +125,10 @@
       "types": "./src/agent-browser.ts",
       "default": "./dist/agent-browser.js"
     },
+    "./browser-schemas": {
+      "types": "./src/browser-schemas.ts",
+      "default": "./dist/browser-schemas.js"
+    },
     "./agent-face": {
       "types": "./src/agent-face.ts",
       "default": "./dist/agent-face.js"
