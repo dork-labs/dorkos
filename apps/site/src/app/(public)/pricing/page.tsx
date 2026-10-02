@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { ChevronDown } from 'lucide-react';
+import { company } from '@dorkos/shared/company';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { PlanCards } from './PlanCards';
@@ -108,10 +109,10 @@ export default function PricingPage() {
       <footer className="text-warm-gray mx-auto mt-16 max-w-3xl text-center text-sm">
         <p>
           Questions?{' '}
-          <a href="mailto:hey@dorkos.ai" className={LINK}>
-            hey@dorkos.ai
+          <a href={`mailto:${company.contactEmail}`} className={LINK}>
+            {company.contactEmail}
           </a>
-          . DorkOS is made by Blaze Ventures, LLC. See also{' '}
+          . DorkOS is made by {company.legalName}. See also{' '}
           <Link href="/security" className={LINK}>
             Security
           </Link>{' '}
