@@ -83,20 +83,34 @@ export function RemoteCommunitySurface({
     (destination) => destination.ref === community && destination.roomId === roomId
   );
   const anchorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The row this view last saved, or `undefined` before it has saved one. Read before
+  // the stored destination, because a save still on its way has not reached that query.
+  const savedAnchor = useRef<string | null | undefined>(undefined);
+  const rememberedAnchor = remembered?.scrollAnchorEntryId ?? null;
   const noteTopRow = useCallback(
     (entryId: string | undefined) => {
-      if (!entryId || !authority) return;
+      if (!authority) return;
       if (anchorTimer.current) clearTimeout(anchorTimer.current);
+      anchorTimer.current = null;
+      const anchor = entryId ?? null;
+      // `undefined` means the reader is caught up at the bottom, so the saved row is
+      // forgotten and the channel reopens at its newest message. Without this, a row
+      // saved once outlived every later read of the channel, and the channel kept
+      // reopening on it.
+      const stored = savedAnchor.current === undefined ? rememberedAnchor : savedAnchor.current;
+      if (anchor === null && stored === null) return;
       anchorTimer.current = setTimeout(() => {
+        anchorTimer.current = null;
+        savedAnchor.current = anchor;
         rememberNavigation.mutate({
           ref: community,
           roomId,
           threadId: threadId ?? null,
-          scrollAnchorEntryId: entryId,
+          scrollAnchorEntryId: anchor,
         });
       }, 400);
     },
-    [authority, community, rememberNavigation, roomId, threadId]
+    [authority, community, rememberNavigation, rememberedAnchor, roomId, threadId]
   );
   useEffect(
     () => () => {
