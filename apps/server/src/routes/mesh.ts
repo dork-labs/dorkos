@@ -645,7 +645,7 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     if (!updated) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    // Only the person who owns this install can put an agent on DorkOS credits
+    // Only the owner of this DorkOS can put an agent on DorkOS credits
     // (ADR 261001-000811, DOR-2652). The file now says what was asked; the
     // consent lives in DorkOS config, recorded only for the owner, so an agent,
     // another signed-in account, or a cloned file naming credits on its own

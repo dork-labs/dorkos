@@ -21,7 +21,7 @@
  * ## Who may write (DOR-2652)
  *
  * Every write here acts as the DorkOS account, on the one key this computer
- * holds, so every write is for the person who owns this install and nobody
+ * holds, so every write is for the owner of this DorkOS and nobody
  * else: never an agent, and with login on never an API key or another signed-in
  * account (`routes/cloud-owner-bar.ts`). The reads stay open to any caller that
  * passed the session gate; they carry no credential and change nothing.
@@ -497,7 +497,7 @@ router.post('/account/export', async (req, res) => {
  */
 router.post('/account/deletion', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  // Only the person who owns this install may ask to end the account, never an
+  // Only the owner of this DorkOS may ask to end the account, never an
   // agent: not one that names itself, not one holding an approval token, and,
   // with login on, not one presenting the person's API key instead of a
   // browser session, nor a person signed in to some other account.

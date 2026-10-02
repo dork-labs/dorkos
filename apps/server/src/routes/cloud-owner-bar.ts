@@ -24,17 +24,17 @@ import type { Request, Response } from 'express';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 
 /** Refusal code when anything but a person asks for a DorkOS account action. */
-export const PERSON_ONLY_CODE = 'person_only';
+const PERSON_ONLY_CODE = 'person_only';
 
 /** Refusal code when a signed-in person who does not own this install asks. */
-export const OWNER_ONLY_CODE = 'owner_only';
+const OWNER_ONLY_CODE = 'owner_only';
 
 /** How one write words its refusals. */
 export interface AccountOwnerWording {
   /** The whole sentence an agent, or anything but the person, is told. */
   personOnly: string;
   /**
-   * What the write does, completing "Only the person who owns this install
+   * What the write does, completing "Only the owner of this DorkOS
    * can …" (no capital, no full stop).
    */
   action: string;
@@ -52,7 +52,7 @@ function refusalFor(
     ? { code: PERSON_ONLY_CODE, message: wording.personOnly }
     : {
         code: OWNER_ONLY_CODE,
-        message: `Only the person who owns this install can ${wording.action}.`,
+        message: `Only the owner of this DorkOS can ${wording.action}.`,
       };
 }
 

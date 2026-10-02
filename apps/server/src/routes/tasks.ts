@@ -43,6 +43,8 @@ import { loadTemplates } from '../services/tasks/task-templates.js';
 import { parseBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { clearsTheAgentBar, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { refuseErrorUnlessOwner } from './cloud-owner-bar.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
@@ -202,6 +204,26 @@ async function describeTaskPermissionLevel(task: Task, meshCore?: MeshCore): Pro
 const NEXT_RUNS_PREVIEW_COUNT = 3;
 
 /**
+ * What a schedule on DorkOS credits says to a caller that is not the owner.
+ * Every run of such a schedule spends the DorkOS account's money, so naming
+ * credits, approving a schedule that names them, and running one now are the
+ * owner's alone (DOR-2652), like every other credits choice.
+ */
+const TASK_ON_CREDITS = {
+  personOnly: 'Only you can run a scheduled task on your DorkOS credits, from the DorkOS app.',
+  action: 'run a scheduled task on DorkOS credits',
+};
+
+/** Whether a task write body names DorkOS credits as its account. */
+function namesCredits(body: unknown): boolean {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    (body as { account?: unknown }).account === CREDITS_ACCOUNT_ID
+  );
+}
+
+/**
  * Create the Tasks router with schedule and run management endpoints.
  *
  * @param store - TaskStore for data persistence
@@ -298,6 +320,7 @@ export function createTasksRouter(
   router.post('/', async (req, res) => {
     const trusted = clearsTheAgentBar(req, res);
     if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
+    if (namesCredits(req.body) && refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)) return;
 
     // Everything from "is this a valid request" to "the cron job is running" lives
     // in `createScheduledTask`, because `tasks_create` on both MCP servers has to
@@ -366,6 +389,17 @@ export function createTasksRouter(
     const existing = store.getTask(req.params.id);
     if (!existing) {
       return res.status(404).json({ error: 'Scheduled task not found' });
+    }
+
+    // Naming DorkOS credits, or approving a schedule that runs on them, spends
+    // the DorkOS account's money: the owner's call alone (DOR-2652).
+    const runsOnCredits =
+      (data.account !== undefined ? data.account : existing.account) === CREDITS_ACCOUNT_ID;
+    if (
+      (namesCredits(req.body) || (data.status === 'active' && runsOnCredits)) &&
+      refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)
+    ) {
+      return;
     }
 
     // A new timing and the package's own timing are two different answers to
@@ -752,6 +786,13 @@ export function createTasksRouter(
         fields: [],
         message: OPERATOR_ONLY_TRIGGER_REFUSAL,
       });
+    }
+
+    if (
+      store.getTask(req.params.id)?.account === CREDITS_ACCOUNT_ID &&
+      refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)
+    ) {
+      return;
     }
 
     const run = await scheduler.triggerManualRun(req.params.id);

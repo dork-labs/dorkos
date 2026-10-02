@@ -1012,7 +1012,7 @@ registry.registerPath({
     403: {
       description:
         'The message names DorkOS credits (`account: "dorkos-credits"`) and the caller is not ' +
-        'the person who owns this install (`person_only`, `owner_only`); nothing started',
+        'the owner of this DorkOS (`person_only`, `owner_only`); nothing started',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {
@@ -3534,7 +3534,7 @@ const CloudOwnerOnlyEnvelopeDocSchema = z
 
 /** What a 403 on a DorkOS account write means, said once for every one of them. */
 const OWNER_ONLY_403 =
-  'Only the person who owns this install may do this: never an agent or a caller holding an ' +
+  'Only the owner of this DorkOS may do this: never an agent or a caller holding an ' +
   'approval token, and with login on never an API key or another signed-in account.';
 
 const CLOUD_OWNER_ONLY_ERROR = {

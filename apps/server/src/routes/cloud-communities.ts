@@ -20,7 +20,7 @@
  *   person's own browser. It is sent `no-store` and appears in no list, poll or
  *   start answer.
  *
- * Every write is for the person who owns this install and nobody else
+ * Every write is for the owner of this DorkOS and nobody else
  * (`routes/cloud-owner-bar.ts`, DOR-2652): it acts as the DorkOS account. The
  * reads stay open.
  *

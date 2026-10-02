@@ -283,9 +283,12 @@ export function useCloudLink(): UseCloudLink {
     setStartError(null);
     try {
       setLinkStatus(await transport.cancelCloudLink());
-    } catch {
+    } catch (err) {
       // The server keeps its own state; the next status read reconciles it.
       setLinkStatus(null);
+      // A refusal (only the owner of this DorkOS may stop a link) is said, so
+      // the person is not left wondering why the code came back.
+      if ((err as { status?: unknown }).status === 403) setStartError(cloudErrorMessage(err));
     }
     await queryClient.invalidateQueries({ queryKey: cloudStatusKey });
   }, [transport, queryClient, stopPolling]);

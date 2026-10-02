@@ -75,8 +75,7 @@ describe('CreditsNotices', () => {
       notices: [{ kind: 'filled', runtimes: ['claude-code'] }],
     });
     // What the transport throws for the owner bar's 403 (DOR-2652).
-    const sentence =
-      'Only the person who owns this install can choose what runs on DorkOS credits.';
+    const sentence = 'Only the owner of this DorkOS can choose what runs on DorkOS credits.';
     vi.mocked(transport.undoFilledCloudCredits).mockRejectedValue(
       Object.assign(new Error(sentence), {
         status: 403,

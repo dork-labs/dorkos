@@ -56,7 +56,7 @@ describe('the cloud transport methods', () => {
     ['cancelling a move', () => methods.cancelHostedCommunityMove('move_1')],
     ['resending a move', () => methods.retryHostedCommunityMoveUpload('move_1')],
   ])('hands over the owner-only refusal of %s as its own sentence', async (_name, call) => {
-    const message = 'Only the person who owns this install can do that.';
+    const message = 'Only the owner of this DorkOS can do that.';
     stubFetch(403, { ok: false, code: 'owner_only', message });
     await expect(call()).resolves.toEqual({ ok: false, message });
   });

@@ -345,7 +345,11 @@ export function refuseUnlessAccountOwner(
   res: Response
 ): AccountOwnerRefusal | undefined {
   if (!clearsTheAgentBar(req, res)) return 'not-a-person';
+  if (!loginEnabledFromConfig()) return undefined;
+  // Login is on, so the agent bar above has already required a browser
+  // session. An install with no owner account to compare against is refused:
+  // nobody can be shown to own it.
   const user = res.locals.user as RequestUser | undefined;
-  if (user === undefined) return undefined;
-  return user.userId === readOwnerAccount()?.id ? undefined : 'not-the-owner';
+  const owner = readOwnerAccount();
+  return owner !== null && user?.userId === owner.id ? undefined : 'not-the-owner';
 }

@@ -48,7 +48,7 @@ import { startHostedCommunityMoveOverHttp } from './community-move-methods';
  * Answer a write whose reply is an `ok` envelope, handing back the owner bar's
  * refusal instead of throwing it.
  *
- * Every DorkOS account write is for the person who owns this install, and the
+ * Every DorkOS account write is for the owner of this DorkOS, and the
  * server answers anyone else with a 403 carrying one sentence
  * (`{ ok: false, code, message }`). `fetchJSON` throws on every non-2xx, so
  * without this the sentence would be lost and the surface would say the

@@ -171,7 +171,7 @@ describe('CloudLinkPanel', () => {
     vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
     // What the transport throws for the owner bar's 403 (DOR-2652).
     const sentence =
-      'Only the person who owns this install can unlink this computer from its DorkOS account.';
+      'Only the owner of this DorkOS can unlink this computer from its DorkOS account.';
     vi.mocked(transport.unlinkCloud).mockRejectedValue(
       Object.assign(new Error(sentence), { status: 403, code: 'owner_only' })
     );

@@ -1015,7 +1015,7 @@ router.post('/:id/messages', async (req, res) => {
   }
 
   // Naming DorkOS credits for a new session spends the DorkOS account's money,
-  // so only the person who owns this install may name it (DOR-2652). Any other
+  // so only the owner of this DorkOS may name it (DOR-2652). Any other
   // account, or none, is the runtime's own business and stays open.
   if (
     parsed.data.account === CREDITS_ACCOUNT_ID &&

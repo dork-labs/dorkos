@@ -1,5 +1,5 @@
 /**
- * Every DorkOS account write is for the person who owns this install and
+ * Every DorkOS account write is for the owner of this DorkOS and
  * nobody else (DOR-2652); every read stays open.
  *
  * Driven route by route over the real cloud router, with the services each
@@ -119,9 +119,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 /** The account that owns this install. */
 const OWNER_ID = 'user_owner';
+/** What `readOwnerAccount` answers; `null` when no owner account can be read. */
+const owner = vi.hoisted(() => ({
+  account: { id: 'user_owner', name: 'Owner' } as { id: string; name: string } | null,
+}));
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
-  readOwnerAccount: () => ({ id: OWNER_ID, name: 'Owner' }),
+  readOwnerAccount: () => owner.account,
 }));
 
 import cloudRouter from '../cloud.js';
@@ -145,7 +149,7 @@ interface Write {
   path: string;
   body?: object;
   effect: Mock;
-  /** Completes "Only the person who owns this install can …". */
+  /** Completes "Only the owner of this DorkOS can …". */
   action: string;
 }
 
@@ -338,7 +342,7 @@ describe('the DorkOS account owner bar', () => {
       const res = await send(write).expect(403);
       expect(refusalOf(res.body)).toEqual({
         code: 'owner_only',
-        sentence: `Only the person who owns this install can ${write.action}.`,
+        sentence: `Only the owner of this DorkOS can ${write.action}.`,
       });
       expect(write.effect).not.toHaveBeenCalled();
     });
@@ -349,6 +353,19 @@ describe('the DorkOS account owner bar', () => {
       const res = await send(write);
       expect(res.status).not.toBe(403);
       expect(write.effect).toHaveBeenCalled();
+    });
+
+    it('with login on, refuses everyone when no owner account can be read', async () => {
+      posture.authEnabled = true;
+      signedInUser = { userId: OWNER_ID, credential: 'cookie' };
+      owner.account = null;
+      try {
+        const res = await send(write).expect(403);
+        expect(refusalOf(res.body).code).toBe('owner_only');
+        expect(write.effect).not.toHaveBeenCalled();
+      } finally {
+        owner.account = { id: OWNER_ID, name: 'Owner' };
+      }
     });
 
     it('with login off, lets the person at this computer through', async () => {
