@@ -139,18 +139,18 @@ test('the first owner must tick the age box before the community is created', as
   await page.getByLabel('Your name').fill('Owner');
   await page.getByLabel('Email').fill('owner@age.test');
   await page.getByLabel('Password').fill(password);
-  await page.getByLabel('Community name').fill('Age Place');
+  await page.getByLabel('Space name').fill('Age Place');
   const box = page.getByRole('checkbox', { name: 'I am at least 18 years old.' });
   await expect(box).not.toBeChecked();
   await page.screenshot({ path: testInfo.outputPath('owner-setup-age.png'), fullPage: true });
 
-  await page.getByRole('button', { name: 'Create community' }).click();
+  await page.getByRole('button', { name: 'Create space' }).click();
   // The browser holds the form back on the unticked box; nothing reaches the server.
   expect(await box.evaluate((input: HTMLInputElement) => input.validity.valueMissing)).toBe(true);
   expect(await userCount()).toBe(0);
 
   await box.check();
-  await page.getByRole('button', { name: 'Create community' }).click();
+  await page.getByRole('button', { name: 'Create space' }).click();
   await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
   expect(await userCount()).toBe(1);
 });
@@ -173,7 +173,7 @@ test('an invited person sees the age line and must tick the box before an accoun
   await page.getByLabel('Email').fill('ada@age.test');
   await page.getByLabel('Password').fill(password);
   const before = await userCount();
-  await page.getByRole('button', { name: 'Join community' }).click();
+  await page.getByRole('button', { name: 'Join space' }).click();
   expect(await box.evaluate((input: HTMLInputElement) => input.validity.valueMissing)).toBe(true);
   expect(await userCount()).toBe(before);
 
@@ -181,11 +181,11 @@ test('an invited person sees the age line and must tick the box before an accoun
   await expect(google).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('invite-age.png'), fullPage: true });
   // Signing in to an existing account asks nothing.
-  await page.getByRole('button', { name: 'Sign in to this host' }).click();
+  await page.getByRole('button', { name: 'Sign in to this server' }).click();
   await expect(page.getByText(RULE)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Create an account on this host' }).click();
+  await page.getByRole('button', { name: 'Create an account on this server' }).click();
   await expect(box).toBeVisible();
-  await page.getByRole('button', { name: 'Join community' }).click();
+  await page.getByRole('button', { name: 'Join space' }).click();
   await expect(page.getByRole('heading', { name: 'You’re in Age Place.' })).toBeVisible();
   expect(await userCount()).toBe(before + 1);
 });
@@ -201,6 +201,6 @@ test('with no minimum age set, the invitation page asks nothing and joins as bef
   await page.getByLabel('Your name').fill('Grace');
   await page.getByLabel('Email').fill('grace@age.test');
   await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Join community' }).click();
+  await page.getByRole('button', { name: 'Join space' }).click();
   await expect(page.getByRole('heading', { name: 'You’re in Age Place.' })).toBeVisible();
 });

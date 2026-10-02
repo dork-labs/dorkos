@@ -7,7 +7,7 @@ const join = { phase: 'join', accountCreated: false } as const;
 
 describe('describeAdmissionFailure', () => {
   it('says membership was not added, and that a new account still exists', () => {
-    const cause = new RequestError(503, 'UNAVAILABLE', 'The community is unavailable.');
+    const cause = new RequestError(503, 'UNAVAILABLE', 'The space is unavailable.');
     expect(describeAdmissionFailure(cause, join).title).toBe('Membership was not added.');
     expect(describeAdmissionFailure(cause, { ...join, accountCreated: true }).title).toBe(
       'Your account was created, but membership was not added.'
@@ -18,7 +18,7 @@ describe('describeAdmissionFailure', () => {
     const refusals = [
       new RequestError(403, 'FORBIDDEN', 'This invitation cannot be used. Ask for a new link.'),
       new RequestError(403, 'FORBIDDEN', 'This invitation is invalid or expired.'),
-      new RequestError(404, 'NOT_FOUND', 'Community not found.'),
+      new RequestError(404, 'NOT_FOUND', 'Space not found.'),
       new RequestError(
         409,
         'STATE_CONFLICT',
@@ -34,13 +34,9 @@ describe('describeAdmissionFailure', () => {
   });
 
   it('keeps the closed-community reason the server chose to reveal', () => {
-    const cause = new RequestError(
-      409,
-      'STATE_CONFLICT',
-      'This community is closed to new members.'
-    );
+    const cause = new RequestError(409, 'STATE_CONFLICT', 'This space is closed to new members.');
     expect(describeAdmissionFailure(cause, join)).toMatchObject({
-      detail: 'This community is closed to new members.',
+      detail: 'This space is closed to new members.',
       recovery: 'new-invitation',
     });
   });
@@ -50,13 +46,13 @@ describe('describeAdmissionFailure', () => {
     const cause = new RequestError(
       409,
       'MEMBER_LIMIT_REACHED',
-      'This community is full. Ask its owner to make room.'
+      'This space is full. Ask its owner to make room.'
     );
     for (const context of [check, join]) {
       const failure = describeAdmissionFailure(cause, context);
       expect(failure).toEqual({
         title: 'Membership was not added.',
-        detail: 'This community is full. Ask its owner to make room.',
+        detail: 'This space is full. Ask its owner to make room.',
         recovery: 'wait-for-room',
       });
       expect(recoveryInstruction(failure.recovery)).toBe(
@@ -71,13 +67,13 @@ describe('describeAdmissionFailure', () => {
     const cause = new RequestError(
       423,
       'COMMUNITY_HELD',
-      'This community is on hold by its host. You can read it but not post.'
+      'This space is on hold by its server admin. You can read it but not post.'
     );
     for (const context of [check, join]) {
       const failure = describeAdmissionFailure(cause, context);
       expect(failure).toEqual({
         title: 'Membership was not added.',
-        detail: 'This community is on hold. You can join when the hold ends.',
+        detail: 'This space is on hold. You can join when the hold ends.',
         recovery: 'wait-for-release',
       });
       expect(recoveryInstruction(failure.recovery)).not.toMatch(/new (invitation )?link/u);
@@ -108,7 +104,7 @@ describe('describeAdmissionFailure', () => {
     ).toMatchObject({ recovery: 'retry', detail: 'Too many attempts.' });
     expect(describeAdmissionFailure(new Error('boom'), join)).toMatchObject({
       recovery: 'retry',
-      detail: 'The community did not respond.',
+      detail: 'The space did not respond.',
     });
   });
 });
@@ -126,7 +122,7 @@ describe('recoveryInstruction', () => {
 describe('reactivationScope', () => {
   it('restores identity only, and names every kind of access that stays removed', () => {
     const scope = reactivationScope(null);
-    expect(scope.restored).toEqual(['Your name and handle in this community.']);
+    expect(scope.restored).toEqual(['Your name and handle in this space.']);
     expect(scope.notRestored.join(' ')).toMatch(/role.*Channels.*Agents.*DorkOS installations/su);
   });
 

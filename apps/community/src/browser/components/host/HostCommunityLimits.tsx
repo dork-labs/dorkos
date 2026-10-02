@@ -117,7 +117,7 @@ export function HostCommunityLimits({ communityId, name }: { communityId: string
             </span>
           </div>
           <div className="field">
-            <Label htmlFor={storageId}>Most file space (MiB)</Label>
+            <Label htmlFor={storageId}>Most storage (MiB)</Label>
             <Input
               id={storageId}
               type="number"

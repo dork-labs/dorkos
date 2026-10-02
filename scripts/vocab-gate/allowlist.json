@@ -2,6 +2,17 @@
   "$comment": "Scoped exceptions for banned-terms.json. Each entry suppresses hits on files whose repo-relative path CONTAINS `path` (a plain substring, not a glob). Omit `terms` to allowlist every banned term at that path; scope it to specific terms when the file is legitimate for one wave's word but would be a real hit for a later wave's. Keep entries file- or directory-scoped and explain the domain reason — this file is the audit trail for every 'connection' the gate lets through.",
   "entries": [
     {
+      "path": "apps/community/src/browser/components/Pairing.tsx",
+      "terms": ["connection"],
+      "reason": "The space's approval page for a DorkOS install asking to connect to it (DOR-2653 brought apps/community under the gate). The connection is the thing being approved, declined or limited to reading: an entity a person acts on, not a network-health reading."
+    },
+    {
+      "path": "apps/community/src/browser/components/host/HostHoldControls.tsx",
+      "terms": ["connection"],
+      "contains": "Every connection stays",
+      "reason": "The DorkOS installs connected to a space stay revoked after a suspension: the same approved-connection entity the space's pairing page grants, not network health."
+    },
+    {
       "path": "apps/site/src/app/connectors/managed/fields/ManagedAccountFieldsForm.tsx",
       "terms": ["connection"],
       "reason": "The owner-authorized account form names the exact Connections account being created. Its closed failure messages describe that account entity, not network reachability."
@@ -479,72 +490,6 @@
       "terms": ["community"],
       "contains": "The marketplace is community-driven",
       "reason": "\"Community-driven\": built by the people who share packages, the ordinary English sense — not a space."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community"],
-      "contains": "A space's own pages still call it a \"community\"",
-      "reason": "The sentence that tells the reader the space's own site still says \"community\", so the quoted button names below make sense. It has to name the old word."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community", "communities"],
-      "contains": "the page says **No community at this address.**",
-      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community", "communities"],
-      "contains": "before choosing **Create community**",
-      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community", "communities"],
-      "contains": "and finish with **Join community**",
-      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community", "communities"],
-      "contains": "Enter a name, then choose **Create community**",
-      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community", "communities"],
-      "contains": "community**. After that they choose **Open community**",
-      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community", "communities"],
-      "contains": "message was removed by a community admin.",
-      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community", "communities"],
-      "contains": "choose **Export this community**",
-      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community", "communities"],
-      "contains": "under **Leave community**, choose **Leave community**",
-      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community", "communities"],
-      "contains": "find it under **Communities you left**",
-      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
-    },
-    {
-      "path": "docs/guides/communities.mdx",
-      "terms": ["community", "communities"],
-      "contains": "sees \"This community was removed by its host.\"",
-      "reason": "The open-source space server's own pages still label this button or message with \"community\" (apps/community, outside this wave's sweep); the docs quote the label exactly as the reader sees it so they can find it. Renamed with the space server's own copy."
     },
     {
       "path": "docs/guides/cli-usage.mdx",

@@ -82,7 +82,7 @@ function OwnerBanner({
             <p className="mb-1">{reasonSentence(notice.reason)}</p>
             {notice.reference !== null && (
               // Plain text in quotes, never a link, whatever it looks like.
-              <p className="mb-1">The host’s reference: “{notice.reference}”</p>
+              <p className="mb-1">The server admin’s reference: “{notice.reference}”</p>
             )}
             {ownerOptionSentences(notice.options, lifecycle).map((sentence) => (
               <p key={sentence} className="mb-1">
@@ -166,7 +166,7 @@ export function OwnerReplacementBanner({
         <Notice tone="success" className="m-3">
           {/* Focus lands here: the button that opened the confirm is gone with the banner. */}
           <p ref={keptLine} tabIndex={-1} role="status" className="mb-0">
-            You kept ownership. The host has been told.
+            You kept ownership. The server admin has been told.
           </p>
         </Notice>
       )}

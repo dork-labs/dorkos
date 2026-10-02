@@ -91,7 +91,7 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
     // (apps/community), which the app-side rename (DOR-2631) leaves for DOR-2653.
     await page.locator('#community-name').fill(o.community);
     await page.getByLabel('First channel').fill('general');
-    await page.getByRole('button', { name: 'Create community', exact: true }).click();
+    await page.getByRole('button', { name: 'Create space', exact: true }).click();
     await expect(page.getByRole('button', { name: 'general', exact: true })).toBeVisible();
   }
 
@@ -129,19 +129,19 @@ export async function setupSteps(ctx: JourneyContext): Promise<World> {
     assert(fromInvite, 'the invite names its community');
     communityId = fromInvite;
 
-    await step('3 member joins via invite → "You’re in …" → Open community', async () => {
+    await step('3 member joins via invite → "You’re in …" → Open space', async () => {
       await member.goto(invite);
       await member.getByRole('button', { name: 'Continue', exact: true }).click();
       await member
-        .getByRole('button', { name: 'Create an account on this host', exact: true })
+        .getByRole('button', { name: 'Create an account on this server', exact: true })
         .click();
       await member.getByLabel('Your name').fill('Desktop B');
       await member.getByLabel('Email', { exact: true }).fill(signIn.b.email);
       await member.getByLabel('Password', { exact: true }).fill(PASSWORD);
-      await member.getByRole('button', { name: 'Join community', exact: true }).click();
+      await member.getByRole('button', { name: 'Join space', exact: true }).click();
       await expect(member.getByRole('heading', { name: `You’re in ${COMMUNITY}.` })).toBeVisible();
       const confirmation = await shot(member, '03a-member-youre-in');
-      await member.getByRole('button', { name: 'Open community', exact: true }).click();
+      await member.getByRole('button', { name: 'Open space', exact: true }).click();
       await expect(member.getByLabel(/Message #general/i)).toBeVisible();
       return { confirmation, opened: await shot(member, '03b-member-open-community') };
     });

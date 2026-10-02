@@ -236,7 +236,7 @@ export function registerMemberRoutes(
         [actor.community_id]
       );
       if (community.rows[0]?.name !== body.communityName)
-        throw new ApiError(409, 'STATE_CONFLICT', 'Enter the community name exactly.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'Enter the space name exactly.');
       await remove(client, current, actor.id, 'member.leave');
     });
     return c.body(null, 204);
@@ -257,7 +257,7 @@ export function registerMemberRoutes(
         community.rows[0]?.lifecycle !== 'active' ||
         community.rows[0].lifecycle_version !== body.lifecycleVersion
       )
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'Space lifecycle changed.');
       const lockedMembers = await client.query<Member>(
         `SELECT id,user_id,display_name,role,community_id FROM members
          WHERE community_id=$1 AND id=ANY($2::uuid[]) AND active ORDER BY id FOR UPDATE`,
@@ -271,9 +271,9 @@ export function registerMemberRoutes(
       const successor = lockedMembers.rows.find((member) => member.id === body.successorMemberId);
       if (!successor) throw new ApiError(404, 'NOT_FOUND', 'Successor not found.');
       if (successor.role === 'owner')
-        throw new ApiError(409, 'STATE_CONFLICT', 'That member already owns this community.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'That member already owns this space.');
       if (await memberIsLeaving(client, successor))
-        throw new ApiError(409, 'STATE_CONFLICT', 'That member is leaving this community.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'That member is leaving this space.');
       await client.query("UPDATE members SET role='member' WHERE id=$1", [current.id]);
       await client.query("UPDATE members SET role='owner' WHERE id=$1", [successor.id]);
       const updated = await client.query<{ lifecycle_version: number }>(

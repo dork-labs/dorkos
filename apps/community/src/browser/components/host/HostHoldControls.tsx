@@ -100,7 +100,8 @@ export function HostHoldControls({
         community.lifecycle === 'deletion_pending' &&
         community.deletionRequestedBy && (
           <p className="small muted mb-2">
-            Deletion requested by the {community.deletionRequestedBy}.
+            Deletion requested by the{' '}
+            {community.deletionRequestedBy === 'host' ? 'server admin' : 'owner'}.
           </p>
         )
       )}
@@ -163,7 +164,7 @@ export function HostHoldControls({
             {dialog !== 'hold'
               ? `Members see this date on every channel. You can move it later or clear it, but never closer than ${noticeDays} days away.`
               : community.lifecycle === 'suspended'
-                ? 'The community goes straight from suspended to on hold. Members can read it again and the owner can export, but no one can post, join, or change settings.'
+                ? 'The space goes straight from suspended to on hold. Members can read it again and the owner can export, but no one can post, join, or change settings.'
                 : 'Members can still read and the owner can still export, but no one can post, join, or change settings. Every connected DorkOS installation and agent loses access now.'}
           </p>
           <div className="field">
@@ -194,7 +195,7 @@ export function HostHoldControls({
                 ).finally(close)
               }
             >
-              {dialog === 'hold' ? 'Hold community' : day ? 'Save notice' : 'Clear notice'}
+              {dialog === 'hold' ? 'Hold space' : day ? 'Save notice' : 'Clear notice'}
             </Button>
           </div>
         </FocusDialog>
@@ -202,7 +203,7 @@ export function HostHoldControls({
       {dialog === 'reverse' && community.takedownId && (
         <FocusDialog title={`Reverse the takedown of ${community.name}?`} onClose={close}>
           <p>
-            The deletion stops and the community is suspended, not reopened. Every connection stays
+            The deletion stops and the space is suspended, not reopened. Every connection stays
             revoked until you resume it and people reconnect. The copy kept for the authorities is
             not deleted.
           </p>
@@ -239,8 +240,8 @@ export function HostHoldControls({
       {dialog === 'delete' && (
         <FocusDialog title={`Delete ${community.name}?`} onClose={close}>
           <p>
-            This permanently deletes the community and everything in it after seven more days. You
-            can cancel during those seven days. The owner cannot.
+            This permanently deletes the space and everything in it after seven more days. You can
+            cancel during those seven days. The owner cannot.
           </p>
           <div className="field">
             <Label htmlFor={`delete-suffix-${community.id}`}>
@@ -269,7 +270,7 @@ export function HostHoldControls({
                 }, `${community.name} will be deleted in seven days.`).finally(close)
               }
             >
-              Delete community
+              Delete space
             </Button>
           </div>
         </FocusDialog>

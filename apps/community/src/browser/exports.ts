@@ -15,15 +15,14 @@ export const READY_POLL_MS = 60_000;
 export function goneMessage(value: CommunityWireExport, now = new Date()): string {
   if (value.state === 'expired' || (value.expiresAt && new Date(value.expiresAt) <= now))
     return 'This export has expired. Start a new one to download your data.';
-  return 'This export is no longer available: it was deleted because someone in this community erased their data. Start a new one.';
+  return 'This export is no longer available: it was deleted because someone in this space erased their data. Start a new one.';
 }
 
 /** One sentence per reason an export stopped, in the words a person reads. */
 export const EXPORT_FAILURE_TEXT: Record<CommunityWireExportFailureCode, string> = {
   EXPORT_TIMED_OUT: 'This export took too long and stopped. Try again.',
   EXPORT_ACCESS_ENDED: 'Your access changed while we were preparing it.',
-  EXPORT_CONTENT_CHANGING:
-    'The community kept changing while we were preparing it. Try again later.',
+  EXPORT_CONTENT_CHANGING: 'The space kept changing while we were preparing it. Try again later.',
   EXPORT_STORAGE_UNAVAILABLE: "We couldn't store the export. Try again later.",
 };
 

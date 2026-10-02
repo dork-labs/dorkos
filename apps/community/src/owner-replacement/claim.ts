@@ -74,7 +74,7 @@ async function assertNamedAccount(
       throw new ApiError(
         409,
         'STATE_CONFLICT',
-        'This host now uses a sign-in service, so the host must ask again.'
+        'This server now uses a sign-in service, so the server admin must ask again.'
       );
     return;
   }
@@ -82,7 +82,7 @@ async function assertNamedAccount(
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      "This host's sign-in service changed, so this claim can't be used. Ask the host for a new request."
+      "This server's sign-in service changed, so this claim can't be used. Ask the server admin for a new request."
     );
   const linked = await client.query<{ userId: string }>(
     `SELECT "userId" FROM account WHERE "providerId"=$1 AND "accountId"=$2 LIMIT 2`,
@@ -166,7 +166,7 @@ export async function claimOwnerReplacement(
   )
     throw new ApiError(403, 'FORBIDDEN', CLAIM_UNAVAILABLE);
   if (!CLAIM_LIFECYCLES.includes(lifecycle))
-    throw new ApiError(409, 'STATE_CONFLICT', 'This community is not open to a new owner now.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'This space is not open to a new owner now.');
   await assertNamedAccount(client, replacement, claimant.userId, input.oidcIssuer);
 
   const account = await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR SHARE', [
@@ -188,14 +188,14 @@ export async function claimOwnerReplacement(
   const owner = members.rows.find((member) => member.role === 'owner' && member.active);
   const own = members.rows.find((member) => member.user_id === claimant.userId);
   if (!owner?.user_id)
-    throw new ApiError(409, 'STATE_CONFLICT', 'This community has no owner to replace.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'This space has no owner to replace.');
   if (owner.user_id === claimant.userId)
-    throw new ApiError(409, 'STATE_CONFLICT', 'You already own this community.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'You already own this space.');
   if (own && (await memberIsLeaving(client, { ...own, user_id: claimant.userId })))
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      "You are leaving this community, so you can't take ownership."
+      "You are leaving this space, so you can't take ownership."
     );
 
   // The swap, as a transfer does it: the one-owner index needs the old owner demoted first.

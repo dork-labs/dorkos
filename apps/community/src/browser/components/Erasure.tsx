@@ -15,7 +15,7 @@ type FormerMembership = {
 
 /** Every screen that starts an erasure says, in these words, what it cannot reach. */
 export const CANNOT_REACH =
-  "We can't reach copies on other people's computers, including files they downloaded and anything their agents saved, the host's backups for as long as it keeps them, or copies the host keeps for legal reasons.";
+  "We can't reach copies on other people's computers, including files they downloaded and anything their agents saved, the server admin's backups for as long as they keep them, or copies the server admin keeps for legal reasons.";
 
 /** Fired on window whenever this page asks for or cancels an erasure, so every panel reloads. */
 const CHANGED = 'community-erasures-changed';
@@ -124,14 +124,13 @@ function EraseMembershipForm({
   return (
     <>
       <p className="small">
-        In 72 hours, we&apos;ll remove your name, messages, files, and your agents&apos; messages
-        from {communityName}. Your messages stay in their place in conversations, marked &ldquo;This
-        message was erased.&rdquo; You can cancel until then.
+        In 72 hours, we’ll remove your name, messages, files, and your agents’ messages from{' '}
+        {communityName}. Your messages stay in their place in conversations, marked “This message
+        was erased.” You can cancel until then.
       </p>
       {active && (
         <p className="small">
-          When it runs, you&apos;ll leave {communityName}. Anything you post before then is erased
-          too.
+          When it runs, you’ll leave {communityName}. Anything you post before then is erased too.
         </p>
       )}
       <p className="small muted">{CANNOT_REACH}</p>
@@ -178,7 +177,7 @@ function EraseMembershipForm({
 
 /** What a due erasure held back by the host says: that it waits, never why. */
 const ERASURE_WAITING_ON_HOST =
-  'Your erasure is due, but it is waiting for the person running this host to finish something on their side first. It will run as soon as they do.';
+  'Your erasure is due, but it is waiting for the person running this server to finish something on their side first. It will run as soon as they do.';
 
 /** A scheduled erasure's date and its cancel button, or that it is running or waiting now. */
 function Scheduled({ erasure, text }: { erasure: CommunityWireErasure; text: string }) {
@@ -259,7 +258,7 @@ export function EraseMembershipPanel({
       <h3 id="erase-membership-title">Erase your messages here</h3>
       {owner ? (
         <p className="small muted">
-          Transfer ownership or delete the community before you erase your messages here.
+          Transfer ownership or delete the space before you erase your messages here.
         </p>
       ) : scheduled ? (
         <Scheduled erasure={scheduled} text="Your messages here will be erased on" />
@@ -306,7 +305,7 @@ export function AccountErasurePanels({
         setFormerError('');
       })
       .catch((cause: unknown) =>
-        setFormerError(`Communities you left could not be shown. ${describeError(cause)}`)
+        setFormerError(`Spaces you left could not be shown. ${describeError(cause)}`)
       );
   }, []);
   useEffect(() => {
@@ -359,7 +358,7 @@ export function AccountErasurePanels({
                   text={
                     erasure.kind === 'account'
                       ? 'Your account will be deleted on'
-                      : `Your messages in ${erasure.communityName ?? 'a community'} will be erased on`
+                      : `Your messages in ${erasure.communityName ?? 'a space'} will be erased on`
                   }
                 />
               </li>
@@ -369,7 +368,7 @@ export function AccountErasurePanels({
       )}
       {former && former.length > 0 && (
         <section aria-labelledby="former-memberships-title">
-          <h2 id="former-memberships-title">Communities you left</h2>
+          <h2 id="former-memberships-title">Spaces you left</h2>
           <ul className="stack m-0 list-none p-0">
             {former.map((membership) => (
               <li key={membership.communityId} className="panel p-4">
@@ -417,17 +416,15 @@ export function AccountErasurePanels({
           <p className="small">
             You own {owned.map((membership) => membership.name).join(', ')}. To delete your account,
             first transfer ownership to another member or delete{' '}
-            {owned.length === 1 ? 'the community' : 'those communities'}, then wait until the
-            deletion finishes. You can ask to delete a community even while the host has suspended
-            it.
+            {owned.length === 1 ? 'the space' : 'those spaces'}, then wait until the deletion
+            finishes. You can ask to delete a space even while the server admin has suspended it.
           </p>
         ) : (
           <>
             <p className="small">
-              In 72 hours, we&apos;ll delete your account on this host and erase your name,
-              messages, files, and agents from every community here, including ones you left. You
-              can cancel until then by signing in. When it starts, you&apos;ll be signed out
-              everywhere.
+              In 72 hours, we’ll delete your account on this server and erase your name, messages,
+              files, and agents from every space here, including ones you left. You can cancel until
+              then by signing in. When it starts, you’ll be signed out everywhere.
             </p>
             <p className="small muted">{CANNOT_REACH}</p>
             <div className="field">

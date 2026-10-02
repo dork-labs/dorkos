@@ -57,11 +57,11 @@ describe('Manage: leaving a community', () => {
     // Purpose: fails if the leave section is hidden again for every read-only community, which
     // left a member of a held community with no way to leave it.
     const { calls, onLeft } = show('member', { readOnly: true, held: true });
-    expect(screen.getByRole('heading', { name: 'Leave community' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Leave space' })).toBeTruthy();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     fireEvent.change(screen.getByLabelText(`Enter ${NAME}`), { target: { value: NAME } });
     fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'pw' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Leave community' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Leave space' }));
     await waitFor(() => expect(onLeft).toHaveBeenCalled());
     expect(calls.find((call) => call.url.endsWith('/api/v1/me/leave'))?.body).toEqual({
       password: 'pw',
@@ -72,12 +72,12 @@ describe('Manage: leaving a community', () => {
   it('offers no leave in an archived community, where the server refuses it', () => {
     // Purpose: fails if the section shows for every read-only state, not just a hold.
     show('member', { readOnly: true, held: false });
-    expect(screen.queryByRole('heading', { name: 'Leave community' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Leave space' })).toBeNull();
   });
 
   it('offers an owner no leave or transfer while held, since a hold allows no transfer', () => {
     // Purpose: fails if the owner sees a transfer form a held community can only refuse.
     show('owner', { readOnly: true, held: true });
-    expect(screen.queryByRole('heading', { name: 'Leave community' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Leave space' })).toBeNull();
   });
 });

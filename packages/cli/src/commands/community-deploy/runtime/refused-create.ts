@@ -68,6 +68,6 @@ export async function stopForRefusedCreate(
       throw new Error(formatCommunityCreationRefusal(refusal, env, true), { cause: refusal });
     }
   }
-  process.stderr.write(`Community setup stopped.\n${recovery(journal)}\n`);
+  process.stderr.write(`Space setup stopped.\n${recovery(journal)}\n`);
   throw new Error(formatCommunityCreationRefusal(refusal, env, false), { cause: refusal });
 }

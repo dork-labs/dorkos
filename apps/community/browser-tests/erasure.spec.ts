@@ -32,7 +32,7 @@ dbUrl.pathname = `/${dbName}`;
 const admin = new Pool({ connectionString: adminUrl });
 const password = 'password1234';
 const cannotReach =
-  "We can't reach copies on other people's computers, including files they downloaded and anything their agents saved, the host's backups for as long as it keeps them, or copies the host keeps for legal reasons.";
+  "We can't reach copies on other people's computers, including files they downloaded and anything their agents saved, the server admin's backups for as long as they keep them, or copies the server admin keeps for legal reasons.";
 let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
@@ -181,7 +181,7 @@ test('a member schedules erasure from Manage, sees the banner, and cancels it', 
     // A current member is told that erasing also ends their membership.
     await expect(
       panel.getByText(
-        "When it runs, you'll leave Erasure Place. Anything you post before then is erased too."
+        'When it runs, you’ll leave Erasure Place. Anything you post before then is erased too.'
       )
     ).toBeVisible();
     const proceed = panel.getByRole('button', { name: 'Continue to erase' });
@@ -235,9 +235,7 @@ test('an owner is told to transfer first, and the account panel names what they 
     await signIn(context, 'operator@erasure.test');
     await page.goto(`${baseUrl}/c/${communityId}/settings/account`);
     await expect(
-      page.getByText(
-        'Transfer ownership or delete the community before you erase your messages here.'
-      )
+      page.getByText('Transfer ownership or delete the space before you erase your messages here.')
     ).toBeVisible();
     await page.goto(`${baseUrl}/?account`);
     await expect(page.getByRole('heading', { name: 'Delete your account' })).toBeVisible();
@@ -250,7 +248,7 @@ test('an owner is told to transfer first, and the account panel names what they 
   }
 });
 
-test('a person who left sees the community under "Communities you left" and can erase it', async ({
+test('a person who left sees the community under "Spaces you left" and can erase it', async ({
   browser,
 }) => {
   const memberId = await admitNewAccount('Lou', 'lou@erasure.test');
@@ -264,7 +262,7 @@ test('a person who left sees the community under "Communities you left" and can 
   try {
     await signIn(context, 'lou@erasure.test');
     await page.goto(`${baseUrl}/`);
-    const left = page.getByRole('region', { name: 'Communities you left' });
+    const left = page.getByRole('region', { name: 'Spaces you left' });
     await expect(left.getByText('Erasure Place')).toBeVisible();
     await left.getByRole('button', { name: 'Erase your messages here' }).click();
     await expect(left.getByText(cannotReach)).toBeVisible();

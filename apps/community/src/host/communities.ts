@@ -107,14 +107,14 @@ export function legalHoldActive(): ApiError {
   return new ApiError(
     409,
     'LEGAL_HOLD_ACTIVE',
-    'This community is under a legal hold. Release the hold before deleting it.'
+    'This space is under a legal hold. Release the hold before deleting it.'
   );
 }
 
 /** Parse a host route's community id; a malformed id is the same 404 as an unknown one. */
 export function parseHostCommunityId(value: string | undefined): string {
   const parsed = z.uuid().safeParse(value);
-  if (!parsed.success) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+  if (!parsed.success) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
   return parsed.data;
 }
 
@@ -162,7 +162,7 @@ export async function createCommunityGated<T>(
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      'Complete first installation before creating another community.'
+      'Complete first installation before creating another space.'
     );
   }
   if (count.rows[0].count > 1) return transaction(pool, create);
@@ -171,7 +171,7 @@ export async function createCommunityGated<T>(
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      'Storage ownership must be reconciled before creating another community.'
+      'Storage ownership must be reconciled before creating another space.'
     );
   }
   return gated.value;

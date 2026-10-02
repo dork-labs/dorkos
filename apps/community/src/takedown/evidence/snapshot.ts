@@ -160,7 +160,7 @@ export async function snapshotTarget(
   } satisfies EvidenceContent;
   if (target.kind === 'icon') {
     if (!icon.key || !icon.contentType)
-      throw new ApiError(404, 'NOT_FOUND', 'Community icon not found.');
+      throw new ApiError(404, 'NOT_FOUND', 'Space icon not found.');
     const blob = await client.query<{ byte_size: string; checksum: string }>(
       `SELECT byte_size::text,checksum FROM managed_blobs
        WHERE blob_key=$1 AND community_id=$2 AND state IN ('committed','stored')`,

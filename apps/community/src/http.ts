@@ -39,7 +39,7 @@ export class AdminSettingsConflict extends ApiError {
     super(
       409,
       'STATE_CONFLICT',
-      'Community settings changed. Review the current values and try again.'
+      'Space settings changed. Review the current values and try again.'
     );
   }
 }
@@ -97,7 +97,7 @@ export function handleError(error: unknown, c: Context): Response {
   return c.json(
     CommunityWireErrorSchema.parse({
       code: 'UNAVAILABLE',
-      message: 'The community is unavailable.',
+      message: 'The space is unavailable.',
     }),
     503
   );

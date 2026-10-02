@@ -57,7 +57,7 @@ describe('KeepOwnership', () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        'The host’s request will end. The host can ask again after 60 days, and you’ll be told again.'
+        'The server admin’s request will end. The server admin can ask again after 60 days, and you’ll be told again.'
       )
     ).toBeTruthy();
     expect(linkCalls(calls)).toEqual([{ route: PREFLIGHT, body: { token: TOKEN } }]);
@@ -66,7 +66,9 @@ describe('KeepOwnership', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Keep ownership' }));
     expect(
-      await screen.findByRole('heading', { name: 'You kept ownership. The host has been told.' })
+      await screen.findByRole('heading', {
+        name: 'You kept ownership. The server admin has been told.',
+      })
     ).toBeTruthy();
     expect(linkCalls(calls)).toEqual([
       { route: PREFLIGHT, body: { token: TOKEN } },

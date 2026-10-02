@@ -45,7 +45,7 @@ export function useHostLinks(): CommunityWireHostLinks {
 /** What one Report link names: always the community, and a message or one of its files. */
 export type ReportSubject = { entryId?: string; attachmentId?: string };
 
-const MAIL_LABELS = { community: 'Community', entry: 'Message', attachment: 'File' } as const;
+const MAIL_LABELS = { community: 'Space', entry: 'Message', attachment: 'File' } as const;
 
 /**
  * Build the address a Report link opens: the host's report target plus the community ID and,

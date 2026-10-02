@@ -97,19 +97,19 @@ async function lockSettings(client: PoolClient, communityId: string): Promise<Se
      FROM communities WHERE id=$1 FOR UPDATE`,
     [communityId]
   );
-  if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+  if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
   return result.rows[0];
 }
 
 function assertReadableLifecycle(row: SettingsRow): void {
   if (row.lifecycle === 'suspended') {
-    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
+    throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This space is suspended.');
   }
   if (row.lifecycle === 'deletion_pending') {
-    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');
+    throw new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This space is being deleted.');
   }
   if (row.lifecycle === 'pending_owner') {
-    throw new ApiError(403, 'FORBIDDEN', 'This community has no owner.');
+    throw new ApiError(403, 'FORBIDDEN', 'This space has no owner.');
   }
 }
 
@@ -133,7 +133,7 @@ function mapIconBlobError(error: unknown): never {
     if (error.code === 'BLOB_TYPE_REJECTED' || error.code === 'BLOB_EMPTY')
       throw new ApiError(415, 'UNSUPPORTED_ATTACHMENT_TYPE', 'Use a PNG, JPEG, GIF, or WebP icon.');
     if (error.code === 'BLOB_NOT_FOUND')
-      throw new ApiError(404, 'NOT_FOUND', 'Community icon not found.');
+      throw new ApiError(404, 'NOT_FOUND', 'Space icon not found.');
   }
   throw error;
 }
@@ -217,7 +217,7 @@ export function registerAdministrationRoutes(
       [actor.community_id]
     );
     const row = result.rows[0];
-    if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    if (!row) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
     assertReadableLifecycle(row);
     c.header('ETag', settingsEtag(row.settings_version));
     return json(c, CommunityAdminSettingsSchema, projectSettings(row));
@@ -232,7 +232,7 @@ export function registerAdministrationRoutes(
       const currentActor = await lockMember(client, actor, ['owner', 'admin']);
       if (current.lifecycle !== 'active') {
         if (current.lifecycle === 'archived') {
-          throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'This community is archived.');
+          throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'This space is archived.');
         }
         if (current.lifecycle === 'held') throw communityHeld();
         assertReadableLifecycle(current);
@@ -291,7 +291,7 @@ export function registerAdministrationRoutes(
       await lockMember(client, actor, ['owner', 'admin']);
       if (current.lifecycle !== 'active') {
         if (current.lifecycle === 'archived')
-          throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'This community is archived.');
+          throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'This space is archived.');
         if (current.lifecycle === 'held') throw communityHeld();
         assertReadableLifecycle(current);
       }
@@ -404,7 +404,7 @@ export function registerAdministrationRoutes(
     }>('SELECT icon_blob_key,icon_content_type FROM communities WHERE id=$1', [tenant.communityId]);
     const icon = result.rows[0];
     if (!icon?.icon_blob_key || !icon.icon_content_type)
-      throw new ApiError(404, 'NOT_FOUND', 'Community icon not found.');
+      throw new ApiError(404, 'NOT_FOUND', 'Space icon not found.');
     let blob;
     try {
       blob = await blobStore.get(icon.icon_blob_key, { signal: c.req.raw.signal });
@@ -424,7 +424,7 @@ export function registerAdministrationRoutes(
             'SELECT 1 FROM communities WHERE id=$1 AND icon_blob_key=$2',
             [tenant.communityId, key]
           );
-          if (!current.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Community icon not found.');
+          if (!current.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Space icon not found.');
           controller.enqueue(next.value);
         } catch (error) {
           blob.body.destroy();
@@ -460,10 +460,10 @@ export function registerAdministrationRoutes(
       if (current.lifecycle === 'held') throw communityHeld();
       if (body.action === 'archive') {
         if (current.lifecycle !== 'active') {
-          throw new ApiError(409, 'STATE_CONFLICT', 'Only an active community can be archived.');
+          throw new ApiError(409, 'STATE_CONFLICT', 'Only an active space can be archived.');
         }
         if (body.confirmName !== current.name) {
-          throw new ApiError(409, 'STATE_CONFLICT', 'Community name confirmation did not match.');
+          throw new ApiError(409, 'STATE_CONFLICT', 'Space name confirmation did not match.');
         }
         await revokeTenantAccess(client, current.id);
         await client.query(
@@ -473,7 +473,7 @@ export function registerAdministrationRoutes(
         );
       } else {
         if (current.lifecycle !== 'archived') {
-          throw new ApiError(409, 'STATE_CONFLICT', 'Only an archived community can be restored.');
+          throw new ApiError(409, 'STATE_CONFLICT', 'Only an archived space can be restored.');
         }
         await client.query(
           `UPDATE communities SET lifecycle='active',archived_at=NULL,
@@ -552,7 +552,7 @@ export function registerAdministrationRoutes(
         return pending.rows[0];
       }
       if (!DELETABLE.includes(current.lifecycle)) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be deleted now.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'This space cannot be deleted now.');
       }
       if (current.lifecycle_version !== body.lifecycleVersion) {
         throw new AdminSettingsConflict(projectSettings(current));
@@ -569,7 +569,7 @@ export function registerAdministrationRoutes(
       throw new ApiError(
         409,
         'STATE_CONFLICT',
-        'Storage ownership must be reconciled before deleting this community.'
+        'Storage ownership must be reconciled before deleting this space.'
       );
     }
     const result = await transaction(pool, async (client) => {
@@ -587,7 +587,7 @@ export function registerAdministrationRoutes(
         return existing.rows[0];
       }
       if (!DELETABLE.includes(current.lifecycle)) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be deleted now.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'This space cannot be deleted now.');
       }
       if (current.lifecycle_version !== body.lifecycleVersion) {
         throw new AdminSettingsConflict(projectSettings(current));
@@ -676,14 +676,14 @@ export function registerAdministrationRoutes(
         throw new ApiError(
           409,
           'STATE_CONFLICT',
-          'The host removed this community. Only the host can reverse that.'
+          'The server admin removed this space. Only the server admin can reverse that.'
         );
       }
       if (row?.lifecycle === 'deletion_pending' && row.delete_requested_by === null) {
         throw new ApiError(
           409,
           'STATE_CONFLICT',
-          'The host started this deletion after its notice date. Only the host can cancel it.'
+          'The server admin started this deletion after their notice date. Only the server admin can cancel it.'
         );
       }
       if (

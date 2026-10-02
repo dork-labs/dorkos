@@ -230,10 +230,9 @@ export function registerAccountErasureRoutes(
       );
       if (body.kind === 'membership') {
         const member = memberships.rows.find((row) => row.community_id === body.communityId);
-        if (!member)
-          throw new ApiError(404, 'NOT_FOUND', 'You are not a member of that community.');
+        if (!member) throw new ApiError(404, 'NOT_FOUND', 'You are not a member of that space.');
         if (member.active && member.role === 'owner')
-          throw new ApiError(403, 'FORBIDDEN', 'Transfer ownership or delete the community first.');
+          throw new ApiError(403, 'FORBIDDEN', 'Transfer ownership or delete the space first.');
         const existing = await openRequest(
           client,
           `r.kind='membership' AND r.community_id=$1 AND r.member_id=$2`,
@@ -257,7 +256,7 @@ export function registerAccountErasureRoutes(
         throw new ApiError(
           403,
           'FORBIDDEN',
-          'This account runs this host, so it cannot be deleted here. You can still erase your messages from each community.'
+          'This account runs this server, so it cannot be deleted here. You can still erase your messages from each space.'
         );
       const owned = memberships.rows
         .filter((row) => row.active && row.role === 'owner')
@@ -266,7 +265,7 @@ export function registerAccountErasureRoutes(
         throw new ApiError(
           409,
           'STATE_CONFLICT',
-          `You own ${owned.join(', ')}. To delete your account, first transfer ownership to another member or delete ${owned.length === 1 ? 'the community' : 'those communities'}, then wait until the deletion finishes.`
+          `You own ${owned.join(', ')}. To delete your account, first transfer ownership to another member or delete ${owned.length === 1 ? 'the space' : 'those spaces'}, then wait until the deletion finishes.`
         );
       const existing = await openRequest(client, `r.kind='account' AND r.user_id=$1`, [userId]);
       if (existing) return { row: existing, created: false };

@@ -1437,9 +1437,9 @@ export const COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES: Record<
   string
 > = {
   child_safety: 'It was removed to protect children.',
-  illegal_content: 'It was reported to the host as illegal.',
-  legal_order: 'The host received a legal order to remove it.',
-  terms_violation: "It broke the host's terms.",
+  illegal_content: 'It was reported to the server admin as illegal.',
+  legal_order: 'The server admin received a legal order to remove it.',
+  terms_violation: "It broke this server's terms.",
 };
 /**
  * One thing the host removed from this community, as the owner, an admin, or its author sees

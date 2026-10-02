@@ -160,9 +160,9 @@ describe('OwnerReplacementClaim, at the date', () => {
     [
       409,
       'STATE_CONFLICT',
-      "This host's sign-in service changed, so this claim can't be used. Ask the host for a new request.",
+      "This server's sign-in service changed, so this claim can't be used. Ask the server admin for a new request.",
     ],
-    [409, 'STATE_CONFLICT', 'You already own this community.'],
+    [409, 'STATE_CONFLICT', 'You already own this space.'],
     [409, 'STATE_CONFLICT', "This account is being deleted, so it can't take ownership."],
   ])('says the %s refusal in one sentence and stays on the page', async (status, code, message) => {
     // Purpose: fails if a refusal the person can act on is hidden or turned into a dead end.
@@ -210,7 +210,7 @@ describe('OwnerReplacementClaim, at the date', () => {
     });
     render(<OwnerReplacementClaim />);
     expect(
-      await screen.findByText('Sign in, or create an account on this host, to take ownership.')
+      await screen.findByText('Sign in, or create an account on this server, to take ownership.')
     ).toBeTruthy();
     expect(screen.getByLabelText('Email')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Create account' })).toBeTruthy();

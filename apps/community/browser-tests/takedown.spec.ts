@@ -25,7 +25,7 @@ import { bootstrapFirstHost, responseCookies } from '../src/__tests__/bootstrap-
 
 // Host takedowns in the browser (task 1.2 of specs/community-host-takedown): the host page's Take
 // down section with its no-store warning and every evidence state, Try again and Release (with a
-// password, refused under a legal hold), the owner's "Removed by the host" list, the author's
+// password, refused under a legal hold), the owner's "Removed by the server admin" list, the author's
 // one-time banner, and a withheld takedown that neither shows. Two servers share one database:
 // one without an evidence store (and with a report address), one with a filesystem store.
 // COMMUNITY_TAKEDOWN_SCREENSHOTS optionally names a directory for reviewable screenshots.
@@ -193,7 +193,7 @@ async function openTakedowns(page: Page, baseUrl: string): Promise<Locator> {
   });
   expect(signedIn.ok()).toBe(true);
   await page.goto(`${baseUrl}/host`);
-  const record = page.getByRole('article', { name: 'Takedown Place community' });
+  const record = page.getByRole('article', { name: 'Takedown Place space' });
   await record.getByText('Take down content', { exact: true }).click();
   const section = record.getByRole('region', { name: 'Takedown Place takedowns' });
   await expect(section.getByRole('heading', { name: 'Takedowns' })).toBeVisible();
@@ -377,18 +377,20 @@ test('a host takes down a message; its author and the owner are told, another me
     const read = noticesRead(miaPage);
     await miaPage.goto(`${plainUrl}/c/${communityId}`);
     expect((await read).map((notice) => notice.yours)).toEqual([true]);
-    const banner = miaPage.getByRole('status').filter({ hasText: 'The host removed one of your' });
+    const banner = miaPage
+      .getByRole('status')
+      .filter({ hasText: 'The server admin removed one of your' });
     await expect(banner).toContainText(
-      /The host removed one of your messages on .+\. It was reported to the host as illegal\./u
+      /The server admin removed one of your messages on .+\. It was reported to the server admin as illegal\./u
     );
     await expect(banner).toContainText('Reference: CASE-7.');
-    const contact = banner.getByRole('link', { name: /contact the host/u });
+    const contact = banner.getByRole('link', { name: /contact the server admin/u });
     const href = new URL((await contact.getAttribute('href')) ?? '');
     expect([...href.searchParams.entries()]).toEqual([
       ['community', communityId],
       ['entry', toldEntry],
     ]);
-    await expect(miaPage.getByText('This message was removed by the host.')).toBeVisible();
+    await expect(miaPage.getByText('This message was removed by the server admin.')).toBeVisible();
     await assertAccessible(miaPage, 'author banner');
     await shot(miaPage, 'author-takedown-banner');
     await banner.getByRole('button', { name: 'Dismiss' }).click();
@@ -397,7 +399,7 @@ test('a host takes down a message; its author and the owner are told, another me
     await miaPage.reload();
     await reread;
     await expect(miaPage.getByRole('heading', { name: '# general' })).toBeVisible();
-    await expect(miaPage.getByText(/The host removed one of your/u)).toHaveCount(0);
+    await expect(miaPage.getByText(/The server admin removed one of your/u)).toHaveCount(0);
   } finally {
     await miaContext.close();
   }
@@ -409,12 +411,12 @@ test('a host takes down a message; its author and the owner are told, another me
     const read = noticesRead(ownerPage);
     await ownerPage.goto(`${plainUrl}/c/${communityId}/settings/settings`);
     expect((await read).map((notice) => notice.yours)).toEqual([false]);
-    const list = ownerPage.getByRole('region', { name: 'Removed by the host' });
+    const list = ownerPage.getByRole('region', { name: 'Removed by the server admin' });
     await expect(list).toContainText('A message in #general');
-    await expect(list).toContainText('It was reported to the host as illegal.');
+    await expect(list).toContainText('It was reported to the server admin as illegal.');
     await expect(list).toContainText('Reference: CASE-7.');
-    await expect(list.getByRole('link', { name: /contact the host/u })).toBeVisible();
-    await expect(ownerPage.getByText(/The host removed one of your/u)).toHaveCount(0);
+    await expect(list.getByRole('link', { name: /contact the server admin/u })).toBeVisible();
+    await expect(ownerPage.getByText(/The server admin removed one of your/u)).toHaveCount(0);
     await assertAccessible(ownerPage, 'removed by the host');
     await shot(ownerPage, 'owner-removed-by-host', list);
   } finally {
@@ -428,8 +430,8 @@ test('a host takes down a message; its author and the owner are told, another me
     const read = noticesRead(adaPage);
     await adaPage.goto(`${plainUrl}/c/${communityId}`);
     expect(await read).toEqual([]);
-    await expect(adaPage.getByText('This message was removed by the host.')).toBeVisible();
-    await expect(adaPage.getByText(/The host removed one of your/u)).toHaveCount(0);
+    await expect(adaPage.getByText('This message was removed by the server admin.')).toBeVisible();
+    await expect(adaPage.getByText(/The server admin removed one of your/u)).toHaveCount(0);
   } finally {
     await adaContext.close();
   }
@@ -472,7 +474,7 @@ test('a child-safety takedown tells no one, and its kept copy is released only w
     const reopened = await openTakedowns(page, plainUrl);
     const heldRow = reopened.getByRole('listitem', { name: `Message ${quietEntry} takedown` });
     await expect(heldRow).toContainText(
-      'It can’t be released while this community is under a legal hold.'
+      'It can’t be released while this space is under a legal hold.'
     );
     await expect(heldRow.getByRole('button', { name: 'Release' })).toHaveCount(0);
     await shot(page, 'host-takedown-legal-hold', heldRow);
@@ -538,7 +540,7 @@ test('a child-safety takedown tells no one, and its kept copy is released only w
     await ownerPage.goto(`${plainUrl}/c/${communityId}/settings/settings`);
     expect(await read).toHaveLength(1);
     await expect(
-      ownerPage.getByRole('region', { name: 'Removed by the host' }).getByRole('listitem')
+      ownerPage.getByRole('region', { name: 'Removed by the server admin' }).getByRole('listitem')
     ).toHaveCount(1);
   } finally {
     await ownerContext.close();
@@ -550,8 +552,8 @@ test('a child-safety takedown tells no one, and its kept copy is released only w
     await miaPage.goto(`${plainUrl}/c/${communityId}`);
     // Only the first, which this fresh browser has not dismissed: the withheld one never shows.
     expect((await read).map((notice) => notice.id)).toHaveLength(1);
-    await expect(miaPage.getByText(/The host removed one of your/u)).toHaveCount(1);
-    await expect(miaPage.getByText('This message was removed by the host.')).toHaveCount(2);
+    await expect(miaPage.getByText(/The server admin removed one of your/u)).toHaveCount(1);
+    await expect(miaPage.getByText('This message was removed by the server admin.')).toHaveCount(2);
   } finally {
     await miaContext.close();
   }

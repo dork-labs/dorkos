@@ -63,8 +63,16 @@ export function describeLauncherStop(journal: unknown): string | null {
   return `launcher stopped with ${code}${provider ? ` (${provider})` : ''}`;
 }
 
-/** Prefix the launcher prints on stderr when a command fails (`packages/cli/src/cli.ts`). */
-const LAUNCHER_FAILURE_PREFIX = 'Community setup failed:';
+/**
+ * Prefixes the launcher prints on stderr when a command fails (`packages/cli/src/cli.ts`). The gate
+ * runs PUBLISHED versions, so it reads every wording one of them prints: `Space setup failed:` since
+ * DOR-2653, `Community setup failed:` before it. Drop the old one only once no version the gate may
+ * still run prints it.
+ */
+export const LAUNCHER_FAILURE_PREFIXES = [
+  'Space setup failed:',
+  'Community setup failed:',
+] as const;
 
 /** Added only when the run has no launch journal, so the stop cannot have created anything. */
 export const NO_LAUNCH_RECORD_SUFFIX = ' before writing a launch record';
@@ -74,8 +82,9 @@ export const NO_LAUNCH_RECORD_SUFFIX = ' before writing a launch record';
  * launcher that refused its release (for example `COMMUNITY_RELEASE_INVALID`, DOR-2169) before it
  * wrote a journal, and a resumed launcher whose journal holds no saved error.
  *
- * Only a code token is ever returned: the last `Community setup failed:` line of the transcript,
- * its final `(CODE)`, checked against this checkout's error codes. Nothing else from the terminal
+ * Only a code token is ever returned: the last failure line of the transcript (any prefix in
+ * {@link LAUNCHER_FAILURE_PREFIXES}), its final `(CODE)`, checked against this checkout's error
+ * codes. Nothing else from the terminal
  * reaches the gate's output, so a message that echoes a name or an account cannot leak. Whether a
  * launch record exists is not known here; `explainCommunityLiveGateFailure` says so when none does.
  *
@@ -88,7 +97,7 @@ export function describeLauncherExit(transcript: string): string | null {
   const plain = transcript.replace(/\r/gu, '\n');
   const line = plain
     .split('\n')
-    .filter((entry) => entry.includes(LAUNCHER_FAILURE_PREFIX))
+    .filter((entry) => LAUNCHER_FAILURE_PREFIXES.some((prefix) => entry.includes(prefix)))
     .at(-1);
   if (!line) return null;
   const token = [...line.matchAll(/\(([A-Z][A-Z0-9_]{1,63})\)/gu)].at(-1)?.[1];

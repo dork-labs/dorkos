@@ -101,7 +101,7 @@ export async function assertHostActor(
       'SELECT 1 FROM host_operators WHERE user_id=$1 AND revoked_at IS NULL FOR SHARE',
       [actor.userId]
     );
-    if (!operator.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Host operator access ended.');
+    if (!operator.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Server admin access ended.');
     return;
   }
   const key = await client.query(
@@ -109,7 +109,8 @@ export async function assertHostActor(
      WHERE id=$1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>$2) FOR SHARE`,
     [actor.keyId, now]
   );
-  if (!key.rowCount) throw new ApiError(401, 'UNAUTHENTICATED', 'This host API key is not valid.');
+  if (!key.rowCount)
+    throw new ApiError(401, 'UNAUTHENTICATED', 'This server API key is not valid.');
 }
 
 async function requireHostPerson(
@@ -122,7 +123,7 @@ async function requireHostPerson(
     'SELECT 1 FROM host_operators WHERE user_id=$1 AND revoked_at IS NULL',
     [user.id]
   );
-  if (!operator.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Host operator access is required.');
+  if (!operator.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Server admin access is required.');
   return { kind: 'person', userId: user.id, name: user.name };
 }
 
@@ -164,7 +165,7 @@ export function createHostAuthority(deps: {
       );
     } catch (error) {
       console.error(
-        'Host API key last-use update unavailable',
+        'Server API key last-use update unavailable',
         error instanceof Error ? error.name : 'unknown'
       );
     }
@@ -186,7 +187,7 @@ export function createHostAuthority(deps: {
       const row = key.rows[0];
       if (!row) {
         limitKeyMiss(c);
-        throw new ApiError(401, 'UNAUTHENTICATED', 'A valid host API key is required.');
+        throw new ApiError(401, 'UNAUTHENTICATED', 'A valid server API key is required.');
       }
       if (!row.scopes.includes(scope)) {
         throw new ApiError(403, 'FORBIDDEN', 'This key does not allow that action.');
@@ -196,7 +197,7 @@ export function createHostAuthority(deps: {
     },
     async requireSession(c) {
       if (c.req.header('authorization') !== undefined) {
-        throw new ApiError(403, 'FORBIDDEN', 'A host API key cannot manage keys.');
+        throw new ApiError(403, 'FORBIDDEN', 'A server API key cannot manage keys.');
       }
       return requireHostPerson(c, auth, pool);
     },

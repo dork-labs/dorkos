@@ -10,10 +10,10 @@ export function HoldBanner({ deletionNoticeAt }: { deletionNoticeAt: string | nu
     : null;
   return (
     <Notice tone="info" className="m-3" role="status">
-      <strong>This community is on hold by its host. You can read it but not post.</strong>
+      <strong>This space is on hold by its server admin. You can read it but not post.</strong>
       {date && (
         <p className="mt-1 mb-0">
-          The host plans to delete it after {date}. The owner can export it until then.
+          The server admin plans to delete it after {date}. The owner can export it until then.
         </p>
       )}
     </Notice>

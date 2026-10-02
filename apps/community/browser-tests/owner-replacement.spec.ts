@@ -222,7 +222,7 @@ async function seed(
 
 /** The host page's record for one community. */
 function record(page: Page, c: Owned): Locator {
-  return page.getByRole('article', { name: `${c.name} community` });
+  return page.getByRole('article', { name: `${c.name} space` });
 }
 
 /** The host page's record for one community, with its Owner part open. */
@@ -362,7 +362,7 @@ test('the host asks, sees the claim link once, sends it again, and cancels', asy
     const dialog = page.getByRole('dialog', { name: `Replace the owner of ${c.name}?` });
     // No single sign-on on this host, so no sign-in ID is asked for.
     await expect(dialog.getByLabel('Sign-in ID of the new owner')).toHaveCount(0);
-    await dialog.getByLabel('The owner has left the group this community belongs to').check();
+    await dialog.getByLabel('The owner has left the group this space belongs to').check();
     await dialog.getByLabel('Your reference (optional)').fill('TICKET-42');
     await dialog.getByLabel('Your password').fill(TENANCY_PASSWORD);
     await audit(page, 'host-owner-form', dialog);
@@ -559,9 +559,9 @@ test('every request state reads as a sentence on the host page', async ({ browse
     const kept = `The owner kept ownership on ${day(now - 35 * DAY)}. You can ask again after ${day(now + 55 * DAY)}.`;
     for (const sentence of [
       `The new owner accepted on ${day(now - 180 * DAY)}.`,
-      `Withdrawn on ${day(now - 150 * DAY)} because the community was suspended.`,
-      `Withdrawn on ${day(now - 140 * DAY)} because the community is being deleted.`,
-      `Ended on ${day(now - 130 * DAY)} because the owner handed the community to someone or asked to delete it.`,
+      `Withdrawn on ${day(now - 150 * DAY)} because the space was suspended.`,
+      `Withdrawn on ${day(now - 140 * DAY)} because the space is being deleted.`,
+      `Ended on ${day(now - 130 * DAY)} because the owner handed the space to someone or asked to delete it.`,
       `The new owner didn’t accept in time. Ended on ${day(now - 92 * DAY)}.`,
     ])
       await expect(section.getByText(sentence, { exact: true })).toBeVisible();
@@ -610,7 +610,7 @@ test('the host page says why it cannot ask when this host has no mail', async ({
     await expect(section.getByRole('button', { name: 'Replace the owner' })).toBeDisabled();
     await expect(
       section.getByText(
-        'This host can’t send email, so it can’t give the owner notice. Set up mail first.'
+        'This server can’t send email, so it can’t give the owner notice. Set up mail first.'
       )
     ).toBeVisible();
     await audit(page, 'host-owner-no-mail', section, record(page, c));
@@ -629,9 +629,9 @@ test('the owner sees only what they can do; admins and members see their own not
   // A reference that looks like an address stays text.
   const { replacementId } = await requestReplacement(host, c, { reference: 'www.example.com' });
   const claimableAfter = await toWaiting(host, replacementId);
-  const banner = `The host has been asked to make someone else the owner of this community. Unless you keep ownership, that can happen on or after ${day(claimableAfter)}.`;
-  const transfer = 'You can hand the community to someone yourself.';
-  const remove = 'You can delete the community.';
+  const banner = `The server admin has been asked to make someone else the owner of this space. Unless you keep ownership, that can happen on or after ${day(claimableAfter)}.`;
+  const transfer = 'You can hand the space to someone yourself.';
+  const remove = 'You can delete the space.';
   const addPassword = 'To hand it to someone or delete it, add a password to your account first.';
   // Held: only deletion would open with a password, so that is all it promises.
   const addPasswordToDelete = 'To delete it, add a password to your account first.';
@@ -645,8 +645,8 @@ test('the owner sees only what they can do; admins and members see their own not
       await page.goto(`${baseUrl}/c/${c.communityId}`);
       await expect(page.getByText(banner)).toBeVisible();
       await page.getByRole('button', { name: 'What this means' }).click();
-      await expect(page.getByText('The host couldn’t reach you.')).toBeVisible();
-      const reference = page.getByText('The host’s reference: “www.example.com”');
+      await expect(page.getByText('The server admin couldn’t reach you.')).toBeVisible();
+      const reference = page.getByText('The server admin’s reference: “www.example.com”');
       await expect(reference).toBeVisible();
       await expect(reference.locator('a')).toHaveCount(0);
       await expect(page.getByRole('link', { name: /example\.com/u })).toHaveCount(0);
@@ -668,7 +668,7 @@ test('the owner sees only what they can do; admins and members see their own not
 
     const adminPage = await adminContext.newPage();
     await adminPage.goto(`${baseUrl}/c/${c.communityId}`);
-    const adminSentence = `The host has been asked to make someone else the owner. The owner has until ${day(claimableAfter)} to respond.`;
+    const adminSentence = `The server admin has been asked to make someone else the owner. The owner has until ${day(claimableAfter)} to respond.`;
     await expect(adminPage.getByText(adminSentence)).toBeVisible();
     await expect(adminPage.getByRole('button', { name: 'Keep ownership' })).toHaveCount(0);
     await audit(adminPage, 'admin-banner', adminPage.getByText(adminSentence));
@@ -683,12 +683,14 @@ test('the owner sees only what they can do; admins and members see their own not
     const confirm = page.getByRole('dialog', { name: `Keep ownership of ${c.name}?` });
     await expect(
       confirm.getByText(
-        'The host’s request will end. The host can ask again after 90 days, and you’ll be told again.'
+        'The server admin’s request will end. The server admin can ask again after 90 days, and you’ll be told again.'
       )
     ).toBeVisible();
     await audit(page, 'owner-keep-confirm', confirm);
     await confirm.getByRole('button', { name: 'Keep ownership' }).click();
-    await expect(page.getByText('You kept ownership. The host has been told.')).toBeVisible();
+    await expect(
+      page.getByText('You kept ownership. The server admin has been told.')
+    ).toBeVisible();
     await expect(page.getByText(banner)).toHaveCount(0);
     expect((await replacementRow(host, replacementId)).state).toBe('objected');
   } finally {
@@ -714,7 +716,7 @@ test('the emailed link keeps ownership only when the owner presses the button', 
     await expect(page.getByRole('heading', { name: `Keep ownership of ${c.name}?` })).toBeVisible();
     await expect(
       page.getByText(
-        'The host’s request will end. The host can ask again after 90 days, and you’ll be told again.'
+        'The server admin’s request will end. The server admin can ask again after 90 days, and you’ll be told again.'
       )
     ).toBeVisible();
     // Opening the page only checked the link; nothing changed.
@@ -727,7 +729,7 @@ test('the emailed link keeps ownership only when the owner presses the button', 
 
     await page.getByRole('button', { name: 'Keep ownership' }).click();
     await expect(
-      page.getByRole('heading', { name: 'You kept ownership. The host has been told.' })
+      page.getByRole('heading', { name: 'You kept ownership. The server admin has been told.' })
     ).toBeVisible();
     expect((await replacementRow(host, replacementId)).state).toBe('objected');
     await audit(page, 'keep-ownership-kept');
@@ -760,7 +762,7 @@ test('every member is told for a week after a new owner takes over', async ({ br
   const page = await context.newPage();
   try {
     await page.goto(`${baseUrl}/c/${c.communityId}`);
-    const sentence = `The host made Riley Chen the owner of this community on ${day(completedAt)}.`;
+    const sentence = `The server admin made Riley Chen the owner of this space on ${day(completedAt)}.`;
     await expect(page.getByText(sentence)).toBeVisible();
     await audit(page, 'member-completion-notice', page.getByText(sentence));
     await page.getByRole('button', { name: 'Dismiss' }).click();
@@ -804,7 +806,7 @@ test('the claim link says when it opens, then lets the new owner take ownership'
     await page.goto('about:blank');
     await page.goto(`${baseUrl}/owner-replacement#${claimToken}`);
     await expect(
-      page.getByText('Sign in, or create an account on this host, to take ownership.')
+      page.getByText('Sign in, or create an account on this server, to take ownership.')
     ).toBeVisible();
     await audit(page, 'claim-account');
     await page.getByLabel('Your name').fill('Noor New');

@@ -244,7 +244,7 @@ export async function closeAccount(
   if (recent.rows.length >= input.closuresPerDay) {
     const frees = recent.rows[recent.rows.length - input.closuresPerDay].created_at;
     throw new RateLimited(
-      'You have closed as many accounts today as this host allows.',
+      'You have closed as many accounts today as this server allows.',
       Math.max(1, Math.ceil((frees.getTime() + DAY_MS - input.now.getTime()) / 1000))
     );
   }
@@ -256,7 +256,7 @@ export async function closeAccount(
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      'This account has operated this host, so it cannot be closed.'
+      'This account has operated this server, so it cannot be closed.'
     );
   const memberships = await client.query<{ community_id: string; role: string; active: boolean }>(
     `SELECT community_id,role,active FROM members WHERE user_id=$1
@@ -270,7 +270,7 @@ export async function closeAccount(
     throw new ApiError(
       409,
       'ACCOUNT_OWNS_COMMUNITY',
-      `This account owns ${owned.length === 1 ? 'community' : 'communities'} ${owned.join(', ')}. Replace the owner or delete ${owned.length === 1 ? 'that community' : 'those communities'} first.`
+      `This account owns ${owned.length === 1 ? 'space' : 'spaces'} ${owned.join(', ')}. Replace the owner or delete ${owned.length === 1 ? 'that space' : 'those spaces'} first.`
     );
   const open = await client.query(
     `SELECT 1 FROM account_closures WHERE user_id=$1 AND state='closed'`,

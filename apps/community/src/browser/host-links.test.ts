@@ -24,7 +24,7 @@ describe('reportAbuseHref', () => {
   it('puts the IDs in the body of a mailto report and nowhere else', () => {
     // Purpose: fails if a mail report loses the IDs or gains a subject or other field.
     expect(reportAbuseHref('mailto:abuse@example.com', community, { entryId: entry })).toBe(
-      `mailto:abuse@example.com?body=${encodeURIComponent(`Community: ${community}\nMessage: ${entry}`)}`
+      `mailto:abuse@example.com?body=${encodeURIComponent(`Space: ${community}\nMessage: ${entry}`)}`
     );
   });
 
@@ -42,7 +42,7 @@ describe('reportAbuseHref', () => {
     expect(
       reportAbuseHref('mailto:abuse@example.com', community, { entryId: entry, attachmentId: file })
     ).toBe(
-      `mailto:abuse@example.com?body=${encodeURIComponent(`Community: ${community}\nMessage: ${entry}\nFile: ${file}`)}`
+      `mailto:abuse@example.com?body=${encodeURIComponent(`Space: ${community}\nMessage: ${entry}\nFile: ${file}`)}`
     );
   });
 
