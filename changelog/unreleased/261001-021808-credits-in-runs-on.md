@@ -4,6 +4,7 @@ covers:
   - 'fix(credits): pin the credits endpoint above folder settings, respect "no", gate agent files (DOR-2623)'
   - 'fix(credits): keep a folder''s own variables on credits, offer "Don''t use credits in this project", notify every refusal (DOR-2623)'
   - "fix(credits): leave the agent's cloud accounts alone, send the refusal reason, offer the project rule only for a folder's own sign-in (DOR-2623)"
+  - 'fix(config): renumber the credits migration to 0.96.0 now v0.95.0 is tagged (DOR-2623)'
 ---
 
 ### Added

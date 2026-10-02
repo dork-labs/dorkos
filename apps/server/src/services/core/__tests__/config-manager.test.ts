@@ -6203,7 +6203,7 @@ describe('the 0.67.0 bodies (spec full-power-defaults)', () => {
 });
 
 describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
-  /** Run the real `'0.95.0'` upgrade over a file and return what is on disk. */
+  /** Run the real `'0.96.0'` upgrade over a file and return what is on disk. */
   function upgrade(cloud: Record<string, unknown>): { cloud: Record<string, unknown> } {
     const dir = path.join(os.tmpdir(), 'test-dork-cloud-credits-' + Date.now() + Math.random());
     const cfgPath = path.join(dir, 'config.json');
@@ -6211,7 +6211,7 @@ describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
     try {
       fs.writeFileSync(
         cfgPath,
-        JSON.stringify({ version: 1, cloud, __internal__: { migrations: { version: '0.94.0' } } }),
+        JSON.stringify({ version: 1, cloud, __internal__: { migrations: { version: '0.95.0' } } }),
         'utf-8'
       );
       new Conf({
@@ -6220,7 +6220,7 @@ describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
         schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
         defaults: USER_CONFIG_DEFAULTS,
         clearInvalidConfig: false,
-        projectVersion: '0.95.0',
+        projectVersion: '0.96.0',
         migrations: CONFIG_MIGRATIONS,
       });
       return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as { cloud: Record<string, unknown> };

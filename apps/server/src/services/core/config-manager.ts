@@ -4736,11 +4736,11 @@ export const CONFIG_MIGRATIONS = {
     // (spec `flow-multiproject` §9.3). See `seedExtensionsTrustedSources`.
     seedExtensionsTrustedSources(store);
   },
-  // v0.94.0 is tagged, so 0.95.0 is the next key. Frozen from merge.
+  // v0.95.0 is tagged, so 0.96.0 is the next key. Frozen from merge.
   //
   // Disjoint from every other key here: it adds one nested leaf under `cloud`,
   // beside the link fields, which it preserves.
-  '0.95.0': (store: {
+  '0.96.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
   }) => {

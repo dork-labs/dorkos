@@ -23,7 +23,7 @@
  * What this module never does: fill a gap that already has a record, treat an
  * expired or out-of-usage sign-in as a gap (that sign-in needs attention, not
  * replacing), or arm a computer that was linked before credits were a choice
- * (it gets one dismissible offer instead, set by the `'0.95.0'` migration).
+ * (it gets one dismissible offer instead, set by the `'0.96.0'` migration).
  *
  * @module services/core/cloud/credits-defaults
  */
