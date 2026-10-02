@@ -11,8 +11,8 @@
  * @module features/canvas/ui/CanvasRenderer
  */
 import { lazy, Suspense } from 'react';
+import type { WidgetChannelPort } from '@/layers/features/gen-ui';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { CanvasErrorBoundary } from './CanvasErrorBoundary';
 import { CanvasBrowserContent } from './CanvasBrowserContent';
 import { CanvasMarkdownContent } from './CanvasMarkdownContent';
 import { CanvasJsonContent } from './CanvasJsonContent';
@@ -49,10 +49,12 @@ const CanvasDiffContent = lazy(() =>
  */
 export function CanvasRenderer({
   documentId,
+  widgetChannel,
   content,
   onContentChange,
 }: {
   documentId: string;
+  widgetChannel?: WidgetChannelPort;
   content: UiCanvasContent;
   onContentChange: (content: UiCanvasContent) => void;
 }) {
@@ -95,7 +97,9 @@ export function CanvasRenderer({
     case 'video':
       return <CanvasVideoContent content={content} />;
     case 'widget':
-      return <CanvasWidgetContent content={content} />;
+      return (
+        <CanvasWidgetContent documentId={documentId} channel={widgetChannel} content={content} />
+      );
     case 'mcp_app':
       return <CanvasMcpAppContent content={content} />;
     case 'file':

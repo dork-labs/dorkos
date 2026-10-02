@@ -20,3 +20,5 @@
  */
 export { CanvasContent, BrowserContent } from './ui/CanvasViews';
 export { useSessionCanvas, resetSessionCanvasImport } from './model/use-session-canvas';
+
+export { CanvasWidgetContent } from './ui/CanvasWidgetContent';

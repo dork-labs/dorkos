@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { WidgetNodeProvider, useWidgetNodePath } from '../model/widget-node-context';
 import { WidgetFormProvider } from '../model/form-context';
 import {
   BadgeNode,
@@ -41,7 +42,14 @@ const GAP_CLASS = { sm: 'gap-2', md: 'gap-3', lg: 'gap-5' } as const;
  * nodes delegate to presentational components; container nodes (`stack`, `card`,
  * `form`) recurse through this component.
  */
-export function WidgetNodeView({ node }: { node: WidgetNode }) {
+export function WidgetNodeView({ node, path = 'root' }: { node: WidgetNode; path?: string }) {
+  return (
+    <WidgetNodeProvider value={path}>
+      <WidgetNodeContent node={node} />
+    </WidgetNodeProvider>
+  );
+}
+function WidgetNodeContent({ node }: { node: WidgetNode }) {
   switch (node.type) {
     case 'stack':
       return <StackNode node={node} />;
@@ -100,6 +108,7 @@ export function WidgetNodeView({ node }: { node: WidgetNode }) {
 }
 
 function StackNode({ node }: { node: NodeOf<'stack'> }) {
+  const path = useWidgetNodePath();
   return (
     <div
       className={cn(
@@ -109,13 +118,14 @@ function StackNode({ node }: { node: NodeOf<'stack'> }) {
       )}
     >
       {node.children.map((child, i) => (
-        <WidgetNodeView key={i} node={child} />
+        <WidgetNodeView key={i} path={`${path}.children.${i}`} node={child} />
       ))}
     </div>
   );
 }
 
 function CardNode({ node }: { node: NodeOf<'card'> }) {
+  const path = useWidgetNodePath();
   const hasHeader = Boolean(node.title || node.description);
   return (
     <Card className="shadow-soft">
@@ -127,13 +137,13 @@ function CardNode({ node }: { node: NodeOf<'card'> }) {
       )}
       <CardContent>
         {node.children.map((child, i) => (
-          <WidgetNodeView key={i} node={child} />
+          <WidgetNodeView key={i} path={`${path}.children.${i}`} node={child} />
         ))}
       </CardContent>
       {node.footer && node.footer.length > 0 && (
         <CardFooter>
           {node.footer.map((child, i) => (
-            <WidgetNodeView key={i} node={child} />
+            <WidgetNodeView key={i} path={`${path}.footer.${i}`} node={child} />
           ))}
         </CardFooter>
       )}
@@ -142,6 +152,7 @@ function CardNode({ node }: { node: NodeOf<'card'> }) {
 }
 
 function FormNode({ node }: { node: NodeOf<'form'> }) {
+  const path = useWidgetNodePath();
   const [values, setValues] = useState<Record<string, string>>({});
   const setValue = useCallback((name: string, value: string) => {
     setValues((prev) => ({ ...prev, [name]: value }));
@@ -151,10 +162,10 @@ function FormNode({ node }: { node: NodeOf<'form'> }) {
   // Merge collected field values into the agent action payload; the submit
   // button POSTs it through the ui-action return channel (gen-ui §3).
   const submitAction = useMemo(
-    () => ({
-      ...node.submit.action,
-      payload: { ...(node.submit.action.payload ?? {}), ...values },
-    }),
+    () =>
+      node.submit.action.kind === 'emit'
+        ? { ...node.submit.action, payload: { ...(node.submit.action.payload ?? {}), ...values } }
+        : { ...node.submit.action, payload: { ...(node.submit.action.payload ?? {}), ...values } },
     [node.submit.action, values]
   );
 
@@ -162,10 +173,16 @@ function FormNode({ node }: { node: NodeOf<'form'> }) {
     <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-3">
       <WidgetFormProvider value={formCtx}>
         {node.children.map((child, i) => (
-          <WidgetNodeView key={i} node={child} />
+          <WidgetNodeView key={i} path={`${path}.children.${i}`} node={child} />
         ))}
       </WidgetFormProvider>
-      <WidgetActionButton action={submitAction} label={node.submit.label} fullWidth />
+      <WidgetActionButton
+        action={submitAction}
+        label={node.submit.label}
+        controlId={`${path}.submit`}
+        submit
+        fullWidth
+      />
     </form>
   );
 }
