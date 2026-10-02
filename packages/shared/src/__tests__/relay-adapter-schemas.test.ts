@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   AdapterBindingSchema,
+  WebhookInboundConfigSchema,
   AdapterSecretSchema,
   ConfigFieldSchema,
   AdapterManifestSchema,
@@ -682,4 +683,38 @@ describe('TelegramPlatformDataSchema (spec chats-as-channels §11.2)', () => {
     });
     expect(result.success).toBe(false);
   });
+});
+
+describe('webhook namespace ownership', () => {
+  it.each([
+    'relay.agent.codex.session',
+    'relay.human.console',
+    'relay.inbox.owner',
+    'relay.system.tasks.task',
+    'relay.control.stop',
+    'relay.doc.canvas-hash',
+    'relay',
+    'relay.webhook',
+    'relay.webhook.',
+    'relay.webhooks.x',
+    'relay.webhook.*',
+    'relay.webhook.>',
+    'relay.webhook.x..y',
+    ' relay.webhook.x',
+    'relay.webhook.x ',
+    'Relay.webhook.x',
+    'relay.webhook.' + Array(15).fill('x').join('.'),
+  ])('refuses ownership of %s', (subject) => {
+    expect(
+      WebhookInboundConfigSchema.safeParse({ subject, secret: 'fixture-secret-at-least16' }).success
+    ).toBe(false);
+  });
+  it.each(['relay.webhook.x', 'relay.webhook.x2', 'relay.webhook.GitHub.alerts_1'])(
+    'accepts literal webhook address %s',
+    (subject) => {
+      expect(
+        WebhookInboundConfigSchema.parse({ subject, secret: 'fixture-secret-at-least16' }).subject
+      ).toBe(subject);
+    }
+  );
 });

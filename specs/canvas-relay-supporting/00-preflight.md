@@ -1,6 +1,6 @@
 # Canvas and Relay supporting lane preflight
 
-Prepared 2026-10-01. Preparatory source audit, not a frozen specification or canonical DECOMPOSE task list. DOR-2663 is claimed and implemented, pending independent review and delivery.
+Prepared 2026-10-01. Preparatory source audit, not a frozen specification or canonical DECOMPOSE task list. DOR-2663 is merged and Flow DONE. DOR-2660 is claimed for bounded source work in its own worktree; the historical source findings below remain investigation pointers.
 
 ## Run boundaries and assumptions
 

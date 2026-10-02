@@ -5,6 +5,7 @@ import { WEBHOOK_SERVER_SUBJECT_REFUSAL } from '@dorkos/shared/relay-schemas';
 import { WebhookAdapter, verifySignature } from '../webhook-adapter.js';
 import { runAdapterComplianceSuite } from '../../../testing/index.js';
 import type { RelayPublisher } from '../../../types.js';
+import { AdapterRegistry } from '../../../adapter-registry.js';
 
 // --- Constants ---
 
@@ -134,10 +135,18 @@ describe('WebhookAdapter', () => {
 
   // --- inbound HMAC verification ---
 
-  // DOR-2432: the config schema now refuses a DorkOS inbound subject, but a
-  // config written before that rule still loads. The adapter refuses it itself.
-  describe('a config aimed at a DorkOS address, written before the rule', () => {
-    const legacy = () => makeAdapter({ inboundSubject: 'relay.system.tasks.task-1' });
+  // Constructor calls can bypass schema/loading checks; runtime effects must
+  // still refuse persisted addresses outside the literal webhook namespace.
+  describe.each([
+    'relay.system.tasks.task-1',
+    'relay.agent.codex.session',
+    'relay.human.console',
+    'relay.inbox.owner',
+    'relay.doc.canvas-hash',
+    'relay.webhook.*',
+    'relay.webhook.x..y',
+  ])('a persisted config aimed at %s', (inboundSubject) => {
+    const legacy = () => makeAdapter({ inboundSubject });
 
     it('refuses to start, naming the rule', async () => {
       const refused = legacy();
@@ -175,6 +184,86 @@ describe('WebhookAdapter', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
   });
+
+  it('keeps a real signed webhook connected when its active instance is registered twice', async () => {
+    const registry = new AdapterRegistry();
+    registry.setRelay(relay);
+    registry.setLogger({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() });
+    const start = vi.spyOn(adapter, 'start'),
+      stop = vi.spyOn(adapter, 'stop');
+    await registry.register(adapter);
+    await registry.register(adapter);
+    expect(registry.get(adapter.id)).toBe(adapter);
+    expect(registry.getBySubject('relay.webhook.test.child')).toBe(adapter);
+    expect(adapter.getStatus().state).toBe('connected');
+    expect(start).toHaveBeenCalledOnce();
+    expect(stop).not.toHaveBeenCalled();
+    const body = '{"event":"same-active-instance"}';
+    expect(
+      await adapter.handleInbound(Buffer.from(body), buildHeaders(body, SECRET))
+    ).toMatchObject({ ok: true });
+    expect(relay.publish).toHaveBeenCalledOnce();
+    expect(relay.publish).toHaveBeenCalledWith(
+      'relay.webhook.test',
+      expect.objectContaining({ data: JSON.parse(body) }),
+      { from: 'relay.webhook.test-webhook' }
+    );
+  });
+
+  it.each(['relay.webhook.GitHub.alerts_1', 'relay.webhook.x', 'relay.webhook.x2'])(
+    'starts and verifies inbound and outbound HMAC at the valid address %s',
+    async (subject) => {
+      const valid = makeAdapter({ inboundSubject: subject });
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      vi.stubGlobal('fetch', fetchMock);
+      try {
+        await valid.start(relay);
+        expect(valid.getStatus().state).toBe('connected');
+        const body = '{"event":"push","ref":"refs/heads/main"}';
+        expect(
+          await valid.handleInbound(Buffer.from(body), buildHeaders(body, SECRET))
+        ).toMatchObject({ ok: true });
+        expect(relay.publish).toHaveBeenCalledWith(
+          subject,
+          expect.objectContaining({ data: JSON.parse(body) }),
+          { from: 'relay.webhook.test-webhook' }
+        );
+        const payload = { text: 'valid namespace outbound' };
+        const result = await valid.deliver(subject, {
+          id: 'valid-namespace-envelope',
+          subject,
+          from: 'relay.agent.sender',
+          budget: {
+            hopCount: 0,
+            maxHops: 5,
+            ancestorChain: [],
+            ttl: Date.now() + 3600000,
+            callBudgetRemaining: 10,
+          },
+          createdAt: new Date().toISOString(),
+          payload,
+        });
+        expect(result.success).toBe(true);
+        expect(fetchMock).toHaveBeenCalledOnce();
+        const [url, options] = fetchMock.mock.calls[0] as [
+          string,
+          RequestInit & { headers: Record<string, string> },
+        ];
+        expect(url).toBe(OUTBOUND_URL);
+        expect(options.method).toBe('POST');
+        expect(options.body).toBe(JSON.stringify(payload));
+        expect(options.headers['X-Signature']).toBe(
+          crypto
+            .createHmac('sha256', SECRET)
+            .update(`${options.headers['X-Timestamp']}.${options.body}`)
+            .digest('hex')
+        );
+      } finally {
+        await valid.stop();
+        vi.unstubAllGlobals();
+      }
+    }
+  );
 
   describe('handleInbound()', () => {
     beforeEach(async () => {

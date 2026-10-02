@@ -8,6 +8,8 @@
  * @module relay/lib/reserved-subjects
  */
 
+import { DOC_SUBJECT_PREFIX, isDocumentSubject } from '@dorkos/shared/relay-schemas';
+
 /**
  * Subject namespaces the server manages, which a caller acting for an agent (or
  * for a person over HTTP) may not register a mailbox in.
@@ -19,6 +21,7 @@
  * `relay_send_and_wait` and `relay_send_async`, which register them directly.
  */
 export const SERVER_MANAGED_PREFIXES = [
+  DOC_SUBJECT_PREFIX,
   'relay.agent.',
   'relay.system.',
   'relay.human.',
@@ -47,7 +50,10 @@ export const CONTROL_SUBJECT_PREFIX = 'relay.control.';
  * @param subject - The subject a caller asked to register.
  */
 export function isServerManagedSubject(subject: string): boolean {
-  return SERVER_MANAGED_PREFIXES.some((prefix) => subject.startsWith(prefix));
+  return (
+    isDocumentSubject(subject) ||
+    SERVER_MANAGED_PREFIXES.some((prefix) => subject.startsWith(prefix))
+  );
 }
 
 /**

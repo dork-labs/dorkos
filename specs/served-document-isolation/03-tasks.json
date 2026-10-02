@@ -50,7 +50,7 @@
     {
       "id": "1.4",
       "subject": "[served-document-isolation] Independent review and delivery",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.3"
       ],

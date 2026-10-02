@@ -287,7 +287,7 @@ describe('a secret field that holds a MAP of secrets (webhook outbound headers)'
   it('is masked out of an API read, like any other secret field', () => {
     const masked = maskSensitiveFields(
       {
-        inbound: { subject: 's', secret: 'inbound-secret-16-chars' },
+        inbound: { subject: 'relay.webhook.wh-1', secret: 'inbound-secret-16-chars' },
         outbound: { url: 'u', secret: 'x', headers: { Authorization: 'Bearer sk-live-abc' } },
       },
       WEBHOOK_MANIFEST
@@ -395,7 +395,7 @@ describe('setting webhook custom headers through the form (DOR-796, server half)
     expect(() =>
       parseAdapterConfigForPersist(
         formEntry({
-          inbound: { subject: 's', secret: 'inbound-secret-16ch' },
+          inbound: { subject: 'relay.webhook.wh-1', secret: 'inbound-secret-16ch' },
           outbound: {
             url: 'https://example.com/hook',
             secret: 'outbound-secret-16c',
@@ -410,7 +410,7 @@ describe('setting webhook custom headers through the form (DOR-796, server half)
   it('treats a cleared field as no headers', () => {
     const parsed = parseAdapterConfigForPersist(
       formEntry({
-        inbound: { subject: 's', secret: 'inbound-secret-16ch' },
+        inbound: { subject: 'relay.webhook.wh-1', secret: 'inbound-secret-16ch' },
         outbound: { url: 'https://example.com/hook', secret: 'outbound-secret-16c', headers: '' },
       }),
       WEBHOOK_MANIFEST
@@ -423,7 +423,7 @@ describe('setting webhook custom headers through the form (DOR-796, server half)
     // The normalizer writes through copies; mutating the request body would
     // surprise every caller downstream of the route.
     const config = {
-      inbound: { subject: 's', secret: 'inbound-secret-16ch' },
+      inbound: { subject: 'relay.webhook.wh-1', secret: 'inbound-secret-16ch' },
       outbound: {
         url: 'https://example.com/hook',
         secret: 'outbound-secret-16c',
@@ -472,7 +472,7 @@ describe('setting webhook custom headers through the form (DOR-796, server half)
     // headers are configured without being shown a value.
     const masked = maskSensitiveFields(
       {
-        inbound: { subject: 's', secret: 'file:in' },
+        inbound: { subject: 'relay.webhook.wh-1', secret: 'file:in' },
         outbound: {
           url: 'u',
           secret: 'file:out',
@@ -491,7 +491,7 @@ describe('setting webhook custom headers through the form (DOR-796, server half)
     // A client echoing back a masked GET must not overwrite the real values
     // with the mask.
     const stored = {
-      inbound: { subject: 's', secret: 'file:in' },
+      inbound: { subject: 'relay.webhook.wh-1', secret: 'file:in' },
       outbound: { url: 'u', secret: 'file:out', headers: { Authorization: 'file:auth' } },
     };
 
