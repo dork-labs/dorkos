@@ -3,7 +3,7 @@ import { AlertTriangle, XCircle, Puzzle, ChevronDown, ShieldCheck } from 'lucide
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { Badge, Button, Card, Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { extensionConsentCopy } from '@/layers/entities/extension';
+import { EXTENSION_TRUST_COPY, extensionConsentCopy } from '@/layers/entities/extension';
 
 interface ExtensionCardProps {
   /** The extension record from the server. */
@@ -45,12 +45,12 @@ export function ExtensionCard({
   // Nothing about an unapproved extension runs: the server refuses its `server.ts`
   // AND withholds its client bundle, so the browser never imports it either
   // (DOR-516). This only picks which reach to name, because a server entry or data
-  // proxy adds "anything on this machine" to "anything you can do in DorkOS".
+  // proxy adds "anything DorkOS can" to acting as you in DorkOS.
   const runsInServer = extension.hasServerEntry || extension.hasDataProxy;
   // Health/availability state — communicated by a badge that is visually
   // distinct from the on/off toggle (an errored extension can still be "on").
   const healthLabel = hasError
-    ? 'Error'
+    ? 'Not working'
     : isIncompatible
       ? 'Incompatible'
       : isInvalid
@@ -177,18 +177,17 @@ export function ExtensionCard({
                     data-testid={`extension-origin-problem-${extension.id}`}
                   >
                     {extension.originProblem === 'changed'
-                      ? 'Its files changed after install, so DorkOS can’t vouch for its source.'
+                      ? 'Its files changed after install, so DorkOS can’t vouch for it. Look it over first.'
                       : 'Its plugin links to files elsewhere, so DorkOS can’t vouch for its source.'}
                   </p>
                 )}
-                {/* One sentence shared with the Activity inbox's ⓘ panel
-                    (DOR-2517), so the two places that ask say the same thing. */}
+                {/* The consent sentence and the trust warning are shared with
+                    the Activity inbox's ⓘ panel (DOR-2517), so the two places
+                    that ask say the same thing. */}
                 <p className="text-muted-foreground text-sm">
                   {extensionConsentCopy(runsInServer)}
                 </p>
-                <p className="text-muted-foreground text-sm">
-                  Turn it on only if you trust its source.
-                </p>
+                <p className="text-muted-foreground text-sm">{EXTENSION_TRUST_COPY}</p>
                 <Button
                   size="sm"
                   onClick={() => onSetRunApproval(extension.id, true)}
@@ -205,7 +204,7 @@ export function ExtensionCard({
             <Badge variant="outline">{scope}</Badge>
             {healthLabel && (
               <Badge
-                variant={healthLabel === 'Error' ? 'destructive' : 'secondary'}
+                variant={healthLabel === 'Not working' ? 'destructive' : 'secondary'}
                 data-testid={`extension-health-${extension.id}`}
               >
                 {healthLabel}

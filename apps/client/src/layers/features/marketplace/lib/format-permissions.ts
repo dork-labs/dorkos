@@ -585,7 +585,7 @@ export function summarizePermissionPreview(preview: PermissionPreview): string {
     preview.monitors.length +
     preview.executables.length;
   const own =
-    programs === 0 ? '' : ` Declares ${programs} ${programs === 1 ? 'program' : 'programs'}.`;
+    programs === 0 ? '' : ` Includes ${programs} ${programs === 1 ? 'program' : 'programs'}.`;
 
   return `${files}. ${declares}.${own}`;
 }

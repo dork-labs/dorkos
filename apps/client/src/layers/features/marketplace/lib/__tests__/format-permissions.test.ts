@@ -506,7 +506,7 @@ describe('formatPermissionPreview → commands → programs', () => {
       unreadableDeclarations: [{ path: '.lsp.json', kind: 'lsp-server' }],
     });
     expect(summarizePermissionPreview(preview)).toBe(
-      'Changes no files. Declares no commands. Declares 1 program.'
+      'Changes no files. Declares no commands. Includes 1 program.'
     );
   });
 });

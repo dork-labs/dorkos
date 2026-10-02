@@ -1013,27 +1013,33 @@ describe('InstalledPackagesView', () => {
 
       const note = screen.getByTestId('installation-integrity');
       expect(note).toHaveTextContent(
-        '4 files changed since install (2 edited, 1 added, 1 removed).Updating replaces the 2 files you edited and keeps your copies beside them.Updating keeps the file you added.Updating puts back the file you removed.'
+        '4 files changed since install (2 edited, 1 added, 1 removed).Updating replaces your edits; copies are kept.Updating replaces the 2 files you edited and keeps your copies beside them.The file you added stays.The file you removed comes back.'
       );
       expect(note).not.toHaveTextContent('.dork-old');
     });
 
-    // Purpose (review 2, item 4): the "Updating…" sentences wait inside the
-    // disclosure on every screen, one paragraph each, so the closed note stays
-    // one short line and no paragraph runs past the copy cap.
-    it('keeps what an update does inside the disclosure, one paragraph per kind', () => {
+    // Purpose (review 2, item 4): a row's Update can apply with no confirm
+    // step, so one short line on what an update does stays visible in the
+    // closed note on every screen; the per-kind detail waits inside, one
+    // paragraph each, so no paragraph runs past the copy cap.
+    it('keeps one update line visible and the per-kind detail inside', () => {
       showRows([FLOW], [staleCheck(FLOW, '0.7.3')]);
       setIntegrity({ [FLOW.installPath]: MODIFIED });
       render(<InstalledPackagesView />);
       const note = screen.getByTestId('installation-integrity');
-      expect(note.querySelector('summary')).not.toHaveTextContent('Updating');
+      const visible = within(note.querySelector('summary')!).getByTestId(
+        'installation-integrity-update'
+      );
+      expect(visible).toHaveTextContent('Updating replaces your edits; copies are kept.');
+      expect(visible.className).not.toContain('hidden');
+      // Sentences only: the path-group headings ("Edited", "Added") are <p>s too.
       const sentences = [...note.querySelectorAll('p')]
         .map((p) => p.textContent ?? '')
-        .filter((text) => text.startsWith('Updating'));
+        .filter((text) => text.endsWith('.') && !text.startsWith('Showing'));
       expect(sentences).toEqual([
         'Updating replaces the 2 files you edited and keeps your copies beside them.',
-        'Updating keeps the file you added.',
-        'Updating puts back the file you removed.',
+        'The file you added stays.',
+        'The file you removed comes back.',
       ]);
     });
 
@@ -1045,7 +1051,10 @@ describe('InstalledPackagesView', () => {
 
       render(<InstalledPackagesView />);
 
-      expect(screen.getByTestId('installation-integrity')).not.toHaveTextContent('Updating');
+      const note = screen.getByTestId('installation-integrity');
+      expect(note).not.toHaveTextContent('Updating');
+      expect(note).not.toHaveTextContent('comes back');
+      expect(note).not.toHaveTextContent('stays');
     });
 
     // Purpose (review 4): the note is a native disclosure (a <summary>, so a
@@ -1444,7 +1453,7 @@ describe('InstalledPackagesView', () => {
       };
       rerender(<InstalledPackagesView />);
       const dialog = screen.getByRole('dialog');
-      expect(dialog).toHaveTextContent('Keeping also lets it run everywhere');
+      expect(dialog).toHaveTextContent('Keeping also lets it run in every session');
       expect(within(dialog).getByRole('list', { name: 'What Flow runs' })).toHaveTextContent(
         'echo hi'
       );
@@ -1514,7 +1523,7 @@ describe('InstalledPackagesView', () => {
 
       const flowItem = items.find((i) => i.textContent?.includes('Flow'))!;
       expect(flowItem).toHaveTextContent(
-        'Updating replaces the 2 files you edited and keeps your copies beside them.Updating keeps the file you added.Updating puts back the file you removed.'
+        'Updating replaces the 2 files you edited and keeps your copies beside them.The file you added stays.The file you removed comes back.'
       );
       expect(flowItem).not.toHaveTextContent('.dork-old');
       const otherItem = items.find((i) => i.textContent?.includes('Reviewer'))!;

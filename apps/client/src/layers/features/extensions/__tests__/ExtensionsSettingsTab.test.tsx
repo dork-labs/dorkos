@@ -652,6 +652,7 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
     // And it has to be TRUE. Nothing of an unapproved extension has run, in the
     // server or on this page, so the card says exactly that.
     expect(screen.getByText(/None of it has run yet/i)).toBeInTheDocument();
+    expect(screen.getByText('Turn it on only if you trust its source.')).toBeInTheDocument();
   });
 
   it('tells the truth about a client-only extension, which also has not run', async () => {

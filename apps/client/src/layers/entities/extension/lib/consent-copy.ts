@@ -9,13 +9,20 @@
  */
 
 /**
+ * The trust warning both places that ask show under the consent sentence, as
+ * its own paragraph.
+ */
+export const EXTENSION_TRUST_COPY = 'Turn it on only if you trust its source.';
+
+/**
  * The consent sentence for one extension.
  *
  * Nothing about an extension a person has not turned on runs: the server
  * refuses its server half AND withholds its browser half. So the sentence only
  * picks which reach to name — a server entry or data proxy adds "anything
- * DorkOS can" (this computer included) to acting as you on this page. It stays one block of 15 words
- * or fewer, because the inbox renders it as a single paragraph.
+ * DorkOS can" (this computer included) to acting as you on this page. It
+ * stays one block of 15 words or fewer, because the inbox renders it as a
+ * single paragraph.
  *
  * @param runsInServer - Whether the extension has a server half.
  * @returns The sentence to show before a person decides.

@@ -100,7 +100,7 @@ export function KeepFilesDialog({
                     ? 'No earlier version to compare with.'
                     : 'DorkOS couldn’t download the old version to compare.'}
                 </p>
-                <p>Updates then leave them alone.</p>
+                <p>Keeping makes them yours. Updates leave them alone.</p>
                 <p>Nothing is moved or deleted.</p>
                 {running.length > 0 && <p>They now run as your own files.</p>}
               </div>
@@ -116,7 +116,7 @@ export function KeepFilesDialog({
                         {name} is held back from sessions.
                       </p>
                       <p className="text-foreground">
-                        Keeping also lets it run everywhere, as it is now:
+                        Keeping also lets it run in every session, as it is now:
                       </p>
                       <ul aria-label={`What ${name} runs`} className="space-y-1.5">
                         {rows.map((row, index) => (

@@ -34,8 +34,14 @@ export function TrustedSourcesSection() {
         <p className="text-muted-foreground text-sm">
           Extensions from these sources turn on without asking.
         </p>
-        <MoreDetails className="text-muted-foreground text-sm" label="What stop trusting does">
-          <p>Its extensions that are on now keep running as they are.</p>
+        <p className="text-muted-foreground text-sm">
+          Stop trusting one, and extensions already on keep running.
+        </p>
+        <MoreDetails
+          className="text-muted-foreground text-sm"
+          label="If you stop trusting one"
+          openLabel="If you stop trusting one"
+        >
           <p>Newer versions and new extensions from it wait for your yes.</p>
         </MoreDetails>
       </div>
