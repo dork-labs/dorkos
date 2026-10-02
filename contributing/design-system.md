@@ -466,6 +466,18 @@ Standard shadcn Radix tooltip from `shared/ui/tooltip.tsx`. Used for:
 
 `TooltipProvider` is mounted in `AppShell.tsx`. Use `<Tooltip>` + `<TooltipTrigger>` + `<TooltipContent>` pattern.
 
+### InfoTip and MoreDetails
+
+Two primitives for rung 3 of the copy overflow ladder (`writing-app-copy` skill): the label or description stays short, and the rest moves somewhere a person can open it. Each paragraph inside is still one block of 15 words or fewer.
+
+| Use           | When                                                                                       | From                         |
+| ------------- | ------------------------------------------------------------------------------------------ | ---------------------------- |
+| `Tooltip`     | One short line on hover or focus: an icon button's name, why a control is disabled         | `shared/ui/tooltip.tsx`      |
+| `InfoTip`     | A note about one control or label, up to a few short paragraphs. Opens on click or tap     | `shared/ui/info-tip.tsx`     |
+| `MoreDetails` | Extra paragraphs under a description, read in the page flow. An inline "More details" link | `shared/ui/more-details.tsx` |
+
+Never put a paragraph in a `Tooltip`: it has no touch path and hides as soon as the pointer leaves. `InfoTip` takes a required `label` for its accessible name ("About background agents"), and opens a popover on desktop and a drawer on a phone.
+
 ### Toast Notifications (Sonner)
 
 Theme-aware toast via `sonner` from `shared/ui/sonner.tsx`. `<Toaster />` mounted in `AppShell.tsx`.

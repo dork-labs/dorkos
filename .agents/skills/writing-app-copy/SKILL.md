@@ -29,6 +29,7 @@ Count the words in each **block**: one label, one title, one body, one toast, on
 1. **Cut.** Most long copy explains how the system works. Drop that and keep what changes for the person.
 2. **Split** into a short title and a short body.
 3. **Disclose in place.** Put the rest behind an expandable section, a popover, or an info tip next to the control. Each paragraph inside is a block too, so each stays at 15 words or fewer.
+   Use `InfoTip` for a note on one control and `MoreDetails` for paragraphs under a description, both from `layers/shared/ui`. Never a `Tooltip`: it is hover-only.
 4. **Link out** to a docs page with "Learn more". Last resort.
 
 There is no exception marker. A block that "has to" be long has not been split yet.
