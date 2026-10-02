@@ -549,7 +549,7 @@ export function ScheduleApprovalCard({
             )}
           >
             Runs as: {currentLabel}
-            {bypasses && ', acts without approval prompts'}
+            {bypasses && ', never asks first'}
           </span>
         </div>
         <CollapsibleContent>
@@ -573,9 +573,10 @@ export function ScheduleApprovalCard({
       {answered === null && raise && (
         <div data-slot="schedule-power-choice" className="min-w-0 space-y-1">
           <p className="text-muted-foreground text-xs break-words">
-            Approve runs it as {currentLabel}. “Approve at {stopLabel(raise.stop)}” runs it at the
-            level you normally use instead — {raise.descriptor.promise}
+            Approve runs it as {currentLabel}. “Approve at {stopLabel(raise.stop)}” uses your usual
+            level.
           </p>
+          <p className="text-muted-foreground text-xs break-words">{raise.descriptor.promise}</p>
           <PermissionModeScopeNote
             mode={raise.mode}
             descriptor={raise.descriptor}
@@ -595,8 +596,8 @@ export function ScheduleApprovalCard({
           data-slot="schedule-raise-refused"
           className="text-status-warning-fg min-w-0 text-xs break-words"
         >
-          DorkOS could not give this schedule {stopLabel(refusedRaise.stop)}. Approve still works,
-          and it will run as {currentLabel}.
+          Couldn’t set this schedule to {stopLabel(refusedRaise.stop)}. Approve still runs it as{' '}
+          {currentLabel}.
         </p>
       )}
 

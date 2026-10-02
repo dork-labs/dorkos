@@ -842,9 +842,7 @@ describe('PinnedTriageHeader', () => {
     // and the difference is an agent blocked while nobody knows to answer it.
     renderHeader({ listPendingApprovals: vi.fn().mockRejectedValue(new Error('offline')) });
 
-    expect(
-      await screen.findByText(/could not check whether anything is waiting/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t check for approvals/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 

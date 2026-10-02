@@ -46,7 +46,7 @@ export function CompactBoundaryRow({
         icon={
           <AlertTriangle aria-hidden="true" className="text-status-warning-dot size-3 shrink-0" />
         }
-        label={<span className="text-status-warning-fg">Compaction failed</span>}
+        label={<span className="text-status-warning-fg">Couldn’t compact</span>}
       >
         {error ? <p className="text-muted-foreground mt-1 text-xs">{error}</p> : null}
       </CompactResultRow>

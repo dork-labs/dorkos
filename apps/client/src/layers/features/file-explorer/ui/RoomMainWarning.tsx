@@ -33,7 +33,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle } from 'lucide-react';
 import type { RoomMainRepairRequest, RoomStrayChange } from '@dorkos/shared/room-repo';
 import { useTransport } from '@/layers/shared/model';
-import { Button, Checkbox } from '@/layers/shared/ui';
+import { Button, Checkbox, MoreDetails } from '@/layers/shared/ui';
 import { errorCodeOf } from '../lib/error-code';
 import { roomKeys } from '@/layers/entities/room';
 import { roomRepoStatusQueryOptions } from '../model/pending-work';
@@ -48,28 +48,19 @@ const STRAY_KIND_LABEL: Record<RoomStrayChange['kind'], string> = {
 
 /** The sentence for each refusal a repair can come back with. */
 const REPAIR_REFUSAL_COPY = new Map<string, string>([
-  [
-    'OPERATOR_ONLY',
-    'Only the person who owns this DorkOS can decide what happens to those changes.',
-  ],
+  ['OPERATOR_ONLY', 'Only the owner of this DorkOS can keep or discard these.'],
   [
     'ROOM_FILE_NOT_FOUND',
-    'One of those changes is not there any more, so nothing was discarded. The list below has been refreshed.',
+    'One of those changes is gone, so nothing was discarded. The list is refreshed.',
   ],
   [
     'MERGE_IN_FLIGHT',
-    'Something else is writing to this room’s files right now. Nothing was changed. Try again in a moment.',
+    'Something else is writing to these files. Nothing changed. Try again in a moment.',
   ],
-  [
-    'MAIN_CHECKOUT_DIRTY',
-    'This room’s files are on another branch, which DorkOS will not move for you. Put them back on main yourself.',
-  ],
-  [
-    'ROOM_REPO_GIT_UNAVAILABLE',
-    'This computer doesn’t have git installed, and a room’s files are a git repository.',
-  ],
-  ['ROOM_HAS_NO_REPO', 'This room does not have files of its own any more.'],
-  ['ROOM_REPOS_DISABLED', 'Rooms cannot have files of their own on this install right now.'],
+  ['MAIN_CHECKOUT_DIRTY', 'These files are on another branch. Switch them back to main yourself.'],
+  ['ROOM_REPO_GIT_UNAVAILABLE', 'Room files need git, and git isn’t installed on this computer.'],
+  ['ROOM_HAS_NO_REPO', 'This room no longer has its own files.'],
+  ['ROOM_REPOS_DISABLED', 'Room files are turned off on this install.'],
 ]);
 
 /** What {@link RoomMainWarning} watches. */
@@ -109,7 +100,7 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
     onError: (error) => {
       setConfirmingDiscard(false);
       const known = REPAIR_REFUSAL_COPY.get(errorCodeOf(error) ?? '');
-      setRefusal(known ?? 'That didn’t work. Try again in a moment.');
+      setRefusal(known ?? 'Couldn’t update the files. Try again in a moment.');
       // A refusal is very often about the list being out of date — a path that
       // is no longer changed, a room somebody has since fixed — so the list is
       // re-asked whatever the reason.
@@ -132,8 +123,7 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
         data-slot="room-main-warning"
         className="border-border/60 text-muted-foreground rounded-lg border px-3 py-2.5 text-xs"
       >
-        DorkOS couldn’t check whether this room’s files are in order. If saving here is refused,
-        this is why. Try again in a moment.
+        Couldn’t check this room’s files. Saves may not work. Try again soon.
       </p>
     );
   }
@@ -170,11 +160,23 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
         <AlertTriangle className="text-muted-foreground mt-0.5 size-(--size-icon-sm) flex-shrink-0" />
         <div className="min-w-0 space-y-1">
           <p className="font-medium">Somebody changed this room’s files outside DorkOS</p>
-          <p className="text-muted-foreground text-xs">
-            {wrongBranch
-              ? `This room’s files are on ${main.branch ?? 'no branch'} instead of main. Nobody can save a file here and no agent can merge into it until they are back on main. DorkOS will not move a branch it did not move, in case there is work on it.`
-              : 'Nobody can save a file here, and no agent can merge its work in, until these are dealt with.'}
-          </p>
+          {wrongBranch ? (
+            <>
+              <p className="text-muted-foreground text-xs">
+                {`This room’s files are on ${main.branch ?? 'no branch'}, not main.`}
+              </p>
+              <p className="text-muted-foreground text-xs">
+                Saves and agent merges wait until they’re back on main.
+              </p>
+              <MoreDetails className="text-xs">
+                <p>DorkOS won’t switch the branch for you. There may be work on it.</p>
+              </MoreDetails>
+            </>
+          ) : (
+            <p className="text-muted-foreground text-xs">
+              Saves and agent merges wait until you keep or discard these.
+            </p>
+          )}
         </div>
       </div>
 
@@ -204,8 +206,8 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
           </ul>
           {main.strayCount > main.strays.length && (
             <p className="text-muted-foreground text-xs">
-              …and {main.strayCount - main.strays.length} more, not listed here. Keeping them all
-              still keeps every one.
+              …and {main.strayCount - main.strays.length} more not shown. “Keep them all” keeps
+              these too.
             </p>
           )}
 
@@ -213,8 +215,8 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
             <div className="space-y-2">
               <p className="text-xs">
                 {selected.length === 1
-                  ? 'Throw away that change? It cannot be brought back.'
-                  : `Throw away those ${selected.length} changes? They cannot be brought back.`}
+                  ? 'Discard this change? It can’t be undone.'
+                  : `Discard these ${selected.length} changes? They can’t be undone.`}
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -233,7 +235,7 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
                   disabled={repair.isPending}
                   onClick={() => repair.mutate({ action: 'discard', paths: [...selected] })}
                 >
-                  Yes, discard
+                  {selected.length === 1 ? 'Discard change' : `Discard ${selected.length} changes`}
                 </Button>
               </div>
             </div>

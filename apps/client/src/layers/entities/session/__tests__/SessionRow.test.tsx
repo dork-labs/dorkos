@@ -168,7 +168,7 @@ describe('SessionRow variant="full"', () => {
     // draws a legitimately red dot when a session is nearly out of context, and
     // a row-wide "no red" sweep would fail on that the day a fixture runs the
     // context down — for a reason that has nothing to do with permissions.
-    const mark = screen.getByRole('button', { name: 'Full power: acts without approval prompts' });
+    const mark = screen.getByRole('button', { name: 'Full power: never asks first' });
     expect(mark).toBeInTheDocument();
     expect(mark.innerHTML).toMatch(/text-status-success/);
     expect(mark.innerHTML).not.toMatch(/text-red-/);
@@ -180,7 +180,7 @@ describe('SessionRow variant="full"', () => {
       <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
     );
     expect(
-      screen.queryByRole('button', { name: 'Full power: acts without approval prompts' })
+      screen.queryByRole('button', { name: 'Full power: never asks first' })
     ).not.toBeInTheDocument();
     expect(container.querySelector('.text-status-success')).toBeNull();
   });
@@ -638,7 +638,7 @@ describe('SessionRow variant="full"', () => {
         onClick={() => {}}
       />
     );
-    expect(screen.getByLabelText('Runtime: Codex')).toBeDefined();
+    expect(screen.getByLabelText('Runs on Codex')).toBeDefined();
   });
 
   it('renders a neutral fallback mark for unknown runtimes', () => {
@@ -650,7 +650,7 @@ describe('SessionRow variant="full"', () => {
         onClick={() => {}}
       />
     );
-    expect(screen.getByLabelText('Runtime: made-up')).toBeDefined();
+    expect(screen.getByLabelText('Runs on made-up')).toBeDefined();
   });
 
   it('shows the runtime in the details panel', () => {
@@ -663,7 +663,7 @@ describe('SessionRow variant="full"', () => {
       />
     );
     fireEvent.click(screen.getByLabelText('Session details'));
-    expect(screen.getByText('Runtime')).toBeDefined();
+    expect(screen.getByText('Runs on')).toBeDefined();
     expect(screen.getByText('Codex')).toBeDefined();
   });
 
@@ -927,7 +927,7 @@ describe('SessionRow variant="compact"', () => {
         onClick={() => {}}
       />
     );
-    expect(screen.getByLabelText('Runtime: Codex')).toBeDefined();
+    expect(screen.getByLabelText('Runs on Codex')).toBeDefined();
   });
 
   it('renders the origin mark for a non-user session', () => {

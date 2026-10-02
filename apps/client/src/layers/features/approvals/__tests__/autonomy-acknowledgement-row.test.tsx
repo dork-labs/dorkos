@@ -57,7 +57,7 @@ describe('AutonomyAcknowledgementRow', () => {
     setup('2026-08-01T09:30:00.000Z');
 
     expect(await screen.findByText(/full autonomy/i)).toBeInTheDocument();
-    expect(screen.getByText(/you acknowledged what this means on/i)).toBeInTheDocument();
+    expect(screen.getByText(/Hidden since/i)).toBeInTheDocument();
   });
 
   it('clears it on Reset, so the dialog comes back', async () => {

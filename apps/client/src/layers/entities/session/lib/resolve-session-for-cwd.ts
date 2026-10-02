@@ -40,8 +40,7 @@ import { partitionSessionsByOrigin } from './partition-sessions-by-origin';
  * agent is on. One message, in one place, because three surfaces show it and
  * they must not drift into describing the same event three ways.
  */
-export const SESSION_LOOKUP_FAILED_MESSAGE =
-  'Couldn’t reach the server to find this agent’s latest conversation.';
+export const SESSION_LOOKUP_FAILED_MESSAGE = 'Couldn’t find this agent’s latest chat.';
 
 /**
  * Tell the operator the lookup failed, without moving them.
@@ -56,8 +55,8 @@ export const SESSION_LOOKUP_FAILED_MESSAGE =
 export function notifySessionLookupFailed(cwd: string | null): void {
   toast.error(SESSION_LOOKUP_FAILED_MESSAGE, {
     description: cwd
-      ? `Still where you were. Try ${cwd} again in a moment.`
-      : 'Still where you were. Try again in a moment.',
+      ? `Nothing moved. Try ${cwd} again in a moment.`
+      : 'Nothing moved. Try again in a moment.',
   });
 }
 

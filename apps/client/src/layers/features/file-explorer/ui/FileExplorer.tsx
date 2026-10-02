@@ -58,12 +58,11 @@ interface PreviewTarget {
  */
 function nameClashMessage(name: string, clash: ExplorerEntry): string {
   if (clash.name === name) return nameTakenMessage(name);
-  return `There’s already “${clash.name}” there, and a name that differs only in capital letters is the same ${clash.type === 'dir' ? 'folder' : 'file'} on some computers. Pick another name.`;
+  return `“${clash.name}” is already there. Some computers ignore capital letters in names. Pick another name.`;
 }
 
 /** What a drop that held only folders is told — an upload takes files. */
-const DROP_FOLDERS_MESSAGE =
-  'Folders can’t be uploaded whole. Open the folder and drop the files inside it.';
+const DROP_FOLDERS_MESSAGE = 'Folders can’t be uploaded. Drop the files inside instead.';
 
 /** What {@link FileExplorer} renders over. */
 export interface FileExplorerProps {
@@ -288,7 +287,7 @@ export function FileExplorer({
     if (sourceProp !== undefined) return null;
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center p-6 text-center text-sm">
-        Select a working directory to browse its files.
+        Pick a folder to see its files.
       </div>
     );
   }
@@ -379,7 +378,7 @@ export function FileExplorer({
           </div>
         ) : rows.length === 0 && !draft ? (
           <div className="text-muted-foreground/60 flex h-20 items-center justify-center px-4 text-center text-xs">
-            {changes !== null ? 'No files yet. Drop files here, or use Upload.' : 'Empty directory'}
+            {changes !== null ? 'No files yet. Drop files here, or use Upload.' : 'Empty folder'}
           </div>
         ) : (
           <FileTree
@@ -461,10 +460,9 @@ export function FileExplorer({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this folder?</AlertDialogTitle>
+            <AlertDialogTitle>Delete “{explorer.pendingRecursiveDelete?.name}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              “{explorer.pendingRecursiveDelete?.name}” isn’t empty. Deleting it removes everything
-              inside. This can’t be undone.
+              This folder isn’t empty. Everything inside is deleted. This can’t be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -473,7 +471,7 @@ export function FileExplorer({
               onClick={() => void explorer.confirmRecursiveDelete()}
               className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
             >
-              Delete
+              Delete folder
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -550,7 +548,7 @@ function DraftRow({
       </p>
       {input}
       <p className="text-muted-foreground text-2xs">
-        Name its first file. The folder appears when you save it.
+        Name its first file. The folder appears on save.
       </p>
     </div>
   );

@@ -204,7 +204,7 @@ describe('editing one of a room’s files', () => {
     renderDialog(transport, 'logo.png');
 
     expect(
-      await screen.findByText('This isn’t a text file, so it can’t be shown or edited here.')
+      await screen.findByText('Only text files can be shown or edited here.')
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
   });
@@ -222,7 +222,7 @@ describe('editing one of a room’s files', () => {
 
     // A file too large to show is a file too large to save back, and offering
     // the pencil would invite somebody to replace it with an empty box.
-    expect(await screen.findByText(/isn’t shown here|isn't shown here/)).toBeInTheDocument();
+    expect(await screen.findByText(/aren’t shown here/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
   });
 });
@@ -238,9 +238,7 @@ describe('when somebody else got there first', () => {
     fireEvent.change(box, { target: { value: 'mine\n' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(
-      await screen.findByText(/Ana changed this file while you were editing it/)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Ana changed this file while you edited/)).toBeInTheDocument();
     expect(screen.getByText(/tighten the rule about tests/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open their version' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save mine over it' })).toBeInTheDocument();
@@ -288,7 +286,7 @@ describe('when somebody else got there first', () => {
     // the conflict.** Adopting that would throw away what was typed and call
     // the pre-conflict text "their version" — the one destructive act on this
     // path, performed for a request that never arrived.
-    expect(await screen.findByText(/couldn’t be fetched just now/)).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t get their version/)).toBeInTheDocument();
     expect(box).toHaveValue('mine\n');
     // And the choice is still there to take, because it was never answered.
     expect(screen.getByRole('button', { name: 'Open their version' })).toBeInTheDocument();
@@ -316,8 +314,8 @@ describe('when somebody else got there first', () => {
     // The source's own sentence for the refusal, plus what it means for the
     // text still in the box. The apostrophe class is loose on purpose: the
     // read-refusal copy predates this branch and spells it straight.
-    expect(await screen.findByText(/isn.t in the room.s files any more/)).toBeInTheDocument();
-    expect(screen.getByText(/Save it over their change/)).toBeInTheDocument();
+    expect(await screen.findByText(/is no longer in the room/)).toBeInTheDocument();
+    expect(screen.getByText(/Save over theirs/)).toBeInTheDocument();
     expect(box).toHaveValue('mine\n');
     expect(screen.getByRole('button', { name: 'Save mine over it' })).toBeInTheDocument();
   });
@@ -339,7 +337,7 @@ describe('when somebody else got there first', () => {
     // A banner byte-identical to the one already on screen would read as a
     // dead button. Something really did happen, so it says what.
     expect(
-      await screen.findByText(/changed this file again while you were deciding/)
+      await screen.findByText(/changed this file again, so it still isn’t saved/)
     ).toBeInTheDocument();
   });
 
@@ -406,7 +404,7 @@ describe('when the room refuses the save', () => {
     fireEvent.change(box, { target: { value: 'x'.repeat(20) } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByText(/too much text to send in one go/)).toBeInTheDocument();
+    expect(await screen.findByText(/Too much text to save here/)).toBeInTheDocument();
     // No choice is offered, because there is nothing to choose between: this is
     // a fact about the file, not a race.
     expect(screen.queryByRole('button', { name: 'Open their version' })).not.toBeInTheDocument();
@@ -422,9 +420,7 @@ describe('when the room refuses the save', () => {
     fireEvent.change(box, { target: { value: 'x\n' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(
-      await screen.findByText(/saving is paused until that is sorted out/)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Saving is paused/)).toBeInTheDocument();
   });
 });
 

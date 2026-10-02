@@ -159,14 +159,14 @@ export class ChatPage {
     return this.messageList.locator('[data-testid="tool-approval"]');
   }
 
-  /** Get the Approve button inside an active tool approval. */
+  /** Get the Allow button inside an active tool approval. */
   get approveButton() {
-    return this.toolApproval.getByRole('button', { name: /approve/i });
+    return this.toolApproval.getByRole('button', { name: /^Allow(?!\s+all)/ });
   }
 
   /** Get the Deny button inside an active tool approval. */
   get denyButton() {
-    return this.toolApproval.getByRole('button', { name: /deny/i });
+    return this.toolApproval.getByRole('button', { name: /^Don’t allow(?!\s+any)/ });
   }
 
   /** Get the current session ID from the URL. */

@@ -68,7 +68,7 @@ describe('stopNotice — the stop-requested rule', () => {
     // An adapter nobody has heard of still reads as English rather than leaking
     // an internal id into the sentence.
     const unknown = stopNotice(receipt('unconfirmed', 'some-future-runtime')).message ?? '';
-    expect(unknown).toContain('The runtime');
+    expect(unknown).toContain('Your agent');
     expect(unknown).not.toContain('some-future-runtime');
   });
 });

@@ -92,7 +92,7 @@ export function TestRunStrip({ testRun, onOpenRun, className }: TestRunStripProp
       {phase === 'stopped' && (
         <>
           <CircleSlash className="size-(--size-icon-xs) shrink-0" aria-hidden />
-          Test run was stopped before it finished.
+          Test run stopped early.
         </>
       )}
 
@@ -102,7 +102,9 @@ export function TestRunStrip({ testRun, onOpenRun, className }: TestRunStripProp
           {/* The reason, whenever the server gave one. A bare "it failed" is
               the least useful thing this line could say to somebody deciding
               whether to let the same prompt run unattended every night. */}
-          <span className="min-w-0 break-words">Test run failed{error ? `: ${error}` : '.'}</span>
+          <span className="min-w-0 break-words">
+            Test run didn’t finish{error ? `: ${error}` : '.'}
+          </span>
         </>
       )}
     </p>

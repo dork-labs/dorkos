@@ -27,8 +27,9 @@ const CLEAR_MS = 4000;
 function sentenceFor(part: Extract<MessagePart, { type: 'tool_call' }>): string {
   const label = part.approvalDisplayName || getToolLabel(part.toolName, part.input ?? '');
   if (part.approvalOutcome === 'allowed') return `Allowed ${label}. Recorded in the conversation.`;
-  if (part.approvalOutcome === 'denied') return `Denied ${label}. Recorded in the conversation.`;
-  return `${label} expired without an answer and was denied. Recorded in the conversation.`;
+  if (part.approvalOutcome === 'denied')
+    return `Didn’t allow ${label}. Recorded in the conversation.`;
+  return `${label} wasn’t answered in time, so it didn’t run. Recorded in the conversation.`;
 }
 
 /**

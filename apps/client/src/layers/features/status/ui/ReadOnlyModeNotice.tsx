@@ -65,8 +65,7 @@ export function ReadOnlyModeNotice({ runtimeLabel, onShown, onDismiss }: ReadOnl
     >
       <Lock className="text-muted-foreground size-4 shrink-0" aria-hidden />
       <p className="text-muted-foreground min-w-0 flex-1 text-xs">
-        In this mode {runtimeLabel} can read files but not change them. Ask for a change and it will
-        say no, with nothing for you to approve.
+        In this mode, {runtimeLabel} reads but never changes files. Nothing asks for approval.
       </p>
       {/* Its own line under the words on a phone, beside them from `sm` up —
           the same shape `PermissionPrimer` uses, for the same reason: the two
@@ -80,7 +79,7 @@ export function ReadOnlyModeNotice({ runtimeLabel, onShown, onDismiss }: ReadOnl
           className="h-7 px-2 text-xs"
           onClick={onDismiss}
         >
-          Got it
+          Dismiss
         </Button>
         {pickerAvailable && (
           <Button

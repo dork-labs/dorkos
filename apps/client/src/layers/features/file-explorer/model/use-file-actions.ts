@@ -86,7 +86,7 @@ export function useFileActions(cwd: string | null): FileActionsApi {
 
   const addToChat = useCallback((entry: ExplorerEntry): void => {
     const delivered = requestComposerInsert(composerFileReference(entry.path));
-    if (!delivered) toast.error('Open a chat first to add a file to it');
+    if (!delivered) toast.error('Open a chat to add this file');
   }, []);
 
   const copyToClipboard = useCallback((entry: ExplorerEntry): void => {

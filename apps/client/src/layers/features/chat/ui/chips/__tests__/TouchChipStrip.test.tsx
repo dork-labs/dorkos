@@ -814,7 +814,7 @@ describe('TouchChipStrip — chip anatomy', () => {
     const chip = within(tray).getByTestId('touch-chip');
 
     expect(chip.className).toContain('border-destructive/40');
-    expect(chip).toHaveAccessibleName('Read /repo/src/a.ts, failed');
+    expect(chip).toHaveAccessibleName('Read /repo/src/a.ts, didn’t finish');
   });
 
   it('marks a chip live while its tool is still running', () => {

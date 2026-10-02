@@ -68,9 +68,7 @@ const STOPPED: Record<ChangeKind, string> = {
  */
 export function deleteSentence(pending: PendingDelete): string {
   const { entry, fileCount, moreThan } = pending;
-  const keeps =
-    'The room’s history keeps a copy, so an agent or git can bring it back if you need it.';
-  if (entry.type !== 'dir') return `“${entry.name}” leaves the room’s files. ${keeps}`;
+  if (entry.type !== 'dir') return `“${entry.name}” leaves the room’s files.`;
   const what =
     fileCount === null
       ? 'everything in it'
@@ -79,8 +77,11 @@ export function deleteSentence(pending: PendingDelete): string {
         : fileCount === 1
           ? 'the 1 file in it'
           : `the ${fileCount.toLocaleString()} files in it`;
-  return `“${entry.name}” and ${what} leave the room’s files. ${keeps}`;
+  return `“${entry.name}” and ${what} leave the room’s files.`;
 }
+
+/** What a delete confirmation adds about getting it back: the room keeps history. */
+export const DELETE_KEEPS_SENTENCE = 'The room’s history keeps a copy you can bring back.';
 
 /**
  * The confirmations and choices for a source's tree changes.
@@ -119,11 +120,12 @@ export function SourceChangeDialogs({
         <AlertDialogContent onCloseAutoFocus={returnFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingDelete?.entry.type === 'dir' ? 'Delete this folder?' : 'Delete this file?'}
+              {pendingDelete === null ? '' : `Delete “${pendingDelete.entry.name}”?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDelete === null ? '' : deleteSentence(pendingDelete)}
             </AlertDialogDescription>
+            <p className="text-muted-foreground text-sm">{DELETE_KEEPS_SENTENCE}</p>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={changes.cancelDelete}>Cancel</AlertDialogCancel>
@@ -131,7 +133,7 @@ export function SourceChangeDialogs({
               onClick={() => void changes.confirmDelete()}
               className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
             >
-              Delete
+              {pendingDelete?.entry.type === 'dir' ? 'Delete folder' : 'Delete file'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -150,8 +152,8 @@ export function SourceChangeDialogs({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {clashOne
-                ? `${clashFolder} already has a file with this name. Replace it with yours, or keep both and add yours under a new name.`
-                : `${clashFolder} already has files with these names: ${pendingClash?.names.join(', ') ?? ''}. Replace them with yours, or keep both and add yours under new names.`}
+                ? `${clashFolder} already has a file with this name. Replace it, or keep both.`
+                : `${clashFolder} already has files named ${pendingClash?.names.join(', ') ?? ''}. Replace them, or keep both.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -91,7 +91,7 @@ export function SubagentBlock({ part }: SubagentBlockProps) {
         {subagentText && (
           <div className="space-y-1">
             <p className="text-3xs text-muted-foreground/70 tracking-wide uppercase">
-              Subagent output
+              Helper output
             </p>
             <pre
               ref={streamRef}
@@ -115,7 +115,7 @@ export function SubagentBlock({ part }: SubagentBlockProps) {
             outcome would be a guess dressed as a result. */}
         {untracked && (
           <p className="text-3xs text-muted-foreground" data-testid="subagent-untracked">
-            DorkOS lost track of this one when the agent finished. It may still be running.
+            No longer tracked. It may still be running.
           </p>
         )}
       </div>

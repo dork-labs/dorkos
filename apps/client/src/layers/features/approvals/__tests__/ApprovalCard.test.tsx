@@ -117,7 +117,7 @@ describe('ApprovalCard', () => {
       denyApproval: vi.fn().mockResolvedValue({ ok: true, outcome: 'denied' }),
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Don’t allow' }));
 
     expect(await screen.findByText('Not allowed')).toBeInTheDocument();
   });
@@ -150,7 +150,7 @@ describe('ApprovalCard', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument());
     expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Don’t allow' })).toBeInTheDocument();
   });
 
   it('draws the receipt on a card that did not itself answer', async () => {
@@ -194,7 +194,7 @@ describe('ApprovalCard', () => {
 
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Deny' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Don’t allow' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
   });
 
@@ -212,7 +212,7 @@ describe('ApprovalCard', () => {
     it('offers Allow, Always allow and Deny, in that order', () => {
       renderCard(ROOMS);
       const names = screen.getAllByRole('button').map((b) => b.textContent);
-      expect(names).toEqual(['Allow', 'Always allow', 'Deny']);
+      expect(names).toEqual(['Allow', 'Always allow', 'Don’t allow']);
     });
 
     it('sends each answer as what it is', async () => {
@@ -234,7 +234,7 @@ describe('ApprovalCard', () => {
       discardSettlingApprovals();
 
       renderCard(ROOMS, { denyApproval });
-      await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Don’t allow' }));
       expect(denyApproval).toHaveBeenCalledWith(ROOMS.approvalId, undefined);
       expect(await screen.findByText('Not allowed')).toBeVisible();
     });
@@ -248,11 +248,12 @@ describe('ApprovalCard', () => {
 
     it('says why on a floor area, and shows only Allow and Deny', () => {
       renderCard(buildApproval({ area: 'reach', alwaysOffered: false }));
-      expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Allow', 'Deny']);
+      expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual([
+        'Allow',
+        'Don’t allow',
+      ]);
       expect(
-        screen.getByText(
-          "Always allow isn't offered here. Changing this needs your yes every time."
-        )
+        screen.getByText('Always allow isn’t offered here. This always needs your yes.')
       ).toBeInTheDocument();
     });
 
@@ -290,7 +291,7 @@ describe('ApprovalCard', () => {
 
     it('highlights Always allow with the true count, keeping Allow first', () => {
       const { container } = renderCard(SUGGESTED);
-      expect(screen.getByText(/You've allowed this 3 times this week\./)).toBeVisible();
+      expect(screen.getByText(/You’ve allowed this 3 times this week\./)).toBeVisible();
       expect(
         container.querySelector('[data-slot="approval-always"]')?.getAttribute('data-suggested')
       ).toBe('true');
@@ -299,7 +300,7 @@ describe('ApprovalCard', () => {
         .getAllByRole('button')
         .filter((b) => b.dataset.slot?.startsWith('approval-'))
         .map((b) => b.textContent);
-      expect(names).toEqual(['Allow', 'Always allow', 'Deny']);
+      expect(names).toEqual(['Allow', 'Always allow', 'Don’t allow']);
     });
 
     it('"Not now" asks the server to stop suggesting it, and the highlight goes at once', async () => {
@@ -325,7 +326,7 @@ describe('ApprovalCard', () => {
       const dismissAlwaysSuggestion = vi.fn().mockRejectedValue(new Error('no'));
       renderCard(SUGGESTED, { dismissAlwaysSuggestion });
       await userEvent.click(screen.getByRole('button', { name: /^Not now/ }));
-      expect(await screen.findByText(/You've allowed this 3 times/)).toBeVisible();
+      expect(await screen.findByText(/You’ve allowed this 3 times/)).toBeVisible();
     });
 
     it('says nothing when the server does not suggest it, or does not offer Always allow', () => {
@@ -490,9 +491,7 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
   it('says plainly that it cannot be undone', () => {
     renderCard(connectorApproval(GMAIL_DELETE));
     expect(
-      screen.getByText(
-        'This is a high-risk action in Gmail. Check what it does before you allow it.'
-      )
+      screen.getByText('High-risk action in Gmail. Check it before you allow it.')
     ).toBeInTheDocument();
     // Never the old promise: "destructive" covers sending and sharing too.
     expect(screen.queryByText(/can't be undone/u)).not.toBeInTheDocument();
@@ -590,7 +589,7 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
       await user.click(screen.getByRole('button', { name: 'Show everything' }));
       expect(
         screen.getByText(
-          "2 values are too long to show here. If you're not sure what this sends, deny it."
+          '2 values are too long to show. If you’re unsure what this sends, don’t allow it.'
         )
       ).toBeInTheDocument();
     });

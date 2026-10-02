@@ -22,8 +22,7 @@ export function ApprovalsUnavailable({ onRetry }: ApprovalsUnavailableProps) {
       className="bg-background/60 border-status-warning-border/40 flex min-w-0 flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center"
     >
       <p className="text-muted-foreground min-w-0 flex-1 text-xs">
-        DorkOS could not check whether anything is waiting for your approval. An agent may be
-        paused.
+        Couldn’t check for approvals. An agent may be waiting on you.
       </p>
       <Button variant="outline" size="sm" className="h-7 shrink-0 px-2.5 text-xs" onClick={onRetry}>
         Try again

@@ -183,7 +183,7 @@ describe('SubagentBlock', () => {
     expect(button.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(button);
     const note = screen.getByTestId('subagent-untracked');
-    expect(note.textContent).toContain('lost track');
+    expect(note.textContent).toContain('No longer tracked');
     expect(note.textContent).toContain('may still be running');
     expect(note.textContent).not.toContain('stopped');
   });
@@ -203,6 +203,6 @@ describe('SubagentBlock', () => {
     render(<SubagentBlock part={{ ...basePart, subagentText: 'Exploring the auth module' }} />);
     fireEvent.click(screen.getByRole('button'));
     expect(screen.getByTestId('subagent-text').textContent).toBe('Exploring the auth module');
-    expect(screen.getByText('Subagent output')).toBeDefined();
+    expect(screen.getByText('Helper output')).toBeDefined();
   });
 });

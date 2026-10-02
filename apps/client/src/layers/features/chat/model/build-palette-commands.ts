@@ -86,7 +86,7 @@ function buildIntentEntries(gate?: CommandIntentGate): PaletteCommandEntry[] {
       // Spread the readonly registry aliases into a mutable array for CommandEntry.
       aliases: [...intent.aliases],
       ...(unsupported
-        ? { disabled: true, disabledReason: `Not supported by ${gate.runtimeLabel}` }
+        ? { disabled: true, disabledReason: `Not available on ${gate.runtimeLabel}` }
         : {}),
     };
   });

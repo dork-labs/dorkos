@@ -245,7 +245,7 @@ describe('QuestionPrompt', () => {
 
   it('submit button is disabled when no selection made', () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
-    const submitButton = screen.getByRole('button', { name: /submit/i });
+    const submitButton = screen.getByRole('button', { name: /^Send answer/ });
     expect(submitButton.hasAttribute('disabled')).toBe(true);
   });
 
@@ -254,7 +254,7 @@ describe('QuestionPrompt', () => {
     const radio = screen.getAllByRole('radio')[0];
     fireEvent.click(radio);
 
-    const submitButton = screen.getByRole('button', { name: /submit/i });
+    const submitButton = screen.getByRole('button', { name: /^Send answer/ });
     expect(submitButton.hasAttribute('disabled')).toBe(false);
   });
 
@@ -265,7 +265,7 @@ describe('QuestionPrompt', () => {
     fireEvent.click(radio);
 
     // Submit
-    const submitButton = screen.getByRole('button', { name: /submit/i });
+    const submitButton = screen.getByRole('button', { name: /^Send answer/ });
     fireEvent.click(submitButton);
 
     await waitFor(() => {
@@ -281,7 +281,7 @@ describe('QuestionPrompt', () => {
       <QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} onDecided={onDecided} />
     );
     fireEvent.click(screen.getAllByRole('radio')[0]);
-    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send answer/ }));
 
     await waitFor(() => {
       expect(onDecided).toHaveBeenCalledWith({ '0': 'Reschedule the internal meeting' });
@@ -295,7 +295,7 @@ describe('QuestionPrompt', () => {
     fireEvent.click(checkboxes[0]); // Dark mode
     fireEvent.click(checkboxes[1]); // Notifications
 
-    const submitButton = screen.getByRole('button', { name: /submit/i });
+    const submitButton = screen.getByRole('button', { name: /^Send answer/ });
     fireEvent.click(submitButton);
 
     await waitFor(() => {
@@ -315,7 +315,7 @@ describe('QuestionPrompt', () => {
     const textInput = screen.getByPlaceholderText('Type your answer…');
     fireEvent.change(textInput, { target: { value: 'My custom answer' } });
 
-    const submitButton = screen.getByRole('button', { name: /submit/i });
+    const submitButton = screen.getByRole('button', { name: /^Send answer/ });
     fireEvent.click(submitButton);
 
     await waitFor(() => {
@@ -330,7 +330,7 @@ describe('QuestionPrompt', () => {
     // Select and submit
     const radio = screen.getAllByRole('radio')[0];
     fireEvent.click(radio);
-    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send answer/ }));
 
     await waitFor(() => {
       // After submission, the form should collapse
@@ -356,7 +356,7 @@ describe('QuestionPrompt', () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
     const radio = screen.getAllByRole('radio')[0];
     fireEvent.click(radio);
-    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send answer/ }));
 
     await waitFor(() => {
       // Should collapse to submitted state, not show an error
@@ -372,7 +372,7 @@ describe('QuestionPrompt', () => {
     // Select and submit
     const radio = screen.getAllByRole('radio')[0];
     fireEvent.click(radio);
-    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send answer/ }));
 
     await waitFor(() => {
       expect(screen.getByText('Network error')).toBeDefined();
@@ -396,15 +396,15 @@ describe('QuestionPrompt', () => {
     // Select and submit
     const radio = screen.getAllByRole('radio')[0];
     fireEvent.click(radio);
-    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send answer/ }));
 
     // Should show "Submitting…" while waiting
-    expect(screen.getByText('Submitting…')).toBeDefined();
+    expect(screen.getByText('Sending…')).toBeDefined();
 
     // Resolve the promise to clean up
     resolveSubmit!({ ok: true });
     await waitFor(() => {
-      expect(screen.queryByText('Submitting…')).toBeNull();
+      expect(screen.queryByText('Sending…')).toBeNull();
     });
   });
 
@@ -414,7 +414,7 @@ describe('QuestionPrompt', () => {
     const otherRadio = screen.getAllByRole('radio')[2];
     fireEvent.click(otherRadio);
 
-    const submitButton = screen.getByRole('button', { name: /submit/i });
+    const submitButton = screen.getByRole('button', { name: /^Send answer/ });
     expect(submitButton.hasAttribute('disabled')).toBe(true);
   });
 
@@ -475,7 +475,7 @@ describe('Multi-question Back/Next navigation', () => {
     );
     // First question: Next visible, no Submit
     expect(screen.getByRole('button', { name: /next/i })).toBeDefined();
-    expect(screen.queryByRole('button', { name: /submit/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Send answer/ })).toBeNull();
 
     // Navigate to last question
     act(() => {
@@ -483,7 +483,7 @@ describe('Multi-question Back/Next navigation', () => {
     });
     // Last question: Submit visible, no Next
     expect(screen.queryByRole('button', { name: /next/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /submit/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /^Send answer/ })).toBeDefined();
   });
 
   // Verifies Next button navigates to next question
@@ -519,7 +519,9 @@ describe('Multi-question Back/Next navigation', () => {
     act(() => {
       ref.current!.navigateQuestion('next');
     });
-    expect(screen.getByRole('button', { name: /submit/i }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /^Send answer/ }).hasAttribute('disabled')).toBe(
+      true
+    );
   });
 
   // Verifies step indicator updates on navigation
@@ -546,7 +548,7 @@ describe('Answer summary layout', () => {
   it('renders compact single-row summary after submission', async () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
     fireEvent.click(screen.getAllByRole('radio')[0]);
-    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send answer/ }));
 
     await waitFor(() => {
       // Single-question: "header: value" on one line
@@ -662,7 +664,7 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
 
     it('shows Enter Kbd on submit button when isActive is true', () => {
       render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} isActive={true} />);
-      const submitButton = screen.getByRole('button', { name: /submit/i });
+      const submitButton = screen.getByRole('button', { name: /^Send answer/ });
       const kbd = submitButton.querySelector('kbd');
       expect(kbd).not.toBeNull();
       expect(kbd!.textContent).toBe('Enter');
@@ -950,7 +952,7 @@ describe('submitted state tokens', () => {
   it('uses neutral bg-muted/50 with shadow-msg-tool in submitted state', async () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
     fireEvent.click(screen.getAllByRole('radio')[0]);
-    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send answer/ }));
 
     await waitFor(() => {
       const container = screen.getByTestId('question-prompt-submitted');
@@ -963,7 +965,7 @@ describe('submitted state tokens', () => {
   it('renders status-success check icon in submitted state', async () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
     fireEvent.click(screen.getAllByRole('radio')[0]);
-    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send answer/ }));
 
     await waitFor(() => {
       const container = screen.getByTestId('question-prompt-submitted');

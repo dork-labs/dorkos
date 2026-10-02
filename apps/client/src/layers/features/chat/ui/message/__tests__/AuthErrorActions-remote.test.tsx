@@ -103,7 +103,7 @@ describe('auth-error card on a browser that is not on this machine', () => {
     const transport = renderCard({ isLocalCaller: false, onRetry: vi.fn() });
 
     expect(await guidance()).toHaveTextContent('Signing in needs the computer DorkOS runs on.');
-    expect(screen.getByText('Open DorkOS there and sign in, then press Retry here.')).toBeVisible();
+    expect(screen.getByText('Sign in to DorkOS there, then press Retry.')).toBeVisible();
 
     // The two doors onto the same 403 are both gone.
     expect(screen.queryByTestId('auth-error-signin')).not.toBeInTheDocument();
@@ -151,7 +151,7 @@ describe('auth-error card on a browser that is not on this machine', () => {
   it('does not promise a Retry that is not on screen', async () => {
     renderCard({ isLocalCaller: false });
 
-    expect(await guidance()).toHaveTextContent('Open DorkOS there and sign in.');
+    expect(await guidance()).toHaveTextContent('Sign in to DorkOS there.');
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
   });
 });

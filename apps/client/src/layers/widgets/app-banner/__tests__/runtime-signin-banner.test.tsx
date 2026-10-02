@@ -297,7 +297,7 @@ describe('runtime-signin descriptor', () => {
     render(findSigninDescriptor(result.current)!.render());
     const banner = screen.getByRole('alert');
     expect(banner).not.toHaveTextContent('Sign in to Claude again');
-    expect(banner).not.toHaveTextContent('pick up where you left off');
+    expect(banner).not.toHaveTextContent('Sign in again to continue');
     expect(screen.queryByRole('button', { name: 'Fix sign-in' })).toBeNull();
   });
 });

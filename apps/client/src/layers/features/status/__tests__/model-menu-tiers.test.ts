@@ -104,7 +104,7 @@ describe('capability flags are tri-state, and absent is not "no"', () => {
     expect(modelLimitationNote(model({ value: 'm', supportsImageOutput: undefined }))).toBeNull();
     expect(modelLimitationNote(model({ value: 'm', supportsImageOutput: false }))).toBeNull();
     expect(modelLimitationNote(model({ value: 'm', supportsImageOutput: true }))).toBe(
-      'Makes images, and DorkOS cannot show them yet.'
+      'Makes images DorkOS can’t show yet.'
     );
   });
 

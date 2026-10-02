@@ -84,9 +84,7 @@ describe('CanvasImageDiffContent', () => {
 
     expect(screen.getByAltText('Previous version')).toBeInTheDocument();
     expect(screen.getByAltText('Current version')).toBeInTheDocument();
-    expect(
-      screen.getByRole('slider', { name: 'Blend between the previous and current version' })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Blend old and new versions' })).toBeInTheDocument();
   });
 
   it('shows a calm web-only message when the transport cannot serve baseline bytes', () => {
@@ -106,7 +104,7 @@ describe('CanvasImageDiffContent', () => {
     expect(transport.revertDiffBaseline).not.toHaveBeenCalled();
 
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Confirm: restore the previous version' })
+      await screen.findByRole('button', { name: 'Press again to restore the previous version' })
     );
     expect(transport.revertDiffBaseline).toHaveBeenCalledWith('/work', 'assets/logo.png', 'sess-1');
   });

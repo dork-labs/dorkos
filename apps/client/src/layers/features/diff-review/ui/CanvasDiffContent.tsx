@@ -133,7 +133,7 @@ function TextDiffReview({ content }: CanvasDiffContentProps) {
       <AnimatePresence>
         {review.conflict && (
           <Banner key="conflict" tone="warn" reduceMotion={reduceMotion}>
-            <span className="flex-1">This file changed since the diff was computed.</span>
+            <span className="flex-1">This file changed on disk. Refresh to see it.</span>
             <Button
               type="button"
               variant="ghost"
@@ -148,9 +148,7 @@ function TextDiffReview({ content }: CanvasDiffContentProps) {
         )}
         {review.writeFailed && (
           <Banner key="write-failed" tone="error" reduceMotion={reduceMotion}>
-            <span className="flex-1">
-              That change couldn’t be written to disk. Nothing was lost. Try again.
-            </span>
+            <span className="flex-1">Couldn’t save that change. Nothing was lost. Try again.</span>
             <Button
               type="button"
               variant="ghost"
@@ -241,8 +239,8 @@ function DiffHeader({
   const disclosure =
     mode === 'session' && degraded
       ? capturedFrom === 'head'
-        ? 'No session snapshot. Comparing to your last commit. Rejecting also undoes any edits you made before this session.'
-        : 'No session snapshot or commit found. The whole file shows as new. Rejecting everything would empty it.'
+        ? 'Compared to your last commit. Rejecting also undoes your earlier edits.'
+        : 'No earlier version found, so the whole file shows as new. Rejecting all empties it.'
       : null;
 
   return (
@@ -286,7 +284,7 @@ function DiffHeader({
           label="Reject all"
           confirmLabel="Really reject all?"
           ariaLabel="Reject all changes"
-          confirmAriaLabel="Confirm: reject all changes"
+          confirmAriaLabel="Press again to reject all changes"
           icon={<Undo2 className="mr-1 size-3.5" />}
           requireConfirm={degraded}
           disabled={writing}

@@ -613,7 +613,7 @@ describe('ScheduleRow', () => {
       renderScheduleRow({ ...activeSchedule, runtime: 'codex' });
 
       expect(screen.getByTestId('task-override-chip')).toBeInTheDocument();
-      expect(screen.getByLabelText('Runtime: Codex')).toBeInTheDocument();
+      expect(screen.getByLabelText('Runs on Codex')).toBeInTheDocument();
     });
 
     it('shows the model beside it, shortened the way every other surface shortens it', () => {
