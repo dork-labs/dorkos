@@ -85,7 +85,7 @@ export function AdapterEventLog({ adapterId }: AdapterEventLogProps) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
         <Activity className="text-muted-foreground size-6" />
-        <p className="text-muted-foreground text-sm">No events recorded</p>
+        <p className="text-muted-foreground text-sm">No events yet</p>
       </div>
     );
   }

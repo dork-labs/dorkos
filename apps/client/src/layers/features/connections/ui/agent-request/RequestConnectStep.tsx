@@ -98,7 +98,7 @@ export function RequestConnectStep({
       appConnections?.newApps.status === 'ready' ? (
         <QueryErrorState
           title={`Couldn’t reach ${serviceName} just now`}
-          description={`${wayName(appConnections.newApps.way)} didn’t answer. Try again in a moment.`}
+          description={`${wayName(appConnections.newApps.way)} didn’t answer. Try again soon.`}
           onRetry={() => void lookup.refetch()}
           isRetrying={lookup.isFetching}
         />
@@ -123,7 +123,7 @@ export function RequestConnectStep({
           <RefreshCw className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
           {activeFlow.state === 'starting'
             ? 'Getting the sign-in page ready…'
-            : `Waiting for you to finish signing in to ${serviceName}…`}
+            : `Finish signing in to ${serviceName}…`}
         </p>
       </div>
     );
@@ -137,7 +137,7 @@ export function RequestConnectStep({
         {whoAsks && <p className="text-muted-foreground text-xs">{whoAsks}</p>}
         {start.isError && (
           <p role="alert" className="text-destructive text-sm">
-            Couldn’t start signing in. Nothing was connected. Try again.
+            Couldn’t start sign-in. Try again.
           </p>
         )}
       </div>

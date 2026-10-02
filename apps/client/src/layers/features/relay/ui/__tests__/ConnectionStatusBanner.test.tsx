@@ -22,7 +22,7 @@ describe('ConnectionStatusBanner', () => {
 
   it('shows disconnected banner with WifiOff icon', () => {
     render(<ConnectionStatusBanner connectionState="disconnected" />);
-    expect(screen.getByText('Server link lost. Check your network.')).toBeInTheDocument();
+    expect(screen.getByText('Can’t reach DorkOS. Check your network.')).toBeInTheDocument();
   });
 
   // The banner wears the app's shared status surfaces, so its amber and red
@@ -44,7 +44,7 @@ describe('ConnectionStatusBanner', () => {
   // link interrupts (`alert`), a retry waits its turn (`status`).
   it('announces a lost link assertively', () => {
     render(<ConnectionStatusBanner connectionState="disconnected" />);
-    expect(screen.getByRole('alert')).toHaveTextContent('Server link lost.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Can’t reach DorkOS.');
   });
 
   it('announces a retry politely', () => {

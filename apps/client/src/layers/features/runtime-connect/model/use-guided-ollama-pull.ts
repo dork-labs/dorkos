@@ -113,7 +113,7 @@ export function useGuidedOllamaPull(): UseGuidedOllamaPull {
     pull: (model: string) => mutation.mutate(model),
     isPending: mutation.isPending,
     isError: failed,
-    errorMessage: failed ? (errorMessage ?? 'The pull could not be completed.') : null,
+    errorMessage: failed ? (errorMessage ?? 'Couldn’t download the model.') : null,
     progress,
     result: mutation.data,
   };

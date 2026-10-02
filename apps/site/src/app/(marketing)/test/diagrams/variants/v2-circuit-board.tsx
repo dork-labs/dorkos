@@ -565,7 +565,7 @@ export function DiagramV2({ modules }: { modules: SystemModule[] }) {
           w={BUS_W}
           h={BUS_H}
           name={byId['relay']?.name ?? 'Relay'}
-          label={byId['relay']?.label ?? 'Integrations'}
+          label={byId['relay']?.label ?? 'Connections'}
           status={byId['relay']?.status ?? 'coming-soon'}
         />
 

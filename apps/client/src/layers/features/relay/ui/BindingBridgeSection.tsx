@@ -15,20 +15,24 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
+  MoreDetails,
 } from '@/layers/shared/ui';
 import { useUpdateBinding } from '@/layers/entities/binding';
 import { useRoom, useSetDeliverNotices } from '@/layers/entities/room';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 
 /**
- * The three plain statements shown at the moment of bridging (chats-as-channels
- * spec §9.4). Said once, here, so a person turns a chat into a channel knowing
- * exactly what changes. Verbatim from the spec, in plain words.
+ * The plain statements shown at the moment of bridging (chats-as-channels spec
+ * §9.4). Said once, here, so a person turns a chat into a channel knowing
+ * exactly what changes. The spec's three statements, in plain words, one short
+ * line each (the app-copy cap is 15 words a block); the permissions statement
+ * takes two lines, so its trust caveat is not cut.
  */
 const BRIDGE_WARNINGS = [
-  'Bridging this chat lets people you may not know put text in front of your agent.',
-  'The permission mode is the real bound. A bridged chat asks before it acts by default. Raising that is a decision you are making with a stranger on the other end.',
-  'The channel keeps the whole record. Every message that reached your agent is in it, kept for good and never trimmed, which the old private line never gave you.',
+  'People you may not know can put text in front of your agent.',
+  'Permissions are the real limit. A bridged chat asks before acting by default.',
+  'Raise that only if you trust everyone in the chat.',
+  'The channel keeps the whole record: every message that reached your agent, for good.',
 ] as const;
 
 export interface BindingBridgeSectionProps {
@@ -60,9 +64,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
   // A chat-wildcard binding names no single chat, so there is no one chat to
   // become a channel. Shown as the reason, not a disabled control (§3.1).
   if (!binding.chatId) {
-    return (
-      <BridgeRefusal reason="This reaches every chat here, not one in particular, so there is no single chat to turn into a channel. Point it at one chat first, then bridge it." />
-    );
+    return <BridgeRefusal reason="This reaches every chat here. Point it at one chat first." />;
   }
 
   // What this chat can become is decided by its raw platform type (DOR-907),
@@ -74,7 +76,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
   // states the reason instead of a dead button.
   if (binding.platformChatType === 'channel') {
     return (
-      <BridgeRefusal reason="This is a broadcast channel, not a two-way conversation, so it can’t become a channel here: your agent would have no one to reply to." />
+      <BridgeRefusal reason="This is a broadcast channel, not a two-way conversation. Your agent can’t reply." />
     );
   }
   const isDirectMessage = binding.channelType == null || binding.channelType === 'dm';
@@ -85,7 +87,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
     (binding.platformChatType == null && isDirectMessage);
   if (!bridgeable) {
     return (
-      <BridgeRefusal reason="We connected this chat before we started noting whether it’s a one-to-one, a group, or a broadcast, so we can’t safely turn it into a channel yet. Re-connect it from a new message and it will carry what it is." />
+      <BridgeRefusal reason="DorkOS doesn’t know what kind of chat this is. Reconnect it from a new message." />
     );
   }
 
@@ -117,8 +119,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
         </h4>
       </div>
       <p className="text-muted-foreground text-xs">
-        Turn this chat into a channel: what people say lands in a shared log your agent reads before
-        it answers, and you can speak into the chat from here.
+        Messages land in a channel your agent reads. You can reply from there too.
       </p>
       <ul className="text-muted-foreground space-y-1.5 text-xs">
         {BRIDGE_WARNINGS.map((line) => (
@@ -155,7 +156,7 @@ function BridgedControls({ binding, onDone }: BindingBridgeSectionProps) {
   async function handleUnbridge() {
     try {
       await updateBinding.mutateAsync({ id: binding.id, updates: { bridge: 'off' } });
-      toast.success('This chat is a private line again');
+      toast.success('This chat is private again');
       onDone?.();
     } catch {
       // Reported by the shared mutation toast (`useUpdateBinding`'s
@@ -174,7 +175,7 @@ function BridgedControls({ binding, onDone }: BindingBridgeSectionProps) {
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="bridge-deliver-notices" className="cursor-pointer text-xs font-normal">
-              Tell this chat when a turn fails or is stopped
+              Tell this chat when your agent stops early
             </Label>
             <Switch
               id="bridge-deliver-notices"
@@ -183,13 +184,10 @@ function BridgedControls({ binding, onDone }: BindingBridgeSectionProps) {
               onCheckedChange={(v) =>
                 setDeliverNotices.mutate({ roomId: binding.roomId!, deliverNotices: v })
               }
-              aria-label="Tell this chat when a turn fails or is stopped"
+              aria-label="Tell this chat when your agent stops early"
             />
           </div>
-          <p className="text-muted-foreground text-xs">
-            When on, the people in this chat see a short note if a turn crashes or you stop it. When
-            off, they see nothing about it.
-          </p>
+          <p className="text-muted-foreground text-xs">People in this chat see a short note.</p>
         </div>
       )}
 
@@ -203,12 +201,14 @@ function BridgedControls({ binding, onDone }: BindingBridgeSectionProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Un-bridge this chat?</AlertDialogTitle>
             <AlertDialogDescription>
-              The channel is archived and this chat goes back to a private, one-to-one line with
-              your agent. The channel and everything in it are kept, and bridging the same chat
-              again brings it back with its history intact. For a clean start with no old messages,
-              un-bridge, archive the channel, then bridge again.
+              Its channel is archived. The chat goes back to a private, one-to-one line.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <MoreDetails>
+            <p>The channel and everything in it are kept.</p>
+            <p>Bridging this chat again brings its history back.</p>
+            <p>For a clean start with no old messages, archive the channel, then bridge again.</p>
+          </MoreDetails>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep it bridged</AlertDialogCancel>
             <AlertDialogAction onClick={handleUnbridge}>Un-bridge</AlertDialogAction>

@@ -149,7 +149,7 @@ describe('ConnectionNotifications', () => {
     expect(screen.getByRole('textbox', { name: 'Query' })).toHaveAccessibleDescription(
       expect.stringContaining('Examples (not selected)')
     );
-    expect(screen.getByText('Check timing is unavailable')).toBeVisible();
+    expect(screen.getByText('Check timing unknown')).toBeVisible();
     await user.clear(screen.getByRole('spinbutton', { name: 'Interval' }));
     expect(screen.getByRole('button', { name: 'Set up notification' })).toBeDisabled();
     await user.type(screen.getByRole('spinbutton', { name: 'Interval' }), '1.5');
@@ -240,7 +240,7 @@ describe('ConnectionNotifications', () => {
 
     renderNotifications(transport);
 
-    expect(await screen.findByText('Sent by the service when it happens')).toBeInTheDocument();
+    expect(await screen.findByText('Sent the moment it happens')).toBeInTheDocument();
     expect(screen.getByText('Setting up. DorkOS keeps trying on its own.')).toBeInTheDocument();
     // The route itself makes no delivery promise; whether notifications load says it.
     expect(screen.queryByText(/managed by DorkOS/)).not.toBeInTheDocument();
@@ -248,9 +248,7 @@ describe('ConnectionNotifications', () => {
       expect(screen.queryByText(state)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Load more notifications' }));
     expect(
-      await screen.findByText(
-        'Stopped for good. Remove it and set it up again to keep getting these.'
-      )
+      await screen.findByText('Stopped for good. Remove it and set it up again.')
     ).toBeInTheDocument();
     expect(
       screen.getAllByRole('button', { name: /^Remove New email/ }),
@@ -453,8 +451,8 @@ describe('ConnectionNotifications', () => {
     renderNotifications(transport);
     await choose(user, 'Account activity', 'New email');
     await choose(user, 'Agent', 'Researcher');
-    expect(screen.getByText('Delivery timing is unavailable')).toBeInTheDocument();
-    expect(screen.getByText(/Setup may remain pending/)).toBeInTheDocument();
+    expect(screen.getByText('Delivery timing unknown')).toBeInTheDocument();
+    expect(screen.getByText(/Setup may stay pending/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Set up notification' }));
     await waitFor(() => expect(create).toHaveBeenCalledOnce());
   });
@@ -503,14 +501,12 @@ describe('ConnectionNotifications', () => {
       await screen.findByText('Goes to #updates, for Researcher (@researcher)')
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Goes to a chat app conversation that’s no longer set up, for Researcher (@researcher-b)'
-      )
+      screen.getByText('Goes to a chat that’s no longer set up, for Researcher (@researcher-b)')
     ).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(/agent-a|agent-b|room-a|channel-missing/);
     await user.click(
       screen.getByRole('button', {
-        name: 'Remove New email: Goes to a chat app conversation that’s no longer set up, for Researcher (@researcher-b)',
+        name: 'Remove New email: Goes to a chat that’s no longer set up, for Researcher (@researcher-b)',
       })
     );
     expect(remove).toHaveBeenCalledWith('connection-a', 'subscription-b');
@@ -612,7 +608,7 @@ describe('ConnectionNotifications', () => {
       })
     );
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Couldn’t confirm that notification was removed. Check the list.'
+      'Couldn’t confirm the removal. Check the list.'
     );
     await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(1));
     expect(list.mock.calls.every(([connectionId]) => connectionId === 'connection-a')).toBe(true);
@@ -830,7 +826,7 @@ describe('ConnectionNotifications', () => {
 
     renderNotifications(transport);
     expect(
-      await screen.findByText(/^Paused while this account can’t be used\./)
+      await screen.findByText(/^Paused because this account can’t be used\./)
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Remove New email/ }));
     expect(remove).toHaveBeenCalledWith('connection-a', 'subscription-a');
@@ -855,7 +851,7 @@ describe('ConnectionNotifications', () => {
 
     renderNotifications(transport);
     expect(
-      await screen.findByText('Notifications aren’t available for this account right now.')
+      await screen.findByText('Notifications aren’t available right now.')
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Set up notification' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Check again' }));
@@ -888,7 +884,7 @@ describe('ConnectionNotifications', () => {
 
     renderNotifications(transport);
     expect(await screen.findByTestId('notification-status')).toHaveTextContent(
-      'DorkOS can’t tell whether Researcher got the newest one (Just now). Open the chat to check.'
+      'DorkOS can’t tell if Researcher got the newest one (Just now). Open the chat to check.'
     );
     await user.click(screen.getByRole('button', { name: /^Open the chat for New email/ }));
     expect(navigate).toHaveBeenCalledWith(

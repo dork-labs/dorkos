@@ -103,14 +103,14 @@ export function AccountPanelMore({
         {connection.everyAgent && (
           <PanelMoreRow
             label="Stop sharing with every agent"
-            hint="Agents you picked by name keep their access"
+            hint="Agents picked by name keep access"
             disabled={stopSharing.isPending}
             onClick={() => stopSharing.mutate({ connectionId })}
           />
         )}
         {stopSharing.isError && (
           <p role="alert" className="text-destructive px-2 text-xs">
-            Couldn’t stop sharing it. Check your connection to DorkOS, then try again.
+            Couldn’t stop sharing. Try again.
           </p>
         )}
 
@@ -140,7 +140,7 @@ export function AccountPanelMore({
         {!disconnected && (
           <PanelMoreRow
             label="Sign in again"
-            hint="Refresh its sign-in without changing who can use it"
+            hint="Who can use it stays the same"
             disabled={signingIn}
             onClick={onSignInAgain}
           />
@@ -237,12 +237,12 @@ function DisconnectConfirm({
               ? 'Checking who will lose access…'
               : impact.data
                 ? disconnectImpactLine(names, impact.data)
-                : 'We couldn’t check who will lose access yet.'}
+                : 'Who loses access isn’t known yet.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {impact.isError && (
           <p role="alert" className="text-destructive text-sm">
-            Couldn’t check who will lose access. Try again before disconnecting.
+            Couldn’t check who loses access. Try again.
           </p>
         )}
         <AlertDialogFooter>

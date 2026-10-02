@@ -64,7 +64,7 @@ export function AccountChoice({
         />
       ) : accounts.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          No {props.serviceName} account is ready to use yet.
+          No {props.serviceName} account is ready yet.
         </p>
       ) : (
         <RadioGroup

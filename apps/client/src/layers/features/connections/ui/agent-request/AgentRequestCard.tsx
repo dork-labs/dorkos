@@ -65,20 +65,20 @@ function unansweredReason(
       // everywhere), never more. The card offers it only when the chat's
       // readiness names it as the fix, then answers the request.
       return {
-        reason: `this chat has ${serviceName} turned off for ${agentName}.`,
+        reason: `This chat has ${serviceName} turned off for ${agentName}.`,
         fix: 'turn_on',
       };
     case 'request_already_resolved':
       return {
-        reason: `it was already answered somewhere else, and ${agentName} got that answer. Ask ${agentName} again if it still needs this.`,
+        reason: `It was answered somewhere else. Ask ${agentName} again if it still needs this.`,
         fix: null,
       };
     case 'request_expired':
-      return { reason: `the request ran out of time. Ask ${agentName} again.`, fix: null };
+      return { reason: `The request ran out of time. Ask ${agentName} again.`, fix: null };
     case 'request_not_found':
-      return { reason: 'the request is no longer open.', fix: null };
+      return { reason: 'The request is no longer open.', fix: null };
     case 'authority_sync_failed':
-      return { reason: 'the access is still being set up.', fix: 'retry' };
+      return { reason: 'The access is still being set up.', fix: 'retry' };
     case 'event_selection_unavailable':
     case 'review_conflict':
     case 'destination_unavailable':
@@ -87,13 +87,13 @@ function unansweredReason(
       // Sending the same updates again would fail the same way, so the card
       // offers the two answers that can work instead of a retry.
       return {
-        reason: `the updates you picked can’t be set up right now. Pick them again, or answer without updates.`,
+        reason: `The updates you picked can’t be set up. Pick again, or answer without them.`,
         fix: 'updates',
       };
     case 'selection_invalid':
-      return { reason: 'that account isn’t ready for it yet.', fix: 'retry' };
+      return { reason: 'That account isn’t ready for it yet.', fix: 'retry' };
     default:
-      return { reason: 'the answer didn’t reach the server.', fix: 'retry' };
+      return { reason: 'The answer didn’t reach DorkOS.', fix: 'retry' };
   }
 }
 
@@ -198,14 +198,19 @@ export function AgentRequestCard({
         title={`${agentName} can now use ${serviceName}`}
         className={frameClass}
       >
-        <p role="alert" className="text-sm" data-testid="agent-request-unanswered">
-          <Check
-            className="text-status-success mr-1.5 inline size-4 align-text-bottom"
-            aria-hidden
-          />
-          The access is saved, but {agentName}’s request wasn’t answered: {reason}
-          {canTurnOn && ' Turning it on here only affects this chat.'}
-        </p>
+        <div role="alert" className="space-y-1 text-sm" data-testid="agent-request-unanswered">
+          <p>
+            <Check
+              className="text-status-success mr-1.5 inline size-4 align-text-bottom"
+              aria-hidden
+            />
+            Access saved, but {agentName}’s request wasn’t answered.
+          </p>
+          <p>
+            {reason}
+            {canTurnOn && ' Turning it on only affects this chat.'}
+          </p>
+        </div>
         {updatesFailed ? (
           <div className="flex flex-wrap justify-end gap-2">
             <Button

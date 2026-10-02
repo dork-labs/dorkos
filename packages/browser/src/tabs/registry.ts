@@ -4,7 +4,7 @@ import { advanceCounter } from '../counters.js';
 import { parseTabId } from '../ids.js';
 import type { BrowserRecord, TabRecord } from '../lifecycle/records.js';
 
-/** Register Pages once; IDs never rebind and frame navigations advance safely. */
+/** Own the canonical record before Page callbacks; parent retirement precedes child listeners. */
 export function trackPage(record: BrowserRecord, page: Page, origin: string): TabRecord {
   const prior = [...record.tabs.values()].find((tab) => tab.page === page);
   if (prior) return prior;
@@ -19,33 +19,63 @@ export function trackPage(record: BrowserRecord, page: Page, origin: string): Ta
       epoch: 0,
       inputGeneration: 0,
     },
-    stopped: false,
+    stopped: record.lifetime.gate.stopped,
     captureSequence: 0,
     tail: Promise.resolve(),
     pending: 0,
   };
   record.tabs.set(tab.binding.tabId, tab);
-  page.setDefaultTimeout(1500);
-  page.setDefaultNavigationTimeout(1500);
-  page.on('close', () => {
+  const retire = () => {
     tab.stopped = true;
+    record.lifetime.gate.stop();
+    record.lifetime.retire?.();
+  };
+  record.lifetime.gate.register(tab.binding, () => {
+    tab.stopped = true;
+    record.lifetime.retire?.();
   });
-  page.on('framenavigated', (frame) => {
-    if (frame !== page.mainFrame()) return;
-    try {
-      tab.binding = {
-        ...tab.binding,
-        navigationGeneration: advanceCounter(tab.binding.navigationGeneration),
-      };
-    } catch {
-      tab.stopped = true;
-      void page.close().catch(() => {});
-      return;
-    }
-    if (frame.url() !== 'about:blank' && new URL(frame.url()).origin !== origin) {
-      tab.stopped = true;
-      void page.close().catch(() => {});
-    }
-  });
+  if (tab.stopped) return tab;
+  try {
+    const active = () =>
+      record.tabs.get(tab.binding.tabId) === tab && !tab.stopped && !record.lifetime.gate.stopped;
+    const timeout = page.setDefaultTimeout;
+    if (!active()) return tab;
+    Reflect.apply(timeout, page, [1500]);
+    const navigationTimeout = page.setDefaultNavigationTimeout;
+    if (!active()) return tab;
+    Reflect.apply(navigationTimeout, page, [1500]);
+    const onClose = page.on;
+    if (!active()) return tab;
+    Reflect.apply(onClose, page, ['close', retire]);
+    const onNavigation = page.on;
+    if (!active()) return tab;
+    Reflect.apply(onNavigation, page, [
+      'framenavigated',
+      (frame: import('playwright-core').Frame) => {
+        if (frame !== page.mainFrame()) return;
+        if (record.tabs.get(tab.binding.tabId) !== tab || record.lifetime.gate.stopped) {
+          retire();
+          return;
+        }
+        try {
+          tab.binding = {
+            ...tab.binding,
+            navigationGeneration: advanceCounter(tab.binding.navigationGeneration),
+          };
+          if (
+            !tab.initialNavigation ||
+            record.status !== 'opening' ||
+            (frame.url() !== 'about:blank' && new URL(frame.url()).origin !== origin)
+          )
+            retire();
+        } catch {
+          retire();
+        }
+      },
+    ]);
+  } catch (error) {
+    retire();
+    throw new Error('PAGE_REGISTRATION_FAILED', { cause: error });
+  }
   return tab;
 }

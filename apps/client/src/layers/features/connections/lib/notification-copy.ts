@@ -90,11 +90,9 @@ export function notificationStatus(
     case 'pending':
       return plain('Setting up. DorkOS keeps trying on its own.');
     case 'unavailable':
-      return problem(
-        'Paused while this account can’t be used. Fix the account above to start it again.'
-      );
+      return problem('Paused because this account can’t be used. Fix it above to restart.');
     case 'revoked':
-      return problem('Stopped for good. Remove it and set it up again to keep getting these.');
+      return problem('Stopped for good. Remove it and set it up again.');
     case 'active':
       break;
   }
@@ -116,30 +114,30 @@ export function notificationStatus(
     case 'unknown_outcome':
       return problem(
         inChat
-          ? `DorkOS can’t tell whether ${destination} got the newest one (${when}). Open the chat to check.`
-          : `DorkOS can’t tell whether the newest one reached ${destination} (${when}). Look there to check.`,
+          ? `DorkOS can’t tell if ${destination} got the newest one (${when}). Open the chat to check.`
+          : `DorkOS can’t tell if the newest one reached ${destination} (${when}). Check there.`,
         inChat
       );
     case 'refused':
       return problem(
-        `The newest one (${when}) was turned away by ${destination}. Check that it still lets this agent post there.`
+        `${destination} turned away the newest one (${when}). Check this agent can still post there.`
       );
     case 'changed':
       return problem(
-        `The newest one (${when}) was held back because this notification changed. Nothing to do: the next one comes as usual.`
+        `Newest one (${when}) held back because this notification changed. Nothing to do.`
       );
     case 'cancelled':
       return problem(
-        `The newest one (${when}) was cancelled before ${destination} read it. Nothing to do: the next one comes as usual.`
+        `Newest one (${when}) cancelled before ${destination} read it. Nothing to do.`
       );
     case 'expired':
       return problem(
-        `The newest one (${when}) waited too long and was dropped. If it keeps happening, remove it and set it up again.`
+        `Newest one (${when}) expired and wasn’t sent. If it repeats, remove it and add it again.`
       );
     case 'unreachable':
     case null:
       return problem(
-        `The newest one (${when}) didn’t reach ${destination}. If it keeps happening, remove it and set it up again.`
+        `Newest one (${when}) didn’t reach ${destination}. If it repeats, remove it and add it again.`
       );
   }
 }

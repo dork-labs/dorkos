@@ -78,8 +78,7 @@ export function ConnectionAccessDialog({
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>Choose agent access</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            Pick the exact actions each agent may take with this account. Existing access stays
-            selected until you change it.
+            Pick the actions each agent may take. Current access stays selected.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-4 pb-4">
@@ -92,7 +91,7 @@ export function ConnectionAccessDialog({
             <LoadFailedState
               error={access.loadError}
               title="Couldn’t load account actions"
-              description="Nothing changed. Try loading the current access again."
+              description="Nothing changed. Try again."
               onRetry={access.refresh}
               isRetrying={access.isLoading}
             />
@@ -105,7 +104,7 @@ export function ConnectionAccessDialog({
                   data-testid="access-dialog-cause"
                   className="bg-status-warning-bg text-status-warning-fg rounded-lg p-3 text-sm"
                 >
-                  {readiness.copy.owner} If what you see below is right, confirm it.
+                  {readiness.copy.owner} If this looks right, confirm it.
                 </p>
               )}
               <ReconciliationEditor
@@ -163,25 +162,29 @@ function ReconciliationEditor({
       <div>
         <p className="text-sm font-medium">{preview.connection.label}</p>
         <p className="text-muted-foreground text-xs">
-          Choose a simple level for each agent. Open Advanced only when individual actions differ.
+          Pick a level for each agent. Use Advanced for single actions.
         </p>
       </div>
 
       {/* The levels below are what each agent has by name. Sharing with every
           agent adds to them, so "No access" here is not the whole answer. */}
       {preview.everyAgent.operationRevisionIds.length > 0 && (
-        <p data-testid="exact-editor-every-agent" className="bg-muted/40 rounded-lg p-3 text-sm">
-          Every agent also has {preview.everyAgent.operationRevisionIds.length}{' '}
-          {preview.everyAgent.operationRevisionIds.length === 1 ? 'action' : 'actions'} here through
-          “Every agent”, including agents you add later. The levels below are only what each agent
-          has by name. To take that away, stop sharing this account with every agent.
-        </p>
+        <div
+          data-testid="exact-editor-every-agent"
+          className="bg-muted/40 space-y-1 rounded-lg p-3 text-sm"
+        >
+          <p>
+            Every agent, even future ones, also has {preview.everyAgent.operationRevisionIds.length}{' '}
+            {preview.everyAgent.operationRevisionIds.length === 1 ? 'action' : 'actions'} here.
+          </p>
+          <p className="text-muted-foreground">
+            The levels below don’t include them. To remove them, stop sharing with every agent.
+          </p>
+        </div>
       )}
 
       {preview.agents.length === 0 ? (
-        <p className="bg-muted/40 rounded-lg p-4 text-sm">
-          Register an agent before granting account access.
-        </p>
+        <p className="bg-muted/40 rounded-lg p-4 text-sm">No agents yet. Add one first.</p>
       ) : (
         <div className="space-y-2">
           {preview.agents.map((agent) => {

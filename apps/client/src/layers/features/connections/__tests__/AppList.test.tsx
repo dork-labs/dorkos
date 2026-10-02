@@ -195,7 +195,7 @@ describe('AppList', () => {
   it('says why a search finds nothing while no way to reach apps is set up', () => {
     renderList(data({ available: [] }), 'zzz');
     expect(screen.getByText('No app matches “zzz”')).toBeInTheDocument();
-    expect(screen.getByText(/Only popular apps are listed/)).toBeInTheDocument();
+    expect(screen.getByText(/Only popular apps show/)).toBeInTheDocument();
   });
 
   it('with chat apps off, says so in one quiet line and offers no dead Connect', () => {

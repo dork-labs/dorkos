@@ -130,9 +130,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       );
 
       await choose(page, detail, 'Account activity', 'Message with unknown timing');
-      await expect(
-        detail.getByText('Delivery timing is unavailable', { exact: true })
-      ).toBeVisible();
+      await expect(detail.getByText('Delivery timing unknown', { exact: true })).toBeVisible();
       await choose(page, detail, 'Agent', 'E2E Test Agent');
       await detail.getByRole('button', { name: 'Set up notification' }).click();
       const unknownRow = detail
@@ -154,7 +152,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       });
       await choose(page, detail, 'Account activity', 'Message with unsupported filter');
       await expect(
-        detail.getByText('This notification needs filter controls this app cannot safely show yet.')
+        detail.getByText('This notification’s filters can’t be shown yet.')
       ).toBeVisible();
       await expect(detail.getByRole('button', { name: 'Set up notification' })).toBeDisabled();
       expect(unsupportedPosts).toBe(0);
@@ -174,7 +172,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await expect(
         detail
           .getByRole('alert')
-          .filter({ hasText: 'Couldn’t confirm that notification was removed. Check the list.' })
+          .filter({ hasText: 'Couldn’t confirm the removal. Check the list.' })
       ).toBeVisible();
       expect(revokeReachedServer).toBe(true);
       // The removal landed even though its answer was lost, so the row is gone.
@@ -375,7 +373,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await expect(detail.getByRole('textbox', { name: 'Query' })).toHaveAccessibleDescription(
         /Examples \(not selected\)/
       );
-      await expect(detail).toContainText('Check timing is unavailable');
+      await expect(detail).toContainText('Check timing unknown');
       await detail.getByRole('textbox', { name: 'User' }).fill('owner@example.test');
       await choose(page, detail, 'Agent', 'E2E Test Agent');
       await expect(detail.getByRole('textbox', { name: 'User' })).toHaveValue('owner@example.test');

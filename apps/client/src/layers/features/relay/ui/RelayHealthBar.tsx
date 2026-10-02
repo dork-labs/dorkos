@@ -52,14 +52,14 @@ export function computeHealthState(
   const failureRate = metrics.totalMessages > 0 ? metrics.failedCount / metrics.totalMessages : 0;
 
   if (total === 0) {
-    return { state: 'healthy', message: 'No connections configured' };
+    return { state: 'healthy', message: 'No connections yet' };
   }
 
   if (failureRate > 0.5 || connected === 0) {
     const pct = Math.round(failureRate * 100);
     return {
       state: 'critical',
-      message: `${pct}% failure rate, ${metrics.failedCount} messages failed today`,
+      message: `${metrics.failedCount} messages had errors today (${pct}%)`,
     };
   }
 
@@ -73,7 +73,7 @@ export function computeHealthState(
     }
     return {
       state: 'degraded',
-      message: `${metrics.failedCount} failure${metrics.failedCount !== 1 ? 's' : ''} in last 24h`,
+      message: `${metrics.failedCount} error${metrics.failedCount !== 1 ? 's' : ''} in the last day`,
     };
   }
 
@@ -119,7 +119,7 @@ export function RelayHealthBar({ enabled = true, onFailedClick }: RelayHealthBar
   const isClickable = (state === 'degraded' || state === 'critical') && onFailedClick != null;
   const latency = fmtLatency(metrics.avgDeliveryLatencyMs);
 
-  const tooltipContent = `${metrics.totalMessages} messages today \u00b7 ${metrics.failedCount} failed \u00b7 ${latency} avg latency`;
+  const tooltipContent = `${metrics.totalMessages} messages today \u00b7 ${metrics.failedCount} errors \u00b7 ${latency} average delivery`;
 
   return (
     <TooltipProvider>
@@ -155,7 +155,7 @@ export function RelayHealthBar({ enabled = true, onFailedClick }: RelayHealthBar
                 type="button"
                 onClick={onFailedClick}
                 className="truncate text-left hover:underline"
-                aria-label={`${message}. Click to view failures`}
+                aria-label={`${message}. Show messages with problems`}
               >
                 {message}
               </button>
