@@ -1,3 +1,4 @@
+import type { BrowserLifetime } from './ownership.js';
 import type { BrowserContext, Page } from 'playwright-core';
 import type { BrowserBinding, BrowserCommand, BrowserResult } from '../contracts.js';
 import type { ProcessIdentity } from '../configuration.js';
@@ -8,6 +9,7 @@ import type { FixtureProxy } from '../network/fixture-proxy.js';
 
 /** Internal acquisition ledger, allocated before any owned browser can launch. */
 export interface BrowserRecord {
+  lifetime: BrowserLifetime;
   browserId: BrowserId;
   browserGeneration: number;
   mode: 'persistent' | 'ephemeral';
@@ -37,6 +39,7 @@ export interface TabRecord {
   captureSequence: number;
   tail: Promise<void>;
   pending: number;
+  initialNavigation?: boolean;
 }
 /** Applicable opened result, with its initial actual canonical Page binding. */
 export type OpenedResult = Extract<BrowserResult, { kind: 'opened' }>;

@@ -41,6 +41,12 @@ function imports(file: string): string[] {
       const argument = node.arguments[0];
       if (argument && ts.isStringLiteral(argument)) found.push(argument.text);
     }
+    if (
+      ts.isImportTypeNode(node) &&
+      ts.isLiteralTypeNode(node.argument) &&
+      ts.isStringLiteral(node.argument.literal)
+    )
+      found.push(node.argument.literal.text);
     ts.forEachChild(node, visit);
   }
   visit(source);
@@ -178,10 +184,16 @@ describe('private browser package boundaries', () => {
           'node:os': ['runtime/host-identity.ts'],
           'node:module': ['runtime/public-library.ts'],
           'node:http': ['network/fixture-proxy.ts'],
+          // Only pinned public types/library imports in these reviewed internal modules.
+          // Inline import types are enumerated too; private package subpaths stay forbidden.
           'playwright-core': [
             'runtime/public-library.ts',
             'lifecycle/records.ts',
+            'lifecycle/ownership.ts',
+            'lifecycle/acquisition.ts',
             'tabs/registry.ts',
+            'input/page-transport.ts',
+            'input/engine-input.ts',
           ],
         };
         expect(allowed[specifier], `${module}: ${specifier}`).toContain(module);
