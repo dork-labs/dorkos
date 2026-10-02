@@ -46,8 +46,8 @@ function adoptableAdvice(source: string | undefined): string {
   const slash = source === undefined ? -1 : source.lastIndexOf('/');
   const folder = slash > 0 ? source?.slice(0, slash) : undefined;
   return folder === undefined
-    ? 'Lives where only some of your agents look. Move it to .agents/skills so every agent can read it.'
-    : `Lives in ${folder}. Move it to .agents/skills so every agent can read it.`;
+    ? 'Only some agents can see it. Move it to .agents/skills to share it.'
+    : `Lives in ${folder}. Move it to .agents/skills to share it.`;
 }
 
 /**
@@ -96,7 +96,7 @@ const ADOPT_BUTTON_LABEL = 'Share with every agent';
 function adoptConfirmDescription(name: string, source: string, keepsClaudeLink: boolean): string {
   const move = `It moves from ${source} to .agents/skills/${name}`;
   return keepsClaudeLink
-    ? `${move}, and DorkOS leaves a link behind so Claude Code still finds it.`
+    ? `${move}. A link stays behind for Claude Code.`
     : `${move}, where every agent reads it.`;
 }
 

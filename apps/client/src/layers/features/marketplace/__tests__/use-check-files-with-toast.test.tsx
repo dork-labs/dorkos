@@ -78,7 +78,7 @@ describe('useCheckFilesWithToast', () => {
 
     act(() => result.current.mutate({ name: 'flow' }));
 
-    expect(mockError).toHaveBeenCalledWith("Couldn't check the files of Flow: server down", {
+    expect(mockError).toHaveBeenCalledWith('Couldn’t check the files of Flow: server down', {
       id: 'toast-1',
     });
   });

@@ -60,7 +60,7 @@ function describeSummary(summary: UpdatesSummary): { headline: string; allCurren
     return { headline: 'All packages are up to date.', allCurrent: true };
   }
   if (summary.current === 0 && summary.unknown === 0) {
-    return { headline: 'These packages haven’t been checked for updates yet.', allCurrent: false };
+    return { headline: 'Not checked for updates yet.', allCurrent: false };
   }
   return { headline: 'No updates found.', allCurrent: false };
 }

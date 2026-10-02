@@ -37,9 +37,9 @@ export type UninstallWithToastArgs = UninstallPackageArgs & { where?: string };
 /**
  * Format an uninstall error for a sonner toast message.
  */
-function formatUninstallError(err: unknown): string {
-  if (err instanceof Error) return `Uninstall failed: ${err.message}`;
-  return 'Uninstall failed: unknown error';
+function formatUninstallError(err: unknown, subject: string): string {
+  if (err instanceof Error) return `Couldn’t uninstall ${subject}: ${err.message}`;
+  return `Couldn’t uninstall ${subject}. Try again.`;
 }
 
 /** Toast subject: the humanized package name, suffixed with the scope label when given. */
@@ -95,7 +95,7 @@ export function useUninstallWithToast() {
           });
         },
         onError: (err) => {
-          toast.error(formatUninstallError(err), { id: toastId });
+          toast.error(formatUninstallError(err, toastSubject({ ...args, where })), { id: toastId });
         },
       });
     },
@@ -114,7 +114,7 @@ export function useUninstallWithToast() {
         });
         return result;
       } catch (err) {
-        toast.error(formatUninstallError(err), { id: toastId });
+        toast.error(formatUninstallError(err, toastSubject({ ...args, where })), { id: toastId });
         throw err;
       }
     },

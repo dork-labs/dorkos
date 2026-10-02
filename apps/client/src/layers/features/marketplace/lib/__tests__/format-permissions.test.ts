@@ -373,7 +373,7 @@ describe('formatPermissionPreview → commands → programs', () => {
       '"gopls" "serve"',
       '"./poll.sh"',
       '"git"',
-      'This package sets up a program to run, but we could not read it',
+      'Sets up a program DorkOS couldn’t read',
     ]);
     expect(commands[0]!.description).toContain('MCP server "db"');
     // Never "in your sessions" flatly: a project install does not start these.
@@ -469,7 +469,7 @@ describe('formatPermissionPreview → commands → programs', () => {
     expect(commands.map((c) => c.description)).toEqual([
       'Runs when the agent "rev" is used (agents/rev.md)',
       'Runs when the output style "t" is used (output-styles/t.md)',
-      'Runs when the command "co" is used (commands/co.md). It uses the text typed after the command',
+      'Runs when the command "co" is used (commands/co.md). Uses what you type after it',
     ]);
   });
 
@@ -506,7 +506,7 @@ describe('formatPermissionPreview → commands → programs', () => {
       unreadableDeclarations: [{ path: '.lsp.json', kind: 'lsp-server' }],
     });
     expect(summarizePermissionPreview(preview)).toBe(
-      'Changes no files. Declares no commands. Declares 1 program of its own.'
+      'Changes no files. Declares no commands. Includes 1 program.'
     );
   });
 });
@@ -521,7 +521,7 @@ describe('shortcuts that will not be installed (DOR-2319)', () => {
     );
     expect(effects).toContainEqual(
       expect.objectContaining({
-        label: "Part of this package won't be installed",
+        label: 'Part of this package won’t be installed',
         description: message,
         severity: 'warning',
       })

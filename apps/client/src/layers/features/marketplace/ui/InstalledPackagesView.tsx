@@ -345,13 +345,13 @@ function PackageRow({
           disabled={isUninstalling}
           aria-label={
             isConfirmingUninstall
-              ? `Confirm uninstall of ${displayName}${agent ? ` from ${agent}` : ''}`
+              ? `Uninstall ${displayName}${agent ? ` from ${agent}` : ''} now`
               : `Uninstall ${displayName}${agent ? ` from ${agent}` : ''}`
           }
           className={isConfirmingUninstall ? '' : 'text-destructive hover:text-destructive'}
         >
           <Trash2 className="mr-1 size-3" aria-hidden />
-          {isUninstalling ? 'Removing…' : isConfirmingUninstall ? 'Confirm' : 'Uninstall'}
+          {isUninstalling ? 'Removing…' : isConfirmingUninstall ? 'Uninstall now' : 'Uninstall'}
         </Button>
       </div>
     </div>
@@ -436,7 +436,7 @@ export function InstalledPackagesView() {
     return (
       <PackageEmptyState
         title="No packages installed"
-        description="Browse the marketplace to discover and install your first package."
+        description="Browse the marketplace to find one."
       />
     );
   }
@@ -468,7 +468,7 @@ export function InstalledPackagesView() {
     review.mutate(pkg.name, {
       onSuccess: () =>
         toast.info(`Review ${humanizePackageName(pkg.name)} on the approval card`, {
-          description: 'It stays held back until you allow it there.',
+          description: 'It stays held back until you allow it.',
         }),
       onError: (err) =>
         toast.error(`Couldn’t ask about ${humanizePackageName(pkg.name)}`, {

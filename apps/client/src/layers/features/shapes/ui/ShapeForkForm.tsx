@@ -42,7 +42,7 @@ export interface ShapeForkFormProps {
 const SLUG_RE = /^[a-z][a-z0-9-]*$/;
 
 /** What to tell someone who typed a name the server would refuse. */
-const SLUG_HELP = 'Use lowercase letters, numbers, and dashes, starting with a letter.';
+const SLUG_HELP = 'Use lowercase letters, numbers and dashes. Start with a letter.';
 
 /**
  * The inline name-your-copy form.
@@ -99,8 +99,7 @@ export function ShapeForkForm({
         disabled={pending}
       />
       <p id={hintId} className="text-muted-foreground text-xs">
-        Your copy keeps the extensions you have turned on and the way your panels are arranged right
-        now.
+        Keeps your current extensions and panel layout.
       </p>
       {error && (
         <p id={errorId} role="alert" className="text-destructive text-xs">

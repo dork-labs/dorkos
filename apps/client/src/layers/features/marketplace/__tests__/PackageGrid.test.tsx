@@ -154,7 +154,7 @@ describe('PackageGrid', () => {
     setMarketplaceState({ data: undefined, error: new Error('boom') });
     render(<PackageGrid />);
 
-    expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+    expect(screen.getByText(/couldn’t load packages/i)).toBeInTheDocument();
     expect(screen.getByText('boom')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
     expect(screen.queryByLabelText('Loading packages')).not.toBeInTheDocument();

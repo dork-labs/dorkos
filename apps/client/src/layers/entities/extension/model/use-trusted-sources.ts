@@ -59,8 +59,8 @@ export function useTrustedSourceActions() {
   const trust = useMutation<void, Error, string>({
     mutationFn: (source) => writeTrustedSource('POST', source),
     onSuccess: (_data, source) => {
-      toast.success(`Extensions from ${source} will now turn on without asking.`, {
-        description: 'You can change this in Settings → Extensions.',
+      toast.success(`${source} is now trusted`, {
+        description: 'Its extensions turn on without asking.',
       });
     },
     onError: (err) => {

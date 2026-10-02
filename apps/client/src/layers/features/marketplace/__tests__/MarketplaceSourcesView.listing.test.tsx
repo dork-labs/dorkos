@@ -133,10 +133,10 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
     const row = await findRow('my-team');
     expect(
       await within(row).findByText(
-        "Its packages didn't load: there's no marketplace listing at that address."
+        "Its packages didn’t load: there's no marketplace listing at that address."
       )
     ).toBeInTheDocument();
-    expect(within(row).getByLabelText("Enabled, but its packages didn't load")).toBeInTheDocument();
+    expect(within(row).getByLabelText('Enabled, but its packages didn’t load')).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'Try again for my-team' })).toBeInTheDocument();
   });
 
@@ -153,12 +153,10 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
     const row = await findRow('my-team');
     expect(
       await within(row).findByText(
-        `Couldn't reach it: the server at that address refused the connection. Still showing the last copy, from ${when('2026-09-20T08:00:00.000Z')}.`
+        `Couldn’t reach it: the server at that address refused the connection. Still showing the last copy, from ${when('2026-09-20T08:00:00.000Z')}.`
       )
     ).toBeInTheDocument();
-    expect(
-      within(row).getByLabelText('Enabled, but showing an older copy of its packages')
-    ).toBeInTheDocument();
+    expect(within(row).getByLabelText('Enabled, showing an older copy')).toBeInTheDocument();
   });
 
   it('says a local folder could not be read, rather than reached', async () => {
@@ -176,7 +174,7 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
 
     const row = await findRow('my-team');
     expect(
-      await within(row).findByText(/^Couldn't read that folder: there's no marketplace listing/)
+      await within(row).findByText(/^Couldn’t read that folder: there's no marketplace listing/)
     ).toBeInTheDocument();
   });
 
@@ -185,7 +183,7 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
     renderView({});
     const row = await findRow('my-team');
     expect(within(row).getByLabelText('Enabled')).toBeInTheDocument();
-    expect(within(row).queryByText(/didn't load|Couldn't/)).not.toBeInTheDocument();
+    expect(within(row).queryByText(/didn’t load|Couldn’t/)).not.toBeInTheDocument();
   });
 
   it('gives a never-fetched source a neutral dot that says so, and no note', async () => {
@@ -195,7 +193,7 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
     const row = await findRow('my-team');
     const dot = within(row).getByLabelText('Enabled, not fetched yet');
     expect(dot.getAttribute('class')).not.toMatch(/status-(success|warning)/);
-    expect(within(row).queryByText(/didn't load|Couldn't/)).not.toBeInTheDocument();
+    expect(within(row).queryByText(/didn’t load|Couldn’t/)).not.toBeInTheDocument();
   });
 
   it('says how many packages are ready when the add fetched the listing', async () => {
@@ -231,11 +229,11 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
     await addSource(user);
 
     const row = await findRow('my-team');
-    expect(await within(row).findByText(/^Its packages didn't load/)).toBeInTheDocument();
+    expect(await within(row).findByText(/^Its packages didn’t load/)).toBeInTheDocument();
     expect(toastSuccess).not.toHaveBeenCalled();
-    expect(toastWarning).toHaveBeenCalledWith("Added my-team, but its packages didn't load.");
+    expect(toastWarning).toHaveBeenCalledWith('Added my-team, but its packages didn’t load.');
     expect(liveRegion()).toHaveTextContent(
-      "my-team: Added, but its packages didn't load: there's no marketplace listing at that address."
+      "my-team: Added, but its packages didn’t load: there's no marketplace listing at that address."
     );
   });
 
@@ -260,7 +258,7 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
     expect(toastSuccess).toHaveBeenCalledWith(
       'Refreshed my-team. 3 packages are ready to install.'
     );
-    await vi.waitFor(() => expect(within(row).queryByText(/didn't load/)).not.toBeInTheDocument());
+    await vi.waitFor(() => expect(within(row).queryByText(/didn’t load/)).not.toBeInTheDocument());
     expect(within(row).getByLabelText('Enabled')).toBeInTheDocument();
     expect(liveRegion()).toHaveTextContent('my-team: 3 packages are ready to install.');
   });
@@ -287,10 +285,10 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
     record({ ...FAILED, reason: 'the server at that address refused the connection' });
     fail(new Error('the server at that address refused the connection'));
 
-    const note = "Its packages didn't load: the server at that address refused the connection.";
+    const note = 'Its packages didn’t load: the server at that address refused the connection.';
     expect(await within(row).findByText(note)).toBeInTheDocument();
     expect(refresh).toHaveAttribute('aria-busy', 'false');
-    expect(toastWarning).toHaveBeenCalledWith("Couldn't refresh my-team.");
+    expect(toastWarning).toHaveBeenCalledWith('Couldn’t refresh my-team.');
     expect(liveRegion()).toHaveTextContent(`my-team: ${note}`);
   });
 
@@ -311,12 +309,12 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
 
     await vi.waitFor(() =>
       expect(toastWarning).toHaveBeenCalledWith(
-        "Couldn't reach my-team. Still showing the last copy."
+        'Couldn’t reach my-team. Still showing the last copy.'
       )
     );
     expect(toastSuccess).not.toHaveBeenCalled();
     expect(liveRegion()).toHaveTextContent(
-      `my-team: Couldn't reach it: the server at that address refused the connection. Still showing the last copy, from ${when('2026-09-20T08:00:00.000Z')}.`
+      `my-team: Couldn’t reach it: the server at that address refused the connection. Still showing the last copy, from ${when('2026-09-20T08:00:00.000Z')}.`
     );
   });
 
@@ -337,7 +335,7 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
     await vi.waitFor(() => expect(liveRegion().firstElementChild).not.toBe(first));
 
     expect(liveRegion()).toHaveTextContent(
-      "my-team: Its packages didn't load: the server went away."
+      'my-team: Its packages didn’t load: the server went away.'
     );
   });
 });

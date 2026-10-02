@@ -238,7 +238,7 @@ describe('useApplyUpdatesWithToast', () => {
     await runApply([makeCheck(), FLOW], { result: { checks: [applied(makeCheck()), kept] } });
 
     expect(toastMock.success).toHaveBeenCalledWith(
-      'Updated 2 packages. One or more kept files DorkOS couldn’t sort; their rows say which.',
+      'Updated 2 packages. Some kept files need sorting; see their rows.',
       { id: 'toast-id' }
     );
   });
@@ -297,10 +297,9 @@ describe('useApplyUpdatesWithToast', () => {
       result: { checks: [applied(makeCheck()), { ...FLOW, applyError: 'disk full' }] },
     });
 
-    expect(toastMock.warning).toHaveBeenCalledWith(
-      'Updated 1 of 2 packages. Each package shows what happened.',
-      { id: 'toast-id' }
-    );
+    expect(toastMock.warning).toHaveBeenCalledWith('Updated 1 of 2 packages. Each row shows why.', {
+      id: 'toast-id',
+    });
   });
 
   it('reports an error when none of several were applied', async () => {
@@ -314,7 +313,7 @@ describe('useApplyUpdatesWithToast', () => {
     });
 
     expect(toastMock.error).toHaveBeenCalledWith(
-      'Couldn’t update 2 packages. Each package shows why.',
+      'Couldn’t update 2 packages. Each row shows why.',
       { id: 'toast-id' }
     );
   });
@@ -331,7 +330,7 @@ describe('useApplyUpdatesWithToast', () => {
     });
 
     expect(toastMock.error).toHaveBeenCalledWith(
-      'Couldn’t update 1 of 2 packages. Each package shows why.',
+      'Couldn’t update 1 of 2 packages. Each row shows why.',
       { id: 'toast-id' }
     );
   });
@@ -346,7 +345,7 @@ describe('useApplyUpdatesWithToast', () => {
       },
     });
 
-    expect(toastMock.success).toHaveBeenCalledWith('These 2 packages are already up to date', {
+    expect(toastMock.success).toHaveBeenCalledWith('All 2 packages are up to date', {
       id: 'toast-id',
     });
   });
@@ -362,10 +361,9 @@ describe('useApplyUpdatesWithToast', () => {
       },
     });
 
-    expect(toastMock.warning).toHaveBeenCalledWith(
-      'Nothing was updated. Each package shows where it stands.',
-      { id: 'toast-id' }
-    );
+    expect(toastMock.warning).toHaveBeenCalledWith('Nothing was updated. Each row shows why.', {
+      id: 'toast-id',
+    });
   });
 
   it('reports a failed request once, in the house form, with the reason under it', async () => {
@@ -393,8 +391,7 @@ describe('useApplyUpdatesWithToast', () => {
     ];
     expect(headline).toBe('Couldn’t update 2 packages');
     expect(options.description).toBe(
-      'Each of these installs needs your approval first, and DorkOS can’t ask for it here. ' +
-        'Update each one from the terminal with `dorkos marketplace update <name> --apply`.'
+      'Each needs your approval. Run `dorkos marketplace update <name> --apply` in a terminal.'
     );
     expect(options.description).not.toMatch(/\/api\//);
   });
@@ -414,7 +411,7 @@ describe('useApplyUpdatesWithToast', () => {
       { description: string },
     ];
     expect(options.description).toBe(
-      'This package changed what it runs since you looked, so nothing was updated. Review it again before updating.'
+      'This package changed what it runs since you looked. Review it again.'
     );
   });
 
@@ -432,7 +429,7 @@ describe('useApplyUpdatesWithToast', () => {
       { description: string },
     ];
     expect(options.description).toMatch(
-      /Update it from the terminal with `dorkos marketplace update @dorkos\/reviewer --apply`\.$/
+      /^It needs your approval\. Run `dorkos marketplace update @dorkos\/reviewer --apply` in a terminal\.$/
     );
   });
 

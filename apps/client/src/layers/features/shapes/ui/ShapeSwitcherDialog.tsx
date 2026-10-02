@@ -229,8 +229,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
             Shapes
           </DialogTitle>
           <DialogDescription>
-            Switch what DorkOS is set up for. A Shape arranges your workspace, turns on its
-            extensions, and offers its agents.
+            Each Shape sets up your panels, extensions and agents.
           </DialogDescription>
         </DialogHeader>
 
@@ -242,7 +241,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
             </div>
           ) : isError ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-sm">
-              Couldn’t load your Shapes. Check that the DorkOS server is running.
+              Couldn’t load your Shapes. Check that DorkOS is running.
             </p>
           ) : !shapes || shapes.length === 0 ? (
             <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
@@ -251,9 +250,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
               </span>
               <div className="space-y-1">
                 <p className="text-sm font-medium">No Shapes installed yet</p>
-                <p className="text-muted-foreground text-sm">
-                  Install one from the Marketplace to switch your whole setup at once.
-                </p>
+                <p className="text-muted-foreground text-sm">Shapes set up your whole app.</p>
               </div>
               <Button
                 variant="outline"
@@ -296,7 +293,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                         </span>
                         {shape.lineage && (
                           <span className="text-muted-foreground block truncate text-xs">
-                            forked from {shape.lineage.forkedFrom}
+                            Copied from {shape.lineage.forkedFrom}
                           </span>
                         )}
                       </span>
