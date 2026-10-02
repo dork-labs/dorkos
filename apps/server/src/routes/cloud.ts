@@ -26,6 +26,7 @@
  */
 import { Router, type Response } from 'express';
 import { z } from 'zod';
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { Problem } from '@dork-labs/cloud-api';
 import type {
   CloudAccountDeletionResponse,
@@ -503,7 +504,9 @@ router.put('/credits/default', async (req, res) => {
   if (useCredits) {
     const view = creditsRuntimeViews().find((candidate) => candidate.type === runtime);
     if (!view?.capabilities.credits) {
-      return res.status(400).json({ error: `${runtime} can't run on DorkOS credits yet.` });
+      return res
+        .status(400)
+        .json({ error: `${runtimeDisplayName(runtime)} can't run on DorkOS credits yet.` });
     }
     if (creditsKilled()) {
       return res.status(409).json({ error: 'DorkOS credits are turned off on this computer.' });
