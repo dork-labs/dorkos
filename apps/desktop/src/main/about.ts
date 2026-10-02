@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import { COPYRIGHT_NOTICE } from '@dorkos/shared/company';
 
 /**
  * Configure the native "About DorkOS" panel (App menu → About DorkOS, `role: 'about'`).
@@ -11,7 +12,7 @@ export function setupAboutPanel(): void {
   app.setAboutPanelOptions({
     applicationName: 'DorkOS',
     applicationVersion: app.getVersion(),
-    copyright: '© 2026 DorkOS',
+    copyright: COPYRIGHT_NOTICE,
     credits: 'All your coding agents. One place.',
   });
 }

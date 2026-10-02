@@ -2,7 +2,7 @@
   "name": "@dorkos/desktop",
   "version": "0.95.0",
   "description": "DorkOS desktop app - all your coding agents in one place",
-  "author": "Dorian Collier",
+  "author": "144 Studio, LLC",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {
