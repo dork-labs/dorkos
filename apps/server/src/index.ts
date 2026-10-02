@@ -1,3 +1,4 @@
+import { DocChannelMetrics } from './services/observability/doc-channel-metrics.js';
 import { subscribeCommittedDocEvents } from './services/canvas/doc-channel/committed-events.js';
 import { DocChannelLiveBuffer } from './services/canvas/doc-channel/streams/live-buffer.js';
 import { DocScopeStream } from './services/canvas/doc-channel/streams/scope-stream.js';
@@ -3167,6 +3168,7 @@ async function start() {
       );
     },
   });
+  const docChannelMetrics = new DocChannelMetrics(db);
   const docChannelHttp = createDocChannelHttpComposition({
     db,
     documents: canvasDocuments,
@@ -3180,7 +3182,7 @@ async function start() {
     revalidateRuntime: (proof) =>
       docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
   });
-  app.locals.docChannelHttp = docChannelHttp;
+  app.locals.docChannelHttp = { ...docChannelHttp, metrics: docChannelMetrics };
   const docStreamAuthority = {
     resolveScope: (scope: string) => canvasDocuments.lifecycle.resolveScope(scope),
     requireScopeCurrent: (
@@ -4617,6 +4619,7 @@ async function start() {
   // overlap today; conflating them would mean a new debug read could only be
   // added by widening the health checks' dependency surface.
   app.locals.debugDeps = {
+    docChannelMetrics,
     roomSessions: roomStore,
     // The SAME probe object the boot sweep and the deep health check hold, so
     // the raw debug read and the doctor cannot say different things about one

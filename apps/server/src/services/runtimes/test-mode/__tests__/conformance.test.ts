@@ -1,4 +1,10 @@
-import { afterEach, expect, vi } from 'vitest';
+import {
+  DOC_VISIBLE_TRIGGER,
+  DOC_PRIVATE_MARKER,
+  docBoundaryEntry,
+  assertDocBoundary,
+} from '../../__tests__/doc-events-boundary-fixture.js';
+import { afterEach, expect, it, vi } from 'vitest';
 import { runtimeConformance } from '@dorkos/test-utils';
 import { scenarioStore, requestFinishTurn } from '../scenario-store.js';
 import { heldProcesses } from '../held-process.js';
@@ -152,4 +158,42 @@ runtimeConformance(() => new TestModeRuntime(), {
   // keeps the omission half of this contract exercised.
   userLastMessageAtOmittedReason:
     'test-mode holds session metadata in memory for a single process lifetime and keeps no transcript, so there is nothing durable to derive the person’s last message from',
+});
+
+it('doc SDK boundary: test-mode passes original structured context and fenced data to its scenario', async () => {
+  const requests: Array<{ content: string; prompt: string; structured: unknown }> = [];
+  const spy = vi
+    .spyOn(scenarioStore, 'getScenario')
+    .mockReturnValue(async function* (content, ctx, opts) {
+      requests.push({
+        content,
+        prompt: ctx.docEventsPrompt ?? '',
+        structured: opts?.additionalContext,
+      });
+      yield { type: 'done', data: {} };
+    });
+  try {
+    const runtime = new TestModeRuntime();
+    runtime.ensureSession('doc-sdk-boundary', {
+      cwd: '/projects/conformance',
+      permissionMode: 'default',
+    });
+    for (let turn = 0; turn < 2; turn++) {
+      for await (const _event of runtime.sendMessage('doc-sdk-boundary', DOC_VISIBLE_TRIGGER, {
+        additionalContext: [docBoundaryEntry],
+      })) {
+        /* Drain actual scenario invocation. */
+      }
+    }
+    expect(requests).toHaveLength(2);
+    const nonces = requests.map((request) => {
+      expect(request.content).toBe(DOC_VISIBLE_TRIGGER);
+      expect(request.content).not.toContain(DOC_PRIVATE_MARKER);
+      expect(request.structured).toEqual([docBoundaryEntry]);
+      return assertDocBoundary(request.prompt);
+    });
+    expect(nonces[0]).not.toBe(nonces[1]);
+  } finally {
+    spy.mockRestore();
+  }
 });

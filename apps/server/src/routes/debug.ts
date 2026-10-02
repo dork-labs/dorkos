@@ -52,6 +52,14 @@
  * @module routes/debug
  */
 import { Router } from 'express';
+import { clearsTheAgentBar } from '../lib/caller-authority.js';
+import { readOwnerAccount } from '../services/core/auth/index.js';
+import type { RequestUser } from '../services/core/auth/session-gate.js';
+import { configManager } from '../services/core/config-manager.js';
+import {
+  DocChannelMetricsUnavailableError,
+  type DocChannelMetrics,
+} from '../services/observability/doc-channel-metrics.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseSessionId, sendError } from '../lib/route-utils.js';
@@ -86,6 +94,7 @@ import type { TraceStore } from '../services/relay/trace-store.js';
  * than no endpoint.
  */
 export interface DebugDeps {
+  docChannelMetrics?: DocChannelMetrics;
   /** Room→session bindings, for the transcript probe. */
   roomSessions?: {
     listRoomSessions(): Array<{ roomId: string; authorId: string; sessionId: string }>;
@@ -433,5 +442,31 @@ function transcriptExists(slugDirs: readonly string[], sessionId: string): boole
   }
   return false;
 }
+
+router.get('/doc-channels', (req, res) => {
+  try {
+    const user = res.locals.user as RequestUser | undefined;
+    const loginOn = configManager.get('auth')?.enabled === true;
+    const owner = loginOn ? readOwnerAccount() : null;
+    if (
+      !clearsTheAgentBar(req, res) ||
+      (loginOn && (!owner || user?.credential !== 'cookie' || user.userId !== owner.id))
+    ) {
+      res.status(403).json({
+        code: 'DOC_METRICS_FORBIDDEN',
+        error: 'Only the owner can read document metrics.',
+      });
+      return;
+    }
+    const metrics = (req.app.locals.debugDeps as DebugDeps | undefined)?.docChannelMetrics;
+    if (!metrics) throw new DocChannelMetricsUnavailableError();
+    res.json(metrics.readCommittedSnapshot());
+  } catch {
+    res.status(503).json({
+      code: 'DOC_CHANNEL_METRICS_UNAVAILABLE',
+      error: 'Document metrics are not available.',
+    });
+  }
+});
 
 export default router;
