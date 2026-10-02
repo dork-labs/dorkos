@@ -27,6 +27,7 @@ import { PROFILE_PANEL_ID } from '@/layers/features/profile';
 import { composeCommandDraft } from './palette-command-draft';
 import { runPaletteCommandHandler } from './palette-command-handlers';
 import { REMOTE_ACCESS_PALETTE_ACTIONS } from './palette-remote-access';
+import { settingsTabForAction } from './palette-contributions';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 interface PaletteActions {
@@ -291,9 +292,17 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           setActiveRightPanelTab(PROFILE_PANEL_ID);
           setRightPanelOpen(true);
           return;
-        default:
+        default: {
+          // One row per Settings tab, through the same deep link a shared
+          // `?settings=` URL uses — so a tab behind the Advanced fold opens it.
+          const settingsTab = settingsTabForAction(action);
+          if (settingsTab) {
+            openSettings(settingsTab);
+            return;
+          }
           runExtensionAction(action);
           return;
+        }
       }
     },
     [

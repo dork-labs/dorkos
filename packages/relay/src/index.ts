@@ -156,7 +156,11 @@ export {
 } from './adapters/test-mode/index.js';
 
 // Adapter registry
-export { AdapterRegistry } from './adapter-registry.js';
+export {
+  AdapterRegistry,
+  adapterPrefixesConflict,
+  type AdapterOwnershipReservation,
+} from './adapter-registry.js';
 
 // Adapter implementations
 export {

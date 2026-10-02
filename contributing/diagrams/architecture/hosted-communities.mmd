@@ -1,17 +1,17 @@
 flowchart TB
   accTitle: Spaces and optional Cloud space management
-  accDescr: The local app implements start and move requests to Cloud. Space management and ordinary space participation have separate authority. Move archives go from the local server directly to the returned space upload target. Contract support does not establish deployment availability.
+  accDescr: The local app implements start and move requests to Cloud. Space management and ordinary space participation have separate authority. Move archives go from the local server directly to the returned space upload target. Imports and optional configured OIDC are implemented. Server takedown and evidence operations are explicit exceptions to ordinary content access. Contract support does not establish space-management deployment availability.
   app["Local DorkOS app + server<br/>Start / move UI + Cloud relay implemented<br/>Agents execute here"]
   cloud["Optional Cloud space management<br/>Public /v1/communities contract<br/>Availability checked independently"]
   subgraph host["Space server · independently runnable"]
-    admin["Server administration API<br/>Scoped machine keys · owner claims<br/>Lifecycle · limits · usage · holds<br/>Notice-gated space deletion"]
+    admin["Server administration API<br/>Scoped machine keys · owner claims<br/>Lifecycle · limits · usage · holds<br/>Takedown / evidence · owner replacement<br/>No ordinary tenant membership"]
     content["Tenant content API<br/>Membership · channels · posts · files"]
-    upload["Space import target<br/>Move contract; destination must support import"]
+    upload["Space import target<br/>Implemented v1 / v2 + multipart upload"]
     auth["Server-wide sign-in<br/>Separate space memberships"]
     data[("PostgreSQL + tenant-owned blobs<br/>The space server is content authority")]
     admin -->|"Scoped server operations"| data
     content --> data
-    upload -.->|"Import contract"| data
+    upload -->|"Restore inactive people / agents<br/>Revoke credentials; single-use owner claim"| data
     auth -->|"Authenticate; check membership"| content
   end
   browser["Space website"]
@@ -20,4 +20,8 @@ flowchart TB
   app -->|"Start / poll / claim / move<br/>HTTPS via local authenticated routes"| cloud
   app -->|"Stage archive; upload directly<br/>to returned target when available"| upload
   cloud -.->|"Public space-management contract<br/>HTTPS + scoped server key"| admin
-  cloud -.->|"Later: optional OIDC sign-in<br/>Separate work"| auth
+  issuer["Configured OIDC issuer · optional<br/>Independent of space management"]
+  issuer <-->|"OIDC sign-in · implemented"| auth
+  journal["IDs-only erasure journal<br/>Operator keeps an off-server copy"]
+  admin -->|"Export erasure records"| journal
+  journal -->|"Reapply after backup restore"| data

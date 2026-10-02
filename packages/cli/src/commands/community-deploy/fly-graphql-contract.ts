@@ -92,25 +92,32 @@ const ReadEnvelopeSchema = z
   })
   .strict();
 /**
- * Fly's answer for an add-on id it does not know (live, 2026-09-29): `data.addOn` is null and every
- * error is a `NOT_FOUND` on the `addOn` path. Only this exact shape means "gone"; any other error,
- * or a not-found beside other errors, stays an invalid response.
+ * Fly's answer for a top-level object it does not know: `data.<field>` is null and every error is
+ * a `NOT_FOUND` on that field's path. Seen live for an add-on id (2026-09-29); an app name gets the
+ * same shape (`fixtures/fly/app-provenance-missing.json`). Only this exact shape means "missing";
+ * a bare null, any other error, or a not-found beside other errors does not.
+ *
+ * @param field - The one field under `data` the query selected.
  */
-const AddOnNotFoundEnvelopeSchema = z
-  .object({
-    data: z.object({ addOn: z.null() }).strict(),
-    errors: z
-      .array(
-        z
-          .object({
-            path: z.tuple([z.literal('addOn')]),
-            extensions: z.object({ code: z.literal('NOT_FOUND') }).passthrough(),
-          })
-          .passthrough()
-      )
-      .min(1),
-  })
-  .strict();
+function notFoundEnvelopeSchema(field: 'addOn' | 'app') {
+  return z
+    .object({
+      data: z.object({ [field]: z.null() }).strict(),
+      errors: z
+        .array(
+          z
+            .object({
+              path: z.tuple([z.literal(field)]),
+              extensions: z.object({ code: z.literal('NOT_FOUND') }).passthrough(),
+            })
+            .passthrough()
+        )
+        .min(1),
+    })
+    .strict();
+}
+const AddOnNotFoundEnvelopeSchema = notFoundEnvelopeSchema('addOn');
+const AppNotFoundEnvelopeSchema = notFoundEnvelopeSchema('app');
 
 /**
  * Fly's answer for an add-on it has deleted (live gate, 2026-09-30): the exact-ID read still returns
@@ -695,6 +702,27 @@ export function parseAppTigrisResponse(
     if (name === null) throw invalidResponse();
     return { id, name };
   });
+}
+
+/** What {@link parseFlyAppProvenanceOrNotFound} returns for Fly's exact "no such app" answer. */
+export const FLY_APP_NOT_FOUND = 'fly-app-not-found' as const;
+
+/**
+ * Parse a provenance read, telling Fly's exact "no such app" answer apart from any other null.
+ *
+ * {@link parseFlyAppProvenanceResponse} returns null for every `app: null`, whatever the errors
+ * say, because its callers prove absence another way. A caller that needs the stronger proof uses
+ * this instead.
+ *
+ * @param response - Decoded response.
+ * @returns The app, {@link FLY_APP_NOT_FOUND} for an exact `NOT_FOUND` on `app`, or null for any
+ *   other null answer.
+ */
+export function parseFlyAppProvenanceOrNotFound(
+  response: unknown
+): FlyAppProvenance | typeof FLY_APP_NOT_FOUND | null {
+  if (AppNotFoundEnvelopeSchema.safeParse(response).success) return FLY_APP_NOT_FOUND;
+  return parseFlyAppProvenanceResponse(response);
 }
 
 /**

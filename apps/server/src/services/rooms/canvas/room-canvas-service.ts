@@ -1,3 +1,4 @@
+import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-schemas';
 /**
  * A room's shared canvas: every rule about who may change it, over the one
  * writer that changes it (spec `room-canvas` §3).
@@ -220,6 +221,7 @@ export interface RoomCanvasDeps {
 
 /** What `open` was given beyond the content itself. */
 export interface CanvasOpenOptions {
+  channel?: CanvasChannelDeclaration;
   /** Pin it on creation. */
   pinned?: boolean;
   /** Where a file document's path was resolved, absolute. */
@@ -648,6 +650,7 @@ export class RoomCanvasService {
     const where = this.resolveTree(roomId, authorId, content, opts.resolvedCwd ?? undefined, null);
     return this.canvas.open(roomScope(roomId), authorId, content, {
       pinned: opts.pinned ?? false,
+      channel: opts.channel,
       tree: { ...where, sourceLabel: opts.sourceLabel ?? where.sourceLabel },
     });
   }

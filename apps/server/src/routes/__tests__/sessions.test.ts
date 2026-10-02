@@ -1,5 +1,5 @@
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
-import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type {
   ModelOption,
   PermissionModeId,
@@ -92,8 +92,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 }));
 
 // Dynamically import after mocks are set up
-import { createServer } from 'node:http';
-import { once } from 'node:events';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import request from '@dorkos/test-utils/supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
@@ -112,29 +111,12 @@ import { TEST_MODE_CAPABILITIES } from '../../services/runtimes/test-mode/runtim
 const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
 
-/**
- * ONE listener for the whole file, reused by every request.
- *
- * Handed a non-listening app, supertest opens a fresh ephemeral listener per
- * request and closes it in the response callback; this file makes ~47 requests,
- * and that listen/close churn intermittently lands a connection on a listener
- * mid-close, failing a random test with a client-side `socket hang up` rather
- * than an assertion (DOR-458). Given a server whose `address()` is already set,
- * supertest reuses it and never closes it.
- */
-const server = createServer(app);
+// Reuse one listener bound to the IPv4 address Supertest dials. An unspecified
+// listener can share its port with another address family on macOS.
+const server = listeningServer(app);
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const S1 = '00000000-0000-4000-8000-000000000001';
-
-beforeAll(async () => {
-  server.listen(0);
-  await once(server, 'listening');
-});
-
-afterAll(async () => {
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-});
 
 describe('Sessions Routes', () => {
   beforeEach(() => {

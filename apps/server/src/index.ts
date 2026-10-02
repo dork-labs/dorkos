@@ -1,3 +1,10 @@
+import { DocChannelMetrics } from './services/observability/doc-channel-metrics.js';
+import { DocBatchAdmission } from './services/canvas/doc-channel/delivery/batch-admission.js';
+import { privateDocTurnBudget } from './services/canvas/doc-channel/delivery/final-budget.js';
+import { DocBatchDeliveryPump } from './services/canvas/doc-channel/delivery/pump.js';
+import { DocDeliveryRunner } from './services/canvas/doc-channel/delivery/runner.js';
+import { createPrivateDocPumpGates } from './services/canvas/doc-channel/delivery/private-gates.js';
+import { createDocChannelHttpComposition } from './services/canvas/doc-channel/http-composition.js';
 import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import path from 'path';
@@ -341,7 +348,10 @@ import {
   type SkillsWatcherHandle,
   type TurnEndReprojection,
 } from './services/harness/skills-watcher.js';
-import { onProjectorTurnBoundary } from './services/session/session-state-projector.js';
+import {
+  onProjectorTurnBoundary,
+  onProjectorInteractionChange,
+} from './services/session/session-state-projector.js';
 import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-turn.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
@@ -603,9 +613,9 @@ import {
   sessionOriginResolvers,
   listRecentSessions,
   setAgentSessionSources,
-  PrivateSessionMessageAcceptanceService,
   setPrivateSessionMessageAcceptanceService,
   adoptAcceptedPrivateMessages,
+  suspendPrivateDispatches,
   getOrCreateProjector,
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
@@ -631,6 +641,8 @@ let claudeRuntime: ClaudeCodeRuntime | null = null;
 let accountUsageStore: AccountUsageStore | undefined;
 /** Stops the out-of-usage planner and the continue service (spec claude-account-fleet D9). */
 let stopSessionContinuation: (() => void) | undefined;
+/** Stop document recovery before the SQLite connection is disposed. */
+let stopDocDelivery: (() => Promise<void>) | undefined;
 // The relay's DEFAULT runtime — what answers a relay message that names no
 // runtime at all (a legacy `relay.agent.<sessionId>` subject, a direct
 // agent-to-agent send to a mesh agent). The relay carries every registered
@@ -1839,6 +1851,7 @@ async function start() {
   const readCursorService = new ReadCursorService(new ReadCursorStore(db));
   setReadCursorService(readCursorService);
 
+  const docChannelRuntimePrincipals: { current?: ConnectorRuntimePrincipalService } = {};
   const roomAttachmentBytes = new LocalRoomAttachmentStore(dorkHome);
   // Both the worker and native stream lifecycle must remain inert until Mesh
   // has reconciled the on-disk manifest registry for this process boot.
@@ -1853,8 +1866,11 @@ async function start() {
     authors: roomAuthors,
     bridges: roomBridges,
     welcomeBack: welcomeBackGreeter,
+    canvasDocuments,
   } = createRoomSubsystem({
     db,
+    runtimePrincipalCurrent: (proof) =>
+      docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
     readCursors: readCursorService,
     createMirrorRuntime: ({ store, authors, attachments }) => {
       remoteCommunityRuntime = new CommunityOutboxRuntime({
@@ -3148,6 +3164,21 @@ async function start() {
       );
     },
   });
+  const docChannelMetrics = new DocChannelMetrics(db);
+  const docChannelHttp = createDocChannelHttpComposition({
+    db,
+    documents: canvasDocuments,
+    rooms: roomService,
+    roomStore,
+    roomRepos: roomRepoStore,
+    approvals: approvalService,
+    installationId: connectorInstallationId,
+    runtimePrincipalCurrent: (proof) =>
+      docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
+    revalidateRuntime: (proof) =>
+      docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
+  });
+  app.locals.docChannelHttp = { ...docChannelHttp, metrics: docChannelMetrics };
   // An answer given after the in-session hold gave up has to reach the agent that
   // asked, or a person ends up relaying it by hand — which is the bug DOR-1931
   // reports. The subscription lives for the life of the process; its listener does
@@ -3564,20 +3595,20 @@ async function start() {
       })
     : undefined;
   if (connectorRuntimePrincipals) await connectorRuntimePrincipals.initializeBoot();
+  docChannelRuntimePrincipals.current = connectorRuntimePrincipals;
   let connectorAgentRequests: ConnectorAgentRequestService | undefined;
-  let recoverAcceptedPrivateSessions: (() => void) | undefined;
   let acceptedPrivateSessionCursor: string | undefined;
-  if (connectorRuntimePrincipals && meshCore) {
-    const requestAuthority = new CanonicalConnectorAgentRequestAuthority({
-      db,
-      sessions: runtimeRegistry,
-      mesh: meshCore,
-      owner: connectorOwner,
-    });
-    const privateAcceptance = new PrivateSessionMessageAcceptanceService(
-      db,
-      messageQueueStore,
-      [
+  const requestAuthority =
+    connectorRuntimePrincipals && meshCore
+      ? new CanonicalConnectorAgentRequestAuthority({
+          db,
+          sessions: runtimeRegistry,
+          mesh: meshCore,
+          owner: connectorOwner,
+        })
+      : undefined;
+  const existingPrivateSources = requestAuthority
+    ? [
         new ConnectorAgentRequestSourceAdapter(
           db,
           requestAuthority,
@@ -3585,35 +3616,109 @@ async function start() {
           connectorEventGrants
         ),
         connectorEventSessionSource,
-      ],
-      connectorBootEpoch
-    );
-    setPrivateSessionMessageAcceptanceService(privateAcceptance);
-    const recoveredPrivateAttempts = privateAcceptance.recoverUnobservedAttempts();
-    if (recoveredPrivateAttempts > 0) {
-      logger.warn('[Connections] Quarantined interrupted private follow-ups', {
-        count: recoveredPrivateAttempts,
-      });
-    }
-    const nudgePrivateSession = (sessionId: string): void => {
-      void Promise.all([
-        runtimeRegistry.resolveForSession(sessionId),
-        runtimeRegistry.getSessionAgentPath(sessionId),
-      ])
-        .then(([runtime, agentPath]) => {
-          if (!agentPath) return;
-          const projector = getOrCreateProjector(sessionId, agentPath);
-          adoptAcceptedPrivateMessages({
-            sessionId,
-            cwd: agentPath,
-            projector,
-            runtime,
-          });
-        })
-        .catch((error: unknown) => {
-          logger.warn('[Connections] Could not resume a private agent message', logError(error));
+      ]
+    : [];
+  const docBatchAdmission = new DocBatchAdmission({
+    db,
+    store: docChannelHttp.channels,
+    grants: docChannelHttp.grants,
+    lifecycle: canvasDocuments.lifecycle,
+    queue: messageQueueStore,
+    bootEpoch: connectorBootEpoch,
+    existingSources: existingPrivateSources,
+    beforeClaim: privateDocTurnBudget,
+  });
+  const recoveredPrivateAttempts = docBatchAdmission.initializeBoot();
+  const privateAcceptance = docBatchAdmission.acceptance;
+  setPrivateSessionMessageAcceptanceService(privateAcceptance);
+  if (recoveredPrivateAttempts > 0)
+    logger.warn('[session messages] Quarantined interrupted private messages', {
+      count: recoveredPrivateAttempts,
+    });
+  const docDispatchLifetime = new AbortController();
+  const nudgePrivateSession = (sessionId: string, documentReceiptIds?: readonly string[]): void => {
+    if (documentReceiptIds && !docDeliveryRunner?.active) return;
+    void Promise.all([
+      runtimeRegistry.resolveForSession(sessionId),
+      runtimeRegistry.getSessionAgentPath(sessionId),
+    ])
+      .then(([runtime, agentPath]) => {
+        if (documentReceiptIds && !docDeliveryRunner?.active) return;
+        if (!agentPath) return;
+        const projector = getOrCreateProjector(sessionId, agentPath);
+        adoptAcceptedPrivateMessages({
+          sessionId,
+          cwd: agentPath,
+          projector,
+          runtime,
+          ...(documentReceiptIds
+            ? {
+                privateDispatchSignal: docDispatchLifetime.signal,
+                privateReceiptSelection: {
+                  sourceKind: 'document_event_batch' as const,
+                  receiptIds: documentReceiptIds,
+                },
+              }
+            : { excludeDocumentMessages: true }),
         });
-    };
+      })
+      .catch((error: unknown) => {
+        logger.warn('[session messages] Could not resume a private message', logError(error));
+      });
+  };
+  const recoverAcceptedPrivateSessions = (): void => {
+    const sessionIds = privateAcceptance.listAcceptedSessionIds(
+      100,
+      acceptedPrivateSessionCursor,
+      true
+    );
+    acceptedPrivateSessionCursor = sessionIds.length === 100 ? sessionIds.at(-1) : undefined;
+    for (const sessionId of sessionIds) nudgePrivateSession(sessionId);
+  };
+  recoverAcceptedPrivateSessions();
+  const docPump = new DocBatchDeliveryPump({
+    db,
+    store: docChannelHttp.channels,
+    grants: docChannelHttp.grants,
+    admission: docBatchAdmission,
+    now: () => new Date(),
+    ...createPrivateDocPumpGates({
+      grants: docChannelHttp.grants,
+      runtimes: runtimeRegistry,
+      now: () => new Date(),
+    }),
+    markWaitingWarning: (batchId, generation, now, tx) =>
+      docChannelHttp.channels.markWaitingWarning(batchId, generation, now, tx),
+    nudge: (sessionId, receiptIds) => {
+      nudgePrivateSession(sessionId, receiptIds);
+      return undefined;
+    },
+    observe: (event) => {
+      if (event.outcome === 'replayed') docDeliveryRunner?.wake();
+      return undefined;
+    },
+  });
+  const docDeliveryRunner = new DocDeliveryRunner({
+    pump: docPump,
+    now: () => new Date(),
+    onError: (error) => logger.warn('[document delivery] Recovery will retry', logError(error)),
+  });
+  const stopDocInputHints = docChannelHttp.service.onCommittedInput(() =>
+    docDeliveryRunner?.wake()
+  );
+  const stopDocTurnHints = onProjectorTurnBoundary(() => docDeliveryRunner?.wake());
+  const stopDocInteractionHints = onProjectorInteractionChange((change) => {
+    if (change.type === 'resolved') docDeliveryRunner?.wake();
+  });
+  stopDocDelivery = async () => {
+    stopDocInputHints();
+    stopDocTurnHints();
+    stopDocInteractionHints();
+    const draining = docDeliveryRunner!.stop();
+    docDispatchLifetime.abort();
+    await Promise.all([draining, suspendPrivateDispatches(docDispatchLifetime.signal)]);
+  };
+  if (connectorRuntimePrincipals && meshCore && requestAuthority) {
     const connectorEventChannels = new ConnectorEventNativeDestination({
       bindings: () => adapterManager?.getBindingStore(),
       adapters: () => adapterManager?.listAdapters() ?? [],
@@ -3640,17 +3745,6 @@ async function start() {
           id: scope.destinationId,
         }),
     });
-    recoverAcceptedPrivateSessions = () => {
-      const sessionIds = privateAcceptance.listAcceptedSessionIds(
-        100,
-        acceptedPrivateSessionCursor
-      );
-      acceptedPrivateSessionCursor = sessionIds.length === 100 ? sessionIds.at(-1) : undefined;
-      for (const sessionId of sessionIds) {
-        nudgePrivateSession(sessionId);
-      }
-    };
-    recoverAcceptedPrivateSessions();
     connectorAgentRequests = new ConnectorAgentRequestService({
       db,
       services: connectorOperatorQueries,
@@ -4482,6 +4576,7 @@ async function start() {
   // overlap today; conflating them would mean a new debug read could only be
   // added by widening the health checks' dependency surface.
   app.locals.debugDeps = {
+    docChannelMetrics,
     roomSessions: roomStore,
     // The SAME probe object the boot sweep and the deep health check hold, so
     // the raw debug read and the doctor cannot say different things about one
@@ -5328,6 +5423,11 @@ async function start() {
   capabilityRegistry = composeDorkOsCapabilityRegistry(
     {
       logger,
+      docChannelDownstream: docChannelHttp.downstream,
+      docChannelGrantDeps: {
+        service: docChannelHttp.grants,
+        authorization: docChannelHttp.authorization,
+      },
       // An agent's approved `change_permission` writes through the same owner
       // Settings does (spec `agent-permissions` D9).
       permissionService,
@@ -5754,7 +5854,7 @@ async function start() {
     void connectorAgentRequests?.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Agent request recovery failed', logError(error));
     });
-    recoverAcceptedPrivateSessions?.();
+    recoverAcceptedPrivateSessions();
   }, INTERVALS.HEALTH_CHECK_MS);
 
   // Keep the daily snapshot honest on a server that is never restarted. The
@@ -5880,6 +5980,9 @@ async function start() {
     eventFanOut.broadcast('tunnel_status', status);
   });
 
+  // Dispatch retained document work only after every runtime and capability is ready.
+  docDeliveryRunner.start();
+
   // Cloud link (accounts-and-auth P2): if this instance is device-linked to a
   // DorkOS account, heartbeat now and every 15 minutes. Non-blocking and
   // best-effort — independent of local login (config.auth.enabled). A 401 marks
@@ -5896,6 +5999,8 @@ async function start() {
 async function shutdownServices() {
   mainRequestAdmission.close();
   await workspaceReconcilerLifecycle.dispose();
+  await stopDocDelivery?.();
+  stopDocDelivery = undefined;
   logger.info('[DorkOS] shutting down services');
   stopSessionContinuation?.();
   stopSessionContinuation = undefined;
@@ -6060,6 +6165,8 @@ start().catch(async (err) => {
   // A later startup failure must not leave the owned offline listener running.
   await testComposioFixture?.close();
   testComposioFixture = undefined;
+  await stopDocDelivery?.();
+  stopDocDelivery = undefined;
   // Two startup failures are addressed to the operator rather than to whoever
   // maintains DorkOS: a database that will not open, and a backup that could not
   // be written. Both carry instructions in their message and both are resolved

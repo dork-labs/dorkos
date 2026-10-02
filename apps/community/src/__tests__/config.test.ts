@@ -394,6 +394,20 @@ describe('community startup config', () => {
     ).toThrow();
   });
 
+  it('limits account closures per day, and never turns the limit off', () => {
+    // Purpose (DOR-2557): fails if the default is not conservative, or the limit can be switched
+    // off or raised without bound.
+    expect(parseConfig(valid).limits.accountClosuresPerDay).toBe(10);
+    for (const count of ['0', '1001'])
+      expect(() => parseConfig({ ...valid, COMMUNITY_ACCOUNT_CLOSURES_PER_DAY: count })).toThrow(
+        /COMMUNITY_ACCOUNT_CLOSURES_PER_DAY/
+      );
+    expect(
+      parseConfig({ ...valid, COMMUNITY_ACCOUNT_CLOSURES_PER_DAY: '1000' }).limits
+        .accountClosuresPerDay
+    ).toBe(1000);
+  });
+
   it('keeps a community takedown reversible for at least a day and limits takedowns per day', () => {
     // Purpose (AC-13): fails if a host could set a reversal window under a day (a takedown that
     // cannot be undone) or over thirty days, or turn the per-actor daily limit off.

@@ -22,7 +22,7 @@
  * @module services/core/capabilities/openapi-projection
  */
 import type { OpenAPIRegistry, RouteConfig } from '@asteasolutions/zod-to-openapi';
-import type { z } from 'zod';
+import { capabilityInputObject } from './input-projection.js';
 
 import type { CapabilityRegistry } from './registry.js';
 
@@ -93,7 +93,7 @@ export function registerCapabilitiesInOpenApi(
     taken.add(key);
 
     const domain = capability.id.slice(0, capability.id.indexOf('.'));
-    const inputObject = capability.input as z.ZodObject<z.ZodRawShape>;
+    const inputObject = capabilityInputObject(capability);
     const hasInputFields = Object.keys(inputObject.shape).length > 0;
     const isWrite = http.method === 'post' || http.method === 'put' || http.method === 'patch';
 

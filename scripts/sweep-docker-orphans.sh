@@ -52,8 +52,9 @@
 #                      before calling Docker frozen (default 60)
 #
 # Running it nightly on macOS: a LaunchAgent template sits beside this script at
-# scripts/launchd/ai.dorkos.docker-orphan-sweep.plist.example. It runs this
-# script with /bin/bash at 03:17 local time and appends to
+# scripts/launchd/ai.dorkos.docker-orphan-sweep.plist.example. It runs
+# scripts/sweep-test-tmp.sh and then this script with /bin/bash at 03:17 local
+# time (each runs whatever the other returned) and appends to
 # ~/Library/Logs/dorkos-docker-sweep.log. Nothing installs it; to opt in, run
 # this from the root of a checkout that stays put (not a worktree):
 #

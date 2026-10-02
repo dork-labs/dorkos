@@ -64,6 +64,8 @@ export class ScenarioAborted extends Error {
  * behaving identically.
  */
 export interface ScenarioContext {
+  /** The exact fenced document input a production runtime receives, for scripted proofs. */
+  docEventsPrompt?: string;
   /** The session this turn belongs to. */
   readonly sessionId: string;
   /**

@@ -22,6 +22,7 @@
  *
  * @module services/session/session-state-projector
  */
+import { moveDurableSessionIdentity } from './turn-identity/durable-rekey.js';
 import {
   StaleResumeCursorError,
   isBlockingInteractionEvent,
@@ -2632,6 +2633,11 @@ export function rekeyProjector(oldId: string, newId: string): void {
   if (fromId === newId) return;
   const projector = projectors.get(fromId);
   if (!projector) return;
+  try {
+    moveDurableSessionIdentity(fromId, newId);
+  } catch (error) {
+    logger.warn('[SessionStateProjector] durable identity move blocked', { fromId, newId, error });
+  }
   const displaced = projectors.get(newId);
   if (displaced !== undefined) {
     // Evicting the displaced instance is not enough: it is now unreachable, so

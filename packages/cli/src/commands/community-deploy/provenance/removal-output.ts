@@ -198,6 +198,18 @@ function manualSteps(provider: RemovalProvider, journal: LaunchJournal): string[
   ];
 }
 
+/**
+ * When an absent run can be cleared, in plain words: "in about 12 minutes (after 10:44 UTC)".
+ * The clock time is rounded up to the next whole minute, so "after" is never early.
+ */
+function whenClearable(clearableAfter: string, clearableInMs: number | undefined): string {
+  const at = Date.parse(clearableAfter);
+  const minute = new Date(Math.ceil(at / 60_000) * 60_000).toISOString().slice(11, 16);
+  if (clearableInMs === undefined) return `after ${minute} UTC`;
+  const minutes = Math.max(1, Math.ceil(clearableInMs / 60_000));
+  return `in about ${minutes} minute${minutes === 1 ? '' : 's'} (after ${minute} UTC)`;
+}
+
 function removeCommand(runId: string, token?: string): string {
   return `dorkos community deploy --remove-uncertain ${runId}${token ? ` --confirm ${shown(token)}` : ''}`;
 }
@@ -248,7 +260,11 @@ export function formatRemovalOutcome(
     case 'absent':
       return done([
         `Nothing named ${shown(context.journal.pendingIntent?.resourceName)} exists in ${OWNER[outcome.provider]} ${shown(context.journal.pendingIntent?.organizationId)}. The create probably never landed.`,
-        'Nothing was changed. This run cannot be resumed; start a new launch instead.',
+        outcome.cleared
+          ? 'Nothing was changed there. This run made nothing else, so DorkOS removed its saved record and it no longer shows in --list-incomplete. Start a new launch instead.'
+          : outcome.clearableAfter
+            ? `Nothing was changed. The create was sent recently and could still appear, so DorkOS keeps this run for now. Run ${removeCommand(context.runId)} again ${whenClearable(outcome.clearableAfter, outcome.clearableInMs)} to check once more and clear it.`
+            : 'Nothing was changed. This run cannot be resumed; start a new launch instead.',
       ]);
     case 'unproved':
       return done([

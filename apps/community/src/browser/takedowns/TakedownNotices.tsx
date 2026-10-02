@@ -49,7 +49,7 @@ function Reasons({ communityId, notice }: { communityId: string; notice: Takedow
 }
 
 /**
- * Settings › "Removed by the host", for the owner and admins: each thing the host took down and
+ * Settings › "Removed by the server admin", for the owner and admins: each thing the server admin took down and
  * chose to say so, with the day, where, and why. Never what it said. Nothing when there is none.
  */
 export function RemovedByHost({

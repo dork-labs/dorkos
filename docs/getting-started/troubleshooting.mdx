@@ -31,7 +31,7 @@ You'll see an error like `Port 4242 is already in use.` DorkOS listens on port 4
   you set with `--port` wins over everything else for that run.
 </Callout>
 
-**In the [desktop app](/docs/getting-started/desktop-app) this usually fixes itself.** 4242 is a starting guess, so when something else has it the app takes the next free port (4243, then 4244) and **Settings → Server** shows the address it landed on. It only stops if ten ports in a row are unavailable, and the message names the range.
+**In the [desktop app](/docs/getting-started/desktop-app) this usually fixes itself.** 4242 is a starting guess, so when something else has it the app takes the next free port (4243, then 4244) and **Settings → Advanced → Server** shows the address it landed on. It only stops if ten ports in a row are unavailable, and the message names the range.
 
 **A port you chose is treated differently.** If you pinned one with `dorkos config set server.port` or the `DORKOS_PORT` environment variable, the app will not move off it. It stops and tells you the port is taken, because anything you already pointed at that port would break if DorkOS quietly answered somewhere else. Free the port and open the app again, or pin a different one.
 
@@ -55,7 +55,7 @@ Look for the DorkOS icon in the menu bar on macOS, or in the notification area n
 
 ## "Restart DorkOS and Reset all data in the desktop app"
 
-Both buttons in **Settings → Danger zone** work in the desktop app. The app runs the server itself, so it does the work for you:
+Both buttons in **Settings → Advanced → Danger zone** work in the desktop app. The app runs the server itself, so it does the work for you:
 
 - **Restart DorkOS** stops the server, starts it again, and points the window at the new one. If the restart fails, the app tells you and leaves a server running.
 - **Reset all data** stops the server, deletes your data folder, then starts fresh.
@@ -88,7 +88,7 @@ DorkOS exposes a health check you can hit directly, no login required:
 curl http://localhost:4242/api/health
 ```
 
-Swap in your own address if DorkOS isn't on 4242. **Settings → Server** always shows it.
+Swap in your own address if DorkOS isn't on 4242. **Settings → Advanced → Server** always shows it.
 
 A healthy server answers with something like:
 

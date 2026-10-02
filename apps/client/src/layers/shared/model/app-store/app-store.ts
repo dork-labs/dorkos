@@ -221,6 +221,7 @@ export const useAppStore = create<AppState>()(
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
             localStorage.removeItem(STORAGE_KEYS.PIP_PANEL_STATE);
+            localStorage.removeItem(STORAGE_KEYS.SETTINGS_ADVANCED_OPEN);
           } catch {}
           set({
             ...BOOL_DEFAULTS,

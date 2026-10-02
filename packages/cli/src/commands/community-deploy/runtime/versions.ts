@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { ProviderCommandError, runProviderCommand } from '../provider-process.js';
 import type { FlySessionReadOptions } from '../tigris-session.js';
 import type { NeonReadOptions } from '../neon-read.js';
+import { describeCommunityCredential } from './credential-env.js';
 
 const VersionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
 /**
@@ -32,38 +33,78 @@ const PROVIDER_HELP = {
   },
 } as const;
 
+/** Which credential a preflight read used, and for which organization, to word a refusal. */
+export interface CommunityPreflightAccess {
+  /** The environment `fly` or `neonctl` was given. Only variable names are ever printed. */
+  env: Readonly<Record<string, string | undefined>>;
+  /** The organization the person chose, as they typed it. */
+  organization: string;
+}
+
 /** Provider-specific, secret-free preflight failure with an actionable official destination. */
 export class CommunityProviderPreflightError extends Error {
   /** Provider whose local CLI could not complete an authenticated read. */
   readonly provider: CommunityProvider;
   /** Stable local action classification. */
-  readonly code: 'CLI_NOT_FOUND' | 'AUTH_REQUIRED' | 'PROVIDER_UNAVAILABLE';
+  readonly code: 'CLI_NOT_FOUND' | 'AUTH_REQUIRED' | 'ACCESS_DENIED' | 'PROVIDER_UNAVAILABLE';
 
-  /** Create one actionable provider failure without copying provider output. */
-  constructor(provider: CommunityProvider, code: CommunityProviderPreflightError['code']) {
+  /**
+   * Create one actionable provider failure without copying provider output.
+   *
+   * @param provider - The service whose read failed.
+   * @param code - What kind of failure it was.
+   * @param access - For `ACCESS_DENIED`: the credential and organization to name.
+   */
+  constructor(
+    provider: CommunityProvider,
+    code: CommunityProviderPreflightError['code'],
+    access?: CommunityPreflightAccess
+  ) {
     const help = PROVIDER_HELP[provider];
     const message =
       code === 'CLI_NOT_FOUND'
         ? `${provider === 'fly' ? 'Fly CLI' : 'Neon CLI'} is required. Install it from ${help.install}`
         : code === 'AUTH_REQUIRED'
           ? `${provider === 'fly' ? 'Fly' : 'Neon'} sign-in is required. Run ${help.command}, then retry. ${help.auth}`
-          : `${provider === 'fly' ? 'Fly' : 'Neon'} preflight is unavailable. Check provider status, CLI compatibility, and sign-in with ${help.command}, then retry. ${help.install}`;
+          : code === 'ACCESS_DENIED' && access
+            ? provider === 'fly'
+              ? // Fly answers `unauthorized` both for a token without access and for one that has
+                // expired or was revoked, so the message names both.
+                `${describeCommunityCredential('fly', access.env)} can't read organization ${access.organization}. It may have expired, or it may not have access there. Setup needs a token or sign-in that can create apps in it.`
+              : `${describeCommunityCredential('neon', access.env)} can't read organization ${access.organization}. Setup needs a key or sign-in that can create projects in it.`
+            : `${provider === 'fly' ? 'Fly' : 'Neon'} preflight is unavailable. Check provider status, CLI compatibility, and sign-in with ${help.command}, then retry. ${help.install}`;
     super(message);
     this.name = 'CommunityProviderPreflightError';
     this.provider = provider;
-    this.code = code;
+    this.code = code === 'ACCESS_DENIED' && !access ? 'PROVIDER_UNAVAILABLE' : code;
   }
 }
 
-/** Convert a bounded provider-process failure into provider-specific preflight guidance. */
+/**
+ * Convert a bounded provider-process failure into provider-specific preflight guidance.
+ *
+ * A read the service refused outright (see `isProviderAccessRefusal`) says so, naming the
+ * credential and organization from `access`. For Fly that refusal also covers an expired or
+ * revoked token, and the message says so. Any other failure keeps the general message, which
+ * fits an outage, an old CLI or a missing sign-in.
+ *
+ * @param provider - The service whose read failed.
+ * @param error - What the read threw.
+ * @param access - The credential and organization the read used; without it a refusal is worded
+ *   as unavailable.
+ */
 export function classifyCommunityProviderPreflightFailure(
   provider: CommunityProvider,
-  error: unknown
+  error: unknown,
+  access?: CommunityPreflightAccess
 ): never {
   if (error instanceof CommunityProviderPreflightError) throw error;
   if (error instanceof ProviderCommandError) {
     if (error.code === 'SPAWN')
       throw new CommunityProviderPreflightError(provider, 'CLI_NOT_FOUND');
+    if (error.refused && access) {
+      throw new CommunityProviderPreflightError(provider, 'ACCESS_DENIED', access);
+    }
   }
   throw new CommunityProviderPreflightError(provider, 'PROVIDER_UNAVAILABLE');
 }

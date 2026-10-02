@@ -7,30 +7,14 @@
  */
 import type { StateCreator } from 'zustand';
 import type { AppState } from './app-store-types';
+import type { BuiltInSettingsTab } from '@/layers/shared/lib/constants';
 
 // ---------------------------------------------------------------------------
 // Tab identifier types
 // ---------------------------------------------------------------------------
 
 /** Valid tab identifiers for the Settings dialog. Extension tabs are allowed as arbitrary strings. */
-export type SettingsTab =
-  | 'profile'
-  | 'account'
-  | 'appearance'
-  | 'preferences'
-  | 'notifications'
-  | 'server'
-  | 'tools'
-  | 'security'
-  | 'remote-access'
-  | 'runtimes'
-  | 'rooms'
-  | 'connections'
-  | 'permissions'
-  | 'privacy'
-  | 'danger'
-  | 'experiments'
-  | (string & {});
+export type SettingsTab = BuiltInSettingsTab | (string & {});
 
 // ---------------------------------------------------------------------------
 // Slice interface

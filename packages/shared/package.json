@@ -125,6 +125,10 @@
       "types": "./src/agent-browser.ts",
       "default": "./dist/agent-browser.js"
     },
+    "./browser-schemas": {
+      "types": "./src/browser-schemas.ts",
+      "default": "./dist/browser-schemas.js"
+    },
     "./agent-face": {
       "types": "./src/agent-face.ts",
       "default": "./dist/agent-face.js"
@@ -432,6 +436,18 @@
     "./community-navigation": {
       "types": "./src/community-navigation.ts",
       "default": "./dist/community-navigation.js"
+    },
+    "./canvas-bridge-wire": {
+      "types": "./src/canvas-bridge-wire.ts",
+      "default": "./dist/canvas-bridge-wire.js"
+    },
+    "./canvas-channel-schemas": {
+      "types": "./src/canvas-channel-schemas.ts",
+      "default": "./dist/canvas-channel-schemas.js"
+    },
+    "./canvas-app-manifest": {
+      "types": "./src/canvas-app-manifest.ts",
+      "default": "./dist/canvas-app-manifest.js"
     }
   },
   "scripts": {
@@ -444,6 +460,7 @@
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "9.1.0",
     "@dork-labs/cloud-api": "workspace:*",
+    "ajv": "^8.20.0",
     "ulidx": "^2.4.1",
     "zod": "^4.6.2"
   },
@@ -451,7 +468,6 @@
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/node": "^24",
-    "ajv": "^8.20.0",
     "vitest": "^4.1.11"
   }
 }

@@ -15,6 +15,7 @@ import {
   requireLiveRole,
   requireMember,
   transaction,
+  type HeldRemovalOption,
   type Member,
 } from '../../data.js';
 import type { ConfirmPassword } from '../../password-confirmation.js';
@@ -22,8 +23,13 @@ import { ApiError, json, readJson } from '../../http.js';
 import { memberIsLeaving } from '../../erasure/guards.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
 
-async function live(client: PoolClient, id: string, communityId: string) {
-  await lockActiveCommunity(client, communityId);
+async function live(
+  client: PoolClient,
+  id: string,
+  communityId: string,
+  options: HeldRemovalOption = {}
+) {
+  await lockActiveCommunity(client, communityId, options);
   const result = await client.query<Member>(
     'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
     [id, communityId]
@@ -217,7 +223,11 @@ export function registerMemberRoutes(
     const body = await readJson(c, CommunityWireMemberLeaveRequestSchema);
     await confirmPassword(c, actor.user_id, body.password);
     await transaction(pool, async (client) => {
-      const current = await live(client, actor.id, actor.community_id);
+      // Leaving is the member's own choice, so a host hold never blocks it: it shrinks the
+      // community and adds nothing. A legal hold does not either: it keeps the community's
+      // content, and leaving deletes no message or file. Refusing would also tell the member a
+      // legal hold exists, which nothing member-facing may do.
+      const current = await live(client, actor.id, actor.community_id, { allowHeld: true });
       if (!current) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
       if (current.role === 'owner')
         throw new ApiError(403, 'FORBIDDEN', 'Transfer ownership before leaving.');

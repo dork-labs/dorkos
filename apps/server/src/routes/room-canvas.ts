@@ -177,12 +177,10 @@ router.post<CanvasParams>('/', (req, res) => {
   if (!body) return;
   try {
     const caller = requireCanvasAccess(req, res, { write: true });
-    const document = getRoomService().canvas.open(
-      req.params.id,
-      caller,
-      body.content,
-      ...(body.pinned !== undefined ? [{ pinned: body.pinned }] : [])
-    );
+    const document = getRoomService().canvas.open(req.params.id, caller, body.content, {
+      ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
+      ...(body.channel ? { channel: body.channel } : {}),
+    });
     res.status(201).json(document);
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/canvas');

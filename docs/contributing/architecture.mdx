@@ -11,7 +11,7 @@ This is the engineering reference. For a plain-language introduction, start with
 
 DorkOS has several deployment boundaries. The local React client reaches an Express server through the `Transport` interface. The independent Community server owns shared channels. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
 
-The Cloud views were refreshed against public source `5794f638160a68811382347356fd29b31ee2e911` on September 27, 2026. Other views retain the September 23 review and September 25 Obsidian retirement update. Solid flowchart edges show implemented public paths; dashed edges label contract relationships or unfinished wiring. Neither style certifies production availability. Sequence-diagram dashed arrows are responses and events.
+Reviewed against public source `996161118a84f938fe76b6e569ba077dfb7a574a` on October 1, 2026. Spaces is the product name; Community remains the service and schema name. Solid diagram edges show implemented public paths, while dashed edges identify unfinished wiring or service-contract relationships. Neither establishes live deployment. Sequence-diagram dashed arrows represent responses and events.
 
 ## System map
 
@@ -20,6 +20,18 @@ The Cloud views were refreshed against public source `5794f638160a68811382347356
 Browser, phone web app, and desktop renderer share the local server path. The desktop shell manages a local server.
 
 Community has its own browser, sign-in, PostgreSQL, and file storage. Its browser chat, invitations, files, and exports are implemented. After a person approves a local installation, the local app opens authorized Community channels through qualified local-server routes and a remote-room SSE stream.
+
+The main server now refuses new HTTP requests and WebSocket upgrades once shutdown begins. Already-admitted requests, streams and background work retain their existing lifetimes. Workspace reconciliation has bounded terminal disposal; the broader storage/lock/restart handoff is still a proposed design.
+
+## Projects and extension orchestration
+
+[![Canonical projects, trusted extensions, Activity decisions and account-qualified work starts](/diagrams/architecture/projects-extensions.svg)](/diagrams/architecture/projects-extensions.svg)
+
+A Git main checkout defines a project; its worktrees and subfolders resolve to that identity. Extensions can report roots, but those reports do not expand core discovery authority. One selected extension copy runs across projects. Source/origin-trusted project copies use immutable snapshots; explicitly path-approved copies run in place. Trusting a source and enabling it in a project are separate decisions.
+
+Extensions contribute pages under `/x/<extensionId>`, status items and questions in Activity. Their browser and server callers start chats through the same core launch service, with persisted origin and shared start limits. Flow is an external marketplace plugin using these public seams. Claude Code account selection checks both account and project eligibility; equivalent project restrictions are not implemented for every runtime.
+
+Connections uses one app list. Shared readiness explains what is usable and how to repair it; authorization still checks grants, access levels and per-chat choices. Chosen levels remain bounded as an app's operations change.
 
 ## Replaceable interfaces
 
@@ -53,9 +65,13 @@ WebSocket reconnection sends the opaque cursor as `?resume=`; SSE uses `Last-Eve
 
 [![Local rooms, messaging bridges, and the independent space server](/diagrams/architecture/community.svg)](/diagrams/architecture/community.svg)
 
-A Community host owns host-wide sign-in and tenant-scoped membership and posts. Canonical routes name the immutable community UUID; unqualified routes are compatibility aliases for a single-community host. Host operators and scoped machine keys manage containers, limits and usage, but gain no tenant content access. It does not execute agent turns. Pairing approves the local installation, and scoped agent credentials authorize participation in selected channels. Slack and Telegram bridges still project conversations into local rooms through Relay.
+A Community host owns host-wide sign-in and tenant-scoped membership and posts. Canonical routes name the immutable community UUID; unqualified routes are compatibility aliases for a single-community host. Host operators and scoped machine keys manage containers, limits and usage without becoming members. Separately scoped takedown and evidence operations provide exceptional moderation access; host keys remain refused on ordinary tenant content routes. It does not execute agent turns. Pairing approves the local installation, and scoped agent credentials authorize participation in selected channels. Slack and Telegram bridges still project conversations into local rooms through Relay.
 
 Server-owned subscriptions continue independently of browser SSE readers. Local room mirrors support dispatch; Community remains authoritative. A durable outbox confirms remote posts and checks Stop and revocation before delivery. The community switcher changes scope without changing where agents execute.
+
+Agent enrollment belongs to the approving installation grant, so disconnecting one computer does not remove another computer's agents. Authoritative deletion, takedown and revocation remove derived local mirrors and stop applicable work. An unexplained 404 is not proof that a community was deleted.
+
+The host imports version 1 and 2 owner exports through a worker into an unclaimed tenant. Historical members and agents do not receive live credentials; ownership requires a new claim. Whole-community takedown supports evidence retention and reversal to a suspended state. Owner replacement uses a scoped request, durable notices, a waiting period, objection and signed-in claim. Legal holds protect inventory-mapped files, while an IDs-only erasure journal can be copied off-server and reapplied after backup restore. These operator workflows need their own operational proof.
 
 ## Runtime tools
 
@@ -67,7 +83,7 @@ Claude Code carries DorkOS tools in-process. Codex and OpenCode use a separate l
 
 [![Package discovery, local installation, activation and harness projection](/diagrams/architecture/marketplace.svg)](/diagrams/architecture/marketplace.svg)
 
-Source registries supply package metadata and content. The website browses them. Local installation validates packages, prepares permission previews, and uses a file transaction with rollback. Harness Sync projects agent-facing assets into the layouts the coding tools read; app extensions have their own activation path. The install path is covered end to end, while full Claude Code marketplace superset compatibility remains unverified.
+Source registries supply package metadata and content. The website browses them. Local installation validates packages, prepares permission previews, and uses a file transaction with rollback. Harness Sync projects agent-facing assets into the layouts the coding tools read; app extensions have their own activation path. Install/update/uninstall serialize per target; preserved backups never load as packages, ambiguous user files remain available for resolution, and failed activation preserves an existing connection. Startup project recovery currently enumerates Mesh agent projects rather than every known project. The install path is covered end to end, while full Claude Code marketplace superset compatibility remains unverified.
 
 ## Cloud boundary
 
@@ -76,6 +92,8 @@ Source registries supply package metadata and content. The website browses them.
 The public `packages/cloud-api` package defines schemas, routes, fixtures and a fetch client. Existing device-link, heartbeat and managed-service calls still use `/api/auth/device/*` and `/api/instances/*`; versioned clients use `/v1`. Both resolve `DORKOS_CLOUD_URL`, falling back to the website origin. Service implementation does not itself migrate those callers or origins.
 
 The contract's remote command stream uses SSE and has lease/acknowledgement semantics. The existing local tunnel manager separately uses the ngrok SDK; the managed command consumer remains separate app-side work. Remote browser traffic travels through the tunnel to the local server. Credits inference is another optional path, requiring an explicit flag and a linked instance. Local DorkOS and Community both run without Cloud.
+
+The account surface asks Cloud for opaque offers and short-lived hosted billing URLs; payment happens in a browser. Account export is a service job, separate from exporting a community. A proposed per-session credits choice is active work; the current implementation still requires the explicit credits flag and supports Claude Code only.
 
 ### Account handover
 
@@ -89,7 +107,7 @@ The [repository system architecture guide](https://github.com/dork-labs/dorkos/b
 
 [![Space management and space archive upload remain separate paths](/diagrams/architecture/hosted-communities.svg)](/diagrams/architecture/hosted-communities.svg)
 
-The public hosted-community contract connects optional Cloud management to the independently runnable Community host. Scoped host APIs manage lifecycle, claims, limits and usage. The local start/move dialogs and `/api/cloud/communities/*` relay are implemented. Complete hosted availability and Community import acceptance remain separate from that app-side implementation.
+The public hosted-community contract connects optional Cloud management to the independently runnable Community host. Scoped host APIs manage lifecycle, claims, limits and usage. The local start/move dialogs and `/api/cloud/communities/*` relay are implemented. Host import/restore and multipart upload are implemented. Current hosted availability and full launch acceptance still need their own evidence.
 
 The local server stages and uploads a move archive to the Community server. Cloud receives management requests, not the archive. Installation and upload credentials stay on the local server; a one-time claim URL reaches the browser only through the explicit claim-link action. Hosting does not grant ordinary Community membership. Where Cloud names a Community server whose single sign-on is the DorkOS account, the app opens that server's claim, invitation and approval pages with a hint that makes them lead with that sign-in; the person still signs in in their own browser, and an unlisted server keeps its own accounts.
 

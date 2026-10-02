@@ -169,7 +169,38 @@ describe('--remove-uncertain output', () => {
     [{ outcome: 'nothing-pending' as const }, 0, 'This run has no unresolved resource.'],
     [{ outcome: 'resume-first' as const }, 0, `--resume ${RUN_ID}`],
     [{ outcome: 'not-a-create' as const }, 0, 'RECOVERY REPORT'],
-    [{ outcome: 'absent' as const, provider: 'fly' as const }, 0, 'probably never landed'],
+    [
+      { outcome: 'absent' as const, provider: 'fly' as const, cleared: false },
+      0,
+      'This run cannot be resumed',
+    ],
+    [
+      { outcome: 'absent' as const, provider: 'fly' as const, cleared: true },
+      0,
+      'it no longer shows in --list-incomplete',
+    ],
+    [
+      {
+        outcome: 'absent' as const,
+        provider: 'fly' as const,
+        cleared: false,
+        clearableAfter: '2026-09-23T10:43:03.000Z',
+        clearableInMs: 483_000,
+      },
+      0,
+      `Run dorkos community deploy --remove-uncertain ${RUN_ID} again in about 9 minutes (after 10:44 UTC) to check once more and clear it.`,
+    ],
+    [
+      {
+        outcome: 'absent' as const,
+        provider: 'fly' as const,
+        cleared: false,
+        clearableAfter: '2026-09-23T10:44:00.000Z',
+        clearableInMs: 1_000,
+      },
+      0,
+      'again in about 1 minute (after 10:44 UTC)',
+    ],
     [{ outcome: 'unreachable' as const, provider: 'neon' as const }, 1, 'could not read Neon'],
     [{ outcome: 'changed' as const }, 1, 'nothing was removed'],
     [

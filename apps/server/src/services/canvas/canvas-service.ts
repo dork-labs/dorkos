@@ -1,3 +1,5 @@
+import type { ServerPrincipalProof } from '../connectors/principal/server-principal.js';
+import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-schemas';
 /**
  * The one writer for every canvas on this machine — a room's shared table and a
  * person's own session canvas (specs `room-canvas` §3, `canvas-agent-seat` §1.2).
@@ -212,6 +214,13 @@ export type CanvasDefaultTarget = 'author-last' | 'active-in-view';
 
 /** How a canvas reaches the rest of the server. */
 export interface CanvasDeps {
+  /** Resolve the original opener from current server-bound session/room identity, never page fields. */
+  resolveOpener?: (
+    scope: string,
+    authorId: string,
+    tx: DbTransaction,
+    principal?: ServerPrincipalProof
+  ) => string | null;
   /** The rows. */
   documents: CanvasDocumentStore;
   /** Where a frame goes, and who is watching. */
@@ -233,6 +242,10 @@ export interface CanvasDeps {
 
 /** What `open` was given beyond the content itself. */
 export interface CanvasOpenOptions {
+  /** Optional declaration data, independent of route approval. */
+  channel?: CanvasChannelDeclaration;
+  /** Verified server runtime caller, never a page option. */
+  principal?: ServerPrincipalProof;
   /** Pin it on creation. */
   pinned?: boolean;
   /** Where a file document's path resolved, and how it is labelled. */
@@ -246,6 +259,12 @@ export class CanvasService {
   private readonly displayNameFor: (authorId: string) => string;
   private readonly viewerOverrides: () => Record<string, string> | undefined;
   private readonly now: () => number;
+  private readonly resolveOpener: (
+    scope: string,
+    authorId: string,
+    tx: DbTransaction,
+    principal?: ServerPrincipalProof
+  ) => string | null;
   /** Who wants to hear that a row is gone. See {@link onRemoved}. */
   private readonly removalListeners = new Set<(scope: string, documentId: string) => void>();
 
@@ -265,6 +284,7 @@ export class CanvasService {
    */
   constructor(deps: CanvasDeps) {
     this.documents = deps.documents;
+    this.resolveOpener = deps.resolveOpener ?? (() => null);
     this.channels = deps.channels;
     this.displayNameFor = deps.displayNameFor ?? (() => 'Somebody');
     this.viewerOverrides = deps.viewerOverrides ?? (() => undefined);
@@ -303,6 +323,7 @@ export class CanvasService {
     scope: string;
     authorId: string;
     command: UiCommand;
+    principal?: ServerPrincipalProof;
     tree?: CanvasTreePlacement;
     defaultTarget?: CanvasDefaultTarget;
     chargeCeiling?: () => { code: RoomErrorCode; reason: string } | null;
@@ -346,8 +367,7 @@ export class CanvasService {
 
     if (plan.kind === 'close') {
       const closed = plan.existing;
-      this.documents.remove(scope, closed.id);
-      this.publish(scope, { type: 'canvas', documentId: closed.id, closed: true });
+      this.remove(scope, closed.id);
       input.record?.({
         change: 'closed',
         documentId: closed.id,
@@ -362,7 +382,7 @@ export class CanvasService {
       };
     }
 
-    const document = this.write(scope, authorId, plan);
+    const document = this.write(scope, authorId, plan, input.principal);
     input.record?.({
       change: plan.existing ? 'updated' : 'opened',
       documentId: document.id,
@@ -424,14 +444,20 @@ export class CanvasService {
       );
     }
     const tree = opts.tree ?? NO_TREE;
-    return this.write(scope, authorId, {
-      kind: 'write',
-      content,
-      sourceKey,
-      existing,
-      pinned: opts.pinned ?? false,
-      ...tree,
-    });
+    return this.write(
+      scope,
+      authorId,
+      {
+        kind: 'write',
+        content,
+        sourceKey,
+        existing,
+        pinned: opts.pinned ?? false,
+        channel: opts.channel,
+        ...tree,
+      },
+      opts.principal
+    );
   }
 
   /**
@@ -835,7 +861,10 @@ export class CanvasService {
       // to says nothing. The mark stays for a healthier pass.
       if (degraded.size > 0) continue;
       this.orphanedSessions.delete(sessionId);
-      deleted += this.documents.removeScope(`session:${sessionId}`);
+      const scope = `session:${sessionId}`;
+      const removed = this.documents.identities(scope);
+      deleted += this.documents.removeScope(scope);
+      for (const row of removed) this.notifyRemoved(scope, row.id);
     }
     return deleted;
   }
@@ -913,6 +942,7 @@ export class CanvasService {
         sourceKey,
         existing,
         pinned: existing?.pinned ?? false,
+        channel: 'channel' in command ? command.channel : undefined,
         resolvedCwd: tree.resolvedCwd ?? existing?.resolvedCwd ?? null,
         sourceLabel: tree.sourceLabel ?? existing?.sourceLabel ?? null,
         treeKind: tree.treeKind ?? existing?.treeKind ?? null,
@@ -974,7 +1004,12 @@ export class CanvasService {
   }
 
   /** Insert or refresh one row, evict down to capacity, and publish the frame. */
-  private write(scope: string, authorId: string, plan: CanvasWritePlan): CanvasDocument {
+  private write(
+    scope: string,
+    authorId: string,
+    plan: CanvasWritePlan,
+    principal?: ServerPrincipalProof
+  ): CanvasDocument {
     const at = new Date(this.now()).toISOString();
     const rev = this.documents.maxRev(scope) + 1;
     const title = canvasTitle(plan.content);
@@ -1013,7 +1048,7 @@ export class CanvasService {
       return this.publishDocument(scope, row, 'updated');
     }
     const row: CanvasDocumentRow = {
-      id: canvasDocumentId(scope, plan.sourceKey),
+      id: this.documents.freshDocumentId(canvasDocumentId(scope, plan.sourceKey)),
       scope,
       // The invariant, applied in the one place a row is born.
       roomId: roomIdForScope(scope),
@@ -1037,7 +1072,10 @@ export class CanvasService {
       // A document is born without a discussion; the first Discuss writes this.
       threadRootEntryId: null,
     };
-    this.documents.insert(row);
+    this.documents.insert(row, (tx) => ({
+      declaration: plan.channel,
+      openerAgentId: this.resolveOpener(scope, authorId, tx, principal),
+    }));
     this.evict(scope, row.id);
     return this.publishDocument(scope, row, 'opened');
   }
@@ -1091,9 +1129,23 @@ export class CanvasService {
    * hears about an eviction exactly as it hears about a close.
    */
   private remove(scope: string, documentId: string): void {
-    this.documents.remove(scope, documentId);
-    this.publish(scope, { type: 'canvas', documentId, closed: true });
-    for (const listener of this.removalListeners) listener(scope, documentId);
+    if (this.documents.remove(scope, documentId)) this.notifyRemoved(scope, documentId);
+  }
+
+  /** Notification failures cannot undo a committed authority closure. */
+  private notifyRemoved(scope: string, documentId: string): void {
+    try {
+      this.publish(scope, { type: 'canvas', documentId, closed: true });
+    } catch (error) {
+      logger.warn('[canvas] closure publication failed', { documentId, error });
+    }
+    for (const listener of this.removalListeners) {
+      try {
+        listener(scope, documentId);
+      } catch (error) {
+        logger.warn('[canvas] removal observer failed', { documentId, error });
+      }
+    }
   }
 
   /** Fan one frame out to this scope's live readers. */
@@ -1104,6 +1156,7 @@ export class CanvasService {
 
 /** A write this command implies: fresh row, or a refresh of one that exists. */
 interface CanvasWritePlan extends CanvasTreePlacement {
+  channel?: CanvasChannelDeclaration;
   kind: 'write';
   content: UiCanvasContent;
   sourceKey: string | null;

@@ -84,6 +84,7 @@ beforeAll(() => {
 
 afterEach(() => {
   deepLink.tab = null;
+  localStorage.clear();
   cleanup();
 });
 
@@ -137,10 +138,23 @@ function createWrapper(transport?: Transport) {
   );
 }
 
-/** Click a sidebar navigation item by name to switch panels. */
+/** The Advanced group's disclosure in the sidebar. */
+function advancedToggle() {
+  return screen.getByRole('button', { name: 'Advanced' });
+}
+
+/**
+ * Click a sidebar navigation item by name to switch panels, unfolding Advanced
+ * first when the tab lives behind it — as a person would.
+ */
 function navigateTo(name: RegExp | string) {
-  const tab = screen.getByRole('tab', { name });
-  fireEvent.click(tab);
+  if (!screen.queryByRole('tab', { name })) fireEvent.click(advancedToggle());
+  fireEvent.click(screen.getByRole('tab', { name }));
+}
+
+/** The sidebar's tab labels, top to bottom. */
+function tabLabels() {
+  return screen.getAllByRole('tab').map((tab) => tab.textContent?.trim());
 }
 
 describe('SettingsDialog', () => {
@@ -224,6 +238,7 @@ describe('SettingsDialog', () => {
   // the Extensions tab arrives through the settings.tabs slot, unmounted here).
   it('renders the built-in sidebar items and drops the retired Integrations and Agents tabs', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    fireEvent.click(advancedToggle());
     expect(screen.getByRole('tab', { name: /appearance/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /preferences/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /server/i })).toBeDefined();
@@ -236,10 +251,11 @@ describe('SettingsDialog', () => {
     expect(screen.getByRole('tab', { name: /danger zone/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /experiments/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /^connections$/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /^room limits$/i })).toBeDefined();
     // The two deleted tabs are gone.
     expect(screen.queryByRole('tab', { name: /integrations/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^agents$/i })).toBeNull();
-    // Advanced is named after what it holds (DOR-1758), and the Access tab
+    // Advanced is a fold, never a tab of its own (DOR-2629), and the Access tab
     // that merged local login with the DorkOS account is gone again (DOR-2628).
     expect(screen.queryByRole('tab', { name: /^advanced$/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^access$/i })).toBeNull();
@@ -312,9 +328,13 @@ describe('SettingsDialog', () => {
     const headers = Array.from(
       container.querySelectorAll('[data-slot="navigation-layout-section-header"]')
     ).map((el) => el.textContent);
-    // Four labelled peers. The first four tabs used to carry no group at all and
-    // rendered as a headerless run above the first header (DOR-1758).
-    expect(headers).toEqual(['You', 'Agents & sessions', 'This computer', 'System']);
+    // Three labelled peers above the Advanced fold, which is a toggle rather
+    // than a plain header (DOR-2629).
+    expect(headers).toEqual(['You', 'Agents', 'This computer']);
+    const toggles = Array.from(
+      container.querySelectorAll('[data-slot="navigation-layout-group-toggle"]')
+    ).map((el) => el.textContent);
+    expect(toggles).toEqual(['Advanced']);
   });
 
   // Verifies font family selector appears in the Appearance tab. The three rows
@@ -452,5 +472,110 @@ describe('SettingsDialog — one heading per panel', () => {
     navigateTo(nav);
     const panel = screen.getByRole('tabpanel');
     expect(within(panel).getAllByRole('heading', { name: title })).toHaveLength(1);
+  });
+});
+
+/**
+ * DOR-2629 — the power-user tabs fold into one Advanced group at the bottom.
+ *
+ * What a person sees by default is the eleven everyday tabs; the other five
+ * are one quiet disclosure away, and every link into them still lands.
+ */
+describe('SettingsDialog — Advanced fold', () => {
+  const VISIBLE = [
+    'Profile',
+    'DorkOS account',
+    'Appearance',
+    'Preferences',
+    'Notifications',
+    'Runtimes',
+    'Permissions',
+    'Connections',
+    'Login & security',
+    'Remote access',
+    'Privacy & Data',
+  ];
+  const ADVANCED = ['Server', 'Tools', 'Room limits', 'Experiments', 'Danger zone'];
+
+  it('shows the eleven everyday tabs in group order, with Advanced folded', () => {
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    expect(tabLabels()).toEqual(VISIBLE);
+    expect(advancedToggle()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('unfolds the five Advanced tabs, in order, below everything else', () => {
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    fireEvent.click(advancedToggle());
+    expect(advancedToggle()).toHaveAttribute('aria-expanded', 'true');
+    expect(tabLabels()).toEqual([...VISIBLE, ...ADVANCED]);
+    // And folds them away again.
+    fireEvent.click(advancedToggle());
+    expect(tabLabels()).toEqual(VISIBLE);
+  });
+
+  it.each([
+    ['server', 'Server'],
+    ['tools', 'Tools'],
+    ['rooms', 'Room limits'],
+    ['experiments', 'Experiments'],
+    ['danger', 'Danger zone'],
+  ])('opens Advanced for a ?settings=%s link and selects its tab', (id, label) => {
+    deepLink.tab = id;
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    expect(advancedToggle()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('tab', { name: label })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel')).toBeDefined();
+  });
+
+  it.each([
+    ['profile', 'Profile'],
+    ['account', 'DorkOS account'],
+    ['appearance', 'Appearance'],
+    ['preferences', 'Preferences'],
+    ['notifications', 'Notifications'],
+    ['runtimes', 'Runtimes'],
+    ['permissions', 'Permissions'],
+    ['connections', 'Connections'],
+    ['security', 'Login & security'],
+    ['remote-access', 'Remote access'],
+    ['privacy', 'Privacy & Data'],
+  ])('lands a ?settings=%s link on its tab and leaves Advanced folded', (id, label) => {
+    deepLink.tab = id;
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    expect(screen.getByRole('tab', { name: label })).toHaveAttribute('aria-selected', 'true');
+    expect(advancedToggle()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('remembers a viewer opening Advanced, and only their own press', () => {
+    const { unmount } = render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
+      wrapper: createWrapper(),
+    });
+    fireEvent.click(advancedToggle());
+    unmount();
+
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    expect(advancedToggle()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('does not remember the reveal a deep link caused', () => {
+    deepLink.tab = 'server';
+    const { unmount } = render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
+      wrapper: createWrapper(),
+    });
+    expect(advancedToggle()).toHaveAttribute('aria-expanded', 'true');
+    unmount();
+
+    deepLink.tab = null;
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    expect(advancedToggle()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('can still be folded while one of its tabs is showing', () => {
+    deepLink.tab = 'server';
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    fireEvent.click(advancedToggle());
+    expect(advancedToggle()).toHaveAttribute('aria-expanded', 'false');
+    // The panel stays where the person is; only the list folds.
+    expect(screen.getByRole('tabpanel')).toBeDefined();
   });
 });

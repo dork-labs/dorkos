@@ -169,14 +169,31 @@ NavigationLayout.displayName = 'NavigationLayout';
 
 export interface NavigationLayoutSidebarProps {
   children: React.ReactNode;
+  /** Accessible name of the main tab list. Defaults to "Navigation". */
+  label?: string;
+  /**
+   * Content rendered below the main tab list but OUTSIDE it — a
+   * {@link NavigationLayoutGroupToggle} and the {@link NavigationLayoutTabList}
+   * it reveals. A tablist may own only tabs, so a disclosure button cannot live
+   * inside one; this is where it goes instead.
+   */
+  footer?: React.ReactNode;
   className?: string;
 }
 
+/** The arrow-key handler every tab list in one sidebar shares. */
+const SidebarKeysContext = React.createContext<((e: React.KeyboardEvent) => void) | null>(null);
+
 /** Vertical sidebar (desktop) or list view (mobile). */
-function NavigationLayoutSidebar({ children, className }: NavigationLayoutSidebarProps) {
+function NavigationLayoutSidebar({
+  children,
+  label = 'Navigation',
+  footer,
+  className,
+}: NavigationLayoutSidebarProps) {
   const { isMobile, isDrilledIn } = useNavigationLayout();
-  const tabListRef = React.useRef<HTMLDivElement>(null);
-  const handleKeyDown = useTabListKeys(tabListRef);
+  const sidebarRef = React.useRef<HTMLDivElement>(null);
+  const handleKeyDown = useTabListKeys(sidebarRef);
 
   if (isMobile) {
     if (isDrilledIn) return null;
@@ -187,30 +204,79 @@ function NavigationLayoutSidebar({ children, className }: NavigationLayoutSideba
         className={cn('flex-1 overflow-y-auto py-1', className)}
       >
         {children}
+        {footer}
       </div>
     );
   }
 
-  // The arrow keys are handled ON the tablist, not on a wrapper around it. The
-  // wrapper was a `role="toolbar"` — a composite widget holding a composite
-  // widget, which assistive tech has no model for, and which the tablist did
-  // not need in order to hear a key.
+  // The arrow keys are handled ON each tablist, not on a wrapper around them —
+  // a `role="toolbar"` wrapper was a composite widget holding a composite
+  // widget, which assistive tech has no model for. The handler walks every tab
+  // in the sidebar, so ArrowDown from the last everyday tab continues into a
+  // second list below the footer's toggle, as one sequence.
+  return (
+    <SidebarKeysContext.Provider value={handleKeyDown}>
+      <div
+        ref={sidebarRef}
+        data-slot="navigation-layout-sidebar"
+        className={cn('h-full w-[180px] shrink-0 overflow-y-auto border-r py-2', className)}
+      >
+        <div
+          role="tablist"
+          aria-orientation="vertical"
+          aria-label={label}
+          tabIndex={-1}
+          onKeyDown={handleKeyDown}
+        >
+          {children}
+        </div>
+        {footer}
+      </div>
+    </SidebarKeysContext.Provider>
+  );
+}
+NavigationLayoutSidebar.displayName = 'NavigationLayoutSidebar';
+
+export interface NavigationLayoutTabListProps {
+  /** Accessible name of this list ("Advanced"). */
+  label: string;
+  /** DOM id, so a {@link NavigationLayoutGroupToggle} can name it in `aria-controls`. */
+  id?: string;
+  children: React.ReactNode;
+}
+
+/**
+ * A second tab list inside a sidebar's `footer` — the tabs a
+ * {@link NavigationLayoutGroupToggle} reveals. On desktop it is its own
+ * `role="tablist"` sharing the sidebar's arrow keys; on a phone its rows simply
+ * continue the drill-in list.
+ */
+function NavigationLayoutTabList({ label, id, children }: NavigationLayoutTabListProps) {
+  const { isMobile } = useNavigationLayout();
+  const handleKeyDown = React.useContext(SidebarKeysContext);
+
+  if (isMobile) {
+    return (
+      <div id={id} role="presentation" className="contents">
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div
-      ref={tabListRef}
-      data-slot="navigation-layout-sidebar"
+      id={id}
       role="tablist"
       aria-orientation="vertical"
-      aria-label="Navigation"
+      aria-label={label}
       tabIndex={-1}
-      onKeyDown={handleKeyDown}
-      className={cn('h-full w-[180px] shrink-0 overflow-y-auto border-r py-2', className)}
+      onKeyDown={handleKeyDown ?? undefined}
     >
       {children}
     </div>
   );
 }
-NavigationLayoutSidebar.displayName = 'NavigationLayoutSidebar';
+NavigationLayoutTabList.displayName = 'NavigationLayoutTabList';
 
 /**
  * Arrow / Home / End across the sidebar's tabs, WAI-ARIA automatic activation.
@@ -222,6 +288,10 @@ function useTabListKeys(containerRef: React.RefObject<HTMLDivElement | null>) {
 
   return React.useCallback(
     (e: React.KeyboardEvent) => {
+      // Only keys aimed at a tab (or at the list itself) move the selection.
+      // Anything else that happens to bubble here keeps its keys.
+      const target = e.target as HTMLElement;
+      if (target !== e.currentTarget && target.getAttribute('role') !== 'tab') return;
       const tabs = containerRef.current?.querySelectorAll<HTMLElement>('[role="tab"]');
       if (!tabs?.length) return;
 
@@ -296,6 +366,70 @@ function NavigationLayoutSectionHeader({
 NavigationLayoutSectionHeader.displayName = 'NavigationLayoutSectionHeader';
 
 // ---------------------------------------------------------------------------
+// Group toggle
+// ---------------------------------------------------------------------------
+
+export interface NavigationLayoutGroupToggleProps {
+  /** The group's name, shown where a section header would be. */
+  children: React.ReactNode;
+  /** Whether the group's items are showing. */
+  expanded: boolean;
+  /** Called with the next state when the toggle is pressed. */
+  onExpandedChange: (expanded: boolean) => void;
+  /**
+   * Id of the list holding the group's items, for `aria-controls`. Omit it
+   * while that list is not rendered — a reference to nothing is an error.
+   */
+  controls?: string;
+  className?: string;
+}
+
+/**
+ * A section header that folds its group away — the calm disclosure for items
+ * most people never need ("Advanced"). It reads like a
+ * {@link NavigationLayoutSectionHeader} with a chevron, so a folded group looks
+ * like one more quiet heading rather than a call to action.
+ *
+ * It is a plain `button` with `aria-expanded`, not a tab, and it belongs in
+ * {@link NavigationLayoutSidebar}'s `footer` — outside every tablist, since a
+ * tablist may own only tabs. Tab reaches it as an ordinary control and its
+ * keys never switch tabs. On a phone it keeps the list's 44px tap height.
+ */
+function NavigationLayoutGroupToggle({
+  children,
+  expanded,
+  onExpandedChange,
+  controls,
+  className,
+}: NavigationLayoutGroupToggleProps) {
+  const { isMobile } = useNavigationLayout();
+  const button = (
+    <button
+      type="button"
+      data-slot="navigation-layout-group-toggle"
+      aria-expanded={expanded}
+      aria-controls={controls}
+      onClick={() => onExpandedChange(!expanded)}
+      className={cn(
+        'text-muted-foreground/70 hover:text-foreground text-2xs flex w-full items-center gap-1 text-left font-medium tracking-wide uppercase transition-colors select-none',
+        isMobile ? 'min-h-[44px] px-4 pt-3 pb-1' : 'px-3 pt-3 pb-1',
+        className
+      )}
+    >
+      <span>{children}</span>
+      <ChevronRight
+        aria-hidden
+        className={cn('size-3 shrink-0 transition-transform duration-150', expanded && 'rotate-90')}
+      />
+    </button>
+  );
+  // In the phone's drill-in list every row is a list item; on desktop the
+  // toggle sits outside any list, between the two tablists.
+  return isMobile ? <div role="listitem">{button}</div> : button;
+}
+NavigationLayoutGroupToggle.displayName = 'NavigationLayoutGroupToggle';
+
+// ---------------------------------------------------------------------------
 // Item
 // ---------------------------------------------------------------------------
 
@@ -325,22 +459,26 @@ function NavigationLayoutItem({
   }, [itemValue, label, registerItem, unregisterItem]);
 
   if (isMobile) {
+    // A list item, because the phone's drill-in list is a `role="list"` and a
+    // list may own only list items.
     return (
-      <motion.button
-        data-value={itemValue}
-        onClick={() => onValueChange(itemValue)}
-        whileTap={{ scale: 0.98 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        className={cn(
-          'flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors',
-          'hover:bg-muted/50 active:bg-muted min-h-[44px]',
-          className
-        )}
-      >
-        {Icon && <Icon className="text-muted-foreground size-(--size-icon-sm) shrink-0" />}
-        <span className="flex-1">{children}</span>
-        <ChevronRight className="text-muted-foreground/40 size-(--size-icon-sm) shrink-0" />
-      </motion.button>
+      <div role="listitem">
+        <motion.button
+          data-value={itemValue}
+          onClick={() => onValueChange(itemValue)}
+          whileTap={{ scale: 0.98 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+          className={cn(
+            'flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors',
+            'hover:bg-muted/50 active:bg-muted min-h-[44px]',
+            className
+          )}
+        >
+          {Icon && <Icon className="text-muted-foreground size-(--size-icon-sm) shrink-0" />}
+          <span className="flex-1">{children}</span>
+          <ChevronRight className="text-muted-foreground/40 size-(--size-icon-sm) shrink-0" />
+        </motion.button>
+      </div>
     );
   }
 
@@ -658,6 +796,8 @@ export {
   NavigationLayoutBody,
   NavigationLayoutSidebar,
   NavigationLayoutSectionHeader,
+  NavigationLayoutGroupToggle,
+  NavigationLayoutTabList,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,

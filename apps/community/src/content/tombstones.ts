@@ -23,9 +23,10 @@ export type RemovedBy = keyof typeof REMOVED_ENTRY_TEXT;
 export const ERASED_ENTRY_TEXT = 'This message was erased.';
 
 /**
- * The removal sentences written before DOR-2653 said "space" and "server admin". Rows removed
- * then still hold them in `entries.text`, so they stay tombstones: shown as removed, offered no
- * actions, and refused as the text of a new post.
+ * The removal sentences written before DOR-2653, which said "community admin" and "host"
+ * instead of "space admin" and "server admin". Rows removed then still hold them in
+ * `entries.text`, so they stay tombstones: shown as removed, offered no actions, and refused as
+ * the text of a new post.
  */
 const LEGACY_REMOVED_ENTRY_TEXTS = [
   'This message was removed by a community admin.',

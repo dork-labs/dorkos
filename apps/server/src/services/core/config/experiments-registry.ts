@@ -1,5 +1,5 @@
 /**
- * The staged opt-ins a person can switch on from Settings → Experiments.
+ * The staged opt-ins a person can switch on from Settings → Advanced → Experiments.
  *
  * ## Why a registry, and why it is meant to shrink
  *

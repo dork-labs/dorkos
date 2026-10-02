@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Managed browser prototype viewer</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font: 16px system-ui;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 16px;
+        max-width: 1300px;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+        padding: 8px;
+        margin: 4px;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible,
+      canvas:focus-visible {
+        outline: 3px solid Highlight;
+        outline-offset: 3px;
+      }
+      fieldset {
+        min-width: 0;
+        border: 1px solid GrayText;
+        margin-block: 12px;
+      }
+      #screen {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        outline: 1px solid GrayText;
+        touch-action: none;
+      }
+      #image-box {
+        position: relative;
+        width: 100%;
+        background: Canvas;
+      }
+      #browser-pointer {
+        position: absolute;
+        width: 15px;
+        height: 22px;
+        background: black;
+        clip-path: polygon(0 0, 0 100%, 30% 72%, 55% 100%, 75% 90%, 50% 62%, 100% 62%);
+        filter: drop-shadow(0 0 1px white);
+        pointer-events: none;
+      }
+      #status,
+      #identity {
+        overflow-wrap: anywhere;
+      }
+      #text-input {
+        width: 95%;
+        height: 48px;
+      }
+      pre {
+        white-space: pre-wrap;
+        max-height: 320px;
+        overflow: auto;
+      }
+      label {
+        display: inline-block;
+      }
+      #token {
+        max-width: 220px;
+      }
+      .notice {
+        color: GrayText;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Managed browser viewer</h1>
+    <form id="connect-form">
+      <label
+        >Viewer access token <input id="token" type="password" autocomplete="off" required /></label
+      ><label>Tab ID <input id="tab" autocomplete="off" required /></label
+      ><button>Connect view</button>
+    </form>
+    <p id="status" role="status" aria-live="polite">Disconnected</p>
+    <p id="identity"></p>
+    <fieldset>
+      <legend>Control</legend>
+      <button id="acquire">Request control</button><button id="takeover">Take control</button
+      ><label>Authorized participant <input id="target" /></label
+      ><button id="handoff">Hand off control</button><button id="close-view">Close view</button
+      ><button id="revoke">Revoke my access</button>
+    </fieldset>
+    <div id="image-box">
+      <canvas
+        id="screen"
+        width="1"
+        height="1"
+        tabindex="0"
+        role="img"
+        aria-label="Browser image. Page text is available in keyboard view."
+      ></canvas>
+    </div>
+    <label
+      >Text sent to the focused page field
+      <textarea
+        id="text-input"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+      ></textarea>
+    </label>
+    <div>
+      <button id="paste">Paste clipboard into page</button
+      ><button id="copy">Copy selected page text</button
+      ><output id="clipboard" aria-live="polite"></output>
+    </div>
+    <fieldset>
+      <legend>Keyboard view experiment</legend>
+      <p class="notice">
+        The image does not expose page controls to a screen reader. Read the page structure below.
+        These keyboard buttons use the same control checks as pointer input.
+      </p>
+      <button id="semantic">Read page structure</button><button id="next">Next page control</button
+      ><button id="previous">Previous page control</button
+      ><button id="activate">Activate focused control</button>
+      <pre id="snapshot" tabindex="0" aria-label="Page structure"></pre>
+      <p id="focused" aria-live="polite"></p>
+    </fieldset>
+    <p class="notice">
+      Touch taps are forwarded as taps. Touch drags scroll through wheel input. Native touch
+      dragging and physical phone behavior remain unverified. Composing text with an input method
+      and using the clipboard depend on your browser and its permissions.
+    </p>
+    <script type="module" src="/viewer-client.mjs"></script>
+  </body>
+</html>

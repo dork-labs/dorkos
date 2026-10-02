@@ -14,6 +14,7 @@
  * @module shared/canvas-schemas
  */
 import { z } from 'zod';
+import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { UiCanvasContentSchema } from './schemas.js';
 
@@ -54,6 +55,8 @@ export const CanvasDocumentSchema = z
      */
     roomId: z.string().min(1).nullable(),
     content: UiCanvasContentSchema,
+    /** Optional declaration shared by every content shape; absence grants no route. */
+    channel: CanvasChannelDeclarationSchema.optional(),
     title: z.string(),
     contentType: z.string().min(1),
     /** Who put it here — a room author id, or the session's own owner or agent. */

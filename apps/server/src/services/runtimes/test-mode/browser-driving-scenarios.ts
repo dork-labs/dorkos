@@ -20,6 +20,12 @@
  *
  * @module services/runtimes/test-mode/browser-driving-scenarios
  */
+import {
+  takeScreenshot,
+  readConsole,
+  readNetwork,
+} from '../../session/browser-seat/devtools-reads.js';
+import { CapabilityImageResult } from '../../core/capabilities/index.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   createBrowserSeatHandlers,
@@ -149,5 +155,68 @@ export function browserDrivingScenarios(): Record<string, ScenarioFn> {
     yield { type: 'done', data: { sessionId: ctx.sessionId } } as StreamEvent;
   };
 
-  return { 'browser-driving': drive, 'browser-recording': record };
+  const evidence: ScenarioFn = async function* (_content, ctx) {
+    const handlers = createBrowserSeatHandlers({
+      sessionId: ctx.sessionId,
+      store: devtoolsCaptureStore,
+      emit: (event) => emitToSession(ctx.sessionId, event),
+    });
+    const screenshot = await takeScreenshot(ctx.sessionId, devtoolsCaptureStore);
+    const action = await handlers.readPage({});
+    const console = await readConsole(
+      { level: 'all', limit: 100 },
+      ctx.sessionId,
+      devtoolsCaptureStore
+    );
+    const network = await readNetwork(
+      { status: 'all', limit: 100 },
+      ctx.sessionId,
+      devtoolsCaptureStore
+    );
+    yield {
+      type: 'text_delta',
+      data: {
+        text: JSON.stringify({
+          bridgeEvidence: true,
+          screenshot: screenshot instanceof CapabilityImageResult ? screenshot.payload : screenshot,
+          image: screenshot instanceof CapabilityImageResult ? screenshot.image.mimeType : null,
+          action: action.payload,
+          console,
+          network,
+        }),
+      },
+    } as StreamEvent;
+    yield { type: 'done', data: { sessionId: ctx.sessionId } } as StreamEvent;
+  };
+  return {
+    'browser-driving': drive,
+    'browser-recording': record,
+    'browser-bridge-evidence': evidence,
+    'browser-bridge-rekey': async function* (_content, ctx) {
+      const handlers = createBrowserSeatHandlers({
+        sessionId: ctx.sessionId,
+        store: devtoolsCaptureStore,
+        emit: (event) => emitToSession(ctx.sessionId, event),
+      });
+      // Both real waiters start before the first yielded event. The normal trigger's
+      // finite canonical-id wait can rekey while their HTTP delivery is deferred.
+      const [screenshot, action] = await Promise.all([
+        takeScreenshot(ctx.sessionId, devtoolsCaptureStore),
+        handlers.readPage({}),
+      ]);
+      yield {
+        type: 'text_delta',
+        data: {
+          text: JSON.stringify({
+            bridgeRekey: true,
+            screenshot:
+              screenshot instanceof CapabilityImageResult ? screenshot.payload : screenshot,
+            image: screenshot instanceof CapabilityImageResult ? screenshot.image.mimeType : null,
+            action: action.payload,
+          }),
+        },
+      } as StreamEvent;
+      yield { type: 'done', data: { sessionId: ctx.sessionId } } as StreamEvent;
+    },
+  };
 }

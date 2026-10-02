@@ -24,7 +24,18 @@
  * @module services/session/message-queue-store
  */
 import { randomUUID } from 'node:crypto';
-import { sessionMessageQueue, eq, inArray, max, type Db, type DbTransaction } from '@dorkos/db';
+import {
+  sessionMessageQueue,
+  sessionMessageAcceptanceReceipts,
+  canvasDocBatches,
+  and,
+  notInArray,
+  eq,
+  inArray,
+  max,
+  type Db,
+  type DbTransaction,
+} from '@dorkos/db';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import { ClientContextSchema } from '@dorkos/shared/additional-context';
 import type { MessageDisposition, QueuedMessage } from '@dorkos/shared/schemas';
@@ -340,13 +351,27 @@ export class MessageQueueStore {
    * @param fromId - The id the rows are stored under today
    * @param toId - The canonical id the session is now known by
    */
-  rekeySession(fromId: string, toId: string): void {
+  rekeySession(fromId: string, toId: string, transaction?: DbTransaction): void {
     if (fromId === toId) return;
-    this.db.transaction((tx) => {
+    const move = (tx: DbTransaction) => {
       const moving = tx
         .select()
         .from(sessionMessageQueue)
-        .where(eq(sessionMessageQueue.sessionId, fromId))
+        .where(
+          and(
+            eq(sessionMessageQueue.sessionId, fromId),
+            notInArray(
+              sessionMessageQueue.id,
+              tx
+                .select({ id: sessionMessageAcceptanceReceipts.queueMessageId })
+                .from(sessionMessageAcceptanceReceipts)
+                .innerJoin(
+                  canvasDocBatches,
+                  eq(canvasDocBatches.admissionReceiptId, sessionMessageAcceptanceReceipts.id)
+                )
+            )
+          )
+        )
         .orderBy(sessionMessageQueue.position)
         .all();
       if (moving.length === 0) return;
@@ -365,7 +390,9 @@ export class MessageQueueStore {
           .where(eq(sessionMessageQueue.id, row.id))
           .run();
       });
-    });
+    };
+    if (transaction) move(transaction);
+    else this.db.transaction(move);
   }
 
   /**

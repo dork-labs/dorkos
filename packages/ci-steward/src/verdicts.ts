@@ -402,10 +402,11 @@ export function computeVerdict(inp: VerdictInput): Verdict | null {
   ].sort()[1]!;
   const baseline = useBefore ? b.value : h.baseline;
   const lower = lowerIsBetter(h.metric, files);
+  // Every entry whose PR merged counts, withdrawn included: withdrawn is also how a
+  // kept change closes a failed or partial verdict, and its gate change still
+  // happened. An entry that never merged has no anchor and drops out below.
   const confounders = inp.ledger
-    .filter(
-      (o) => o.id !== e.id && o.status !== 'withdrawn' && o.gates.some((g) => e.gates.includes(g))
-    )
+    .filter((o) => o.id !== e.id && o.gates.some((g) => e.gates.includes(g)))
     .filter((o) => {
       const t = anchorOf(o, inp.mergedAt);
       return (

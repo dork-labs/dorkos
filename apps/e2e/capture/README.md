@@ -272,7 +272,7 @@ Nothing rendered depends on `Date.now()`.
 - `library.ts` — the media library: run recorder (raw sink + `run.json` provenance), `latest` symlink, retention pruning, run loading.
 - `overrides.ts` — human-override discovery, validation, and application (manual media beats the automated capture).
 - `lib.ts` — shared Playwright plumbing (theme init-script, live-turn opener, raw loop recorder + head-trim marker, the `attemptShot` skip guard).
-- `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives, plus two desktop siblings kept out of line: `surfaces-desktop-power.ts` (Control Center, Settings → Rooms, the full-power door) and `surfaces-desktop-fleet.ts` (the four-agent `multi-session` drive).
+- `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives, plus two desktop siblings kept out of line: `surfaces-desktop-power.ts` (Control Center, Settings → Room limits, the full-power door) and `surfaces-desktop-fleet.ts` (the four-agent `multi-session` drive).
 - `optimize.ts` — the editing stage: PNG recompression + aspect-validated scaling (sharp), loop editing (ffmpeg-static: head-trim, end-seam crossfade, two-pass VP9, poster extraction), and the v2 manifest writer.
 - `overrides/` — committed human-override sources (see `overrides/README.md`).
 - `__tests__/` — unit tests for the registry, aspect validation, and override discovery (`pnpm --filter @dorkos/e2e test`).

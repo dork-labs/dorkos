@@ -91,8 +91,8 @@ export function bearer(c: Context): string | null {
 /** Options for the few removals a host hold still allows. */
 export interface HeldRemovalOption {
   /**
-   * Also allow a held community. Only for a removal (an agent, an invitation): a hold keeps
-   * credentials, so taking one away must stay possible while nothing may grow.
+   * Also allow a held community. Only for a removal (an agent, an invitation, a member leaving):
+   * a hold keeps credentials, so taking one away must stay possible while nothing may grow.
    */
   allowHeld?: boolean;
 }

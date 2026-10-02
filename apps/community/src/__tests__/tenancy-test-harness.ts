@@ -66,8 +66,6 @@ export async function startTenancyHarness(
     blobStore?: BlobStore;
     /** Mail composers the app treats as available, as `main.ts` passes the worker's own set. */
     noticeComposers?: Parameters<typeof createCommunityApp>[0]['noticeComposers'];
-    /** Let hosts start owner replacements, as `main.ts` will once the owner can answer. */
-    ownerReplacementOpen?: boolean;
     /**
      * Serve another harness's database instead of a fresh one, as the same host restarted with
      * other settings would. Closing this one leaves that database to its owner.
@@ -114,7 +112,6 @@ export async function startTenancyHarness(
     blobStore,
     hooks: { ...options.hooks, now: options.now },
     noticeComposers: options.noticeComposers,
-    ownerReplacementOpen: options.ownerReplacementOpen,
   });
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
   configureServerTimeouts(server);

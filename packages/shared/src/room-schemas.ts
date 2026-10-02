@@ -19,6 +19,7 @@
  * @module shared/room-schemas
  */
 import { z } from 'zod';
+import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { ROOM_TURN_LIMIT_BOUNDS } from './config-schema.js';
 import { ResponseModeSchema } from './mesh-schemas.js';
@@ -1020,6 +1021,7 @@ export type CanvasDocumentListResponse = z.infer<typeof CanvasDocumentListRespon
 export const OpenCanvasDocumentRequestSchema = z
   .object({
     content: UiCanvasContentSchema.describe('What to show. One of the fourteen canvas shapes.'),
+    channel: CanvasChannelDeclarationSchema.optional(),
     pinned: z
       .boolean()
       .optional()

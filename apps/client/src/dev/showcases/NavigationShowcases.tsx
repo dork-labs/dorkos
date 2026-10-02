@@ -19,6 +19,8 @@ import {
   NavigationLayout,
   NavigationLayoutBody,
   NavigationLayoutSidebar,
+  NavigationLayoutSectionHeader,
+  NavigationLayoutGroupToggle,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,
@@ -34,7 +36,7 @@ export function NavigationShowcases() {
         title="NavigationLayout"
         description="Vertical sidebar navigation for dialogs and settings panels. Renders a sidebar with animated active pill on desktop, list + drill-down on mobile."
       >
-        <ShowcaseLabel>Settings-style (6 items)</ShowcaseLabel>
+        <ShowcaseLabel>Settings-style, with a folded Advanced group</ShowcaseLabel>
         <ShowcaseDemo responsive>
           <SettingsDemo />
         </ShowcaseDemo>
@@ -127,12 +129,14 @@ function AppTabStripDemo({ tabs: initial }: { tabs: AppTab[] }) {
 
 function SettingsDemo() {
   const [active, setActive] = useState('appearance');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   return (
     <div className="border-border overflow-hidden rounded-lg border">
       <NavigationLayout value={active} onValueChange={setActive}>
         <NavigationLayoutBody>
           <NavigationLayoutSidebar>
+            <NavigationLayoutSectionHeader>You</NavigationLayoutSectionHeader>
             <NavigationLayoutItem value="appearance" icon={Palette}>
               Appearance
             </NavigationLayoutItem>
@@ -142,15 +146,28 @@ function SettingsDemo() {
             <NavigationLayoutItem value="statusBar" icon={LayoutList}>
               Status Bar
             </NavigationLayoutItem>
-            <NavigationLayoutItem value="server" icon={Server}>
-              Server
-            </NavigationLayoutItem>
-            <NavigationLayoutItem value="tools" icon={Wrench}>
-              Tools
-            </NavigationLayoutItem>
-            <NavigationLayoutItem value="advanced" icon={Cog}>
+            <NavigationLayoutGroupToggle
+              expanded={advancedOpen}
+              onExpandedChange={setAdvancedOpen}
+              controls="showcase-advanced-group"
+            >
               Advanced
-            </NavigationLayoutItem>
+            </NavigationLayoutGroupToggle>
+            <div id="showcase-advanced-group" role="presentation" className="contents">
+              {advancedOpen && (
+                <>
+                  <NavigationLayoutItem value="server" icon={Server}>
+                    Server
+                  </NavigationLayoutItem>
+                  <NavigationLayoutItem value="tools" icon={Wrench}>
+                    Tools
+                  </NavigationLayoutItem>
+                  <NavigationLayoutItem value="advanced" icon={Cog}>
+                    Danger zone
+                  </NavigationLayoutItem>
+                </>
+              )}
+            </div>
           </NavigationLayoutSidebar>
 
           <NavigationLayoutContent className="p-4">
@@ -182,7 +199,7 @@ function SettingsDemo() {
               <PanelPlaceholder title="Tools" description="Tool approval and configuration." />
             </NavigationLayoutPanel>
             <NavigationLayoutPanel value="advanced">
-              <PanelPlaceholder title="Advanced" description="Reset data, restart server." />
+              <PanelPlaceholder title="Danger zone" description="Reset data, restart server." />
             </NavigationLayoutPanel>
           </NavigationLayoutContent>
         </NavigationLayoutBody>

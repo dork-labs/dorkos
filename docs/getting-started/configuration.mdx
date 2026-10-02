@@ -102,13 +102,13 @@ DorkOS supports ngrok tunnels (a service that gives your local machine a public 
 
 ### Relay Configuration
 
-Relay is the messaging layer that lets agents reach you on Telegram, notify each other, and connect to external platforms. It is on by default. You can turn it on or off without a terminal: switch **Agent messaging** in Settings › Tools, or choose **Turn on chat apps** on the Connections page, then restart DorkOS when it asks. The environment variable below wins over that switch whenever it is set. See the [Relay Messaging guide](/docs/guides/relay-messaging) for setup details.
+Relay is the messaging layer that lets agents reach you on Telegram, notify each other, and connect to external platforms. It is on by default. You can turn it on or off without a terminal: switch **Agent messaging** in Settings › Advanced › Tools, or choose **Turn on chat apps** on the Connections page, then restart DorkOS when it asks. The environment variable below wins over that switch whenever it is set. See the [Relay Messaging guide](/docs/guides/relay-messaging) for setup details.
 
 <TypeTable
   type={{
     DORKOS_RELAY_ENABLED: {
       description:
-        'Turns Relay (agent messaging and chat apps like Telegram and Slack) on or off. While it is set it overrules the **Agent messaging** switch in Settings › Tools and `relay.enabled` in `~/.dork/config.json`; leave it unset to use the switch. Relay’s own configuration lives in the same file under the `relay` key.',
+        'Turns Relay (agent messaging and chat apps like Telegram and Slack) on or off. While it is set it overrules the **Agent messaging** switch in Settings › Advanced › Tools and `relay.enabled` in `~/.dork/config.json`; leave it unset to use the switch. Relay’s own configuration lives in the same file under the `relay` key.',
       type: 'boolean',
       default: 'true',
     },
@@ -133,7 +133,7 @@ A scheduled task runs an agent job on a timer (like "every night at 2am"), on it
 
 The A2A gateway lets agents built by other people, on other systems, send work to the agents here — anything that speaks Google's Agent-to-Agent protocol. Agent messaging (Relay) has to be on for it to do anything.
 
-It is off until you turn it on, and there are two ways to do that. In DorkOS, open **Settings → Experiments** and flip "Let outside agents reach yours". On a server you run headless, set the environment variable instead — that wins over the setting either way, and the switch says so rather than pretending it decides.
+It is off until you turn it on, and there are two ways to do that. In DorkOS, open **Settings → Advanced → Experiments** and flip "Let outside agents reach yours". On a server you run headless, set the environment variable instead — that wins over the setting either way, and the switch says so rather than pretending it decides.
 
 It is still early alpha. Only turn it on when you know what is on the other side of the door.
 
@@ -204,7 +204,7 @@ file lives beside the agent, on this machine, and you can open it in any editor.
 
 A room is a conversation more than one agent can be in. When you post, every agent the message addresses answers — and because an answer is itself a message, agents can end up replying to each other. This setting is where that stops.
 
-You do not have to edit the file for these. **Settings → Rooms** has the switch and all four numbers, and a single room can be given limits of its own from the panel beside it — open a room, choose Members, then Automatic replies. A room you have not touched follows what you set here.
+You do not have to edit the file for these. **Settings → Advanced → Room limits** has the switch and all four numbers, and a single room can be given limits of its own from the panel beside it — open a room, choose Members, then Automatic replies. A room you have not touched follows what you set here.
 
 <TypeTable
   type={{
@@ -1138,7 +1138,7 @@ DorkOS sends us nothing unless you turn it on. Two anonymous channels are availa
 
 ### Experiments
 
-Some features are still being proved out and are not yet ready to be the default. Those wait in **Settings → Experiments**, off until you turn them on, each one saying plainly what it gives you and what it costs.
+Some features are still being proved out and are not yet ready to be the default. Those wait in **Settings → Advanced → Experiments**, off until you turn them on, each one saying plainly what it gives you and what it costs.
 
 Every experiment ends the same two ways: it becomes the normal behaviour and leaves the list, or it goes away. So the list is meant to be short, and an empty one means nothing is waiting on you.
 

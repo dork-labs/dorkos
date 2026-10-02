@@ -301,7 +301,7 @@ export function Manage({
         <h2>{held ? 'On hold' : readOnly ? 'Archived history' : 'Make room for your people.'}</h2>
         <p className="muted">
           {held
-            ? 'The server admin has put this space on hold. History stays readable and the owner can still export it. Nothing can change until the server admin releases the hold.'
+            ? 'The server admin has put this space on hold. History stays readable and the owner can still export it. Nothing else can change until the server admin releases the hold, but members can still leave.'
             : readOnly
               ? 'History and exports remain available. Restore this space before changing content or access.'
               : 'Manage channels and access without leaving the conversation.'}
@@ -904,7 +904,9 @@ export function Manage({
                 </>
               )}
             </section>
-            {!readOnly && (
+            {/* A member may leave a held community too; an owner must transfer first, and a
+                hold allows no transfer, so the owner sees this section only when active. */}
+            {(!readOnly || (held && me.role !== 'owner')) && (
               <section className="panel">
                 <h3>Leave space</h3>
                 {me.role === 'owner' ? (

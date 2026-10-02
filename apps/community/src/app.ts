@@ -41,6 +41,7 @@ import { registerHostRoutes } from './routes/host/host.js';
 import { registerMembershipRoutes } from './routes/account/memberships.js';
 import { registerHostLimitRoutes } from './routes/host/host-limits.js';
 import { registerHostLegalHoldRoutes } from './routes/host/host-legal-hold.js';
+import { registerHostAccountClosureRoutes } from './routes/host/host-account-closures.js';
 import { registerHostErasureJournalRoutes } from './routes/host/host-erasure-journal.js';
 import { registerHostLifecycleRoutes } from './routes/host/host-lifecycle.js';
 import { registerShortNameRoutes } from './routes/host/short-names.js';
@@ -86,7 +87,6 @@ export function createCommunityApp({
   hooks,
   blobStore = createBlobStore(config),
   noticeComposers = {},
-  ownerReplacementOpen = false,
 }: {
   config: CommunityConfig;
   pool: Pool;
@@ -96,12 +96,6 @@ export function createCommunityApp({
    * never one the worker would fail as unsupported. `main.ts` passes the worker's own set.
    */
   noticeComposers?: NoticeComposers;
-  /**
-   * Whether a host may start an owner replacement, or send its claim link again. Off until the
-   * owner can answer the notice end to end; `main.ts` holds the one switch and says what turns
-   * it on. With it off those two routes refuse as if the notice could not be sent.
-   */
-  ownerReplacementOpen?: boolean;
   hooks?: {
     afterSnapshotWatermark?: () => Promise<void>;
     afterEntryAttachmentLookup?: () => Promise<void>;
@@ -440,8 +434,7 @@ export function createCommunityApp({
     now,
     confirmPassword,
     // Mail is set up and the worker can compose this kind of notice.
-    canSendNotice: (kind) =>
-      ownerReplacementOpen && config.mail !== null && noticeComposers[kind] !== undefined,
+    canSendNotice: (kind) => config.mail !== null && noticeComposers[kind] !== undefined,
     hasPassword: (userId) => accountHasPassword(pool, userId),
   });
   registerOwnerReplacementLinkRoutes(hostApi, {
@@ -451,6 +444,14 @@ export function createCommunityApp({
     now,
     limitAttempt: (c) =>
       limitAttempts(`owner-replacement:${peer(c)}`, config.limits.bootstrapAttemptsPerMinute),
+  });
+  registerHostAccountClosureRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    confirmPassword,
+    hasPassword: (userId) => accountHasPassword(pool, userId),
   });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });

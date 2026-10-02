@@ -119,8 +119,9 @@ describe('POST /api/sessions/:id/devtools/ingest', () => {
     expect(res.status).toBe(400);
   });
 
-  it('accepts a screenshot result (204) and stores it in the buffer slot', async () => {
+  it('accepts a requested screenshot result (204) and stores it in the buffer slot', async () => {
     const id = crypto.randomUUID();
+    void devtoolsCaptureStore.awaitScreenshot('r1', 5000);
     const res = await ingest(
       {
         seq: 1,
@@ -259,4 +260,167 @@ describe('POST /api/sessions/:id/devtools/action', () => {
       .send({ requestId: 'req-3', ok: true });
     expect(res.status).toBe(400);
   });
+});
+
+it('rejects wrong binding atomically through the real HTTP ingest and keeps the exact issued response usable', async () => {
+  const id = crypto.randomUUID();
+  const binding = { clientId: 'host', documentId: 'doc', bridgeGeneration: 'generation' };
+  const base = { ...binding, seq: 1, logicalUrl: 'original', console: [], network: [] };
+  await request(testServer)
+    .post(`/api/sessions/${id}/devtools/ingest`)
+    .set('X-Client-Id', 'host')
+    .send({ ...base, active: true, instrumented: true });
+  const original = devtoolsCaptureStore.read(id);
+  const pending = devtoolsCaptureStore.awaitScreenshot('known', 5000, binding);
+  const hostile = {
+    ...base,
+    reset: true,
+    logicalUrl: 'forged',
+    console: [{ level: 'error', text: 'forged', timestamp: 1 }],
+    screenshot: { requestId: 'known', dataUrl: 'data:image/png;base64,AAAA' },
+  };
+  for (const [clientId, override] of [
+    ['other', {}],
+    ['host', { bridgeGeneration: undefined }],
+    ['host', { documentId: 'wrong' }],
+  ] as const) {
+    expect(
+      (
+        await request(testServer)
+          .post(`/api/sessions/${id}/devtools/ingest`)
+          .set('X-Client-Id', clientId)
+          .send({ ...hostile, ...override })
+      ).status
+    ).toBe(204);
+    expect(devtoolsCaptureStore.read(id)).toEqual(original);
+  }
+  await request(testServer)
+    .post(`/api/sessions/${id}/devtools/ingest`)
+    .set('X-Client-Id', 'host')
+    .send({ ...base, screenshot: hostile.screenshot });
+  expect(await pending).toMatchObject({ ok: true });
+  const accepted = devtoolsCaptureStore.read(id);
+  await request(testServer)
+    .post(`/api/sessions/${id}/devtools/ingest`)
+    .set('X-Client-Id', 'host')
+    .send(hostile);
+  expect(devtoolsCaptureStore.read(id)).toEqual(accepted);
+});
+
+it('matches action HTTP by pinned client/document/generation and never infers legacy from a missing response generation', async () => {
+  const id = crypto.randomUUID();
+  const pending = devtoolsCaptureStore.awaitAction('known', 5000, {
+    clientId: 'host',
+    documentId: 'doc',
+    bridgeGeneration: 'generation',
+  });
+  const post = (body: object, clientId = 'host') =>
+    request(testServer)
+      .post(`/api/sessions/${id}/devtools/action`)
+      .set('X-Client-Id', clientId)
+      .send(body);
+  await post({ requestId: 'known', documentId: 'doc', ok: false });
+  await post(
+    { requestId: 'known', documentId: 'doc', bridgeGeneration: 'generation', ok: false },
+    'other'
+  );
+  await post({ requestId: 'known', documentId: 'doc', bridgeGeneration: 'generation', ok: true });
+  expect(await pending).toMatchObject({ ok: true });
+});
+
+it('delivers pinned responses exactly once through canonical HTTP after old-generation release and rekey', async () => {
+  const temporary = crypto.randomUUID();
+  const canonical = crypto.randomUUID();
+  const binding = { clientId: 'host', documentId: 'doc', bridgeGeneration: 'accepted-generation' };
+  const base = { ...binding, logicalUrl: 'accepted-page', seq: 1, console: [], network: [] };
+  const post = (id: string, suffix: string, body: object) =>
+    request(testServer)
+      .post(`/api/sessions/${id}/devtools/${suffix}`)
+      .set('X-Client-Id', 'host')
+      .send(body);
+  await post(temporary, 'ingest', { ...base, active: true, instrumented: true });
+  const screenshot = devtoolsCaptureStore.awaitScreenshot('deferred-capture', 5000, binding);
+  const action = devtoolsCaptureStore.awaitAction('deferred-action', 5000, binding);
+  // These are immutable host-accepted envelopes. HTTP has not reached the route yet.
+  const acceptedCapture = {
+    ...base,
+    hostOutcome: 'page-reported',
+    screenshot: { requestId: 'deferred-capture', dataUrl: 'data:image/png;base64,AAAA' },
+  };
+  const acceptedAction = {
+    ...binding,
+    requestId: 'deferred-action',
+    hostOutcome: 'page-reported',
+    ok: true,
+  };
+  await post(temporary, 'ingest', { ...base, active: false });
+  devtoolsCaptureStore.rekeySession(temporary, canonical);
+  await post(canonical, 'ingest', {
+    ...base,
+    bridgeGeneration: 'replacement',
+    active: true,
+    instrumented: true,
+  });
+  expect((await post(canonical, 'ingest', acceptedCapture)).status).toBe(204);
+  expect((await post(canonical, 'action', acceptedAction)).status).toBe(204);
+  expect(await screenshot).toMatchObject({ ok: true });
+  expect(await action).toMatchObject({ ok: true, bridgeGeneration: 'accepted-generation' });
+  const after = devtoolsCaptureStore.read(canonical);
+  await post(canonical, 'ingest', {
+    ...acceptedCapture,
+    reset: true,
+    logicalUrl: 'duplicate',
+    console: [{ level: 'log', text: 'duplicate', timestamp: 1 }],
+  });
+  await post(canonical, 'action', { ...acceptedAction, ok: false, error: 'duplicate' });
+  await post(canonical, 'ingest', {
+    ...base,
+    reset: true,
+    console: [{ level: 'log', text: 'retired unsolicited', timestamp: 1 }],
+  });
+  expect(devtoolsCaptureStore.read(canonical)).toEqual(after);
+});
+
+it('parses standalone host recording admission and rejects mixed outcomes before any store mutation', async () => {
+  const id = crypto.randomUUID();
+  const binding = { clientId: 'recording-host', documentId: 'doc', bridgeGeneration: 'gen' };
+  devtoolsCaptureStore.ingest(
+    id,
+    { seq: 0, console: [], network: [], ...binding, active: true, instrumented: true },
+    binding.clientId
+  );
+  devtoolsCaptureStore.startRecording(id, { id: 'film', ...binding });
+  const wait = devtoolsCaptureStore.awaitRecordingStart('start-request', {
+    recordingId: 'film',
+    phase: 'reserved',
+    binding,
+    timeoutMs: 1000,
+  });
+  const payload = {
+    hostOutcome: 'host',
+    documentId: 'doc',
+    bridgeGeneration: 'gen',
+    seq: 0,
+    console: [],
+    network: [],
+    recordingStart: {
+      requestId: 'start-request',
+      recordingId: 'film',
+      phase: 'reserved',
+      ok: true,
+    },
+  };
+  const post = (body: unknown) =>
+    request(testServer)
+      .post(`/api/sessions/${id}/devtools/ingest`)
+      .set('X-Client-Id', binding.clientId)
+      .send(body);
+  const before = devtoolsCaptureStore.read(id);
+  expect(
+    (await post({ ...payload, reset: true, logicalUrl: 'forged', active: false })).status
+  ).toBe(204);
+  expect(devtoolsCaptureStore.read(id)).toEqual(before);
+  expect((await post(payload)).status).toBe(204);
+  expect(await wait).toEqual(payload.recordingStart);
+  expect(devtoolsCaptureStore.read(id)).toEqual(before);
 });

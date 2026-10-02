@@ -48,19 +48,16 @@ const blobStore = createBlobStore(config);
 const evidenceSink = createEvidenceSink(config.evidence);
 await tidyEvidenceSink(evidenceSink);
 // The mail worker's composers, by notice kind. The same set goes to the app, which refuses to
-// start anything whose notice the worker could not compose.
+// start anything whose notice the worker could not compose. With mail set up, that is how a host
+// may ask to replace an owner who has left: the owner is told by email, in the community, and on
+// their DorkOS connection, and can keep ownership from any of them. Without mail every request is
+// refused, because the owner could not be told.
 const noticeComposers: NoticeComposers = { ...ownerReplacementComposers(config) };
-// Whether a host may start an owner replacement. It stays off until every way the owner is told
-// works. The server's routes and the /keep-ownership and /owner-replacement pages are in place;
-// it turns on once the owner is also told on their DorkOS connection (task 3.2). Until then the
-// worker still sends the notices of any request already open, and every new request is refused.
-const ownerReplacementOpen = false;
 const app = createCommunityApp({
   config,
   pool,
   blobStore,
   noticeComposers,
-  ownerReplacementOpen,
 });
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 app.use('/assets/*', serveStatic({ root: staticRoot }));
@@ -104,10 +101,10 @@ registerShortNamePages(app, {
   reservedNames: config.reservedShortNames,
 });
 // A name a community already holds may have become reserved since, by an upgrade or the host's
-// own list; that address no longer opens the community, so say so where the host will see it.
+// own list; that address no longer opens the space, so say so where the server admin will see it.
 for (const bound of await reservedBoundShortNames(pool, config.reservedShortNames)) {
   console.warn(
-    `Community ${bound.communityId} has the web address /${bound.shortName}, which is now reserved and no longer opens it. Give the community another address on the server admin page.`
+    `Space ${bound.communityId} has the web address /${bound.shortName}, which is now reserved and no longer opens it. Give the space another address on the Server administration page.`
   );
 }
 const shortNameHolds = {

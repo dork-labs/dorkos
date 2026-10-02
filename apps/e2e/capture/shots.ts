@@ -155,7 +155,7 @@ export const SHOTS: readonly Shot[] = [
   // The one-time full-power consent door, the modal that asks the power
   // question once.
   { id: 'full-power-door', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
-  // Settings → Rooms: the four reply-limit dials behind the Control Center's
+  // Settings → Room limits: the four reply-limit dials behind the Control Center's
   // "Limit automatic replies" switch.
   { id: 'settings-rooms', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
   // --- Desktop stills (v0.66.0 release headline) ---

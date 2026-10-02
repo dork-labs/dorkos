@@ -870,6 +870,7 @@ export const SessionEventSchema = z
     // a stale capture; the tool's timeout has long since fired).
     z.object({
       ...seqShape,
+      bridgeGeneration: z.string().min(1).max(128).optional(),
       type: z.literal('devtools_capture_request'),
       requestId: z.string(),
       /**
@@ -895,6 +896,7 @@ export const SessionEventSchema = z
     // second click nobody asked for.
     z.object({
       ...seqShape,
+      bridgeGeneration: z.string().min(1).max(128).optional(),
       type: z.literal('devtools_action_request'),
       requestId: z.string(),
       /** The window holding the page, and the page. Both required: the server
@@ -924,13 +926,16 @@ export const SessionEventSchema = z
     // megabytes and the wire this rides is a text stream.
     z.object({
       ...seqShape,
+      bridgeGeneration: z.string().min(1).max(128).optional(),
       type: z.literal('devtools_recording_request'),
       requestId: z.string(),
       /** The window holding the page, and the page. Resolved server-side. */
       targetClientId: z.string(),
       documentId: z.string(),
       /** Begin a recording, or end one and hand the file back. */
-      action: z.enum(['start', 'stop']),
+      action: z.enum(['start', 'stop', 'confirm-start', 'cancel-start']),
+      /** Relative host reservation budget; absent only on legacy requests. */
+      reservationTimeoutMs: z.number().int().positive().max(8_000).optional(),
       /** The recording this is about. Names the file the server writes. */
       recordingId: z.string(),
       /**

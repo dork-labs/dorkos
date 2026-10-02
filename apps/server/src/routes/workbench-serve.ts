@@ -18,7 +18,7 @@
  *   NOT cookie/header auth (the browser frame is opaque-origin, credential-less),
  *   so this path is exempted from the session gate.
  *
- * Local files render in a sandbox WITHOUT `allow-same-origin` (opaque origin), so
+ * Local files receive a response sandbox WITHOUT `allow-same-origin` (opaque origin), so
  * untrusted local HTML can never call `/api/*` as the user. A dev-server preview
  * has its own origin and keeps `allow-same-origin`, which grants it nothing
  * against the DorkOS origin.
@@ -34,7 +34,7 @@ import path from 'path';
 import { WorkbenchProbeRequestSchema, WorkbenchSignRequestSchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
-import { getTunnelHost, parseHostname } from '../lib/trusted-origins.js';
+import { getTunnelHost, parseHostname, resolveAuthTrustedOrigins } from '../lib/trusted-origins.js';
 import {
   workbenchTokenSigner,
   WorkbenchTokenError,
@@ -211,6 +211,15 @@ router.post('/probe', async (req, res) => {
  * match an empty remainder.
  */
 async function handleServe(req: Request, res: Response) {
+  // Response sandboxing also covers top-level navigation and SVG/documents;
+  // the iframe attribute alone only isolates the app's embedded view.
+  // The concrete auth-origin list includes Vite, desktop development and the
+  // live tunnel. SAMEORIGIN would silently break the desktop's separate origin.
+  // 'self' covers this listener (and same-origin reverse-proxy deployments).
+  res.setHeader(
+    'Content-Security-Policy',
+    `sandbox allow-scripts allow-forms allow-popups allow-modals; frame-ancestors 'self' ${resolveAuthTrustedOrigins().join(' ')}`
+  );
   let cwd: string;
   try {
     const payload = workbenchTokenSigner.verify(param(req.params.token));

@@ -21,6 +21,7 @@
  *
  * @module services/session/browser-seat/recording
  */
+import { PAGE_REPORTED_EVIDENCE } from '@dorkos/shared/canvas-bridge-wire';
 import { randomUUID } from 'node:crypto';
 import { ulid } from 'ulidx';
 import { WORKBENCH } from '../../../config/constants.js';
@@ -90,7 +91,11 @@ export type RecordingStore = Pick<
   | 'startRecording'
   | 'recordingFor'
   | 'endRecording'
+  | 'cancelRecording'
+  | 'resolveRecording'
   | 'awaitRecording'
+  | 'awaitRecordingStart'
+  | 'cancelRecordingStart'
 >;
 
 /** Everything the two recording handlers need. */
@@ -112,6 +117,12 @@ export interface RecordingDeps {
 /** No working directory means nowhere to write the file. Said before filming. */
 const NO_CWD_NOTE =
   'This session has no working directory, so there is nowhere to save a recording.';
+
+const RECORDING_START_TIMEOUT_MS = 8_000;
+
+/** Publication failed before a window could be addressed; this is a host fact. */
+const RECORDING_NOT_SENT_NOTE =
+  'The recording request could not be sent to the window showing this page.';
 
 /**
  * Build the two recording handlers, bound to one session's windows.
@@ -159,12 +170,59 @@ export function createRecordingHandlers(
         id: recordingId,
         documentId: claim.documentId,
         clientId: claim.clientId,
+        bridgeGeneration: claim.bridgeGeneration,
       });
       // Lost a race with another call between the check above and here. Says
       // the same sentence: one recording per session is the rule either way.
       if (!started) return { payload: { ok: false, note: RECORDING_ALREADY_RUNNING_NOTE } };
 
-      push(deps, 'start', randomUUID(), recordingId, claim.clientId, claim.documentId);
+      const request = {
+        requestId: randomUUID(),
+        recordingId,
+        targetClientId: claim.clientId,
+        documentId: claim.documentId,
+        bridgeGeneration: claim.bridgeGeneration,
+      };
+      const refuse = (note: string): DrivingAnswer => {
+        deps.store.cancelRecordingStart(request.requestId);
+        deps.store.cancelRecording(recordingId);
+        if (claim.bridgeGeneration) push(deps, { ...request, action: 'cancel-start' });
+        return { payload: { ok: false, evidence: { source: 'host', verified: true }, note } };
+      };
+      if (claim.bridgeGeneration) {
+        const timeoutMs = RECORDING_START_TIMEOUT_MS;
+        const deadline = Date.now() + timeoutMs;
+        const reserved = deps.store.awaitRecordingStart(request.requestId, {
+          recordingId,
+          phase: 'reserved',
+          binding: claim,
+          timeoutMs,
+        });
+        if (!push(deps, { ...request, action: 'start', reservationTimeoutMs: timeoutMs }))
+          return refuse(RECORDING_NOT_SENT_NOTE);
+        const reservation = await reserved;
+        if (!reservation?.ok)
+          return refuse(
+            reservation?.error ?? 'This window did not accept the recording request in time.'
+          );
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) return refuse('This window did not start recording in time.');
+        const started = deps.store.awaitRecordingStart(request.requestId, {
+          recordingId,
+          phase: 'started',
+          binding: claim,
+          timeoutMs: remaining,
+        });
+        if (!push(deps, { ...request, action: 'confirm-start' }))
+          return refuse(RECORDING_NOT_SENT_NOTE);
+        const activation = await started;
+        if (!activation?.ok)
+          return refuse(
+            activation?.error ?? 'This window did not confirm that recording started in time.'
+          );
+      } else if (!push(deps, { ...request, action: 'start' })) {
+        return refuse(RECORDING_NOT_SENT_NOTE);
+      }
       return {
         payload: {
           ok: true,
@@ -198,10 +256,34 @@ export function createRecordingHandlers(
       // is one the server chose rather than one the wire named.
       const waiter = deps.store.awaitRecording(
         requestId,
-        { recordingId: recording.id, cwd, full: recording.full },
+        {
+          recordingId: recording.id,
+          cwd,
+          full: recording.full,
+          binding: {
+            clientId: recording.clientId,
+            documentId: recording.documentId,
+            bridgeGeneration: recording.bridgeGeneration,
+          },
+        },
         stopTimeoutMs
       );
-      push(deps, 'stop', requestId, recording.id, recording.clientId, recording.documentId);
+      if (
+        !push(deps, {
+          action: 'stop',
+          requestId,
+          recordingId: recording.id,
+          targetClientId: recording.clientId,
+          documentId: recording.documentId,
+          bridgeGeneration: recording.bridgeGeneration,
+        })
+      ) {
+        deps.store.resolveRecording(requestId, {
+          ok: false,
+          error: RECORDING_NOT_SENT_NOTE,
+          provenance: 'host',
+        });
+      }
 
       const outcome = await waiter;
       if (outcome === undefined) {
@@ -214,7 +296,17 @@ export function createRecordingHandlers(
         };
       }
       if (!outcome.ok) {
-        return { payload: { ok: false, documentId: recording.documentId, note: outcome.error } };
+        return {
+          payload: {
+            ok: false,
+            documentId: recording.documentId,
+            evidence:
+              outcome.provenance === 'host'
+                ? { source: 'host', verified: true }
+                : PAGE_REPORTED_EVIDENCE,
+            note: outcome.error,
+          },
+        };
       }
 
       // Every true thing about the film, in the order it matters: what is
@@ -224,6 +316,7 @@ export function createRecordingHandlers(
         ...(recording.missed > 0 ? [recordingMissedNote(recording.missed)] : []),
       ];
       const body = {
+        evidence: PAGE_REPORTED_EVIDENCE,
         ok: true,
         documentId: recording.documentId,
         path: outcome.path,
@@ -246,27 +339,23 @@ export function createRecordingHandlers(
  * Address one window with one recording request.
  *
  * @param deps - The emitter that reaches the calling session's windows.
- * @param action - Start filming, or stop and hand the file back.
- * @param requestId - The round trip id a stop is answered under.
- * @param recordingId - The recording this is about.
- * @param targetClientId - The window holding the page.
- * @param documentId - The page.
+ * @param request - The server-owned request, addressed to its exact window and lifetime.
  */
 function push(
   deps: RecordingDeps,
-  action: 'start' | 'stop',
-  requestId: string,
-  recordingId: string,
-  targetClientId: string,
-  documentId: string
-): void {
-  deps.emit({
+  request: {
+    action: 'start' | 'stop' | 'confirm-start' | 'cancel-start';
+    reservationTimeoutMs?: number;
+    requestId: string;
+    recordingId: string;
+    targetClientId: string;
+    documentId: string;
+    bridgeGeneration?: string;
+  }
+): boolean {
+  return deps.emit({
     type: 'devtools_recording_request',
-    requestId,
-    targetClientId,
-    documentId,
-    action,
-    recordingId,
+    ...request,
     bounds: {
       longEdgePx: WORKBENCH.RECORDING_LONG_EDGE_PX,
       frameMs: WORKBENCH.RECORDING_FRAME_MS,

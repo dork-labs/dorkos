@@ -30,6 +30,7 @@ import { z } from 'zod';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServerId } from '@dorkos/shared/capabilities';
 
+import { capabilityInputObject } from './input-projection.js';
 import type { CapabilityDefinition } from './capability-definition.js';
 import type { CapabilityInvocationContext, CapabilityRegistry } from './registry.js';
 import { CapabilityImageResult, CapabilityToolError } from './mcp-envelope.js';
@@ -110,7 +111,8 @@ export function capabilitiesForMcpServer(
 /**
  * Recover the Zod field-map (a `ZodRawShape`) both MCP SDKs expect as a tool's
  * input schema from a capability's `input` object schema. Every migrated
- * capability declares `input` as a `z.object(...)`, so its `.shape` is the same
+ * capability exposes an object, optionally behind preprocessing pipes. Its
+ * projected `.shape` is the same
  * field map the phase-1 descriptors passed straight to `registerTool` / `tool`.
  *
  * A capability that can raise an approval card (`destructive`, or an `act`
@@ -131,7 +133,7 @@ export function capabilitiesForMcpServer(
  * @returns The field-map input schema for MCP tool registration.
  */
 export function capabilityInputShape(capability: CapabilityDefinition): z.ZodRawShape {
-  const shape = (capability.input as z.ZodObject<z.ZodRawShape>).shape;
+  const shape = capabilityInputObject(capability).shape;
   if (!canRaiseApproval(capability)) return portableInputShape(shape);
   return portableInputShape({ ...shape, ...approvalTokenArgument() });
 }

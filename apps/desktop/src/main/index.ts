@@ -272,7 +272,7 @@ if (!gotTheLock) {
   // is a "failure" the ladder would go on to recover from.
   setupRendererRecovery();
 
-  // Settings → Danger zone's "Restart" and "Reset all data". Both are the
+  // Settings → Advanced → Danger zone's "Restart" and "Reset all data". Both are the
   // supervisor's work here rather than the server's, because a server that ends
   // its own process inside a UtilityProcess never comes back (see `admin/`).
   setupAdminActions({ getRendererUrl });
@@ -304,8 +304,8 @@ if (!gotTheLock) {
   //
   // Deliberately NOT gated on `isTrackedRenderer`, unlike the handlers below.
   // Those guard read-once state meant for one renderer; this is stateless and
-  // owns nothing, and a second cockpit window (`window.open` at our own origin)
-  // is a full cockpit whose Settings → Server must work too.
+  // owns nothing, and a second app window (`window.open` at our own origin)
+  // is the full app, whose Settings → Advanced → Server must work too.
   // Answers whether the URL actually left, because the renderer's link seam
   // reports refusals to the person now (DOR-547) and cannot report one it was
   // never told about. A dropped `mailto:`/`tel:` used to resolve here exactly

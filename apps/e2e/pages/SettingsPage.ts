@@ -45,8 +45,28 @@ export class SettingsPage {
    * whole transition rather than its endpoints.
    */
   async switchTab(tabName: string) {
-    await this.dialog.getByRole('tab', { name: new RegExp(tabName, 'i') }).click();
+    const tab = this.dialog.getByRole('tab', { name: new RegExp(tabName, 'i') });
+    if ((await tab.count()) === 0) await this.expandAdvanced();
+    await tab.click();
     await expect(this.dialog.getByRole('tabpanel')).toHaveCount(1);
+  }
+
+  /**
+   * The disclosure that folds Server, Tools, Room limits, Experiments and
+   * Danger zone away at the bottom of the sidebar (DOR-2629). It starts
+   * folded, so a spec that clicks one of those tabs directly opens it first;
+   * {@link SettingsPage.switchTab} does that for you.
+   */
+  get advancedToggle() {
+    return this.dialog.getByRole('button', { name: 'Advanced', exact: true });
+  }
+
+  /** Unfold Advanced, if it is not open already. */
+  async expandAdvanced() {
+    if ((await this.advancedToggle.getAttribute('aria-expanded')) !== 'true') {
+      await this.advancedToggle.click();
+    }
+    await expect(this.advancedToggle).toHaveAttribute('aria-expanded', 'true');
   }
 
   get heading() {
@@ -54,7 +74,7 @@ export class SettingsPage {
   }
 
   get tabList() {
-    return this.dialog.getByRole('tablist');
+    return this.dialog.getByRole('tablist', { name: 'Navigation' });
   }
 
   /** Get a specific tab by name. */

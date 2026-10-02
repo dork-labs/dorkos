@@ -5,15 +5,19 @@ import { formatPeriod, formatUnits } from '../lib/other-charges';
 import { UnreadableFigures } from './UnreadableFigures';
 
 interface OtherChargesProps {
-  /** The usage window's charges that are not inference, if the service sent any. */
+  /** The latest settled period of each charge that is not inference, if there is one. */
   otherCharges: OtherChargesBlock | undefined;
   /** The unit the usage response served, which these amounts are in too. */
   denomination: DenominationInput;
 }
 
 /**
- * The usage window's charges that are not inference — storage past what the
- * account includes, and anything like it the service adds later.
+ * The charges that are not inference — storage past what the account includes,
+ * and anything like it the service adds later — for the latest billing period
+ * that has settled.
+ *
+ * That period is usually last month, not the last 30 days the credits
+ * breakdown covers, so every row carries the dates it covers.
  *
  * Each charge is labelled with the service's own `displayName` and `unit`,
  * rendered exactly as given. The credits breakdown above keeps its own total,
@@ -45,7 +49,7 @@ export function OtherCharges({ otherCharges, denomination }: OtherChargesProps) 
             <div className="min-w-0">
               <p className="truncate">{row.displayName}</p>
               <p className="text-muted-foreground text-xs">
-                {formatUnits(row.units, row.unit)} ·{' '}
+                {formatUnits(row.units, row.unit, row.dorkosPriceMicro)} ·{' '}
                 {/* The dates wrap as one piece, so a narrow screen never
                     splits the range across two lines. */}
                 <span className="whitespace-nowrap">

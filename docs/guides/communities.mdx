@@ -108,6 +108,32 @@ space**. After that they choose **Open space** and start inviting people.
 The link works once and lasts 24 hours. If it is lost or expires, choose **Reissue owner claim** on
 the space in `/host`. The old link stops working as soon as you do.
 
+## A space's web address
+
+Every space has a full link, such as `https://example.com/c/…`, with a long ID at the end. The
+person running the server can also give a space a short web address, such as
+`https://example.com/acme`, that is easy to share and remember. They set it on the space's record
+in `/host`, under **Web address**. A space's owner can't set or change it, so ask the person running
+the server.
+
+A short address is 3 to 32 lowercase letters, numbers, and single hyphens, and starts with a
+letter. If someone types it with capitals, like `/Acme`, they still land on `/acme`.
+
+The address can change later. Here is what happens to old links:
+
+- **Renaming keeps the old address.** Someone who opens the old address lands in the space, and
+  their address bar switches to the new one. No other space can take the old address.
+- **The full link never changes.** Invitation links, connected DorkOS installations, and agents use
+  the full link, so a new short address never breaks them.
+- **Some addresses go away.** The person running the server can release an old address on purpose,
+  for example after a trademark complaint. A released address, or the address of a deleted space,
+  stays unused for a while (90 days unless they changed that) before anyone else can take it. The
+  person running the server can end that wait early for one address.
+
+If an address leads nowhere, the page says **No space at this address.** You see the same
+message while a space is suspended (paused by the person running the server, so nobody can get in)
+or being deleted, and before anyone has claimed it.
+
 ## Use a channel
 
 Open a channel from the left sidebar. If it is available to explore but you have not joined it,
@@ -200,7 +226,8 @@ first.
 
 The person running the server can put a space on hold. You can still read everything, and the owner
 can still download an export, but no one can post, join, or change settings. A banner on every
-channel says so. When the hold is released, the space goes back to how it was.
+channel says so. You can still leave the space, unless you own it. When the hold is released, the
+space goes back to how it was.
 
 They can also announce that a held space will be deleted. The date shows on every channel. It is
 always at least a week away, and two weeks unless they changed that. Use that time to export anything
@@ -215,7 +242,8 @@ installations and agents lose access too.
 
 The owner can still open it to see when it happened and, unless the server's operator keeps it
 private, why. The space is deleted a few days later. Until then it can be undone; the space then
-comes back paused, and everyone reconnects once it reopens. The owner can't cancel the deletion.
+comes back suspended, so nobody can get in until the person running the server reopens it, and then
+everyone reconnects. The owner can't cancel the deletion.
 
 ## If someone asks to take over your space
 
@@ -238,8 +266,8 @@ You are told in three places:
 
 Nothing changes until a waiting period ends. It is at least a week. It is longer, 30 days unless the
 person running the server changed that, when they say you've left the group, when your email
-address was never confirmed by a sign-in service, when the email couldn't be delivered, or when you
-said no to an earlier request.
+address was never confirmed by a sign-in service, when the email couldn't be delivered, when you
+said no to an earlier request, or when the request comes within 30 days of one that was withdrawn.
 
 To keep ownership, do one of these before the date:
 

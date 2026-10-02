@@ -142,7 +142,7 @@ describe('AgentMcpServers', () => {
     } as RuntimeCapabilities);
   });
 
-  it('cross-links to Settings → Tools for the inbound MCP direction (plan D7)', async () => {
+  it('cross-links to Settings → Advanced → Tools for the inbound MCP direction (plan D7)', async () => {
     const transport = createMockTransport({
       listAgentMcpServers: vi.fn().mockResolvedValue([]),
       getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),

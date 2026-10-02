@@ -112,7 +112,7 @@ describe('a driving verb addresses exactly one window', () => {
       matched: 1,
       page: { title: 'Checkout', url: 'https://preview/checkout', focused: 'button "Pay $42.00"' },
     };
-    store.resolveAction(result);
+    store.resolveAction({ ...result, documentId: 'doc-a' }, 'client-a');
 
     expect((await answer).payload).toMatchObject({
       ok: true,
@@ -345,11 +345,15 @@ describe('bounds every driving verb carries', () => {
 
     const answer = handlers.waitFor({ text: 'Done', timeoutMs: 60_000 });
     expect(pushedRequest(emitted).command).toMatchObject({ timeoutMs: 10_000 });
-    store.resolveAction({
-      requestId: pushedRequest(emitted).requestId,
-      ok: true,
-      waitedMs: 12,
-    });
+    store.resolveAction(
+      {
+        documentId: 'doc-a',
+        requestId: pushedRequest(emitted).requestId,
+        ok: true,
+        waitedMs: 12,
+      },
+      'client-a'
+    );
     await answer;
   });
 
@@ -400,12 +404,16 @@ describe('bounds every driving verb carries', () => {
     const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1_000);
 
     const answer = handlers.click({ text: 'Delete' });
-    store.resolveAction({
-      requestId: pushedRequest(emitted).requestId,
-      ok: false,
-      matched: 4,
-      error: '4 things matched the text "Delete". Pass nth to pick one, or name it more exactly.',
-    });
+    store.resolveAction(
+      {
+        documentId: 'doc-a',
+        requestId: pushedRequest(emitted).requestId,
+        ok: false,
+        matched: 4,
+        error: '4 things matched the text "Delete". Pass nth to pick one, or name it more exactly.',
+      },
+      'client-a'
+    );
 
     expect((await answer).payload.documentId).toBe('doc-a');
   });
@@ -426,7 +434,10 @@ describe('bounds every driving verb carries', () => {
     // Answer each minted request in the order they were pushed.
     for (const event of emitted) {
       const request = event as unknown as { requestId: string };
-      store.resolveAction({ requestId: request.requestId, ok: true, did: 'did it.' });
+      store.resolveAction(
+        { requestId: request.requestId, documentId: 'doc-a', ok: true, did: 'did it.' },
+        'client-a'
+      );
     }
     for (const [verb, pending] of calls) {
       expect((await pending).payload.documentId, `${verb} did not name the tab`).toBe('doc-a');
@@ -439,12 +450,16 @@ describe('bounds every driving verb carries', () => {
     const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1_000);
 
     const answer = handlers.click({ text: 'Delete' });
-    store.resolveAction({
-      requestId: pushedRequest(emitted).requestId,
-      ok: false,
-      matched: 4,
-      error: '4 things matched the text "Delete". Pass nth to pick one, or name it more exactly.',
-    });
+    store.resolveAction(
+      {
+        documentId: 'doc-a',
+        requestId: pushedRequest(emitted).requestId,
+        ok: false,
+        matched: 4,
+        error: '4 things matched the text "Delete". Pass nth to pick one, or name it more exactly.',
+      },
+      'client-a'
+    );
 
     expect((await answer).payload).toMatchObject({
       ok: false,
@@ -453,4 +468,24 @@ describe('bounds every driving verb carries', () => {
       note: '4 things matched the text "Delete". Pass nth to pick one, or name it more exactly.',
     });
   });
+});
+
+it('cancels an unpublished action waiter before a late correlated reply', async () => {
+  vi.useFakeTimers();
+  try {
+    const store = storeWithDriver();
+    const wait = vi.spyOn(store, 'awaitAction');
+    const { emit } = makeSink(false);
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1000);
+    expect((await handlers.click({ selector: '#pay' })).payload).toMatchObject({
+      ok: false,
+      evidence: { source: 'host', verified: true },
+    });
+    expect(vi.getTimerCount()).toBe(0);
+    const requestId = wait.mock.calls[0][0];
+    store.resolveAction({ requestId, documentId: 'doc-a', ok: true }, 'client-a');
+    await expect(wait.mock.results[0].value).resolves.toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
 });

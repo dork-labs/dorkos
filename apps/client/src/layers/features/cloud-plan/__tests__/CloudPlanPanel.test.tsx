@@ -204,6 +204,28 @@ describe('the plan-aware surfaces', () => {
     );
   });
 
+  it('shows a charged sliver as <0.001, never as a charge for nothing', async () => {
+    const [row] = usageWithOtherChargesFixture.otherCharges.rows;
+    renderPanel(
+      linkedTransport({
+        getCloudUsage: {
+          available: true,
+          usage: {
+            ...usageWithOtherChargesFixture,
+            otherCharges: {
+              rows: [{ ...row, units: 0, dorkosPriceMicro: '750' }],
+              dorkosPriceMicro: '750',
+            },
+          },
+        },
+      })
+    );
+    const dates = await screen.findByText('Sep 1 – Sep 30');
+    expect(dates.parentElement).toHaveTextContent('<0.001 GB-month · Sep 1 – Sep 30');
+    // 750 micro at the fixture's placeholder 250 per credit is 3 credits.
+    expect(within(screen.getByText('Other charges').parentElement!).getByText('3')).toBeVisible();
+  });
+
   it('adds nothing when the service sends no such charges', async () => {
     renderPanel(linkedTransport());
     expect(await screen.findByText(usageFixture.rows[0].displayName)).toBeInTheDocument();

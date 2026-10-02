@@ -11,7 +11,7 @@
  * @module db/tests/tier-ceiling-drop-migration
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,7 +47,13 @@ function databaseBefore(idx: number): Raw {
   );
   const sqlite = new Database(':memory:');
   sqlite.pragma('foreign_keys = ON');
-  migrate(drizzle(sqlite), { migrationsFolder: folder });
+  try {
+    migrate(drizzle(sqlite), { migrationsFolder: folder });
+  } finally {
+    // The copied migrations are read only here (the database is in memory),
+    // so the folder goes now rather than piling up in the temp folder.
+    rmSync(folder, { recursive: true, force: true });
+  }
   return sqlite;
 }
 
