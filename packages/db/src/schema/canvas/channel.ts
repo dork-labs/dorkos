@@ -26,6 +26,8 @@ export const canvasDocChannels = sqliteTable(
     stateRev: integer('state_rev').notNull().default(0),
     /** First retained sequence; older cursors require a snapshot reset. */
     retentionFloor: integer('retention_floor').notNull().default(1),
+    /** First sequence with complete receipt membership; older UUIDs may be unknowable. */
+    receiptRetentionFloor: integer('receipt_retention_floor').notNull().default(1),
     declaration: text('declaration', { mode: 'json' }),
     declarationHash: text('declaration_hash'),
     openerAgentId: text('opener_agent_id'),
@@ -51,6 +53,10 @@ export const canvasDocEvents = sqliteTable(
     type: text('type').notNull(),
     payload: text('payload', { mode: 'json' }).notNull(),
     envelopeHash: text('envelope_hash').notNull(),
+    /** Exact canonical UTF-8 envelope size; zero marks foundation rows awaiting backfill. */
+    envelopeBytes: integer('envelope_bytes').notNull().default(0),
+    /** Compact receipt header remains after app payload/provenance removal. */
+    payloadPrunedAt: text('payload_pruned_at'),
     coalesceKey: text('coalesce_key'),
     clientTs: text('client_ts'),
     receivedAt: text('received_at').notNull(),
@@ -60,6 +66,10 @@ export const canvasDocEvents = sqliteTable(
     primaryKey({ columns: [table.documentId, table.eventId] }),
     uniqueIndex('canvas_doc_events_sequence_unique').on(table.documentId, table.docSeq),
     index('canvas_doc_events_received_idx').on(table.documentId, table.receivedAt),
+    index('canvas_doc_events_retention_idx').on(table.receivedAt, table.documentId, table.docSeq),
+    index('canvas_doc_events_unaccounted_idx')
+      .on(table.documentId, table.eventId)
+      .where(sql`${table.envelopeBytes}=0 AND ${table.payloadPrunedAt} IS NULL`),
   ]
 );
 

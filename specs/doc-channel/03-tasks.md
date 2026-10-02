@@ -2,7 +2,7 @@
 
 Generated: 2026-10-01T20:11:19.260645Z
 
-Canonical task records: `03-tasks.json`. Mode: full. Task 1.1 is in progress; 21 tasks remain pending. Full v1/v1.1/v2 delivery is included. Parent owns tracking, promotion, integration and aggregate release readiness; each implementation runs in an isolated checkout.
+Canonical task records: `03-tasks.json`. Mode: full. Task 1.1 is completed after verified foundation merge; nine tasks are in progress and twelve remain pending. Full v1/v1.1/v2 delivery is included. Parent owns tracking, promotion, integration and aggregate release readiness; each implementation runs in an isolated checkout.
 
 The natural xl boundaries are 2.6 (room admission) and 4.3 (checkbox write coordination). They are promoted through the tracker adapter as DOR-2669 and DOR-2670, with parent DOR-2665; they stay unready until their canonical prerequisites pass.
 
@@ -14,7 +14,7 @@ Shared app/composition mounts, export barrels, migrations and Transport integrat
 
 ### Task 1.1: [doc-channel] [P1] Define channel contracts and durable storage
 
-- Status: in_progress
+- Status: completed
 - Size: large
 - Priority: high
 - Dependencies: none
@@ -34,7 +34,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 1.2: [doc-channel] [P1] Enforce document authority and recoverable lifecycle
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 1.1
@@ -57,7 +57,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.1: [doc-channel] [P2] Authorize declarations and exact route grants
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 1.2
@@ -78,7 +78,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.2: [doc-channel] [P2] Persist accepted input and deterministic batches
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 1.2
@@ -99,7 +99,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.3: [doc-channel] [P2] Expose host HTTP and Transport operations
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 2.1, 2.2
@@ -119,7 +119,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.4: [doc-channel] [P2] Reuse canonical admission and render document context
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 2.1, 2.2
@@ -140,7 +140,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.5: [doc-channel] [P2] Schedule durable waits and truthful terminal receipts
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 2.4
@@ -204,7 +204,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.8: [doc-channel] [P2] Persist downstream state and correlated acknowledgements
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 2.1, 2.2, 2.4
@@ -227,14 +227,14 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 3.1: [doc-channel] [P3] Deliver channel replay over shared scope streams
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 2.3, 2.8
 - Parallel with: none declared
 - Issue: none; parent issue: none
 
-Add canvas_event to session/room stream schemas and common projectors/delivery, with docSeq independent of stream sequence, room entry cursor and content revision. Notifications are not durable history; cold/idle session channels replay from document store without existing projector. Attach live buffer before capturing highWatermark, replay through it, then drain later buffered events. Reduce duplicates by docSeq; gaps fetch document replay. Room frames never advance room entry cursor. Expose resetRequired/current state/receipt summary/retention floor when history pruned and do not synthesize unavailable app events.
+Add canvas_event as an explicit typed wire notification alongside durable session events, and to room schemas/common delivery. Do not fabricate SessionEvent.seq values or copy document history into transcript storage; dispatch channel frames before transcript cursor logic, with docSeq independent of stream sequence, room entry cursor and content revision. Notifications are not durable history; cold/idle session channels replay from document store without existing projector. Attach live buffer before capturing highWatermark, replay through it, then drain later buffered events. Reduce duplicates by docSeq; gaps fetch document replay. Room frames never advance room entry cursor. Expose resetRequired/current state/receipt summary/retention floor when history pruned and do not synthesize unavailable app events.
 Apply existing subscriber backpressure and authorized scope filtering; document state/replies/status travel over SSE and WebSocket equivalently. Client use-doc-channel uses Transport/public barrels; keep identity data out of page projections. Preserve stable content/edit state when notifications arrive.
 
 Acceptance and verification:
@@ -269,7 +269,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 3.3: [doc-channel] [P3] Emit native widget actions with durable status
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: high
 - Dependencies: 2.3, 2.8, 3.1

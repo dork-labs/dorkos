@@ -376,7 +376,11 @@ describe('the three reads as `ui` capabilities', () => {
   });
 
   it('reach no surface but the in-session one', () => {
-    for (const capability of registry.capabilities.filter((c) => c.id.startsWith('ui.'))) {
+    const reads = registry.capabilities.filter((c) =>
+      ['ui.read_console', 'ui.read_network', 'ui.screenshot'].includes(c.id)
+    );
+    expect(reads).toHaveLength(3);
+    for (const capability of reads) {
       expect(capability.surfaces.mcp!.servers, capability.id).toEqual(['in-session']);
     }
   });

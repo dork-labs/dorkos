@@ -77,6 +77,7 @@
  *
  * @module test-utils/capability-conformance
  */
+import * as invokeRefusal from './capability-invoke-refusal.js';
 import { describe, expect, it } from 'vitest';
 import {
   CAPABILITY_TIERS,
@@ -88,18 +89,6 @@ import {
 
 /** The MCP servers a conformance run inspects. */
 const MCP_SERVERS: readonly McpServerId[] = ['in-session', 'external'];
-
-/**
- * Whether a thrown value is the registry's gate refusal — the error
- * `registry.invoke` raises when the tier gate did not allow a call. Duck-typed by
- * name so this suite stays free of a `@dorkos/server` import.
- *
- * @param err - The thrown value.
- * @returns True when it is a `CapabilityGateRefusal`.
- */
-function isGateRefusal(err: unknown): err is { decision: { payload: unknown } } {
-  return err instanceof Error && err.name === 'CapabilityGateRefusal';
-}
 
 /** What the real decide endpoint did when the REQUESTER tried to answer itself. */
 export interface ApprovalDecisionProbeResult {
@@ -245,6 +234,8 @@ export interface CapabilityConformanceFixtures {
    * schema has required fields.
    */
   sampleInputs?: Record<string, unknown>;
+  /** Exact capability-specific typed refusals expected from a valid anonymous fixture invocation. */
+  expectedInvokeRefusal?: Record<string, (error: Error) => boolean>;
   /**
    * The tool names each MCP server ACTUALLY registers for the capability
    * surface, obtained by running the real adapters (`capabilityMcpTools` for
@@ -286,18 +277,6 @@ export interface ConformanceViolation {
   check: string;
   /** What drifted, in enough detail to fix it. */
   detail: string;
-}
-
-/**
- * Whether a thrown value is the server's `CapabilityToolError` — the structured
- * domain-error a handler raises through the plain-data seam. Duck-typed by name
- * so this suite stays free of a `@dorkos/server` import.
- *
- * @param err - The thrown value.
- * @returns True when it is a `CapabilityToolError`.
- */
-function isCapabilityToolError(err: unknown): boolean {
-  return err instanceof Error && err.name === 'CapabilityToolError';
 }
 
 /** The `${domain}.${verb}` id shape every capability id must match. */
@@ -731,7 +710,7 @@ export async function checkRegistryGateConformance(
       );
       continue;
     }
-    if (!isGateRefusal(thrown)) {
+    if (!invokeRefusal.isGateRefusal(thrown)) {
       add(
         `${cap.id}: registry.invoke rejected, but not with a gate refusal — got ` +
           `${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : String(thrown)}`
@@ -896,9 +875,10 @@ export function capabilityConformance(
           // (`tier-enforcement.test.ts`, spec `agent-permissions` D6).
           const ok =
             error === undefined ||
-            isCapabilityToolError(error) ||
+            invokeRefusal.isCapabilityToolError(error) ||
+            invokeRefusal.isExpectedInvokeRefusal(cap.id, error, fixtures) ||
             ((cap.tier === 'destructive' || (cap.area !== null && cap.area !== undefined)) &&
-              isGateRefusal(error));
+              invokeRefusal.isGateRefusal(error));
           expect(ok, error instanceof Error ? error.message : String(error)).toBe(true);
         });
       }

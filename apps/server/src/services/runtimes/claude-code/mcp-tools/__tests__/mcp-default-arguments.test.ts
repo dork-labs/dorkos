@@ -40,6 +40,7 @@ vi.mock('../../../../../lib/logger.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 
 import { createDorkOsToolServer, handRegisteredInSessionTools } from '../index.js';
+import { capabilityInputObject } from '../../../../core/capabilities/input-projection.js';
 import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -142,7 +143,7 @@ function capabilitiesWithDefaults(
   return capabilitiesForMcpServer(registry, server)
     .map((capability) => ({
       toolName: capability.surfaces.mcp!.toolName,
-      fields: Object.entries((capability.input as z.ZodObject<z.ZodRawShape>).shape)
+      fields: Object.entries(capabilityInputObject(capability).shape)
         .filter(([, field]) => rungOf(field) === 'defaulted')
         .map(([key]) => key),
       capability,

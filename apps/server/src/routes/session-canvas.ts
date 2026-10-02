@@ -175,6 +175,7 @@ router.post<SessionCanvasParams>('/', (req, res) => {
   try {
     const document = access.canvas.open(access.scope, SESSION_OWNER_AUTHOR, body.content, {
       ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
+      ...(body.channel ? { channel: body.channel } : {}),
     });
     res.status(201).json(document);
   } catch (err) {

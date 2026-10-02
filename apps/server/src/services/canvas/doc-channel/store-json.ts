@@ -45,6 +45,8 @@ export function assertRowJson(row: object): void {
       [
         'nextDocSeq',
         'retentionFloor',
+        'receiptRetentionFloor',
+        'envelopeBytes',
         'docSeq',
         'stateRev',
         'revision',
@@ -52,7 +54,7 @@ export function assertRowJson(row: object): void {
         'attempt',
       ].includes(key)
     ) {
-      const minimum = ['stateRev', 'attempt'].includes(key) ? 0 : 1;
+      const minimum = ['stateRev', 'attempt', 'envelopeBytes'].includes(key) ? 0 : 1;
       if (!Number.isSafeInteger(descriptor.value) || descriptor.value < minimum)
         throw new TypeError('Invalid stored sequence or revision');
     }

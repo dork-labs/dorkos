@@ -20,6 +20,7 @@ const ALL_KINDS: ContextKind[] = [
   'seed_context',
   'approval_verdict',
   'accounts_access',
+  'doc_events',
 ];
 
 /** A minimal but complete room context — every field the union requires. */

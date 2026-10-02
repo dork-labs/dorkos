@@ -17,7 +17,7 @@
  *
  * @module server/services/canvas
  */
-import { onProjectorRekey } from '../session/session-state-projector.js';
+import { onDurableSessionRekey } from '../session/turn-identity/durable-rekey.js';
 import { onSessionRemoved } from '../session/session-list-broadcaster.js';
 import { logger } from '../../lib/logger.js';
 import { CanvasService } from './canvas-service.js';
@@ -100,18 +100,12 @@ export function peekCanvasService(): CanvasService | undefined {
 // Wired on import rather than from the composition root, for the reason the
 // module doc gives: both shells import this domain, and only one of them runs
 // `index.ts`. Both listeners are no-ops until a service is registered.
-onProjectorRekey((oldId, newId) => {
+onDurableSessionRekey((oldId, newId) => {
   try {
     active?.rekeyScope(sessionScope(oldId), sessionScope(newId));
   } catch (err) {
-    // **A rekey is a notification, not a transaction** — the same reason the
-    // other SQLite listener on this event gives (`room-session-convergence.ts`).
-    // `rekeyProjector` fans out with no guard of its own, so a throw here would
-    // abort every listener after it and propagate into the trigger, mid-first-
-    // turn. It is throwable: a rename into a scope that already holds the same
-    // source key fails the `(scope, source_key)` unique index. The cost of
-    // catching it is one canvas stranded on the retired id, which the next
-    // hydrate under the canonical id simply shows as empty.
+    // Lifecycle persists blocked recovery evidence before refusing a move. Keep
+    // unrelated participants running; protected document queues remain fenced.
     logger.warn('[canvas] could not carry a canvas across a session rename', {
       oldSessionId: oldId,
       newSessionId: newId,
