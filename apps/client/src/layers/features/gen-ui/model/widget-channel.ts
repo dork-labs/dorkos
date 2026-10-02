@@ -146,7 +146,7 @@ export function useWidgetChannelActions(
           ? 'This action could not be saved. Review the document before trying again.'
           : refusal
             ? 'Save not confirmed. Review this action before trying again.'
-            : 'Save not confirmed. Check your connection and try again.',
+            : 'Save not confirmed. Check your network and try again.',
       });
     }
   };
