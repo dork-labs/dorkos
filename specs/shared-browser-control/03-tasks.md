@@ -237,11 +237,13 @@ Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkou
 
 ### Task 5.1: Implement canonical destination parser DNS and grant policy
 
-Status: in_progress · Size: large · Priority: high · Phase: Runtime network and identity gates
+Status: completed · Size: large · Priority: high · Phase: Runtime network and identity gates
 
 Dependencies: 4.1. Parallel with: 6.1.
 
-Worker: `/root/prototype_manager`; isolated source checkout: `/Users/doriancollier/.codex/worktrees/browser-egress-policy/dorkos`. Frozen source `b65503dd3c968fb6546c711d924105451ac33c40` is integrated for fresh parent verification and whole-change review. No actual merge, broker/runtime activation or full task completion is claimed.
+Destination policy primitives merged in PR #2467 at 4f117573928cc737c74d9f186de0ff320ebd2004 on 2026-10-02T10:09:22Z. Both distinct independent whole-change reviews passed exact pushed head 57ea622c06df54a6adeccb1e559c87cee23e089d; all 25 owned merged blobs match that head. Original source failures and corrected history remain preserved. This completes only this private foundation slice; forwarding, runtime integration, public activation and full DOR-2667 delivery remain open.
+
+Historical pre-merge checkpoint: Worker: `/root/prototype_manager`; isolated source checkout: `/Users/doriancollier/.codex/worktrees/browser-egress-policy/dorkos`. Frozen source `b65503dd3c968fb6546c711d924105451ac33c40` is integrated for fresh parent verification and whole-change review. No actual merge, broker/runtime activation or full task completion is claimed.
 
 Implement services/browser/egress policy primitives without opening production browser access: canonicalize authority once, reject userinfo/ambiguous hosts/Host mismatch/forbidden schemes and ports. Public HTTP(S)/WS(S) initially ports80/443; deny all nonglobal/mapped-IPv6/private/metadata/host-interface destinations and configured app/admin authorities/aliases before any allow grant. Bounded resolver/CNAME validates every A/AAAA answer, rejects mixed sets and yields pinned numeric endpoints with policy revision. Local-dev grant is owner/workspace/browser-bound exact literal scheme/host/port with expiry; cannot override admin deny. Test rebind/mixed/CNAME/mapped-IP/adjacent-port/alias cases and allowed shared-CDN hostname independent of denied app authority, using injected resolver and socket fixtures.
 
@@ -332,11 +334,13 @@ Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkou
 
 ### Task 6.1: Add strict browser and semantic shared schemas
 
-Status: in_progress · Size: medium · Priority: high · Phase: Shared contracts and server authority
+Status: completed · Size: medium · Priority: high · Phase: Shared contracts and server authority
 
 Dependencies: 4.1. Parallel with: 5.1.
 
-Worker: `/root/prototype_contracts`; isolated source checkout: `/Users/doriancollier/.codex/worktrees/browser-shared-contracts/dorkos`. Frozen source `92d9068f34cca6c5775dab1da344d3aac37bf798` is integrated for fresh parent verification and whole-change review. No actual merge, broker/runtime activation or full task completion is claimed.
+Strict browser and semantic shared schemas merged in PR #2467 at 4f117573928cc737c74d9f186de0ff320ebd2004 on 2026-10-02T10:09:22Z. Both distinct independent whole-change reviews passed exact pushed head 57ea622c06df54a6adeccb1e559c87cee23e089d; all 25 owned merged blobs match that head. Original source failures and corrected history remain preserved. This completes only this private foundation slice; forwarding, runtime integration, public activation and full DOR-2667 delivery remain open.
+
+Historical pre-merge checkpoint: Worker: `/root/prototype_contracts`; isolated source checkout: `/Users/doriancollier/.codex/worktrees/browser-shared-contracts/dorkos`. Frozen source `92d9068f34cca6c5775dab1da344d3aac37bf798` is integrated for fresh parent verification and whole-change review. No actual merge, broker/runtime activation or full task completion is claimed.
 
 Add exported browser-safe strict Zod schemas for lifecycle, grants, generations, actions,
 frames/real render receipts, errors, diagnostics and exact version-1 semantic/event/continuation

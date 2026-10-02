@@ -46,13 +46,8 @@
       "size": "medium",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "1.1"
-      ],
-      "parallelWith": [
-        "1.3",
-        "1.4"
-      ],
+      "dependencies": ["1.1"],
+      "parallelWith": ["1.3", "1.4"],
       "issue": null,
       "parentIssue": null,
       "worker": "/root",
@@ -68,13 +63,8 @@
       "size": "large",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "1.1"
-      ],
-      "parallelWith": [
-        "1.2",
-        "1.4"
-      ],
+      "dependencies": ["1.1"],
+      "parallelWith": ["1.2", "1.4"],
       "issue": null,
       "parentIssue": null,
       "worker": "/root/prototype_manager",
@@ -90,13 +80,8 @@
       "size": "large",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "1.1"
-      ],
-      "parallelWith": [
-        "1.2",
-        "1.3"
-      ],
+      "dependencies": ["1.1"],
+      "parallelWith": ["1.2", "1.3"],
       "issue": null,
       "parentIssue": null,
       "worker": "/root/prototype_control",
@@ -112,11 +97,7 @@
       "size": "xl",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "1.2",
-        "1.3",
-        "1.4"
-      ],
+      "dependencies": ["1.2", "1.3", "1.4"],
       "parallelWith": [],
       "issue": "DOR-2668",
       "parentIssue": "DOR-2667",
@@ -133,13 +114,8 @@
       "size": "large",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "1.2",
-        "1.3"
-      ],
-      "parallelWith": [
-        "2.1"
-      ],
+      "dependencies": ["1.2", "1.3"],
+      "parallelWith": ["2.1"],
       "issue": null,
       "parentIssue": null,
       "worker": "/root/browser_architecture",
@@ -155,10 +131,7 @@
       "size": "large",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "2.1",
-        "2.2"
-      ],
+      "dependencies": ["2.1", "2.2"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
@@ -175,10 +148,7 @@
       "size": "large",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "1.3",
-        "2.1"
-      ],
+      "dependencies": ["1.3", "2.1"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
@@ -194,13 +164,8 @@
       "size": "large",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "2.1"
-      ],
-      "parallelWith": [
-        "2.3",
-        "3.2"
-      ],
+      "dependencies": ["2.1"],
+      "parallelWith": ["2.3", "3.2"],
       "issue": null,
       "parentIssue": null,
       "worker": "/root",
@@ -216,14 +181,8 @@
       "size": "medium",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "1.3",
-        "2.1"
-      ],
-      "parallelWith": [
-        "2.3",
-        "3.1"
-      ],
+      "dependencies": ["1.3", "2.1"],
+      "parallelWith": ["2.3", "3.1"],
       "issue": null,
       "parentIssue": null,
       "worker": "/root/browser_architecture",
@@ -239,12 +198,7 @@
       "size": "medium",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "2.3",
-        "3.1",
-        "3.2",
-        "2.4"
-      ],
+      "dependencies": ["2.3", "3.1", "3.2", "2.4"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
@@ -290,9 +244,7 @@
       "size": "large",
       "priority": "high",
       "status": "completed",
-      "dependencies": [
-        "4.1"
-      ],
+      "dependencies": ["4.1"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
@@ -309,12 +261,8 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.2"
-      ],
-      "parallelWith": [
-        "4.4"
-      ],
+      "dependencies": ["4.2"],
+      "parallelWith": ["4.4"],
       "issue": null,
       "parentIssue": null
     },
@@ -328,12 +276,8 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.2"
-      ],
-      "parallelWith": [
-        "4.3"
-      ],
+      "dependencies": ["4.2"],
+      "parallelWith": ["4.3"],
       "issue": null,
       "parentIssue": null
     },
@@ -347,9 +291,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.4"
-      ],
+      "dependencies": ["4.4"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -364,10 +306,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.3",
-        "4.5"
-      ],
+      "dependencies": ["4.3", "4.5"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -377,17 +316,13 @@
       "phase": 5,
       "phaseName": "Runtime network and identity gates",
       "subject": "[shared-browser-control] [P5] Implement canonical destination parser DNS and grant policy",
-      "description": "Frozen isolated source b65503dd3c968fb6546c711d924105451ac33c40 integrated for fresh whole-change review. Source gates and intended-cause failures are preserved; no actual merge, public activation or full task completion is claimed.\n\nImplement services/browser/egress policy primitives without opening production browser access: canonicalize authority once, reject userinfo/ambiguous hosts/Host mismatch/forbidden schemes and ports. Public HTTP(S)/WS(S) initially ports80/443; deny all nonglobal/mapped-IPv6/private/metadata/host-interface destinations and configured app/admin authorities/aliases before any allow grant. Bounded resolver/CNAME validates every A/AAAA answer, rejects mixed sets and yields pinned numeric endpoints with policy revision. Local-dev grant is owner/workspace/browser-bound exact literal scheme/host/port with expiry; cannot override admin deny. Test rebind/mixed/CNAME/mapped-IP/adjacent-port/alias cases and allowed shared-CDN hostname independent of denied app authority, using injected resolver and socket fixtures.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "description": "Destination policy primitives merged in PR #2467 at 4f117573928cc737c74d9f186de0ff320ebd2004 on 2026-10-02T10:09:22Z. Both distinct independent whole-change reviews passed exact pushed head 57ea622c06df54a6adeccb1e559c87cee23e089d; all 25 owned merged blobs match that head. Original source failures and corrected history remain preserved. This completes only this private foundation slice; forwarding, runtime integration, public activation and full DOR-2667 delivery remain open.\n\nHistorical pre-merge checkpoint: Frozen isolated source b65503dd3c968fb6546c711d924105451ac33c40 integrated for fresh whole-change review. Source gates and intended-cause failures are preserved; no actual merge, public activation or full task completion is claimed.\n\nImplement services/browser/egress policy primitives without opening production browser access: canonicalize authority once, reject userinfo/ambiguous hosts/Host mismatch/forbidden schemes and ports. Public HTTP(S)/WS(S) initially ports80/443; deny all nonglobal/mapped-IPv6/private/metadata/host-interface destinations and configured app/admin authorities/aliases before any allow grant. Bounded resolver/CNAME validates every A/AAAA answer, rejects mixed sets and yields pinned numeric endpoints with policy revision. Local-dev grant is owner/workspace/browser-bound exact literal scheme/host/port with expiry; cannot override admin deny. Test rebind/mixed/CNAME/mapped-IP/adjacent-port/alias cases and allowed shared-CDN hostname independent of denied app authority, using injected resolver and socket fixtures.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
       "activeForm": "Implementing canonical destination parser DNS and grant policy",
       "size": "large",
       "priority": "high",
-      "status": "in_progress",
-      "dependencies": [
-        "4.1"
-      ],
-      "parallelWith": [
-        "6.1"
-      ],
+      "status": "completed",
+      "dependencies": ["4.1"],
+      "parallelWith": ["6.1"],
       "issue": null,
       "parentIssue": null,
       "worker": "/root/prototype_manager",
@@ -403,10 +338,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "5.1",
-        "4.2"
-      ],
+      "dependencies": ["5.1", "4.2"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -421,10 +353,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "5.2",
-        "4.5"
-      ],
+      "dependencies": ["5.2", "4.5"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -439,12 +368,8 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "5.3"
-      ],
-      "parallelWith": [
-        "5.5"
-      ],
+      "dependencies": ["5.3"],
+      "parallelWith": ["5.5"],
       "issue": null,
       "parentIssue": null
     },
@@ -458,12 +383,8 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "5.3"
-      ],
-      "parallelWith": [
-        "5.4"
-      ],
+      "dependencies": ["5.3"],
+      "parallelWith": ["5.4"],
       "issue": null,
       "parentIssue": null
     },
@@ -477,12 +398,8 @@
       "size": "medium",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.2"
-      ],
-      "parallelWith": [
-        "5.1"
-      ],
+      "dependencies": ["4.2"],
+      "parallelWith": ["5.1"],
       "issue": null,
       "parentIssue": null
     },
@@ -496,13 +413,8 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.3",
-        "5.6"
-      ],
-      "parallelWith": [
-        "5.8"
-      ],
+      "dependencies": ["4.3", "5.6"],
+      "parallelWith": ["5.8"],
       "issue": null,
       "parentIssue": null
     },
@@ -516,13 +428,8 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.3",
-        "5.6"
-      ],
-      "parallelWith": [
-        "5.7"
-      ],
+      "dependencies": ["4.3", "5.6"],
+      "parallelWith": ["5.7"],
       "issue": null,
       "parentIssue": null
     },
@@ -531,17 +438,13 @@
       "phase": 6,
       "phaseName": "Shared contracts and server authority",
       "subject": "[shared-browser-control] [P6] Add strict browser and semantic shared schemas",
-      "description": "Frozen isolated source 92d9068f34cca6c5775dab1da344d3aac37bf798 integrated for fresh whole-change review. Source gates and intended-cause failures are preserved; no actual merge, public activation or full task completion is claimed.\n\nAdd exported browser-safe strict Zod schemas for lifecycle, grants, generations, actions,\nframes/real render receipts, errors, diagnostics and exact version-1 semantic/event/continuation\nshapes. Extend Transport and typed mocks; use managed `browser.*` namespace rather than\nchanging iframe ui/devtools verbs. Acceptance: unknown keys/enum/bounds/version and forged\nactor fields rejected; no engine objects or executable payloads in public schemas; strict\ncorrelation/stream watermark and secret noecho schemas match the approved contract. Define all closed role/key/event/reason enums, conditional event payloads, request edit stream ID and continuation event watermark with strict unknown-key rejection; identity counters safe integers, opaque IDs never authority. No engine stub methods added to Transport in this types PR; typed operation implementation belongs task6.8.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "description": "Strict browser and semantic shared schemas merged in PR #2467 at 4f117573928cc737c74d9f186de0ff320ebd2004 on 2026-10-02T10:09:22Z. Both distinct independent whole-change reviews passed exact pushed head 57ea622c06df54a6adeccb1e559c87cee23e089d; all 25 owned merged blobs match that head. Original source failures and corrected history remain preserved. This completes only this private foundation slice; forwarding, runtime integration, public activation and full DOR-2667 delivery remain open.\n\nHistorical pre-merge checkpoint: Frozen isolated source 92d9068f34cca6c5775dab1da344d3aac37bf798 integrated for fresh whole-change review. Source gates and intended-cause failures are preserved; no actual merge, public activation or full task completion is claimed.\n\nAdd exported browser-safe strict Zod schemas for lifecycle, grants, generations, actions,\nframes/real render receipts, errors, diagnostics and exact version-1 semantic/event/continuation\nshapes. Extend Transport and typed mocks; use managed `browser.*` namespace rather than\nchanging iframe ui/devtools verbs. Acceptance: unknown keys/enum/bounds/version and forged\nactor fields rejected; no engine objects or executable payloads in public schemas; strict\ncorrelation/stream watermark and secret noecho schemas match the approved contract. Define all closed role/key/event/reason enums, conditional event payloads, request edit stream ID and continuation event watermark with strict unknown-key rejection; identity counters safe integers, opaque IDs never authority. No engine stub methods added to Transport in this types PR; typed operation implementation belongs task6.8.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
       "activeForm": "Adding strict browser and semantic shared schemas",
       "size": "medium",
       "priority": "high",
-      "status": "in_progress",
-      "dependencies": [
-        "4.1"
-      ],
-      "parallelWith": [
-        "5.1"
-      ],
+      "status": "completed",
+      "dependencies": ["4.1"],
+      "parallelWith": ["5.1"],
       "issue": null,
       "parentIssue": null,
       "worker": "/root/prototype_contracts",
@@ -557,10 +460,7 @@
       "size": "medium",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.3",
-        "6.1"
-      ],
+      "dependencies": ["4.3", "6.1"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -575,10 +475,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.4",
-        "6.2"
-      ],
+      "dependencies": ["4.4", "6.2"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -593,10 +490,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.5",
-        "6.3"
-      ],
+      "dependencies": ["4.5", "6.3"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -611,10 +505,7 @@
       "size": "medium",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.5",
-        "6.3"
-      ],
+      "dependencies": ["4.5", "6.3"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -629,10 +520,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "5.2",
-        "6.3"
-      ],
+      "dependencies": ["5.2", "6.3"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -647,11 +535,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "6.4",
-        "6.5",
-        "6.6"
-      ],
+      "dependencies": ["6.4", "6.5", "6.6"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -666,11 +550,7 @@
       "size": "medium",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "6.4",
-        "6.5",
-        "6.6"
-      ],
+      "dependencies": ["6.4", "6.5", "6.6"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -685,10 +565,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.5",
-        "6.1"
-      ],
+      "dependencies": ["4.5", "6.1"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -703,10 +580,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "7.1",
-        "6.3"
-      ],
+      "dependencies": ["7.1", "6.3"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -721,11 +595,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "7.2",
-        "6.3",
-        "6.4"
-      ],
+      "dependencies": ["7.2", "6.3", "6.4"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -740,12 +610,8 @@
       "size": "medium",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "6.8"
-      ],
-      "parallelWith": [
-        "7.1"
-      ],
+      "dependencies": ["6.8"],
+      "parallelWith": ["7.1"],
       "issue": null,
       "parentIssue": null
     },
@@ -759,10 +625,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "7.4",
-        "6.3"
-      ],
+      "dependencies": ["7.4", "6.3"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -777,10 +640,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "7.3",
-        "7.4"
-      ],
+      "dependencies": ["7.3", "7.4"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -795,11 +655,7 @@
       "size": "medium",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "7.4",
-        "6.2",
-        "6.3"
-      ],
+      "dependencies": ["7.4", "6.2", "6.3"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -814,11 +670,7 @@
       "size": "medium",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "7.7",
-        "6.3",
-        "7.5"
-      ],
+      "dependencies": ["7.7", "6.3", "7.5"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -833,10 +685,7 @@
       "size": "medium",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "7.7",
-        "7.8"
-      ],
+      "dependencies": ["7.7", "7.8"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -851,13 +700,8 @@
       "size": "medium",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "5.6",
-        "4.3"
-      ],
-      "parallelWith": [
-        "7.4"
-      ],
+      "dependencies": ["5.6", "4.3"],
+      "parallelWith": ["7.4"],
       "issue": null,
       "parentIssue": null
     },
@@ -871,9 +715,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "8.1"
-      ],
+      "dependencies": ["8.1"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -888,11 +730,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "8.2",
-        "5.7",
-        "7.5"
-      ],
+      "dependencies": ["8.2", "5.7", "7.5"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -907,12 +745,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "4.6",
-        "6.7",
-        "7.5",
-        "7.8"
-      ],
+      "dependencies": ["4.6", "6.7", "7.5", "7.8"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -927,10 +760,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "7.5",
-        "8.2"
-      ],
+      "dependencies": ["7.5", "8.2"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -945,13 +775,8 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "7.6",
-        "8.2"
-      ],
-      "parallelWith": [
-        "8.7"
-      ],
+      "dependencies": ["7.6", "8.2"],
+      "parallelWith": ["8.7"],
       "issue": null,
       "parentIssue": null
     },
@@ -965,13 +790,8 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "7.6",
-        "8.5"
-      ],
-      "parallelWith": [
-        "8.6"
-      ],
+      "dependencies": ["7.6", "8.5"],
+      "parallelWith": ["8.6"],
       "issue": null,
       "parentIssue": null
     },
@@ -985,10 +805,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "8.4",
-        "8.2"
-      ],
+      "dependencies": ["8.4", "8.2"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -1003,10 +820,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "8.4",
-        "7.8"
-      ],
+      "dependencies": ["8.4", "7.8"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -1051,12 +865,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "9.1",
-        "6.8",
-        "7.8",
-        "9.4"
-      ],
+      "dependencies": ["9.1", "6.8", "7.8", "9.4"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -1071,10 +880,7 @@
       "size": "medium",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "9.2",
-        "5.8"
-      ],
+      "dependencies": ["9.2", "5.8"],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null
@@ -1089,13 +895,7 @@
       "size": "large",
       "priority": "high",
       "status": "pending",
-      "dependencies": [
-        "6.3",
-        "6.7",
-        "6.8",
-        "7.4",
-        "9.1"
-      ],
+      "dependencies": ["6.3", "6.7", "6.8", "7.4", "9.1"],
       "parallelWith": [],
       "issue": "DOR-2672",
       "parentIssue": "DOR-2667"
