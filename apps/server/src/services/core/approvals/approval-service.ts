@@ -76,6 +76,15 @@ import {
 } from '../../notifications/emitters/capability-approval.js';
 import { eventFanOut } from '../event-fan-out.js';
 import { logger } from '../../../lib/logger.js';
+import {
+  ApprovalConsumptionPublisher,
+  type ApprovalConsumeOptions,
+  type ApprovalConsumptionSettlement,
+} from './approval-consumption.js';
+export type {
+  ApprovalConsumeOptions,
+  ApprovalConsumptionSettlement,
+} from './approval-consumption.js';
 import { redactSecretsInText, renderRequesterLabel } from './approval-summary.js';
 
 /**
@@ -702,6 +711,7 @@ const BLOCKED_REQUEST_HOUR_MS = 60 * 60 * 1000;
  * contract.
  */
 export class ApprovalService {
+  private readonly consumptionPublisher: ApprovalConsumptionPublisher;
   /**
    * Build the service over a database handle.
    *
@@ -712,7 +722,27 @@ export class ApprovalService {
   constructor(
     private readonly db: Db,
     private readonly options: ApprovalServiceOptions = {}
-  ) {}
+  ) {
+    this.consumptionPublisher = new ApprovalConsumptionPublisher(db, (id, outcome) =>
+      this.settle(id, outcome)
+    );
+  }
+
+  /** Ensure an atomic caller uses this service's exact SQLite transaction connection. */
+  assertTransactionDatabase(db: Db): void {
+    if (db.$client !== this.db.$client)
+      throw new Error('Approval consumption requires the same transaction database.');
+  }
+
+  /** Discard actual deferred settlements when their containing transaction rolls back. */
+  discardConsumption(settlement: ApprovalConsumptionSettlement): void {
+    this.consumptionPublisher.discard(settlement);
+  }
+
+  /** Publish a genuine deferred consumption once after its containing transaction commits. */
+  publishConsumption(settlement: ApprovalConsumptionSettlement): boolean {
+    return this.consumptionPublisher.publish(settlement);
+  }
 
   /** How long an operator has to decide on a request this service records. */
   private get ttlMs(): number {
@@ -908,9 +938,14 @@ export class ApprovalService {
    *
    * @param token - The token the requester was handed.
    * @param binding - The capability and input hash the caller is about to run.
+   * @param options - Optional settlement collector for a surrounding transaction owner.
    * @returns What presenting the token achieved.
    */
-  consume(token: string, binding: ApprovalBinding): ApprovalConsumeResult {
+  consume(
+    token: string,
+    binding: ApprovalBinding,
+    options?: ApprovalConsumeOptions
+  ): ApprovalConsumeResult {
     const row = this.findByToken(token);
     if (!row) return { outcome: 'unknown' };
     if (row.consumedAt) return { outcome: 'consumed', approvalId: row.id };
@@ -920,7 +955,7 @@ export class ApprovalService {
     // rebuilding its arguments to chase a token that had already run out of time.
     if (this.isExpired(row)) {
       if (!this.markConsumed(row.id)) return { outcome: 'consumed', approvalId: row.id };
-      this.settle(row.id, 'expired');
+      this.consumptionPublisher.collect(row.id, 'expired', options);
       return { outcome: 'expired', approvalId: row.id };
     }
 
@@ -937,7 +972,7 @@ export class ApprovalService {
     }
 
     if (!this.markConsumed(row.id)) return { outcome: 'consumed', approvalId: row.id };
-    this.settle(row.id, 'consumed');
+    this.consumptionPublisher.collect(row.id, 'consumed', options);
 
     if (row.state === 'denied') {
       return {

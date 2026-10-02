@@ -41,6 +41,8 @@ export const CanvasChannelPublicEventTypeSchema = CanvasChannelEventTypeSchema.r
   (type) =>
     !type.startsWith('doc.') &&
     !type.startsWith('state.') &&
+    type !== 'selection.ask' &&
+    type !== 'md.task.toggled' &&
     type !== 'event.status' &&
     type !== 'app.ack',
   { message: 'This event type is reserved' }
@@ -232,6 +234,8 @@ export const CanvasChannelDeliverySchema = z
     reason: z.string().max(1000).nullable(),
     nextEligibleAt: z.string().datetime({ offset: true }).optional(),
     updatedAt: z.string().datetime({ offset: true }),
+    ackOutcome: z.enum(['handled', 'rejected']).nullable().optional(),
+    acknowledgedAt: z.string().datetime({ offset: true }).nullable().optional(),
   })
   .strict();
 /** Receipt plus per-route outcomes; failure never erases ingestion. */
@@ -239,8 +243,11 @@ export const CanvasChannelEventReceiptSchema = z
   .object({
     receipt: IngestReceiptSchema,
     deliveries: z.array(CanvasChannelDeliverySchema).max(16),
+    payloadAvailable: z.boolean().optional(),
   })
   .strict();
+/** Public acceptance and per-route receipt, without private actor or authority evidence. */
+export type CanvasChannelEventReceipt = z.infer<typeof CanvasChannelEventReceiptSchema>;
 /** Canonical application acknowledgement; correlation is checked by the service. */
 export const CanvasChannelAppAckSchema = z
   .object({
@@ -341,9 +348,10 @@ export const CanvasChannelReplayResponseSchema = z
     stateRev: CanvasChannelSequenceSchema,
     highWatermark: CanvasChannelSequenceSchema,
     retentionFloor: CanvasChannelSequenceSchema,
+    receiptRetentionFloor: CanvasChannelSequenceSchema,
     resetRequired: z.boolean(),
     health: CanvasChannelHealthSchema,
-    receipts: z.array(CanvasChannelEventReceiptSchema),
+    receipts: z.array(CanvasChannelEventReceiptSchema).max(200),
   })
   .strict();
 /** Replay projection. */

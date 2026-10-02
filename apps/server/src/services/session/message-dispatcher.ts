@@ -706,10 +706,18 @@ function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
           preparePrivateMessage: (receiptId: string) => privateMessages.prepare(receiptId),
           claimPrivateMessage: (
             receiptId: string,
-            prepared: Parameters<typeof privateMessages.claim>[1]
-          ) => privateMessages.claim(receiptId, prepared),
+            prepared: Parameters<typeof privateMessages.claim>[1],
+            sessionId?: string
+          ) =>
+            privateMessages.claim(
+              receiptId,
+              prepared,
+              sessionId ? { sessionId, runtime: runtime.type } : undefined
+            ),
           cancelPrivateMessage: (receiptId: string, reason: string) =>
             privateMessages.cancel(receiptId, reason),
+          isPrivatePreclaimRefusal: (receiptId: string, error: unknown) =>
+            privateMessages.isPreclaimRefusal(receiptId, error),
           markPrivateOutcomeUnknown: (receiptId: string, reason: string) =>
             privateMessages.markOutcomeUnknown(receiptId, reason),
         }
@@ -1325,7 +1333,11 @@ function launchDispatch(
     });
   } catch (err) {
     clearIfOurs();
-    if (turn.privateReceiptId !== undefined && err instanceof PrivateSessionMessageRefusalError) {
+    if (
+      turn.privateReceiptId !== undefined &&
+      err instanceof PrivateSessionMessageRefusalError &&
+      getPrivateSessionMessageAcceptanceService()?.isPreclaimRefusal(turn.privateReceiptId, err)
+    ) {
       getPrivateSessionMessageAcceptanceService()?.cancel(turn.privateReceiptId, err.code);
       emitQueueUpdate(sessionKey);
     } else {
@@ -1346,7 +1358,11 @@ function launchDispatch(
     },
     (err: unknown) => {
       clearIfOurs();
-      if (turn.privateReceiptId !== undefined && err instanceof PrivateSessionMessageRefusalError) {
+      if (
+        turn.privateReceiptId !== undefined &&
+        err instanceof PrivateSessionMessageRefusalError &&
+        getPrivateSessionMessageAcceptanceService()?.isPreclaimRefusal(turn.privateReceiptId, err)
+      ) {
         getPrivateSessionMessageAcceptanceService()?.cancel(turn.privateReceiptId, err.code);
         emitQueueUpdate(sessionKey);
       } else {
@@ -1797,7 +1813,7 @@ export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): num
     const plan: DispatchPlan = {
       sessionId: receipt.sessionId,
       sessionKey,
-      clientId: `system:${receipt.sourceKind}:${receipt.sourceId}`,
+      clientId: service.sender(receipt) ?? `system:${receipt.sourceKind}:${receipt.sourceId}`,
       content: row.content,
       messageId: row.id,
       projector: opts.projector,

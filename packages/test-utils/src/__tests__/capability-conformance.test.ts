@@ -23,6 +23,8 @@
  * `invoke` assertions).
  */
 import { describe, expect, it } from 'vitest';
+import { CanvasChannelSendRequestSchema } from '@dorkos/shared/canvas-channel-schemas';
+import { isExpectedInvokeRefusal } from '../capability-invoke-refusal.js';
 import {
   capabilityConformance,
   checkCapabilityConformance,
@@ -33,6 +35,55 @@ import {
   checkDecisionAuthorityConformance,
   type ApprovalDecisionProbe,
 } from '../capability-conformance.js';
+
+describe('exact fixture invocation refusals', () => {
+  class FixtureAuthorityRefusal extends Error {
+    constructor(readonly code: string) {
+      super(code);
+    }
+  }
+  const fixtures = {
+    expectedInvokeRefusal: {
+      'demo.document': (error: Error) =>
+        error instanceof FixtureAuthorityRefusal && error.code === 'INVALID_PRINCIPAL',
+    },
+  };
+  it('accepts only the named capability and exact typed domain refusal', () => {
+    expect(
+      isExpectedInvokeRefusal(
+        'demo.document',
+        new FixtureAuthorityRefusal('INVALID_PRINCIPAL'),
+        fixtures
+      )
+    ).toBe(true);
+    for (const error of [
+      new Error('INVALID_PRINCIPAL'),
+      new FixtureAuthorityRefusal('OTHER'),
+      { code: 'INVALID_PRINCIPAL' },
+    ]) {
+      expect(isExpectedInvokeRefusal('demo.document', error, fixtures)).toBe(false);
+    }
+    expect(
+      isExpectedInvokeRefusal(
+        'demo.other',
+        new FixtureAuthorityRefusal('INVALID_PRINCIPAL'),
+        fixtures
+      )
+    ).toBe(false);
+  });
+  it('cannot hide malformed input or wiring faults even with an overbroad fixture matcher', () => {
+    const malformed = CanvasChannelSendRequestSchema.safeParse({});
+    expect(malformed.success).toBe(false);
+    const overbroad = { expectedInvokeRefusal: { 'demo.document': () => true } };
+    for (const error of [
+      malformed.error,
+      new TypeError('missing dependency'),
+      new ReferenceError('undefined service'),
+    ]) {
+      expect(isExpectedInvokeRefusal('demo.document', error, overbroad)).toBe(false);
+    }
+  });
+});
 
 /** A long-enough model-facing description so the metadata check passes by default. */
 const OK_DESCRIPTION = 'Do the demonstrated thing and return its result to the caller.';

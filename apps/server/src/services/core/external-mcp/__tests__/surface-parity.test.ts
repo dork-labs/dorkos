@@ -179,14 +179,16 @@ describe('in-session and external MCP surface parity', () => {
     ]);
   });
 
-  it('keeps every `ui` verb off the external server too', async () => {
-    // The half the list above can no longer make. These reach the in-session
-    // `dorkos` server — the loopback one every runtime is injected with, which is
-    // the whole point of the domain — and never the public `/mcp` one.
+  it('keeps browser and UI control verbs session-only, with the two declared document operations external', async () => {
+    // Document send/state operations expose their explicit external surface;
+    // browser driving and UI control remain confined to the owning session.
     const external = new Set((await fetchExternalTools()).map((tool) => tool.name));
     const uiTools = uiDomain.capabilities.map((c) => c.surfaces.mcp!.toolName);
 
     expect(uiTools.length).toBeGreaterThan(10);
-    expect(uiTools.filter((name) => external.has(name))).toEqual([]);
+    expect(uiTools.filter((name) => external.has(name)).sort()).toEqual([
+      'canvas_patch_state',
+      'canvas_send',
+    ]);
   });
 });

@@ -481,7 +481,16 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 111 -> 112 for `accounts_probe` (spec `claude-account-fleet` D3), likewise.
     // 112 -> 113 for `session_start` (spec `claude-account-fleet` D5): no prompt
     // block names it, so it stays deferred and unprefixed.
-    expect(advertised.size).toBe(113);
+    // Document-channel verbs remain deferred; they do not add prompt instructions.
+    expect(advertised.size).toBe(118);
+    for (const name of [
+      'configure_doc_channel',
+      'approve_doc_route',
+      'revoke_doc_route',
+      'canvas_send',
+      'canvas_patch_state',
+    ])
+      expect(advertised.has(name)).toBe(true);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

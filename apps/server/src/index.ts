@@ -1,3 +1,5 @@
+import { DocBatchAdmission } from './services/canvas/doc-channel/delivery/batch-admission.js';
+import { createDocChannelHttpComposition } from './services/canvas/doc-channel/http-composition.js';
 import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import path from 'path';
@@ -603,7 +605,6 @@ import {
   sessionOriginResolvers,
   listRecentSessions,
   setAgentSessionSources,
-  PrivateSessionMessageAcceptanceService,
   setPrivateSessionMessageAcceptanceService,
   adoptAcceptedPrivateMessages,
   getOrCreateProjector,
@@ -1839,6 +1840,7 @@ async function start() {
   const readCursorService = new ReadCursorService(new ReadCursorStore(db));
   setReadCursorService(readCursorService);
 
+  const docChannelRuntimePrincipals: { current?: ConnectorRuntimePrincipalService } = {};
   const roomAttachmentBytes = new LocalRoomAttachmentStore(dorkHome);
   // Both the worker and native stream lifecycle must remain inert until Mesh
   // has reconciled the on-disk manifest registry for this process boot.
@@ -1853,8 +1855,11 @@ async function start() {
     authors: roomAuthors,
     bridges: roomBridges,
     welcomeBack: welcomeBackGreeter,
+    canvasDocuments,
   } = createRoomSubsystem({
     db,
+    runtimePrincipalCurrent: (proof) =>
+      docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
     readCursors: readCursorService,
     createMirrorRuntime: ({ store, authors, attachments }) => {
       remoteCommunityRuntime = new CommunityOutboxRuntime({
@@ -3148,6 +3153,20 @@ async function start() {
       );
     },
   });
+  const docChannelHttp = createDocChannelHttpComposition({
+    db,
+    documents: canvasDocuments,
+    rooms: roomService,
+    roomStore,
+    roomRepos: roomRepoStore,
+    approvals: approvalService,
+    installationId: connectorInstallationId,
+    runtimePrincipalCurrent: (proof) =>
+      docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
+    revalidateRuntime: (proof) =>
+      docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
+  });
+  app.locals.docChannelHttp = docChannelHttp;
   // An answer given after the in-session hold gave up has to reach the agent that
   // asked, or a person ends up relaying it by hand — which is the bug DOR-1931
   // reports. The subscription lives for the life of the process; its listener does
@@ -3564,20 +3583,20 @@ async function start() {
       })
     : undefined;
   if (connectorRuntimePrincipals) await connectorRuntimePrincipals.initializeBoot();
+  docChannelRuntimePrincipals.current = connectorRuntimePrincipals;
   let connectorAgentRequests: ConnectorAgentRequestService | undefined;
-  let recoverAcceptedPrivateSessions: (() => void) | undefined;
   let acceptedPrivateSessionCursor: string | undefined;
-  if (connectorRuntimePrincipals && meshCore) {
-    const requestAuthority = new CanonicalConnectorAgentRequestAuthority({
-      db,
-      sessions: runtimeRegistry,
-      mesh: meshCore,
-      owner: connectorOwner,
-    });
-    const privateAcceptance = new PrivateSessionMessageAcceptanceService(
-      db,
-      messageQueueStore,
-      [
+  const requestAuthority =
+    connectorRuntimePrincipals && meshCore
+      ? new CanonicalConnectorAgentRequestAuthority({
+          db,
+          sessions: runtimeRegistry,
+          mesh: meshCore,
+          owner: connectorOwner,
+        })
+      : undefined;
+  const existingPrivateSources = requestAuthority
+    ? [
         new ConnectorAgentRequestSourceAdapter(
           db,
           requestAuthority,
@@ -3585,35 +3604,50 @@ async function start() {
           connectorEventGrants
         ),
         connectorEventSessionSource,
-      ],
-      connectorBootEpoch
-    );
-    setPrivateSessionMessageAcceptanceService(privateAcceptance);
-    const recoveredPrivateAttempts = privateAcceptance.recoverUnobservedAttempts();
-    if (recoveredPrivateAttempts > 0) {
-      logger.warn('[Connections] Quarantined interrupted private follow-ups', {
-        count: recoveredPrivateAttempts,
-      });
-    }
-    const nudgePrivateSession = (sessionId: string): void => {
-      void Promise.all([
-        runtimeRegistry.resolveForSession(sessionId),
-        runtimeRegistry.getSessionAgentPath(sessionId),
-      ])
-        .then(([runtime, agentPath]) => {
-          if (!agentPath) return;
-          const projector = getOrCreateProjector(sessionId, agentPath);
-          adoptAcceptedPrivateMessages({
-            sessionId,
-            cwd: agentPath,
-            projector,
-            runtime,
-          });
-        })
-        .catch((error: unknown) => {
-          logger.warn('[Connections] Could not resume a private agent message', logError(error));
+      ]
+    : [];
+  const docBatchAdmission = new DocBatchAdmission({
+    db,
+    store: docChannelHttp.channels,
+    grants: docChannelHttp.grants,
+    lifecycle: canvasDocuments.lifecycle,
+    queue: messageQueueStore,
+    bootEpoch: connectorBootEpoch,
+    existingSources: existingPrivateSources,
+  });
+  const recoveredPrivateAttempts = docBatchAdmission.initializeBoot();
+  const privateAcceptance = docBatchAdmission.acceptance;
+  setPrivateSessionMessageAcceptanceService(privateAcceptance);
+  if (recoveredPrivateAttempts > 0)
+    logger.warn('[session messages] Quarantined interrupted private messages', {
+      count: recoveredPrivateAttempts,
+    });
+  const nudgePrivateSession = (sessionId: string): void => {
+    void Promise.all([
+      runtimeRegistry.resolveForSession(sessionId),
+      runtimeRegistry.getSessionAgentPath(sessionId),
+    ])
+      .then(([runtime, agentPath]) => {
+        if (!agentPath) return;
+        const projector = getOrCreateProjector(sessionId, agentPath);
+        adoptAcceptedPrivateMessages({
+          sessionId,
+          cwd: agentPath,
+          projector,
+          runtime,
         });
-    };
+      })
+      .catch((error: unknown) => {
+        logger.warn('[session messages] Could not resume a private message', logError(error));
+      });
+  };
+  const recoverAcceptedPrivateSessions = (): void => {
+    const sessionIds = privateAcceptance.listAcceptedSessionIds(100, acceptedPrivateSessionCursor);
+    acceptedPrivateSessionCursor = sessionIds.length === 100 ? sessionIds.at(-1) : undefined;
+    for (const sessionId of sessionIds) nudgePrivateSession(sessionId);
+  };
+  recoverAcceptedPrivateSessions();
+  if (connectorRuntimePrincipals && meshCore && requestAuthority) {
     const connectorEventChannels = new ConnectorEventNativeDestination({
       bindings: () => adapterManager?.getBindingStore(),
       adapters: () => adapterManager?.listAdapters() ?? [],
@@ -3640,17 +3674,6 @@ async function start() {
           id: scope.destinationId,
         }),
     });
-    recoverAcceptedPrivateSessions = () => {
-      const sessionIds = privateAcceptance.listAcceptedSessionIds(
-        100,
-        acceptedPrivateSessionCursor
-      );
-      acceptedPrivateSessionCursor = sessionIds.length === 100 ? sessionIds.at(-1) : undefined;
-      for (const sessionId of sessionIds) {
-        nudgePrivateSession(sessionId);
-      }
-    };
-    recoverAcceptedPrivateSessions();
     connectorAgentRequests = new ConnectorAgentRequestService({
       db,
       services: connectorOperatorQueries,
@@ -5328,6 +5351,11 @@ async function start() {
   capabilityRegistry = composeDorkOsCapabilityRegistry(
     {
       logger,
+      docChannelDownstream: docChannelHttp.downstream,
+      docChannelGrantDeps: {
+        service: docChannelHttp.grants,
+        authorization: docChannelHttp.authorization,
+      },
       // An agent's approved `change_permission` writes through the same owner
       // Settings does (spec `agent-permissions` D9).
       permissionService,
@@ -5754,7 +5782,7 @@ async function start() {
     void connectorAgentRequests?.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Agent request recovery failed', logError(error));
     });
-    recoverAcceptedPrivateSessions?.();
+    recoverAcceptedPrivateSessions();
   }, INTERVALS.HEALTH_CHECK_MS);
 
   // Keep the daily snapshot honest on a server that is never restarted. The

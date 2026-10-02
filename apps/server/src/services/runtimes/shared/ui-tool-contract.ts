@@ -1,3 +1,4 @@
+import { CanvasChannelDeclarationSchema } from '@dorkos/shared/canvas-channel-schemas';
 /**
  * Runtime-neutral contract for the DorkOS `control_ui` tool — its description
  * and input schema, the single source of truth both runtimes register against.
@@ -399,6 +400,9 @@ Notes:
  * against a schema of 14, until the catalog replaced both lists.
  */
 export const CONTROL_UI_INPUT = {
+  channel: CanvasChannelDeclarationSchema.optional().describe(
+    'Optional document event routes for opening a canvas document. Routes still need approval.'
+  ),
   action: z.string().describe('The UI action to perform'),
   panel: z.string().optional().describe('Panel ID for panel commands'),
   // Not `z.record()`: a record anywhere in an in-session tool's schema crashes the

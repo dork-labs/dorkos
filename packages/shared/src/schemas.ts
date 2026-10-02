@@ -1,3 +1,4 @@
+import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
 /**
  * Zod schemas — single source of truth for all shared types and OpenAPI metadata.
  *
@@ -5963,6 +5964,7 @@ export const UiCommandSchema = z
     // Canvas commands
     z.object({
       action: z.literal('open_canvas'),
+      channel: CanvasChannelDeclarationSchema.optional(),
       content: UiCanvasContentSchema.optional(),
       preferredWidth: z.number().min(20).max(80).optional(),
       target: UiCommandTargetSchema.optional(),
@@ -6009,6 +6011,7 @@ export const UiCommandSchema = z
 
     z.object({
       action: z.literal('open_file'),
+      channel: CanvasChannelDeclarationSchema.optional(),
       /**
        * Path of the file to open in the canvas. Workspace-relative or absolute;
        * resolved and confined to the session's working directory. The client
@@ -6020,6 +6023,7 @@ export const UiCommandSchema = z
     }),
     z.object({
       action: z.literal('open_diff'),
+      channel: CanvasChannelDeclarationSchema.optional(),
       /**
        * Path of the file whose agent edits to review. Workspace-relative or
        * absolute; resolved and confined to the session's working directory. Opens
@@ -6042,6 +6046,7 @@ export const UiCommandSchema = z
     }),
     z.object({
       action: z.literal('browser_navigate'),
+      channel: CanvasChannelDeclarationSchema.optional(),
       /**
        * The page to open in the embedded browser: an external URL, a
        * `localhost` dev-server URL, or a local (cwd-confined) file path. Opens

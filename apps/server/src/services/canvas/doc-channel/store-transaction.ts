@@ -53,7 +53,7 @@ function scopedTransaction(tx: DbTransaction): { tx: DbTransaction; retire(): vo
 }
 
 /** Roll back promise-returning work and retire every escaped handle on all exit paths. */
-function executeDocumentWork<T>(native: DbTransaction, work: (tx: DbTransaction) => T): T {
+export function executeDocumentWork<T>(native: DbTransaction, work: (tx: DbTransaction) => T): T {
   const scoped = scopedTransaction(native);
   try {
     const result = work(scoped.tx);
