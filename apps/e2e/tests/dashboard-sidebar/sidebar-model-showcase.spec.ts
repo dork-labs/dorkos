@@ -536,7 +536,7 @@ test.describe('Sidebar model showcase @smoke', () => {
     }
     const expected = ['Rename session', 'Session details'];
     if ((await row.getByRole('button', { name: /^Full power/ }).count()) > 0) {
-      expected.unshift('Full power: never asks first');
+      expected.unshift('Full power: runs without asking');
     }
     expect(stops).toEqual(expected);
 

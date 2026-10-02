@@ -382,7 +382,7 @@ describe('QuestionPrompt', () => {
     expect(screen.getAllByRole('radio').length).toBe(3);
   });
 
-  it('shows "Submitting…" text during submission', async () => {
+  it('shows "Sending…" text during submission', async () => {
     // Make submitAnswers hang so we can observe the submitting state
     let resolveSubmit: (value: unknown) => void;
     mockSubmitAnswers.mockImplementationOnce(

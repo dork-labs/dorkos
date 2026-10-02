@@ -258,7 +258,7 @@ describe('ToolCallCard HookRow', () => {
 
     const hookName = screen.getByText('type-check');
     expect(hookName).toHaveClass('text-destructive');
-    expect(screen.getByText('failed')).toBeInTheDocument();
+    expect(screen.getByText('Error')).toBeInTheDocument();
   });
 
   it('error hook starts expanded and shows stderr', () => {

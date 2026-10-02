@@ -288,7 +288,7 @@ describe('deleting from a room’s files', () => {
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog).toHaveTextContent('Delete “notes.md”?');
     expect(dialog).toHaveTextContent('“notes.md” leaves the room’s files.');
-    expect(dialog).toHaveTextContent('The room’s history keeps a copy you can bring back.');
+    expect(dialog).toHaveTextContent('The room’s history keeps a copy. An agent can restore it.');
     expect(transport.deleteRoomFile).not.toHaveBeenCalled();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete file' }));

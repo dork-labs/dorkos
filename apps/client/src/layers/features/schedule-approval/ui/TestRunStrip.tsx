@@ -103,7 +103,7 @@ export function TestRunStrip({ testRun, onOpenRun, className }: TestRunStripProp
               the least useful thing this line could say to somebody deciding
               whether to let the same prompt run unattended every night. */}
           <span className="min-w-0 break-words">
-            Test run didn’t finish{error ? `: ${error}` : '.'}
+            Test run didn’t work{error ? `: ${error}` : '.'}
           </span>
         </>
       )}

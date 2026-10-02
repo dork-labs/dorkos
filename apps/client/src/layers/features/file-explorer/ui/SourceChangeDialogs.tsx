@@ -13,6 +13,7 @@
  *
  * @module features/file-explorer/ui/SourceChangeDialogs
  */
+import { useState } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -81,7 +82,7 @@ export function deleteSentence(pending: PendingDelete): string {
 }
 
 /** What a delete confirmation adds about getting it back: the room keeps history. */
-export const DELETE_KEEPS_SENTENCE = 'The room’s history keeps a copy you can bring back.';
+export const DELETE_KEEPS_SENTENCE = 'The room’s history keeps a copy. An agent can restore it.';
 
 /**
  * The confirmations and choices for a source's tree changes.
@@ -103,13 +104,19 @@ export function SourceChangeDialogs({
     onReturnFocus();
   };
   const { pendingDelete, pendingClash, conflict } = changes;
+  // The last delete and clash asked about, kept while the dialog animates
+  // closed, so its title and button do not blank or flip on the way out.
+  const [shownDelete, setShownDelete] = useState(pendingDelete);
+  if (pendingDelete !== null && pendingDelete !== shownDelete) setShownDelete(pendingDelete);
+  const [shownClash, setShownClash] = useState(pendingClash);
+  if (pendingClash !== null && pendingClash !== shownClash) setShownClash(pendingClash);
   const clashFolder =
-    pendingClash === null
+    shownClash === null
       ? ''
-      : pendingClash.dir === ROOT_KEY
+      : shownClash.dir === ROOT_KEY
         ? 'The top folder'
-        : `“${pendingClash.dir}”`;
-  const clashOne = pendingClash?.names.length === 1;
+        : `“${shownClash.dir}”`;
+  const clashOne = shownClash?.names.length === 1;
 
   return (
     <>
@@ -120,12 +127,14 @@ export function SourceChangeDialogs({
         <AlertDialogContent onCloseAutoFocus={returnFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingDelete === null ? '' : `Delete “${pendingDelete.entry.name}”?`}
+              {shownDelete === null ? '' : `Delete “${shownDelete.entry.name}”?`}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete === null ? '' : deleteSentence(pendingDelete)}
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>{shownDelete === null ? '' : deleteSentence(shownDelete)}</p>
+                <p>{DELETE_KEEPS_SENTENCE}</p>
+              </div>
             </AlertDialogDescription>
-            <p className="text-muted-foreground text-sm">{DELETE_KEEPS_SENTENCE}</p>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={changes.cancelDelete}>Cancel</AlertDialogCancel>
@@ -133,7 +142,7 @@ export function SourceChangeDialogs({
               onClick={() => void changes.confirmDelete()}
               className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
             >
-              {pendingDelete?.entry.type === 'dir' ? 'Delete folder' : 'Delete file'}
+              {shownDelete?.entry.type === 'dir' ? 'Delete folder' : 'Delete file'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -147,13 +156,13 @@ export function SourceChangeDialogs({
           <AlertDialogHeader>
             <AlertDialogTitle>
               {clashOne
-                ? `Replace “${pendingClash?.names[0]}”?`
-                : `Replace ${pendingClash?.names.length ?? 0} files?`}
+                ? `Replace “${shownClash?.names[0]}”?`
+                : `Replace ${shownClash?.names.length ?? 0} files?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {clashOne
                 ? `${clashFolder} already has a file with this name. Replace it, or keep both.`
-                : `${clashFolder} already has files named ${pendingClash?.names.join(', ') ?? ''}. Replace them, or keep both.`}
+                : `${clashFolder} already has files named ${shownClash?.names.join(', ') ?? ''}. Replace them, or keep both.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -51,7 +51,7 @@ export function stopNotice(receipt: InterruptReceipt): StopNotice {
       return { message: 'You stopped this reply.', isFailure: false };
     case 'closed':
       return {
-        message: 'You stopped this reply. DorkOS ended it.',
+        message: 'Stopped. Your agent didn’t answer, so DorkOS ended it.',
         isFailure: false,
       };
     case 'not-running':

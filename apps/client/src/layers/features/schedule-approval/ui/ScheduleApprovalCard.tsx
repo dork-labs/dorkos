@@ -549,7 +549,7 @@ export function ScheduleApprovalCard({
             )}
           >
             Runs as: {currentLabel}
-            {bypasses && ', never asks first'}
+            {bypasses && ', runs without asking'}
           </span>
         </div>
         <CollapsibleContent>

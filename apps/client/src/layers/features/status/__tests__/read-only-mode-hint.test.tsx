@@ -215,14 +215,14 @@ describe('ReadOnlyModeNotice', () => {
   it('says what the mode does and what happens when you ask for more', () => {
     render(<ReadOnlyModeNotice runtimeLabel="Codex" onDismiss={() => {}} />);
     expect(screen.getByTestId('read-only-mode-notice')).toHaveTextContent(
-      'In this mode, Codex reads but never changes files. Nothing asks for approval.'
+      'In this mode, Codex reads files but won’t change them. Asking won’t help.'
     );
   });
 
   it('names whichever runtime declared the mode, never Codex by hardcode', () => {
     render(<ReadOnlyModeNotice runtimeLabel="OpenCode" onDismiss={() => {}} />);
     expect(screen.getByTestId('read-only-mode-notice')).toHaveTextContent(
-      'In this mode, OpenCode reads but never changes files'
+      'In this mode, OpenCode reads files but won’t change them'
     );
   });
 
@@ -244,7 +244,7 @@ describe('ReadOnlyModeNotice', () => {
     expect(screen.queryByRole('button', { name: 'Change permissions' })).not.toBeInTheDocument();
     // The sentence and the dismissal still stand.
     expect(screen.getByTestId('read-only-mode-notice')).toHaveTextContent(
-      'reads but never changes files'
+      'reads files but won’t change them'
     );
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument();
   });

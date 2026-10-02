@@ -152,30 +152,35 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
 
   return (
     <div
-      role="alert"
       data-slot="room-main-warning"
       className="border-border/60 bg-muted/40 space-y-3 rounded-lg border px-3 py-2.5 text-sm"
     >
       <div className="flex gap-2">
         <AlertTriangle className="text-muted-foreground mt-0.5 size-(--size-icon-sm) flex-shrink-0" />
         <div className="min-w-0 space-y-1">
-          <p className="font-medium">Somebody changed this room’s files outside DorkOS</p>
-          {wrongBranch ? (
-            <>
+          {/* The alert is the words only. The disclosure toggle below is a
+              control, and a live region would read its label out as news. */}
+          <div role="alert" className="space-y-1">
+            <p className="font-medium">Somebody changed this room’s files outside DorkOS</p>
+            {wrongBranch ? (
+              <>
+                <p className="text-muted-foreground text-xs">
+                  {`This room’s files are on ${main.branch ?? 'no branch'}, not main.`}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  Saves and agent merges wait until they’re back on main.
+                </p>
+              </>
+            ) : (
               <p className="text-muted-foreground text-xs">
-                {`This room’s files are on ${main.branch ?? 'no branch'}, not main.`}
+                Saves and agent merges wait until you keep or discard these.
               </p>
-              <p className="text-muted-foreground text-xs">
-                Saves and agent merges wait until they’re back on main.
-              </p>
-              <MoreDetails className="text-xs">
-                <p>DorkOS won’t switch the branch for you. There may be work on it.</p>
-              </MoreDetails>
-            </>
-          ) : (
-            <p className="text-muted-foreground text-xs">
-              Saves and agent merges wait until you keep or discard these.
-            </p>
+            )}
+          </div>
+          {wrongBranch && (
+            <MoreDetails className="text-xs">
+              <p>DorkOS won’t switch the branch for you. There may be work on it.</p>
+            </MoreDetails>
           )}
         </div>
       </div>
@@ -264,7 +269,11 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
         </>
       )}
 
-      {refusal !== null && <p className="text-destructive text-xs">{refusal}</p>}
+      {refusal !== null && (
+        <p role="alert" className="text-destructive text-xs">
+          {refusal}
+        </p>
+      )}
     </div>
   );
 }

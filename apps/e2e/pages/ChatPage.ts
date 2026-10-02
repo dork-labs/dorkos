@@ -164,7 +164,7 @@ export class ChatPage {
     return this.toolApproval.getByRole('button', { name: /^Allow(?!\s+all)/ });
   }
 
-  /** Get the Deny button inside an active tool approval. */
+  /** Get the Don’t allow button inside an active tool approval. */
   get denyButton() {
     return this.toolApproval.getByRole('button', { name: /^Don’t allow(?!\s+any)/ });
   }
