@@ -77,7 +77,12 @@ export function useWidgetChannelActions(
   const send = async (row: WidgetChannelSubmission, retry = false): Promise<void> => {
     let host = port.current;
     if (!host?.enabled || host.documentId !== row.documentId) {
-      update(row.event.id, { phase: 'refused', message: 'Document actions are not available.' });
+      update(row.event.id, {
+        phase: retry ? 'review' : 'refused',
+        message: retry
+          ? 'Save not confirmed. Document actions are unavailable; review this action before trying again.'
+          : 'Document actions are not available.',
+      });
       return;
     }
     update(row.event.id, { phase: 'sending', message: undefined });
@@ -126,12 +131,17 @@ export function useWidgetChannelActions(
       update(row.event.id, { phase: 'accepted', receipt });
     } catch (error) {
       const status = (error as { status?: number }).status;
-      const terminal = status !== undefined && [400, 401, 403, 404, 409, 413, 422].includes(status);
+      // A retry begins with an uncertain original POST. Neither a refused
+      // receipt lookup nor a refused resend proves that original POST failed.
+      const refusal = status !== undefined && [400, 401, 403, 404, 409, 413, 422].includes(status);
+      const terminal = !retry && refusal;
       update(row.event.id, {
-        phase: terminal ? 'refused' : 'retry',
+        phase: terminal ? 'refused' : refusal ? 'review' : 'retry',
         message: terminal
           ? 'This action could not be saved. Review the document before trying again.'
-          : 'Not saved yet. Check your connection and try again.',
+          : refusal
+            ? 'Save not confirmed. Review this action before trying again.'
+            : 'Save not confirmed. Check your connection and try again.',
       });
     }
   };

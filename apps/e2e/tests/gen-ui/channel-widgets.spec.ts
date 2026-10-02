@@ -54,7 +54,7 @@ test('uncertain save retries the same click while status updates preserve editin
   await fixture.getByRole('button', { name: 'Fail next save', exact: true }).click();
   await fixture.getByRole('button', { name: 'Save task', exact: true }).click();
   const row = fixture.getByTestId('widget-action-status');
-  await expect(row).toContainText('Not saved yet');
+  await expect(row).toContainText('Save not confirmed');
   const id = await row.getAttribute('data-event-id');
   await fixture.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(row).toContainText('Saved; waiting');

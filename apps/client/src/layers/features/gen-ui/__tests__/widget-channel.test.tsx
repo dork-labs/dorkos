@@ -1,6 +1,14 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
@@ -8,7 +16,7 @@ import type { CanvasChannelEventReceipt, PageEvent } from '@dorkos/shared/canvas
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { WidgetRenderer } from '../ui/WidgetRenderer';
-import type { WidgetChannelPort } from '../model/widget-channel';
+import { useWidgetChannelActions, type WidgetChannelPort } from '../model/widget-channel';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 const transport = createMockTransport();
@@ -108,6 +116,108 @@ describe('native document widget actions', () => {
     expect(inputs[2].payload).toMatchObject({ widget: { nodeId: 'root.children.1' } });
     expect(transport.sendUiAction).not.toHaveBeenCalled();
     expect(screen.getAllByTestId('widget-action-status')).toHaveLength(3);
+  });
+  it('guards a direct new dispatch after a lost persisted response and forbidden lookup', async () => {
+    const persisted: PageEvent[] = [];
+    vi.mocked(transport.ingestCanvasEvent).mockImplementation(async (_id, event) => {
+      persisted.push(event);
+      throw new Error('Response lost AFTER persistence');
+    });
+    vi.mocked(transport.getCanvasEventReceipt).mockRejectedValue(
+      Object.assign(new Error('Permission revoked'), { status: 403 })
+    );
+    const { result } = renderHook(() => useWidgetChannelActions(port()));
+    const action = { kind: 'emit' as const, type: 'task.changed', payload: { task: 'same' } };
+    await act(() => result.current.dispatch(action, 'control'));
+    const original = result.current.records[0].event.id;
+    await act(() => result.current.retry(original));
+    expect(result.current.records[0].phase).toBe('review');
+    expect(result.current.pending('control')).toBe(true);
+    await act(() => result.current.dispatch(action, 'control'));
+    expect(persisted).toHaveLength(1);
+    expect(result.current.records).toHaveLength(1);
+    expect(result.current.records[0].event.id).toBe(original);
+  });
+  it.each([401, 403, 409])(
+    'keeps a lost persisted click pending after receipt lookup %s',
+    async (status) => {
+      const persisted: PageEvent[] = [];
+      vi.mocked(transport.ingestCanvasEvent).mockImplementation(async (_id, event) => {
+        persisted.push(event);
+        throw new Error('Response lost after persistence');
+      });
+      vi.mocked(transport.getCanvasEventReceipt).mockRejectedValue(
+        Object.assign(new Error('Lookup refused'), { status })
+      );
+      draw();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: 'One' }));
+      const id = screen.getByTestId('widget-action-status').getAttribute('data-event-id');
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      expect(screen.getByRole('button', { name: 'One' })).toBeDisabled();
+      expect(screen.getByTestId('widget-action-status')).toHaveAttribute('data-event-id', id);
+      expect(screen.getByTestId('widget-action-status')).toHaveTextContent('Save not confirmed');
+      await user.click(screen.getByRole('button', { name: 'One' }));
+      expect(persisted).toHaveLength(1);
+      expect(screen.getAllByTestId('widget-action-status')).toHaveLength(1);
+    }
+  );
+  it('preserves the original uncertain identity when its host becomes unavailable and then returns', async () => {
+    vi.mocked(transport.ingestCanvasEvent).mockRejectedValue(
+      new Error('Response lost after persistence')
+    );
+    const channel = port();
+    const view = draw(document, channel);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'One' }));
+    const original = vi.mocked(transport.ingestCanvasEvent).mock.calls[0][1];
+    view.rerender(
+      <TransportProvider transport={transport}>
+        <WidgetRenderer document={document} channel={{ ...channel, enabled: false }} />
+      </TransportProvider>
+    );
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    view.rerender(
+      <TransportProvider transport={transport}>
+        <WidgetRenderer document={document} channel={channel} />
+      </TransportProvider>
+    );
+    expect(screen.getByRole('button', { name: 'One' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'One' }));
+    expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('widget-action-status')).toHaveAttribute(
+      'data-event-id',
+      original.id
+    );
+    expect(transport.getCanvasEventReceipt).not.toHaveBeenCalled();
+  });
+  it('keeps the original pending when a same-ID resend is refused', async () => {
+    vi.mocked(transport.ingestCanvasEvent)
+      .mockRejectedValueOnce(new Error('Lost response'))
+      .mockRejectedValueOnce(Object.assign(new Error('Permission changed'), { status: 403 }));
+    draw();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'One' }));
+    const original = vi.mocked(transport.ingestCanvasEvent).mock.calls[0][1];
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(screen.getByRole('button', { name: 'One' })).toBeDisabled();
+    expect(vi.mocked(transport.ingestCanvasEvent).mock.calls[1][1]).toEqual(original);
+    await user.click(screen.getByRole('button', { name: 'One' }));
+    expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByTestId('widget-action-status')).toHaveLength(1);
+  });
+  it('releases only a definitive original POST refusal for a fresh click', async () => {
+    vi.mocked(transport.ingestCanvasEvent).mockRejectedValueOnce(
+      Object.assign(new Error('Refused before acceptance'), { status: 403 })
+    );
+    draw();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'One' }));
+    expect(screen.getByRole('button', { name: 'One' })).not.toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'One' }));
+    const calls = vi.mocked(transport.ingestCanvasEvent).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[1][1].id).not.toBe(calls[0][1].id);
   });
   it('blocks only the unaccepted control, preserves the exact envelope on a network retry', async () => {
     vi.mocked(transport.ingestCanvasEvent).mockRejectedValueOnce(new Error('Offline'));
