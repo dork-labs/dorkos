@@ -5967,10 +5967,10 @@ async function start() {
 let docNotificationCleanup: (() => void) | undefined;
 
 async function shutdownServices() {
-  docNotificationCleanup?.();
-  docNotificationCleanup = undefined;
   mainRequestAdmission.close();
   await workspaceReconcilerLifecycle.dispose();
+  docNotificationCleanup?.();
+  docNotificationCleanup = undefined;
   logger.info('[DorkOS] shutting down services');
   stopSessionContinuation?.();
   stopSessionContinuation = undefined;
@@ -6135,6 +6135,8 @@ start().catch(async (err) => {
   // A later startup failure must not leave the owned offline listener running.
   await testComposioFixture?.close();
   testComposioFixture = undefined;
+  docNotificationCleanup?.();
+  docNotificationCleanup = undefined;
   // Two startup failures are addressed to the operator rather than to whoever
   // maintains DorkOS: a database that will not open, and a backup that could not
   // be written. Both carry instructions in their message and both are resolved

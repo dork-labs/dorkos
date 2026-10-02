@@ -198,12 +198,14 @@ describe('main admission root adoption', () => {
     owner.start(reconciler);
     const pass = reconciler.reconcile();
     const stopAfterPrefix = new Error('later cleanup sentinel');
+    const docNotificationCleanup = vi.fn();
     const compiled = ts.transpileModule(`(${rootFunction('shutdownServices').getText(source)})`, {
       compilerOptions: { target: ts.ScriptTarget.ES2022 },
     }).outputText;
     const cleanup = runInNewContext(compiled, {
       mainRequestAdmission: admission,
       workspaceReconcilerLifecycle: owner,
+      docNotificationCleanup,
       logger: {
         info: () => {
           throw stopAfterPrefix;
@@ -213,6 +215,7 @@ describe('main admission root adoption', () => {
     try {
       const completion = cleanup();
       expect(admission.isClosed).toBe(true);
+      expect(docNotificationCleanup).not.toHaveBeenCalled();
       expect(() => reconciler.start()).toThrow(/disposed/i);
       pendingListener.emit('listening');
       expect(close).toHaveBeenCalledTimes(1);
@@ -220,6 +223,7 @@ describe('main admission root adoption', () => {
       release(false);
       await pass;
       await expect(completion).rejects.toBe(stopAfterPrefix);
+      expect(docNotificationCleanup).toHaveBeenCalledTimes(1);
       expect(removeRow).not.toHaveBeenCalled();
     } finally {
       vi.restoreAllMocks();
