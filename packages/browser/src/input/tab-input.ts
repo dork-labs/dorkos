@@ -271,6 +271,15 @@ class InputQueue implements TabInput {
         drained = false;
       }
     }
+    // Draining can outlive this target; never release held state onto a replacement lifetime.
+    if (
+      this.stopped ||
+      !this.ports.stopGate.accepts(binding) ||
+      !sameBinding(this.readBinding(), binding)
+    ) {
+      this.ports.stopGate.stop();
+      return Object.freeze({ binding, status: 'stopped' });
+    }
     const cancel = new AbortController();
     const released = await this.held.release(this.ports.native, end, cancel.signal);
     cancel.abort();
