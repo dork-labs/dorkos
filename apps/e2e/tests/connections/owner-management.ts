@@ -303,19 +303,21 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       const failed = page.waitForResponse((response) =>
         response.url().endsWith(`/connections/${completed.connectionId}/remove`)
       );
-      await confirmation.getByRole('button', { name: 'Remove', exact: true }).click();
+      await confirmation.getByRole('button', { name: 'Remove app', exact: true }).click();
       expect((await failed).status()).toBe(503);
       await expect(panel.getByRole('alert')).toContainText(
-        'Check the app’s current state before trying again.'
+        'Couldn’t confirm that change. Check the app before trying again.'
       );
       // The panel's address is in the URL, so a reload comes back to it.
       await page.reload();
       await expect(panel).toBeVisible();
       await panel.getByTestId('remove-account').click();
       confirmation = page.getByRole('alertdialog', { name: 'Remove Gmail from your apps?' });
-      await expect(confirmation).toContainText('What agents did with it stays on record');
+      await expect(confirmation).toContainText('Its activity history is kept');
       await page.setViewportSize({ width: 390, height: 844 });
-      await expect(confirmation.getByRole('button', { name: 'Remove', exact: true })).toBeVisible();
+      await expect(
+        confirmation.getByRole('button', { name: 'Remove app', exact: true })
+      ).toBeVisible();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
       ).toBe(true);
@@ -326,7 +328,7 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       const removed = page.waitForResponse((response) =>
         response.url().endsWith(`/connections/${completed.connectionId}/remove`)
       );
-      await confirmation.getByRole('button', { name: 'Remove', exact: true }).click();
+      await confirmation.getByRole('button', { name: 'Remove app', exact: true }).click();
       expect((await removed).status()).toBe(204);
       await expect(panel).toBeHidden();
       await expect(row(completed.connectionId)).toHaveCount(0);

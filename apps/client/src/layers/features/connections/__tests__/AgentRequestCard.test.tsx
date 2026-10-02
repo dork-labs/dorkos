@@ -227,7 +227,7 @@ describe('AgentRequestCard — no account yet', () => {
       'href',
       'https://accounts.example/consent'
     );
-    expect(screen.getByText(/Waiting for you to finish signing in/)).toBeInTheDocument();
+    expect(screen.getByText(/Finish signing in to/)).toBeInTheDocument();
     // Signing in alone answers nothing.
     expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
   });
@@ -368,7 +368,7 @@ describe('AgentRequestCard — an account exists', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Allow' }));
     const unanswered = await screen.findByTestId('agent-request-unanswered');
-    expect(unanswered).toHaveTextContent('The access is saved, but Bo’s request wasn’t answered');
+    expect(unanswered).toHaveTextContent('Access saved, but Bo’s request wasn’t answered');
     expect(unanswered).not.toHaveTextContent(/nothing changed/i);
     expect(screen.getByRole('heading', { name: 'Bo can now use Gmail' })).toBeInTheDocument();
 
@@ -400,7 +400,7 @@ describe('AgentRequestCard — an account exists', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Allow' }));
     const unanswered = await screen.findByTestId('agent-request-unanswered');
-    expect(unanswered).toHaveTextContent('this chat has Gmail turned off for Bo');
+    expect(unanswered).toHaveTextContent('This chat has Gmail turned off for Bo');
     expect(await screen.findByText(/only affects this chat/)).toBeInTheDocument();
     expect(transport.getSessionConnectorConnections).toHaveBeenCalledWith(REQUEST.sessionId);
     expect(unanswered).not.toHaveTextContent(/can’t be changed/);
@@ -436,7 +436,7 @@ describe('AgentRequestCard — an account exists', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Allow' }));
     const unanswered = await screen.findByTestId('agent-request-unanswered');
-    expect(unanswered).toHaveTextContent('this chat has Gmail turned off for Bo');
+    expect(unanswered).toHaveTextContent('This chat has Gmail turned off for Bo');
     await waitFor(() =>
       expect(transport.getSessionConnectorConnections).toHaveBeenCalledWith(REQUEST.sessionId)
     );
@@ -466,7 +466,7 @@ describe('AgentRequestCard — an account exists', () => {
   });
 
   it.each([
-    ['request_already_resolved', 'already answered somewhere else'],
+    ['request_already_resolved', 'answered somewhere else'],
     ['request_expired', 'ran out of time'],
   ])('offers no retry that cannot land when the request is %s', async (code, words) => {
     const user = userEvent.setup();
@@ -500,7 +500,7 @@ describe('AgentRequestCard — an account exists', () => {
     renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
     const asked = await screen.findByTestId('requested-access');
     await user.click(screen.getByRole('radio', { name: 'Read' }));
-    expect(asked).toHaveTextContent('With Read, Bo can’t change anything in Gmail.');
+    expect(asked).toHaveTextContent('With Read, Bo can’t change Gmail.');
   });
 
   it('starts on Read when that is all the agent asked for', async () => {
@@ -517,7 +517,7 @@ describe('AgentRequestCard — answered', () => {
   it.each([
     ['granted', 'Allowed Bo to use Gmail'],
     ['denied', 'Bo wasn’t given Gmail'],
-    ['expired', 'This request for Gmail ran out of time. Bo can ask again.'],
+    ['expired', 'Request for Gmail timed out. Bo can ask again.'],
     ['authentication_failed', 'Signing in to Gmail didn’t finish. Nothing was shared.'],
     ['access_pending', 'Giving Bo access to Gmail…'],
   ] as const)('reads %s as a one-line record with nothing to press', async (status, line) => {
@@ -629,7 +629,7 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
     await user.click(send);
 
     expect(await screen.findByTestId('agent-request-unanswered')).toHaveTextContent(
-      'the updates you picked can’t be set up right now'
+      'The updates you picked can’t be set up'
     );
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Pick updates again' }));
@@ -660,7 +660,7 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
     await waitFor(() => expect(send).toBeEnabled());
     await user.click(send);
     const unanswered = await screen.findByTestId('agent-request-unanswered');
-    expect(unanswered).not.toHaveTextContent('didn’t reach the server');
+    expect(unanswered).not.toHaveTextContent('didn’t reach DorkOS');
     expect(screen.getByRole('button', { name: 'Pick updates again' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
@@ -1021,7 +1021,7 @@ describe('AgentRequestCard — an account that needs attention first', () => {
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
     await user.click(await screen.findByRole('button', { name: 'Sign in again' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('That didn’t work.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t finish that.');
     expect(screen.queryByText('Getting the sign-in page ready…')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign in again' })).toBeEnabled();
   });
@@ -1222,9 +1222,7 @@ describe('AgentRequestCard — access through "Every agent"', () => {
     } as never);
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
-    expect(
-      await screen.findByText('Bo can already do this, because every agent can.')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Bo already can, like every agent.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Allow' }));
     await waitFor(() =>
       expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
@@ -1245,6 +1243,6 @@ describe('AgentRequestCard — access through "Every agent"', () => {
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
     await screen.findByRole('heading', { name: 'Let Bo use Gmail?' });
     await screen.findByRole('button', { name: 'Allow' });
-    expect(screen.queryByText(/because every agent can/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/like every agent/)).not.toBeInTheDocument();
   });
 });

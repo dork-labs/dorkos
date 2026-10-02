@@ -21,7 +21,7 @@ export function StopSharingFallback({
   if (stop.isSuccess) {
     return (
       <p role="status" className="text-sm">
-        {serviceName} is no longer shared with every agent.
+        Stopped sharing {serviceName} with every agent.
       </p>
     );
   }

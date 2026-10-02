@@ -352,7 +352,7 @@ function DirectProviderForm({
           placeholder={
             savedLast4 === null
               ? (entry?.keyPlaceholder ?? OPENCODE_DIRECT_PROVIDERS[0].keyPlaceholder)
-              : `Saved · ends in ${savedLast4} — paste a new key to replace it`
+              : `Saved key ends in ${savedLast4}. Paste to replace.`
           }
           autoComplete="off"
           spellCheck={false}

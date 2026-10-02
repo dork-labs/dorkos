@@ -152,10 +152,10 @@ afterEach(cleanup);
 // ---------------------------------------------------------------------------
 
 describe('computeHealthState', () => {
-  it('returns healthy with "No connections configured" when total is zero', () => {
+  it('returns healthy with "No connections yet" when total is zero', () => {
     const result = computeHealthState(emptyMetrics, 0, 0);
     expect(result.state).toBe('healthy');
-    expect(result.message).toBe('No connections configured');
+    expect(result.message).toBe('No connections yet');
   });
 
   it('returns healthy when all adapters connected and failure rate < 5%', () => {
@@ -193,7 +193,7 @@ describe('computeHealthState', () => {
       3
     );
     expect(result.state).toBe('degraded');
-    expect(result.message).toContain('10 failures in last 24h');
+    expect(result.message).toContain('10 errors in the last day');
   });
 
   it('returns critical when failure rate exceeds 50%', () => {
@@ -204,8 +204,8 @@ describe('computeHealthState', () => {
       3
     );
     expect(result.state).toBe('critical');
-    expect(result.message).toContain('60% failure rate');
-    expect(result.message).toContain('60 messages failed today');
+    expect(result.message).toContain('(60%)');
+    expect(result.message).toContain('60 messages had errors today');
   });
 
   it('returns critical when zero adapters are connected', () => {
@@ -340,7 +340,7 @@ describe('RelayHealthBar', () => {
       enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogPartiallyConnected });
       const onFailedClick = vi.fn();
       render(<RelayHealthBar onFailedClick={onFailedClick} />);
-      const btn = screen.getByRole('button', { name: /disconnected. Click to view failures/ });
+      const btn = screen.getByRole('button', { name: /disconnected. Show messages with problems/ });
       expect(btn).toBeInTheDocument();
     });
 
@@ -348,7 +348,9 @@ describe('RelayHealthBar', () => {
       enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogPartiallyConnected });
       const onFailedClick = vi.fn();
       render(<RelayHealthBar onFailedClick={onFailedClick} />);
-      fireEvent.click(screen.getByRole('button', { name: /disconnected. Click to view failures/ }));
+      fireEvent.click(
+        screen.getByRole('button', { name: /disconnected. Show messages with problems/ })
+      );
       expect(onFailedClick).toHaveBeenCalledTimes(1);
     });
 

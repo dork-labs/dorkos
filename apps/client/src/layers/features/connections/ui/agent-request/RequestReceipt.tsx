@@ -15,11 +15,11 @@ function receiptLine(request: ConnectorAgentRequestItem, serviceName: string): s
     case 'denied':
       return `${agent} wasn’t given ${serviceName}`;
     case 'expired':
-      return `This request for ${serviceName} ran out of time. ${agent} can ask again.`;
+      return `Request for ${serviceName} timed out. ${agent} can ask again.`;
     case 'authentication_failed':
       return `Signing in to ${serviceName} didn’t finish. Nothing was shared.`;
     case 'target_deleted':
-      return `This request for ${serviceName} is closed. The agent or its chat is gone.`;
+      return `Request for ${serviceName} closed. The agent or its chat is gone.`;
     case 'awaiting_owner':
       return `${agent} is waiting for ${serviceName}`;
   }

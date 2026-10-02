@@ -141,8 +141,7 @@ export function KeyWayRow({
       )}
       {!status.configured && apps.length > 0 && (
         <p className="text-muted-foreground text-xs">
-          These apps stopped working when the key was removed. Add the same key again to bring them
-          back.
+          These apps stopped when the key was removed. Add it again to restore them.
         </p>
       )}
       {changing && (
@@ -166,8 +165,7 @@ export function KeyWayRow({
               <AlertDialogHeader>
                 <AlertDialogTitle>Change your {name} key?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  A new key pauses the apps on this one until you review their access again. A key
-                  from a different {keyScope(status.type)} can’t reach them at all.
+                  A new key pauses these apps until you review their access.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <ConnectionImpactList
@@ -175,14 +173,15 @@ export function KeyWayRow({
                 idle={idle}
                 stopLine={
                   stopping.length === 1
-                    ? 'This app pauses until you review its access on the Connections page:'
-                    : `These ${stopping.length} apps pause until you review their access on the Connections page:`
+                    ? 'This app pauses until you review it on the Connections page:'
+                    : `These ${stopping.length} apps pause until you review them on the Connections page:`
                 }
               />
-              <p className="text-muted-foreground text-sm">
-                Nothing changes until you save the new key. If it doesn’t work, every app on this
-                key stops until you fix it.
-              </p>
+              <div className="text-muted-foreground space-y-1 text-sm">
+                <p>Nothing changes until you save the new key.</p>
+                <p>A key that doesn’t work stops every app until you fix it.</p>
+                <p>A key from a different {keyScope(status.type)} can’t reach them at all.</p>
+              </div>
               <AlertDialogFooter>
                 <AlertDialogCancel>Keep this key</AlertDialogCancel>
                 <AlertDialogAction
@@ -203,7 +202,7 @@ export function KeyWayRow({
                 <AlertDialogDescription>
                   {apps.length === 0
                     ? 'No apps use this key right now.'
-                    : 'Your sign-ins are not deleted. Add the same key again to bring these apps back.'}
+                    : 'Your sign-ins are kept. Add the same key again to restore these apps.'}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <ConnectionImpactList

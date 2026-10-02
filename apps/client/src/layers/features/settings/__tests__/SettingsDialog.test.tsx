@@ -292,7 +292,7 @@ describe('SettingsDialog', () => {
     const panel = screen.getByRole('tabpanel');
     expect(within(panel).getByText('How DorkOS reaches your apps')).toBeDefined();
     expect(within(panel).getByText('Chat apps')).toBeDefined();
-    expect(await within(panel).findByText('Set up when you connect your first app')).toBeDefined();
+    expect(await within(panel).findByText('Set up with your first app')).toBeDefined();
   });
 
   it('switches to the DorkOS account tab from the DorkOS account row', async () => {

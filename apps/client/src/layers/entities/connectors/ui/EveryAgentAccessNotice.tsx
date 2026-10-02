@@ -37,7 +37,7 @@ export function EveryAgentAccessNotice({ agentName, className }: EveryAgentAcces
         className={cn('text-muted-foreground text-center text-xs', className)}
         data-testid="every-agent-access-checking"
       >
-        Checking which apps every agent can use…
+        Checking apps every agent can use…
       </p>
     );
   }
@@ -47,7 +47,7 @@ export function EveryAgentAccessNotice({ agentName, className }: EveryAgentAcces
         className={cn('text-muted-foreground text-xs', className)}
         data-testid="every-agent-access-unknown"
       >
-        Couldn’t check which apps every agent can use. {who} gets whatever you gave every agent.
+        Couldn’t check apps shared with every agent. {who} gets them too.
       </p>
     );
   }

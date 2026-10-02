@@ -9,7 +9,7 @@ const STEP_LABELS: Record<WizardStep, string> = {
   agent: 'Agent',
   configure: 'Set up',
   test: 'Check',
-  confirm: 'Confirm',
+  confirm: 'Review',
 };
 
 /**
@@ -34,7 +34,7 @@ export function StepIndicator({
     <div
       className="flex items-start justify-between px-1"
       role="navigation"
-      aria-label="Wizard steps"
+      aria-label="Setup steps"
     >
       {visibleSteps.map((s, i) => {
         const isComplete = i < currentIndex;

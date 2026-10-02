@@ -18,12 +18,12 @@ const failed = (
 /** The sentences a status line ends with that tell the owner what to do next. */
 const NEXT_STEPS = [
   /Open the chat to check\.$/,
-  /Look there to check\.$/,
-  /Fix the account above to start it again\.$/,
-  /Remove it and set it up again to keep getting these\.$/,
-  /Check that it still lets this agent post there\.$/,
-  /Nothing to do: the next one comes as usual\.$/,
-  /If it keeps happening, remove it and set it up again\.$/,
+  /Check there\.$/,
+  /Fix it above to restart\.$/,
+  /Remove it and set it up again\.$/,
+  /Check this agent can still post there\.$/,
+  /Nothing to do\.$/,
+  /If it repeats, remove it and add it again\.$/,
 ];
 
 describe('notificationStatus', () => {

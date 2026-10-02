@@ -181,8 +181,8 @@ describe('BindingAdvancedSection permissions', () => {
 
       const note = await screen.findByTestId('trust-dial-unavailable');
       expect(note).toHaveTextContent(/Bypass All/);
-      expect(note).toHaveTextContent(/hasn’t said what it can do/);
-      expect(note).toHaveTextContent(/saving keeps it as it is/i);
+      expect(note).toHaveTextContent(/No other levels to choose yet/);
+      expect(note).toHaveTextContent(/saving keeps it/i);
       expect(screen.queryByRole('radiogroup', { name: /how much/i })).not.toBeInTheDocument();
       // The scope note is about a bypass mode a person just CHOSE. With no dial
       // to choose on, it is a clarification about nothing.
@@ -200,7 +200,7 @@ describe('BindingAdvancedSection permissions', () => {
       // The runtime's own word for the mode, not the client's id table — the
       // descriptor is right here, and a table is only ever the fallback.
       expect(note).toHaveTextContent(/“Plan”/);
-      expect(note).toHaveTextContent(/saving keeps it as it is/i);
+      expect(note).toHaveTextContent(/saving keeps it/i);
       expect(within(dial()).queryAllByRole('radio', { checked: true })).toHaveLength(0);
       expect(onPermissionModeChange).not.toHaveBeenCalled();
     });
@@ -216,13 +216,18 @@ describe('BindingAdvancedSection permissions', () => {
       expect(onPermissionModeChange).not.toHaveBeenCalled();
       const alert = await screen.findByRole('alertdialog');
       expect(alert).toHaveTextContent(/Turn on Full autonomy/);
+      expect(alert).toHaveTextContent(/Anyone who can message this connection/);
       // The facts that are true HERE and nowhere else: who could have answered,
-      // and what happens to an ask nobody answers.
-      expect(alert).toHaveTextContent(/approver/i);
-      expect(alert).toHaveTextContent(/refused after 10 minutes/);
+      // and what happens to an ask nobody answers. They sit behind an info tip.
+      await userEvent.click(
+        within(alert).getByRole('button', { name: 'About asking in the chat' })
+      );
+      const tip = await screen.findByText(/approver list/i);
+      expect(tip).toBeInTheDocument();
+      expect(screen.getByText(/refused after 10 minutes/)).toBeInTheDocument();
       // Not every adapter can draw a button. The sentence must be true for a
       // webhook binding, which gets no buttons and auto-denies every ask.
-      expect(alert).toHaveTextContent(/where your connection can show buttons/i);
+      expect(screen.getByText(/where your connection can show buttons/i)).toBeInTheDocument();
     });
 
     it('applies it only once the person confirms', async () => {
@@ -256,15 +261,19 @@ describe('BindingAdvancedSection permissions', () => {
   describe('session strategy when bridged (chats-as-channels §7.2)', () => {
     it('shows the session-strategy selector for an unbridged binding', () => {
       renderSection({ bridged: false });
-      expect(screen.getByLabelText('Session strategy')).toBeInTheDocument();
-      expect(screen.queryByText(/keeps its history in the channel/i)).not.toBeInTheDocument();
+      expect(screen.getByLabelText('How the agent remembers')).toBeInTheDocument();
+      expect(
+        screen.queryByText(/Kept in the channel this chat is linked to/i)
+      ).not.toBeInTheDocument();
     });
 
     it('hides the selector for a bridged binding and explains why', () => {
       renderSection({ bridged: true });
       // The <select> is gone; a plain line takes its place.
-      expect(screen.queryByRole('combobox', { name: /session strategy/i })).not.toBeInTheDocument();
-      expect(screen.getByText(/keeps its history in the channel/i)).toBeInTheDocument();
+      expect(
+        screen.queryByRole('combobox', { name: /how the agent remembers/i })
+      ).not.toBeInTheDocument();
+      expect(screen.getByText(/Kept in the channel this chat is linked to/i)).toBeInTheDocument();
     });
   });
 

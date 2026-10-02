@@ -53,9 +53,12 @@ export function AdapterBindingRow({
         {canInitiate && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Zap className="size-3 shrink-0 text-amber-500" aria-label="Can initiate messages" />
+              <Zap
+                className="size-3 shrink-0 text-amber-500"
+                aria-label="Can start conversations"
+              />
             </TooltipTrigger>
-            <TooltipContent>Can initiate messages</TooltipContent>
+            <TooltipContent>Can start conversations</TooltipContent>
           </Tooltip>
         )}
         {!canReply && (
@@ -63,10 +66,10 @@ export function AdapterBindingRow({
             <TooltipTrigger asChild>
               <MessageSquareOff
                 className="text-muted-foreground/70 size-3 shrink-0"
-                aria-label="Reply disabled"
+                aria-label="Can’t reply"
               />
             </TooltipTrigger>
-            <TooltipContent>Reply disabled</TooltipContent>
+            <TooltipContent>Can’t reply</TooltipContent>
           </Tooltip>
         )}
         {!canReceive && (
@@ -74,10 +77,10 @@ export function AdapterBindingRow({
             <TooltipTrigger asChild>
               <BellOff
                 className="text-muted-foreground/70 size-3 shrink-0"
-                aria-label="Receive disabled"
+                aria-label="Doesn’t receive messages"
               />
             </TooltipTrigger>
-            <TooltipContent>Receive disabled</TooltipContent>
+            <TooltipContent>Doesn’t receive messages</TooltipContent>
           </Tooltip>
         )}
       </TooltipProvider>

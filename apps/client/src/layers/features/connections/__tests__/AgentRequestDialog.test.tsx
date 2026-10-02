@@ -206,9 +206,7 @@ describe('AgentRequestDialog', () => {
     const edit = vi.fn();
     renderDialog(transport, edit);
 
-    expect(
-      await screen.findByText(/Researcher already has exact actions chosen for this account\./)
-    ).toBeVisible();
+    expect(await screen.findByText(/Researcher already has exact actions here\./)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Choose exact actions' }));
     expect(edit).toHaveBeenCalledWith('connection-1');
   });

@@ -66,8 +66,7 @@ export function ChatAppsOff({
       setRestartOverlayOpen(true);
     } catch (err) {
       toast.error('Couldn’t restart DorkOS.', {
-        description:
-          err instanceof Error ? err.message : 'Not sure if it restarted. Try the button again.',
+        description: err instanceof Error ? err.message : 'It may not have restarted. Try again.',
       });
     } finally {
       setRestarting(false);
@@ -80,8 +79,8 @@ export function ChatAppsOff({
     case 'env':
       message = (
         <>
-          Chat apps are off because <InlineCode>DORKOS_RELAY_ENABLED</InlineCode> is set on this
-          computer, and it decides over the setting. Remove it, then start DorkOS again.
+          Chat apps are off: <InlineCode>DORKOS_RELAY_ENABLED</InlineCode> overrides the setting.
+          Remove it, then restart DorkOS.
         </>
       );
       break;
@@ -103,8 +102,7 @@ export function ChatAppsOff({
       );
       break;
     case 'off':
-      message =
-        'Chat apps are off. Turn them on to reach your agents from Telegram, Slack, or a webhook.';
+      message = 'Chat apps are off. Turn them on to reach agents from Telegram, Slack or webhooks.';
       action = (
         <Button
           size="sm"
@@ -137,7 +135,7 @@ export function ChatAppsOff({
       {action}
       {updateConfig.isError && (
         <p role="alert" className="text-destructive text-xs">
-          Couldn’t save that. Check that DorkOS is running, then try again.
+          Couldn’t save. Check that DorkOS is running, then try again.
         </p>
       )}
     </div>

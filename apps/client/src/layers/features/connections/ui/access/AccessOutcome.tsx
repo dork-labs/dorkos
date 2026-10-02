@@ -17,7 +17,7 @@ interface AccessOutcomeProps {
  */
 export function AccessOutcome({
   access,
-  savedDetail = 'Access is ready for the agents you changed.',
+  savedDetail = 'Ready for the agents you changed.',
 }: AccessOutcomeProps) {
   const { saveOutcome } = access;
   const pendingAdds = saveOutcome?.grants.some((grant) => grant.operationRevisionIds.length > 0);
@@ -26,7 +26,7 @@ export function AccessOutcome({
   );
   const syncCheckFailed = access.syncCheckFailed && (
     <p role="alert" className="text-destructive text-sm">
-      Couldn’t check whether the change is done. DorkOS didn’t send it again.
+      Couldn’t check if the change is done. Nothing was sent twice.
     </p>
   );
 
@@ -37,10 +37,10 @@ export function AccessOutcome({
           <ShieldAlert className="text-destructive mt-0.5 size-4 shrink-0" aria-hidden />
           <div>
             <p role="alert" className="text-sm font-medium">
-              We couldn’t confirm that access was saved
+              Couldn’t confirm access was saved
             </p>
             <p className="text-muted-foreground mt-1 text-sm">
-              Reload the current access before making another change.
+              Reload access before another change.
             </p>
           </div>
         </div>
@@ -78,7 +78,7 @@ export function AccessOutcome({
             Access needs review
           </p>
           <p className="text-muted-foreground mt-1 text-sm">
-            Available actions changed. Reload the current access before making another change.
+            Available actions changed. Reload access before another change.
           </p>
         </div>
       </div>
@@ -95,10 +95,10 @@ export function AccessOutcome({
             </p>
             <p className="text-muted-foreground mt-1 text-sm">
               {pendingAdds && pendingRemovals
-                ? 'Access you removed has already ended. Agents can use the new access once DorkOS finishes updating it.'
+                ? 'Removed access has ended. New access works once DorkOS finishes.'
                 : pendingRemovals
-                  ? 'Access you removed has already ended here. DorkOS is still removing it at the service.'
-                  : 'New access is saved. Agents can use it once DorkOS finishes updating it.'}
+                  ? 'Removed access has ended here. DorkOS is still removing it at the service.'
+                  : 'New access is saved. It works once DorkOS finishes.'}
             </p>
           </div>
         </div>
@@ -116,8 +116,8 @@ export function AccessOutcome({
               Access didn’t update
             </p>
             <p className="text-muted-foreground mt-1 text-sm">
-              {saveOutcome.authoritySync.reason} Agents cannot use this change. Check your account
-              setup, then try again.
+              {saveOutcome.authoritySync.reason} Agents can’t use this yet. Check your account, then
+              try again.
             </p>
           </div>
         </div>

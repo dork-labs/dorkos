@@ -75,6 +75,14 @@ export function AdapterSetupWizard({
     handleRetryTest,
   } = wizard;
 
+  // One line per step, picked here so each reads as its own short sentence.
+  const stepDescription = {
+    agent: 'Pick who answers messages here.',
+    configure: currentSetupStep?.description ?? 'Fill in the settings this needs.',
+    test: 'Checking the connection…',
+    confirm: 'Check it over, then save.',
+  }[step];
+
   return (
     <Fragment>
       <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -83,13 +91,7 @@ export function AdapterSetupWizard({
             <DialogTitle>
               {isEditMode ? `Edit ${manifest.displayName}` : `Add ${manifest.displayName}`}
             </DialogTitle>
-            <DialogDescription>
-              {step === 'agent' && 'Pick the agent that answers messages arriving here.'}
-              {step === 'configure' &&
-                (currentSetupStep?.description ?? 'Fill in the settings this needs.')}
-              {step === 'test' && 'Checking whether this is reachable.'}
-              {step === 'confirm' && 'Check it over, then save.'}
-            </DialogDescription>
+            <DialogDescription>{stepDescription}</DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 space-y-4 overflow-y-auto py-2">

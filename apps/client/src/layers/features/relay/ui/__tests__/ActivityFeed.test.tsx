@@ -103,9 +103,7 @@ describe('ActivityFeed', () => {
     it('shows contextual description in the no-messages state', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
-      expect(
-        screen.getByText('Messages will appear here as your agents communicate')
-      ).toBeInTheDocument();
+      expect(screen.getByText('Messages between your agents show up here.')).toBeInTheDocument();
     });
 
     it('never shows "Set up an integration" button', () => {
@@ -123,7 +121,7 @@ describe('ActivityFeed', () => {
       fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
       expect(screen.getByText('No messages match your filters')).toBeInTheDocument();
-      expect(screen.getByText('Try adjusting your filter criteria.')).toBeInTheDocument();
+      expect(screen.getByText('Try different filters.')).toBeInTheDocument();
     });
 
     it('shows "Clear filters" in the empty state when filters are active and nothing matches', () => {
@@ -311,7 +309,7 @@ describe('ActivityFeed', () => {
 
       const [, statusCombobox] = screen.getAllByRole('combobox');
       fireEvent.click(statusCombobox);
-      fireEvent.click(screen.getByRole('option', { name: 'Failed' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Error' }));
 
       expect(screen.getAllByTestId('conversation-row')).toHaveLength(1);
       expect(screen.getByTestId('conversation-row')).toHaveAttribute(

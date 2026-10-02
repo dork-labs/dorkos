@@ -117,7 +117,7 @@ export function ClaimCard({
           {chat.messageCount === 1
             ? 'One message so far.'
             : `${chat.messageCount} messages so far.`}{' '}
-          Nobody has answered, and nothing has been read.
+          Not read or answered yet.
         </p>
       </div>
 
@@ -182,21 +182,21 @@ export function ClaimCard({
         )}
       </div>
 
-      <p className="text-muted-foreground text-xs">
-        {isBroadcast ? (
-          'This is a broadcast channel, not a conversation, so there’s no one here for an agent ' +
-          'to answer. Ignore hides this and stays quiet. Leave removes the bot from the channel.'
-        ) : isGroup ? (
-          'Ignore hides this and stays quiet. Leave removes the bot from the group, so nothing ' +
-          'further can arrive from it.'
-        ) : (
-          <>
-            A channel gives you a room to see and reply from; answering privately keeps this chat as
-            it is today. Ignore hides this and stays quiet. Block stops anything from this chat
-            being recorded again.
-          </>
-        )}
-      </p>
+      {isBroadcast ? (
+        <p className="text-muted-foreground text-xs">
+          Broadcast channel: no one to answer. Ignore hides it. Leave removes the bot.
+        </p>
+      ) : isGroup ? (
+        <p className="text-muted-foreground text-xs">
+          Ignore hides this quietly. Leave removes the bot, so nothing more arrives.
+        </p>
+      ) : (
+        <div className="text-muted-foreground space-y-0.5 text-xs">
+          <p>A channel gives you a room to see and reply from.</p>
+          <p>Answering privately keeps this chat as it is.</p>
+          <p>Ignore hides this quietly. Block stops recording this chat.</p>
+        </div>
+      )}
     </Card>
   );
 }

@@ -49,7 +49,7 @@ describe('MessageRow', () => {
   it('does not show payload when collapsed', () => {
     render(<MessageRow message={baseMessage} />);
 
-    expect(screen.queryByText('Payload')).not.toBeInTheDocument();
+    expect(screen.queryByText('Content')).not.toBeInTheDocument();
   });
 
   it('shows payload content when expanded', () => {
@@ -59,7 +59,7 @@ describe('MessageRow', () => {
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons[0]);
 
-    expect(screen.getByText('Payload')).toBeInTheDocument();
+    expect(screen.getByText('Content')).toBeInTheDocument();
   });
 
   it('shows trace toggle button when expanded and message has id', () => {
@@ -143,11 +143,11 @@ describe('MessageRow', () => {
     fireEvent.click(buttons[0]);
 
     // Payload should be visible
-    expect(screen.getByText('Payload')).toBeInTheDocument();
+    expect(screen.getByText('Content')).toBeInTheDocument();
 
     // Click trace toggle — payload should remain visible
     fireEvent.click(screen.getByText('Show trace'));
-    expect(screen.getByText('Payload')).toBeInTheDocument();
+    expect(screen.getByText('Content')).toBeInTheDocument();
   });
 
   it('shows budget section when budget is present', () => {
@@ -157,7 +157,7 @@ describe('MessageRow', () => {
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons[0]);
 
-    expect(screen.getByText('Budget')).toBeInTheDocument();
+    expect(screen.getByText('Limits')).toBeInTheDocument();
   });
 
   it('does not show budget section when budget is absent', () => {
@@ -166,7 +166,7 @@ describe('MessageRow', () => {
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons[0]);
 
-    expect(screen.queryByText('Budget')).not.toBeInTheDocument();
+    expect(screen.queryByText('Limits')).not.toBeInTheDocument();
   });
 
   describe('content preview', () => {
@@ -203,7 +203,7 @@ describe('MessageRow', () => {
       const message = { ...baseMessage, payload: { content: longText } };
       render(<MessageRow message={message} />);
 
-      const expectedPreview = 'a'.repeat(80) + '...';
+      const expectedPreview = 'a'.repeat(80) + '…';
       expect(screen.getByText(expectedPreview)).toBeInTheDocument();
     });
 
@@ -255,7 +255,7 @@ describe('MessageRow', () => {
     const failedMessage = { ...baseMessage, status: 'failed' };
     render(<MessageRow message={failedMessage} />);
 
-    expect(screen.getByText('Failed')).toBeInTheDocument();
+    expect(screen.getByText('Error')).toBeInTheDocument();
   });
 
   it('renders dead_letter status with correct badge', () => {

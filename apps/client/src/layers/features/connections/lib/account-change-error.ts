@@ -15,17 +15,17 @@ export function accountChangeError(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
   switch (code) {
     case 'connection_cleanup_pending':
-      return 'DorkOS is still removing this app’s earlier access at the service. Try again in a few minutes.';
+      return 'DorkOS is still removing this app’s earlier access. Try again in a few minutes.';
     case 'connection_not_disconnected':
       return 'Disconnect this app before removing it.';
     case 'connection_not_found':
       return 'This app is no longer connected. Pick it again from the list.';
     case 'provider_not_found':
     case 'authentication_unavailable':
-      return 'Sign-in isn’t available for this app right now. Check how DorkOS reaches your apps in Settings › Connections, then try again.';
+      return 'Sign-in isn’t available for this app. Check Settings › Connections, then try again.';
     case 'idempotency_conflict':
       return 'This sign-in was already used. Start again.';
     default:
-      return 'We couldn’t confirm that change. Check the app’s current state before trying again.';
+      return 'Couldn’t confirm that change. Check the app before trying again.';
   }
 }
