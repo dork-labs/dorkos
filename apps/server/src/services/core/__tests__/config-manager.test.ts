@@ -71,6 +71,7 @@ import {
   seedMaxConcurrentTurnsPerAgent,
   retireToolOnlyReplies,
   seedCommunityNavigationPrefs,
+  seedCloudCreditsChoices,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -517,6 +518,7 @@ describe('ConfigManager', () => {
       instanceName: null,
       linkedAccountLabel: null,
       previousLinkProof: null,
+      credits: { defaults: {}, offer: 'none', agents: [], linkedTo: null },
     });
   });
 
@@ -3918,7 +3920,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(39);
+    expect(Object.keys(bodies)).toHaveLength(40);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -6197,5 +6199,89 @@ describe('the 0.67.0 bodies (spec full-power-defaults)', () => {
     });
     expect(store.data.approvals).toEqual({ standingGrants: false });
     expect(store.data.mesh).toEqual({ scanRoots: [] });
+  });
+});
+
+describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
+  /**
+   * Run the real upgrade to `'0.96.0'` over a file last written at `from`, and
+   * return what is on disk.
+   */
+  function upgrade(
+    cloud: Record<string, unknown>,
+    from = '0.95.0'
+  ): { cloud: Record<string, unknown> } {
+    const dir = path.join(os.tmpdir(), 'test-dork-cloud-credits-' + Date.now() + Math.random());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({ version: 1, cloud, __internal__: { migrations: { version: from } } }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.96.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as { cloud: Record<string, unknown> };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const link = {
+    instanceToken: 'ik_live',
+    instanceName: 'mac',
+    linkedAccountLabel: null,
+    previousLinkProof: null,
+  };
+
+  it('owes a computer that was already linked one offer, and arms no runtime', () => {
+    // READ THE FILE: `cloud` is a section every linked config already has, so
+    // this body is the only thing that writes the leaf (see the skill's note).
+    // Suppress the body and this goes red.
+    const onDisk = upgrade(link);
+    // The rest of the block (`agents`, `linkedTo`) is the schema's default on read.
+    expect(onDisk.cloud.credits).toEqual({ defaults: {}, offer: 'pending' });
+    expect(onDisk.cloud.instanceToken).toBe('ik_live');
+  });
+
+  // A computer that skipped 0.95.x (or is on an 0.94.x build) runs every key
+  // in between on the way up, and still gets the same single offer.
+  it.each(['0.94.0', '0.94.3'])(
+    'owes a linked computer upgrading from %s the same one offer',
+    (from) => {
+      const onDisk = upgrade(link, from);
+      expect(onDisk.cloud.credits).toEqual({ defaults: {}, offer: 'pending' });
+      expect(onDisk.cloud.instanceToken).toBe('ik_live');
+    }
+  );
+
+  it('owes an unlinked computer nothing: its next link fills the gaps', () => {
+    const onDisk = upgrade({ ...link, instanceToken: null });
+    expect(onDisk.cloud.credits).toEqual({ defaults: {}, offer: 'none' });
+  });
+
+  it('is idempotent and never overwrites a choice already recorded', () => {
+    const credits = {
+      defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'user' } },
+      offer: 'dismissed',
+    };
+    const store = createMockStore({ cloud: { ...link, credits } });
+    seedCloudCreditsChoices(store);
+    seedCloudCreditsChoices(store);
+    expect((store.data.cloud as { credits: unknown }).credits).toEqual(credits);
+  });
+
+  it('skips a config with no cloud section', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    seedCloudCreditsChoices(store);
+    expect(store.data.cloud).toBeUndefined();
   });
 });

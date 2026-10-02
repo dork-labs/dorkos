@@ -98,6 +98,13 @@ const CODEX_VENDOR_AUTH_TEXT =
 const sdkPrompts = vi.hoisted(() => [] as string[]);
 
 /**
+ * The options every `Codex` client the adapter built was handed: its binary,
+ * its environment, its config. The credits gate (ADR 261001-000811) searches
+ * them, with each thread's options and prompt, for a credits token.
+ */
+const codexClientOptions = vi.hoisted(() => [] as unknown[]);
+
+/**
  * How each thread the mocked SDK minted was reached: `'start'` for a new
  * conversation, `'resume'` for one that already existed.
  *
@@ -152,6 +159,9 @@ vi.mock('@openai/codex-sdk', async (importOriginal) => {
     // mockReturnValue here (a spent generator would end multi-turn tests with
     // zero events).
     Codex: class {
+      constructor(options?: unknown) {
+        codexClientOptions.push(options ?? {});
+      }
       startThread = vi.fn((options?: (typeof threadOptionsSeen)[number]) => {
         threadMints.push('start');
         threadOptionsSeen.push(options ?? {});
@@ -210,6 +220,8 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 });
 
 import { CodexRuntime } from '../codex-runtime.js';
+import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
+import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
@@ -423,8 +435,53 @@ runtimeConformance(
             'a live codex binary is a subprocess this suite hands a prompt and cannot read back, so what it received is only observable in the mocked run',
           directoryGrantsUnprovenReason:
             'a live codex binary is a subprocess this suite hands thread options and cannot read back, so which folders it was granted is only observable in the mocked run',
+          creditsUnprovenReason:
+            'a live codex binary is a subprocess this suite hands an environment and cannot read back, so whether a credits token reached it is only observable in the mocked run',
         }
       : {
+          // ADR 261001-000811: Codex does not declare credits, so whatever the
+          // host holds and whatever the session asks for, no client, thread or
+          // prompt the adapter builds may carry a credits token.
+          creditsTurn: async (runtime, { runsOn, heldToken }) => {
+            __setCreditsStateForTests({
+              token:
+                heldToken === null
+                  ? null
+                  : {
+                      ...CREDITS_TOKEN_FIXTURE,
+                      token: heldToken,
+                      expiresAt: '2999-01-01T00:00:00.000Z',
+                    },
+            });
+            try {
+              const clientsBefore = codexClientOptions.length;
+              const threadsBefore = threadOptionsSeen.length;
+              const promptsBefore = sdkPrompts.length;
+              const sessionId = randomUUID();
+              runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: projectDir });
+              const events = [];
+              for await (const event of runtime.sendMessage(sessionId, 'conformance ping', {
+                cwd: projectDir,
+                ...(runsOn === 'credits' ? { accountHint: 'dorkos-credits' } : {}),
+              })) {
+                events.push(event);
+              }
+              return {
+                launched: threadOptionsSeen.length > threadsBefore,
+                handed: {
+                  // Every client ever built, not just this turn's: a shared
+                  // client built earlier is still what this turn ran on.
+                  clients: codexClientOptions,
+                  newClients: codexClientOptions.slice(clientsBefore),
+                  threads: threadOptionsSeen.slice(threadsBefore),
+                  prompts: sdkPrompts.slice(promptsBefore),
+                },
+                events,
+              };
+            } finally {
+              __setCreditsStateForTests({ token: null });
+            }
+          },
           // The `agent-home-desk` §4.6 gate. Codex hands a write grant as
           // `additionalDirectories` (the SDK's `--add-dir`, per run) and a read
           // grant as nothing, because its sandbox already reads everywhere —

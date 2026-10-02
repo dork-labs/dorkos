@@ -69,6 +69,11 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // runtime. `tool-result-images.ts` + `media-capture.ts` read it now, on both
   // paths (ADR 260901-135657, DOR-1664).
   mediaOutput: 'none',
+  // DorkOS credits ride the Anthropic Messages API Claude Code already speaks
+  // (ADR 261001-000811): a credits session runs in the DorkOS-owned credits
+  // folder with the endpoint and token in its environment, and is refused,
+  // never moved, when no live token can be had (`messaging/launch-resolver.ts`).
+  credits: { protocol: 'anthropic-messages' },
   // Native git is suppressed via `excludeDynamicSections` (ADR-0273 A2), so the
   // server injects all context kinds from the bag — none are runtime-native.
   nativeContext: [],

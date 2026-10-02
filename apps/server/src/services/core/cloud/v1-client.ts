@@ -108,10 +108,52 @@ export function captureCloudV1Context(): CloudV1Context | null {
 
 /** Resolve only a service-issued instance ID under the captured credential. */
 export async function resolveCloudInstanceId(context: CloudV1Context): Promise<string | null> {
+  return (await resolveCloudIdentity(context)).instanceId;
+}
+
+/** Who the captured credential belongs to, as far as the service says. */
+export interface CloudIdentity {
+  /** The service-issued instance id, or `null`. */
+  instanceId: string | null;
+  /**
+   * The DorkOS account this link belongs to — the account's id, else its
+   * organization's — or `null` when the service names neither.
+   */
+  accountKey: string | null;
+}
+
+/**
+ * Introspect the captured credential once: its instance id, and the account
+ * (or organization) it belongs to. Both `null` when the context went stale or
+ * the credential is not authenticated.
+ *
+ * @param context - The captured link context.
+ */
+export async function resolveCloudIdentity(context: CloudV1Context): Promise<CloudIdentity> {
   const session = await context.client.get(V1_ROUTES.session, SessionSchema);
-  if (!context.isCurrent() || !session.authenticated) return null;
+  if (!context.isCurrent() || !session.authenticated) {
+    return { instanceId: null, accountKey: null };
+  }
   const id = session.instanceId;
-  return id && id.trim() !== '' ? id : null;
+  const key = session.account?.id ?? session.orgId ?? null;
+  return {
+    instanceId: id && id.trim() !== '' ? id : null,
+    accountKey: key && key.trim() !== '' ? key : null,
+  };
+}
+
+/**
+ * The DorkOS account this computer is linked to right now, or `null` when it
+ * is not linked or the service could not say. Never throws.
+ */
+export async function readCloudAccountKey(): Promise<string | null> {
+  const context = captureCloudV1Context();
+  if (context === null) return null;
+  try {
+    return (await resolveCloudIdentity(context)).accountKey;
+  } catch {
+    return null;
+  }
 }
 
 /**

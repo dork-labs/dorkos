@@ -30,6 +30,7 @@ export { PlanCard } from './ui/PlanCard';
 export { CreditsGauge } from './ui/CreditsGauge';
 export { UpgradeNudge } from './ui/UpgradeNudge';
 export { SeatManagement } from './ui/SeatManagement';
+export { CreditsNotices } from './ui/CreditsNotices';
 export { ManageOnWeb, BillingPageButton, PlanOffers } from './ui/ManageOnWeb';
 export { BillingNoticeView } from './ui/BillingNoticeView';
 export { ExportAccountData } from './ui/ExportAccountData';
@@ -37,7 +38,6 @@ export type { BillingPageButtonProps, PlanOffersProps } from './ui/ManageOnWeb';
 export { DeleteAccount, DELETE_CONFIRM_WORD } from './ui/DeleteAccount';
 export {
   cloudPlanKeys,
-  useCloudCredits,
   useCloudMembers,
   useCloudNudge,
   useCloudOrgs,
@@ -45,7 +45,6 @@ export {
   useCloudSeats,
   useCloudUsage,
   useSeatActions,
-  useSelectCloudCredits,
 } from './model/use-cloud-plan';
 export { useAccountExport, useCloudOffers, useOpenBillingPage } from './model/use-billing-page';
 export type {
@@ -63,6 +62,6 @@ export {
   useDorkosAccountLine,
   type DorkosAccountLine,
 } from './model/use-dorkos-account-line';
-export { readCreditsFor } from './model/use-credits-for';
+export { creditsRuntimesOnOffer } from './model/use-credits-for';
 export type { LocalSpend } from './model/use-local-spend';
 export { remainingFraction } from './lib/remaining-fraction';

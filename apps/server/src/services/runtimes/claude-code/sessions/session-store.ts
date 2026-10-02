@@ -305,6 +305,19 @@ export class SessionStore {
   }
 
   /**
+   * The ids of the live sessions a predicate accepts.
+   *
+   * @param predicate - Decides each session.
+   */
+  sessionIdsWhere(predicate: (session: AgentSession) => boolean): string[] {
+    const ids: string[] = [];
+    for (const [sessionId, session] of this.sessions) {
+      if (predicate(session)) ids.push(sessionId);
+    }
+    return ids;
+  }
+
+  /**
    * Enumerate sessions that hold a reloadable SDK query — one whose subprocess
    * is still alive enough to answer the `reload_plugins` control request. A
    * live `activeQuery` (mid-turn) is preferred; a preserved `lastQuery` (the

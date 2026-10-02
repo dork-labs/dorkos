@@ -331,6 +331,27 @@ describe('CloudLinkManager lifecycle ownership', () => {
     ).toHaveLength(1);
   });
 
+  it('runs the unlink step while the link still stands (ADR 261001-000811)', async () => {
+    const config = memoryConfig('old-key');
+    const fetchImpl = vi.fn(async () => response(200, { ok: true }));
+    const manager = new CloudLinkManager({
+      config,
+      fetchImpl,
+      sleep: noSleep,
+      resolveTelemetryInstanceId: async () => undefined,
+    });
+    managers.push(manager);
+    const seen: (string | null)[] = [];
+    manager.setOnUnlink(() => {
+      seen.push(config.getToken());
+    });
+
+    await manager.unlink();
+    // Called before the withdrawal, so what was minted under it can be revoked.
+    expect(seen).toEqual(['old-key']);
+    expect(config.getToken()).toBeNull();
+  });
+
   it('withdraws locally before revoke settles and preserves an equal-token replacement', async () => {
     const revoke = deferred<Response>();
     const config = memoryConfig('same-key');

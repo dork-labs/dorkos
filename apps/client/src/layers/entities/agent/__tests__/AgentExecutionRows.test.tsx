@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, within, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -114,6 +114,14 @@ interface ClaudeCodeConfig {
   accounts: { id: string | null; path: string; label: string | null; isAccountRoot: boolean }[];
   /** The server admitting it could not read the registry at all. */
   accountsUnavailable?: boolean;
+  /** The DorkOS credits entry, when the server offers it. */
+  credits?: {
+    id: 'dorkos-credits';
+    path: string;
+    available: boolean;
+    isDefault: boolean;
+    allowedAgents: string[];
+  };
 }
 
 /** Two registered accounts — the smallest registry that offers a real choice. */
@@ -524,6 +532,45 @@ describe('AgentExecutionRows — the Account row', () => {
     );
     // The self-edit route this row used to take, and the one that 403s.
     expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  // ADR 261001-000811: an agent's own file cannot put it on DorkOS credits.
+  it('says when an agent’s file names credits nobody allowed, and lets a person allow it', async () => {
+    const credits = {
+      id: 'dorkos-credits' as const,
+      path: '/Users/dev/.dork/runtimes/claude-code/credits',
+      available: true,
+      isDefault: false,
+      allowedAgents: [],
+    };
+    const { transport } = renderRows(
+      manifest({ account: 'dorkos-credits' }),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      { ...TWO_ACCOUNTS, credits }
+    );
+    const notice = await screen.findByTestId('agent-credits-not-allowed');
+    expect(notice).toHaveTextContent('It uses your default until you allow it.');
+    await userEvent.click(within(notice).getByRole('button', { name: 'Allow' }));
+    await waitFor(() =>
+      expect(transport.updateMeshAgent).toHaveBeenCalledWith('a', { account: 'dorkos-credits' })
+    );
+  });
+
+  it('shows no notice for an agent a person already allowed onto credits', async () => {
+    renderRows(manifest({ account: 'dorkos-credits' }), DEFAULTS, MODELS, capabilityMap(false), {
+      ...TWO_ACCOUNTS,
+      credits: {
+        id: 'dorkos-credits',
+        path: '/Users/dev/.dork/runtimes/claude-code/credits',
+        available: true,
+        isDefault: false,
+        allowedAgents: ['a'],
+      },
+    });
+    expect(await screen.findByTestId('agent-account-row')).toHaveTextContent('DorkOS credits');
+    expect(screen.queryByTestId('agent-credits-not-allowed')).toBeNull();
   });
 
   it('restores the server default through the footer, writing the wire null', async () => {

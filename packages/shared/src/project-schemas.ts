@@ -171,6 +171,20 @@ export const ProjectAccountsRequestSchema = z
 /** Body of `PUT /api/runtimes/claude-code/project-accounts`. */
 export type ProjectAccountsRequest = z.infer<typeof ProjectAccountsRequestSchema>;
 
+/**
+ * Body of `POST /api/runtimes/claude-code/project-accounts/without-credits`:
+ * keep DorkOS credits out of the project a session's folder is in.
+ */
+export const ProjectWithoutCreditsRequestSchema = z
+  .object({
+    /** The session whose turn credits refused; its folder names the project. */
+    sessionId: z.string().min(1),
+  })
+  .openapi('ProjectWithoutCreditsRequest');
+
+/** Body of `POST /api/runtimes/claude-code/project-accounts/without-credits`. */
+export type ProjectWithoutCreditsRequest = z.infer<typeof ProjectWithoutCreditsRequestSchema>;
+
 /** Body of `PUT /api/runtimes/claude-code/accounts/:id/only-projects`. */
 export const OnlyProjectsRequestSchema = z
   .object({

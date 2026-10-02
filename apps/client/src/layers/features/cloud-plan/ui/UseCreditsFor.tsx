@@ -1,12 +1,14 @@
 import { FieldCard, FieldCardContent, SettingRow, Switch } from '@/layers/shared/ui';
 import { useCreditsFor, type CreditsForRow } from '../model/use-credits-for';
+import { CreditsNotices } from './CreditsNotices';
 
 /**
  * "Use credits for" — one switch per runtime DorkOS credits can reach.
  *
- * Each switch is a view onto that runtime's own default sign-in, not a setting
- * of its own (see `use-credits-for`). It renders only where the server reports
- * the credits path switched on, and only for the runtimes it reports as wired:
+ * Each switch is a view onto that runtime's recorded Runs on choice, not a
+ * setting of its own (see `use-credits-for`). It renders only where credits can
+ * be chosen (linked, not switched off), and only for the runtimes the server
+ * reports as wired:
  * on every other install the section is absent rather than disabled, because a
  * switch nobody can use is worse than no switch, and one that silently did
  * nothing would be a lie about where somebody's money goes.
@@ -20,6 +22,9 @@ export function UseCreditsFor() {
     <FieldCard>
       <FieldCardContent className="space-y-3">
         <p className="text-muted-foreground text-xs tracking-wide uppercase">Use credits for</p>
+        {/* Choices DorkOS made for the person, and the one offer an earlier
+            link is owed, said where the switches are. */}
+        <CreditsNotices />
         {rows.map((row) => (
           <SettingRow key={row.runtime} label={row.name} description={rowDescription(row)}>
             <Switch
@@ -47,15 +52,16 @@ export function UseCreditsFor() {
  * @param row - The runtime's row.
  */
 function rowDescription(row: CreditsForRow): string {
-  if (!row.on) return `${row.name} uses its own sign-in.`;
-  if (!row.canTurnOff) {
-    // The true answer for a build where credits are one process-wide token
-    // held in memory: nothing here can hand the runtime back, the token expires
-    // on its own, and pretending otherwise would mislead somebody about who
-    // pays for their next turn.
-    return `${row.name} runs on your DorkOS credits. They stay on until the current pass runs out, DorkOS restarts, or you unlink this computer. Then this switches off, and you can turn it on again.`;
+  if (!row.on) {
+    return row.previousSignIn === null
+      ? `New ${row.name} work uses its own sign-in.`
+      : `New ${row.name} work uses ${row.previousSignIn}.`;
   }
-  return row.previousSignIn === null
-    ? `${row.name} runs on your DorkOS credits.`
-    : `${row.name} runs on your DorkOS credits. Turning this off puts it back on ${row.previousSignIn}.`;
+  const back =
+    row.previousSignIn === null
+      ? 'Turning this off puts it back on its own sign-in.'
+      : `Turning this off puts it back on ${row.previousSignIn}.`;
+  return row.chosenBy === 'default'
+    ? `DorkOS turned this on when you linked, because ${row.name} had no sign-in. ${back}`
+    : `New ${row.name} work runs on your DorkOS credits unless an agent or a session picks another account. ${back}`;
 }

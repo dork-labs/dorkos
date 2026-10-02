@@ -353,6 +353,8 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       // which accounts it uses (spec flow-multiproject §8.5).
       defaultAccountOnlyProjects: null,
       projectAccounts: [],
+      // The DorkOS credits entry of Runs on: never a row, and not the default.
+      credits: expect.objectContaining({ id: 'dorkos-credits', isDefault: false }),
     });
   });
 
@@ -486,6 +488,8 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       accounts: [],
       defaultAccountColor: null,
       accountsUnavailable: true,
+      // Credits read as not the default when nothing can be read: that spends nothing.
+      credits: expect.objectContaining({ id: 'dorkos-credits', isDefault: false }),
     });
   });
 

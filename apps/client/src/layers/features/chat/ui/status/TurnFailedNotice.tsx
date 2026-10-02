@@ -91,6 +91,8 @@ export function TurnFailedNotice({
         onChooseModel={onChooseModel}
         runtimeLabel={runtimeLabel}
         sessionId={sessionId}
+        {...(lastError?.code ? { code: lastError.code } : {})}
+        {...(lastError?.reason ? { reason: lastError.reason } : {})}
       />
     </motion.div>
   );

@@ -630,6 +630,7 @@ function foldError(parts: MessagePart[], event: Extract<SessionEvent, { type: 'e
     ...(event.category !== undefined ? { category: event.category } : {}),
     ...(details !== undefined ? { details } : {}),
     ...(event.code !== undefined ? { code: event.code } : {}),
+    ...(event.reason !== undefined ? { reason: event.reason } : {}),
   });
 }
 

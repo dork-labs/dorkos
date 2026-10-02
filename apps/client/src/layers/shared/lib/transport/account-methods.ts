@@ -109,6 +109,14 @@ export function createAccountMethods(baseUrl: string) {
       );
     },
 
+    keepCreditsOutOfProject(sessionId: string): Promise<AccountEligibilityResponse> {
+      return fetchJSON<AccountEligibilityResponse>(
+        baseUrl,
+        '/runtimes/claude-code/project-accounts/without-credits',
+        { method: 'POST', body: JSON.stringify({ sessionId }) }
+      );
+    },
+
     setAccountOnlyProjects(
       accountId: string,
       projects: string[] | null

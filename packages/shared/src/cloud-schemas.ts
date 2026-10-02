@@ -229,16 +229,73 @@ export type CloudCreditsRuntimeState = 'wired' | 'follow-up';
 /**
  * `GET /api/cloud/credits` — a credential-free description of the credits path.
  *
- * It carries no token, no endpoint and no amount: only whether the path is
- * armed for this process and which runtimes it reaches.
+ * It carries no token, no endpoint and no amount: only whether credits can be
+ * chosen on this computer, which runtimes they reach, and the notices about
+ * choices made for the person that the app owes them.
  */
 export interface CloudCreditsStatus {
-  /** Whether the feature flag is on for this process. Off by default. */
+  /** Whether DorkOS credits can be chosen here: linked, and not switched off. */
   enabled: boolean;
+  /** Whether `DORKOS_CLOUD_CREDITS` has switched credits off for this server. */
+  killed: boolean;
+  /** Whether this computer is linked to a DorkOS account. */
+  linked: boolean;
   /** Whether a live inference token is held. Never the token itself. */
   ready: boolean;
-  /** Per-runtime state, so the app can say what actually works today. */
+  /** Per-runtime state, derived from what each runtime declares. */
   runtimes: Record<'claude-code' | 'opencode' | 'codex', CloudCreditsRuntimeState>;
+  /**
+   * Each runtime's recorded choice, and who made it. A runtime with no record
+   * runs on its own sign-in by default.
+   */
+  defaults?: Partial<Record<string, CloudCreditsChoice>>;
+  /** Notices the app owes the person, each shown until they act on it. */
+  notices?: CloudCreditsNotice[];
+}
+
+/**
+ * Who made a credits choice: `default` when DorkOS filled a gap on a new link
+ * (a runtime with no sign-in at all), `user` when a person chose.
+ */
+export type CloudCreditsChosenBy = 'default' | 'user';
+
+/** One runtime's recorded choice, as `GET /api/cloud/credits` reports it. */
+export interface CloudCreditsChoice {
+  /** What new work on the runtime runs on by default. */
+  runsOn: 'credits' | 'own-sign-in';
+  /** Who chose it. */
+  chosenBy: CloudCreditsChosenBy;
+}
+
+/**
+ * A notice about credits the person is owed, each dismissible:
+ *
+ * - `filled`: a new link set these runtimes to credits because none had a
+ *   sign-in at all. Offers Change and Undo all.
+ * - `offer`: this computer was linked before credits were a choice, so nothing
+ *   was switched; credits are offered once.
+ * - `signed-in`: a runtime DorkOS set to credits now has a working sign-in of
+ *   its own, so switching back is offered once.
+ */
+export type CloudCreditsNotice =
+  | { kind: 'filled'; runtimes: string[] }
+  | { kind: 'offer' }
+  | { kind: 'signed-in'; runtime: string };
+
+/** `PUT /api/cloud/credits/default` body: a person's choice for one runtime's default. */
+export interface CloudCreditsDefaultRequest {
+  /** The runtime whose default to change. */
+  runtime: string;
+  /** `true` runs new work on credits by default; `false` returns it to its own sign-in. */
+  useCredits: boolean;
+}
+
+/** `POST /api/cloud/credits/notices/dismiss` body. */
+export interface CloudCreditsNoticeDismissRequest {
+  /** Which notice to settle. */
+  kind: CloudCreditsNotice['kind'];
+  /** For `signed-in`, the runtime the notice is about. */
+  runtime?: string;
 }
 
 // ---------------------------------------------------------------------------

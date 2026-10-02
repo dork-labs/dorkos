@@ -35,6 +35,7 @@ export async function checkClaudeLaunchAccount(opts: {
   return resolveLaunchAccountRoot({
     hintId: opts.hintId,
     agentAccountId: manifest?.account,
+    agentId: manifest?.id,
     project: opts.project !== undefined ? opts.project : await projectOfFolder(opts.cwd),
   });
 }

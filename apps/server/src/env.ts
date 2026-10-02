@@ -328,12 +328,12 @@ export const serverEnvSchema = z.object({
   // http://localhost:$SITE_PORT). Trailing slashes are normalized by the
   // cloud-link client.
   DORKOS_CLOUD_URL: z.string().default('https://dorkos.ai'),
-  // The decision to spend DorkOS credits on inference (DOR-2027). The FLAG,
-  // beside its own KEY — the existing cloud-link instance credential — per the
-  // repo's money-path rule in AGENTS.md: being linked is not the same as having
-  // decided to spend, so neither one alone arms anything. Absent by default, and
-  // deliberately absent from `turbo.json`, so no `pnpm test`, `pnpm verify`,
-  // pre-push or CI run can ever see it.
+  // A force-off kill switch for DorkOS credits (ADR 261001-000811). Who pays for
+  // a turn is a choice a person makes in a runtime's Runs on list, recorded in
+  // config; this variable can only take that choice away. `0`, `false`, `no` or
+  // `off` makes every turn set to credits refuse rather than run on anything
+  // else; any other value, or none, leaves the person's choice in charge. Still
+  // deliberately absent from `turbo.json`.
   DORKOS_CLOUD_CREDITS: z.string().optional(),
   // Origin the agent-facing docs pointers are built from: the `<dorkos_context>`
   // block hands an agent `{base}/llms.txt` and `{base}/docs`

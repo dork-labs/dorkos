@@ -426,6 +426,17 @@ function mockHarnessStatus(): HarnessStatusResponse {
   };
 }
 
+/** What a mock transport answers about DorkOS credits: not linked, nothing chosen. */
+const UNLINKED_CREDITS = {
+  enabled: false,
+  killed: false,
+  linked: false,
+  ready: false,
+  runtimes: { 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' },
+  defaults: {},
+  notices: [],
+} as const;
+
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {
   return {
@@ -1309,6 +1320,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // so every account reads as allowed unless a test supplies otherwise.
     getAccountEligibility: vi.fn().mockResolvedValue({ project: null, allow: null, accounts: [] }),
     setProjectAccounts: vi.fn().mockResolvedValue({ project: null, allow: null, accounts: [] }),
+    keepCreditsOutOfProject: vi
+      .fn()
+      .mockResolvedValue({ project: null, allow: null, accounts: [] }),
     setAccountOnlyProjects: vi.fn().mockResolvedValue({ onlyProjects: null }),
     // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
     // Each resolves with what the real route answers, so a component under test
@@ -1414,16 +1428,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     createCloudBillingSession: vi.fn(),
     requestCloudAccountExport: vi.fn(),
     requestCloudAccountDeletion: vi.fn(),
-    getCloudCredits: vi.fn().mockResolvedValue({
-      enabled: false,
-      ready: false,
-      runtimes: { 'claude-code': 'follow-up', opencode: 'follow-up', codex: 'follow-up' },
-    }),
-    selectCloudCredits: vi.fn().mockResolvedValue({
-      enabled: false,
-      ready: false,
-      runtimes: { 'claude-code': 'follow-up', opencode: 'follow-up', codex: 'follow-up' },
-    }),
+    getCloudCredits: vi.fn().mockResolvedValue(UNLINKED_CREDITS),
+    setCloudCreditsDefault: vi.fn().mockResolvedValue(UNLINKED_CREDITS),
+    undoFilledCloudCredits: vi.fn().mockResolvedValue(UNLINKED_CREDITS),
+    dismissCloudCreditsNotice: vi.fn().mockResolvedValue(UNLINKED_CREDITS),
     // Hosted communities: reads default to "not linked"; writes stay unstubbed
     // so a test that drives them must say what the server would answer.
     listHostedCommunities: vi.fn().mockResolvedValue({ available: false }),

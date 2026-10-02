@@ -283,6 +283,11 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
     // list a reviewer reads. Changing any of these to `expose` is a security
     // decision and has to break a test.
     expect(pathsWithVerdict('withhold').sort()).toEqual([
+      // Spending policy a person sets in Runs on (ADR 261001-000811).
+      'cloud.credits.agents',
+      'cloud.credits.defaults',
+      'cloud.credits.linkedTo',
+      'cloud.credits.offer',
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
       'cloud.previousLinkProof',

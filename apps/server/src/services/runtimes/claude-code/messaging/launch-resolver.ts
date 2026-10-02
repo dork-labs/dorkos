@@ -37,7 +37,10 @@
  *
  * @module services/runtimes/claude-code/messaging/launch-resolver
  */
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import {
+  runtimeEnvironment,
+  runtimeInheritedNames,
+} from '../../shared/runtime-environment-config.js';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -51,10 +54,16 @@ import {
   resolveAgentHome,
   turnAgentOf,
 } from '../../../core/agent-identity/index.js';
-import { creditsTurnEnv } from '../../../core/cloud/credits-inference.js';
+import {
+  CreditsUnavailableError,
+  resolveCreditsLaunchEnv,
+} from '../../../core/cloud/credits-inference.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
+import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
+import { creditsProcessEnv, creditsSettingsEnv } from './credits-launch.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
 import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import { envBillsPerToken } from './per-token-billing.js';
@@ -280,11 +289,6 @@ export async function resolveLaunch(args: {
     }
   }
 
-  // Resolve a stored Claude credential REFERENCE into ANTHROPIC_API_KEY at the
-  // env seam (ADR-0315). Injected below ONLY when configured; a missing or
-  // dangling reference yields `{}`, leaving host/delegated-login auth untouched.
-  const claudeCredentialEnv = await resolveClaudeCredentialEnv();
-
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It
   // rides the process env — NOT the context-builder's prompt block — so it
   // stays a credential for the tools the agent runs (`dorkos call ...`) rather
@@ -330,12 +334,34 @@ export async function resolveLaunch(args: {
       // above. It reaches the spawn env and stops there — nothing writes it to
       // `session_metadata`, because disk stays the per-session truth.
       agentAccountId: manifest?.account,
+      agentId: manifest?.id,
       project: await projectOfFolder(effectiveCwd),
     });
     if (!launch.ok) throw launch.error;
     accountRoot = launch.root;
   }
   const accountEnv = claudeConfigDirEnv(accountRoot);
+
+  // **Who pays, decided by the folder** (ADR 261001-000811). A session whose
+  // account is the DorkOS credits folder runs on credits and on nothing else:
+  // the endpoint and token come from `resolveCreditsLaunchEnv`, which REFUSES
+  // (throws `CreditsUnavailableError`) when no live token can be had, so a
+  // credits session never quietly runs on the person's own sign-in. Every other
+  // session gets no credits variable from here at all, and keeps its own
+  // stored key below.
+  const onCredits = isCreditsClaudeRoot(accountRoot);
+  let creditsEnv: Record<string, string> = {};
+  let creditsSettings: Record<string, string> | undefined;
+  if (onCredits) {
+    ensureCreditsClaudeRoot();
+    creditsEnv = await resolveCreditsLaunchEnv(CLAUDE_CODE_CAPABILITIES, 'Claude Code');
+  }
+  // Resolve a stored Claude credential REFERENCE into ANTHROPIC_API_KEY at the
+  // env seam (ADR-0315). Injected below ONLY when configured; a missing or
+  // dangling reference yields `{}`, leaving host/delegated-login auth untouched.
+  // Never on credits: the person's own key must not ride a turn they chose to
+  // pay for with credits.
+  const claudeCredentialEnv = onCredits ? {} : await resolveClaudeCredentialEnv();
   const sdkOptions: Options = {
     cwd: effectiveCwd,
     includePartialMessages: true,
@@ -372,57 +398,61 @@ export async function resolveLaunch(args: {
     // of `path-not-found`. Read `plugin_errors` for whether a plugin is actually
     // there.
     pluginDelivery: 'initialize',
-    env: runtimeEnvironment('claude-code', 'turn', {
-      CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
-      // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took
-      // TodoWrite / TaskCreate / TaskUpdate / TaskGet / TaskList off the DEFAULT
-      // tool set on every newer model, and 0.3.268 restated that as a positive
-      // list ending at Opus 4.7 / Sonnet 4.6 / Haiku 4.5. DorkOS builds its whole
-      // task and todo surface by watching those exact tool names go past
-      // (`sdk/build-task-event.ts`, `sessions/task-reader.ts`), so without this
-      // the model simply never calls them, the todo panel and the Tasks surface
-      // stay empty forever, and nothing errors. The env var is the only lever
-      // that does not cost something else: `allowedTools` is an auto-approval
-      // list rather than an access list, so naming tools there widens
-      // auto-approval (DOR-519, recorded in ADR-0070),
-      // and `tools` would mean declaring a whole base tool set DorkOS has never
-      // taken a position on. Fixture-fed tests cannot catch a regression here —
-      // fixtures keep supplying the blocks a real model would have stopped
-      // sending — so this is verified by one live turn per bump.
-      CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
-      // NOTE: an inherited MCP_TOOL_TIMEOUT is deliberately passed through
-      // untouched. DorkOS used to raise it to the approval hold's cap, because
-      // the variable governs every MCP server in the subprocess and a low value
-      // killed held destructive calls mid-wait (DOR-987). The `dorkos` server now
-      // declares its own per-call ceiling instead (`mcp-tools/tool-timeout.ts`),
-      // so the operator's value applies to the external server they lowered it
-      // for and to nothing else.
-      // The account, ALWAYS spelled out (see `claudeConfigDirEnv`) so it is never
-      // inherited from `process.env`. That is load-bearing for D8: rename and
-      // fork point the in-process SDK at an account by mutating
-      // `process.env.CLAUDE_CONFIG_DIR` process-globally for the duration of the
-      // call (`claude-config-env-lock.ts`), and a query spawning inside that
-      // window must not pick the transient value up. The two changes are safe
-      // only together — do not separate them.
-      ...accountEnv,
-      // Resolved credential (if any) wins over an inherited ANTHROPIC_API_KEY.
-      ...claudeCredentialEnv,
-      // This session's freshly minted agent identity token (or nothing).
-      ...agentTokenEnv,
-      // DorkOS credits as the inference source, when the operator armed them
-      // (DOR-2027). An empty object on every install that did not — the flag is
-      // off by default and the path also needs the cloud link beside it — so a
-      // turn launches exactly as it did before. It is deliberately LAST: having
-      // chosen to spend credits, that choice beats an inherited key. The base
-      // URL and token are runtime values obtained before the turn, never minted
-      // on this path: a launch that waited on the network would turn a cloud
-      // hiccup into a stalled turn.
-      // Recheck after the awaited credential/agent resolution: unlink or relink
-      // during either wait must not hand this launch a retired credits token.
-      ...creditsTurnEnv('claude-code'),
-    }),
+    env: forCredits(
+      onCredits ? creditsEnv : undefined,
+      runtimeEnvironment('claude-code', 'turn', {
+        CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
+        // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took
+        // TodoWrite / TaskCreate / TaskUpdate / TaskGet / TaskList off the DEFAULT
+        // tool set on every newer model, and 0.3.268 restated that as a positive
+        // list ending at Opus 4.7 / Sonnet 4.6 / Haiku 4.5. DorkOS builds its whole
+        // task and todo surface by watching those exact tool names go past
+        // (`sdk/build-task-event.ts`, `sessions/task-reader.ts`), so without this
+        // the model simply never calls them, the todo panel and the Tasks surface
+        // stay empty forever, and nothing errors. The env var is the only lever
+        // that does not cost something else: `allowedTools` is an auto-approval
+        // list rather than an access list, so naming tools there widens
+        // auto-approval (DOR-519, recorded in ADR-0070),
+        // and `tools` would mean declaring a whole base tool set DorkOS has never
+        // taken a position on. Fixture-fed tests cannot catch a regression here —
+        // fixtures keep supplying the blocks a real model would have stopped
+        // sending — so this is verified by one live turn per bump.
+        CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+        // NOTE: an inherited MCP_TOOL_TIMEOUT is deliberately passed through
+        // untouched. DorkOS used to raise it to the approval hold's cap, because
+        // the variable governs every MCP server in the subprocess and a low value
+        // killed held destructive calls mid-wait (DOR-987). The `dorkos` server now
+        // declares its own per-call ceiling instead (`mcp-tools/tool-timeout.ts`),
+        // so the operator's value applies to the external server they lowered it
+        // for and to nothing else.
+        // The account, ALWAYS spelled out (see `claudeConfigDirEnv`) so it is never
+        // inherited from `process.env`. That is load-bearing for D8: rename and
+        // fork point the in-process SDK at an account by mutating
+        // `process.env.CLAUDE_CONFIG_DIR` process-globally for the duration of the
+        // call (`claude-config-env-lock.ts`), and a query spawning inside that
+        // window must not pick the transient value up. The two changes are safe
+        // only together — do not separate them.
+        ...accountEnv,
+        // Resolved credential (if any) wins over an inherited ANTHROPIC_API_KEY.
+        ...claudeCredentialEnv,
+        // This session's freshly minted agent identity token (or nothing).
+        ...agentTokenEnv,
+      })
+    ),
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };
+  if (onCredits) {
+    // The endpoint pinned ABOVE a folder's own `.claude/settings*.json`, which
+    // outrank the process environment inside the CLI, with the server's own
+    // `PATH`, proxy and certificates put back over a folder's; refuses a folder
+    // whose settings name their own sign-in (`credits-launch.ts`). Before the
+    // session is stamped below, so a refused launch changes nothing.
+    creditsSettings = creditsSettingsEnv(
+      effectiveCwd,
+      creditsEnv.ANTHROPIC_BASE_URL ?? '',
+      sdkOptions.env ?? {}
+    );
+  }
 
   // Record which account this launch settled on, so the session can say later
   // which credential its turns ran under (`ClaudeCodeRuntime.getSessionAccount`,
@@ -579,6 +609,11 @@ export async function resolveLaunch(args: {
   // variable that would make a granted folder's CLAUDE.md load stripped from the
   // env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
   applyDirectoryGrants(sdkOptions, messageOpts?.additionalDirectories, effectiveCwd);
+  // A credits turn's endpoint, in the launch's own settings (see above).
+  if (creditsSettings) {
+    const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
+    sdkOptions.settings = { ...base, env: creditsSettings };
+  }
 
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.
@@ -727,6 +762,44 @@ export async function resolveLaunch(args: {
       // (DOR-1308).
       effortInput: session.effort,
       capabilityResolved: opts.modelThinkingCapability !== undefined,
+    },
+  };
+}
+
+/**
+ * A credits turn's process environment is what `creditsProcessEnv` keeps (the
+ * baseline, DorkOS's own names and the inherit list, never a name that routes
+ * or pays), with the credits pair on top; any other turn's is returned as
+ * projected, and carries no credits variable because none was added.
+ *
+ * @param creditsEnv - The credits pair on a credits turn, else `undefined`.
+ * @param env - The projected environment.
+ */
+function forCredits(
+  creditsEnv: Record<string, string> | undefined,
+  env: Record<string, string>
+): Record<string, string> {
+  return creditsEnv === undefined
+    ? env
+    : creditsProcessEnv(env, creditsEnv, runtimeInheritedNames('claude-code'));
+}
+
+/**
+ * The error event a refused credits launch ends its turn with, or `null` when
+ * `err` is not that refusal. `code` is what the chat keys its Retry and
+ * Use-your-own-sign-in actions on; the message is the plain sentence.
+ *
+ * @param err - Whatever `resolveLaunch` threw.
+ */
+export function creditsRefusalEvent(err: unknown): StreamEvent | null {
+  if (!(err instanceof CreditsUnavailableError)) return null;
+  return {
+    type: 'error',
+    data: {
+      message: err.message,
+      code: err.code,
+      category: 'execution_error',
+      reason: err.reason,
     },
   };
 }

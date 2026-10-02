@@ -36,7 +36,9 @@ import { sessionKeys } from '../../api/query-keys';
 export function useRenameSession(cwd: string | null) {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const { resolvedAccount, nameFor } = useClaudeAccounts();
+  // The account titles are READ from is the person's own default, which a
+  // DorkOS credits default (ADR 261001-000811) does not move.
+  const { ownResolvedAccount: resolvedAccount, nameFor } = useClaudeAccounts();
 
   return useMutation({
     mutationFn: ({ sessionId, title }: { sessionId: string; title: string }) =>

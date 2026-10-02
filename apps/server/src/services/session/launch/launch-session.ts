@@ -270,6 +270,27 @@ interface LaunchAccountAware {
     projectDir: string,
     hintId?: string
   ): Promise<LaunchAccountResolution>;
+  /** Whether the session has already settled on an account. */
+  hasSettledAccount?(sessionId: string, projectDir: string): Promise<boolean>;
+}
+
+/**
+ * Whether a session that is already bound has still not settled on an
+ * account, so the person's pick on this send can still decide it. True only
+ * when the runtime can say so; any doubt keeps the hint ignored.
+ */
+async function accountStillOpen(opts: {
+  sessionId: string;
+  runtimeType: string;
+  cwd: string;
+}): Promise<boolean> {
+  try {
+    const runtime = runtimeRegistry.get(opts.runtimeType);
+    if (!isLaunchAccountAware(runtime) || !runtime.hasSettledAccount) return false;
+    return !(await runtime.hasSettledAccount(opts.sessionId, opts.cwd));
+  } catch {
+    return false;
+  }
 }
 
 function isLaunchAccountAware(runtime: unknown): runtime is LaunchAccountAware {
@@ -491,9 +512,18 @@ async function launchSessionMessage(
   // Whether the id NAMES a registered account is deliberately not asked here:
   // the resolver falls through an unknown id to the next rung so a launch never
   // fails over a billing setting, and a 400 here would be exactly that failure.
+  //
+  // One exception keeps the rule's intent: a session whose first turn never
+  // launched (a DorkOS credits turn refused for want of a token) has no account
+  // on disk yet, so "Use your own sign-in" on that refusal is still a pick for
+  // the launch that has not happened.
   let accountHint: string | undefined;
   if (accountHintRaw !== undefined) {
-    if (isNewSession && runtimeType === 'claude-code') {
+    const open =
+      runtimeType === 'claude-code' &&
+      (isNewSession ||
+        (await accountStillOpen({ sessionId, runtimeType, cwd: effectiveCwd ?? DEFAULT_CWD })));
+    if (open) {
       accountHint = accountHintRaw;
     } else {
       logger.warn('[POST /messages] ignoring account hint', {

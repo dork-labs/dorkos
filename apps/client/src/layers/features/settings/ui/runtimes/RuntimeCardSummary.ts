@@ -2,7 +2,7 @@
  * The collapsed runtime card's one-line summary, as data rather than a string.
  *
  * A card at rest is a header and this line: "Starts with **Opus 4.6** · **High
- * effort** · **Asks first** · billing **Personal**" (design §4). It answers one
+ * effort** · **Asks first** · runs on **Personal**" (design §4). It answers one
  * question — *what will a new conversation on this runtime do?* — and it answers
  * it while the card is closed, which is exactly when nobody can check it. So the
  * rules live here, pure, and the view only styles what it is handed.
@@ -137,7 +137,7 @@ const STOP_SUMMARY_LABELS: Record<PermissionStop, string> = {
  * render nothing.
  */
 const SECTION_SUMMARY_LABELS: Record<string, (value: string) => string> = {
-  'claude-accounts': (name) => `billing ${name}`,
+  'claude-accounts': (name) => `runs on ${name}`,
   'opencode-power-source': (provider) => provider,
 };
 

@@ -12,7 +12,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import type {
-  CloudCreditsStatus,
   CloudMembersResponse,
   CloudNudgeResponse,
   CloudOrgsResponse,
@@ -30,12 +29,8 @@ export const cloudPlanKeys = {
   orgs: () => [...cloudPlanKeys.all, 'orgs'] as const,
   members: (orgId: string) => [...cloudPlanKeys.all, 'members', orgId] as const,
   seats: (orgId: string) => [...cloudPlanKeys.all, 'seats', orgId] as const,
-  credits: () => [...cloudPlanKeys.all, 'credits'] as const,
   offers: () => [...cloudPlanKeys.all, 'offers'] as const,
 };
-
-/** How often the credits read re-asks while credits are on (see {@link useCloudCredits}). */
-const CREDITS_POLL_MS = 60_000;
 
 /** How long a plan read stays fresh. Plans do not move minute to minute. */
 const STALE_MS = 60_000;
@@ -117,39 +112,6 @@ export function useCloudMembers(orgId: string | null) {
     queryFn: () => transport.getCloudMembers(orgId as string),
     enabled: orgId !== null,
     staleTime: STALE_MS,
-  });
-}
-
-/** Read whether DorkOS credits are armed as an inference source on this server. */
-export function useCloudCredits() {
-  const transport = useTransport();
-  return useQuery<CloudCreditsStatus>({
-    queryKey: cloudPlanKeys.credits(),
-    queryFn: () => transport.getCloudCredits(),
-    staleTime: STALE_MS,
-    // While credits are on, ask again every minute: the pass they run on
-    // expires on the server with no event to say so, and the switch has to
-    // read off once it has. Focus refetch alone would leave an open tab saying
-    // "on" indefinitely. Off, nothing changes without a press, so no polling.
-    refetchInterval: (query) => (query.state.data?.ready ? CREDITS_POLL_MS : false),
-  });
-}
-
-/**
- * Select DorkOS credits as this server's inference source.
- *
- * It asks the server to obtain a token; the token itself never reaches the
- * client. Inert unless the server's own flag is on, and the answer is the same
- * report either way rather than an error.
- */
-export function useSelectCloudCredits() {
-  const transport = useTransport();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => transport.selectCloudCredits(),
-    onSuccess: (report) => {
-      queryClient.setQueryData(cloudPlanKeys.credits(), report);
-    },
   });
 }
 

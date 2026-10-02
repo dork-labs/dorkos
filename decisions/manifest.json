@@ -6884,6 +6884,27 @@
       ]
     },
     {
+      "id": "261001-000811",
+      "slug": "credits-are-a-runs-on-choice-not-a-flag",
+      "title": "DorkOS credits are a choice in Runs on, never a flag and never a silent switch",
+      "status": "accepted",
+      "created": "2026-10-01",
+      "extractedFrom": "dorkos-account-by-default",
+      "specSlug": "dorkos-account-by-default",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/cloud/credits-inference.ts",
+        "apps/server/src/services/core/cloud/credits-defaults.ts",
+        "apps/server/src/services/runtimes/claude-code/credits-root.ts",
+        "apps/server/src/services/runtimes/claude-code/claude-config-dir.ts",
+        "apps/server/src/services/runtimes/claude-code/messaging/launch-resolver.ts",
+        "apps/server/src/services/runtimes/claude-code/messaging/credits-launch.ts",
+        "packages/shared/src/agent-runtime.ts",
+        "packages/test-utils/src/runtime-conformance.ts",
+        "AGENTS.md"
+      ]
+    },
+    {
       "id": "261001-150212",
       "slug": "host-account-closure-ends-access-now-erases-after-the-window",
       "title": "A host may close someone's account; access ends at once, erasure waits the ordinary window",

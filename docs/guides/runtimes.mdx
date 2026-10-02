@@ -111,11 +111,23 @@ This is for Claude Code only. Codex and OpenCode each use the one sign-in on thi
 
 ### Add Your Accounts
 
-Open Settings and go to **Runtimes**. On the Claude Code card, under **Billing account**, choose **Add account**, pick the account's folder and give it a name you'll recognize. You can also edit the settings file by hand (see [Configuration](/docs/getting-started/configuration#runtimes)).
+Open Settings and go to **Runtimes**. On the Claude Code card, under **Runs on**, choose **Add account**, pick the account's folder and give it a name you'll recognize. You can also edit the settings file by hand (see [Configuration](/docs/getting-started/configuration#runtimes)).
 
 DorkOS also looks for Claude account folders on this computer that you haven't added yet. They appear in a group called **Found on this computer**, each with its folder and when it was last used. Choose **Add** to add one, or **Dismiss** to stop seeing it. A folder that looks like it belongs to a company or school account is marked **managed by an organization**. DorkOS never adds a folder until you click Add.
 
 This computer's own Claude sign-in (usually the `~/.claude` folder) is your main account. DorkOS calls it **Main (this computer's sign-in)** everywhere it names an account. With two or more accounts, it gets its own row in the list, with its usage. It has no remove button, because it is the computer's own sign-in rather than something you added. If you add its folder as an account yourself, that row takes its place. When a row is marked **in use**, that's the account new chats run on. If the server was started pointing at a folder no row stands for, a line above the list names that folder, and no row is marked.
+
+### DorkOS credits
+
+When this computer is linked to a DorkOS account, **DorkOS credits** is one more choice in the same places you pick an account: the **Default account** list under **Runs on**, an agent's **Runs on**, the account chip before a chat's first message, and **Continue on another account**. A chat set to DorkOS credits runs on them and nothing else. If DorkOS can't reach your credits, the chat stops and says so, with **Retry** and **Use your Claude Code sign-in**. It never quietly runs on your own sign-in instead. When a scheduled task, an agent's reply or a room turn stops this way, you get a notification, so it never fails without anyone knowing.
+
+Some projects have their own Claude Code sign-in in their `.claude/settings.json`. Those can't run on credits, so the chat stops with **Don't use credits in this project** beside **Use your Claude Code sign-in**. That adds a project limit without credits, which you can remove in Settings → Runtimes.
+
+Anything a chat runs, such as a project's hooks or the commands an agent runs, can read the credits key while the chat runs on credits, just as it could read your own API key. Only use credits in projects you trust.
+
+If you link a DorkOS account while Claude Code has no sign-in at all, DorkOS sets new Claude Code chats to run on credits and tells you once, with **Change** and **Undo all**. If you sign in to Claude Code later, DorkOS offers once to switch back. Turning credits off is remembered, and a sign-in that has expired is never replaced with credits. A computer linked before credits were a choice keeps everything as it was, and gets one offer you can turn down.
+
+An agent runs on credits only when you pick that for it in the app. If an agent's own settings file asks for credits, its row says so and offers **Allow**; until then it uses your default. Project limits can keep credits out of a project, but they never choose credits.
 
 With two or more accounts, each account has a color, and its dot wears that color everywhere in the app. To change it, click the account's dot in Settings and pick one of 8 colors, or **Default**. Main's dot works the same way.
 

@@ -36,6 +36,7 @@ import {
   ACCOUNT_ID_PATTERN,
   IMPLICIT_ACCOUNT_ID,
   isAccountColor,
+  isReservedAccountId,
   LEDGER_RUNTIMES,
   resolveAccountColor,
   type LedgerRuntime,
@@ -262,7 +263,8 @@ function readRegistered(
   const section = isObject(runtimes) ? runtimes[RUNTIME_CONFIG_KEYS[runtime]] : undefined;
   const read = readClaudeAccountSettings(section, ACCOUNT_NOUNS[runtime]);
   const accounts = read.accounts.map((row): RuntimeAccount => {
-    const routable = row.id !== IMPLICIT_ACCOUNT_ID && ACCOUNT_ID_PATTERN.test(row.id);
+    // A reserved id (`default`, `dorkos-credits`) never routes to a person's folder.
+    const routable = !isReservedAccountId(row.id) && ACCOUNT_ID_PATTERN.test(row.id);
     const expanded = expandAccountPath(row.path, home);
     return {
       runtime,

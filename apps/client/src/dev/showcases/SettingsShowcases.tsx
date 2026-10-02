@@ -103,7 +103,7 @@ function ControlCenterShowcaseSection() {
 }
 
 /**
- * Section 2b — the Claude Code billing-account section in every state it can
+ * Section 2b — the Claude Code Runs on section in every state it can
  * reach (spec `claude-code-accounts`).
  *
  * It used to be a card of its own at the bottom of the Runtimes tab; it is now a
@@ -116,7 +116,7 @@ function ClaudeAccountsShowcaseSection() {
   return (
     <PlaygroundSection
       title="Claude Code Accounts"
-      description="Which Claude account new work runs and bills on, inside the Claude Code card that carries it. An operator running one account per client registers each folder here and names it after the client."
+      description="Which Claude account, or DorkOS credits, new work runs on, inside the Claude Code card that carries it. An operator running one account per client registers each folder here and names it after the client."
     >
       <ShowcaseLabel>Default install: nothing registered</ShowcaseLabel>
       <ShowcaseDemo>
@@ -139,7 +139,7 @@ function ClaudeAccountsShowcaseSection() {
         </MockedQueryProvider>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>One account: its usage under Billing account</ShowcaseLabel>
+      <ShowcaseLabel>One account: its usage under Runs on</ShowcaseLabel>
       <ShowcaseDemo>
         <MockedQueryProvider config={SINGLE_ACCOUNT_CONFIG} usage={CLAUDE_USAGE}>
           <LiveRuntimeCard type="claude-code" expanded renderSection={accountsSection} />
@@ -169,6 +169,29 @@ function ClaudeAccountsShowcaseSection() {
           config={MOCK_SERVER_CONFIG_STANDALONE_DEFAULT}
           usage={STANDALONE_USAGE}
         >
+          <LiveRuntimeCard type="claude-code" expanded renderSection={accountsSection} />
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        DorkOS credits as the default, chosen for the person when they linked
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider config={CREDITS_DEFAULT_CONFIG}>
+          <LiveRuntimeCard
+            type="claude-code"
+            expanded
+            renderSection={accountsSection}
+            sectionValues={{ 'claude-accounts': 'DorkOS credits' }}
+          />
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        DorkOS credits as the default while they cannot be had: new sessions are refused
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider config={CREDITS_UNAVAILABLE_CONFIG}>
           <LiveRuntimeCard type="claude-code" expanded renderSection={accountsSection} />
         </MockedQueryProvider>
       </ShowcaseDemo>
@@ -245,6 +268,36 @@ const SINGLE_ACCOUNT_CONFIG = {
   claudeCode: {
     ...MOCK_SERVER_CONFIG_MULTI_ACCOUNT.claudeCode!,
     accounts: MOCK_SERVER_CONFIG_MULTI_ACCOUNT.claudeCode!.accounts.slice(1, 2),
+  },
+};
+
+/** Credits are the default, filled in on a new link (ADR 261001-000811). */
+const CREDITS_DEFAULT_CONFIG = {
+  ...SINGLE_ACCOUNT_CONFIG,
+  claudeCode: {
+    ...SINGLE_ACCOUNT_CONFIG.claudeCode,
+    resolvedAccountId: 'dorkos-credits',
+    credits: {
+      id: 'dorkos-credits' as const,
+      path: '/Users/you/.dork/runtimes/claude-code/credits',
+      available: true,
+      isDefault: true,
+      chosenBy: 'default' as const,
+      allowedAgents: [] as string[],
+    },
+  },
+};
+
+/** The same default after the computer was unlinked: refused, never moved. */
+const CREDITS_UNAVAILABLE_CONFIG = {
+  ...CREDITS_DEFAULT_CONFIG,
+  claudeCode: {
+    ...CREDITS_DEFAULT_CONFIG.claudeCode,
+    credits: {
+      ...CREDITS_DEFAULT_CONFIG.claudeCode.credits,
+      available: false,
+      chosenBy: 'user' as const,
+    },
   },
 };
 

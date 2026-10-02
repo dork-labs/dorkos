@@ -34,8 +34,11 @@ export {
   noteSigninRepaired,
   isSigninFailing,
   resetSigninEpisodes,
+  setCreditsRefusedSink,
   type RuntimeSigninEvent,
   type RuntimeSigninSink,
+  type CreditsRefusedEvent,
+  type CreditsRefusedSink,
 } from './runtime-signin-watch.js';
 export { traceRelay } from './trace-relay.js';
 export { SPAN, ATTR } from './attributes.js';

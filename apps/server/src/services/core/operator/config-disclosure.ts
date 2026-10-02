@@ -472,6 +472,15 @@ export const CONFIG_DISCLOSURE = {
   // approval it continues the old link and its apps. A credential, so withheld
   // like the key itself (and, as a SENSITIVE_CONFIG_KEYS entry, flagged).
   'cloud.previousLinkProof': 'withhold',
+  // Who chose DorkOS credits for each runtime and the notices owed about it
+  // (ADR 261001-000811). No credential, but it is spending policy a person sets
+  // in Runs on, and an agent has no use for it: withheld rather than exposed.
+  'cloud.credits.defaults': 'withhold',
+  'cloud.credits.offer': 'withhold',
+  // Which agents a person allowed onto credits, and which account the choices
+  // belong to: spending policy and an account identity, withheld.
+  'cloud.credits.agents': 'withhold',
+  'cloud.credits.linkedTo': 'withhold',
 
   // Raw-MCP URLs may contain userinfo, query tokens, or secret path segments.
   // Withhold the complete URL rather than guessing which parts are credentials;

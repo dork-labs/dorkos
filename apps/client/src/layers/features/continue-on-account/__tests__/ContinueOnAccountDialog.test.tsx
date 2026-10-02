@@ -595,3 +595,31 @@ describe('opening from a countdown (cancelAutoFirst)', () => {
     expect(transport.getContinueOptions).not.toHaveBeenCalled();
   });
 });
+
+describe('DorkOS credits as one more place to continue (ADR 261001-000811)', () => {
+  it('lists credits last when the server offers them, and never preselects them', async () => {
+    renderDialog({ answer: options([row(2, 72)], { credits: true }) });
+    const list = await radios();
+    expect(list.map((radio) => radio.closest('label')?.textContent)).toEqual([
+      'Acct 228% left · resets Wed',
+      'DorkOS creditspaid from your DorkOS account',
+    ]);
+    expect(screen.getByRole('radio', { name: /Acct 2/ })).toBeChecked();
+  });
+
+  it('posts the credits id when a person picks them', async () => {
+    const { transport } = renderDialog({ answer: options([row(2, 72)], { credits: true }) });
+    await radios();
+    await user().click(screen.getByRole('radio', { name: /DorkOS credits/ }));
+    await user().click(screen.getByRole('button', { name: 'Continue on DorkOS credits' }));
+    await waitFor(() =>
+      expect(transport.continueSession).toHaveBeenCalledWith(SID, { account: 'dorkos-credits' })
+    );
+  });
+
+  it('lists no credits when the server does not offer them', async () => {
+    renderDialog({ answer: options([row(2, 72)]) });
+    await radios();
+    expect(screen.queryByRole('radio', { name: /DorkOS credits/ })).toBeNull();
+  });
+});

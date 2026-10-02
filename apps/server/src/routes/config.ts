@@ -4,6 +4,7 @@ import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.j
 import { getLocalCockpitPort } from '../lib/trusted-origins.js';
 import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk/sdk-utils.js';
 import { describeClaudeCodeAccounts } from '../services/runtimes/claude-code/claude-config-dir.js';
+import { creditsCanBeHad } from '../services/core/cloud/credits-availability.js';
 import { configManager } from '../services/core/config-manager.js';
 // Straight from the module, not the `services/session` barrel: that barrel pulls
 // in the projector, transcript readers, and the turn trigger, none of which a
@@ -149,7 +150,12 @@ router.get('/', async (req, res) => {
     // effective default belongs. The reader falls back to the section defaults on
     // its own, which covers the pre-migration read window.
     claudeCode: {
-      ...describeClaudeCodeAccounts(),
+      // Whether DorkOS credits can be chosen is the link and the kill switch
+      // (ADR 261001-000811), read here so the account module stays free of the
+      // cloud client.
+      ...describeClaudeCodeAccounts(undefined, {
+        creditsAvailable: creditsCanBeHad(),
+      }),
       // Read so the Control Center can show the warm-agents switch's real state:
       // the setting graduated out of Settings → Experiments (DOR-1290) and its
       // only curated read went with it, leaving nothing for the new switch to
