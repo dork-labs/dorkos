@@ -1,14 +1,18 @@
 {
-  "spec": "specs/shared-browser-control/02-specification.md",
+  "spec": "specs/shared-browser-control/06-production-specification.md",
   "slug": "shared-browser-control",
-  "generatedAt": "2026-10-01T20:04:57.504339+00:00",
-  "mode": "full",
-  "lastDecomposeDate": null,
+  "generatedAt": "2026-10-02T01:45:45.624761+00:00",
+  "mode": "incremental",
+  "lastDecomposeDate": "2026-10-01T20:04:57.504339+00:00",
   "assumptions": [
     "GPT-6.1 Sol with Medium reasoning explicitly selected; overrides Flow tier bindings.",
-    "Bounded prototype decomposition only; production tasks follow measured refinement incrementally.",
-    "Tracker projection and xl promotion handled by parent through configured Flow adapter; no tracker calls in this writer.",
-    "Parallel work requires separate worktrees and disjoint module ownership; shared edits serialized."
+    "Frozen06/07 at cb8bc3b9879684e3105d0238e7730e2d7fa79cd0 establish design acceptance; ADR remains Proposed until implemented gate. Existing full-scope authorization persists, no invented human permission.",
+    "All11 prototype tasks retain their original scope and history. Task3.3 completed after independently verified PR2460 merge9dc56fd45d81fbb3125fdc48cc7e5ee1af340b0a at2026-10-02T02:28:00Z; all11 prototype tasks now completed. Full production parent remains open in phase4.",
+    "Task API absent; canonical JSON is authoritative. Parent owns projection/integration/tracker/PR/cleanup; no promotion created in this decomposition.",
+    "Native and Chrome-compatible readiness keyed separately exact executable/platform/policy/mode. Native can activate after its own complete gates; Chrome preference remains unresolved and full parent cannot close on native-only success.",
+    "Research264a worker-hint availability exception is not accepted. Unsupported required observations UNVERIFIED; rejected private copied-package candidate never production dependency/configuration.",
+    "Each new task is bounded complete PR medium/large; large protocol/platform matrices split. No new XL task reasonably requires promotion at present; completed prototype2.1 XL mapping retained.",
+    "Measurement windows serialized; parallelWith permits source work in isolated worktrees only, never competing runtime/browser metrics."
   ],
   "tasks": [
     {
@@ -230,7 +234,7 @@
       "activeForm": "Consolidating evidence and independent review",
       "size": "medium",
       "priority": "high",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "2.3",
         "3.1",
@@ -239,7 +243,826 @@
       ],
       "parallelWith": [],
       "issue": null,
+      "parentIssue": null,
+      "completionEvidence": {
+        "pr": "https://github.com/dork-labs/dorkos/pull/2460",
+        "reviewedHead": "041afeaaaf3eb8960b77018ffafa42fb51f878db",
+        "mergeCommit": "9dc56fd45d81fbb3125fdc48cc7e5ee1af340b0a",
+        "mergedAt": "2026-10-02T02:28:00Z",
+        "scope": "Bounded prototype, reproducible evidence and independent review only; full production parent remains open."
+      }
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Private engine foundation",
+      "subject": "[shared-browser-control] [P4] Establish private engine package types and validation",
+      "description": "Create private @dorkos/browser package with browser-safe command/result/error types, runtime descriptor and strict validation for absolute injected dataDir, bounded IDs/parameters and counters. Accept injected clocks, process observers and narrow policy callbacks; no home resolution or app/auth/room/runtime-SDK imports. Export only complete types/validators in this PR, not a constructor/factory with unimplemented lifecycle methods or a pretend launch success. No raw Page/CDP/selector/profile-path or arbitrary evaluation in consumer API. Validate package exports, dependency boundaries, frontend exclusion, counter exhaustion and invalid configuration. Actual fixture launch/capture belongs the first complete lifecycle slice, task4.2, not this package skeleton. Phase4 may proceed while prototype task3.3 shipping remains in_progress.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.\n\nEstablish one public pinned Playwright library boundary with runtime-relative assets represented in its descriptor. Package types do not select a private patched dependency or pretend install readiness; CLI/desktop shipping verification must resolve the actual production library, not a development-only monorepo installation.",
+      "activeForm": "Establishing private engine package types and validation",
+      "size": "medium",
+      "priority": "high",
+      "status": "in_progress",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "worker": "/root/prototype_contracts",
+      "worktree": "/Users/doriancollier/.codex/worktrees/browser-engine-phase4/dorkos"
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "Private engine foundation",
+      "subject": "[shared-browser-control] [P4] Implement retained and clean browser lifecycle with real capture",
+      "description": "Implement first complete private engine constructor/open/close/tab-list/capture slice using reviewed Playwright and explicit executable descriptor; never resolve/download implicitly. Persistent named profiles and unseeded separate clean browser receive fresh browser/tab IDs, fixed canonical viewport and truthful stopped/uncertain outcomes. Inject roots/process observation; register cleanup before launch and bound IPC/acquisition/teardown. Reserve profiles atomically with manager/Chromium PID-birth and launch phase; no losing attempt modifies seeded profile. Capture actual named fixture Page JPEG/receipt through narrow API, keeping raw engine objects private. Real tests cover open/capture/clean close/return, absent/corrupt executable, concurrent same-profile open in independent processes, zero-viewer browser lifetime and idempotent shutdown. This is fixture-only lifecycle capability, not permission for public egress or mode activation.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing retained and clean browser lifecycle with real capture",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.3",
+      "phase": 4,
+      "phaseName": "Private engine foundation",
+      "subject": "[shared-browser-control] [P4] Prove exact-owned crash recovery and profile exclusion",
+      "description": "Extend engine lifecycle with attributable descendant PID/birth recording before parent death, renderer/browser/manager distinct failures and startup reconciliation. A dead manager or absent native lock cannot authorize reuse while recorded Chromium is live; unknown observer/PID reuse/failed launch cleanup fail closed and quarantine profile for explicit repair. Shut down only exact matching recorded identities, never process groups or operator browsers; attempt all cleanup steps and preserve original failure. Actual crash fixtures prove recognized live-root refusal without profile mutation, original/recovery descendant disappearance, stopped old IDs, fresh restart relationship and no interrupted side-effect replay. Root-only observer/PID-reuse/missing observation mutants must fail their intended gates; incomplete inventory is UNVERIFIED, never invented allGone.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Proving exact-owned crash recovery and profile exclusion",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.2"
+      ],
+      "parallelWith": [
+        "4.4"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.4",
+      "phase": 4,
+      "phaseName": "Private engine foundation",
+      "subject": "[shared-browser-control] [P4] Implement serialized generation-bound engine input and reset",
+      "description": "Implement bounded action dispatch with per-tab serialization, at most64 pending operations,16KiB payload/2048-byte text, at most16 composite steps and2-second execution/reset barrier. Recheck live browser/tab/navigation/viewport/input-generation and server validation hook before each unstarted step. Distinguish rejected queued, aborted composite and uncertain started effects; never undo/retry by claim. Reset held mouse buttons/modifiers/composition/drag before successor input, invalidate late dispatch restoration and tombstone every tab of a stopped browser including unseen tabs. Actual fixture tests prove exact wrong-tab/nav/viewport rejection, cancelled queued releases cannot leave dragging/Shift/composition, blocked operation bounded and new input unmodified; keep raw CDP private.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing serialized generation-bound engine input and reset",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.2"
+      ],
+      "parallelWith": [
+        "4.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.5",
+      "phase": 4,
+      "phaseName": "Private engine foundation",
+      "subject": "[shared-browser-control] [P4] Implement canonical capture pointer caret and bounded telemetry",
+      "description": "Complete capture/tab-popup hooks with actual canonical pixels, native caret capture and manager-observed pointer only after successful mouseMove/click dispatch. Bind pointer to initiating tab/nav/viewport, snapshot before capture, null on intervening move/reset/navigation/resize/close and refuse stale late restoration; no fabricated caret or touch-derived mouse. Provide bounded console/error/network diagnostics by tab/navigation/request, explicit drops/truncation and secret-safe summaries, with no automatic disclosure. Actual fixture tests check caret focus/blur/blink, pointer reset/midcapture races, popup distinct stable tab and independent wrong-Page byte marker negative; telemetry overflow has exact loss counts. Presentation/authorization remain later slices.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing canonical capture pointer caret and bounded telemetry",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.4"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.6",
+      "phase": 4,
+      "phaseName": "Private engine foundation",
+      "subject": "[shared-browser-control] [P4] Prove production retained stores clean return and unattended isolation",
+      "description": "Run three actual clean restarts with exact cookie/localStorage/IndexedDB/SW/Cache Storage/HTTP cache\nfixture values; session/expired-cookie behavior explicit. Two private profiles complete 100 exact\nmutations each with zero viewers; reattach same live Page. Run profile-only persistence baseline with exact cookie/localStorage/IndexedDB/service-worker/Cache Storage/HTTP-cache values after three real clean restarts. Record session-cookie/expiry separately and do not promise lossless recent writes on forced crash. Separate clean mode starts empty, mutates only itself and removes private clean data after exact process cleanup. Two agents in separate profiles each complete100 exact fixture mutations with zero subscribers; later engine reattachment identifies same live tab/current counter. Persistence/seeding/shared-context mutants prove exact named failures, without exporting profile state. Server-level handoff receipts belong task8.4.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Proving production retained stores clean return and unattended isolation",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.3",
+        "4.5"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.1",
+      "phase": 5,
+      "phaseName": "Runtime network and identity gates",
+      "subject": "[shared-browser-control] [P5] Implement canonical destination parser DNS and grant policy",
+      "description": "Implement services/browser/egress policy primitives without opening production browser access: canonicalize authority once, reject userinfo/ambiguous hosts/Host mismatch/forbidden schemes and ports. Public HTTP(S)/WS(S) initially ports80/443; deny all nonglobal/mapped-IPv6/private/metadata/host-interface destinations and configured app/admin authorities/aliases before any allow grant. Bounded resolver/CNAME validates every A/AAAA answer, rejects mixed sets and yields pinned numeric endpoints with policy revision. Local-dev grant is owner/workspace/browser-bound exact literal scheme/host/port with expiry; cannot override admin deny. Test rebind/mixed/CNAME/mapped-IP/adjacent-port/alias cases and allowed shared-CDN hostname independent of denied app authority, using injected resolver and socket fixtures.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing canonical destination parser DNS and grant policy",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.1"
+      ],
+      "parallelWith": [
+        "6.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.2",
+      "phase": 5,
+      "phaseName": "Runtime network and identity gates",
+      "subject": "[shared-browser-control] [P5] Implement authenticated broker forwarding and live revocation",
+      "description": "Build per-browser generation/owner/policy-bound broker lease and bounded HTTP absolute-form/CONNECT/WS forwarding using canonical policy primitives. Connect pinned numeric address without a second DNS lookup, validate peer, strip proxy credentials from upstream and bind live sockets/tunnels to lease/revision. Configure no DIRECT/PAC/system/WPAD/implicit-local bypass; subtract loopback bypass. Keep TLS browser-to-site with certificate checks, no interception CA or ignoreHTTPSErrors. Revocation/expiry/admin-alias change closes existing connections/pools; dead broker never retries direct. Fake endpoint tests verify zero forbidden connects, permitted public/exact-local positives, no credential disclosure, byte/time limits and live WS/tunnel closure; this does not claim all-protocol OS isolation.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing authenticated broker forwarding and live revocation",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "5.1",
+        "4.2"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.3",
+      "phase": 5,
+      "phaseName": "Runtime network and identity gates",
+      "subject": "[shared-browser-control] [P5] Prove browser target egress and shared-authority tunnel isolation",
+      "description": "Run exact-runtime broker acceptance for navigation/redirect/image/script/iframe/OOPIF/popup/dedicated/shared/service-worker install/fetch/background requests after detach and WS/WSS. Workers stay enabled and HTTP cache remains testable; Playwright route is not the firewall. Exercise fake admin/local/private/metadata endpoints, expired/revoked leases, dead broker no DIRECT fallback and an allowed relay fixture whose denied admin target remains untouched/unauthenticated. Shared-IP/shared-SAN H2 fixture warms allowed authority then attempts denied app authority: require separately denied CONNECT and zero app requests while unrelated allowed shared-CDN host works. Include cross-origin fetch/redirect/Alt-Svc and open-tunnel revocation. Bypass-enabled mutant must reach intended fake endpoint; current source comments alone cannot pass runtime proof.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Proving browser target egress and shared-authority tunnel isolation",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "5.2",
+        "4.5"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.4",
+      "phase": 5,
+      "phaseName": "Runtime network and identity gates",
+      "subject": "[shared-browser-control] [P5] Prove supported WebRTC restrictions without disabling sandbox",
+      "description": "Choose supported native pre-execution runtime controls for WebRTC ICE/STUN/TURN/data-channel page networking; no JS API shim, denied camera permission or guessed flag as proof. On exact executable/platform, exercised page APIs attempt fake loopback/private/admin endpoints while endpoint connects/packets are observed; permitted broker HTTP(S)/WS(S) positives run too. Cover target/lifetime initialization before Page/worker execution and retain native sandbox. Removed-restriction mutant must expose intended endpoint traffic. Unavailable API/packet observation is UNVERIFIED; bypass that cannot be disabled/routed with supported controls returns NETWORK_POLICY_UNSUPPORTED and refuses that configuration, not a passing skip. No privileged firewall/entitlement changes or claim to contain browser compromise.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Proving supported WebRTC restrictions without disabling sandbox",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "5.3"
+      ],
+      "parallelWith": [
+        "5.5"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.5",
+      "phase": 5,
+      "phaseName": "Runtime network and identity gates",
+      "subject": "[shared-browser-control] [P5] Prove WebTransport QUIC and unsupported scheme policy",
+      "description": "Select supported native pre-execution restrictions for WebTransport and QUIC/HTTP3 and explicit supported URL-scheme policy on exact executable/platform. Observe exercised page attempts against fake forbidden endpoints/packets, permitted HTTP(S)/WS(S) positives and dead broker no-direct negative. Reject file/external/custom schemes; app-owned about:blank and same-origin blob/data render without network authority but fetches use broker. Removed/bypassed restriction must produce its specific forbidden endpoint observation; raw-socket helper is not page evidence. Unsupported/unobserved restriction yields NETWORK_POLICY_UNSUPPORTED and mode remains unavailable. Native sandbox stays enabled, no privileged OS firewall changes or all-host-egress containment claims.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Proving WebTransport QUIC and unsupported scheme policy",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "5.3"
+      ],
+      "parallelWith": [
+        "5.4"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.6",
+      "phase": 5,
+      "phaseName": "Runtime network and identity gates",
+      "subject": "[shared-browser-control] [P5] Implement explicit pinned runtime installation and status",
+      "description": "Implement `dorkos browser install/status` using pinned official Playwright full Chromium\n`--no-shell --no-remove`, private versioned cache and atomic verified manifest publication.\nNo implicit action-time download/update, system packages or unrelated cache removal. Verify\nfresh-process executable hash/version/platform; test absent executable, concurrent/interrupted\ninstall, stale/mismatched receipt and repair. Status distinguishes installed from mode/network/\nplatform acceptance; installing a rejected candidate cannot make it usable in production. Keep acceptance records separately keyed executable hash/platform/policy/identity mode; installed does not mean ready. Native fallback is never silent.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing explicit pinned runtime installation and status",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.2"
+      ],
+      "parallelWith": [
+        "5.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.7",
+      "phase": 5,
+      "phaseName": "Runtime network and identity gates",
+      "subject": "[shared-browser-control] [P5] Prove unchanged explicit native identity across all lifetimes",
+      "description": "Collect native baseline from exact unmodified executable/hash/platform: HTTP UA and appVersion/navigator.userAgent/platform, low entropy brands/mobile/platform and supported high entropy full-version-list/platform-version/architecture/bitness/model/wow64. Native mode performs no UA override and explicitly retains headless token if native. Trusted HTTPS fixtures record first request before Accept-CH and separately negotiated subsequent requests per origin; compare actual native conventions, not host-derived MacIntel/CPU rewrites. Observe Page, popup first request, OOPIF, same/cross-origin navigation/reload, dedicated/shared/service workers, nested/background lifetimes, clean and persistent reopen/restart. Unsupported required fields stay UNVERIFIED with causes; no worker-hint availability exception is accepted. Native readiness record may eventually activate only after its own complete network/distribution/native-platform gates, irrespective of failed Chrome candidate.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Proving unchanged explicit native identity across all lifetimes",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.3",
+        "5.6"
+      ],
+      "parallelWith": [
+        "5.8"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.8",
+      "phase": 5,
+      "phaseName": "Runtime network and identity gates",
+      "subject": "[shared-browser-control] [P5] Prove supported Chrome-compatible identity before mode availability",
+      "description": "Collect exact native executable baseline; expose explicit native mode. Chrome-compatible\npolicy normalizes only native HeadlessChrome token in legacy UA/appVersion, preserving native\nClient Hints, brands/GREASE, platform reduction and actual version. Apply supported configuration\nbefore first target request; never patch JS getters, response headers or fake Google Chrome\nbrands. Prove initial and negotiated HTTPS requests/JS metadata across Page/navigation/reload/\npopup/OOPIF/dedicated/shared/service workers/background activity, persistent/clean contexts\nand separately negotiated origins. Missed first request/worker, UA-only metadata loss, invented\narchitecture/version/brand mutants fail specifically. Keep Chrome-compatible mode unavailable\nuntil the entire matrix passes; reject private candidates without production activation. This complete target-matrix PR is large after separating native task5.7; partial coverage cannot become a ready default. Retain rejected candidate shared-worker JS/service-worker first-request failures and missed-initialization popup mutant; private copied-package research cannot replace installed dependency. Research264a worker-hint availability proposal is pending/UNVERIFIED and not an accepted exception. Required metadata absence cannot certify a context by assuming workers share Page hints. Keep mode unavailable until complete matrix passes; unchanged separately verified native is explicit, never substituted silently. Full parent remains open while requested Chrome-compatible default unresolved.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Proving supported Chrome-compatible identity before mode availability",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.3",
+        "5.6"
+      ],
+      "parallelWith": [
+        "5.7"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "6.1",
+      "phase": 6,
+      "phaseName": "Shared contracts and server authority",
+      "subject": "[shared-browser-control] [P6] Add strict browser and semantic shared schemas",
+      "description": "Add exported browser-safe strict Zod schemas for lifecycle, grants, generations, actions,\nframes/real render receipts, errors, diagnostics and exact version-1 semantic/event/continuation\nshapes. Extend Transport and typed mocks; use managed `browser.*` namespace rather than\nchanging iframe ui/devtools verbs. Acceptance: unknown keys/enum/bounds/version and forged\nactor fields rejected; no engine objects or executable payloads in public schemas; strict\ncorrelation/stream watermark and secret noecho schemas match the approved contract. Define all closed role/key/event/reason enums, conditional event payloads, request edit stream ID and continuation event watermark with strict unknown-key rejection; identity counters safe integers, opaque IDs never authority. No engine stub methods added to Transport in this types PR; typed operation implementation belongs task6.8.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Adding strict browser and semantic shared schemas",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.1"
+      ],
+      "parallelWith": [
+        "5.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "6.2",
+      "phase": 6,
+      "phaseName": "Shared contracts and server authority",
+      "subject": "[shared-browser-control] [P6] Persist owner-qualified registry migration and reconciliation",
+      "description": "Add metadata migration for profile owner/label/mode/version and session/room attachments.\nServer browser domain derives liveness from engine, reconciles stopped/uncertain objects and\nnever silently rebinds old browser/tab IDs. Durable metadata excludes page/profile contents.\nAttachment possession does not grant access. Acceptance: owner-qualified isolation, restart\nreconciliation, clean/profile independence and explicit detach vs stop behavior; update domain\ncensus/AGENTS when domain is introduced, not by weakening checks.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Persisting owner-qualified registry migration and reconciliation",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.3",
+        "6.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "6.3",
+      "phase": 6,
+      "phaseName": "Shared contracts and server authority",
+      "subject": "[shared-browser-control] [P6] Implement explicit grants scope and controller revocation",
+      "description": "Trusted auth/capabilities supply actor and owner. Separate view/control/secret-input/diagnostics/\nartifact/profile permissions; check exact grant revision/expiry/attachment on requests, delivery\nand each unstarted step. Human takeover invalidates old work immediately; bounded reset precedes\nnew input. Membership removal/revocation/disconnect closes streams and invalidates continuations.\nAcceptance: outsider/room-only/spoofed actor, view-only input, stale generations/same-actor epochs,\nsecret grant revoked between select-all/insertion, held-state reset and barrier timeout negatives.\nUnknown vs inaccessible IDs remain indistinguishable; sharing disclosure is explicit. Add thin validated routes only for implemented operations under /api/browser profiles/instances/tabs; stopped/uncertain states accurate. Update service census/domain instructions when domain introduced. Session/room membership necessary but insufficient; view disclosure private content and signed-in action scope.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing explicit grants scope and controller revocation",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.4",
+        "6.2"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "6.4",
+      "phase": 6,
+      "phaseName": "Shared contracts and server authority",
+      "subject": "[shared-browser-control] [P6] Implement authenticated pixel metadata streams and actual render ACK",
+      "description": "Implement scoped short-lived viewer tickets/origin/CSRF guards and lossy non-durable pixel frames;\none pending <=2MiB per viewer, real decode/draw acknowledgment, prior-receipt/next-frame protocol\nand legacy compatibility only where intentionally supported. Metadata streams have identities,\nsequences and resync; no page data in durable room/session replay. Acceptance: two simultaneous\nchanged-pixel viewers, wrong/replayed/missing receipts, lost-response reconnect, stale old-tab/\ncontrol state, zero-viewer continued work and stalled viewer cannot delay peers or engine input. Add server-side monotonic state and stale-control/nav/viewport checks. Tickets actor/tab/grant/origin bound, never durable credentials in URLs; close on grant expiry/revocation. Metadata replay excludes pixels/page data. Lost subscription does not revoke controller unless explicit lifecycle rule; action response lost never auto replay.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing authenticated pixel metadata streams and actual render ACK",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.5",
+        "6.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "6.5",
+      "phase": 6,
+      "phaseName": "Shared contracts and server authority",
+      "subject": "[shared-browser-control] [P6] Implement bounded authorized diagnostics with exact redaction loss",
+      "description": "Expose read-only diagnostics only under separate owner-qualified grant. Bind sanitized console/error/network summaries to tab/navigation/request, enforce bounded retention and byte limits, count exact drops/truncations and use typed safe errors. Recheck grant before read/delivery and close revoked subscriptions; no cookies/URLs/page strings/typed secret/protocol payload in durable session/room stream/logs/crash analytics. Test overflow exact counts, wrong tab/nav/outsider/room-only access, revoke during serialization and secret sentinel removal. A sanitizer mutant must reveal named sentinel; unrelated assertion is not detection. Diagnostic receipt stores safe provenance/counts, not secret dumps.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing bounded authorized diagnostics with exact redaction loss",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.5",
+        "6.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "6.6",
+      "phase": 6,
+      "phaseName": "Shared contracts and server authority",
+      "subject": "[shared-browser-control] [P6] Implement authorized staged uploads downloads and file confinement",
+      "description": "Add explicit artifact/upload/download permissions and private owner/browser-specific staging roots; default downloads denied. Accept server artifact IDs only, not absolute paths. Normalize/realpath-confine and open without following changed symlink; bidirectional profile/artifact separation, exclusive private filenames, size/type/time quotas and partial cleanup. Reject file/native-picker arbitrary paths and never export cookie/profile/cache/runtime/reservation files. Publish artifact ID only after completion/ownership validation; room attachment alone no access. Actual fake upload/download positive plus traversal/symlink-swap/filename-overwrite/outsider/room-only/private-profile/oversize/partial negatives prove intended boundary; unknown IDs inaccessible.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing authorized staged uploads downloads and file confinement",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "5.2",
+        "6.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "6.7",
+      "phase": 6,
+      "phaseName": "Shared contracts and server authority",
+      "subject": "[shared-browser-control] [P6] Register scoped managed capability tools for every runtime",
+      "description": "Register browser.* grants and managed_browser_* tools in authenticated capability dispatcher for real implemented lifecycle/tab/navigation/actions/control/diagnostics/artifacts. Trusted context resolves owner/actor/attachment, body cannot impersonate. Keep existing iframe ui/devtools semantics until migration; no raw Page/CDP/eval/selector/protocol/path capability. Shared runtime conformance tests exercise spoofed actor, outsider and view-only refusal, revoked queued work, exact tab/nav/viewport/epoch and uncertain side effect without replay. Do not replace managed MCP preset yet; gated internal fixture capability surface can land without public activation, and all runtime callers use same scoped policy.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Registering scoped managed capability tools for every runtime",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "6.4",
+        "6.5",
+        "6.6"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "6.8",
+      "phase": 6,
+      "phaseName": "Shared contracts and server authority",
+      "subject": "[shared-browser-control] [P6] Implement complete Browser Transport and typed mocks",
+      "description": "Extend Transport for implemented profile/instance/tab lifecycle, grants/control/actions/view attachment/diagnostics/artifact and semantic read/subscribe contracts; HttpTransport browser-methods handles typed failure/resync consistently, mock transports match. Do not export methods returning pretend successes or permanent NOT_IMPLEMENTED placeholders; use scoped complete operations available from server. Validate exact request/response shapes, origin/auth/CSRF, no frontend engine import, inaccessible-object equivalence, revoked/out-of-order stream response and abort handling. Semantic operations can be added as complete methods when task7.3 lands, without temporarily promising unimplemented service behavior.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing complete Browser Transport and typed mocks",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "6.4",
+        "6.5",
+        "6.6"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "7.1",
+      "phase": 7,
+      "phaseName": "Canonical presentation and semantic interaction",
+      "subject": "[shared-browser-control] [P7] Extract exact sanitized AX trees and private per-frame bindings",
+      "description": "Implement target-scoped AX extraction/frame/OOPIF registry, private DOM object and fingerprint\nbindings, versioned fresh node refs/actor leases, dirty observers and bounded stable read/retry.\nReturn typed sanitized data, never copied HTML/URLs/attributes or executable app-origin content.\nNative password/file/unknown-sensitive controls redact before hash/serialize. Keep extraction behind a private supervisor boundary; task7.2 independently enforces process allocation/admission ceilings before activation.\nAcceptance: identical-node replacement, frame/DOM races, malicious AX/markup/password sentinels,\nwide/deep/shadow output and truncated read-only behavior. Hostile allocation and web-server responsiveness acceptance remain blocked on complete task7.2; public output slicing alone is not memory proof. Enforce256KiB/2000nodes/depth32/32frames, role/name512/description1024/text2048-byte bounds; one extraction/tab5 starts/sec1sec deadline+one retry, refs/actor leases<=2sec and8 leases/tab. Truncated output read-only, connected DOM identity/frame generation/fingerprint not backendID/name/position authority. No unbounded full DOM, copied remote HTML or engine object export.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Extracting exact sanitized AX trees and private per-frame bindings",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.5",
+        "6.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "7.2",
+      "phase": 7,
+      "phaseName": "Canonical presentation and semantic interaction",
+      "subject": "[shared-browser-control] [P7] Enforce supervised semantic allocation and hostile-page failure",
+      "description": "Implement enforced working-memory/admission/process isolation for private semantic extraction, bounded IPC and cleanup of AX/DOM/Runtime objects. Wide shallow CDP reply can allocate before slicing; post-parse output bounds are not memory proof. Test actual hostile wide/deep/shadow/subframe candidates in separately supervised engine, exhaustion/unavailable path and web server/input/peer viewers remain responsive; budgets release target sessions. Missing enforceable isolation fails semantic readiness instead of claiming preallocation bound. Test one-pending extraction, deadline/retry cap, oversized nonsecret value read-only and secret redaction before hash/retention; failure cleanup preserves primary while every resource attempted.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Enforcing supervised semantic allocation and hostile-page failure",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "7.1",
+        "6.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "7.3",
+      "phase": 7,
+      "phaseName": "Canonical presentation and semantic interaction",
+      "subject": "[shared-browser-control] [P7] Dispatch semantic focus edit and write-only secret continuation",
+      "description": "Map approved focus/activation/toggle/plain-text/secret/key actions through canonical serialized\ncontrol queue. Revalidate DOM object/frame/tree/focus/grant/epoch/input generation at every step;\nno name/selector fallback or script setters. Secret operation is explicit write-only/noecho with\nper-step grant. One in-flight edit suspends old refs; exact actor-stream/request correlation and\nreceipt watermark permit only same-field expected edit continuation with fresh lease/revision.\nAcceptance: successive characters reach exact canonical field with local editor focus retained;\nboth notification orders, held later refreshes, unrelated dirty/focus/replacement/reset/deadline/\nrevocation stop continuation, secret buffer clears/noecho, lost response never replays effects. Native plain text input/textarea only; unsupported richtext/widget read-only. Exact focus DOM chain, canonical Enter/Space/enum key/manager text, no setter/fabricated event; expected operation focus/selection transitions privately validated each step. Secret native password additionally exact secretInput grant, raw-key/pixel lane same permission. Stream metadata128events/5min, one pending/viewer8max excludes typed/page contents; uncorrelated coalesced dirtiness wins. API tests no arbitrary selectors/ref fallback.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Dispatching semantic focus edit and write-only secret continuation",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "7.2",
+        "6.3",
+        "6.4"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "7.4",
+      "phase": 7,
+      "phaseName": "Canonical presentation and semantic interaction",
+      "subject": "[shared-browser-control] [P7] Implement FSD Browser entity and optional canonical pixel viewer",
+      "description": "Build FSD entity/browser state/query/subscriptions and feature/browser viewer through barrels;\nCanvas composes presentation, no sibling internal imports or engine in frontend. Scale fixed\ncanonical viewport without resizing Page; close/detach/reopen shows same live tab and does not\nlaunch/stop it. Acceptance: two actual changed-pixel viewers, wrong-page-byte oracle, late old state,\nread-only view and lost subscription recovery; no local-history navigation of shared Page. HttpTransport and mocks are complete before consumption; browser entity owns query keys/server-state, features own presentation and barrel exports. Render loss/stale/refused/view-only with accessible named chrome; no viewer requirement for browser work.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Implementing FSD Browser entity and optional canonical pixel viewer",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "6.8"
+      ],
+      "parallelWith": [
+        "7.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "7.5",
+      "phase": 7,
+      "phaseName": "Canonical presentation and semantic interaction",
+      "subject": "[shared-browser-control] [P7] Forward real viewer events and render canonical pointer caret",
+      "description": "Wire click/drag/wheel/keyboard/modifier/text/composition/touch/clipboard permission states through\nshared control identities. Overlay only capture-bound canonical pointer, clear on stale/reset/\nnavigation/viewport/controller mismatch, preserve actual native caret pixels. Distinguish tap/wheel\nemulation from native touch scrolling. Acceptance: actual viewer event handlers, scaled pointer,\nfocus/blur, lost pointer capture cancellation and first new-controller unmodified input. Native IME,\nclipboard, phone and AT claims remain gated G2; use fixture doubles without operator clipboard reads. At actual decode/draw/twoRAF boundary send exact prior receipt with next frame; local resize scales presentation only. Tests same exact tab native caret and pointer visibility independent image oracle, wrong-Page replacement bytes under expected receipt and stale lifetime hide; native gate remains distinct.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Forwarding real viewer events and render canonical pointer caret",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "7.4",
+        "6.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "7.6",
+      "phase": 7,
+      "phaseName": "Canonical presentation and semantic interaction",
+      "subject": "[shared-browser-control] [P7] Render semantic outline editor with bounded own-edit focus",
+      "description": "Render typed escaped roles/names/state with independent local tree selection and explicit canonical\nfocus action; never import remote DOM/ARIA ownership into app origin. Implement pending/refused/\nfreshness states, bounded own-edit focus continuation and exact stream order, secret native password\nbuffer clear-on-send, no automatic replay/retarget. Polite controlled announcements, no remote alert\npriority/focus theft. Acceptance: keyboard fixture exact Page effects, local outline no remote focus,\nreplacement and out-of-order events fail closed. Real AT observations remain G2, not DOM-only parity. Use exact semantic eventStreamId/requestId/coveredEventSequence; pending first order retains focus but suspended refs, receipt first waits ordered watermark. One in-flight commit<=2sec; future char explicit fresh lease, no buffered autoreplay. All unrelated DOM/focus/replacement/epoch/nav/frame/grant/gap/deadline cancels and clears. Owned polite statuses, no remote live-region priority; secret echo/value/length forbidden, local buffer clears on send.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Rendering semantic outline editor with bounded own-edit focus",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "7.3",
+        "7.4"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "7.7",
+      "phase": 7,
+      "phaseName": "Canonical presentation and semantic interaction",
+      "subject": "[shared-browser-control] [P7] Attach canonical browsers to session Canvas independently of Doc",
+      "description": "Add distinct managed-browser reference schema with owner/author/scope limits and durable metadata\nreplay. Render optional viewer, not iframe URL clone; attachment never grants browser access.\nDetach removes presentation only; explicit stop remains separate. Keep ui preview and Doc iframe\nMessagePort authority unchanged. Acceptance: zero-viewer engine work, one canonical Page with two\nviews, detach/reopen identity and navigation controlled only by current controller. Any proposed\nbrowser-process Doc peer transport is deferred behind a separate contract plus zero-viewer replay,\ntwo-viewer no-duplicate emit and navigation-revoke gates, never inferred from this attachment.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Attaching canonical browsers to session Canvas independently of Doc",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "7.4",
+        "6.2",
+        "6.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "7.8",
+      "phase": 7,
+      "phaseName": "Canonical presentation and semantic interaction",
+      "subject": "[shared-browser-control] [P7] Add explicitly granted Room browser attachments",
+      "description": "Use existing room Canvas author/replay/limits with explicit owner-issued browser grant/disclosure.\nRoom membership alone is insufficient; removing member/attachment or expiring grant invalidates\nstreams/actions without stopping independently owned browser. Acceptance: authorized people/agent\ntwo-viewer actual pixels, outsider and room-only refusal, queued/composite cancellation and metadata\nreplay cannot restore authority or copy account state. Doc peer namespace remains independent.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Adding explicitly granted Room browser attachments",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "7.7",
+        "6.3",
+        "7.5"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "7.9",
+      "phase": 7,
+      "phaseName": "Canonical presentation and semantic interaction",
+      "subject": "[shared-browser-control] [P7] Prove lightweight Doc authority and viewer independence",
+      "description": "Add regression tests preserving instrumented iframe preview and parent/MessagePort authority independently from managed viewers; lightweight documents need no Chromium. Managed pixel/tab IDs cannot mint Doc SDK authority, cross namespace or gain app-origin credentials. Existing Doc peer behavior must emit/downstream replay with zero viewers, emit exactly once with two viewers and revoke old-page authority after navigation. Exercise delayed old frame/port token, duplicated subscription and absent viewer positives/negatives. Do not introduce browser-process Doc transport in this PR: that requires separate reviewed contract and same zero-viewer/no-duplicate/navigation-revoke proof before adoption; keep prior iframe decision effective.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Proving lightweight Doc authority and viewer independence",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "7.7",
+        "7.8"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "8.1",
+      "phase": 8,
+      "phaseName": "Distribution and real acceptance",
+      "subject": "[shared-browser-control] [P8] Package CLI source engine and explicit runtime install path",
+      "description": "Resolve private engine source/runtime manifest explicitly in CLI bundle; new command/status/install\nsurfaces retain existing source-resolving build conventions. Test fresh cold install, absent runtime\nno-download, real path/alias invocation, cache relocation and interrupted upgrade rollback. Include\nprovenance/licenses and exact runtime receipt. Packaging success cannot activate unaccepted identity/\nnetwork configurations or imply native/visibility/platform acceptance. Test source-vintage pinned engine, CLI entrypoint symlink/macOS var aliases and fresh-process manifest publish. No action auto download, --with-deps or unrelated cache cleanup; native/Chrome availability displayed per mode not installation alone.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.\n\nFollow existing CLI @dorkos source/root-subpath discovery instead of a second alias table or stale dist. Determine whether the pinned public library must be externalized to retain runtime-relative assets; any external is an actual shipped CLI production dependency. Verify cold package with no dev node_modules/cache fallback and source/hash receipts; do not silently bundle away required package assets.",
+      "activeForm": "Packaging CLI source engine and explicit runtime install path",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "5.6",
+        "4.3"
+      ],
+      "parallelWith": [
+        "7.4"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "8.2",
+      "phase": 8,
+      "phaseName": "Distribution and real acceptance",
+      "subject": "[shared-browser-control] [P8] Package desktop single-copy real runtime and upgrade rollback",
+      "description": "Use desktop server and same manifest/acceptance policy; single-copy unpacked executable assets,\nno execution from virtual asar paths or duplicated unreachable resources. Verify installed package\nruntime paths, hash/version, startup/shutdown and update rollback on supported platform. Retain\nWindows alpha label until real installation gate passes; macOS Dock/focus observation belongs G2,\nnot a packaging assertion. No new privileged host installation side effects. Check emitted asset tree and unpack references, license/provenance, fresh package install and rollback while preserving named private profile. Windows x64 real end-user install remains separately unverified alpha until observed; no Linux desktop claim. Cold package run must find same source/hash, not npm cache/personal Chrome.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.\n\nExtend established desktop server ESM parse/runtime specifier/packaged declaration checks without weakening them or accepting warnings. Electron-builder uses files/asarUnpack and intentionally no extraResources: ship one reachable real-file executable/dependency copy, or explicitly installed private cache with reviewed paths/lifecycle. Verify Node launcher and cache paths from actual installed package rather than monorepo require.resolve; test absent library separately from absent/damaged runtime, license/assets, cache reuse and cold/rollback.\n\nSupported-platform packaging acceptance includes actual fresh macOS installed app and Windows x64 installed package observations where that platform is claimed: exact real-file runtime path/hash, private profile create/close/reopen, absent-runtime refusal, upgrade/rollback and owned shutdown. Windows host unavailable remains explicitly UNVERIFIED/alpha for that platform and does not manufacture acceptance or reject independently verified macOS mode. Platform-specific native presence/input remains separately gated, not inferred from installer success.",
+      "activeForm": "Packaging desktop single-copy real runtime and upgrade rollback",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "8.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "8.3",
+      "phase": 8,
+      "phaseName": "Distribution and real acceptance",
+      "subject": "[shared-browser-control] [P8] Observe macOS Dock app-switcher and foreground invariance",
+      "description": "On exact packaged supported macOS executable/platform use real Dock/app-switcher/process foreground inventory before/during launch, capture/input and renderer/browser/manager crash-recovery. Visible test app positive control must prove observation detects presence/focus. Assert managed headless Chromium adds zero Chrome Dock/app-switcher icons and zero foreground steals; exact owned process cleanup. UI automation unavailable/failed inventory remains UNVERIFIED, never screenshot-label substitute. Repeat accepted identity modes independently and retain failing configuration unavailable. No OS entitlement/firewall changes or operator-app termination.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Observing macOS Dock app-switcher and foreground invariance",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "8.2",
+        "5.7",
+        "7.5"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "8.4",
+      "phase": 8,
+      "phaseName": "Distribution and real acceptance",
+      "subject": "[shared-browser-control] [P8] Retain integrated lifecycle zero-viewer and 100-handoff receipts",
+      "description": "Run three actual clean restarts with exact cookie/localStorage/IndexedDB/SW/Cache Storage/HTTP cache\nfixture values; session/expired-cookie behavior explicit. Two private profiles complete 100 exact\nmutations each with zero viewers; reattach same live Page. Exercise exclusions/recovery and 100\nhandoffs (ack p95<100ms, barrier<=2s) with meaningful named mutants. Record exact source/runtime,\ncounts and all failures/unverified observations; no prototype PASS inheritance or lost-action replay. Record all5 delivery requirements' subjects: named exact persisted stores, separate unseeded clean return, two profiles100 exact actions each without viewers/same-live-page reopen, two authorized changed-pixel viewers and one epoch. MacOS presence receipt separate task8.3. Prove100 local handoff ackp95<100ms/max2s barrier, mouse/modifier/composition reset, same-actor epoch mutant; force distinct failures and exact inventories original/recovery. No recent-write flush/lossless crash promise.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Retaining integrated lifecycle zero-viewer and 100-handoff receipts",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "4.6",
+        "6.7",
+        "7.5",
+        "7.8"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "8.5",
+      "phase": 8,
+      "phaseName": "Distribution and real acceptance",
+      "subject": "[shared-browser-control] [P8] Observe real native IME clipboard and physical phone input",
+      "description": "Execute real fixture native click/drag/wheel/modifier/emoji/CJK IME composition/copy/paste plus permission-denied recovery through production viewer. Physical Android/iOS touch scrolling/drag is distinct from phone-sized desktop/tap/wheel emulation. Record OS/browser/input versions, actual fixture outcomes and stale viewport/controller refusal. Clipboard requires concrete isolated or preserve-and-restore arrangement before native system reads/writes; no operator contents in artifacts, blind restoration or mock-success native claim. Unsafe/unavailable composition/clipboard/phone arrangement remains UNVERIFIED; full readiness blocked. All managed profiles fixture-only, no paid model/accounts.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Observing real native IME clipboard and physical phone input",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "7.5",
+        "8.2"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "8.6",
+      "phase": 8,
+      "phaseName": "Distribution and real acceptance",
+      "subject": "[shared-browser-control] [P8] Observe macOS VoiceOver browser and desktop semantic interaction",
+      "description": "Record actual VoiceOver sessions on supported macOS web and packaged desktop using exact OS/browser/AT/runtime. Exercise canonical focus order, successive text field edits with local focus continuation, secret noecho, status/refusal/navigation/revocation and stale tree/frame replacement. Outline/screenshot/DOM assertion/synthesized key cannot establish screen-reader parity. Test view-only local selection never moves canonical focus; remote alerts do not steal local focus. Retain pass/fail/unverified scope and observed limitations; no universal AT/native IME claim from fixture keyboard success.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Observing macOS VoiceOver browser and desktop semantic interaction",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "7.6",
+        "8.2"
+      ],
+      "parallelWith": [
+        "8.7"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "8.7",
+      "phase": 8,
+      "phaseName": "Distribution and real acceptance",
+      "subject": "[shared-browser-control] [P8] Observe Windows and mobile assistive-technology matrix",
+      "description": "Record actual NVDA on supported Windows web browsers, TalkBack Android web and VoiceOver iOS web using exact device/OS/browser/AT/runtime. Verify canonical focus/edit/announcements/navigation/revocation/stale semantic refusal, mobile scrolling/composition and same-field continuation. Windows desktop remains alpha absent separate actual installer observation; JAWS/additional combinations unsupported until observed. Missing device/observer never passing skip or emulated parity. Dedicated fixture-only profiles/sites, no operator account/clipboard data. Retain per-combination acceptance rather than inheriting macOS/native browser results.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Observing Windows and mobile assistive-technology matrix",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "7.6",
+        "8.5"
+      ],
+      "parallelWith": [
+        "8.6"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "8.8",
+      "phase": 8,
+      "phaseName": "Distribution and real acceptance",
+      "subject": "[shared-browser-control] [P8] Measure host resources and enforce conservative admission",
+      "description": "In a coordinated resource-only window collect nonzero idle/active browser CPU/RSS separately Node/frontend and payload bandwidth for two browsers/two viewers; record exact source/runtime/OS/counters, baseline/load/headroom and observation availability. RSS sums may share pages; free RAM excludes reclaimable cache. Derive conservative enforceable profile/browser/tab/viewer/queue/capture-rate limits from supported envelope, predictable refusal under pressure, no invented capacity from PASS. Positive live-process observer plus root-only/unbounded queue mutants fail specific observations. Hold concurrent latency/browser measurements; retain old loaded-host/zero additional slots results without universalizing them.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Measuring host resources and enforce conservative admission",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "8.4",
+        "8.2"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "8.9",
+      "phase": 8,
+      "phaseName": "Distribution and real acceptance",
+      "subject": "[shared-browser-control] [P8] Measure exact pixel-verified local RTT stalled and real tunnel render",
+      "description": "Record 100 actual input-to-decode/draw/twoRAF samples local p95<250ms and injected150msRTT p95<600ms,\nplus >=10-second stalled viewer with one pending/2MiB bound. Independently validate changed pixels\nfrom named canonical Page, not response self-comparison. Measure actual authorized fixture tunnel\nseparately; distinct coordinated resource/latency windows, host load and Node/browser/frontend\nCPU/RSS/bandwidth. Retain all failures and samples, choose conservative admission envelope from\nheadroom rather than declaring capacity from observation PASS. No universal idle-host/SLA claim. Resource window task8.8 is separate, not simultaneous; parent schedules quiet browser lane and records unrelated host interference. Retain original RTT100629.9ms FAIL and later scoped300samples instead of erasing history. No filtered failed samples or relaxed250/600thresholds; missing observation UNVERIFIED, actual authorized fixture tunnel separate from150msRTT injection.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Measuring exact pixel-verified local RTT stalled and real tunnel render",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "8.4",
+        "7.8"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "9.1",
+      "phase": 9,
+      "phaseName": "Readiness migration and delivery",
+      "subject": "[shared-browser-control] [P9] Freeze exact per-mode readiness with public activation gates",
+      "description": "Record readiness separately for each exact executable/platform/identity mode, using\nthat mode's 5.3\u20135.5/identity-target/8.2/8.3\u20138.9 receipts plus API/grant/semantic\nnegatives and artifact privacy. Status/launch accept only reviewed configurations; failed/unverified\nprivate candidates remain inactive for their rejected mode. Chrome-compatible cannot\nactivate before its complete target/worker matrix. Explicit native mode may activate\nwhen its own complete identity-target, network and platform gates pass; a failed\nChrome-compatible candidate is not a native rejection. Do not use aggregate5.8status\nto block verified native mode or admit failed Chrome-compatible mode. Full compatibility\nacceptance and the parent task remain unresolved until the Chrome preference is satisfied. Validate mode/policy\nmanifest mismatch cannot bypass admission; never silently fallback. Record accepted scope and still-\nunverified combinations for product copy and release checks. Dependencies5.7(native) and5.8(Chrome) have distinct outcomes: native record can activate only after its own complete identity/target/network/distribution/native/platform gates even if Chrome failed; Chrome unavailable until full5.8passes. This task must preserve blocked Chrome/full-parent state and mode-specific reasons rather than requiring aggregate candidate PASS or silently fallback. Research264a availability exception unaccepted. Tests stale hash/policy/mode receipts and rejected private patch cannot activate, frontend cannot bundle engine, and status reports unavailable correctly. Full parent not DONE until user Chrome preference and all delivery requirements satisfied.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Freezing exact per-mode readiness with public activation gates",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "5.3",
+        "5.4",
+        "5.5",
+        "5.7",
+        "6.7",
+        "7.3",
+        "7.9",
+        "8.3",
+        "8.4",
+        "8.5",
+        "8.6",
+        "8.7",
+        "8.8",
+        "8.9"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "9.2",
+      "phase": 9,
+      "phaseName": "Readiness migration and delivery",
+      "subject": "[shared-browser-control] [P9] Migrate preset and explicit storage-state compatibility without Doc change",
+      "description": "After accepted selected-mode readiness, switch managed MCP preset across all runtimes to scoped managed_browser capabilities and remove superseded managed paths in the same reviewed PR. Preserve iframe ui/devtools/Doc behavior; no mandatory Chromium for lightweight documents. Existing browser login/status/forget and agent-browser site summaries get explicit compatibility; authorized import creates new named profile from storage-state snapshot, not fullclone/personal Chrome reuse/clean seed. Actual migration tests all runtime callers, view/control/grant revocation, profile ownership and absent-mode refusal. Native-only migration may remain scoped but cannot mark full user compatibility goal complete; Chrome preference unresolved unless complete gate passes.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Migrating preset and explicit storage-state compatibility without Doc change",
+      "size": "large",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "9.1",
+        "6.8",
+        "7.8"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "9.3",
+      "phase": 9,
+      "phaseName": "Readiness migration and delivery",
+      "subject": "[shared-browser-control] [P9] Document accepted delivery and independently verify release scope",
+      "description": "Update profile/login/sharing/install/repair/recovery guides and developer engine/Transport/capability/packaging/failure taxonomy using plain truthful language. Explain private-content signed-in controller disclosure, clean state separation, uncertain lost effects/no replay, actual runtime identity choices, installation vs readiness and explicit stop vs detach. Retain Windows alpha and unverified native/AT/tunnel combinations; no challenge-bypass/indistinguishability/lossless-crash claim. Require independent exact pushed-branch compliance/quality review and affected gates before final parent merge; parent alone updates ADR/manifest only when implemented acceptance qualifies. Completed prototype receipts retained. Full parent closure additionally requires Chrome-compatible preference5.8and every5full delivery requirement; task dependencies do not turn an unverified gate into success.\n\nUse GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.",
+      "activeForm": "Documenting accepted delivery and independently verify release scope",
+      "size": "medium",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        "9.2",
+        "5.8"
+      ],
+      "parallelWith": [],
+      "issue": null,
       "parentIssue": null
     }
-  ]
+  ],
+  "prototypeSpec": "specs/shared-browser-control/02-specification.md",
+  "semanticSpec": "specs/shared-browser-control/07-semantic-browser-contract.md",
+  "activePhase": 4
 }

@@ -114,6 +114,7 @@ export default defineConfig({
       'apps/server',
       'apps/site',
       'packages/a2a-gateway',
+      'packages/browser',
       'packages/ci-steward',
       'packages/cli',
       'packages/cloud-api',

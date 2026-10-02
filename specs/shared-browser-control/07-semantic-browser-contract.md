@@ -1,16 +1,16 @@
 ---
 slug: shared-browser-control-semantic-contract
 created: 2026-10-01
-status: proposed
+status: specified
 ---
 
 # Shared browser semantic contract
 
-**Status:** Proposed; not approved, implemented, or evidence of assistive-technology readiness.
+**Status:** Frozen design contract after the two distinct independent composition reviews at `17d7c579c0a52211521a2ce50de29b47f8142a1d` (journals44/45). This is design acceptance within the authorized scope, not implementation or evidence of assistive-technology readiness.
 
 This supplies the semantic transport and action design requested by §Detailed Design
 and §Open Questions of `06-production-specification.md` in the parent checkout.
-Authoring this proposal does not accept that production contract or its ADR amendment.
+Design freeze does not accept any runtime/identity configuration or the still-proposed ADR amendment.
 The frozen prototype remains an experiment: `/semantic` emits a bounded outline,
 while its keyboard buttons act on the canonical Page through control arbitration.
 It does not implement the node identities, privacy policy, editing model, or
