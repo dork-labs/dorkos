@@ -4,6 +4,7 @@ covers:
   - 'fix(canvas): preserve uncertain widget submission identity'
   - 'fix(canvas): preserve workspace shutdown fences'
   - 'chore(test): await complete arrival screening outcome'
+  - 'chore(test): bind session fixtures to their client address'
 ---
 
 ### Added
