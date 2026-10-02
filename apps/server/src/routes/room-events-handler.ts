@@ -1,8 +1,9 @@
+import { docScopeNotifications } from '../services/canvas/doc-channel/streams/registry.js';
 /**
  * `GET /api/rooms/:id/events` over Server-Sent Events.
  *
  * The SSE half of the durable room stream, kept as the public integration
- * contract alongside the WebSocket the cockpit uses (`room-events-socket.ts`);
+ * contract alongside the WebSocket the app uses (`room-events-socket.ts`);
  * see `services/core/durable-stream-sink.ts` for why there are two. Both
  * resolve the same {@link RoomStreamPlan} and hand it to the same
  * {@link deliverRoomStream} — only the sink differs.
@@ -98,5 +99,10 @@ export const roomEventsHandler = async (
   // "still connecting". See SseStreamSink.flushHeaders.
   sink.flushHeaders();
 
-  await deliverRoomStream(sink, { roomId, viewerAuthorId, sinceCursor });
+  await deliverRoomStream(sink, {
+    roomId,
+    viewerAuthorId,
+    sinceCursor,
+    documentNotifications: docScopeNotifications(`room:${roomId}`, req, res),
+  });
 };

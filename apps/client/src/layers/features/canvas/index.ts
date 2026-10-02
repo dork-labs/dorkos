@@ -26,3 +26,7 @@ export {
   type DevtoolsBridge,
   type UseDevtoolsBridgeParams,
 } from './model/use-devtools-bridge';
+
+export { CanvasWidgetContent } from './ui/CanvasWidgetContent';
+
+export { useDocChannel } from './model/use-doc-channel';

@@ -24,14 +24,10 @@ export function ChecklistNode({ node }: { node: ChecklistNodeData }) {
     if (!node.action) return null;
     const checkedLabels = node.items.filter((_, i) => checked[i]).map((item) => item.label);
     const uncheckedLabels = node.items.filter((_, i) => !checked[i]).map((item) => item.label);
-    return {
-      ...node.action,
-      payload: {
-        ...(node.action.payload ?? {}),
-        checked: checkedLabels,
-        unchecked: uncheckedLabels,
-      },
-    };
+    const fields = { checked: checkedLabels, unchecked: uncheckedLabels };
+    return node.action.kind === 'emit'
+      ? { ...node.action, payload: { ...(node.action.payload ?? {}), ...fields } }
+      : { ...node.action, payload: { ...(node.action.payload ?? {}), ...fields } };
   }, [node.action, node.items, checked]);
 
   return (

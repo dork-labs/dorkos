@@ -20,7 +20,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
-import { isFatalStreamError, streamManager } from '@/layers/shared/lib/transport';
+import {
+  isFatalStreamError,
+  streamManager,
+  publishDocChannelNotification,
+} from '@/layers/shared/lib/transport';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { mergeRoomReactions } from '../lib/reactions';
@@ -506,6 +510,10 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
             // path out of a stall — a busy room recovers on its first message
             // rather than ten seconds later.
             declareHealthy();
+            if (event.type === 'canvas_event' || event.type === 'canvas_channel_snapshot') {
+              publishDocChannelNotification(event);
+              continue;
+            }
             // Signals (typing, presence) are live-only and carry no `seq`, so
             // they never enter the history — they go to the presence store,
             // which expires them rather than keeping them.

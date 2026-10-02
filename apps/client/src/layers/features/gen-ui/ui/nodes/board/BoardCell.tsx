@@ -13,6 +13,7 @@ import type { WidgetAction, WidgetNode } from '@dorkos/shared/ui-widget';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { toneBadgeClass } from '../../../lib/widget-tone';
+import { useWidgetNodePath } from '../../../model/widget-node-context';
 import { useAgentActionState, useWidgetActions } from '../../../model/widget-context';
 import { WIDGET_SPRING } from '../../../lib/widget-motion';
 import { defaultMarkColorClass, DrawnMark } from './DrawnMark';
@@ -107,8 +108,12 @@ function ActionBoardCell({
   col,
   winRole,
 }: BoardCellProps & { cell: BoardCellData & { action: WidgetAction } }) {
-  const { onAction } = useWidgetActions();
-  const state = useAgentActionState(cell.action);
+  const { onAction, channel } = useWidgetActions();
+  const path = useWidgetNodePath();
+  const controlId = `${path}.rows.${row}.${col}`;
+  const channelAction =
+    cell.action.kind === 'emit' || (cell.action.kind === 'agent' && channel !== undefined);
+  const state = useAgentActionState(cell.action, controlId);
 
   const optimisticMark = state.isDispatched ? optimisticMarkFor(cell.action) : null;
   const showGhost =
@@ -117,11 +122,13 @@ function ActionBoardCell({
 
   const handleClick = () => {
     if (!state.interactive) return;
-    const dispatched = onAction(cell.action);
-    if (cell.action.kind !== 'agent') return;
+    const dispatched = onAction(cell.action, { controlId });
+    if (cell.action.kind !== 'agent' && cell.action.kind !== 'emit') return;
     dispatched.catch(() => {
       toast.error('Couldn’t send the move', {
-        description: 'The agent may be busy right now. Try again in a moment.',
+        description: channelAction
+          ? 'Check the action size and document permissions, then try again.'
+          : 'The agent may be busy right now. Try again in a moment.',
       });
     });
   };
@@ -139,7 +146,10 @@ function ActionBoardCell({
   // drawn mark IS the feedback.
   let tooltipText: string | null = null;
   if (state.superseded) tooltipText = 'This board is from an earlier turn. Play on the newest one.';
-  else if (state.unavailable) tooltipText = 'Interactions aren’t available here';
+  else if (state.unavailable)
+    tooltipText = channelAction
+      ? 'This document action is not available or needs approval.'
+      : 'Interactions aren’t available here';
   else if (state.latched) tooltipText = 'Move sent. Waiting for the agent’s reply';
 
   const buttonEl = (

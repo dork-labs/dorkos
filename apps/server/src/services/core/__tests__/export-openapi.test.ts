@@ -11,6 +11,20 @@ describe('export-openapi', () => {
     expect(Object.keys(spec.paths ?? {}).length).toBeGreaterThan(0);
   });
 
+  it('documents document room notifications without recursive JSON expansion or scope cursor fields', () => {
+    const spec = generateOpenAPISpec();
+    const stream = JSON.stringify([
+      spec.paths?.['/api/rooms/{id}/events']?.get?.responses,
+      spec.paths?.['/api/sessions/{id}/events']?.get?.responses,
+    ]);
+    expect(stream).toContain('canvas_channel_snapshot');
+    expect(stream).toContain('canvas_event');
+    expect(stream).toContain('docSeq');
+    expect(stream).toContain('receiptRetentionFloor');
+    expect(stream).toContain('approvedEventTypes');
+    expect(stream).toContain('Finite plain JSON');
+  });
+
   it('includes required endpoint groups', () => {
     const spec = generateOpenAPISpec();
     const paths = Object.keys(spec.paths ?? {});

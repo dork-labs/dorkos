@@ -56,6 +56,13 @@ import {
 } from '@/layers/shared/lib';
 import { LinkSafetyModal } from '@/layers/shared/ui';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
+import {
+  useWidgetChannelActions,
+  isWidgetActionApproved,
+  type WidgetChannelPort,
+  type WidgetChannelSubmission,
+} from './widget-channel';
+import { useWidgetNodePath } from './widget-node-context';
 import { useSessionStreamStore } from '@/layers/entities/session';
 
 /** Settle phase of the widget's single in-flight/settled `agent` dispatch. */
@@ -89,13 +96,20 @@ export interface WidgetActionsValue {
    *   point a resulting `celebrate` command erupts from (the clicked control's
    *   center), so confetti bursts out of the button rather than screen-center.
    */
-  onAction: (action: WidgetAction, opts?: { origin?: CelebrationOrigin }) => Promise<void>;
+  onAction: (
+    action: WidgetAction,
+    opts?: { origin?: CelebrationOrigin; controlId?: string }
+  ) => Promise<void>;
   /**
    * Whether a session sits behind this widget. Gates BOTH `agent` actions (they
    * POST into it) and session-shaped `ui` commands (they write into its canvas,
    * workbench or terminal) — see the module doc.
    */
   hasSession: boolean;
+  channel?: WidgetChannelPort;
+  channelRecords: WidgetChannelSubmission[];
+  channelPending(controlId: string): boolean;
+  retryChannel(eventId: string): Promise<void>;
   /**
    * Whether this widget is superseded — a later message exists, so its `agent`
    * actions are inert (readable, not clickable). `ui`/`url` actions stay live.
@@ -119,6 +133,9 @@ const noop = () => Promise.resolve();
 const WidgetActionsContext = createContext<WidgetActionsValue>({
   onAction: noop,
   hasSession: false,
+  channelRecords: [],
+  channelPending: () => false,
+  retryChannel: noop,
   superseded: false,
   latched: false,
   dispatchedActionKey: null,
@@ -126,6 +143,7 @@ const WidgetActionsContext = createContext<WidgetActionsValue>({
 });
 
 interface WidgetActionProviderProps {
+  channel?: WidgetChannelPort;
   children: ReactNode;
   /**
    * The session that rendered the widget. Required to dispatch `agent` actions,
@@ -159,12 +177,14 @@ interface DispatchRecord {
  */
 export function WidgetActionProvider({
   children,
+  channel,
   sessionId,
   widgetTitle,
   isLatestMessage = true,
 }: WidgetActionProviderProps) {
   const { setTheme } = useTheme();
   const transport = useTransport();
+  const channelActions = useWidgetChannelActions(channel, widgetTitle);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [dispatch, setDispatch] = useState<DispatchRecord | null>(null);
   // SYNCHRONOUS latch mirror. The React state above is for rendering only — it
@@ -176,7 +196,14 @@ export function WidgetActionProvider({
   const dispatchedRef = useRef(false);
 
   const onAction = useCallback(
-    async (action: WidgetAction, opts?: { origin?: CelebrationOrigin }): Promise<void> => {
+    async (
+      action: WidgetAction,
+      opts?: { origin?: CelebrationOrigin; controlId?: string }
+    ): Promise<void> => {
+      if (action.kind === 'emit' || (channel && action.kind === 'agent')) {
+        await channelActions.dispatch(action, opts?.controlId ?? 'root');
+        return;
+      }
       switch (action.kind) {
         case 'ui': {
           // The node-level control is already inert for this case; this is the
@@ -251,19 +278,23 @@ export function WidgetActionProvider({
         }
       }
     },
-    [setTheme, transport, sessionId, widgetTitle]
+    [setTheme, transport, sessionId, widgetTitle, channel, channelActions]
   );
 
   const value = useMemo<WidgetActionsValue>(
     () => ({
       onAction,
+      channel,
+      channelRecords: channelActions.records,
+      channelPending: channelActions.pending,
+      retryChannel: channelActions.retry,
       hasSession: Boolean(sessionId),
       superseded: !isLatestMessage,
       latched: dispatch !== null,
       dispatchedActionKey: dispatch?.key ?? null,
       dispatchStatus: dispatch?.status ?? 'idle',
     }),
-    [onAction, sessionId, isLatestMessage, dispatch]
+    [onAction, sessionId, isLatestMessage, dispatch, channel, channelActions]
   );
 
   return (
@@ -321,9 +352,27 @@ export interface AgentActionState {
  *
  * @param action - The action a node is about to render a control for.
  */
-export function useAgentActionState(action: WidgetAction): AgentActionState {
-  const { hasSession, superseded, latched, dispatchedActionKey, dispatchStatus } =
-    useWidgetActions();
+export function useAgentActionState(action: WidgetAction, controlId?: string): AgentActionState {
+  const path = useWidgetNodePath();
+  const context = useWidgetActions();
+  const channelAction =
+    action.kind === 'emit' || (action.kind === 'agent' && context.channel !== undefined);
+  if (channelAction) {
+    const unavailable =
+      !context.channel?.enabled ||
+      (action.kind === 'agent' && !isWidgetActionApproved(context.channel.approvedEventTypes));
+    const pending = context.channelPending(controlId ?? path);
+    return {
+      isAgent: false,
+      unavailable,
+      superseded: false,
+      latched: false,
+      isDispatched: pending,
+      dispatchStatus: pending ? 'pending' : 'idle',
+      interactive: !unavailable && !pending,
+    };
+  }
+  const { hasSession, superseded, latched, dispatchedActionKey, dispatchStatus } = context;
   const isAgent = action.kind === 'agent';
   // Compare on the full dispatch key (id + payload), so a same-id sibling of the
   // fired control reads as latched-not-dispatched rather than dispatched.

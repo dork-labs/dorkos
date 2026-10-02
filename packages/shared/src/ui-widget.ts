@@ -15,6 +15,10 @@
  * @module shared/ui-widget
  */
 import { z } from 'zod';
+import {
+  CanvasChannelPublicEventTypeSchema,
+  CanvasChannelStateSchema,
+} from './canvas-channel-schemas.js';
 import { UiCommandSchema } from './schemas.js';
 
 /** Visual tone shared by `badge` nodes and list-item badges. */
@@ -25,8 +29,8 @@ export type WidgetTone = z.infer<typeof WidgetToneSchema>;
 
 /**
  * The `agent`-kind action variant — the single definition, reused as the
- * discriminated-union member in {@link WidgetActionSchema} and required
- * standalone by `form` submit buttons.
+ * discriminated-union member in {@link WidgetActionSchema} and permitted
+ * by native form/checklist submits.
  */
 export const AgentWidgetActionSchema = z.object({
   kind: z.literal('agent'),
@@ -37,18 +41,39 @@ export const AgentWidgetActionSchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
 });
 
-/** The `agent`-kind action variant (form submits). */
+/** The legacy inline agent action variant. */
 export type AgentWidgetAction = z.infer<typeof AgentWidgetActionSchema>;
+
+/** A native document event action; the host creates each click's event identity. */
+export const EmitWidgetActionSchema = z
+  .object({
+    kind: z.literal('emit'),
+    type: CanvasChannelPublicEventTypeSchema,
+    payload: CanvasChannelStateSchema.optional(),
+    coalesceKey: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+/** Native document event action. */
+export type EmitWidgetAction = z.infer<typeof EmitWidgetActionSchema>;
+/** Form/checklist submission excludes navigation and local UI commands. */
+export const WidgetSubmitActionSchema = z.discriminatedUnion('kind', [
+  AgentWidgetActionSchema,
+  EmitWidgetActionSchema,
+]);
+/** Native form/checklist action. */
+export type WidgetSubmitAction = z.infer<typeof WidgetSubmitActionSchema>;
 
 /**
  * An interactive action a widget node can trigger. Discriminated on `kind`:
- * - `agent` — POSTed to `/api/sessions/:id/ui-action` and injected into the
- *   agent's next turn (channel ships in PR E; rendered disabled until then).
+ * - `agent` — uses the inline session action path, or an approved document
+ *   route when rendered by a channel-enabled canvas host.
+ * - `emit` — saves a bounded public document event through the host transport.
  * - `ui` — dispatched locally through `executeUiCommand`, no agent wake.
  * - `url` — opens an external https link via the link-safety modal.
  */
 export const WidgetActionSchema = z.discriminatedUnion('kind', [
   AgentWidgetActionSchema,
+  EmitWidgetActionSchema,
   z.object({
     kind: z.literal('ui'),
     command: UiCommandSchema,
@@ -64,7 +89,7 @@ export const WidgetActionSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
-/** An interactive action a widget node can trigger (agent, ui, or url). */
+/** An interactive action a widget node can trigger (agent, emit, ui, or url). */
 export type WidgetAction = z.infer<typeof WidgetActionSchema>;
 
 /** Scalar cell value permitted in a `table` row. */
@@ -149,9 +174,16 @@ export type WidgetNode =
       label?: string;
       placeholder?: string;
       kind?: 'text' | 'number';
+      required?: boolean;
     }
-  | { type: 'select'; name: string; label?: string; options: { label: string; value: string }[] }
-  | { type: 'form'; children: WidgetNode[]; submit: { label: string; action: AgentWidgetAction } }
+  | {
+      type: 'select';
+      name: string;
+      label?: string;
+      required?: boolean;
+      options: { label: string; value: string }[];
+    }
+  | { type: 'form'; children: WidgetNode[]; submit: { label: string; action: WidgetSubmitAction } }
   | {
       type: 'timeline';
       items: {
@@ -165,7 +197,7 @@ export type WidgetNode =
   | {
       type: 'checklist';
       items: { label: string; checked?: boolean; note?: string }[];
-      action?: AgentWidgetAction;
+      action?: WidgetSubmitAction;
       submitLabel?: string;
     }
   | {
@@ -696,9 +728,11 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
       label: z.string().optional(),
       placeholder: z.string().optional(),
       kind: z.enum(['text', 'number']).optional(),
+      required: z.boolean().optional(),
     }),
     z.object({
       type: z.literal('select'),
+      required: z.boolean().optional(),
       name: z.string().min(1),
       label: z.string().optional(),
       options: z.array(z.object({ label: z.string(), value: z.string() })),
@@ -706,7 +740,7 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
     z.object({
       type: z.literal('form'),
       children: z.array(WidgetNodeSchema),
-      submit: z.object({ label: z.string(), action: AgentWidgetActionSchema }),
+      submit: z.object({ label: z.string(), action: WidgetSubmitActionSchema }),
     }),
     z.object({
       type: z.literal('timeline'),
@@ -734,7 +768,7 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
       ),
       // When present, a submit button posts the checked/unchecked label sets
       // back to the agent (merged into the action payload client-side).
-      action: AgentWidgetActionSchema.optional(),
+      action: WidgetSubmitActionSchema.optional(),
       submitLabel: z.string().optional(),
     }),
     z.object({

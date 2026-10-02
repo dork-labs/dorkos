@@ -16,3 +16,8 @@ export {
   type DurableStreamConnection,
   type StreamManagerListeners,
 } from './stream-manager';
+
+export {
+  subscribeDocChannelNotifications,
+  publishDocChannelNotification,
+} from './doc-channel-notifications';

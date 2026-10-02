@@ -1,5 +1,6 @@
+import { docScopeNotifications } from '../services/canvas/doc-channel/streams/registry.js';
 /**
- * `GET /api/rooms/:id/events` over a WebSocket — what the cockpit uses.
+ * `GET /api/rooms/:id/events` over a WebSocket — what the app uses.
  *
  * Same path, same durable contract, same sequencing as the SSE handler beside
  * it (`room-events-handler.ts`): both resolve a {@link RoomStreamPlan} and hand
@@ -103,6 +104,7 @@ export const roomEventsRoute: UpgradeRoute = {
           roomId,
           viewerAuthorId,
           sinceCursor,
+          documentNotifications: docScopeNotifications(`room:${roomId}`, { headers }, { locals }),
         });
       },
     };

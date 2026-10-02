@@ -214,6 +214,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
       const exit = vi.fn();
       const fixtureClose = vi.fn().mockResolvedValue(undefined);
       const stopDocDelivery = vi.fn().mockResolvedValue(undefined);
+      const docNotificationCleanup = vi.fn();
       const callback = startupCatch();
       const javascript = ts.transpileModule(`(${callback.getText(source)})`, {
         compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
@@ -226,6 +227,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
         process: { exit },
         testComposioFixture: { close: fixtureClose },
         stopDocDelivery,
+        docNotificationCleanup,
         DatabaseOpenError: class extends Error {},
         SnapshotFailedError: class extends Error {},
       }) as (error: Error) => Promise<void>;
@@ -238,6 +240,13 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
         expect(fixtureClose).toHaveBeenCalledTimes(1);
         expect(stopDocDelivery).toHaveBeenCalledTimes(1);
         expect(stopDocDelivery.mock.invocationCallOrder[0]).toBeGreaterThan(
+          fixtureClose.mock.invocationCallOrder[0]
+        );
+        expect(docNotificationCleanup).toHaveBeenCalledTimes(1);
+        expect(docNotificationCleanup.mock.invocationCallOrder[0]).toBeGreaterThan(
+          stopDocDelivery.mock.invocationCallOrder[0]
+        );
+        expect(docNotificationCleanup.mock.invocationCallOrder[0]).toBeGreaterThan(
           fixtureClose.mock.invocationCallOrder[0]
         );
         expect(logError).toHaveBeenCalledExactlyOnceWith(original);

@@ -33,6 +33,8 @@ export interface DocGrantedRoute {
   route: CanvasChannelRoute;
   grantId?: string;
   grantRevision?: number;
+  allowedTypes?: string[];
+  targetSessionId?: string | null;
   reason?: string;
 }
 
@@ -374,7 +376,7 @@ export class DocChannelGrantRevalidation {
   /** Return current granted or saved-only route outcomes; never enqueue or replay old input. */
   getCurrentRoutes(
     documentId: string,
-    type: string,
+    type: string | undefined,
     actor: DocGrantActor,
     tx?: DbTransaction
   ): DocGrantedRoute[] {
@@ -390,7 +392,7 @@ export class DocChannelGrantRevalidation {
     const declaration = CanvasChannelDeclarationSchema.safeParse(channel.declaration);
     if (!declaration.success) return [];
     return declaration.data.routes
-      .filter((route) => matchesCanvasChannelEvent(route.on, type))
+      .filter((route) => type === undefined || matchesCanvasChannelEvent(route.on, type))
       .map((route) => {
         const grants = tx
           .select()
@@ -405,11 +407,20 @@ export class DocChannelGrantRevalidation {
           try {
             const current = this.revalidateGrant(documentId, grant.grantId, actor, tx);
             const patterns = current.allowedTypes as string[];
-            if (!patterns.some((pattern) => matchesCanvasChannelEvent(pattern, type))) {
+            if (
+              type !== undefined &&
+              !patterns.some((pattern) => matchesCanvasChannelEvent(pattern, type))
+            ) {
               reason = 'TYPE_NOT_GRANTED';
               continue;
             }
-            return { route, grantId: current.grantId, grantRevision: current.revision };
+            return {
+              route,
+              grantId: current.grantId,
+              grantRevision: current.revision,
+              allowedTypes: patterns,
+              targetSessionId: current.targetSessionId,
+            };
           } catch (error) {
             if (!(error instanceof DocRouteGrantError)) throw error;
             reason = error.code;

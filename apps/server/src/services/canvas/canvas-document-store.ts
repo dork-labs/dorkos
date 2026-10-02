@@ -181,8 +181,13 @@ export class CanvasDocumentStore {
   }
 
   /** Raw identities include corrupt content rows that still need atomic teardown. */
-  identities(scope: string): { id: string; scope: string; sourceKey: string | null }[] {
-    return this.db
+  identities(
+    scope: string,
+    limit?: number
+  ): { id: string; scope: string; sourceKey: string | null }[] {
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 1001))
+      throw new RangeError('Invalid canvas identity page limit.');
+    const query = this.db
       .select({
         id: canvasDocuments.id,
         scope: canvasDocuments.scope,
@@ -190,7 +195,8 @@ export class CanvasDocumentStore {
       })
       .from(canvasDocuments)
       .where(eq(canvasDocuments.scope, scope))
-      .all();
+      .$dynamic();
+    return limit === undefined ? query.all() : query.limit(limit).all();
   }
 
   /**

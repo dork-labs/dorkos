@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
+import type { WidgetChannelPort } from '../model/widget-channel';
 import { WidgetActionProvider } from '../model/widget-context';
 import { useWidgetMotion, widgetEntrance } from '../lib/widget-motion';
 import { WidgetNodeView } from './WidgetNodeView';
@@ -7,6 +8,7 @@ import { WidgetNodeView } from './WidgetNodeView';
 interface WidgetRendererProps {
   /** A validated widget document (parse untrusted input with `parseWidget` first). */
   document: WidgetDocument;
+  channel?: WidgetChannelPort;
   /**
    * The session that rendered this widget. Required to dispatch `agent`-kind
    * actions through the interactivity return channel; omit for surfaces with no
@@ -31,10 +33,16 @@ interface WidgetRendererProps {
  * @param sessionId - Session that rendered the widget (enables `agent` actions)
  * @param isLatestMessage - Whether the widget is in the latest message (else superseded)
  */
-export function WidgetRenderer({ document, sessionId, isLatestMessage }: WidgetRendererProps) {
+export function WidgetRenderer({
+  document,
+  sessionId,
+  isLatestMessage,
+  channel,
+}: WidgetRendererProps) {
   const motionOn = useWidgetMotion();
   return (
     <WidgetActionProvider
+      channel={channel}
       sessionId={sessionId}
       widgetTitle={document.title}
       isLatestMessage={isLatestMessage}

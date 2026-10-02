@@ -1,3 +1,4 @@
+import { queueCommittedDocChannel } from './committed-events.js';
 /** Independent exact route grants backed by existing operator approvals. */
 import { ulid } from 'ulidx';
 import { APPROVAL_DETAIL_MAX_LENGTH } from '@dorkos/shared/approval-schemas';
@@ -115,6 +116,7 @@ export class DocChannelGrants extends DocChannelGrantRevalidation {
         .where(eq(canvasDocChannels.documentId, documentId))
         .run();
       this.manifest(documentId, tx);
+      queueCommittedDocChannel(this.deps.db, this.deps.store.getChannel(documentId, tx)!);
     });
   }
   /** Resolve the exact binding shown for approval, using only current canonical server identity. */

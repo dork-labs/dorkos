@@ -11,8 +11,8 @@
  * @module features/canvas/ui/CanvasRenderer
  */
 import { lazy, Suspense } from 'react';
+import type { WidgetChannelPort } from '@/layers/features/gen-ui';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { CanvasErrorBoundary } from './CanvasErrorBoundary';
 import { CanvasBrowserContent } from './CanvasBrowserContent';
 import { CanvasMarkdownContent } from './CanvasMarkdownContent';
 import { CanvasJsonContent } from './CanvasJsonContent';
@@ -21,6 +21,7 @@ import { CanvasPdfContent } from './CanvasPdfContent';
 import { CanvasAudioContent } from './CanvasAudioContent';
 import { CanvasVideoContent } from './CanvasVideoContent';
 import { CanvasWidgetContent } from './CanvasWidgetContent';
+import { useDocChannel } from '../model/use-doc-channel';
 import { CanvasMcpAppContent } from './CanvasMcpAppContent';
 
 // Lazy: viewers that pull heavy, on-demand deps (CodeMirror, three.js /
@@ -49,10 +50,12 @@ const CanvasDiffContent = lazy(() =>
  */
 export function CanvasRenderer({
   documentId,
+  widgetChannel,
   content,
   onContentChange,
 }: {
   documentId: string;
+  widgetChannel?: WidgetChannelPort;
   content: UiCanvasContent;
   onContentChange: (content: UiCanvasContent) => void;
 }) {
@@ -95,7 +98,11 @@ export function CanvasRenderer({
     case 'video':
       return <CanvasVideoContent content={content} />;
     case 'widget':
-      return <CanvasWidgetContent content={content} />;
+      return widgetChannel ? (
+        <CanvasWidgetContent content={content} documentId={documentId} channel={widgetChannel} />
+      ) : (
+        <HostedWidget documentId={documentId} content={content} />
+      );
     case 'mcp_app':
       return <CanvasMcpAppContent content={content} />;
     case 'file':
@@ -131,4 +138,16 @@ export function CanvasRenderer({
 /** Fallback shown while a lazy viewer chunk loads. */
 function CanvasLoading() {
   return <div className="text-muted-foreground p-4 text-sm">Loading…</div>;
+}
+
+/** The production widget stays on its physical channel while its current grant is unavailable. */
+function HostedWidget({
+  documentId,
+  content,
+}: {
+  documentId: string;
+  content: Extract<UiCanvasContent, { type: 'widget' }>;
+}) {
+  const { channel } = useDocChannel(documentId);
+  return <CanvasWidgetContent documentId={documentId} content={content} channel={channel} />;
 }

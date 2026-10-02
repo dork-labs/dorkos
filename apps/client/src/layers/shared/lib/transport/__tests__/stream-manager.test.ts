@@ -1,3 +1,6 @@
+import { CanvasChannelNotificationSchema } from '@dorkos/shared/canvas-channel-schemas';
+import { subscribeDocChannelNotifications } from '../doc-channel-notifications';
+import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ConnectionState } from '@dorkos/shared/types';
 import {
@@ -345,9 +348,11 @@ describe('StreamManager', () => {
         `no handler registered for '${type}' — it would be silently dropped`
       ).toContain(type);
     }
-    // Exactly the schema's discriminants plus the hydration 'snapshot' frame —
-    // a stale extra name here means the array outlived a schema removal.
-    expect(new Set(registered).size).toBe(discriminants.length + 1);
+    // Document notifications are a separate wire family, never transcript events.
+    const documentTypes = CanvasChannelNotificationSchema.options.map(
+      (option) => option.shape.type.value
+    );
+    expect([...registered].sort()).toEqual([...discriminants, ...documentTypes, 'snapshot'].sort());
   });
 
   it('registers a frame handler for EVERY SessionListEventSchema discriminant (schema-drift pin)', () => {
@@ -987,4 +992,29 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
     expect(manager.getAttachedSessionId()).toBe('A');
     expect(manager.getPinnedSessionId()).toBe('A'); // shared again
   });
+});
+
+it('routes document frames separately from transcript taps without opening another connection', () => {
+  const { manager, connections } = setup();
+  const transcript = vi.fn();
+  const tap = vi.fn();
+  const docs = vi.fn();
+  const stop = subscribeDocChannelNotifications(undefined, docs);
+  manager.setListeners({ onSessionEvent: transcript });
+  manager.subscribeSessionEvent(tap);
+  manager.attachSession('request-alias');
+  try {
+    connections[0]!.push('canvas_event', DOC_EVENT);
+    connections[0]!.push('canvas_channel_snapshot', DOC_SNAPSHOT);
+    connections[0]!.push('canvas_event', { ...DOC_EVENT, docSeq: -1 });
+    expect(docs.mock.calls.map(([frame]) => frame)).toEqual([DOC_EVENT, DOC_SNAPSHOT]);
+    expect(transcript).not.toHaveBeenCalled();
+    expect(tap).not.toHaveBeenCalled();
+    connections[0]!.push('turn_start', TURN_START_EVENT);
+    expect(transcript).toHaveBeenCalledWith('request-alias', TURN_START_EVENT);
+    expect(connections).toHaveLength(1);
+  } finally {
+    stop();
+    manager.detachSession();
+  }
 });

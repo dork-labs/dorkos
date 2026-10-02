@@ -59,6 +59,7 @@ import {
 import { WSConnection, type StreamConnectionOptions } from './ws-connection';
 import { addBreadcrumb } from '../breadcrumbs';
 import { SESSION_LIST_EVENT_TYPES } from './session-stream-methods';
+import { publishDocChannelNotification } from './doc-channel-notifications';
 import {
   createUnreadablePromptReporter,
   createUnreadableSnapshotReporter,
@@ -945,6 +946,12 @@ export class StreamManager {
   private buildSessionEventHandlers(sessionId: string): Record<string, (data: unknown) => void> {
     const handlers: Record<string, (data: unknown) => void> = {
       snapshot: (data) => this.handleSnapshot(sessionId, data),
+      canvas_event: (data) => {
+        publishDocChannelNotification(data);
+      },
+      canvas_channel_snapshot: (data) => {
+        publishDocChannelNotification(data);
+      },
     };
     const onEvent = (data: unknown): void => this.handleSessionEvent(sessionId, data);
     for (const type of SESSION_EVENT_TYPES) {

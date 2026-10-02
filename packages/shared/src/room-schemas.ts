@@ -19,7 +19,10 @@
  * @module shared/room-schemas
  */
 import { z } from 'zod';
-import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
+import {
+  CanvasChannelDeclarationSchema,
+  CanvasChannelNotificationSchema,
+} from './canvas-channel-schemas.js';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { ROOM_TURN_LIMIT_BOUNDS } from './config-schema.js';
 import { ResponseModeSchema } from './mesh-schemas.js';
@@ -2564,6 +2567,7 @@ export const RoomEventSchema = z
     RoomSignalEventSchema,
     RoomReactionEventSchema,
     RoomCanvasEventSchema,
+    ...CanvasChannelNotificationSchema.options,
     RoomRevisionEventSchema,
   ])
   .openapi('RoomEvent');

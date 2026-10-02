@@ -1,11 +1,12 @@
+import { docScopeNotifications } from '../services/canvas/doc-channel/streams/registry.js';
 /**
- * `GET /api/sessions/:id/events` over a WebSocket — what the cockpit uses.
+ * `GET /api/sessions/:id/events` over a WebSocket — what the app uses.
  *
  * Same path, same durable contract, same sequencing as the SSE handler beside
  * it (`session-events-handler.ts`): both resolve a {@link SessionStreamPlan} and
  * hand it to {@link deliverSessionStream}. Only the sink differs, and only
  * because of a browser limit — an SSE stream holds one of a browser's ~6 sockets
- * per origin for as long as it is open, so three cockpit windows spent all six
+ * per origin for as long as it is open, so three app windows spent all six
  * and every later request queued forever (ADR 260805-041016).
  *
  * Two mechanics differ from SSE, both because a browser `WebSocket` constructor
@@ -61,7 +62,7 @@ export const sessionEventsRoute: UpgradeRoute = {
 
   async authorize({ url, match, headers, locals }): Promise<UpgradeDecision> {
     // Refusals go out as a close frame rather than a failed handshake: a
-    // browser cannot read the status of a failed one, and a signed-out cockpit
+    // browser cannot read the status of a failed one, and a signed-out app
     // has to be able to tell "not yours to read" from "server briefly down".
     const refuse = (status: number, message: string): UpgradeDecision => ({
       ok: false,
@@ -108,7 +109,7 @@ export const sessionEventsRoute: UpgradeRoute = {
       );
       // No `?cwd=` is required for a session the runtime can already place
       // (DOR-1444) — the same ladder the SSE handler climbs. This is the path
-      // the cockpit uses, so it is the one a second window opened without
+      // the app uses, so it is the one a second window opened without
       // `&dir=` was refused on while a turn was streaming into the first.
       cwd = resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
       ctx = { cwd, permissionMode: stored?.permissionMode ?? 'default' };
@@ -145,6 +146,11 @@ export const sessionEventsRoute: UpgradeRoute = {
           // `StreamUpgradeLocals` is `res.locals`-shaped precisely so this
           // reads the same principal an HTTP request would.
           principal: readCallerPrincipal({ headers }, { locals }),
+          documentNotifications: docScopeNotifications(
+            `session:${sessionId}`,
+            { headers },
+            { locals }
+          ),
         });
       },
     };
