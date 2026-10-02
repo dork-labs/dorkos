@@ -1,9 +1,12 @@
 /**
- * Private managed-browser contract foundation. No acquisition, installation or
- * runtime activation occurs here. The server owns authority and chooses every root.
+ * Private fixture-only browser engine and contracts. Installation and production
+ * activation remain outside this package. The server chooses authority and roots.
  * @module browser
  */
 export { BrowserValidationError, type BrowserValidationCode } from './errors.js';
+export { createBrowserEngine, type BrowserLifecycleEngine } from './engine.js';
+export { BrowserLifecycleError } from './lifecycle/errors.js';
+export { type BrowserCapture } from './tabs/capture.js';
 export {
   parseProfileId,
   parseBrowserId,
