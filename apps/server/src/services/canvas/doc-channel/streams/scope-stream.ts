@@ -4,6 +4,7 @@ import type { CanvasDocumentStore } from '../../canvas-document-store.js';
 import type { DocChannelActor } from '../authorization.js';
 import type { DocChannelService } from '../service.js';
 import { DocChannelLiveBuffer } from './live-buffer.js';
+import type { DocScopeNotificationStream } from './registry.js';
 
 /** Existing scope authorization remains mandatory before even listing document IDs. */
 export interface DocScopeStreamPorts {
@@ -25,7 +26,7 @@ export class DocScopeStream {
     scope: string,
     actor: DocChannelActor,
     signal: AbortSignal
-  ): AsyncIterable<CanvasChannelNotification> {
+  ): DocScopeNotificationStream {
     const cancellation = new AbortController();
     const hints = this.live.subscribe(scope, actor, AbortSignal.any([signal, cancellation.signal]));
     const iterator = hints[Symbol.asyncIterator]();
@@ -57,7 +58,19 @@ export class DocScopeStream {
         return generator.return(undefined);
       },
     };
-    return { [Symbol.asyncIterator]: () => wrapped };
+    return {
+      [Symbol.asyncIterator]: () => wrapped,
+      prepareForSend: (notification) => {
+        if (signal.aborted || cancellation.signal.aborted)
+          throw new Error('Document stream ended.');
+        this.requireCurrent(scope, actor, notification.documentId);
+        const currentScope = this.resolveScope(scope);
+        const identity = this.documents.lookupIdentity(notification.documentId);
+        if (!identity || identity.scope !== currentScope)
+          throw new Error('Document scope changed.');
+        return { ...notification, scope: currentScope };
+      },
+    };
   }
 
   private resolveScope(scope: string): string {

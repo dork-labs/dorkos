@@ -102,7 +102,8 @@ export async function deliverSessionStream(
   plan: SessionStreamPlan
 ): Promise<void> {
   const { sessionId, runtime, ctx, resume, principal } = plan;
-  sink = serializedStreamSink(sink);
+  const serialized = serializedStreamSink(sink);
+  sink = serialized;
   let documents: ReturnType<typeof attachDocumentStream> | undefined;
   // Resolved ONCE per connection rather than per frame: a principal is fixed
   // for the life of a socket (changing it would need a new handshake), and the
@@ -114,7 +115,7 @@ export async function deliverSessionStream(
   let generation = UNOWNED_STREAM_GENERATION;
 
   try {
-    documents = attachDocumentStream(sink, plan.documentNotifications);
+    documents = attachDocumentStream(serialized, plan.documentNotifications);
     if (resume !== undefined) {
       // Read and compare in the same tick as the subscribe: between two ticks
       // the projector behind this session id can change, and both the check and

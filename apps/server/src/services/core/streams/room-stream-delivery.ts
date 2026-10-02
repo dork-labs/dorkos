@@ -52,7 +52,8 @@ export async function deliverRoomStream(
   plan: RoomStreamPlan
 ): Promise<void> {
   const { roomId, viewerAuthorId, sinceCursor } = plan;
-  sink = serializedStreamSink(sink);
+  const serialized = serializedStreamSink(sink);
+  sink = serialized;
   let documents: ReturnType<typeof attachDocumentStream> | undefined;
   const service = getRoomService();
 
@@ -101,7 +102,7 @@ export async function deliverRoomStream(
   let highestSent: number;
 
   try {
-    documents = attachDocumentStream(sink, plan.documentNotifications);
+    documents = attachDocumentStream(serialized, plan.documentNotifications);
     if (sinceCursor !== undefined) {
       highestSent = sinceCursor;
       for (const entry of service.entriesAfter(roomId, sinceCursor)) {
