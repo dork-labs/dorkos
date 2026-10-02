@@ -20,9 +20,12 @@ it('adds accounting/floors to foundation rows and reconstructs exact Unicode env
   cpSync(source, oldMigrations, { recursive: true });
   const journalPath = join(oldMigrations, 'meta', '_journal.json');
   const journal = JSON.parse(readFileSync(journalPath, 'utf8'));
-  journal.entries = journal.entries.filter(
-    (entry: { tag: string }) => entry.tag !== '0138_canvas_channel_accounting'
+  const accountingIndex = journal.entries.findIndex(
+    (entry: { tag: string }) => entry.tag === '0138_canvas_channel_accounting'
   );
+  expect(accountingIndex).toBeGreaterThan(0);
+  // A historical database cannot have later migrations applied while skipping this one.
+  journal.entries = journal.entries.slice(0, accountingIndex);
   writeFileSync(journalPath, JSON.stringify(journal));
   const db = createDb(join(directory, 'old.sqlite'));
   try {

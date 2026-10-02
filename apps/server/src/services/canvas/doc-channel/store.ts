@@ -33,6 +33,7 @@ import {
 import { assertJson, assertRowJson, readChecked, DocChannelCorruptionError } from './store-json.js';
 export { DocChannelCorruptionError } from './store-json.js';
 import { documentTransaction, type SynchronousResult } from './store-transaction.js';
+import { markDocWaitingWarning, markAcceptedDocWaitingWarning } from './store-warnings.js';
 
 /** A stored channel, independent of the physical canvas document. */
 export type DocChannelRow = typeof canvasDocChannels.$inferSelect;
@@ -257,6 +258,21 @@ export class DocChannelStore {
       )
       .run().changes;
     return changed === 1 ? this.getBatch(input.batchId, tx) : undefined;
+  }
+
+  /** Mark one waiting generation in the same transaction as its durable warning event. */
+  markWaitingWarning(batchId: string, generation: string, now: string, tx: DbTransaction): boolean {
+    return markDocWaitingWarning(batchId, generation, now, tx);
+  }
+
+  /** Mark an accepted wait without changing its dispatch lease or selected input. */
+  markAcceptedWaitingWarning(
+    receiptId: string,
+    generation: string,
+    now: string,
+    tx: DbTransaction
+  ): boolean {
+    return markAcceptedDocWaitingWarning(receiptId, generation, now, tx);
   }
 
   /** Change a batch only when the caller still owns its generation/attempt/state. */
