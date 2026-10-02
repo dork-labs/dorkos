@@ -847,7 +847,7 @@ describe('ManagementReviewDialog', () => {
         completedAt: '2026-09-06T00:10:01.000Z',
       },
       heading: 'Sign-in didn’t finish',
-      detail: 'Not sure the sign-in started. Connect it yourself on the Connections page.',
+      detail: 'DorkOS can’t tell if the sign-in started. Connect it on the Connections page.',
     },
   ])('shows the terminal authentication state as $heading', async ({ poll, heading, detail }) => {
     const user = userEvent.setup();

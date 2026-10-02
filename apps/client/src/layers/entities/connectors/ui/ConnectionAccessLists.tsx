@@ -110,7 +110,7 @@ const THIS_CHAT_SWITCH_NOTE =
   'This only affects this chat. Turning an app back on never adds access.';
 
 /** Why a switch did not change, when the server gave no reason of its own. */
-const THIS_CHAT_SWITCH_FAILED = 'Nothing changed. Try again.';
+const THIS_CHAT_SWITCH_FAILED = 'Couldn’t change access for this chat. Try again.';
 
 /**
  * What to say when a switch did not change. A refusal the owner can't retry

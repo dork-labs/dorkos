@@ -70,7 +70,7 @@ export function pendingReviewLine(
     case 'pause':
       return {
         title: `${who} asks to pause ${appAndAccount(context.connection.toolkit, context.connection.label, services)}`,
-        detail: 'Agents can’t use it until it’s resumed.',
+        detail: 'Agents can’t use it until you resume it.',
       };
     case 'resume':
       return {

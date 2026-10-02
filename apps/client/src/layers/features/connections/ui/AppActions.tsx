@@ -115,7 +115,7 @@ export function AppActions({ toolkit, appName, providerInstanceId, grant }: AppA
   } else if (!listed) {
     body = (
       <p className="text-muted-foreground text-sm">
-        DorkOS can’t list {appName}’s actions. All count as changes.
+        DorkOS can’t list {appName}’s actions. Everything agents do in {appName} counts as a change.
       </p>
     );
   } else {

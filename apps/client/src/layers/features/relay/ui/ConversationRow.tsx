@@ -339,7 +339,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                 </div>
               )}
 
-              {/* Technical Details accordion */}
+              {/* Technical details accordion */}
               <button
                 type="button"
                 onClick={(e) => {
@@ -353,7 +353,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                 ) : (
                   <ChevronRight className="size-3.5" />
                 )}
-                Technical Details
+                Technical details
               </button>
               <AnimatePresence initial={false}>
                 {showTechnical && (
@@ -388,7 +388,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                 )}
               </AnimatePresence>
 
-              {/* Trace Timeline accordion */}
+              {/* Trace timeline accordion */}
               {conversation.traceId && (
                 <>
                   <button
@@ -404,7 +404,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                     ) : (
                       <ChevronRight className="size-3.5" />
                     )}
-                    Trace Timeline
+                    Trace timeline
                   </button>
                   <AnimatePresence initial={false}>
                     {showTrace && (

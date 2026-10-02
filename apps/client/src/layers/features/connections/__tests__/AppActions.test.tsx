@@ -213,7 +213,9 @@ describe('AppActions before an app is connected', () => {
     renderActions(transportWith({ status: 'unlisted', toolkit: 'gmail' }));
 
     expect(
-      await screen.findByText('DorkOS can’t list Gmail’s actions. All count as changes.')
+      await screen.findByText(
+        'DorkOS can’t list Gmail’s actions. Everything agents do in Gmail counts as a change.'
+      )
     ).toBeInTheDocument();
   });
 

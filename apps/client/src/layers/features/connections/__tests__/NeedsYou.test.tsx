@@ -79,7 +79,7 @@ describe('NeedsYou', () => {
     await user.click(
       screen.getByRole('button', { name: /A program asks to pause Gmail \(work\)/ })
     );
-    expect(screen.getByText('Agents can’t use it until it’s resumed.')).toBeInTheDocument();
+    expect(screen.getByText('Agents can’t use it until you resume it.')).toBeInTheDocument();
     expect(onOpenReview).toHaveBeenCalledWith('review-1');
   });
 

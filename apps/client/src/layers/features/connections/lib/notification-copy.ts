@@ -114,8 +114,8 @@ export function notificationStatus(
     case 'unknown_outcome':
       return problem(
         inChat
-          ? `Not sure ${destination} got the newest one (${when}). Open the chat to check.`
-          : `Not sure the newest one reached ${destination} (${when}). Check there.`,
+          ? `DorkOS can’t tell if ${destination} got the newest one (${when}). Open the chat to check.`
+          : `DorkOS can’t tell if the newest one reached ${destination} (${when}). Check there.`,
         inChat
       );
     case 'refused':
@@ -132,7 +132,7 @@ export function notificationStatus(
       );
     case 'expired':
       return problem(
-        `Newest one (${when}) waited too long. If it repeats, remove it and add it again.`
+        `Newest one (${when}) expired and wasn’t sent. If it repeats, remove it and add it again.`
       );
     case 'unreachable':
     case null:

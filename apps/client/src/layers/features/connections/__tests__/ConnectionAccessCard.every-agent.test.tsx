@@ -284,7 +284,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     ).toBeInTheDocument();
     // The shared set includes delete, so the warning says so.
     expect(screen.getByTestId('every-agent-warning')).toHaveTextContent(
-      'Every agent, even future ones, could send email as you. Some are high risk.'
+      'Every agent, even future ones, could send email as you, including high-risk actions.'
     );
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });

@@ -348,10 +348,10 @@ describe('everyAgentDecision (DOR-2420)', () => {
       'Every agent, even future ones, could make changes in Asana as you.'
     );
     expect(everyAgentWriteWarning('gmail', 'Gmail', true)).toBe(
-      'Every agent, even future ones, could send email as you. Some are high risk.'
+      'Every agent, even future ones, could send email as you, including high-risk actions.'
     );
     expect(everyAgentWriteWarning('asana', 'Asana', true)).toBe(
-      'Every agent, even future ones, could make changes in Asana as you. Some are high risk.'
+      'Every agent, even future ones, could make changes in Asana as you, including high-risk actions.'
     );
   });
 
@@ -369,7 +369,7 @@ describe('everyAgentDecision (DOR-2420)', () => {
     const held = everyAgentHoldsHighRisk(forwardOnly, null);
     expect(held).toBe(true);
     const line = everyAgentWriteWarning('gmail', 'Gmail', held);
-    expect(line).toContain('Some are high risk.');
+    expect(line).toContain('including high-risk actions.');
     expect(line).not.toMatch(/delete/iu);
   });
 

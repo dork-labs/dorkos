@@ -97,7 +97,7 @@ export function AccessOutcome({
               {pendingAdds && pendingRemovals
                 ? 'Removed access has ended. New access works once DorkOS finishes.'
                 : pendingRemovals
-                  ? 'Removed access has ended here. The service is still catching up.'
+                  ? 'Removed access has ended here. DorkOS is still removing it at the service.'
                   : 'New access is saved. It works once DorkOS finishes.'}
             </p>
           </div>

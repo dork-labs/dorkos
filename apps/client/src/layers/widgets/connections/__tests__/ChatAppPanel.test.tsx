@@ -142,7 +142,7 @@ describe('ChatAppPanel', () => {
     // recorded, blocked and ignored ones included (DOR-2608), with the names
     // in them, so the dialog says so.
     expect(confirm).toHaveAccessibleDescription(
-      /So are its recent deliveries and everyone waiting, ignored or blocked\..*block those people again\./
+      /people who messaged it is deleted, names included\..*anyone ignored or blocked\..*block anyone you blocked again\./
     );
     expect(transport.removeRelayAdapter).not.toHaveBeenCalled();
     const feedReadsBefore = vi.mocked(transport.listUnclaimedChats).mock.calls.length;

@@ -22,10 +22,11 @@ import { useRoom, useSetDeliverNotices } from '@/layers/entities/room';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 
 /**
- * The three plain statements shown at the moment of bridging (chats-as-channels
- * spec §9.4). Said once, here, so a person turns a chat into a channel knowing
- * exactly what changes. The spec's statements, in plain words, one short line
- * each (the app-copy cap is 15 words a block).
+ * The plain statements shown at the moment of bridging (chats-as-channels spec
+ * §9.4). Said once, here, so a person turns a chat into a channel knowing
+ * exactly what changes. The spec's three statements, in plain words, one short
+ * line each (the app-copy cap is 15 words a block); the permissions statement
+ * takes two lines, so its trust caveat is not cut.
  */
 const BRIDGE_WARNINGS = [
   'People you may not know can put text in front of your agent.',

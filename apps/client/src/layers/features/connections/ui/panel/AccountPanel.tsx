@@ -307,17 +307,15 @@ function ReadinessFix({
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Remove {appName} from your apps?</AlertDialogTitle>
-              <AlertDialogDescription>
-                It leaves this list. Its activity history is kept.
+              <AlertDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>It leaves this list. Its activity history is kept.</p>
+                  <p>Connect it again later and you choose who can use it.</p>
+                  {readiness.reason === 'disconnect_finishing' && (
+                    <p>DorkOS still finishes removing its access at the service.</p>
+                  )}
+                </div>
               </AlertDialogDescription>
-              <p className="text-muted-foreground text-sm">
-                Connect it again later and you choose who can use it.
-              </p>
-              {readiness.reason === 'disconnect_finishing' && (
-                <p className="text-muted-foreground text-sm">
-                  DorkOS still finishes removing its access at the service.
-                </p>
-              )}
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Keep it</AlertDialogCancel>

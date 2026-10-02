@@ -170,7 +170,9 @@ describe('SessionConnectorsGroup', () => {
 
     await user.click(await screen.findByRole('switch', { name: 'Gmail (work) in this chat' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Nothing changed');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Couldn’t change access for this chat. Try again.'
+    );
     expect(screen.getByRole('switch', { name: 'Gmail (work) in this chat' })).toBeChecked();
   });
 

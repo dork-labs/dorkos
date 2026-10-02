@@ -61,12 +61,15 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('BindingBridgeSection — bridge action (§3.1, A12.2)', () => {
-  it('shows the three §9.4 warnings and a live bridge action for a bridgeable chat', () => {
+  it('shows the four §9.4 warning lines and a live bridge action for a bridgeable chat', () => {
     renderSection(makeBinding());
     expect(
       screen.getByText(/people you may not know can put text in front of your agent/i)
     ).toBeInTheDocument();
     expect(screen.getByText(/Permissions are the real limit/i)).toBeInTheDocument();
+    expect(
+      screen.getByText('Raise that only if you trust everyone in the chat.')
+    ).toBeInTheDocument();
     expect(screen.getByText(/keeps the whole record/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Bridge to a channel$/i })).toBeEnabled();
   });

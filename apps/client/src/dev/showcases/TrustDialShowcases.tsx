@@ -269,7 +269,7 @@ function PickerAvailability({ available, children }: { available: boolean; child
 /** What a binding gives up at a stop that never asks. */
 const BINDING_CONSEQUENCE = (
   <>
-    Nothing is asked here. Anyone who can message this connection sets the agent off.{' '}
+    Anyone who can message this connection can make the agent act, with no one asked.{' '}
     <InfoTip label="About asking in the chat" title="At a stop that asks">
       <p>Where your connection can show buttons, the agent waits for Approve or Deny.</p>
       <p>Only people on the approver list can answer.</p>

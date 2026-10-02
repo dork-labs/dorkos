@@ -884,7 +884,7 @@ describe('ConnectionNotifications', () => {
 
     renderNotifications(transport);
     expect(await screen.findByTestId('notification-status')).toHaveTextContent(
-      'Not sure Researcher got the newest one (Just now). Open the chat to check.'
+      'DorkOS can’t tell if Researcher got the newest one (Just now). Open the chat to check.'
     );
     await user.click(screen.getByRole('button', { name: /^Open the chat for New email/ }));
     expect(navigate).toHaveBeenCalledWith(

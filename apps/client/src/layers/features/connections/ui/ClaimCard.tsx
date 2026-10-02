@@ -193,6 +193,7 @@ export function ClaimCard({
       ) : (
         <div className="text-muted-foreground space-y-0.5 text-xs">
           <p>A channel gives you a room to see and reply from.</p>
+          <p>Answering privately keeps this chat as it is.</p>
           <p>Ignore hides this quietly. Block stops recording this chat.</p>
         </div>
       )}

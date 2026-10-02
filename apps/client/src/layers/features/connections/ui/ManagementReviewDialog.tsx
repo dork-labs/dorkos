@@ -167,7 +167,7 @@ export function ManagementReviewDialog({
                       : authenticationState === 'expired'
                         ? 'The sign-in timed out. Connect it yourself on the Connections page.'
                         : authenticationState === 'start_unknown'
-                          ? 'Not sure the sign-in started. Connect it yourself on the Connections page.'
+                          ? 'DorkOS can’t tell if the sign-in started. Connect it on the Connections page.'
                           : authenticationState === 'failed'
                             ? 'Sign-in didn’t finish. Connect it yourself on the Connections page.'
                             : authenticationState === 'pending' ||
