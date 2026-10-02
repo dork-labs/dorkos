@@ -3,6 +3,7 @@ covers:
   - 'feat(canvas): emit native widget actions with durable status'
   - 'fix(canvas): preserve uncertain widget submission identity'
   - 'fix(canvas): preserve workspace shutdown fences'
+  - 'chore(test): await complete arrival screening outcome'
 ---
 
 ### Added
